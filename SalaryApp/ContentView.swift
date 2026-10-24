@@ -115,7 +115,7 @@ struct ContentView: View {
                 return all
             }.value
             try await DataImporter(modelContainer: container).replace(with: imported)
-            message = "تم استيراد \(imported.employees.count) موظف و\(imported.deductions.count) استقطاع."
+            message = "تم استيراد \(imported.employees.count.formatted()) موظف و\(imported.deductions.count.formatted()) استقطاع."
             report = "employees=\(imported.employees.count) deductions=\(imported.deductions.count)"
         } catch {
             message = error.localizedDescription
