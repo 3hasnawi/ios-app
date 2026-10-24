@@ -1,0 +1,11 @@
+# ملفات الرواتب الحقيقية لا تُرفع إلى GitHub أبداً
+*.xlsx
+*.xls
+
+# ملفات يولدها البناء
+*.xcodeproj/
+SalaryApp/Info.plist
+build/
+Payload/
+*.ipa
+.DS_Store
