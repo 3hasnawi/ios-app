@@ -227,6 +227,13 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # الفيديو الأصلي كبير (حد GitHub 100MB): نسخة مصغّرة فقط
+          if [ -f ci-output/navigation.mp4 ]; then
+            avconvert --source ci-output/navigation.mp4 --preset Preset960x540 --output ci-output/navigation-small.mp4 --replace \
+              && rm ci-output/navigation.mp4 || true
+            [ -f ci-output/navigation.mp4 ] && [ $(stat -f%z ci-output/navigation.mp4) -gt 90000000 ] && rm ci-output/navigation.mp4
+            ls -la ci-output/*.mp4 || true
+          fi
           tail -n 200 ci-output/build.log > ci-output/build-tail.log 2>/dev/null || true
           rm -f ci-output/build.log
           cd ci-output
