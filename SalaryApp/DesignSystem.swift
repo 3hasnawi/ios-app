@@ -28,14 +28,10 @@ extension View {
         }
     }
 
-    /// iOS 26+: شريط البحث في أسفل الشاشة كما في تطبيقات النظام. قبل ذلك: تحت العنوان.
-    @ViewBuilder
+    /// شريط البحث ثابت تحت العنوان دائماً.
+    /// (مع التبويبات في iOS 26 كان شريط البحث السفلي يختفي أحياناً بعد البحث والرجوع من صفحة التفاصيل.)
     func adaptiveSearchable(text: Binding<String>, prompt: String) -> some View {
-        if #available(iOS 26, *) {
-            searchable(text: text, prompt: Text(prompt))
-        } else {
-            searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(prompt))
-        }
+        searchable(text: text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text(prompt))
     }
 }
 
