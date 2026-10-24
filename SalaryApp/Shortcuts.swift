@@ -51,6 +51,8 @@ enum ShortcutMonthRange: String, AppEnum {
 // MARK: - البحث عن موظف: الاسم ← اختيار النتيجة ← التفاصيل وصورة القسيمة
 
 struct SearchEmployeeIntent: AppIntent {
+    /// بيانات الرواتب لا تظهر من شاشة القفل: الاختصار يطلب فتح الآيفون أولاً.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "البحث عن موظف"
     static let description = IntentDescription(
         "يبحث بالاسم، وإذا وُجد أكثر من موظف تختار من القائمة. يعرض صافي الراتب والاستقطاعات ويعيد صورة القسيمة. أضف بعده \"نسخ إلى الحافظة\" لنسخ الصورة.",
@@ -95,6 +97,8 @@ struct SearchEmployeeIntent: AppIntent {
 // MARK: - قسيمة راتب: نافذة بحث واختيار ← التفاصيل وصورة القسيمة
 
 struct ShowPayslipIntent: AppIntent {
+    /// بيانات الرواتب لا تظهر من شاشة القفل: الاختصار يطلب فتح الآيفون أولاً.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "قسيمة راتب"
     static let description = IntentDescription(
         "اكتب الاسم واختر النتيجة لعرض تفاصيل الراتب والاستقطاعات. يعيد صورة القسيمة؛ أضف بعده \"نسخ إلى الحافظة\" لنسخها.",

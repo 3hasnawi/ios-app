@@ -14,7 +14,7 @@ struct SalaryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            AppLockGate { RootView() }
                 .environment(\.layoutDirection, language == AppLanguage.english.rawValue ? .leftToRight : .rightToLeft)
                 .environment(\.locale, AppSettings.locale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)

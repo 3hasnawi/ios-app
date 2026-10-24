@@ -22,6 +22,7 @@ targets:
         CFBundleDisplayName: الرواتب
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar]
+        NSFaceIDUsageDescription: يُستخدم Face ID لقفل تطبيق الرواتب وحماية بيانات الموظفين.
         UILaunchScreen:
           UIImageName: HomeLogo
           UIImageRespectsSafeAreaInsets: true

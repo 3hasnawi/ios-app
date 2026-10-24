@@ -17,11 +17,15 @@ struct SettingsView: View {
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
     @State private var storeSize: Int64?
+    @AppStorage(AppLock.enabledKey) private var lockEnabled = false
+    @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
+    @State private var lockMessage: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 displaySection
+                securitySection
                 importSection
                 staffSection
                 storageSection
@@ -37,6 +41,59 @@ struct SettingsView: View {
         }
         // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
         .id("\(language)-\(numerals)")
+    }
+
+    // MARK: - الأمان
+
+    private var securitySection: some View {
+        Section {
+            SettingRow(title: tr("القفل بـ \(AppLock.methodName)", "Lock with \(AppLock.methodName)"),
+                       systemImage: AppLock.systemImage, color: .green) {
+                Toggle("", isOn: Binding(get: { lockEnabled }, set: { setLock($0) }))
+                    .labelsHidden()
+                    .accessibilityIdentifier("faceIDToggle")
+            }
+            if lockEnabled {
+                Picker(selection: $lockTimeout) {
+                    Text(tr("فوراً", "Immediately")).tag(0)
+                    Text(tr("بعد دقيقة", "After 1 minute")).tag(60)
+                    Text(tr("بعد 5 دقائق", "After 5 minutes")).tag(300)
+                    Text(tr("بعد 15 دقيقة", "After 15 minutes")).tag(900)
+                } label: {
+                    SettingRow(title: tr("القفل عند الخروج", "Lock when leaving"), systemImage: "timer", color: .teal) { EmptyView() }
+                }
+                .pickerStyle(.menu)
+            }
+        } header: {
+            Text(tr("الأمان", "Security"))
+        } footer: {
+            if let lockMessage {
+                Text(lockMessage).foregroundStyle(.red)
+            } else {
+                Text(tr("يُطلب \(AppLock.methodName) عند فتح التطبيق وعند الرجوع إليه، ويُستخدم رمز الجهاز إذا تعذّر التعرّف. البيانات تُخفى في قائمة التطبيقات المفتوحة.",
+                        "\(AppLock.methodName) is required when opening or returning to the app; the device passcode is used if recognition fails. Data is hidden in the app switcher."))
+            }
+        }
+    }
+
+    /// التفعيل يحتاج تحققاً ناجحاً أولاً، حتى لا يُقفل المستخدم بقفل لا يعمل على جهازه.
+    private func setLock(_ on: Bool) {
+        lockMessage = nil
+        guard on else {
+            lockEnabled = false
+            AppLock.shared.disable()
+            return
+        }
+        guard AppLock.kind != .none else {
+            lockMessage = tr("فعّل رمز القفل أو Face ID في إعدادات الآيفون أولاً.", "Set up a passcode or Face ID in iPhone Settings first.")
+            return
+        }
+        Task {
+            switch await AppLock.authenticate(reason: tr("تفعيل قفل تطبيق الرواتب", "Turn on the payroll app lock")) {
+            case .success: lockEnabled = true
+            case .failure: lockMessage = tr("لم يُفعَّل القفل: لم يتم التحقق.", "Lock not turned on: verification failed.")
+            }
+        }
     }
 
     // MARK: - العرض
