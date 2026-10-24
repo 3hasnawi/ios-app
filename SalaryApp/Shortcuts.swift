@@ -55,7 +55,7 @@ struct SearchEmployeeIntent: AppIntent {
     @Parameter(title: "الاسم", requestValueDialog: "ما اسم الموظف؟")
     var name: String
 
-    @Parameter(title: "الأشهر", default: .latest)
+    @Parameter(title: "الأشهر", default: .all)
     var range: ShortcutMonthRange
 
     @Parameter(title: "إظهار الاستقطاعات", default: true)
@@ -259,26 +259,8 @@ enum ShortcutSearch {
     @MainActor
     static func run(name: String, range: ShortcutMonthRange, includeDeductions: Bool) throws -> [ShortcutResult] {
         let context = SharedModel.container.mainContext
-        let tokens = ArabicText.normalize(name).split(separator: " ").map(String.init)
-        guard let first = tokens.first else { return [] }
-
-        var monthDescriptor = FetchDescriptor<PayrollMonth>(sortBy: [
-            SortDescriptor(\.sortKey, order: .reverse), SortDescriptor(\.importedAt, order: .reverse),
-        ])
-        if let limit = range.limit { monthDescriptor.fetchLimit = limit }
-        let months = try context.fetch(monthDescriptor).map(\.name)
-        guard !months.isEmpty else { return [] }
-
-        var descriptor = FetchDescriptor<Employee>(
-            predicate: #Predicate { months.contains($0.month) && $0.nameKey.contains(first) },
-            sortBy: [SortDescriptor(\.name)]
-        )
-        descriptor.fetchLimit = 200
-        let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
-        let employees = try context.fetch(descriptor)
-            .filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
-            .sorted { (order[$0.month] ?? 0, $0.name) < (order[$1.month] ?? 0, $1.name) }
-            .prefix(20)
+        let months = try EmployeeLookup.monthNames(limit: range.limit)
+        let employees = try EmployeeLookup.find(name, in: months).prefix(30)
 
         return try employees.map { e in
             var lines: [(title: String, amount: Double?)]?
@@ -366,7 +348,7 @@ struct EmployeeEntity: AppEntity {
         )
     }
 
-    static let separator = "\u{1F}"
+    static let separator = " | "
 
     init(_ employee: Employee) {
         id = employee.month + Self.separator + employee.name
@@ -390,26 +372,48 @@ struct EmployeeQuery: EntityStringQuery {
 }
 
 enum EmployeeLookup {
+    /// الأشهر المحفوظة من الأحدث إلى الأقدم، وبحد أقصى `limit` شهراً.
     @MainActor
-    static func search(_ text: String) throws -> [EmployeeEntity] {
-        let context = SharedModel.container.mainContext
-        let tokens = ArabicText.normalize(text).split(separator: " ").map(String.init)
-        guard let first = tokens.first else { return [] }
-        let months = try context.fetch(FetchDescriptor<PayrollMonth>(sortBy: [
+    static func monthNames(limit: Int? = nil) throws -> [String] {
+        var descriptor = FetchDescriptor<PayrollMonth>(sortBy: [
             SortDescriptor(\.sortKey, order: .reverse), SortDescriptor(\.importedAt, order: .reverse),
-        ])).map(\.name)
-        let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        ])
+        if let limit { descriptor.fetchLimit = limit }
+        return try SharedModel.container.mainContext.fetch(descriptor).map(\.name)
+    }
 
-        var descriptor = FetchDescriptor<Employee>(
-            predicate: #Predicate { $0.nameKey.contains(first) },
-            sortBy: [SortDescriptor(\.name)]
-        )
-        descriptor.fetchLimit = 400
-        return try context.fetch(descriptor)
+    /// نفس بحث التطبيق: كل كلمة من الاسم يجب أن تكون موجودة (بعد توحيد الهمزات والتاء المربوطة).
+    /// أول ثلاث كلمات تُصفّى داخل قاعدة البيانات حتى لا تضيع النتيجة بين آلاف الأسماء المتشابهة.
+    @MainActor
+    static func find(_ text: String, in months: [String]) throws -> [Employee] {
+        let tokens = ArabicText.normalize(text).split(separator: " ").map(String.init)
+        guard !tokens.isEmpty, !months.isEmpty else { return [] }
+        let a = tokens[0]
+        let predicate: Predicate<Employee>
+        switch tokens.count {
+        case 1:
+            predicate = #Predicate { months.contains($0.month) && $0.nameKey.contains(a) }
+        case 2:
+            let b = tokens[1]
+            predicate = #Predicate { months.contains($0.month) && $0.nameKey.contains(a) && $0.nameKey.contains(b) }
+        default:
+            let b = tokens[1]
+            let c = tokens[2]
+            predicate = #Predicate {
+                months.contains($0.month) && $0.nameKey.contains(a) && $0.nameKey.contains(b) && $0.nameKey.contains(c)
+            }
+        }
+        var descriptor = FetchDescriptor<Employee>(predicate: predicate, sortBy: [SortDescriptor(\.name)])
+        descriptor.fetchLimit = 2000
+        let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
+        return try SharedModel.container.mainContext.fetch(descriptor)
             .filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
             .sorted { (order[$0.month] ?? .max, $0.name) < (order[$1.month] ?? .max, $1.name) }
-            .prefix(40)
-            .map(EmployeeEntity.init)
+    }
+
+    @MainActor
+    static func search(_ text: String) throws -> [EmployeeEntity] {
+        try find(text, in: monthNames()).prefix(60).map(EmployeeEntity.init)
     }
 
     @MainActor
@@ -496,19 +500,32 @@ struct CopyPayslipImageIntent: AppIntent {
     static let title: LocalizedStringResource = "نسخ قسيمة الراتب كصورة"
     static let isDiscoverable = false
 
-    @Parameter(title: "الموظف")
-    var employee: EmployeeEntity
+    /// معرّف السجل كنص عادي (الشهر | الاسم)، حتى لا يحتاج النظام إلى البحث عنه من جديد.
+    @Parameter(title: "السجل")
+    var recordID: String
 
     init() {}
-    init(employee: EmployeeEntity) { self.employee = employee }
+    init(recordID: String) { self.recordID = recordID }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard let record = try EmployeeLookup.employee(id: employee.id) else { return .result() }
+        guard let record = try EmployeeLookup.employee(id: recordID) else { throw CopyError.notFound }
         let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
-        UIPasteboard.general.image = files.image
-        PayslipClipboard.markCopied(employee.id)
+        guard let png = files.image.pngData() else { throw CopyError.renderFailed }
+        // الصورة فقط في الحافظة (بدون نص)، فتُلصق كصورة في واتساب والملاحظات.
+        UIPasteboard.general.setItems([[UTType.png.identifier: png]])
+        PayslipClipboard.markCopied(recordID)
         return .result()
+    }
+
+    enum CopyError: LocalizedError {
+        case notFound, renderFailed
+        var errorDescription: String? {
+            switch self {
+            case .notFound: tr("لم يُعثر على السجل.", "Record not found.")
+            case .renderFailed: tr("تعذّر إنشاء الصورة.", "Couldn't create the image.")
+            }
+        }
     }
 }
 
@@ -614,7 +631,7 @@ struct PayslipSnippetView: View {
                 }
             }
 
-            Button(intent: CopyPayslipImageIntent(employee: entity)) {
+            Button(intent: CopyPayslipImageIntent(recordID: entity.id)) {
                 Label(copied ? tr("تم نسخ الصورة", "Image copied") : tr("نسخ كصورة", "Copy as image"),
                       systemImage: copied ? "checkmark" : "doc.on.doc")
                     .frame(maxWidth: .infinity)
