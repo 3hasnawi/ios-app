@@ -121,14 +121,6 @@ struct ContentView: View {
                             Label(tr("الإعدادات", "Settings"), systemImage: "gearshape")
                         }
                     }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            showImporter = true
-                        } label: {
-                            Label(tr("استيراد ملفات Excel", "Import Excel files"), systemImage: "square.and.arrow.down")
-                        }
-                        .disabled(isImporting)
-                    }
                 }
                 .sheet(isPresented: $showSettings, onDismiss: {
                     // زر الاستيراد داخل الإعدادات: تُغلق الإعدادات أولاً ثم تُفتح نافذة الملفات.
@@ -463,7 +455,7 @@ struct EmployeeList: View {
             ContentUnavailableView(
                 tr("لا توجد بيانات", "No data yet"),
                 systemImage: "tablecells",
-                description: Text(tr("اضغط زر الاستيراد واختر ملف Excel أو أكثر. كل ملف يُحفظ كشهر باسم الملف، مثل \"تشرين الاول 2026\".", "Tap Import and choose one or more Excel files. Each file is saved as a month named after the file, like \"October 2026\"."))
+                description: Text(tr("افتح الإعدادات من زر الترس واضغط \"استيراد ملفات Excel\". كل ملف يُحفظ كشهر باسم الملف، مثل \"تشرين الاول 2026\".", "Open Settings from the gear button and tap \"Import Excel files\". Each file is saved as a month named after the file, like \"October 2026\"."))
             )
         }
     }
