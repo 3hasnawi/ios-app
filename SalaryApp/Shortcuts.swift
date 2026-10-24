@@ -174,6 +174,7 @@ struct OpenSearchIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         ShortcutRouter.shared.pendingSearch = name
+        AppRouter.shared.tab = .search
         return .result()
     }
 }

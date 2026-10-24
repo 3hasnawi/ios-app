@@ -42,6 +42,8 @@ struct ContentView: View {
     @State private var router = ShortcutRouter.shared
     @State private var importAfterSettings = false
     @State private var staffImportAfterSettings = false
+    @State private var showStaffPicker = false
+    @State private var pickedStaffFile: URL?
     @State private var appRouter = AppRouter.shared
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
@@ -87,8 +89,11 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             // التصميم "آيفون أصلي زجاجي": عنوان كبير، زر الأشهر تحته، النتائج مجمّعة بالأشهر،
             // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
-            EmployeeList(search: appliedSearch, months: selectedMonths,
-                         showSalary: showSalary || !showDeductions, showDeductions: showDeductions)
+            // الشاشة الرئيسية: ملخص الشهر وآخر عمليات البحث، والشعار خلفية شفافة.
+            // البحث نفسه في تبويب العدسة.
+            HomeDashboard(months: months, current: currentMonth,
+                          onImportPayroll: { showImporter = true },
+                          onImportStaff: { showStaffPicker = true })
                 .id("\(language)-\(numerals)")
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !months.isEmpty {
@@ -96,7 +101,6 @@ struct ContentView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 monthMenu
-                                displayMenu
                             }
                             .padding(.horizontal, 20)
                             .padding(.top, 4)
@@ -106,17 +110,7 @@ struct ContentView: View {
                     }
                 }
                 .background(Color(.systemGroupedBackground))
-                .adaptiveSearchable(text: $search, prompt: tr("ابحث بالاسم", "Search by name"))
-                .onSubmit(of: .search) { appliedSearch = search }
-                .task(id: search) {
-                    // مسح النص يُطبَّق فوراً؛ الكتابة تنتظر توقفاً قصيراً.
-                    if !search.isEmpty {
-                        try? await Task.sleep(for: .milliseconds(220))
-                        guard !Task.isCancelled else { return }
-                    }
-                    if appliedSearch != search { appliedSearch = search }
-                }
-                .navigationTitle(tr("الرواتب", "Payroll"))
+                .navigationTitle(tr("الرئيسية", "Home"))
                 .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .toolbar {
@@ -136,8 +130,7 @@ struct ContentView: View {
                     }
                     if staffImportAfterSettings {
                         staffImportAfterSettings = false
-                        AppRouter.shared.tab = .staff
-                        AppRouter.shared.pendingStaffImport = true
+                        showStaffPicker = true
                     }
                 }) {
                     SettingsView(months: months, onImport: {
@@ -147,6 +140,18 @@ struct ContentView: View {
                         staffImportAfterSettings = true
                         showSettings = false
                     })
+                }
+                .sheet(isPresented: $showStaffPicker, onDismiss: {
+                    if let url = pickedStaffFile {
+                        pickedStaffFile = nil
+                        StaffImportState.shared.importDatabase(url)
+                    }
+                }) {
+                    DocumentPicker(contentTypes: accessFileTypes) { urls in
+                        pickedStaffFile = urls.first
+                        showStaffPicker = false
+                    }
+                    .ignoresSafeArea()
                 }
                 .sheet(isPresented: $showImporter, onDismiss: startPendingImport) {
                     DocumentPicker(contentTypes: fileTypes) { urls in
@@ -186,13 +191,10 @@ struct ContentView: View {
                     appRouter.pendingPayrollImport = false
                     showImporter = true
                 }
-                .onChange(of: router.pendingSearch, initial: true) { _, name in
-                    guard let name else { return }
-                    router.pendingSearch = nil
-                    path = []
-                    showSettings = false
-                    search = name
-                    appliedSearch = name
+                .onChange(of: appRouter.pendingStaffImport, initial: true) { _, pending in
+                    guard pending else { return }
+                    appRouter.pendingStaffImport = false
+                    showStaffPicker = true
                 }
         }
     }

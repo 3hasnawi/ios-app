@@ -143,9 +143,6 @@ jobs:
           launch -appNumerals arabicIndic -search "احمد علي"
           shot 08g-eastern-digits
 
-          # 8h) تبويب الملاك (بدون ملف Access: شاشة الاستيراد)
-          launch -tab staff
-          shot 08h-staff-empty
 
           # 8i) البحث الموحّد: قبل البحث، ثم نتائج كبطاقات
           launch -tab search

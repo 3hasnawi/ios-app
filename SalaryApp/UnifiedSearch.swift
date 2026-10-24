@@ -60,37 +60,70 @@ enum RecentSearches {
 // MARK: - تبويب البحث
 
 struct UnifiedSearchView: View {
-    @State private var search = LaunchOptions.startTab == "search" ? LaunchOptions.search : ""
-    @State private var appliedSearch = LaunchOptions.startTab == "search" ? LaunchOptions.search : ""
+    private static var initialSearch: String {
+        LaunchOptions.startTab == "search" || !LaunchOptions.openFirst ? LaunchOptions.search : ""
+    }
+
+    @State private var search = Self.initialSearch
+    @State private var appliedSearch = Self.initialSearch
     @AppStorage("unifiedScope") private var scopeRaw = UnifiedScope.all.rawValue
     @AppStorage("unifiedMode") private var modeRaw = StaffSearchMode.name.rawValue
+    @AppStorage("selectedMonth") private var selectedMonth = ""
     @State private var recents = RecentSearches.items
     @State private var importState = StaffImportState.shared
+    @State private var router = ShortcutRouter.shared
+    @State private var path: [UnifiedPerson] = []
+    @State private var people: [UnifiedPerson] = []
+    @State private var loadedKey = ""
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var months: [PayrollMonth]
 
     private var scope: UnifiedScope { UnifiedScope(rawValue: scopeRaw) ?? .all }
     private var mode: StaffSearchMode { StaffSearchMode(rawValue: modeRaw) ?? .name }
+    private var trimmed: String { appliedSearch.trimmingCharacters(in: .whitespaces) }
+
+    /// أشهر الرواتب المختارة (نفس اختيار الشاشة الرئيسية)، أو آخر شهر.
+    private var monthNames: [String] {
+        let names = Set(selectedMonth.split(separator: "|").map(String.init))
+        let chosen = months.filter { names.contains($0.name) }.map(\.name)
+        return chosen.isEmpty ? months.prefix(1).map(\.name) : chosen
+    }
+
+    private var queryKey: String {
+        "\(trimmed)|\(mode.rawValue)|\(scope.rawValue)|\(monthNames.joined(separator: ","))|\(importState.version)"
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
-                Section {
-                    Picker(tr("النطاق", "Scope"), selection: $scopeRaw) {
-                        ForEach(UnifiedScope.allCases) { Text($0.title).tag($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                }
-
-                if appliedSearch.trimmingCharacters(in: .whitespaces).isEmpty {
+                if trimmed.isEmpty {
                     emptyState
+                } else if loadedKey == queryKey && people.isEmpty {
+                    Section {
+                        ContentUnavailableView.search(text: trimmed)
+                            .listRowBackground(Color.clear)
+                    }
                 } else {
-                    UnifiedResults(search: appliedSearch, mode: mode, scope: scope, version: importState.version)
+                    Section {
+                        ForEach(people) { person in
+                            NavigationLink(value: person) {
+                                UnifiedCard(person: person)
+                            }
+                        }
+                    } header: {
+                        if loadedKey == queryKey {
+                            Text(tr("\(Num.format(people.count)) شخص", "\(Num.format(people.count)) people"))
+                        } else {
+                            ProgressView()
+                        }
+                    }
                 }
             }
             .listStyle(.insetGrouped)
             .scrollDismissesKeyboard(.immediately)
-            .adaptiveSearchable(text: $search, prompt: mode.prompt)
+            .safeAreaInset(edge: .top, spacing: 0) { filters }
+            // في تبويب العدسة يظهر شريط البحث عند الضغط على العدسة (iOS 26).
+            .searchable(text: $search, prompt: Text(mode.prompt))
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
                 if !search.isEmpty {
@@ -98,6 +131,21 @@ struct UnifiedSearchView: View {
                     guard !Task.isCancelled else { return }
                 }
                 if appliedSearch != search { appliedSearch = search }
+            }
+            // البحث نفسه: يُحسب عند تغيّر النص أو الخيارات.
+            .task(id: queryKey) {
+                let key = queryKey
+                guard !trimmed.isEmpty else { people = []; loadedKey = key; return }
+                people = (try? UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)) ?? []
+                loadedKey = key
+            }
+            .onChange(of: router.pendingSearch, initial: true) { _, name in
+                guard let name else { return }
+                router.pendingSearch = nil
+                path = []
+                modeRaw = StaffSearchMode.name.rawValue
+                search = name
+                appliedSearch = name
             }
             .navigationTitle(tr("بحث", "Search"))
             .navigationBarTitleDisplayMode(.large)
@@ -109,6 +157,78 @@ struct UnifiedSearchView: View {
                     }
             }
         }
+    }
+
+    /// أزرار صغيرة: النطاق، نوع البحث، أشهر الرواتب.
+    private var filters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Picker(tr("النطاق", "Scope"), selection: $scopeRaw) {
+                        ForEach(UnifiedScope.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                } label: {
+                    pill(scope.title, systemImage: "square.stack.3d.up")
+                }
+                .glassButtonStyle(prominent: true)
+                .buttonBorderShape(.capsule)
+
+                Menu {
+                    Picker(tr("البحث حسب", "Search by"), selection: $modeRaw) {
+                        ForEach(StaffSearchMode.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                } label: {
+                    pill(tr("بحث: \(mode.title)", "By: \(mode.title)"), systemImage: "magnifyingglass")
+                }
+                .glassButtonStyle()
+                .buttonBorderShape(.capsule)
+
+                if !months.isEmpty {
+                    Menu {
+                        ForEach(months) { month in
+                            Button {
+                                toggle(month.name)
+                            } label: {
+                                if monthNames.contains(month.name) {
+                                    Label(month.name, systemImage: "checkmark")
+                                } else {
+                                    Text(month.name)
+                                }
+                            }
+                            .menuActionDismissBehavior(.disabled)
+                        }
+                    } label: {
+                        pill(monthNames.count == 1 ? monthNames[0] : tr("\(Num.format(monthNames.count)) أشهر", "\(Num.format(monthNames.count)) months"),
+                             systemImage: "calendar")
+                    }
+                    .glassButtonStyle()
+                    .buttonBorderShape(.capsule)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
+        .scrollClipDisabled()
+    }
+
+    private func toggle(_ name: String) {
+        var names = monthNames
+        if let i = names.firstIndex(of: name) {
+            guard names.count > 1 else { return }
+            names.remove(at: i)
+        } else {
+            names.append(name)
+        }
+        selectedMonth = names.joined(separator: "|")
+    }
+
+    private func pill(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title).lineLimit(1)
+            Image(systemName: "chevron.down").font(.caption.weight(.bold))
+        }
+        .font(.subheadline.weight(.semibold))
     }
 
     @ViewBuilder
@@ -141,26 +261,15 @@ struct UnifiedSearchView: View {
                     .textCase(nil)
                 }
             }
-        }
-        Section(tr("ابحث بـ", "Search by")) {
-            ForEach(StaffSearchMode.allCases) { m in
-                Button {
-                    modeRaw = m.rawValue
-                } label: {
-                    HStack {
-                        Text(m.title).foregroundStyle(.primary)
-                        Spacer()
-                        if m == mode { Image(systemName: "checkmark").foregroundStyle(.tint) }
-                    }
-                }
-            }
-        }
-        if mode != .name {
+        } else {
             Section {
-                Text(tr("البحث بهذا النوع يكون في الملاك، ويظهر الراتب لمن يتطابق اسمه في آخر شهر.",
-                        "This search runs on staff data; the salary shows when the name matches the latest month."))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                ContentUnavailableView(
+                    tr("ابحث في الرواتب والملاك", "Search payroll and staff"),
+                    systemImage: "magnifyingglass",
+                    description: Text(tr("اكتب الاسم في شريط البحث. يمكنك تغيير نوع البحث والأشهر من الأزرار في الأعلى.",
+                                         "Type a name in the search bar. Change the search type and months with the buttons above."))
+                )
+                .listRowBackground(Color.clear)
             }
         }
     }
@@ -184,86 +293,56 @@ struct SourceTag: View {
 
 // MARK: - النتائج
 
-struct UnifiedResults: View {
-    @Environment(\.modelContext) private var context
-    let search: String
-    let mode: StaffSearchMode
-    let scope: UnifiedScope
-    let version: Int
-
-    @State private var people: [UnifiedPerson] = []
-    @State private var latestMonth: String?
-    @State private var loaded = false
-
-    var body: some View {
-        Group {
-            if loaded && people.isEmpty {
-                Section {
-                    ContentUnavailableView.search(text: search)
-                        .listRowBackground(Color.clear)
-                }
-            } else {
-                Section {
-                    ForEach(people) { person in
-                        NavigationLink(value: person) {
-                            UnifiedCard(person: person, month: latestMonth)
-                        }
-                    }
-                } header: {
-                    if loaded {
-                        Text(tr("\(Num.format(people.count)) شخص", "\(Num.format(people.count)) people"))
-                    }
-                }
-            }
-        }
-        .task(id: "\(search)|\(mode.rawValue)|\(scope.rawValue)|\(version)") {
-            people = (try? find()) ?? []
-            loaded = true
-        }
-    }
-
-    private func find() throws -> [UnifiedPerson] {
-        let month = try EmployeeLookup.monthNames(limit: 1).first
-        latestMonth = month
+enum UnifiedFinder {
+    /// يبحث في الملاك وفي رواتب الأشهر المختارة، ويربط الطرفين بالاسم (بلا مسافات).
+    @MainActor
+    static func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) throws -> [UnifiedPerson] {
+        let context = SharedModel.container.mainContext
+        let tokens = tokens(search, mode: mode)
+        guard !tokens.isEmpty else { return [] }
+        let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
 
         var staff: [StaffMember] = []
         var employees: [Employee] = []
-
-        if scope != .payroll || mode != .name {
+        if StaffInfo.count > 0, scope != .payroll || mode != .name {
             var d = FetchDescriptor<StaffMember>(predicate: StaffResultsList.predicate(mode: mode, tokens: tokens), sortBy: [SortDescriptor(\.name)])
             d.fetchLimit = 3000
-            staff = try context.fetch(d).filter(matchesStaff).prefix(150).map { $0 }
+            staff = try context.fetch(d).filter { matches($0, tokens: tokens, mode: mode) }.prefix(150).map { $0 }
         }
-        if let month, scope != .staff, mode == .name {
-            employees = try EmployeeLookup.find(search, in: [month]).prefix(150).map { $0 }
+        if scope != .staff, mode == .name, !months.isEmpty {
+            // لكل شخص: أحدث شهر من الأشهر المختارة.
+            var seen = Set<String>()
+            for e in try EmployeeLookup.find(search, in: months) where seen.insert(e.matchKey).inserted {
+                employees.append(e)
+                if employees.count >= 150 { break }
+            }
         }
 
-        // ربط الطرفين بالاسم (بلا مسافات).
         struct Pair { var employee: Employee?; var staff: StaffMember? }
         var byKey: [String: Pair] = [:]
-        var order: [String] = []
+        var keys: [String] = []
         for s in staff {
             let key = s.nameKey.replacingOccurrences(of: " ", with: "")
-            if byKey[key] == nil { order.append(key); byKey[key] = Pair() }
+            if byKey[key] == nil { keys.append(key); byKey[key] = Pair() }
             if byKey[key]!.staff == nil { byKey[key]!.staff = s }
         }
         for e in employees {
             let key = e.matchKey
-            if byKey[key] == nil { order.append(key); byKey[key] = Pair() }
+            if byKey[key] == nil { keys.append(key); byKey[key] = Pair() }
             if byKey[key]!.employee == nil { byKey[key]!.employee = e }
         }
-        // من وُجد في طرف واحد: البحث عنه في الطرف الآخر بالاسم الكامل.
-        if let month {
-            let missingPay = order.filter { byKey[$0]!.employee == nil }
-            if !missingPay.isEmpty {
-                let d = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month && missingPay.contains($0.matchKey) })
-                for e in try context.fetch(d) where byKey[e.matchKey]?.employee == nil && byKey[e.matchKey] != nil {
-                    byKey[e.matchKey]!.employee = e
-                }
+        // من وُجد في الملاك فقط: البحث عن راتبه بالاسم الكامل في الأشهر المختارة.
+        let missingPay = keys.filter { byKey[$0]!.employee == nil }
+        if !missingPay.isEmpty, !months.isEmpty {
+            let d = FetchDescriptor<Employee>(predicate: #Predicate { months.contains($0.month) && missingPay.contains($0.matchKey) })
+            let found = try context.fetch(d).sorted { (order[$0.month] ?? .max) < (order[$1.month] ?? .max) }
+            for e in found where byKey[e.matchKey] != nil && byKey[e.matchKey]!.employee == nil {
+                byKey[e.matchKey]!.employee = e
             }
         }
+        // من وُجد في الرواتب فقط: البحث عنه في الملاك بالاسم الكامل.
         if StaffInfo.count > 0 {
-            for key in order where byKey[key]!.staff == nil {
+            for key in keys where byKey[key]!.staff == nil {
                 guard let e = byKey[key]!.employee else { continue }
                 let nameKey = e.nameKey
                 var d = FetchDescriptor<StaffMember>(predicate: #Predicate { $0.nameKey == nameKey })
@@ -272,37 +351,35 @@ struct UnifiedResults: View {
             }
         }
 
-        let people = order.compactMap { key -> UnifiedPerson? in
+        return keys.compactMap { key -> UnifiedPerson? in
             guard let pair = byKey[key] else { return nil }
             let name = pair.staff?.name ?? pair.employee?.name ?? ""
             return UnifiedPerson(id: key, name: name, employee: pair.employee, staff: pair.staff)
         }
-        return people
-            .filter { p in
-                switch scope {
-                case .all: true
-                case .payroll: p.employee != nil
-                case .staff: p.staff != nil
-                }
+        .filter { p in
+            switch scope {
+            case .all: true
+            case .payroll: p.employee != nil
+            case .staff: p.staff != nil
             }
-            .sorted { lhs, rhs in
-                // من في الطرفين أولاً، ثم بالاسم.
-                let l = (lhs.employee != nil ? 1 : 0) + (lhs.staff != nil ? 1 : 0)
-                let r = (rhs.employee != nil ? 1 : 0) + (rhs.staff != nil ? 1 : 0)
-                return l != r ? l > r : lhs.name < rhs.name
-            }
+        }
+        .sorted { lhs, rhs in
+            // من في الطرفين أولاً، ثم بالاسم.
+            let l = (lhs.employee != nil ? 1 : 0) + (lhs.staff != nil ? 1 : 0)
+            let r = (rhs.employee != nil ? 1 : 0) + (rhs.staff != nil ? 1 : 0)
+            return l != r ? l > r : lhs.name < rhs.name
+        }
     }
 
-    private var tokens: [String] {
-        let isNumber = mode == .statNumber || mode == .unifiedNumber
-        if isNumber {
+    static func tokens(_ search: String, mode: StaffSearchMode) -> [String] {
+        if mode == .statNumber || mode == .unifiedNumber {
             let t = ArabicText.latinDigits(search).trimmingCharacters(in: .whitespaces)
             return t.isEmpty ? [] : [t]
         }
         return ArabicText.normalize(search).split(separator: " ").map(String.init)
     }
 
-    private func matchesStaff(_ m: StaffMember) -> Bool {
+    static func matches(_ m: StaffMember, tokens: [String], mode: StaffSearchMode) -> Bool {
         tokens.allSatisfy { t in
             switch mode {
             case .name: m.nameKey.contains(t)
@@ -317,7 +394,7 @@ struct UnifiedResults: View {
 /// بطاقة نتيجة: الاسم، وراتب آخر شهر، والحالة في الملاك.
 struct UnifiedCard: View {
     let person: UnifiedPerson
-    let month: String?
+    private var month: String? { person.employee?.month }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

@@ -7,11 +7,9 @@ import UniformTypeIdentifiers
 final class AppRouter {
     static let shared = AppRouter()
     enum Tab: Hashable { case payroll, staff, search }
-    var tab: Tab = switch LaunchOptions.startTab {
-    case "staff": .staff
-    case "search": .search
-    default: .payroll
-    }
+    /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
+    var tab: Tab = LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst)
+        ? .search : .payroll
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
@@ -61,19 +59,33 @@ let accessFileTypes: [UTType] = [
 
 struct RootView: View {
     @State private var router = AppRouter.shared
+    @State private var staffImport = StaffImportState.shared
 
     var body: some View {
         TabView(selection: $router.tab) {
-            Tab(tr("الرواتب", "Payroll"), systemImage: "banknote", value: AppRouter.Tab.payroll) {
+            Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
-            }
-            Tab(tr("الملاك", "Staff"), systemImage: "person.3", value: AppRouter.Tab.staff) {
-                StaffView()
             }
             // تبويب البحث الموحّد (زر دائري مستقل في iOS 26).
             Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
                 UnifiedSearchView()
             }
+        }
+        // استيراد الملاك يعمل في الخلفية أياً كان التبويب.
+        .overlay {
+            if staffImport.isImporting {
+                ProgressView(tr("جارٍ استيراد الملاك… قد يستغرق دقيقة أو اثنتين", "Importing staff… this can take a minute or two"))
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .alert(tr("الملاك", "Staff"), isPresented: Binding(
+            get: { staffImport.message != nil },
+            set: { if !$0 { staffImport.message = nil } }
+        )) {
+            Button(tr("حسناً", "OK"), role: .cancel) {}
+        } message: {
+            Text(staffImport.message ?? "")
         }
     }
 }
@@ -419,7 +431,7 @@ struct StaffDetailView: View {
             Section {
                 Button {
                     ShortcutRouter.shared.pendingSearch = member.name
-                    AppRouter.shared.tab = .payroll
+                    AppRouter.shared.tab = .search
                 } label: {
                     Label(tr("عرض راتبه في الرواتب", "Show salary in Payroll"), systemImage: "banknote")
                         .frame(maxWidth: .infinity)
