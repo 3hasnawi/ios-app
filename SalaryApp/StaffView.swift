@@ -71,8 +71,12 @@ struct RootView: View {
                 UnifiedSearchView()
             }
         }
-        // بيانات ملاك وهمية لاختبار المحاكي فقط (-fakeStaff).
-        .task { await TestData.prepareIfRequested() }
+        // بيانات ملاك وهمية وتنقّل آلي لاختبار المحاكي فقط (-fakeStaff، -autopilot).
+        .task {
+            PerfLog.record("firstAppear", since: PerfLog.processStart)
+            await TestData.prepareIfRequested()
+            await AutoPilot.shared.run()
+        }
         // استيراد الملاك يعمل في الخلفية أياً كان التبويب.
         .overlay {
             if staffImport.isImporting {

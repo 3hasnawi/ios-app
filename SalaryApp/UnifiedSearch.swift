@@ -4,18 +4,21 @@ import UIKit
 
 /// شخص في البحث الموحّد: راتبه في آخر شهر (إن وُجد) وسجله في الملاك (إن وُجد)،
 /// مربوطان بالاسم بعد توحيد الهمزات وحذف المسافات.
+/// البطاقة تُرسم من قيم جاهزة (تُحسب في الخلفية)، والكائنات نفسها تُجلب فقط عند فتح صفحة الشخص.
 struct UnifiedPerson: Hashable, Identifiable {
-    let id: String
-    let name: String
-    let employee: Employee?
-    let staff: StaffMember?
+    let hit: UnifiedHit
 
-    var subtitle: String {
-        if let staff {
-            return [staff.rank, staff.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
-        }
-        guard let employee else { return "" }
-        return [employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
+    var id: String { hit.key }
+    var name: String { hit.name }
+    var subtitle: String { hit.subtitle }
+    var hasPayroll: Bool { hit.employeeID != nil }
+    var hasStaff: Bool { hit.staffID != nil }
+
+    @MainActor var employee: Employee? {
+        hit.employeeID.flatMap { SharedModel.container.mainContext.model(for: $0) as? Employee }
+    }
+    @MainActor var staff: StaffMember? {
+        hit.staffID.flatMap { SharedModel.container.mainContext.model(for: $0) as? StaffMember }
     }
 }
 
@@ -75,6 +78,7 @@ struct UnifiedSearchView: View {
     @State private var path: [UnifiedPerson] = []
     @State private var people: [UnifiedPerson] = []
     @State private var loadedKey = ""
+    @State private var autopilot = AutoPilot.shared
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
 
@@ -146,6 +150,10 @@ struct UnifiedSearchView: View {
                 PerfLog.record("search", since: started)
                 if LaunchOptions.openPerson, path.isEmpty, let first = people.first { path = [first] }
             }
+            .onChange(of: autopilot.openRequest) {
+                if autopilot.openIndex < people.count { path = [people[autopilot.openIndex]] }
+            }
+            .onChange(of: autopilot.backRequest) { path = [] }
             .onChange(of: router.pendingSearch, initial: true) { _, name in
                 guard let name else { return }
                 router.pendingSearch = nil
@@ -159,7 +167,7 @@ struct UnifiedSearchView: View {
             .navigationDestination(for: UnifiedPerson.self) { person in
                 UnifiedPersonView(person: person)
                     .onAppear {
-                        RecentSearches.add(.init(text: person.name, inPayroll: person.employee != nil, inStaff: person.staff != nil))
+                        RecentSearches.add(.init(text: person.name, inPayroll: person.hasPayroll, inStaff: person.hasStaff))
                         recents = RecentSearches.items
                     }
             }
@@ -303,11 +311,16 @@ struct SourceTag: View {
 // MARK: - النتائج
 
 /// نتيجة البحث كما تخرج من الخلفية: معرّفات فقط (آمنة للنقل بين الخيوط).
-nonisolated struct UnifiedHit: Sendable {
+nonisolated struct UnifiedHit: Sendable, Hashable {
     let key: String
     let name: String
+    let subtitle: String
     let employeeID: PersistentIdentifier?
     let staffID: PersistentIdentifier?
+    /// ما تعرضه البطاقة.
+    let month: String?
+    let netSalary: Double?
+    let staffStatus: String?
 }
 
 /// البحث الموحّد يعمل على سياق خاص في الخلفية حتى تبقى الكتابة والتمرير سلسة.
@@ -327,15 +340,7 @@ enum UnifiedFinder {
             try await UnifiedSearchActor(modelContainer: container).find(search, mode: mode, scope: scope, months: months)
         }.value
         try Task.checkCancellation()
-        let context = container.mainContext
-        return hits.map { hit in
-            UnifiedPerson(
-                id: hit.key,
-                name: hit.name,
-                employee: hit.employeeID.flatMap { context.model(for: $0) as? Employee },
-                staff: hit.staffID.flatMap { context.model(for: $0) as? StaffMember }
-            )
-        }
+        return hits.map(UnifiedPerson.init)
     }
 
     /// يبحث في الملاك وفي رواتب الأشهر المختارة، ويربط الطرفين بالاسم (بلا مسافات).
@@ -401,7 +406,13 @@ enum UnifiedFinder {
             case .staff: if pair.staff == nil { return nil }
             }
             let name = pair.staff?.name ?? pair.employee?.name ?? ""
-            return UnifiedHit(key: key, name: name, employeeID: pair.employee?.persistentModelID, staffID: pair.staff?.persistentModelID)
+            let subtitle = pair.staff.map { [$0.rank, $0.workplace] } ?? pair.employee.map { [$0.rank, $0.workplace] } ?? []
+            return UnifiedHit(
+                key: key, name: name,
+                subtitle: subtitle.filter { !$0.isEmpty }.joined(separator: " · "),
+                employeeID: pair.employee?.persistentModelID, staffID: pair.staff?.persistentModelID,
+                month: pair.employee?.month, netSalary: pair.employee?.netSalary, staffStatus: pair.staff?.status
+            )
         }
         .sorted { lhs, rhs in
             // من في الطرفين أولاً، ثم بالاسم.
@@ -434,7 +445,8 @@ enum UnifiedFinder {
 /// بطاقة نتيجة: الاسم، وراتب آخر شهر، والحالة في الملاك.
 struct UnifiedCard: View {
     let person: UnifiedPerson
-    private var month: String? { person.employee?.month }
+    private var hit: UnifiedHit { person.hit }
+    private var month: String? { hit.month }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -449,14 +461,14 @@ struct UnifiedCard: View {
             }
             HStack(spacing: 8) {
                 tile(
-                    title: person.employee != nil ? tr("راتب \(month ?? "")", "Salary \(month ?? "")") : tr("لا يوجد راتب", "No salary"),
-                    value: person.employee.map { Money.format($0.netSalary) } ?? "—",
+                    title: person.hasPayroll ? tr("راتب \(month ?? "")", "Salary \(month ?? "")") : tr("لا يوجد راتب", "No salary"),
+                    value: person.hasPayroll ? Money.format(hit.netSalary) : "—",
                     color: .primary
                 )
                 tile(
                     title: tr("الملاك", "Staff"),
-                    value: person.staff.map { $0.status.isEmpty ? tr("موجود", "Found") : $0.status } ?? tr("غير موجود", "Not found"),
-                    color: person.staff == nil ? .secondary : (person.staff!.status.contains("مستمر") ? .green : .orange)
+                    value: hit.staffStatus.map { $0.isEmpty ? tr("موجود", "Found") : $0 } ?? tr("غير موجود", "Not found"),
+                    color: hit.staffStatus == nil ? .secondary : (hit.staffStatus!.contains("مستمر") ? .green : .orange)
                 )
             }
         }
@@ -493,6 +505,7 @@ struct UnifiedPersonView: View {
     }
 
     @State private var part: Part
+    @State private var autopilot = AutoPilot.shared
     @State private var showShare = false
     @State private var copied = false
 
@@ -568,6 +581,9 @@ struct UnifiedPersonView: View {
         .listSectionSpacing(.compact)
         .navigationTitle(person.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: autopilot.partRequest) {
+            if let p = Part(rawValue: autopilot.part), parts.contains(p) { part = p }
+        }
         .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
         .sheet(isPresented: $showShare) {
             if let employee = person.employee { ShareOptionsSheet(employee: employee) }

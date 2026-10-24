@@ -98,9 +98,11 @@ struct HomeDashboard: View {
             let month = current.name
             let previousName = previous?.name
             // يُنشأ في الخلفية حتى لا يعمل الحساب على خيط الواجهة.
+            let started = Date()
             stats = try? await Task.detached(priority: .userInitiated) {
                 try await HomeStatsLoader(modelContainer: container).stats(month: month, previous: previousName)
             }.value
+            PerfLog.record("homeStats", since: started)
         }
         .onAppear { recents = RecentSearches.items }
     }

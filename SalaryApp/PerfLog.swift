@@ -13,9 +13,24 @@ nonisolated enum PerfLog {
     private static let url: URL? = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
         .appendingPathComponent("perf.txt")
 
+    /// وقت بدء العملية (قبل main) لقياس زمن الفتح كاملاً.
+    static let processStart: Date = {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return Date() }
+        let t = info.kp_proc.p_un.__p_starttime
+        return Date(timeIntervalSince1970: Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000)
+    }()
+
+    static func mark(_ name: String) {
+        guard isEnabled else { return }
+        write("mark 0 \(name)")
+    }
+
     static func startIfEnabled() {
         guard isEnabled else { return }
-        write("launch 0")
+        record("launch", since: processStart)
         let thread = Thread {
             while true {
                 let ping = DispatchSemaphore(value: 0)

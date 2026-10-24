@@ -56,3 +56,41 @@ enum TestData {
         }
     }
 }
+
+/// تنقّل آلي داخل التطبيق لاختبار المحاكي فقط (-autopilot YES): نفس حركات المستخدم
+/// (تبويب البحث، بحث، فتح نتيجة، أقسام الصفحة، رجوع، الرئيسية) بدون أداة الاختبار،
+/// حتى يقيس سجل التجمّد سلاسة التطبيق نفسه فقط.
+@MainActor @Observable
+final class AutoPilot {
+    static let shared = AutoPilot()
+    var openIndex = 0
+    var openRequest = 0
+    var backRequest = 0
+    var part = ""
+    var partRequest = 0
+
+    func run() async {
+        guard UserDefaults.standard.bool(forKey: "autopilot") else { return }
+        func pause(_ seconds: Double) async { try? await Task.sleep(for: .seconds(seconds)) }
+        func step(_ name: String, wait: Double, _ action: () -> Void) async {
+            PerfLog.mark(name)
+            action()
+            await pause(wait)
+        }
+        await pause(3)
+        for round in 1...2 {
+            await step("تبويب البحث \(round)", wait: 1.5) { AppRouter.shared.tab = .search }
+            await step("بحث احمد علي \(round)", wait: 3) { ShortcutRouter.shared.pendingSearch = "احمد علي" }
+            for i in 0..<3 {
+                await step("فتح النتيجة \(i + 1)", wait: 1.5) { openIndex = i; openRequest += 1 }
+                await step("قسم الأشهر", wait: 1) { part = "months"; partRequest += 1 }
+                await step("قسم الراتب", wait: 1) { part = "salary"; partRequest += 1 }
+                await step("رجوع", wait: 1.5) { backRequest += 1 }
+            }
+            await step("بحث علي حسين \(round)", wait: 3) { ShortcutRouter.shared.pendingSearch = "علي حسين" }
+            await step("الرئيسية \(round)", wait: 2) { AppRouter.shared.tab = .payroll }
+        }
+        PerfLog.mark("انتهى")
+        LaunchOptions.writeReport("autopilot=done")
+    }
+}

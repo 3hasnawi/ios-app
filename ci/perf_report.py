@@ -18,7 +18,7 @@ for m in re.finditer(r"^STEP (\d+\.\d+) (\d+\.\d+) (\d+) (.+)$", log, re.M):
 issues = re.findall(r"^ISSUE \S+ (.+)$", log, re.M)
 waits = [(int(a), b) for a, b in re.findall(r"^WAIT (\d+) (.+)$", log, re.M)]
 
-hangs, searches, launches = [], [], []
+hangs, searches, launches, marks, timings = [], [], [], [], {}
 try:
     for line in open(perf_path, encoding="utf-8"):
         parts = line.split()
@@ -31,6 +31,10 @@ try:
             searches.append(value)
         elif kind == "launch":
             launches.append(ts)
+        if kind == "mark":
+            marks.append((ts, " ".join(parts[3:])))
+        elif kind != "hang":
+            timings.setdefault(kind, []).append(value)
 except FileNotFoundError:
     print("perf.txt missing: the app did not write the lag log")
 
@@ -70,3 +74,16 @@ for start, ms in hangs:
     if ms >= 250:
         name = next((s["name"] for s in steps if ms in s["hangs"] and s["start"] - 0.2 <= start <= s["end"]), "?")
         print(f"::warning::UI hang {ms}ms during: {name}", file=sys.stderr)
+
+print()
+print("timings: " + "; ".join(f"{k}={v}" for k, v in timings.items()))
+if marks:
+    print()
+    print("Autopilot (in-app, no XCUITest):")
+    for i, (ts, name) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else ts + 3
+        inside = [ms for start, ms in hangs if ts - 0.05 <= start < end]
+        worst = max(inside, default=0)
+        print(f"  {name:<24} hangs={len(inside):>2} worst={worst:>5}ms  {verdict(inside)}")
+        if worst >= 250:
+            print(f"::warning::Autopilot hang {worst}ms during: {name}", file=sys.stderr)

@@ -10,6 +10,8 @@ import UniformTypeIdentifiers
 /// قاعدة بيانات واحدة يشترك فيها التطبيق واختصارات تطبيق "الاختصارات" (Shortcuts) وSiri.
 enum SharedModel {
     @MainActor static let container: ModelContainer = {
+        let started = Date()
+        defer { PerfLog.record("container", since: started) }
         do {
             return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self)
         } catch {

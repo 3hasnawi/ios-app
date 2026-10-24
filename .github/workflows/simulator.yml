@@ -202,6 +202,18 @@ jobs:
           echo "xcodebuild test status=$STATUS"
           grep -E "error:|XCTAssert|Failed|failed:" ci-output/uitest.log | sort -u | head -30 | sed 's/^/::warning::/' || true
 
+      - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
+        run: |
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          rm -f "$DATA/Documents/perf.txt" "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -AppleLocale ar_IQ -perfLog YES -autopilot YES
+          for i in $(seq 1 180); do grep -q autopilot "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
+          sleep 1
+          cp "$DATA/Documents/perf.txt" ci-output/perf-autopilot.txt 2>/dev/null || echo "::warning::no autopilot perf.txt"
+          printf "" > ci-output/empty.log
+          python3 ci/perf_report.py ci-output/empty.log ci-output/perf-autopilot.txt | tee ci-output/autopilot-report.txt
+
       - name: Check import result
         run: |
           expected=$(cat ci-output/expected.txt)

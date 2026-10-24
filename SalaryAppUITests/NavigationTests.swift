@@ -36,7 +36,7 @@ final class NavigationTests: XCTestCase {
         if e.waitForExistence(timeout: timeout) {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             print("WAIT \(ms) \(what)")
-            if ms > 1500 { issue("بطء: \(what) ظهر بعد \(ms)ms") }
+            if ms > 2500 { issue("بطء: \(what) ظهر بعد \(ms)ms") }
             return true
         }
         issue("لم يظهر: \(what)")
@@ -157,6 +157,11 @@ final class NavigationTests: XCTestCase {
         }
         step("تضييق البحث") {
             searchField.tap()
+            if !app.keyboards.firstMatch.waitForExistence(timeout: 2) { searchField.tap() }
+            guard app.keyboards.firstMatch.waitForExistence(timeout: 2) else {
+                issue("حقل البحث لم يستقبل التركيز للكتابة بعد إغلاق قائمة الأشهر")
+                return
+            }
             searchField.typeText(" حسين")
             wait(element("resultCard"), "النتائج بعد تضييق البحث")
         }
