@@ -29,8 +29,8 @@ struct ShareOptionsSheet: View {
                             copyImage()
                         } label: {
                             OptionLabel(
-                                title: copied ? "تم نسخ الصورة" : "نسخ كصورة",
-                                subtitle: "للصقها في واتساب أو الملاحظات",
+                                title: copied ? tr("تم نسخ الصورة", "Image copied") : tr("نسخ كصورة", "Copy as image"),
+                                subtitle: tr("للصقها في واتساب أو الملاحظات", "Paste it into WhatsApp or Notes"),
                                 systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc.fill"
                             )
                         }
@@ -38,12 +38,12 @@ struct ShareOptionsSheet: View {
 
                         if let files {
                             ShareLink(item: files.pdfURL, preview: SharePreview(files.title, icon: Image(systemName: "doc.richtext"))) {
-                                OptionLabel(title: "تصدير PDF", subtitle: "حفظ في الملفات أو الطباعة أو الإرسال", systemImage: "doc.richtext.fill")
+                                OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
                             }
                             .glassButtonStyle()
 
                             ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
-                                OptionLabel(title: "مشاركة كصورة", subtitle: "إرسال الصورة إلى أي تطبيق", systemImage: "photo.fill")
+                                OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("إرسال الصورة إلى أي تطبيق", "Send the image to any app"), systemImage: "photo.fill")
                             }
                             .glassButtonStyle()
                         }
@@ -52,22 +52,22 @@ struct ShareOptionsSheet: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("مشاركة النتيجة")
+            .navigationTitle(tr("مشاركة النتيجة", "Share result"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("إغلاق", systemImage: "xmark") { dismiss() }
+                    Button(tr("إغلاق", "Close"), systemImage: "xmark") { dismiss() }
                 }
             }
         }
-        .environment(\.layoutDirection, .rightToLeft)
+        .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .task {
             do {
                 files = try PayslipExporter.export(employee: employee, deductions: deductions)
             } catch {
-                errorText = "تعذّر تجهيز الصورة: \(error.localizedDescription)"
+                errorText = tr("تعذّر تجهيز الصورة: \(error.localizedDescription)", "Couldn't prepare the image: \(error.localizedDescription)")
             }
         }
     }
@@ -128,16 +128,16 @@ struct PayslipCard: View {
 
             VStack(spacing: 0) {
                 HStack {
-                    Text("الاستقطاعات").font(.headline)
+                    Text(tr("الاستقطاعات", "Deductions")).font(.headline)
                     Spacer()
                     if !deductions.isEmpty {
-                        Text(deductions.count.formatted()).foregroundStyle(.secondary)
+                        Text(Num.format(deductions.count)).foregroundStyle(.secondary)
                     }
                 }
                 .padding(.bottom, 8)
 
                 if deductions.isEmpty {
-                    Text("لا توجد استقطاعات")
+                    Text(tr("لا توجد استقطاعات", "No deductions"))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 6)
@@ -158,7 +158,7 @@ struct PayslipCard: View {
                     }
                     Divider()
                     HStack {
-                        Text("المجموع").font(.subheadline.bold())
+                        Text(tr("المجموع", "Total")).font(.subheadline.bold())
                         Spacer()
                         Text(Money.format(deductions.total))
                             .font(.subheadline.bold().monospacedDigit())
@@ -170,7 +170,7 @@ struct PayslipCard: View {
             .padding(18)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
 
-            Text("تطبيق الرواتب")
+            Text(tr("تطبيق الرواتب", "Payroll app"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -191,13 +191,13 @@ enum PayslipExporter {
 
     enum ExportError: LocalizedError {
         case renderFailed
-        var errorDescription: String? { "فشل إنشاء الملف" }
+        var errorDescription: String? { tr("فشل إنشاء الملف", "Couldn't create the file") }
     }
 
     /// يرسم البطاقة إلى PNG (للنسخ والمشاركة) وإلى PDF، ويحفظهما في tmp/share.
     static func export(employee: Employee, deductions: [Deduction]) throws -> Files {
         let card = PayslipCard(employee: employee, deductions: deductions)
-            .environment(\.layoutDirection, .rightToLeft)
+            .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
             .environment(\.colorScheme, .light)
         let renderer = ImageRenderer(content: card)
         renderer.scale = 3

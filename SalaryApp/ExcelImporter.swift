@@ -32,9 +32,9 @@ nonisolated enum ImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotOpen(let file):
-            return "تعذّر فتح الملف \(file). تأكد أنه بصيغة xlsx أو csv."
+            return tr("تعذّر فتح الملف \(file). تأكد أنه بصيغة xlsx أو csv.", "Couldn't open \(file). Make sure it's an xlsx or csv file.")
         case .noData(let file):
-            return "لم يُعثر في \(file) على عمود \"الاسم\" مع عمود صافي الراتب أو مبلغ الاستقطاع."
+            return tr("لم يُعثر في \(file) على عمود \"الاسم\" مع عمود صافي الراتب أو مبلغ الاستقطاع.", "\(file) has no \"name\" column with a net salary or deduction amount column.")
         }
     }
 }

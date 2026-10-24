@@ -77,7 +77,7 @@ struct SalaryHeader: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("صافي الراتب")
+                Text(tr("صافي الراتب", "Net salary"))
                     .font(.caption.weight(.medium))
                     .opacity(0.8)
                 Text(Money.format(employee.netSalary))

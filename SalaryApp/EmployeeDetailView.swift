@@ -21,15 +21,15 @@ struct EmployeeDetailView: View {
                     .listRowBackground(Color.clear)
             }
 
-            Section("المعلومات") {
-                InfoRow(title: "الرتبة", value: employee.rank.orDash, systemImage: "star.fill", color: .orange)
-                InfoRow(title: "محل العمل", value: employee.workplace.orDash, systemImage: "building.2.fill", color: .teal)
-                InfoRow(title: "الشهر", value: employee.month.orDash, systemImage: "calendar", color: .purple)
+            Section(tr("المعلومات", "Details")) {
+                InfoRow(title: tr("الرتبة", "Rank"), value: employee.rank.orDash, systemImage: "star.fill", color: .orange)
+                InfoRow(title: tr("محل العمل", "Workplace"), value: employee.workplace.orDash, systemImage: "building.2.fill", color: .teal)
+                InfoRow(title: tr("الشهر", "Month"), value: employee.month.orDash, systemImage: "calendar", color: .purple)
             }
 
             Section {
                 if deductions.isEmpty {
-                    Label("لا توجد استقطاعات باسم هذا الموظف", systemImage: "checkmark.seal.fill")
+                    Label(tr("لا توجد استقطاعات باسم هذا الموظف", "No deductions for this employee"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(deductions) { deduction in
@@ -52,15 +52,15 @@ struct EmployeeDetailView: View {
                             .monospacedDigit()
                             .foregroundStyle(.red)
                     } label: {
-                        Text("مجموع الاستقطاعات").bold()
+                        Text(tr("مجموع الاستقطاعات", "Total deductions")).bold()
                     }
                 }
             } header: {
                 HStack {
-                    Text("الاستقطاعات")
+                    Text(tr("الاستقطاعات", "Deductions"))
                     Spacer()
                     if !deductions.isEmpty {
-                        Text(deductions.count.formatted())
+                        Text(Num.format(deductions.count))
                     }
                 }
             }
@@ -70,7 +70,7 @@ struct EmployeeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("مشاركة", systemImage: "square.and.arrow.up") {
+                Button(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up") {
                     showShare = true
                 }
             }

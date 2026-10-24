@@ -135,6 +135,14 @@ jobs:
           launch -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "أحمد علي حسين الدليمي" -showDeductions YES
           shot 08d-salary-and-deductions
 
+          # 8e) الإعدادات، ثم الواجهة بالإنجليزية والأرقام الهندية
+          launch -openSettings YES
+          shot 08e-settings
+          launch -appLanguage en -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "أحمد علي حسين الدليمي" -showDeductions YES
+          shot 08f-english
+          launch -appNumerals arabicIndic -search "احمد علي"
+          shot 08g-eastern-digits
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8

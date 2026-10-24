@@ -46,12 +46,9 @@ nonisolated enum ArabicText {
 }
 
 enum Money {
-    /// نمط التنسيق يُنشأ مرة واحدة بدل كل صف.
-    private static let style = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...2))
-
     static func format(_ value: Double?) -> String {
         guard let value else { return "—" }
-        return value.formatted(style)
+        return value.formatted(.number.precision(.fractionLength(0...2)).locale(AppSettings.locale))
     }
 }
 

@@ -14,6 +14,8 @@ enum LaunchOptions {
     static var openFirst: Bool { UserDefaults.standard.bool(forKey: "openFirst") }
     /// يفتح نافذة المشاركة في صفحة التفاصيل.
     static var share: Bool { UserDefaults.standard.bool(forKey: "share") }
+    /// يفتح لوحة الإعدادات.
+    static var openSettings: Bool { UserDefaults.standard.bool(forKey: "openSettings") }
 
     /// نتيجة الاستيراد تُكتب في Documents/import-report.txt ليقرأها سكربت الاختبار.
     static func writeReport(_ text: String) {
@@ -30,6 +32,11 @@ struct ContentView: View {
     /// ماذا يظهر في النتائج: تفاصيل الراتب، الاستقطاعات، أو الاثنان معاً (واحد على الأقل).
     @AppStorage("showSalary") private var showSalary = true
     @AppStorage("showDeductions") private var showDeductions = false
+    /// تغيير اللغة أو الأرقام يعيد رسم الشاشة بالنصوص والأرقام الجديدة.
+    @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
+    @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
+    @State private var showSettings = false
+    @State private var importAfterSettings = false
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
@@ -76,6 +83,7 @@ struct ContentView: View {
             // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
             EmployeeList(search: appliedSearch, months: selectedMonths,
                          showSalary: showSalary || !showDeductions, showDeductions: showDeductions)
+                .id("\(language)-\(numerals)")
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !months.isEmpty {
                         // فلترة النتائج: زرّان صغيران، كل واحد يفتح قائمة تقبل خياراً واحداً أو عدة خيارات.
@@ -92,7 +100,7 @@ struct ContentView: View {
                     }
                 }
                 .background(Color(.systemGroupedBackground))
-                .adaptiveSearchable(text: $search, prompt: "ابحث بالاسم")
+                .adaptiveSearchable(text: $search, prompt: tr("ابحث بالاسم", "Search by name"))
                 .onSubmit(of: .search) { appliedSearch = search }
                 .task(id: search) {
                     // مسح النص يُطبَّق فوراً؛ الكتابة تنتظر توقفاً قصيراً.
@@ -102,17 +110,36 @@ struct ContentView: View {
                     }
                     if appliedSearch != search { appliedSearch = search }
                 }
-                .navigationTitle("الرواتب")
+                .navigationTitle(tr("الرواتب", "Payroll"))
                 .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
+                            showSettings = true
+                        } label: {
+                            Label(tr("الإعدادات", "Settings"), systemImage: "gearshape")
+                        }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
                             showImporter = true
                         } label: {
-                            Label("استيراد ملفات Excel", systemImage: "square.and.arrow.down")
+                            Label(tr("استيراد ملفات Excel", "Import Excel files"), systemImage: "square.and.arrow.down")
                         }
                         .disabled(isImporting)
+                    }
+                }
+                .sheet(isPresented: $showSettings, onDismiss: {
+                    // زر الاستيراد داخل الإعدادات: تُغلق الإعدادات أولاً ثم تُفتح نافذة الملفات.
+                    if importAfterSettings {
+                        importAfterSettings = false
+                        showImporter = true
+                    }
+                }) {
+                    SettingsView(months: months) {
+                        importAfterSettings = true
+                        showSettings = false
                     }
                 }
                 .sheet(isPresented: $showImporter, onDismiss: startPendingImport) {
@@ -124,26 +151,26 @@ struct ContentView: View {
                 }
                 .overlay {
                     if isImporting {
-                        ProgressView("جارٍ الاستيراد… قد يستغرق دقيقة لكل ملف كبير")
+                        ProgressView(tr("جارٍ الاستيراد… قد يستغرق دقيقة لكل ملف كبير", "Importing… a large file can take a minute"))
                             .padding(24)
                             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                     }
                 }
-                .alert("الاستيراد", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                    Button("حسناً", role: .cancel) {}
+                .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+                    Button(tr("حسناً", "OK"), role: .cancel) {}
                 } message: {
                     Text(message ?? "")
                 }
                 .confirmationDialog(
-                    "حذف بيانات \(monthToDelete?.name ?? "")؟",
+                    tr("حذف بيانات \(monthToDelete?.name ?? "")؟", "Delete \(monthToDelete?.name ?? "")?"),
                     isPresented: Binding(get: { monthToDelete != nil }, set: { if !$0 { monthToDelete = nil } }),
                     titleVisibility: .visible
                 ) {
-                    Button("حذف", role: .destructive) {
+                    Button(tr("حذف", "Delete"), role: .destructive) {
                         if let name = monthToDelete?.name { deleteMonth(name) }
                     }
                 } message: {
-                    Text("يُحذف الموظفون والاستقطاعات لهذا الشهر فقط. يمكنك استيراد الملف مرة أخرى لاحقاً.")
+                    Text(tr("يُحذف الموظفون والاستقطاعات لهذا الشهر فقط. يمكنك استيراد الملف مرة أخرى لاحقاً.", "Only this month's employees and deductions are deleted. You can import the file again later."))
                 }
                 .task {
                     await applyLaunchOptions()
@@ -166,21 +193,21 @@ struct ContentView: View {
         let chosen = Set(selectedMonths.map(\.name))
         let latest = latestCount
         return Menu {
-            Section("عدد الأشهر") {
+            Section(tr("عدد الأشهر", "Number of months")) {
                 ForEach(quickCounts, id: \.self) { n in
                     Button {
                         setSelection(months.prefix(n).map(\.name))
                     } label: {
-                        checkLabel(n == 1 ? "آخر شهر" : "آخر \(n.formatted()) أشهر", latest == n)
+                        checkLabel(n == 1 ? tr("آخر شهر", "Latest month") : tr("آخر \(Num.format(n)) أشهر", "Last \(Num.format(n)) months"), latest == n)
                     }
                 }
                 Button {
                     setSelection(months.map(\.name))
                 } label: {
-                    checkLabel("كل الأشهر", chosen.count == months.count)
+                    checkLabel(tr("كل الأشهر", "All months"), chosen.count == months.count)
                 }
             }
-            Section("أشهر محددة") {
+            Section(tr("أشهر محددة", "Specific months")) {
                 ForEach(months) { month in
                     Button {
                         toggle(month)
@@ -190,7 +217,7 @@ struct ContentView: View {
                     .menuActionDismissBehavior(.disabled)
                 }
             }
-            Menu("حذف شهر", systemImage: "trash") {
+            Menu(tr("حذف شهر", "Delete a month"), systemImage: "trash") {
                 ForEach(months) { month in
                     Button(month.name, role: .destructive) { monthToDelete = month }
                 }
@@ -204,30 +231,30 @@ struct ContentView: View {
 
     private var monthMenuTitle: String {
         let chosen = selectedMonths
-        if chosen.count == months.count, months.count > 1 { return "كل الأشهر" }
+        if chosen.count == months.count, months.count > 1 { return tr("كل الأشهر", "All months") }
         if chosen.count == 1 { return chosen[0].name }
-        if latestCount != nil { return "آخر \(chosen.count.formatted()) أشهر" }
+        if latestCount != nil { return tr("آخر \(Num.format(chosen.count)) أشهر", "Last \(Num.format(chosen.count)) months") }
         if chosen.count == 2 { return chosen.map(\.shortName).joined(separator: " + ") }
-        return "\(chosen.count.formatted()) أشهر"
+        return tr("\(Num.format(chosen.count)) أشهر", "\(Num.format(chosen.count)) months")
     }
 
     /// زر العرض: تفاصيل الراتب و/أو الاستقطاعات (يبقى واحد على الأقل مختاراً).
     private var displayMenu: some View {
         let salary = showSalary || !showDeductions
         return Menu {
-            Section("ماذا يظهر في النتائج") {
+            Section(tr("ماذا يظهر في النتائج", "Show in results")) {
                 Button {
                     guard showDeductions else { return }
                     showSalary = !salary
                 } label: {
-                    Label("تفاصيل الراتب", systemImage: salary ? "checkmark.circle.fill" : "circle")
+                    Label(tr("تفاصيل الراتب", "Salary details"), systemImage: salary ? "checkmark.circle.fill" : "circle")
                 }
                 .menuActionDismissBehavior(.disabled)
                 Button {
                     if showDeductions { showSalary = true }
                     showDeductions.toggle()
                 } label: {
-                    Label("الاستقطاعات", systemImage: showDeductions ? "checkmark.circle.fill" : "circle")
+                    Label(tr("الاستقطاعات", "Deductions"), systemImage: showDeductions ? "checkmark.circle.fill" : "circle")
                 }
                 .menuActionDismissBehavior(.disabled)
             }
@@ -241,9 +268,9 @@ struct ContentView: View {
     private var displayTitle: String {
         let salary = showSalary || !showDeductions
         switch (salary, showDeductions) {
-        case (true, true): return "الراتب والاستقطاعات"
-        case (false, true): return "الاستقطاعات فقط"
-        default: return "تفاصيل الراتب"
+        case (true, true): return tr("الراتب والاستقطاعات", "Salary and deductions")
+        case (false, true): return tr("الاستقطاعات فقط", "Deductions only")
+        default: return tr("تفاصيل الراتب", "Salary details")
         }
     }
 
@@ -264,6 +291,7 @@ struct ContentView: View {
     }
 
     private func applyLaunchOptions() async {
+        if LaunchOptions.openSettings { showSettings = true }
         let files = LaunchOptions.importFiles
         if !files.isEmpty {
             await importFiles(files.map { URL(fileURLWithPath: $0) })
@@ -312,7 +340,7 @@ struct ContentView: View {
                     return try ExcelImporter.load(url: url)
                 }.value
                 try await importer.replace(month: monthName, with: imported)
-                lines.append("\(monthName): \(imported.employees.count.formatted()) موظف و\(imported.deductions.count.formatted()) استقطاع")
+                lines.append(tr("\(monthName): \(Num.format(imported.employees.count)) موظف و\(Num.format(imported.deductions.count)) استقطاع", "\(monthName): \(Num.format(imported.employees.count)) employees, \(Num.format(imported.deductions.count)) deductions"))
                 totals.employees += imported.employees.count
                 totals.deductions += imported.deductions.count
                 let sortKey = MonthName.sortKey(monthName)
@@ -327,8 +355,8 @@ struct ContentView: View {
         path = []
         isImporting = false
         var parts: [String] = []
-        if !lines.isEmpty { parts += ["تم الاستيراد:"] + lines }
-        if !failures.isEmpty { parts += ["", "تعذّر:"] + failures }
+        if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
+        if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
         message = parts.joined(separator: "\n")
         if !LaunchOptions.importFiles.isEmpty {
             let status = failures.isEmpty ? "" : " failed=\(failures.count)"
@@ -398,7 +426,7 @@ struct EmployeeList: View {
         if !months.isEmpty {
             if tokens.isEmpty {
                 ContentUnavailableView(
-                    "ابحث بالاسم",
+                    tr("ابحث بالاسم", "Search by name"),
                     systemImage: "magnifyingglass",
                     description: Text(summary)
                 )
@@ -413,12 +441,12 @@ struct EmployeeList: View {
                                     EmployeeRow(employee: employee, showSalary: showSalary, showDeductions: showDeductions)
                                 }
                                 .contextMenu {
-                                    Button("مشاركة", systemImage: "square.and.arrow.up") {
+                                    Button(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up") {
                                         shareTarget = employee
                                     }
                                 }
                                 .swipeActions(edge: .leading) {
-                                    Button("مشاركة", systemImage: "square.and.arrow.up") {
+                                    Button(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up") {
                                         shareTarget = employee
                                     }
                                     .tint(.blue)
@@ -433,19 +461,19 @@ struct EmployeeList: View {
             }
         } else {
             ContentUnavailableView(
-                "لا توجد بيانات",
+                tr("لا توجد بيانات", "No data yet"),
                 systemImage: "tablecells",
-                description: Text("اضغط زر الاستيراد واختر ملف Excel أو أكثر. كل ملف يُحفظ كشهر باسم الملف، مثل \"تشرين الاول 2026\".")
+                description: Text(tr("اضغط زر الاستيراد واختر ملف Excel أو أكثر. كل ملف يُحفظ كشهر باسم الملف، مثل \"تشرين الاول 2026\".", "Tap Import and choose one or more Excel files. Each file is saved as a month named after the file, like \"October 2026\"."))
             )
         }
     }
 
     private var summary: String {
         if months.count == 1, let month = months.first {
-            return "شهر \(month.name): \(month.employeeCount.formatted()) موظف و\(month.deductionCount.formatted()) استقطاع.\nلتغيير الشهر أو اختيار عدة أشهر استخدم القائمة في الأعلى."
+            return tr("شهر \(month.name): \(Num.format(month.employeeCount)) موظف و\(Num.format(month.deductionCount)) استقطاع.\nلتغيير الشهر أو اختيار عدة أشهر استخدم زر الأشهر في الأعلى.", "\(month.name): \(Num.format(month.employeeCount)) employees, \(Num.format(month.deductionCount)) deductions.\nUse the months button above to pick one or more months.")
         }
         let employees = months.reduce(0) { $0 + $1.employeeCount }
-        return "\(months.count.formatted()) أشهر مختارة: \(employees.formatted()) سجل موظف.\nالنتائج تُعرض مجمّعة حسب الشهر."
+        return tr("\(Num.format(months.count)) أشهر مختارة: \(Num.format(employees)) سجل موظف.\nالنتائج تُعرض مجمّعة حسب الشهر.", "\(Num.format(months.count)) months selected: \(Num.format(employees)) employee records.\nResults are grouped by month.")
     }
 }
 
@@ -503,7 +531,7 @@ struct DeductionLines: View {
 
     var body: some View {
         if deductions.isEmpty {
-            Label("لا توجد استقطاعات", systemImage: "checkmark.circle")
+            Label(tr("لا توجد استقطاعات", "No deductions"), systemImage: "checkmark.circle")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         } else {
@@ -528,7 +556,7 @@ struct DeductionLines: View {
                 if deductions.count > 1 {
                     Divider()
                     HStack {
-                        Text("المجموع").fontWeight(.semibold)
+                        Text(tr("المجموع", "Total")).fontWeight(.semibold)
                         Spacer()
                         Text(Money.format(deductions.total))
                             .fontWeight(.bold)
