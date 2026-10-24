@@ -143,6 +143,10 @@ jobs:
           launch -appNumerals arabicIndic -search "احمد علي"
           shot 08g-eastern-digits
 
+          # 8h) تبويب الملاك (بدون ملف Access: شاشة الاستيراد)
+          launch -tab staff
+          shot 08h-staff-empty
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8

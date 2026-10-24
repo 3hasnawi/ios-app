@@ -60,6 +60,14 @@ nonisolated enum Num {
         value.formatted(.number.locale(AppSettings.locale))
     }
 
+    /// الأرقام داخل نص (تواريخ وأرقام هويات) بحسب إعداد الأرقام، بدون فواصل.
+    static func digits(_ text: String) -> String {
+        guard AppSettings.numerals == .arabicIndic else { return text }
+        return String(String.UnicodeScalarView(text.unicodeScalars.map { s in
+            (48...57).contains(s.value) ? Unicode.Scalar(s.value - 48 + 0x0660)! : s
+        }))
+    }
+
     /// حجم بالبايت ← كيلوبايت أو ميغابايت أو غيغابايت حسب الحجم.
     static func bytes(_ count: Int64) -> String {
         let units = AppSettings.isEnglish

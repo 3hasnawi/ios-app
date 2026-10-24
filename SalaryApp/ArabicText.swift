@@ -20,6 +20,17 @@ nonisolated enum ArabicText {
             .joined(separator: " ")
     }
 
+    /// الأرقام الهندية (٠١٢) والفارسية ← لاتينية، لمطابقة البحث بالأرقام.
+    static func latinDigits(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { s in
+            switch s.value {
+            case 0x0660...0x0669: Unicode.Scalar(s.value - 0x0660 + 48)!
+            case 0x06F0...0x06F9: Unicode.Scalar(s.value - 0x06F0 + 48)!
+            default: s
+            }
+        }))
+    }
+
     static func matchKey(_ text: String) -> String {
         normalize(text).replacingOccurrences(of: " ", with: "")
     }

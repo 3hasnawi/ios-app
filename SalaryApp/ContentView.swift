@@ -16,6 +16,8 @@ enum LaunchOptions {
     static var share: Bool { UserDefaults.standard.bool(forKey: "share") }
     /// يفتح لوحة الإعدادات.
     static var openSettings: Bool { UserDefaults.standard.bool(forKey: "openSettings") }
+    /// التبويب عند التشغيل: "staff" لتبويب الملاك.
+    static var startTab: String { UserDefaults.standard.string(forKey: "tab") ?? "" }
 
     /// نتيجة الاستيراد تُكتب في Documents/import-report.txt ليقرأها سكربت الاختبار.
     static func writeReport(_ text: String) {
@@ -39,6 +41,8 @@ struct ContentView: View {
     /// اسم قادم من اختصار "فتح البحث في الرواتب".
     @State private var router = ShortcutRouter.shared
     @State private var importAfterSettings = false
+    @State private var staffImportAfterSettings = false
+    @State private var appRouter = AppRouter.shared
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
@@ -130,11 +134,19 @@ struct ContentView: View {
                         importAfterSettings = false
                         showImporter = true
                     }
+                    if staffImportAfterSettings {
+                        staffImportAfterSettings = false
+                        AppRouter.shared.tab = .staff
+                        AppRouter.shared.pendingStaffImport = true
+                    }
                 }) {
-                    SettingsView(months: months) {
+                    SettingsView(months: months, onImport: {
                         importAfterSettings = true
                         showSettings = false
-                    }
+                    }, onImportStaff: {
+                        staffImportAfterSettings = true
+                        showSettings = false
+                    })
                 }
                 .sheet(isPresented: $showImporter, onDismiss: startPendingImport) {
                     DocumentPicker(contentTypes: fileTypes) { urls in
@@ -168,6 +180,11 @@ struct ContentView: View {
                 }
                 .task {
                     await applyLaunchOptions()
+                }
+                .onChange(of: appRouter.pendingPayrollImport, initial: true) { _, pending in
+                    guard pending else { return }
+                    appRouter.pendingPayrollImport = false
+                    showImporter = true
                 }
                 .onChange(of: router.pendingSearch, initial: true) { _, name in
                     guard let name else { return }

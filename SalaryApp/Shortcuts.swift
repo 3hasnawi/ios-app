@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 enum SharedModel {
     @MainActor static let container: ModelContainer = {
         do {
-            return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self)
+            return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self)
         } catch {
             fatalError("تعذّر فتح قاعدة البيانات: \(error)")
         }

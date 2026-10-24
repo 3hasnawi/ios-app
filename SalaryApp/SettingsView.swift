@@ -6,6 +6,10 @@ struct SettingsView: View {
     let months: [PayrollMonth]
     /// يُستدعى عند الضغط على "استيراد ملفات Excel": تُغلق الإعدادات وتُفتح نافذة الملفات.
     let onImport: () -> Void
+    /// "استيراد ملف الملاك": تُغلق الإعدادات وتُفتح نافذة اختيار ملف Access.
+    var onImportStaff: () -> Void = {}
+    @State private var importState = StaffImportState.shared
+    @State private var confirmStaffDelete = false
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +23,7 @@ struct SettingsView: View {
             Form {
                 displaySection
                 importSection
+                staffSection
                 storageSection
             }
             .navigationTitle(tr("الإعدادات", "Settings"))
@@ -28,7 +33,7 @@ struct SettingsView: View {
                     Button(tr("تم", "Done")) { dismiss() }
                 }
             }
-            .task(id: months.count) { storeSize = await Self.storeSize(of: context.container) }
+            .task(id: "\(months.count)-\(importState.version)") { storeSize = await Self.storeSize(of: context.container) }
         }
         // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
         .id("\(language)-\(numerals)")
@@ -108,6 +113,46 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - الملاك
+
+    private var staffSection: some View {
+        Section {
+            Button {
+                onImportStaff()
+            } label: {
+                SettingRow(title: tr("استيراد ملف الملاك (Access)", "Import staff database (Access)"), systemImage: "person.3.fill", color: .teal) {
+                    if importState.isImporting { ProgressView() }
+                }
+            }
+            .disabled(importState.isImporting)
+            if StaffInfo.count > 0 {
+                LabeledContent(tr("عدد الموظفين", "Employees")) {
+                    Text(Num.format(StaffInfo.count))
+                }
+                LabeledContent(tr("الملف", "File")) {
+                    Text(StaffInfo.fileName).lineLimit(1)
+                }
+                if let date = StaffInfo.importedAt {
+                    LabeledContent(tr("تاريخ الاستيراد", "Imported")) {
+                        Text(date.formatted(.dateTime.year().month().day().locale(AppSettings.locale)))
+                    }
+                }
+                Button(tr("حذف بيانات الملاك", "Delete staff data"), role: .destructive) {
+                    confirmStaffDelete = true
+                }
+            }
+        } header: {
+            Text(tr("الملاك", "Staff"))
+        } footer: {
+            Text(tr("اختر ملف قاعدة البيانات (‎.accdb) كما هو. الاستيراد الجديد يستبدل الملاك القديم كاملاً.",
+                    "Pick the database file (.accdb) as it is. A new import replaces the previous staff data."))
+        }
+        .id(importState.version)
+        .confirmationDialog(tr("حذف بيانات الملاك؟", "Delete staff data?"), isPresented: $confirmStaffDelete, titleVisibility: .visible) {
+            Button(tr("حذف", "Delete"), role: .destructive) { importState.deleteAll() }
+        }
+    }
+
     // MARK: - مساحة البيانات
 
     private var storageSection: some View {
@@ -148,15 +193,17 @@ struct SettingsView: View {
 
     /// حجم كل شهر = الحجم الكلي موزعاً حسب عدد السجلات (موظفون + استقطاعات).
     private var segments: [StorageSegment] {
-        guard let storeSize, !months.isEmpty else { return [] }
+        guard let storeSize, !months.isEmpty || StaffInfo.count > 0 else { return [] }
         let palette: [Color] = [.blue, .indigo, .cyan, .teal, .purple, .mint, .orange, .pink]
-        let records = months.map { max($0.employeeCount + $0.deductionCount, 1) }
-        let total = Double(records.reduce(0, +))
-        return months.enumerated().map { i, month in
+        // سجل الملاك أكبر بكثير من سجل الراتب (فيه كل الحقول)، فوزنه تقريبي ×8.
+        var parts = months.map { (name: $0.name, weight: max($0.employeeCount + $0.deductionCount, 1)) }
+        if StaffInfo.count > 0 { parts.append((name: tr("الملاك", "Staff"), weight: StaffInfo.count * 8)) }
+        let total = Double(parts.reduce(0) { $0 + $1.weight })
+        return parts.enumerated().map { i, part in
             StorageSegment(
-                name: month.name,
-                bytes: Int64(Double(storeSize) * Double(records[i]) / total),
-                color: palette[i % palette.count]
+                name: part.name,
+                bytes: Int64(Double(storeSize) * Double(part.weight) / total),
+                color: i == months.count ? .teal : palette[i % palette.count]
             )
         }
     }
