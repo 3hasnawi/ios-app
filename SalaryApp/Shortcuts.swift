@@ -276,6 +276,11 @@ enum EmployeeLookup {
     /// أول ثلاث كلمات تُصفّى داخل قاعدة البيانات حتى لا تضيع النتيجة بين آلاف الأسماء المتشابهة.
     @MainActor
     static func find(_ text: String, in months: [String]) throws -> [Employee] {
+        try find(text, in: months, context: SharedModel.container.mainContext)
+    }
+
+    /// نفس البحث على أي سياق (يُستدعى من الخلفية في البحث الموحّد).
+    nonisolated static func find(_ text: String, in months: [String], context: ModelContext) throws -> [Employee] {
         let tokens = ArabicText.normalize(text).split(separator: " ").map(String.init)
         guard !tokens.isEmpty, !months.isEmpty else { return [] }
         let a = tokens[0]
@@ -296,7 +301,7 @@ enum EmployeeLookup {
         var descriptor = FetchDescriptor<Employee>(predicate: predicate, sortBy: [SortDescriptor(\.name)])
         descriptor.fetchLimit = 2000
         let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
-        return try SharedModel.container.mainContext.fetch(descriptor)
+        return try context.fetch(descriptor)
             .filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
             .sorted { (order[$0.month] ?? .max, $0.name) < (order[$1.month] ?? .max, $1.name) }
     }

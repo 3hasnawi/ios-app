@@ -123,6 +123,7 @@ struct ContentView: View {
                         } label: {
                             Label(tr("الإعدادات", "Settings"), systemImage: "gearshape")
                         }
+                        .accessibilityIdentifier("settingsButton")
                     }
                 }
                 .sheet(isPresented: $showSettings, onDismiss: {
@@ -249,6 +250,7 @@ struct ContentView: View {
         } label: {
             pillLabel(monthMenuTitle, systemImage: "calendar")
         }
+        .accessibilityIdentifier("homeMonthMenu")
         .glassButtonStyle(prominent: true)
         .buttonBorderShape(.capsule)
     }

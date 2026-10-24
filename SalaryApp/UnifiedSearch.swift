@@ -109,6 +109,7 @@ struct UnifiedSearchView: View {
                             NavigationLink(value: person) {
                                 UnifiedCard(person: person)
                             }
+                            .accessibilityIdentifier("resultCard")
                         }
                     } header: {
                         if loadedKey == queryKey {
@@ -120,6 +121,7 @@ struct UnifiedSearchView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top, spacing: 0) { filters }
             // في تبويب العدسة يظهر شريط البحث عند الضغط على العدسة (iOS 26).
@@ -136,8 +138,12 @@ struct UnifiedSearchView: View {
             .task(id: queryKey) {
                 let key = queryKey
                 guard !trimmed.isEmpty else { people = []; loadedKey = key; return }
-                people = (try? UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)) ?? []
+                let started = Date()
+                let found = (try? await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)) ?? []
+                guard !Task.isCancelled else { return }
+                people = found
                 loadedKey = key
+                PerfLog.record("search", since: started)
                 if LaunchOptions.openPerson, path.isEmpty, let first = people.first { path = [first] }
             }
             .onChange(of: router.pendingSearch, initial: true) { _, name in
@@ -171,6 +177,7 @@ struct UnifiedSearchView: View {
                 } label: {
                     pill(scope.title, systemImage: "square.stack.3d.up")
                 }
+                .accessibilityIdentifier("scopeMenu")
                 .glassButtonStyle(prominent: true)
                 .buttonBorderShape(.capsule)
 
@@ -202,6 +209,7 @@ struct UnifiedSearchView: View {
                         pill(monthNames.count == 1 ? monthNames[0] : tr("\(Num.format(monthNames.count)) أشهر", "\(Num.format(monthNames.count)) months"),
                              systemImage: "calendar")
                     }
+                    .accessibilityIdentifier("searchMonthMenu")
                     .glassButtonStyle()
                     .buttonBorderShape(.capsule)
                 }
@@ -294,11 +302,44 @@ struct SourceTag: View {
 
 // MARK: - النتائج
 
+/// نتيجة البحث كما تخرج من الخلفية: معرّفات فقط (آمنة للنقل بين الخيوط).
+nonisolated struct UnifiedHit: Sendable {
+    let key: String
+    let name: String
+    let employeeID: PersistentIdentifier?
+    let staffID: PersistentIdentifier?
+}
+
+/// البحث الموحّد يعمل على سياق خاص في الخلفية حتى تبقى الكتابة والتمرير سلسة.
+@ModelActor
+actor UnifiedSearchActor {
+    func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) throws -> [UnifiedHit] {
+        try UnifiedFinder.hits(search, mode: mode, scope: scope, months: months, context: modelContext)
+    }
+}
+
 enum UnifiedFinder {
-    /// يبحث في الملاك وفي رواتب الأشهر المختارة، ويربط الطرفين بالاسم (بلا مسافات).
+    /// يبحث في الخلفية، ثم يجلب الكائنات الناتجة (150 كحد أقصى) في سياق الواجهة.
     @MainActor
-    static func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) throws -> [UnifiedPerson] {
-        let context = SharedModel.container.mainContext
+    static func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) async throws -> [UnifiedPerson] {
+        let container = SharedModel.container
+        let hits = try await Task.detached(priority: .userInitiated) {
+            try await UnifiedSearchActor(modelContainer: container).find(search, mode: mode, scope: scope, months: months)
+        }.value
+        try Task.checkCancellation()
+        let context = container.mainContext
+        return hits.map { hit in
+            UnifiedPerson(
+                id: hit.key,
+                name: hit.name,
+                employee: hit.employeeID.flatMap { context.model(for: $0) as? Employee },
+                staff: hit.staffID.flatMap { context.model(for: $0) as? StaffMember }
+            )
+        }
+    }
+
+    /// يبحث في الملاك وفي رواتب الأشهر المختارة، ويربط الطرفين بالاسم (بلا مسافات).
+    static func hits(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String], context: ModelContext) throws -> [UnifiedHit] {
         let tokens = tokens(search, mode: mode)
         guard !tokens.isEmpty else { return [] }
         let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
@@ -313,7 +354,7 @@ enum UnifiedFinder {
         if scope != .staff, mode == .name, !months.isEmpty {
             // لكل شخص: أحدث شهر من الأشهر المختارة.
             var seen = Set<String>()
-            for e in try EmployeeLookup.find(search, in: months) where seen.insert(e.matchKey).inserted {
+            for e in try EmployeeLookup.find(search, in: months, context: context) where seen.insert(e.matchKey).inserted {
                 employees.append(e)
                 if employees.count >= 150 { break }
             }
@@ -352,22 +393,20 @@ enum UnifiedFinder {
             }
         }
 
-        return keys.compactMap { key -> UnifiedPerson? in
+        return keys.compactMap { key -> UnifiedHit? in
             guard let pair = byKey[key] else { return nil }
-            let name = pair.staff?.name ?? pair.employee?.name ?? ""
-            return UnifiedPerson(id: key, name: name, employee: pair.employee, staff: pair.staff)
-        }
-        .filter { p in
             switch scope {
-            case .all: true
-            case .payroll: p.employee != nil
-            case .staff: p.staff != nil
+            case .all: break
+            case .payroll: if pair.employee == nil { return nil }
+            case .staff: if pair.staff == nil { return nil }
             }
+            let name = pair.staff?.name ?? pair.employee?.name ?? ""
+            return UnifiedHit(key: key, name: name, employeeID: pair.employee?.persistentModelID, staffID: pair.staff?.persistentModelID)
         }
         .sorted { lhs, rhs in
             // من في الطرفين أولاً، ثم بالاسم.
-            let l = (lhs.employee != nil ? 1 : 0) + (lhs.staff != nil ? 1 : 0)
-            let r = (rhs.employee != nil ? 1 : 0) + (rhs.staff != nil ? 1 : 0)
+            let l = (lhs.employeeID != nil ? 1 : 0) + (lhs.staffID != nil ? 1 : 0)
+            let r = (rhs.employeeID != nil ? 1 : 0) + (rhs.staffID != nil ? 1 : 0)
             return l != r ? l > r : lhs.name < rhs.name
         }
     }
@@ -483,6 +522,7 @@ struct UnifiedPersonView: View {
                         ForEach(parts) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityIdentifier("personPartPicker")
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
                 }

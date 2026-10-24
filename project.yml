@@ -14,7 +14,8 @@ targets:
     sources: [SalaryApp]
     dependencies:
       - package: ZIPFoundation
-    scheme: {}
+    scheme:
+      testTargets: [SalaryAppUITests]
     info:
       path: SalaryApp/Info.plist
       properties:
@@ -31,3 +32,16 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SalaryAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [SalaryAppUITests]
+    dependencies:
+      - target: SalaryApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryAppUITests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: SalaryApp

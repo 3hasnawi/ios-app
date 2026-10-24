@@ -45,11 +45,11 @@ jobs:
           print(d["udid"]); print(d["name"], runtimes[-1], file=sys.stderr)')
           echo "UDID=$UDID" >> "$GITHUB_ENV"
 
-      - name: Build for simulator
+      - name: Build for simulator (app + navigation UI test, Release like the real app)
         run: |
-          xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Debug \
+          xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
             -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build > ci-output/build.log 2>&1 \
+            CODE_SIGNING_ALLOWED=NO build-for-testing > ci-output/build.log 2>&1 \
             || { grep -E "error:|warning: .*(isolat|Sendable)" ci-output/build.log | sort -u | head -40 | sed 's/^/::error::/'; exit 1; }
           grep -cE "warning:" ci-output/build.log || true
 
@@ -75,7 +75,7 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
           xcrun simctl ui "$UDID" appearance light
-          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/SalaryApp.app
+          xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/SalaryApp.app
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           mkdir -p "$DATA/Documents"
           cp test-files/*.xlsx "$DATA/Documents/"
@@ -168,6 +168,39 @@ jobs:
           shot 10-detail-dark
           launch -search "احمد علي"
           shot 11-search-dark
+
+      - name: Navigation test (taps, typing, open/back, scrolling) with video and lag log
+        run: |
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          # ملاك وهمي بحجم الملاك الحقيقي (42 ألف) لقياس البحث الموحّد في الحالة الأثقل
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -fakeStaff 42000
+          for i in $(seq 1 300); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no staff report"; } | tee ci-output/fake-staff.txt
+          sleep 2
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          rm -f "$DATA/Documents/perf.txt"
+
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force ci-output/navigation.mp4 &
+          VPID=$!
+          sleep 3
+          set +e
+          xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
+            -destination "id=$UDID" -derivedDataPath build -only-testing:SalaryAppUITests/NavigationTests \
+            CODE_SIGNING_ALLOWED=NO > ci-output/uitest.log 2>&1
+          STATUS=$?
+          set -e
+          sleep 1
+          kill -INT $VPID 2>/dev/null || true
+          wait $VPID 2>/dev/null || true
+          ls -la ci-output/navigation.mp4 || true
+
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          cp "$DATA/Documents/perf.txt" ci-output/perf.txt 2>/dev/null || echo "::warning::no perf.txt"
+          python3 ci/perf_report.py ci-output/uitest.log ci-output/perf.txt | tee ci-output/navigation-report.txt
+          echo "xcodebuild test status=$STATUS"
+          grep -E "error:|XCTAssert|Failed|failed:" ci-output/uitest.log | sort -u | head -30 | sed 's/^/::warning::/' || true
 
       - name: Check import result
         run: |

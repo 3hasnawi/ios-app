@@ -71,6 +71,8 @@ struct RootView: View {
                 UnifiedSearchView()
             }
         }
+        // بيانات ملاك وهمية لاختبار المحاكي فقط (-fakeStaff).
+        .task { await TestData.prepareIfRequested() }
         // استيراد الملاك يعمل في الخلفية أياً كان التبويب.
         .overlay {
             if staffImport.isImporting {
@@ -285,7 +287,7 @@ struct StaffResultsList: View {
     }
 
     /// أول ثلاث كلمات تُصفّى داخل قاعدة البيانات، والباقي في الذاكرة.
-    static func predicate(mode: StaffSearchMode, tokens: [String]) -> Predicate<StaffMember> {
+    nonisolated static func predicate(mode: StaffSearchMode, tokens: [String]) -> Predicate<StaffMember> {
         let a = tokens.first ?? ""
         let b = tokens.count > 1 ? tokens[1] : ""
         let c = tokens.count > 2 ? tokens[2] : ""

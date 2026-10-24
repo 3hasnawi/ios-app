@@ -94,8 +94,13 @@ struct HomeDashboard: View {
         }
         .task(id: "\(current?.name ?? "")-\(current?.employeeCount ?? 0)-\(months.count)") {
             guard let current else { stats = nil; return }
-            let loader = HomeStatsLoader(modelContainer: SharedModel.container)
-            stats = try? await loader.stats(month: current.name, previous: previous?.name)
+            let container = SharedModel.container
+            let month = current.name
+            let previousName = previous?.name
+            // يُنشأ في الخلفية حتى لا يعمل الحساب على خيط الواجهة.
+            stats = try? await Task.detached(priority: .userInitiated) {
+                try await HomeStatsLoader(modelContainer: container).stats(month: month, previous: previousName)
+            }.value
         }
         .onAppear { recents = RecentSearches.items }
     }

@@ -7,6 +7,11 @@ struct SalaryApp: App {
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
 
+    init() {
+        // قياس السلاسة يعمل في اختبار المحاكي فقط (-perfLog YES).
+        PerfLog.startIfEnabled()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
