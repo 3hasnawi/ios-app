@@ -28,6 +28,8 @@ struct ContentView: View {
     private var months: [PayrollMonth]
     @AppStorage("selectedMonth") private var selectedMonth = ""
     @State private var search = LaunchOptions.search
+    /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
+    @State private var appliedSearch = LaunchOptions.search
     @State private var path: [Employee] = []
     @State private var showImporter = false
     @State private var pickedFiles: [URL] = []
@@ -72,9 +74,17 @@ struct ContentView: View {
                     searchField
                     monthMenu
                 }
-                EmployeeList(search: search, months: selectedMonths)
+                EmployeeList(search: appliedSearch, months: selectedMonths)
                     .frame(maxHeight: .infinity)
             }
+                .task(id: search) {
+                    // مسح النص يُطبَّق فوراً؛ الكتابة تنتظر توقفاً قصيراً.
+                    if !search.isEmpty {
+                        try? await Task.sleep(for: .milliseconds(220))
+                        guard !Task.isCancelled else { return }
+                    }
+                    if appliedSearch != search { appliedSearch = search }
+                }
                 .navigationTitle("الرواتب")
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
@@ -133,6 +143,7 @@ struct ContentView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .onSubmit { appliedSearch = search }
             if !search.isEmpty {
                 Button {
                     search = ""
@@ -357,6 +368,7 @@ struct EmployeeList: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollDismissesKeyboard(.immediately)
                 .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             }
         } else {

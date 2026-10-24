@@ -38,8 +38,9 @@ final class Employee {
     init(month: String, name: String, rank: String, workplace: String, netSalary: Double?) {
         self.month = month
         self.name = name
-        self.nameKey = ArabicText.normalize(name)
-        self.matchKey = ArabicText.matchKey(name)
+        let key = ArabicText.normalize(name)
+        self.nameKey = key
+        self.matchKey = key.replacingOccurrences(of: " ", with: "")
         self.rank = rank
         self.workplace = workplace
         self.netSalary = netSalary

@@ -125,6 +125,10 @@ jobs:
           launch -selectedMonth "أيلول 2026" -search "أحمد علي حسين الدليمي" -openFirst YES
           shot 08-detail-september
 
+          # 8b) عدة أشهر معاً: النتائج من الشهرين مع اسم الشهر تحت كل اسم
+          launch -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "احمد علي"
+          shot 08b-multi-month-search
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8
