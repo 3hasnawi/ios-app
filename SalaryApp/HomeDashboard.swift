@@ -34,7 +34,7 @@ actor HomeStatsLoader {
     }
 }
 
-/// الشاشة الرئيسية: الشعار خلفية شفافة، زر البحث، ملخص الشهر، الملاك، وآخر عمليات البحث.
+/// الشاشة الرئيسية (بدون شريط بحث؛ البحث من زر العدسة): الشعار خلفية شفافة، ملخص الشهر، الملاك، وآخر عمليات البحث.
 struct HomeDashboard: View {
     let months: [PayrollMonth]
     let current: PayrollMonth?
@@ -53,7 +53,6 @@ struct HomeDashboard: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                searchButton
 
                 if months.isEmpty && StaffInfo.count == 0 {
                     welcome
@@ -102,26 +101,6 @@ struct HomeDashboard: View {
     }
 
     // MARK: - الأجزاء
-
-    private var searchButton: some View {
-        Button {
-            AppRouter.shared.tab = .search
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                Text(tr("ابحث عن موظف بالاسم أو الرقم", "Search by name or number"))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .font(.body)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .frame(height: 48)
-            .frame(maxWidth: .infinity)
-            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
 
     private var welcome: some View {
         VStack(spacing: 14) {
