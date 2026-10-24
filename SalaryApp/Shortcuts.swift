@@ -1,8 +1,11 @@
 import AppIntents
 import SwiftData
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
+
+// الاختصارات تعمل في الخلفية، والنظام يمنع التطبيقات في الخلفية من الكتابة في الحافظة.
+// لذلك لا ينسخ التطبيق الصورة بنفسه هنا: الاختصار يُعيد صورة القسيمة كنتيجة،
+// وخطوة "نسخ إلى الحافظة" في تطبيق الاختصارات هي التي تنسخها (وهي تعمل دائماً).
 
 /// قاعدة بيانات واحدة يشترك فيها التطبيق واختصارات تطبيق "الاختصارات" (Shortcuts) وSiri.
 enum SharedModel {
@@ -43,12 +46,12 @@ enum ShortcutMonthRange: String, AppEnum {
     }
 }
 
-// MARK: - البحث عن موظف (بدون فتح التطبيق)
+// MARK: - البحث عن موظف: الاسم ← اختيار النتيجة ← التفاصيل وصورة القسيمة
 
 struct SearchEmployeeIntent: AppIntent {
     static let title: LocalizedStringResource = "البحث عن موظف"
     static let description = IntentDescription(
-        "يبحث بالاسم في رواتب الأشهر المحفوظة ويعيد صافي الراتب والاستقطاعات.",
+        "يبحث بالاسم، وإذا وُجد أكثر من موظف تختار من القائمة. يعرض صافي الراتب والاستقطاعات ويعيد صورة القسيمة. أضف بعده \"نسخ إلى الحافظة\" لنسخ الصورة.",
         categoryName: "البحث"
     )
 
@@ -58,101 +61,101 @@ struct SearchEmployeeIntent: AppIntent {
     @Parameter(title: "الأشهر", default: .latest)
     var range: ShortcutMonthRange
 
-    @Parameter(title: "إظهار الاستقطاعات", default: true)
-    var includeDeductions: Bool
+    /// يُملأ عند اختيار نتيجة من القائمة.
+    @Parameter(title: "الموظف")
+    var employee: EmployeeEntity?
 
     static var parameterSummary: some ParameterSummary {
-        Summary("ابحث عن \(\.$name) في \(\.$range)") {
-            \.$includeDeductions
-        }
+        Summary("ابحث عن \(\.$name) في \(\.$range)")
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetIntent {
-        ShortcutSelection.clear()
-        let results = try ShortcutSearch.run(name: name, range: range, includeDeductions: includeDeductions)
+    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        let matches = try EmployeeLookup.find(name, in: EmployeeLookup.monthNames(limit: range.limit))
+            .prefix(50)
+            .map(EmployeeEntity.init)
+        guard let first = matches.first else { throw ShortcutError.noMatch(name) }
 
-        let text = results.isEmpty
-            ? tr("لم يُعثر على \"\(name)\".", "No match for \"\(name)\".")
-            : results.map(\.summary).joined(separator: "\n\n")
-
-        let dialog: IntentDialog
-        if let first = results.first {
-            let spoken = results.count == 1
-                ? first.spokenSummary
-                : tr("وجدت \(Num.format(results.count)) نتائج. أولها: \(first.spokenSummary)",
-                     "Found \(Num.format(results.count)) results. First: \(first.spokenSummary)")
-            dialog = IntentDialog("\(spoken)")
-        } else {
-            dialog = IntentDialog("\(text)")
+        var chosen = first
+        if matches.count > 1 {
+            // نافذة اختيار فوق التطبيقات: كل نتيجة بشهرها وصافي راتبها.
+            let prompt = tr("وجدت \(Num.format(matches.count)) نتائج، اختر الموظف",
+                            "Found \(Num.format(matches.count)) results. Pick one")
+            let picked = try await $employee.requestDisambiguation(
+                among: matches.map { Optional($0) },
+                dialog: IntentDialog("\(prompt)")
+            )
+            if let picked { chosen = picked }
         }
-
-        // النافذة تفاعلية: الضغط على نتيجة يفتح تفاصيلها مع زر "نسخ كصورة".
-        return .result(
-            value: text,
-            dialog: dialog,
-            snippetIntent: SearchResultsSnippetIntent(name: name, range: range, includeDeductions: includeDeductions)
-        )
+        return try PayslipResult.make(for: chosen)
     }
 }
 
-/// نافذة نتائج البحث: قائمة نتائج، والضغط على نتيجة يعرض تفاصيلها (الراتب والاستقطاعات) وزر النسخ كصورة.
-struct SearchResultsSnippetIntent: SnippetIntent {
-    static let title: LocalizedStringResource = "نتائج البحث"
-    static let isDiscoverable = false
+// MARK: - قسيمة راتب: نافذة بحث واختيار ← التفاصيل وصورة القسيمة
 
-    @Parameter(title: "الاسم") var name: String
-    @Parameter(title: "الأشهر") var range: ShortcutMonthRange
-    @Parameter(title: "إظهار الاستقطاعات") var includeDeductions: Bool
+struct ShowPayslipIntent: AppIntent {
+    static let title: LocalizedStringResource = "قسيمة راتب"
+    static let description = IntentDescription(
+        "اكتب الاسم واختر النتيجة لعرض تفاصيل الراتب والاستقطاعات. يعيد صورة القسيمة؛ أضف بعده \"نسخ إلى الحافظة\" لنسخها.",
+        categoryName: "البحث"
+    )
+
+    @Parameter(title: "الموظف", requestValueDialog: "اكتب الاسم واختر النتيجة")
+    var employee: EmployeeEntity
 
     init() {}
-    init(name: String, range: ShortcutMonthRange, includeDeductions: Bool) {
-        self.name = name
-        self.range = range
-        self.includeDeductions = includeDeductions
+    init(employee: EmployeeEntity) { self.employee = employee }
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("اعرض قسيمة \(\.$employee)")
     }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        try PayslipResult.make(for: employee)
+    }
+}
+
+/// يرسم القسيمة (نفس صورة "نسخ كصورة" داخل التطبيق) ويعيدها مع النافذة.
+enum PayslipResult {
+    @MainActor
+    static func make(for entity: EmployeeEntity) throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        guard let record = try EmployeeLookup.employee(id: entity.id) else { throw ShortcutError.recordMissing }
+        let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+        let image = IntentFile(fileURL: files.imageURL, filename: files.imageURL.lastPathComponent, type: .png)
+        return .result(value: image, snippetIntent: PayslipSnippetIntent(employee: entity))
+    }
+}
+
+/// محتوى النافذة المنبثقة: بطاقة الراتب والاستقطاعات.
+struct PayslipSnippetIntent: SnippetIntent {
+    static let title: LocalizedStringResource = "قسيمة راتب"
+    static let isDiscoverable = false
+
+    @Parameter(title: "الموظف")
+    var employee: EmployeeEntity
+
+    init() {}
+    init(employee: EmployeeEntity) { self.employee = employee }
 
     @MainActor
     func perform() async throws -> some IntentResult & ShowsSnippetView {
-        let results = try ShortcutSearch.run(name: name, range: range, includeDeductions: includeDeductions)
-        let selectedID = results.count == 1 ? results[0].recordID : ShortcutSelection.current
-        if let selectedID, results.contains(where: { $0.recordID == selectedID }),
-           let record = try EmployeeLookup.employee(id: selectedID) {
-            let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
-            let entity = EmployeeEntity(record)
-            return .result(view: AnyView(PayslipSnippetView(
-                data: data, entity: entity, copied: PayslipClipboard.wasCopied(entity.id), showBack: results.count > 1
-            )))
+        guard let record = try EmployeeLookup.employee(id: employee.id) else { throw ShortcutError.recordMissing }
+        let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+        return .result(view: PayslipSnippetView(data: data))
+    }
+}
+
+enum ShortcutError: LocalizedError {
+    case noMatch(String)
+    case recordMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .noMatch(let name): tr("لم يُعثر على \"\(name)\" في الأشهر المختارة.", "No match for \"\(name)\" in the selected months.")
+        case .recordMissing: tr("لم يعد هذا السجل موجوداً.", "This record no longer exists.")
         }
-        return .result(view: AnyView(ShortcutResultsView(results: Array(results.prefix(8)), total: results.count)))
     }
-}
-
-/// الضغط على نتيجة في النافذة (أو "كل النتائج" للرجوع).
-struct SelectShortcutResultIntent: AppIntent {
-    static let title: LocalizedStringResource = "اختيار نتيجة"
-    static let isDiscoverable = false
-
-    @Parameter(title: "النتيجة") var recordID: String
-
-    init() {}
-    init(recordID: String) { self.recordID = recordID }
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        if recordID.isEmpty { ShortcutSelection.clear() } else { ShortcutSelection.current = recordID }
-        return .result()
-    }
-}
-
-/// النتيجة المختارة في نافذة الاختصار.
-enum ShortcutSelection {
-    private static let key = "shortcutSelectedResult"
-    static var current: String? {
-        get { UserDefaults.standard.string(forKey: key) }
-        set { UserDefaults.standard.set(newValue, forKey: key) }
-    }
-    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
 // MARK: - فتح التطبيق على البحث
@@ -181,16 +184,6 @@ struct OpenSearchIntent: AppIntent {
 struct SalaryShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: ShowPayslipIntent(),
-            phrases: [
-                "اعرض قسيمة راتب في \(.applicationName)",
-                "قسيمة راتب من \(.applicationName)",
-                "Show a payslip in \(.applicationName)",
-            ],
-            shortTitle: "قسيمة راتب",
-            systemImageName: "doc.text.magnifyingglass"
-        )
-        AppShortcut(
             intent: SearchEmployeeIntent(),
             phrases: [
                 "ابحث عن موظف في \(.applicationName)",
@@ -201,6 +194,16 @@ struct SalaryShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "البحث عن موظف",
             systemImageName: "magnifyingglass"
+        )
+        AppShortcut(
+            intent: ShowPayslipIntent(),
+            phrases: [
+                "اعرض قسيمة راتب في \(.applicationName)",
+                "قسيمة راتب من \(.applicationName)",
+                "Show a payslip in \(.applicationName)",
+            ],
+            shortTitle: "قسيمة راتب",
+            systemImageName: "doc.text.magnifyingglass"
         )
         AppShortcut(
             intent: OpenSearchIntent(),
@@ -214,127 +217,14 @@ struct SalaryShortcuts: AppShortcutsProvider {
     }
 }
 
-// MARK: - البحث نفسه
+// MARK: - الموظف كعنصر قابل للاختيار في نوافذ الاختصارات
 
-struct ShortcutResult: Identifiable {
-    let id = UUID()
-    /// الشهر والاسم معاً، بنفس صيغة EmployeeEntity.id.
-    var recordID: String { month + EmployeeEntity.separator + name }
-    let name: String
-    let month: String
-    let rank: String
-    let netSalary: Double?
-    let deductions: [(title: String, amount: Double?)]?
-
-    var deductionTotal: Double { deductions?.reduce(0) { $0 + ($1.amount ?? 0) } ?? 0 }
-
-    /// نص كامل يُعاد كقيمة للاختصار (يمكن إرساله برسالة أو حفظه في ملاحظة).
-    var summary: String {
-        var lines = ["\(name) — \(month)"]
-        if !rank.isEmpty { lines.append(rank) }
-        lines.append(tr("صافي الراتب: \(Money.format(netSalary))", "Net salary: \(Money.format(netSalary))"))
-        if let deductions {
-            if deductions.isEmpty {
-                lines.append(tr("لا توجد استقطاعات", "No deductions"))
-            } else {
-                for d in deductions { lines.append("• \(d.title): \(Money.format(d.amount))") }
-                lines.append(tr("مجموع الاستقطاعات: \(Money.format(deductionTotal))", "Total deductions: \(Money.format(deductionTotal))"))
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    /// جملة قصيرة يقرؤها Siri.
-    var spokenSummary: String {
-        var text = tr("\(name)، \(month): صافي الراتب \(Money.format(netSalary))",
-                      "\(name), \(month): net salary \(Money.format(netSalary))")
-        if let deductions, !deductions.isEmpty {
-            text += tr("، والاستقطاعات \(Money.format(deductionTotal))", ", deductions \(Money.format(deductionTotal))")
-        }
-        return text
-    }
-}
-
-enum ShortcutSearch {
-    @MainActor
-    static func run(name: String, range: ShortcutMonthRange, includeDeductions: Bool) throws -> [ShortcutResult] {
-        let context = SharedModel.container.mainContext
-        let months = try EmployeeLookup.monthNames(limit: range.limit)
-        let employees = try EmployeeLookup.find(name, in: months).prefix(30)
-
-        return try employees.map { e in
-            var lines: [(title: String, amount: Double?)]?
-            if includeDeductions {
-                let month = e.month
-                let key = e.matchKey
-                let found = try context.fetch(FetchDescriptor<Deduction>(
-                    predicate: #Predicate { $0.month == month && $0.matchKey == key },
-                    sortBy: [SortDescriptor(\.title)]
-                ))
-                lines = found.map { (title: $0.title, amount: $0.amount) }
-            }
-            return ShortcutResult(name: e.name, month: e.month, rank: e.rank, netSalary: e.netSalary, deductions: lines)
-        }
-    }
-}
-
-// MARK: - البطاقة التي تظهر في الاختصارات وSiri
-
-struct ShortcutResultsView: View {
-    let results: [ShortcutResult]
-    let total: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if results.isEmpty {
-                Label(tr("لا توجد نتائج", "No results"), systemImage: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(results) { r in
-                Button(intent: SelectShortcutResultIntent(recordID: r.recordID)) {
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(r.name).font(.headline).lineLimit(2).multilineTextAlignment(.leading)
-                            Text([r.month, r.rank].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let deductions = r.deductions, !deductions.isEmpty {
-                                Text(tr("الاستقطاعات: \(Money.format(r.deductionTotal))", "Deductions: \(Money.format(r.deductionTotal))"))
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        Text(Money.format(r.netSalary)).font(.headline.monospacedDigit())
-                        Image(systemName: "chevron.forward")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if r.id != results.last?.id { Divider() }
-            }
-            if total > results.count {
-                Text(tr("و\(Num.format(total - results.count)) نتائج أخرى، اكتب الاسم كاملاً لتضييق البحث",
-                        "and \(Num.format(total - results.count)) more — type the full name to narrow it down"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
-    }
-}
-
-// MARK: - قسيمة الراتب في نافذة منبثقة: اختيار الموظف ← التفاصيل ← نسخ كصورة
-
-/// موظف في شهر معيّن، يظهر في قائمة البحث داخل الاختصار.
+/// موظف في شهر معيّن.
 struct EmployeeEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "موظف"
     static let defaultQuery = EmployeeQuery()
 
-    /// الشهر والاسم معاً يحددان السجل.
+    /// "الشهر | الاسم" يحدد السجل (فاصل عادي، لأن الأحرف الخاصة قد تضيع عند حفظ الاختصار).
     let id: String
     let name: String
     let month: String
@@ -358,7 +248,7 @@ struct EmployeeEntity: AppEntity {
     }
 }
 
-/// البحث بالاسم عند الكتابة في نافذة الاختيار (كل الأشهر، الأحدث أولاً).
+/// البحث بالاسم عند الكتابة في نافذة الاختيار (آخر شهر).
 struct EmployeeQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [EmployeeEntity] {
         try await EmployeeLookup.entities(ids: identifiers)
@@ -413,7 +303,6 @@ enum EmployeeLookup {
 
     @MainActor
     static func search(_ text: String) throws -> [EmployeeEntity] {
-        // نافذة "قسيمة راتب" تبحث في آخر شهر فقط.
         try find(text, in: monthNames(limit: 1)).prefix(60).map(EmployeeEntity.init)
     }
 
@@ -444,108 +333,7 @@ enum EmployeeLookup {
     }
 }
 
-/// اختصار "قسيمة راتب": يفتح نافذة بحث فوق أي تطبيق، وبعد اختيار النتيجة تظهر
-/// تفاصيل الراتب والاستقطاعات مع زر "نسخ كصورة". يعيد صورة القسيمة لاستخدامها في خطوات أخرى.
-struct ShowPayslipIntent: AppIntent {
-    static let title: LocalizedStringResource = "قسيمة راتب"
-    static let description = IntentDescription(
-        "ابحث بالاسم واختر النتيجة لعرض تفاصيل الراتب والاستقطاعات ونسخها كصورة، بدون فتح التطبيق.",
-        categoryName: "البحث"
-    )
-
-    @Parameter(title: "الموظف", requestValueDialog: "اكتب الاسم واختر النتيجة")
-    var employee: EmployeeEntity
-
-    init() {}
-    init(employee: EmployeeEntity) { self.employee = employee }
-
-    static var parameterSummary: some ParameterSummary {
-        Summary("اعرض قسيمة \(\.$employee)")
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
-        guard let record = try EmployeeLookup.employee(id: employee.id) else {
-            throw PayslipExporter.ExportError.renderFailed
-        }
-        let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
-        let image = IntentFile(fileURL: files.imageURL, filename: files.imageURL.lastPathComponent, type: .png)
-        return .result(value: image, snippetIntent: PayslipSnippetIntent(employee: employee))
-    }
-}
-
-/// محتوى النافذة المنبثقة: يُعاد رسمه بعد الضغط على "نسخ كصورة" ليظهر "تم النسخ".
-struct PayslipSnippetIntent: SnippetIntent {
-    static let title: LocalizedStringResource = "قسيمة راتب"
-    static let isDiscoverable = false
-
-    @Parameter(title: "الموظف")
-    var employee: EmployeeEntity
-
-    init() {}
-    init(employee: EmployeeEntity) { self.employee = employee }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ShowsSnippetView {
-        guard let record = try EmployeeLookup.employee(id: employee.id) else {
-            return .result(view: AnyView(Text(tr("لم يعد هذا السجل موجوداً.", "This record no longer exists.")).padding()))
-        }
-        let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
-        let copied = PayslipClipboard.wasCopied(employee.id)
-        return .result(view: AnyView(PayslipSnippetView(data: data, entity: employee, copied: copied)))
-    }
-}
-
-/// زر "نسخ كصورة" داخل النافذة: يرسم القسيمة ويضعها في الحافظة.
-struct CopyPayslipImageIntent: AppIntent {
-    static let title: LocalizedStringResource = "نسخ قسيمة الراتب كصورة"
-    static let isDiscoverable = false
-
-    /// معرّف السجل كنص عادي (الشهر | الاسم)، حتى لا يحتاج النظام إلى البحث عنه من جديد.
-    @Parameter(title: "السجل")
-    var recordID: String
-
-    init() {}
-    init(recordID: String) { self.recordID = recordID }
-
-    @MainActor
-    func perform() async throws -> some IntentResult {
-        guard let record = try EmployeeLookup.employee(id: recordID) else { throw CopyError.notFound }
-        let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
-        guard let png = files.image.pngData() else { throw CopyError.renderFailed }
-        // الصورة فقط في الحافظة (بدون نص)، فتُلصق كصورة في واتساب والملاحظات.
-        UIPasteboard.general.setItems([[UTType.png.identifier: png]])
-        PayslipClipboard.markCopied(recordID)
-        return .result()
-    }
-
-    enum CopyError: LocalizedError {
-        case notFound, renderFailed
-        var errorDescription: String? {
-            switch self {
-            case .notFound: tr("لم يُعثر على السجل.", "Record not found.")
-            case .renderFailed: tr("تعذّر إنشاء الصورة.", "Couldn't create the image.")
-            }
-        }
-    }
-}
-
-/// يتذكر آخر قسيمة نُسخت (لمدة دقيقة) حتى يظهر "تم النسخ" على الزر.
-enum PayslipClipboard {
-    private static let idKey = "lastCopiedPayslip"
-    private static let dateKey = "lastCopiedPayslipDate"
-
-    static func markCopied(_ id: String) {
-        UserDefaults.standard.set(id, forKey: idKey)
-        UserDefaults.standard.set(Date(), forKey: dateKey)
-    }
-
-    static func wasCopied(_ id: String) -> Bool {
-        guard UserDefaults.standard.string(forKey: idKey) == id,
-              let date = UserDefaults.standard.object(forKey: dateKey) as? Date else { return false }
-        return Date().timeIntervalSince(date) < 60
-    }
-}
+// MARK: - بطاقة النافذة المنبثقة
 
 /// قيم بسيطة للنافذة (بدون كائنات قاعدة البيانات).
 struct PayslipSnippetData {
@@ -574,10 +362,6 @@ struct PayslipSnippetData {
 
 struct PayslipSnippetView: View {
     let data: PayslipSnippetData
-    let entity: EmployeeEntity
-    let copied: Bool
-    /// زر "كل النتائج" عند الوصول من قائمة نتائج البحث.
-    var showBack = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -630,22 +414,6 @@ struct PayslipSnippetView: View {
                     }
                     .font(.subheadline)
                 }
-            }
-
-            Button(intent: CopyPayslipImageIntent(recordID: entity.id)) {
-                Label(copied ? tr("تم نسخ الصورة", "Image copied") : tr("نسخ كصورة", "Copy as image"),
-                      systemImage: copied ? "checkmark" : "doc.on.doc")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(copied ? .green : .blue)
-
-            if showBack {
-                Button(intent: SelectShortcutResultIntent(recordID: "")) {
-                    Label(tr("كل النتائج", "All results"), systemImage: "list.bullet")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
             }
         }
         .padding()
