@@ -294,7 +294,7 @@ struct EmployeeRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(employee.name)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

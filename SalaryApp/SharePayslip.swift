@@ -78,9 +78,9 @@ struct ShareOptionsSheet: View {
             Image(uiImage: files.image)
                 .resizable()
                 .scaledToFit()
-                .frame(maxHeight: 360)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
+                .frame(maxHeight: 360)
         } else if let errorText {
             ContentUnavailableView(errorText, systemImage: "exclamationmark.triangle")
         } else {
