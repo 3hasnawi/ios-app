@@ -2,7 +2,7 @@ name: SalaryApp
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
 packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation

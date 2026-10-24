@@ -1,6 +1,8 @@
 import AppIntents
 import SwiftData
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 /// قاعدة بيانات واحدة يشترك فيها التطبيق واختصارات تطبيق "الاختصارات" (Shortcuts) وSiri.
 enum SharedModel {
@@ -115,6 +117,16 @@ struct OpenSearchIntent: AppIntent {
 
 struct SalaryShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: ShowPayslipIntent(),
+            phrases: [
+                "اعرض قسيمة راتب في \(.applicationName)",
+                "قسيمة راتب من \(.applicationName)",
+                "Show a payslip in \(.applicationName)",
+            ],
+            shortTitle: "قسيمة راتب",
+            systemImageName: "doc.text.magnifyingglass"
+        )
         AppShortcut(
             intent: SearchEmployeeIntent(),
             phrases: [
@@ -254,6 +266,286 @@ struct ShortcutResultsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .padding()
+        .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
+    }
+}
+
+// MARK: - قسيمة الراتب في نافذة منبثقة: اختيار الموظف ← التفاصيل ← نسخ كصورة
+
+/// موظف في شهر معيّن، يظهر في قائمة البحث داخل الاختصار.
+struct EmployeeEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "موظف"
+    static let defaultQuery = EmployeeQuery()
+
+    /// الشهر والاسم معاً يحددان السجل.
+    let id: String
+    let name: String
+    let month: String
+    let netSalary: Double?
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(
+            title: "\(name)",
+            subtitle: "\(month) · \(Money.format(netSalary))",
+            image: .init(systemName: "person.crop.circle.fill")
+        )
+    }
+
+    static let separator = "\u{1F}"
+
+    init(_ employee: Employee) {
+        id = employee.month + Self.separator + employee.name
+        name = employee.name
+        month = employee.month
+        netSalary = employee.netSalary
+    }
+}
+
+/// البحث بالاسم عند الكتابة في نافذة الاختيار (كل الأشهر، الأحدث أولاً).
+struct EmployeeQuery: EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [EmployeeEntity] {
+        try await EmployeeLookup.entities(ids: identifiers)
+    }
+
+    func entities(matching string: String) async throws -> [EmployeeEntity] {
+        try await EmployeeLookup.search(string)
+    }
+
+    func suggestedEntities() async throws -> [EmployeeEntity] { [] }
+}
+
+enum EmployeeLookup {
+    @MainActor
+    static func search(_ text: String) throws -> [EmployeeEntity] {
+        let context = SharedModel.container.mainContext
+        let tokens = ArabicText.normalize(text).split(separator: " ").map(String.init)
+        guard let first = tokens.first else { return [] }
+        let months = try context.fetch(FetchDescriptor<PayrollMonth>(sortBy: [
+            SortDescriptor(\.sortKey, order: .reverse), SortDescriptor(\.importedAt, order: .reverse),
+        ])).map(\.name)
+        let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+
+        var descriptor = FetchDescriptor<Employee>(
+            predicate: #Predicate { $0.nameKey.contains(first) },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        descriptor.fetchLimit = 400
+        return try context.fetch(descriptor)
+            .filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
+            .sorted { (order[$0.month] ?? .max, $0.name) < (order[$1.month] ?? .max, $1.name) }
+            .prefix(40)
+            .map(EmployeeEntity.init)
+    }
+
+    @MainActor
+    static func entities(ids: [String]) throws -> [EmployeeEntity] {
+        try ids.compactMap { try employee(id: $0).map(EmployeeEntity.init) }
+    }
+
+    @MainActor
+    static func employee(id: String) throws -> Employee? {
+        let parts = id.components(separatedBy: EmployeeEntity.separator)
+        guard parts.count == 2 else { return nil }
+        let month = parts[0]
+        let name = parts[1]
+        var descriptor = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month && $0.name == name })
+        descriptor.fetchLimit = 1
+        return try SharedModel.container.mainContext.fetch(descriptor).first
+    }
+
+    @MainActor
+    static func deductions(of employee: Employee) throws -> [Deduction] {
+        let month = employee.month
+        let key = employee.matchKey
+        return try SharedModel.container.mainContext.fetch(FetchDescriptor<Deduction>(
+            predicate: #Predicate { $0.month == month && $0.matchKey == key },
+            sortBy: [SortDescriptor(\.title)]
+        ))
+    }
+}
+
+/// اختصار "قسيمة راتب": يفتح نافذة بحث فوق أي تطبيق، وبعد اختيار النتيجة تظهر
+/// تفاصيل الراتب والاستقطاعات مع زر "نسخ كصورة". يعيد صورة القسيمة لاستخدامها في خطوات أخرى.
+struct ShowPayslipIntent: AppIntent {
+    static let title: LocalizedStringResource = "قسيمة راتب"
+    static let description = IntentDescription(
+        "ابحث بالاسم واختر النتيجة لعرض تفاصيل الراتب والاستقطاعات ونسخها كصورة، بدون فتح التطبيق.",
+        categoryName: "البحث"
+    )
+
+    @Parameter(title: "الموظف", requestValueDialog: "اكتب الاسم واختر النتيجة")
+    var employee: EmployeeEntity
+
+    init() {}
+    init(employee: EmployeeEntity) { self.employee = employee }
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("اعرض قسيمة \(\.$employee)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        guard let record = try EmployeeLookup.employee(id: employee.id) else {
+            throw PayslipExporter.ExportError.renderFailed
+        }
+        let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+        let image = IntentFile(fileURL: files.imageURL, filename: files.imageURL.lastPathComponent, type: .png)
+        return .result(value: image, snippetIntent: PayslipSnippetIntent(employee: employee))
+    }
+}
+
+/// محتوى النافذة المنبثقة: يُعاد رسمه بعد الضغط على "نسخ كصورة" ليظهر "تم النسخ".
+struct PayslipSnippetIntent: SnippetIntent {
+    static let title: LocalizedStringResource = "قسيمة راتب"
+    static let isDiscoverable = false
+
+    @Parameter(title: "الموظف")
+    var employee: EmployeeEntity
+
+    init() {}
+    init(employee: EmployeeEntity) { self.employee = employee }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ShowsSnippetView {
+        guard let record = try EmployeeLookup.employee(id: employee.id) else {
+            return .result(view: AnyView(Text(tr("لم يعد هذا السجل موجوداً.", "This record no longer exists.")).padding()))
+        }
+        let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+        let copied = PayslipClipboard.wasCopied(employee.id)
+        return .result(view: AnyView(PayslipSnippetView(data: data, entity: employee, copied: copied)))
+    }
+}
+
+/// زر "نسخ كصورة" داخل النافذة: يرسم القسيمة ويضعها في الحافظة.
+struct CopyPayslipImageIntent: AppIntent {
+    static let title: LocalizedStringResource = "نسخ قسيمة الراتب كصورة"
+    static let isDiscoverable = false
+
+    @Parameter(title: "الموظف")
+    var employee: EmployeeEntity
+
+    init() {}
+    init(employee: EmployeeEntity) { self.employee = employee }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        guard let record = try EmployeeLookup.employee(id: employee.id) else { return .result() }
+        let files = try PayslipExporter.export(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+        UIPasteboard.general.image = files.image
+        PayslipClipboard.markCopied(employee.id)
+        return .result()
+    }
+}
+
+/// يتذكر آخر قسيمة نُسخت (لمدة دقيقة) حتى يظهر "تم النسخ" على الزر.
+enum PayslipClipboard {
+    private static let idKey = "lastCopiedPayslip"
+    private static let dateKey = "lastCopiedPayslipDate"
+
+    static func markCopied(_ id: String) {
+        UserDefaults.standard.set(id, forKey: idKey)
+        UserDefaults.standard.set(Date(), forKey: dateKey)
+    }
+
+    static func wasCopied(_ id: String) -> Bool {
+        guard UserDefaults.standard.string(forKey: idKey) == id,
+              let date = UserDefaults.standard.object(forKey: dateKey) as? Date else { return false }
+        return Date().timeIntervalSince(date) < 60
+    }
+}
+
+/// قيم بسيطة للنافذة (بدون كائنات قاعدة البيانات).
+struct PayslipSnippetData {
+    struct Line: Identifiable {
+        let id = UUID()
+        let title: String
+        let note: String
+        let amount: Double?
+    }
+
+    let name: String
+    let month: String
+    let details: String
+    let netSalary: Double?
+    let deductions: [Line]
+    var total: Double { deductions.reduce(0) { $0 + ($1.amount ?? 0) } }
+
+    init(employee: Employee, deductions: [Deduction]) {
+        name = employee.name
+        month = employee.month
+        details = [employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
+        netSalary = employee.netSalary
+        self.deductions = deductions.map { Line(title: $0.title.orDash, note: $0.note, amount: $0.amount) }
+    }
+}
+
+struct PayslipSnippetView: View {
+    let data: PayslipSnippetData
+    let entity: EmployeeEntity
+    let copied: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(data.month, systemImage: "calendar")
+                    .font(.caption.weight(.semibold))
+                    .opacity(0.9)
+                Text(data.name)
+                    .font(.headline)
+                if !data.details.isEmpty {
+                    Text(data.details).font(.caption).opacity(0.85)
+                }
+                Text(tr("صافي الراتب", "Net salary"))
+                    .font(.caption2.weight(.medium))
+                    .opacity(0.8)
+                Text(Money.format(data.netSalary))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Theme.salaryGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(tr("الاستقطاعات", "Deductions")).font(.subheadline.weight(.semibold))
+                if data.deductions.isEmpty {
+                    Label(tr("لا توجد استقطاعات", "No deductions"), systemImage: "checkmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(data.deductions) { line in
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(line.title)
+                                if !line.note.isEmpty {
+                                    Text(line.note).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Text(Money.format(line.amount)).monospacedDigit().foregroundStyle(.red)
+                        }
+                        .font(.subheadline)
+                    }
+                    Divider()
+                    HStack {
+                        Text(tr("المجموع", "Total")).fontWeight(.semibold)
+                        Spacer()
+                        Text(Money.format(data.total)).fontWeight(.bold).monospacedDigit().foregroundStyle(.red)
+                    }
+                    .font(.subheadline)
+                }
+            }
+
+            Button(intent: CopyPayslipImageIntent(employee: entity)) {
+                Label(copied ? tr("تم نسخ الصورة", "Image copied") : tr("نسخ كصورة", "Copy as image"),
+                      systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(copied ? .green : .blue)
         }
         .padding()
         .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
