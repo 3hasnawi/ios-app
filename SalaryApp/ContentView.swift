@@ -40,21 +40,45 @@ struct ContentView: View {
         .commaSeparatedText,
     ]
 
-    /// الشهر المختار، أو أحدث شهر إذا لم يُختر شيء.
-    private var currentMonth: PayrollMonth? {
-        months.first { $0.name == selectedMonth } ?? months.first
+    /// الأشهر المختارة (تُحفظ مفصولة بـ "|")، أو أحدث شهر إذا لم يُختر شيء.
+    private var selectedMonths: [PayrollMonth] {
+        let names = Set(selectedMonth.split(separator: "|").map(String.init))
+        let chosen = months.filter { names.contains($0.name) }
+        return chosen.isEmpty ? Array(months.prefix(1)) : chosen
+    }
+
+    private var currentMonth: PayrollMonth? { selectedMonths.first }
+
+    private func setSelection(_ names: [String]) {
+        selectedMonth = names.joined(separator: "|")
+        path = []
+    }
+
+    private func toggle(_ month: PayrollMonth) {
+        var names = selectedMonths.map(\.name)
+        if let i = names.firstIndex(of: month.name) {
+            guard names.count > 1 else { return }   // يبقى شهر واحد على الأقل
+            names.remove(at: i)
+        } else {
+            names.append(month.name)
+        }
+        setSelection(names)
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            EmployeeList(search: search, month: currentMonth)
+            VStack(spacing: 10) {
+                if !months.isEmpty {
+                    searchField
+                    monthMenu
+                }
+                EmployeeList(search: search, months: selectedMonths)
+                    .frame(maxHeight: .infinity)
+            }
                 .navigationTitle("الرواتب")
-                .adaptiveSearchable(text: $search, prompt: "ابحث بالاسم")
+                .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        monthMenu
-                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             showImporter = true
@@ -100,32 +124,82 @@ struct ContentView: View {
         }
     }
 
-    /// قائمة اختيار الشهر الذي يتم البحث فيه.
-    private var monthMenu: some View {
-        Menu {
-            Picker("الشهر", selection: Binding(
-                get: { currentMonth?.name ?? "" },
-                set: { selectedMonth = $0; path = [] }
-            )) {
-                ForEach(months) { month in
-                    Text(month.name).tag(month.name)
+    /// حقل البحث بالاسم.
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("ابحث بالاسم", text: $search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+            if !search.isEmpty {
+                Button {
+                    search = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("مسح")
             }
-            if let month = currentMonth {
-                Divider()
-                Button("حذف بيانات \(month.name)", systemImage: "trash", role: .destructive) {
-                    monthToDelete = month
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    /// قائمة منسدلة لاختيار شهر أو عدة أشهر (تبقى مفتوحة أثناء التحديد).
+    private var monthMenu: some View {
+        let chosen = Set(selectedMonths.map(\.name))
+        return Menu {
+            Button("كل الأشهر", systemImage: chosen.count == months.count ? "checkmark.circle.fill" : "circle") {
+                setSelection(months.map(\.name))
+            }
+            .menuActionDismissBehavior(.disabled)
+            Divider()
+            ForEach(months) { month in
+                Button {
+                    toggle(month)
+                } label: {
+                    if chosen.contains(month.name) {
+                        Label(month.name, systemImage: "checkmark")
+                    } else {
+                        Text(month.name)
+                    }
+                }
+                .menuActionDismissBehavior(.disabled)
+            }
+            Divider()
+            Menu("حذف شهر", systemImage: "trash") {
+                ForEach(months) { month in
+                    Button(month.name, role: .destructive) { monthToDelete = month }
                 }
             }
         } label: {
-            // HStack بدل Label: شريط الأدوات يعرض أيقونة Label فقط ويخفي اسم الشهر.
-            HStack(spacing: 4) {
+            HStack(spacing: 8) {
                 Image(systemName: "calendar")
-                Text(currentMonth?.name ?? "لا توجد أشهر")
-                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                Text(monthMenuTitle)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
         }
-        .disabled(months.isEmpty)
+        .padding(.horizontal)
+    }
+
+    private var monthMenuTitle: String {
+        let chosen = selectedMonths
+        if chosen.count == 1 { return chosen[0].name }
+        if chosen.count == months.count { return "كل الأشهر (\(chosen.count.formatted()))" }
+        return "\(chosen.count.formatted()) أشهر: " + chosen.map(\.name).joined(separator: "، ")
     }
 
     private func applyLaunchOptions() async {
@@ -207,7 +281,7 @@ struct ContentView: View {
         Task {
             do {
                 try await importer.delete(month: name)
-                if selectedMonth == name { selectedMonth = "" }
+                setSelection(selectedMonths.map(\.name).filter { $0 != name })
                 path = []
             } catch {
                 message = error.localizedDescription
@@ -220,50 +294,55 @@ struct EmployeeList: View {
     @Query private var employees: [Employee]
     @State private var shareTarget: Employee?
     private let tokens: [String]
-    private let month: PayrollMonth?
+    private let months: [PayrollMonth]
 
-    init(search: String, month: PayrollMonth?) {
-        self.month = month
+    init(search: String, months: [PayrollMonth]) {
+        self.months = months
         tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
 
-        // قاعدة البيانات تُصفّي بالشهر وأول كلمتين، والباقي يُطابق في الذاكرة
+        // قاعدة البيانات تُصفّي بالأشهر المختارة وأول كلمتين، والباقي يُطابق في الذاكرة
         // حتى يجد "محمد حسين" الاسم "محمد علي حسين".
-        let monthName = month?.name ?? ""
+        let monthNames = months.map(\.name)
         let first = tokens.first ?? ""
         let second = tokens.count > 1 ? tokens[1] : ""
         let filter: Predicate<Employee>
         if second.isEmpty {
-            filter = #Predicate { $0.month == monthName && $0.nameKey.contains(first) }
+            filter = #Predicate { monthNames.contains($0.month) && $0.nameKey.contains(first) }
         } else {
-            filter = #Predicate { $0.month == monthName && $0.nameKey.contains(first) && $0.nameKey.contains(second) }
+            filter = #Predicate { monthNames.contains($0.month) && $0.nameKey.contains(first) && $0.nameKey.contains(second) }
         }
         var descriptor = FetchDescriptor(predicate: filter, sortBy: [SortDescriptor(\.name)])
         // بدون بحث لا نعرض شيئاً (fetchLimit = 0 يعني "بلا حد" فنستخدم 1).
-        descriptor.fetchLimit = tokens.isEmpty ? 1 : 300
+        descriptor.fetchLimit = tokens.isEmpty ? 1 : 300 * max(months.count, 1)
         _employees = Query(descriptor)
     }
 
+    /// النتائج مرتبة بالاسم، ثم بالشهر من الأحدث إلى الأقدم.
     private var results: [Employee] {
         guard !tokens.isEmpty else { return [] }
-        guard tokens.count > 2 else { return employees }
-        return employees.filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
+        let matched = tokens.count > 2 ? employees.filter { e in tokens.allSatisfy { e.nameKey.contains($0) } } : employees
+        guard months.count > 1 else { return matched }
+        let order = Dictionary(months.enumerated().map { ($1.name, $0) }, uniquingKeysWith: { a, _ in a })
+        return matched.sorted {
+            $0.name != $1.name ? $0.name < $1.name : (order[$0.month] ?? 0) < (order[$1.month] ?? 0)
+        }
     }
 
     var body: some View {
         let results = results
-        if let month {
+        if !months.isEmpty {
             if tokens.isEmpty {
                 ContentUnavailableView(
                     "ابحث بالاسم",
                     systemImage: "magnifyingglass",
-                    description: Text("شهر \(month.name): \(month.employeeCount.formatted()) موظف و\(month.deductionCount.formatted()) استقطاع.\nلتغيير الشهر اضغط على اسمه في الأعلى.")
+                    description: Text(summary)
                 )
             } else if results.isEmpty {
                 ContentUnavailableView.search
             } else {
                 List(results) { employee in
                     NavigationLink(value: employee) {
-                        EmployeeRow(employee: employee)
+                        EmployeeRow(employee: employee, showMonth: months.count > 1)
                     }
                     .contextMenu {
                         Button("مشاركة", systemImage: "square.and.arrow.up") {
@@ -288,10 +367,19 @@ struct EmployeeList: View {
             )
         }
     }
+
+    private var summary: String {
+        if months.count == 1, let month = months.first {
+            return "شهر \(month.name): \(month.employeeCount.formatted()) موظف و\(month.deductionCount.formatted()) استقطاع.\nلتغيير الشهر أو اختيار عدة أشهر استخدم القائمة في الأعلى."
+        }
+        let employees = months.reduce(0) { $0 + $1.employeeCount }
+        return "\(months.count.formatted()) أشهر مختارة: \(employees.formatted()) سجل موظف.\nالنتائج تُعرض مع اسم الشهر."
+    }
 }
 
 struct EmployeeRow: View {
     let employee: Employee
+    var showMonth = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -304,6 +392,11 @@ struct EmployeeRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if showMonth {
+                    Label(employee.month, systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
