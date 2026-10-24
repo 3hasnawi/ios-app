@@ -55,7 +55,7 @@ struct SearchEmployeeIntent: AppIntent {
     @Parameter(title: "الاسم", requestValueDialog: "ما اسم الموظف؟")
     var name: String
 
-    @Parameter(title: "الأشهر", default: .all)
+    @Parameter(title: "الأشهر", default: .latest)
     var range: ShortcutMonthRange
 
     @Parameter(title: "إظهار الاستقطاعات", default: true)
@@ -413,7 +413,8 @@ enum EmployeeLookup {
 
     @MainActor
     static func search(_ text: String) throws -> [EmployeeEntity] {
-        try find(text, in: monthNames()).prefix(60).map(EmployeeEntity.init)
+        // نافذة "قسيمة راتب" تبحث في آخر شهر فقط.
+        try find(text, in: monthNames(limit: 1)).prefix(60).map(EmployeeEntity.init)
     }
 
     @MainActor
