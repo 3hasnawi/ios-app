@@ -2,9 +2,25 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+/// خيارات تشغيل للاختبار الآلي على المحاكي، مثلاً:
+/// `xcrun simctl launch <device> com.example.SalaryApp -importFile /path/file.xlsx -search "احمد" -openFirst YES`
+/// لا تؤثر على الاستخدام العادي لأنها لا تُضبط إلا من سطر الأوامر.
+private enum LaunchOptions {
+    static var importFile: String? { UserDefaults.standard.string(forKey: "importFile") }
+    static var search: String { UserDefaults.standard.string(forKey: "search") ?? "" }
+    static var openFirst: Bool { UserDefaults.standard.bool(forKey: "openFirst") }
+
+    /// نتيجة الاستيراد تُكتب في Documents/import-report.txt ليقرأها سكربت الاختبار.
+    static func writeReport(_ text: String) {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        try? text.write(to: docs.appendingPathComponent("import-report.txt"), atomically: true, encoding: .utf8)
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var context
-    @State private var search = ""
+    @State private var search = LaunchOptions.search
+    @State private var path: [Employee] = []
     @State private var showImporter = false
     @State private var isImporting = false
     @State private var message: String?
@@ -16,7 +32,7 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             EmployeeList(search: search, employeeCount: employeeCount)
                 .navigationTitle("الرواتب")
                 .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "ابحث بالاسم")
@@ -46,7 +62,10 @@ struct ContentView: View {
                 } message: {
                     Text(message ?? "")
                 }
-                .onAppear(perform: refreshCount)
+                .task {
+                    refreshCount()
+                    await applyLaunchOptions()
+                }
         }
     }
 
@@ -54,35 +73,58 @@ struct ContentView: View {
         employeeCount = (try? context.fetchCount(FetchDescriptor<Employee>())) ?? 0
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        let urls: [URL]
-        switch result {
-        case .success(let picked): urls = picked
-        case .failure(let error): message = error.localizedDescription; return
+    private func applyLaunchOptions() async {
+        if let file = LaunchOptions.importFile {
+            await importFiles([URL(fileURLWithPath: file)])
         }
-        guard !urls.isEmpty else { return }
+        let key = ArabicText.normalize(search)
+        if LaunchOptions.openFirst, !key.isEmpty {
+            var descriptor = FetchDescriptor<Employee>(predicate: #Predicate { $0.nameKey.contains(key) }, sortBy: [SortDescriptor(\.name)])
+            descriptor.fetchLimit = 1
+            if let first = try? context.fetch(descriptor).first {
+                path = [first]
+            }
+        }
+    }
 
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls) where !urls.isEmpty:
+            Task { await importFiles(urls) }
+        case .success:
+            break
+        case .failure(let error):
+            message = error.localizedDescription
+        }
+    }
+
+    private func importFiles(_ urls: [URL]) async {
         isImporting = true
         let container = context.container
-        Task {
-            do {
-                // القراءة والحفظ في الخلفية حتى لا تتجمد الواجهة مع الملفات الكبيرة.
-                let imported = try await Task.detached(priority: .userInitiated) {
-                    var all = ImportResult()
-                    for url in urls {
-                        let granted = url.startAccessingSecurityScopedResource()
-                        defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                        all.merge(try ExcelImporter.load(url: url))
-                    }
-                    return all
-                }.value
-                try await DataImporter(modelContainer: container).replace(with: imported)
-                message = "تم استيراد \(imported.employees.count) موظف و\(imported.deductions.count) استقطاع."
-            } catch {
-                message = error.localizedDescription
-            }
-            refreshCount()
-            isImporting = false
+        let start = Date()
+        let report: String
+        do {
+            // القراءة والحفظ في الخلفية حتى لا تتجمد الواجهة مع الملفات الكبيرة.
+            let imported = try await Task.detached(priority: .userInitiated) {
+                var all = ImportResult()
+                for url in urls {
+                    let granted = url.startAccessingSecurityScopedResource()
+                    defer { if granted { url.stopAccessingSecurityScopedResource() } }
+                    all.merge(try ExcelImporter.load(url: url))
+                }
+                return all
+            }.value
+            try await DataImporter(modelContainer: container).replace(with: imported)
+            message = "تم استيراد \(imported.employees.count) موظف و\(imported.deductions.count) استقطاع."
+            report = "employees=\(imported.employees.count) deductions=\(imported.deductions.count)"
+        } catch {
+            message = error.localizedDescription
+            report = "error=\(error.localizedDescription)"
+        }
+        refreshCount()
+        isImporting = false
+        if LaunchOptions.importFile != nil {
+            LaunchOptions.writeReport(report + String(format: " seconds=%.1f\n", Date().timeIntervalSince(start)))
         }
     }
 }

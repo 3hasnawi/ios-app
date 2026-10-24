@@ -1,0 +1,132 @@
+name: Simulator test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # لنشر الصور في فرع screenshots
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUNDLE: com.example.SalaryApp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          mkdir -p ci-output/screenshots
+
+      - name: Pick iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import sys, json, re
+          devices = json.load(sys.stdin)["devices"]
+          runtimes = sorted((k for k in devices if "iOS" in k),
+                            key=lambda k: [int(x) for x in re.findall(r"\d+", k.split("iOS")[-1])])
+          phones = [d for d in devices[runtimes[-1]] if d["name"].startswith("iPhone")]
+          pro = [d for d in phones if "Pro" in d["name"] and "Max" not in d["name"]]
+          d = (pro or phones)[0]
+          print(d["udid"]); print(d["name"], runtimes[-1], file=sys.stderr)')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Build for simulator
+        run: |
+          xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Debug \
+            -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build > ci-output/build.log 2>&1 \
+            || { grep -E "error:|warning: .*(isolat|Sendable)" ci-output/build.log | sort -u | head -40 | sed 's/^/::error::/'; exit 1; }
+          grep -cE "warning:" ci-output/build.log || true
+
+      - name: Create test workbook (made-up names)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -q openpyxl
+          .venv/bin/python ci/make_test_xlsx.py test.xlsx ci-output/expected.txt 26000
+
+      - name: Boot simulator and install
+        run: |
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/SalaryApp.app
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          mkdir -p "$DATA/Documents"
+          cp test.xlsx "$DATA/Documents/test.xlsx"
+          echo "DATA=$DATA" >> "$GITHUB_ENV"
+
+      - name: Run app and take screenshots
+        run: |
+          launch() {
+            xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+            xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -AppleLocale ar_IQ "$@"
+          }
+          shot() { sleep "${2:-5}"; xcrun simctl io "$UDID" screenshot "ci-output/screenshots/$1.png"; }
+
+          # 1) أول تشغيل بدون بيانات
+          launch
+          shot 01-empty
+
+          # 2) استيراد ملف Excel (26 ألف موظف) وانتظار التقرير
+          launch -importFile "$DATA/Documents/test.xlsx"
+          for i in $(seq 1 240); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 240s"; } | tee ci-output/import-report.txt
+          shot 02-import-done 2
+
+          # 3) البحث بالاسم
+          launch -search "احمد علي"
+          shot 03-search
+
+          # 4) تفاصيل موظف لديه استقطاعات (الاسم في ورقة الاستقطاعات مكتوب "احمد" بلا همزة)
+          launch -search "أحمد علي حسين الدليمي" -openFirst YES
+          shot 04-detail-deductions
+
+          # 5) تفاصيل موظف بدون استقطاعات
+          launch -search "عمر خالد جاسم" -openFirst YES
+          shot 05-detail-no-deductions
+
+          # 6) الوضع الداكن
+          xcrun simctl ui "$UDID" appearance dark
+          launch -search "أحمد علي حسين الدليمي" -openFirst YES
+          shot 06-detail-dark
+
+      - name: Check import result
+        run: |
+          expected=$(cat ci-output/expected.txt)
+          actual=$(sed 's/ seconds=.*//' ci-output/import-report.txt)
+          echo "expected: $expected"; echo "actual:   $actual"
+          [ "$expected" = "$actual" ] || { echo "::error::Import mismatch: expected '$expected', got '$(cat ci-output/import-report.txt)'"; exit 1; }
+          echo "::notice::Import OK: $(cat ci-output/import-report.txt)"
+
+      - name: Publish screenshots to 'screenshots' branch
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tail -n 200 ci-output/build.log > ci-output/build-tail.log 2>/dev/null || true
+          rm -f ci-output/build.log
+          cd ci-output
+          git init -q -b screenshots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Simulator run for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-screenshots
+          path: ci-output
