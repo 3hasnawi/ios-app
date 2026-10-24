@@ -4,6 +4,9 @@ on:
   # البناء يدوي فقط (بأمر من صاحب المشروع)، لا يعمل تلقائياً عند الدمج.
   workflow_dispatch:
 
+permissions:
+  contents: write   # لنشر ملف التطبيق في صفحة الإصدارات
+
 jobs:
   build:
     runs-on: macos-26
@@ -41,3 +44,15 @@ jobs:
         with:
           name: SalaryApp-unsigned-ipa
           path: SalaryApp-unsigned.ipa
+
+      # ملف ipa مباشر (بدون ضغط) في صفحة الإصدارات، يُنزَّل ويُفتح على الآيفون مباشرة.
+      # آخر بناء دائماً على: https://github.com/<repo>/releases/latest/download/SalaryApp.ipa
+      - name: Publish IPA to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp SalaryApp-unsigned.ipa SalaryApp.ipa
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
+            --title "تطبيق الرواتب — بناء ${{ github.run_number }}" \
+            --notes "من الفرع ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" --latest

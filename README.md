@@ -47,7 +47,8 @@
 
 1. ارفع هذا المجلد إلى مستودع على GitHub (فرع `main`).
 2. كل `push` يشغّل **Actions ← Build iOS app** تلقائياً (أو شغّله يدوياً من زر *Run workflow*).
-3. بعد انتهاء البناء (حوالي 5–10 دقائق) نزّل `SalaryApp-unsigned-ipa` من صفحة التشغيل.
+3. بعد انتهاء البناء (حوالي 5–10 دقائق) يُنشر ملف `SalaryApp.ipa` في صفحة الإصدارات (Releases). آخر نسخة دائماً على:
+   https://github.com/3hasnawi/ios-app/releases/latest/download/SalaryApp.ipa
 
 ## التثبيت على الآيفون من Windows
 
