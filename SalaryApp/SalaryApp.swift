@@ -8,6 +8,6 @@ struct SalaryApp: App {
             ContentView()
                 .environment(\.layoutDirection, .rightToLeft)
         }
-        .modelContainer(for: [Employee.self, Deduction.self])
+        .modelContainer(for: [PayrollMonth.self, Employee.self, Deduction.self])
     }
 }

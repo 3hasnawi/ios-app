@@ -8,7 +8,8 @@ struct EmployeeDetailView: View {
     init(employee: Employee) {
         self.employee = employee
         let key = employee.matchKey
-        _deductions = Query(filter: #Predicate { $0.matchKey == key }, sort: \Deduction.title)
+        let month = employee.month
+        _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
     }
 
     private var total: Double {
@@ -34,6 +35,7 @@ struct EmployeeDetailView: View {
                 LabeledContent("الاسم", value: employee.name)
                 LabeledContent("الرتبة", value: employee.rank.orDash)
                 LabeledContent("محل العمل", value: employee.workplace.orDash)
+                LabeledContent("الشهر", value: employee.month.orDash)
             }
 
             Section("الاستقطاعات") {

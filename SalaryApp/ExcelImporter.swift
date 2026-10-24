@@ -41,9 +41,8 @@ nonisolated enum ImportError: LocalizedError {
 
 /// يقرأ ملفات Excel (xlsx) أو CSV ويتعرف على الأوراق والأعمدة من العناوين.
 ///
-/// - ورقة فيها الاسم + صافي الراتب ← ورقة موظفين. الأعمدة المزدوجة
-///   "اسم الاستقطاع" / "مبلغ الاستقطاع" (و"2اسم الاستقطاع" / "2مبلغ الاستقطاع"...) تُقرأ كاستقطاعات.
-/// - ورقة فيها الاسم + المبلغ (بدون صافي راتب) ← ورقة استقطاعات.
+/// - ورقة فيها الاسم + صافي الراتب ← ورقة موظفين (أعمدة الاستقطاع داخلها لا تُقرأ).
+/// - ورقة فيها الاسم + المبلغ (بدون صافي راتب) ← ورقة الاستقطاعات، وهي المصدر الوحيد للاستقطاعات.
 ///
 /// ملف xlsx يُقرأ صفاً صفاً (XMLParser) لأن ورقة رواتب كبيرة قد تتجاوز 50 ميغابايت من XML.
 nonisolated enum ExcelImporter {
@@ -166,8 +165,6 @@ nonisolated final class SheetParser {
         static let amount = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"]
         static let title = ["نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"]
         static let note = ["الملاحظات", "ملاحظات", "ملاحظة", "note"]
-        static let pairTitle = "اسم الاستقطاع"
-        static let pairAmount = "مبلغ الاستقطاع"
     }
 
     private struct EmployeeColumns {
@@ -175,8 +172,6 @@ nonisolated final class SheetParser {
         var rank: Int?
         var workplace: Int?
         var netSalary: Int
-        /// أزواج (عمود اسم الاستقطاع، عمود مبلغه).
-        var deductionPairs: [(title: Int, amount: Int)]
     }
 
     private struct DeductionColumns {
@@ -222,10 +217,7 @@ nonisolated final class SheetParser {
         if let net = Self.column(Synonyms.netSalary, in: headers, used: &used) {
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
             let workplace = Self.column(Synonyms.workplace, in: headers, used: &used)
-            return .employees(EmployeeColumns(
-                name: name, rank: rank, workplace: workplace, netSalary: net,
-                deductionPairs: Self.deductionPairs(in: headers)
-            ))
+            return .employees(EmployeeColumns(name: name, rank: rank, workplace: workplace, netSalary: net))
         }
         if let amount = Self.column(Synonyms.amount, in: headers, used: &used) {
             let title = Self.column(Synonyms.title, in: headers, used: &used)
@@ -245,13 +237,6 @@ nonisolated final class SheetParser {
             workplace: cell(row, columns.workplace),
             netSalary: ArabicText.number(from: cell(row, columns.netSalary))
         ))
-        for pair in columns.deductionPairs {
-            guard let amount = ArabicText.number(from: cell(row, pair.amount)), amount != 0 else { continue }
-            let title = cell(row, pair.title)
-            result.deductions.append(ImportedDeduction(
-                employeeName: name, title: title.isEmpty ? "استقطاع" : title, amount: amount, note: ""
-            ))
-        }
     }
 
     private func readDeduction(_ row: [String], _ columns: DeductionColumns) {
@@ -289,25 +274,6 @@ nonisolated final class SheetParser {
             }
         }
         return nil
-    }
-
-    /// "اسم الاستقطاع" مع "مبلغ الاستقطاع"، و"2اسم الاستقطاع" مع "2مبلغ الاستقطاع"، وهكذا.
-    private static func deductionPairs(in headers: [String]) -> [(title: Int, amount: Int)] {
-        let pairTitle = ArabicText.normalize(Synonyms.pairTitle)
-        let pairAmount = ArabicText.normalize(Synonyms.pairAmount)
-        func split(_ header: String) -> (base: String, digits: String) {
-            (header.filter { !$0.isASCII || !$0.isNumber }.trimmingCharacters(in: .whitespaces),
-             header.filter { $0.isASCII && $0.isNumber })
-        }
-        var pairs: [(title: Int, amount: Int)] = []
-        for (titleCol, header) in headers.enumerated() {
-            let (base, digits) = split(header)
-            guard base == pairTitle else { continue }
-            if let amountCol = headers.indices.first(where: { split(headers[$0]) == (pairAmount, digits) }) {
-                pairs.append((titleCol, amountCol))
-            }
-        }
-        return pairs
     }
 }
 

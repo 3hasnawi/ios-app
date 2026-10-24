@@ -46,11 +46,21 @@ jobs:
             || { grep -E "error:|warning: .*(isolat|Sendable)" ci-output/build.log | sort -u | head -40 | sed 's/^/::error::/'; exit 1; }
           grep -cE "warning:" ci-output/build.log || true
 
-      - name: Create test workbook (made-up names)
+      - name: Create test workbooks for two months (made-up names)
         run: |
           python3 -m venv .venv
           .venv/bin/pip install -q openpyxl
-          .venv/bin/python ci/make_test_xlsx.py test.xlsx ci-output/expected.txt 26000
+          mkdir -p test-files
+          .venv/bin/python ci/make_test_xlsx.py "test-files/تشرين الاول 2026.xlsx" oct.txt 26000
+          .venv/bin/python ci/make_test_xlsx.py "test-files/أيلول 2026.xlsx" sep.txt 3000 previous
+          # المجموع المتوقع للملفين معاً
+          cat oct.txt sep.txt | python3 -c '
+          import sys, re
+          e = d = 0
+          for line in sys.stdin:
+              m = dict(re.findall(r"(\w+)=(\d+)", line)); e += int(m["employees"]); d += int(m["deductions"])
+          print(f"employees={e} deductions={d} months=2")' > ci-output/expected.txt
+          cat ci-output/expected.txt
 
       - name: Boot simulator and install
         run: |
@@ -61,7 +71,7 @@ jobs:
           xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/SalaryApp.app
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           mkdir -p "$DATA/Documents"
-          cp test.xlsx "$DATA/Documents/test.xlsx"
+          cp test-files/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
       - name: Run app and take screenshots
@@ -76,31 +86,42 @@ jobs:
           launch
           shot 01-empty
 
-          # 2) استيراد ملف Excel (26 ألف موظف) وانتظار التقرير
-          launch -importFile "$DATA/Documents/test.xlsx"
-          for i in $(seq 1 240); do
+          # 2) استيراد ملفين معاً (شهران) وانتظار التقرير
+          launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
+          for i in $(seq 1 300); do
             [ -f "$DATA/Documents/import-report.txt" ] && break
             sleep 1
           done
-          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 240s"; } | tee ci-output/import-report.txt
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt
           shot 02-import-done 2
 
-          # 3) البحث بالاسم
+          # 3) الشاشة الرئيسية: أحدث شهر (تشرين الاول) مختار تلقائياً
+          launch
+          shot 03-month-latest
+
+          # 4) البحث بالاسم
           launch -search "احمد علي"
-          shot 03-search
+          shot 04-search
 
-          # 4) تفاصيل موظف لديه استقطاعات (الاسم في ورقة الاستقطاعات مكتوب "احمد" بلا همزة)
+          # 5) تفاصيل موظف لديه استقطاعات من ورقة الاستقطاعات فقط
+          #    (الاسم هناك مكتوب "احمد" بلا همزة، وعمود "شركة الاتصالات" داخل ورقة الرواتب يجب ألا يظهر)
           launch -search "أحمد علي حسين الدليمي" -openFirst YES
-          shot 04-detail-deductions
+          shot 05-detail-october
 
-          # 5) تفاصيل موظف بدون استقطاعات
+          # 6) تفاصيل موظف بدون استقطاعات
           launch -search "عمر خالد جاسم" -openFirst YES
-          shot 05-detail-no-deductions
+          shot 06-detail-no-deductions
 
-          # 6) الوضع الداكن
+          # 7) اختيار شهر أيلول: الشاشة الرئيسية ثم نفس الموظف براتب واستقطاعات مختلفة
+          launch -selectedMonth "أيلول 2026"
+          shot 07-month-september
+          launch -selectedMonth "أيلول 2026" -search "أحمد علي حسين الدليمي" -openFirst YES
+          shot 08-detail-september
+
+          # 9) الوضع الداكن
           xcrun simctl ui "$UDID" appearance dark
           launch -search "أحمد علي حسين الدليمي" -openFirst YES
-          shot 06-detail-dark
+          shot 09-detail-dark
 
       - name: Check import result
         run: |

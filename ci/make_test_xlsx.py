@@ -1,7 +1,11 @@
 """Builds a test payroll workbook with the same layout as the real monthly file,
 filled with made-up names, for the simulator test. Real payroll files never go to the repo.
 
-Usage: python make_test_xlsx.py OUT.xlsx EXPECTED.txt [EMPLOYEE_COUNT]
+The payroll sheet keeps its in-sheet deduction columns (اسم الاستقطاع / مبلغ الاستقطاع) filled in,
+so the test also checks that the app takes deductions from the deductions sheet only.
+
+Usage: python make_test_xlsx.py OUT.xlsx EXPECTED.txt [EMPLOYEE_COUNT] [VARIANT]
+VARIANT "previous" changes the fixed employee's salary and deductions, to tell two months apart.
 """
 import random
 import sys
@@ -10,7 +14,8 @@ from openpyxl import Workbook
 
 out_path, expected_path = sys.argv[1], sys.argv[2]
 count = int(sys.argv[3]) if len(sys.argv) > 3 else 26000
-rng = random.Random(2026)
+previous = len(sys.argv) > 4 and sys.argv[4] == "previous"
+rng = random.Random(2025 if previous else 2026)
 
 HEADERS = [
     "رقم الموظف", "الدرجة الوظيفية", "الرتبة", "Name_m", "الاسمي", "الخطورة", "الارزاق", "الاستثنائية",
@@ -58,15 +63,13 @@ main.append(HEADERS)
 # Two fixed employees the screenshots look up. The deduction sheet spells the first one
 # without hamza ("احمد") to check that matching ignores spelling differences.
 fixed = [
-    ("أحمد علي حسين الدليمي", "نقيب", "قسم النجدة / المقر", 1452300, True),
+    ("أحمد علي حسين الدليمي", "نقيب", "قسم النجدة / المقر", 1398000 if previous else 1452300, True),
     ("عمر خالد جاسم العبيدي", "مفوض3", "فوج الطوارئ الأول", 987650, False),
 ]
 names = []
-in_sheet_deductions = 0
 for name, rank, unit, net, phone in fixed:
     main.append(employee_row(name, rank, unit, net, phone))
     names.append(name)
-    in_sheet_deductions += phone
 
 for i in range(count - len(fixed)):
     if i == count // 2:
@@ -75,18 +78,19 @@ for i in range(count - len(fixed)):
     phone = rng.random() < 0.66
     main.append(employee_row(name, rng.choice(RANKS), rng.choice(UNITS), rng.randrange(700, 3000) * 1000 + rng.randrange(1000), phone))
     names.append(name)
-    in_sheet_deductions += phone
 
 ded = wb.create_sheet("الاستقطاعات")
 ded.append(["الرتبة", "الاسم", "اسم الفرع", "المبلغ", "الملاحظات", "القسم"])
 ded.append(["نقيب", "احمد علي حسين الدليمي", "مصرف الرشيد / فرع الجامعة", 437024, "قرض شخصي", "قسم النجدة / المقر"])
-ded.append(["نقيب", "احمد علي حسين الدليمي", "مديرية التنفيذ", 200000, "نفقة 2212 / 2024", "قسم النجدة / المقر"])
-sheet_deductions = 2
+sheet_deductions = 1
+if not previous:
+    ded.append(["نقيب", "احمد علي حسين الدليمي", "مديرية التنفيذ", 200000, "نفقة 2212 / 2024", "قسم النجدة / المقر"])
+    sheet_deductions += 1
 for _ in range(count // 4):
     ded.append([rng.choice(RANKS), rng.choice(names[2:]), rng.choice(CREDITORS), rng.randrange(50, 900) * 1000, "", rng.choice(UNITS)])
     sheet_deductions += 1
 
 wb.save(out_path)
 with open(expected_path, "w", encoding="utf-8") as f:
-    f.write(f"employees={count} deductions={in_sheet_deductions + sheet_deductions}\n")
-print(f"wrote {out_path}: employees={count} deductions={in_sheet_deductions + sheet_deductions}")
+    f.write(f"employees={count} deductions={sheet_deductions}\n")
+print(f"wrote {out_path}: employees={count} deductions={sheet_deductions}")
