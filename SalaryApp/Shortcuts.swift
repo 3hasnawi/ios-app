@@ -81,11 +81,10 @@ struct SearchEmployeeIntent: AppIntent {
             // نافذة اختيار فوق التطبيقات: كل نتيجة بشهرها وصافي راتبها.
             let prompt = tr("وجدت \(Num.format(matches.count)) نتائج، اختر الموظف",
                             "Found \(Num.format(matches.count)) results. Pick one")
-            let picked = try await $employee.requestDisambiguation(
-                among: matches.map { Optional($0) },
+            chosen = try await $employee.requestDisambiguation(
+                among: Array(matches),
                 dialog: IntentDialog("\(prompt)")
             )
-            if let picked { chosen = picked }
         }
         return try PayslipResult.make(for: chosen)
     }
