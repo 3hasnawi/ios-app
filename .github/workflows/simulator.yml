@@ -129,6 +129,12 @@ jobs:
           launch -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "احمد علي"
           shot 08b-multi-month-search
 
+          # 8c) فلترة العرض: الاستقطاعات فقط، ثم الراتب والاستقطاعات معاً
+          launch -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "أحمد علي حسين الدليمي" -showSalary NO -showDeductions YES
+          shot 08c-deductions-only
+          launch -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "أحمد علي حسين الدليمي" -showDeductions YES
+          shot 08d-salary-and-deductions
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8

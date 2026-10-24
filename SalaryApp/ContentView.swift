@@ -27,6 +27,9 @@ struct ContentView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @AppStorage("selectedMonth") private var selectedMonth = ""
+    /// ماذا يظهر في النتائج: تفاصيل الراتب، الاستقطاعات، أو الاثنان معاً (واحد على الأقل).
+    @AppStorage("showSalary") private var showSalary = true
+    @AppStorage("showDeductions") private var showDeductions = false
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
@@ -71,14 +74,21 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             // التصميم "آيفون أصلي زجاجي": عنوان كبير، زر الأشهر تحته، النتائج مجمّعة بالأشهر،
             // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
-            EmployeeList(search: appliedSearch, months: selectedMonths)
+            EmployeeList(search: appliedSearch, months: selectedMonths,
+                         showSalary: showSalary || !showDeductions, showDeductions: showDeductions)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !months.isEmpty {
-                        monthMenu
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // فلترة النتائج: زرّان صغيران، كل واحد يفتح قائمة تقبل خياراً واحداً أو عدة خيارات.
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                monthMenu
+                                displayMenu
+                            }
                             .padding(.horizontal, 20)
                             .padding(.top, 4)
                             .padding(.bottom, 8)
+                        }
+                        .scrollClipDisabled()
                     }
                 }
                 .background(Color(.systemGroupedBackground))
@@ -141,43 +151,52 @@ struct ContentView: View {
         }
     }
 
-    /// قائمة منسدلة لاختيار شهر أو عدة أشهر (تبقى مفتوحة أثناء التحديد).
+    /// خيارات سريعة لعدد الأشهر (الأحدث أولاً).
+    private var quickCounts: [Int] { [1, 3, 6].filter { $0 < months.count } }
+
+    /// عدد الأشهر الأحدث المختارة إذا كان الاختيار "آخر n أشهر" بالضبط، وإلا nil.
+    private var latestCount: Int? {
+        let chosen = selectedMonths.map(\.name)
+        let latest = months.prefix(chosen.count).map(\.name)
+        return Set(chosen) == Set(latest) ? chosen.count : nil
+    }
+
+    /// زر الأشهر: آخر شهر / 3 / 6 / الكل، أو تحديد أشهر بعينها (شهر أو عدة أشهر).
     private var monthMenu: some View {
         let chosen = Set(selectedMonths.map(\.name))
+        let latest = latestCount
         return Menu {
-            Button("كل الأشهر", systemImage: chosen.count == months.count ? "checkmark.circle.fill" : "circle") {
-                setSelection(months.map(\.name))
-            }
-            .menuActionDismissBehavior(.disabled)
-            Divider()
-            ForEach(months) { month in
-                Button {
-                    toggle(month)
-                } label: {
-                    if chosen.contains(month.name) {
-                        Label(month.name, systemImage: "checkmark")
-                    } else {
-                        Text(month.name)
+            Section("عدد الأشهر") {
+                ForEach(quickCounts, id: \.self) { n in
+                    Button {
+                        setSelection(months.prefix(n).map(\.name))
+                    } label: {
+                        checkLabel(n == 1 ? "آخر شهر" : "آخر \(n.formatted()) أشهر", latest == n)
                     }
                 }
-                .menuActionDismissBehavior(.disabled)
+                Button {
+                    setSelection(months.map(\.name))
+                } label: {
+                    checkLabel("كل الأشهر", chosen.count == months.count)
+                }
             }
-            Divider()
+            Section("أشهر محددة") {
+                ForEach(months) { month in
+                    Button {
+                        toggle(month)
+                    } label: {
+                        Label(month.name, systemImage: chosen.contains(month.name) ? "checkmark.circle.fill" : "circle")
+                    }
+                    .menuActionDismissBehavior(.disabled)
+                }
+            }
             Menu("حذف شهر", systemImage: "trash") {
                 ForEach(months) { month in
                     Button(month.name, role: .destructive) { monthToDelete = month }
                 }
             }
         } label: {
-            // كبسولة ملوّنة: زجاج بارز على iOS 26، وزر ممتلئ على iOS 18.
-            HStack(spacing: 6) {
-                Image(systemName: "calendar")
-                Text(monthMenuTitle)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.bold))
-            }
-            .font(.subheadline.weight(.semibold))
+            pillLabel(monthMenuTitle, systemImage: "calendar")
         }
         .glassButtonStyle(prominent: true)
         .buttonBorderShape(.capsule)
@@ -185,10 +204,63 @@ struct ContentView: View {
 
     private var monthMenuTitle: String {
         let chosen = selectedMonths
+        if chosen.count == months.count, months.count > 1 { return "كل الأشهر" }
         if chosen.count == 1 { return chosen[0].name }
-        if chosen.count == months.count, months.count > 2 { return "كل الأشهر" }
+        if latestCount != nil { return "آخر \(chosen.count.formatted()) أشهر" }
         if chosen.count == 2 { return chosen.map(\.shortName).joined(separator: " + ") }
         return "\(chosen.count.formatted()) أشهر"
+    }
+
+    /// زر العرض: تفاصيل الراتب و/أو الاستقطاعات (يبقى واحد على الأقل مختاراً).
+    private var displayMenu: some View {
+        let salary = showSalary || !showDeductions
+        return Menu {
+            Section("ماذا يظهر في النتائج") {
+                Button {
+                    guard showDeductions else { return }
+                    showSalary = !salary
+                } label: {
+                    Label("تفاصيل الراتب", systemImage: salary ? "checkmark.circle.fill" : "circle")
+                }
+                .menuActionDismissBehavior(.disabled)
+                Button {
+                    if showDeductions { showSalary = true }
+                    showDeductions.toggle()
+                } label: {
+                    Label("الاستقطاعات", systemImage: showDeductions ? "checkmark.circle.fill" : "circle")
+                }
+                .menuActionDismissBehavior(.disabled)
+            }
+        } label: {
+            pillLabel(displayTitle, systemImage: showDeductions && !salary ? "minus.circle" : "list.bullet")
+        }
+        .glassButtonStyle()
+        .buttonBorderShape(.capsule)
+    }
+
+    private var displayTitle: String {
+        let salary = showSalary || !showDeductions
+        switch (salary, showDeductions) {
+        case (true, true): return "الراتب والاستقطاعات"
+        case (false, true): return "الاستقطاعات فقط"
+        default: return "تفاصيل الراتب"
+        }
+    }
+
+    @ViewBuilder
+    private func checkLabel(_ title: String, _ on: Bool) -> some View {
+        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
+    }
+
+    private func pillLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+                .lineLimit(1)
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.bold))
+        }
+        .font(.subheadline.weight(.semibold))
     }
 
     private func applyLaunchOptions() async {
@@ -284,9 +356,13 @@ struct EmployeeList: View {
     @State private var shareTarget: Employee?
     private let tokens: [String]
     private let months: [PayrollMonth]
+    private let showSalary: Bool
+    private let showDeductions: Bool
 
-    init(search: String, months: [PayrollMonth]) {
+    init(search: String, months: [PayrollMonth], showSalary: Bool = true, showDeductions: Bool = false) {
         self.months = months
+        self.showSalary = showSalary
+        self.showDeductions = showDeductions
         tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
 
         // قاعدة البيانات تُصفّي بالأشهر المختارة وأول كلمتين، والباقي يُطابق في الذاكرة
@@ -334,7 +410,7 @@ struct EmployeeList: View {
                         Section(section.month.name) {
                             ForEach(section.employees) { employee in
                                 NavigationLink(value: employee) {
-                                    EmployeeRow(employee: employee)
+                                    EmployeeRow(employee: employee, showSalary: showSalary, showDeductions: showDeductions)
                                 }
                                 .contextMenu {
                                     Button("مشاركة", systemImage: "square.and.arrow.up") {
@@ -381,24 +457,87 @@ struct MonthSection: Identifiable {
 
 struct EmployeeRow: View {
     let employee: Employee
+    var showSalary = true
+    var showDeductions = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            NameAvatar(name: employee.name, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(employee.name)
-                    .font(.body.weight(.medium))
-                    .lineLimit(2)
-                Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                NameAvatar(name: employee.name, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(employee.name)
+                        .font(.body.weight(.medium))
+                        .lineLimit(2)
+                    if showSalary {
+                        Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                if showSalary {
+                    Text(Money.format(employee.netSalary))
+                        .font(.body.weight(.semibold).monospacedDigit())
+                }
             }
-            Spacer(minLength: 8)
-            Text(Money.format(employee.netSalary))
-                .font(.body.weight(.semibold).monospacedDigit())
+            if showDeductions {
+                DeductionLines(employee: employee)
+                    .padding(.leading, 52)
+            }
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// استقطاعات موظف في شهره، تُعرض داخل صف النتيجة عند اختيار "الاستقطاعات".
+struct DeductionLines: View {
+    @Query private var deductions: [Deduction]
+
+    init(employee: Employee) {
+        let key = employee.matchKey
+        let month = employee.month
+        _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
+    }
+
+    var body: some View {
+        if deductions.isEmpty {
+            Label("لا توجد استقطاعات", systemImage: "checkmark.circle")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(deductions) { deduction in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(deduction.title.orDash)
+                            if !deduction.note.isEmpty {
+                                Text(deduction.note)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Text(Money.format(deduction.amount))
+                            .monospacedDigit()
+                            .foregroundStyle(.red)
+                    }
+                    .font(.subheadline)
+                }
+                if deductions.count > 1 {
+                    Divider()
+                    HStack {
+                        Text("المجموع").fontWeight(.semibold)
+                        Spacer()
+                        Text(Money.format(deductions.total))
+                            .fontWeight(.bold)
+                            .monospacedDigit()
+                            .foregroundStyle(.red)
+                    }
+                    .font(.subheadline)
+                }
+            }
+        }
     }
 }
