@@ -149,6 +149,10 @@ jobs:
           shot 08i-unified-empty
           launch -tab search -search "أحمد علي"
           shot 08j-unified-results
+          launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
+          shot 08k-person-salary
+          launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES -personPart months
+          shot 08l-person-months
 
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES

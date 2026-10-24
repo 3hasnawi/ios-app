@@ -138,6 +138,7 @@ struct UnifiedSearchView: View {
                 guard !trimmed.isEmpty else { people = []; loadedKey = key; return }
                 people = (try? UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)) ?? []
                 loadedKey = key
+                if LaunchOptions.openPerson, path.isEmpty, let first = people.first { path = [first] }
             }
             .onChange(of: router.pendingSearch, initial: true) { _, name in
                 guard let name else { return }
@@ -458,7 +459,8 @@ struct UnifiedPersonView: View {
 
     init(person: UnifiedPerson) {
         self.person = person
-        _part = State(initialValue: person.employee != nil ? .salary : .staff)
+        let start = Part(rawValue: LaunchOptions.personPart)
+        _part = State(initialValue: start ?? (person.employee != nil ? .salary : .staff))
     }
 
     private var parts: [Part] {

@@ -16,7 +16,10 @@ enum LaunchOptions {
     static var share: Bool { UserDefaults.standard.bool(forKey: "share") }
     /// يفتح لوحة الإعدادات.
     static var openSettings: Bool { UserDefaults.standard.bool(forKey: "openSettings") }
-    /// التبويب عند التشغيل: "staff" لتبويب الملاك.
+    /// يفتح صفحة أول نتيجة في البحث الموحّد، وقسمها: salary / staff / months.
+    static var openPerson: Bool { UserDefaults.standard.bool(forKey: "openPerson") }
+    static var personPart: String { UserDefaults.standard.string(forKey: "personPart") ?? "" }
+    /// التبويب عند التشغيل: "search" لتبويب العدسة.
     static var startTab: String { UserDefaults.standard.string(forKey: "tab") ?? "" }
 
     /// نتيجة الاستيراد تُكتب في Documents/import-report.txt ليقرأها سكربت الاختبار.
