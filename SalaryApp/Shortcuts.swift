@@ -68,7 +68,8 @@ struct SearchEmployeeIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetView {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetIntent {
+        ShortcutSelection.clear()
         let results = try ShortcutSearch.run(name: name, range: range, includeDeductions: includeDeductions)
 
         let text = results.isEmpty
@@ -86,10 +87,72 @@ struct SearchEmployeeIntent: AppIntent {
             dialog = IntentDialog("\(text)")
         }
 
-        return .result(value: text, dialog: dialog) {
-            ShortcutResultsView(results: Array(results.prefix(5)), total: results.count)
-        }
+        // النافذة تفاعلية: الضغط على نتيجة يفتح تفاصيلها مع زر "نسخ كصورة".
+        return .result(
+            value: text,
+            dialog: dialog,
+            snippetIntent: SearchResultsSnippetIntent(name: name, range: range, includeDeductions: includeDeductions)
+        )
     }
+}
+
+/// نافذة نتائج البحث: قائمة نتائج، والضغط على نتيجة يعرض تفاصيلها (الراتب والاستقطاعات) وزر النسخ كصورة.
+struct SearchResultsSnippetIntent: SnippetIntent {
+    static let title: LocalizedStringResource = "نتائج البحث"
+    static let isDiscoverable = false
+
+    @Parameter(title: "الاسم") var name: String
+    @Parameter(title: "الأشهر") var range: ShortcutMonthRange
+    @Parameter(title: "إظهار الاستقطاعات") var includeDeductions: Bool
+
+    init() {}
+    init(name: String, range: ShortcutMonthRange, includeDeductions: Bool) {
+        self.name = name
+        self.range = range
+        self.includeDeductions = includeDeductions
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ShowsSnippetView {
+        let results = try ShortcutSearch.run(name: name, range: range, includeDeductions: includeDeductions)
+        let selectedID = results.count == 1 ? results[0].recordID : ShortcutSelection.current
+        if let selectedID, results.contains(where: { $0.recordID == selectedID }),
+           let record = try EmployeeLookup.employee(id: selectedID) {
+            let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
+            let entity = EmployeeEntity(record)
+            return .result(view: AnyView(PayslipSnippetView(
+                data: data, entity: entity, copied: PayslipClipboard.wasCopied(entity.id), showBack: results.count > 1
+            )))
+        }
+        return .result(view: AnyView(ShortcutResultsView(results: Array(results.prefix(8)), total: results.count)))
+    }
+}
+
+/// الضغط على نتيجة في النافذة (أو "كل النتائج" للرجوع).
+struct SelectShortcutResultIntent: AppIntent {
+    static let title: LocalizedStringResource = "اختيار نتيجة"
+    static let isDiscoverable = false
+
+    @Parameter(title: "النتيجة") var recordID: String
+
+    init() {}
+    init(recordID: String) { self.recordID = recordID }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        if recordID.isEmpty { ShortcutSelection.clear() } else { ShortcutSelection.current = recordID }
+        return .result()
+    }
+}
+
+/// النتيجة المختارة في نافذة الاختصار.
+enum ShortcutSelection {
+    private static let key = "shortcutSelectedResult"
+    static var current: String? {
+        get { UserDefaults.standard.string(forKey: key) }
+        set { UserDefaults.standard.set(newValue, forKey: key) }
+    }
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
 // MARK: - فتح التطبيق على البحث
@@ -155,6 +218,8 @@ struct SalaryShortcuts: AppShortcutsProvider {
 
 struct ShortcutResult: Identifiable {
     let id = UUID()
+    /// الشهر والاسم معاً، بنفس صيغة EmployeeEntity.id.
+    var recordID: String { month + EmployeeEntity.separator + name }
     let name: String
     let month: String
     let rank: String
@@ -238,31 +303,39 @@ struct ShortcutResultsView: View {
     let total: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            if results.isEmpty {
+                Label(tr("لا توجد نتائج", "No results"), systemImage: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+            }
             ForEach(results) { r in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(r.name).font(.headline).lineLimit(2)
+                Button(intent: SelectShortcutResultIntent(recordID: r.recordID)) {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(r.name).font(.headline).lineLimit(2).multilineTextAlignment(.leading)
+                            Text([r.month, r.rank].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let deductions = r.deductions, !deductions.isEmpty {
+                                Text(tr("الاستقطاعات: \(Money.format(r.deductionTotal))", "Deductions: \(Money.format(r.deductionTotal))"))
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        }
                         Spacer(minLength: 8)
                         Text(Money.format(r.netSalary)).font(.headline.monospacedDigit())
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
-                    Text([r.month, r.rank].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let deductions = r.deductions, !deductions.isEmpty {
-                        HStack {
-                            Text(tr("الاستقطاعات", "Deductions"))
-                            Spacer()
-                            Text(Money.format(r.deductionTotal)).monospacedDigit()
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
-                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 if r.id != results.last?.id { Divider() }
             }
             if total > results.count {
-                Text(tr("و\(Num.format(total - results.count)) نتائج أخرى", "and \(Num.format(total - results.count)) more"))
+                Text(tr("و\(Num.format(total - results.count)) نتائج أخرى، اكتب الاسم كاملاً لتضييق البحث",
+                        "and \(Num.format(total - results.count)) more — type the full name to narrow it down"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -485,6 +558,8 @@ struct PayslipSnippetView: View {
     let data: PayslipSnippetData
     let entity: EmployeeEntity
     let copied: Bool
+    /// زر "كل النتائج" عند الوصول من قائمة نتائج البحث.
+    var showBack = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -546,6 +621,14 @@ struct PayslipSnippetView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(copied ? .green : .blue)
+
+            if showBack {
+                Button(intent: SelectShortcutResultIntent(recordID: "")) {
+                    Label(tr("كل النتائج", "All results"), systemImage: "list.bullet")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding()
         .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
