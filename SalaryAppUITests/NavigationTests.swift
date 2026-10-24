@@ -9,6 +9,14 @@ final class NavigationTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = true
+        // نوافذ النظام (مثل تفعيل الإملاء الصوتي) لا علاقة لها بالتطبيق: تُغلق تلقائياً.
+        addUIInterruptionMonitor(withDescription: "System alert") { alert in
+            for title in ["Not Now", "ليس الآن", "Cancel", "إلغاء", "OK"] where alert.buttons[title].exists {
+                alert.buttons[title].tap()
+                return true
+            }
+            return false
+        }
         app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
     }
 
@@ -54,8 +62,16 @@ final class NavigationTests: XCTestCase {
     }
 
     private var homeTab: XCUIElement {
+        hideKeyboard()
         let inBar = app.tabBars.buttons["الرئيسية"]
         return inBar.exists ? inBar : app.buttons["الرئيسية"].firstMatch
+    }
+
+    /// يخفي لوحة المفاتيح قبل الضغط على أزرار الشريط السفلي (حتى لا يقع الضغط على مفاتيحها).
+    private func hideKeyboard() {
+        guard app.keyboards.firstMatch.exists else { return }
+        let list = element("searchList")
+        if list.exists { list.swipeDown(velocity: .slow) }
     }
 
     private var searchField: XCUIElement { app.searchFields.firstMatch }

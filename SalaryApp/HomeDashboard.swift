@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// أرقام الشهر في الشاشة الرئيسية (تُحسب في الخلفية).
-nonisolated struct HomeStats: Sendable, Equatable {
+nonisolated struct HomeStats: Sendable, Equatable, Codable {
     var netTotal: Double = 0
     var deductionTotal: Double = 0
     var previousNetTotal: Double?
@@ -94,6 +94,13 @@ struct HomeDashboard: View {
         }
         .task(id: "\(current?.name ?? "")-\(current?.employeeCount ?? 0)-\(months.count)") {
             guard let current else { stats = nil; return }
+            // الأرقام محفوظة بعد أول حساب: تظهر فوراً في المرات القادمة، وتُعاد فقط عند تغيّر الأشهر.
+            let cacheKey = "homeStats|\(current.name)|\(current.employeeCount)|\(current.deductionCount)|\(previous?.name ?? "")|\(previous?.employeeCount ?? 0)"
+            if let data = UserDefaults.standard.data(forKey: "homeStatsCache"),
+               let cached = try? JSONDecoder().decode([String: HomeStats].self, from: data)[cacheKey] {
+                stats = cached
+                return
+            }
             let container = SharedModel.container
             let month = current.name
             let previousName = previous?.name
@@ -103,6 +110,9 @@ struct HomeDashboard: View {
                 try await HomeStatsLoader(modelContainer: container).stats(month: month, previous: previousName)
             }.value
             PerfLog.record("homeStats", since: started)
+            if let stats, let data = try? JSONEncoder().encode([cacheKey: stats]) {
+                UserDefaults.standard.set(data, forKey: "homeStatsCache")
+            }
         }
         .onAppear { recents = RecentSearches.items }
     }

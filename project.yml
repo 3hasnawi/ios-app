@@ -22,7 +22,9 @@ targets:
         CFBundleDisplayName: الرواتب
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar]
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIImageName: HomeLogo
+          UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     settings:
       base:
