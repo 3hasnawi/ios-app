@@ -73,9 +73,17 @@ nonisolated enum ExcelImporter {
             throw ImportError.cannotOpen(url.lastPathComponent)
         }
 
+        // كل جزء XML يُفك إلى ملف مؤقت ثم يُقرأ منه بالتدريج، بدل تحميله كاملاً في الذاكرة
+        // (ملف xlsx بحجم 9 ميغابايت قد يصير مئات الميغابايتات من XML).
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
         var sharedStrings: [String] = []
         if let entry = archive["xl/sharedStrings.xml"] {
-            sharedStrings = try SharedStringsReader.read(try contents(of: entry, in: archive))
+            let file = try extract(entry, from: archive, to: tempDir)
+            sharedStrings = try SharedStringsReader.read(file)
+            try? FileManager.default.removeItem(at: file)
         }
 
         let sheets = archive.filter {
@@ -85,18 +93,21 @@ nonisolated enum ExcelImporter {
 
         for entry in sheets {
             let sheet = SheetParser()
-            try WorksheetReader.read(try contents(of: entry, in: archive), sharedStrings: sharedStrings) {
-                sheet.consume($0)
+            let file = try extract(entry, from: archive, to: tempDir)
+            try autoreleasepool {
+                try WorksheetReader.read(file, sharedStrings: sharedStrings) {
+                    sheet.consume($0)
+                }
             }
+            try? FileManager.default.removeItem(at: file)
             result.merge(sheet.result)
         }
     }
 
-    private static func contents(of entry: Entry, in archive: Archive) throws -> Data {
-        var data = Data()
-        data.reserveCapacity(Int(entry.uncompressedSize))
-        _ = try archive.extract(entry, skipCRC32: true) { data.append($0) }
-        return data
+    private static func extract(_ entry: Entry, from archive: Archive, to dir: URL) throws -> URL {
+        let file = dir.appendingPathComponent(UUID().uuidString + ".xml")
+        _ = try archive.extract(entry, to: file, skipCRC32: true)
+        return file
     }
 
     // MARK: - csv
@@ -290,9 +301,10 @@ nonisolated final class SharedStringsReader: NSObject, XMLParserDelegate {
     private var inText = false
     private var phoneticDepth = 0
 
-    static func read(_ data: Data) throws -> [String] {
+    static func read(_ file: URL) throws -> [String] {
         let reader = SharedStringsReader()
-        let parser = XMLParser(data: data)
+        guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("sharedStrings.xml") }
+        let parser = XMLParser(stream: stream)
         parser.delegate = reader
         guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("sharedStrings.xml") }
         return reader.strings
@@ -338,9 +350,10 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
         self.onRow = onRow
     }
 
-    static func read(_ data: Data, sharedStrings: [String], onRow: @escaping ([String]) -> Void) throws {
+    static func read(_ file: URL, sharedStrings: [String], onRow: @escaping ([String]) -> Void) throws {
         let reader = WorksheetReader(sharedStrings: sharedStrings, onRow: onRow)
-        let parser = XMLParser(data: data)
+        guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("worksheet") }
+        let parser = XMLParser(stream: stream)
         parser.delegate = reader
         guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("worksheet") }
     }

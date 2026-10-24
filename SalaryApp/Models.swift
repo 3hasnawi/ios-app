@@ -74,11 +74,19 @@ actor DataImporter {
     /// يستبدل بيانات الشهر نفسه فقط، وتبقى الأشهر الأخرى كما هي.
     func replace(month: String, with imported: ImportResult) throws {
         try removeData(of: month)
+        // الحفظ على دفعات حتى لا تتراكم عشرات آلاف السجلات غير المحفوظة في الذاكرة.
+        var pending = 0
+        func flush() throws {
+            pending += 1
+            if pending >= 5000 { try modelContext.save(); pending = 0 }
+        }
         for e in imported.employees {
             modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary))
+            try flush()
         }
         for d in imported.deductions {
             modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note))
+            try flush()
         }
         modelContext.insert(PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count))
         try modelContext.save()

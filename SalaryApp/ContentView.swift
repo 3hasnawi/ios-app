@@ -30,6 +30,7 @@ struct ContentView: View {
     @State private var search = LaunchOptions.search
     @State private var path: [Employee] = []
     @State private var showImporter = false
+    @State private var pickedFiles: [URL] = []
     @State private var isImporting = false
     @State private var message: String?
     @State private var monthToDelete: PayrollMonth?
@@ -63,8 +64,12 @@ struct ContentView: View {
                         .disabled(isImporting)
                     }
                 }
-                .fileImporter(isPresented: $showImporter, allowedContentTypes: fileTypes, allowsMultipleSelection: true) {
-                    handleImport($0)
+                .sheet(isPresented: $showImporter, onDismiss: startPendingImport) {
+                    DocumentPicker(contentTypes: fileTypes) { urls in
+                        pickedFiles = urls
+                        showImporter = false
+                    }
+                    .ignoresSafeArea()
                 }
                 .overlay {
                     if isImporting {
@@ -141,14 +146,14 @@ struct ContentView: View {
         }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls) where !urls.isEmpty:
-            Task { await importFiles(urls) }
-        case .success:
-            break
-        case .failure(let error):
-            message = error.localizedDescription
+    /// يبدأ الاستيراد بعد إغلاق نافذة الاختيار، ثم يحذف النسخ المؤقتة.
+    private func startPendingImport() {
+        let urls = pickedFiles
+        pickedFiles = []
+        guard !urls.isEmpty else { return }
+        Task {
+            await importFiles(urls)
+            for url in urls { try? FileManager.default.removeItem(at: url) }
         }
     }
 
