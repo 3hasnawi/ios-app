@@ -1,8 +1,7 @@
 name: Simulator test
 
 on:
-  push:
-    branches: [main]
+  # البناء يدوي فقط (بأمر من صاحب المشروع)، لا يعمل تلقائياً عند الدمج.
   workflow_dispatch:
 
 permissions:
