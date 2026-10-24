@@ -151,3 +151,12 @@ nonisolated enum MonthName {
         return Dictionary(table.map { (ArabicText.normalize($0.0), $0.1) }, uniquingKeysWith: { a, _ in a })
     }()
 }
+
+extension PayrollMonth {
+    /// اسم الشهر بدون السنة ("تشرين الاول 2026" ← "تشرين الاول") لعناوين قصيرة.
+    var shortName: String {
+        let words = name.split(separator: " ")
+        guard words.count > 1, let last = words.last, last.allSatisfy(\.isNumber) else { return name }
+        return words.dropLast().joined(separator: " ")
+    }
+}

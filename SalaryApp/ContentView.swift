@@ -69,14 +69,21 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            VStack(spacing: 10) {
-                if !months.isEmpty {
-                    searchField
-                    monthMenu
+            // التصميم "آيفون أصلي زجاجي": عنوان كبير، زر الأشهر تحته، النتائج مجمّعة بالأشهر،
+            // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
+            EmployeeList(search: appliedSearch, months: selectedMonths)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !months.isEmpty {
+                        monthMenu
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 4)
+                            .padding(.bottom, 8)
+                    }
                 }
-                EmployeeList(search: appliedSearch, months: selectedMonths)
-                    .frame(maxHeight: .infinity)
-            }
+                .background(Color(.systemGroupedBackground))
+                .adaptiveSearchable(text: $search, prompt: "ابحث بالاسم")
+                .onSubmit(of: .search) { appliedSearch = search }
                 .task(id: search) {
                     // مسح النص يُطبَّق فوراً؛ الكتابة تنتظر توقفاً قصيراً.
                     if !search.isEmpty {
@@ -86,7 +93,7 @@ struct ContentView: View {
                     if appliedSearch != search { appliedSearch = search }
                 }
                 .navigationTitle("الرواتب")
-                .navigationBarTitleDisplayMode(.inline)
+                .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -134,34 +141,6 @@ struct ContentView: View {
         }
     }
 
-    /// حقل البحث بالاسم.
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("ابحث بالاسم", text: $search)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .onSubmit { appliedSearch = search }
-            if !search.isEmpty {
-                Button {
-                    search = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("مسح")
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal)
-        .padding(.top, 8)
-    }
-
     /// قائمة منسدلة لاختيار شهر أو عدة أشهر (تبقى مفتوحة أثناء التحديد).
     private var monthMenu: some View {
         let chosen = Set(selectedMonths.map(\.name))
@@ -190,27 +169,26 @@ struct ContentView: View {
                 }
             }
         } label: {
-            HStack(spacing: 8) {
+            // كبسولة ملوّنة: زجاج بارز على iOS 26، وزر ممتلئ على iOS 18.
+            HStack(spacing: 6) {
                 Image(systemName: "calendar")
                 Text(monthMenuTitle)
                     .lineLimit(1)
-                Spacer(minLength: 4)
                 Image(systemName: "chevron.down")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.bold))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .font(.subheadline.weight(.semibold))
         }
-        .padding(.horizontal)
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
     }
 
     private var monthMenuTitle: String {
         let chosen = selectedMonths
         if chosen.count == 1 { return chosen[0].name }
-        if chosen.count == months.count { return "كل الأشهر (\(chosen.count.formatted()))" }
-        return "\(chosen.count.formatted()) أشهر: " + chosen.map(\.name).joined(separator: "، ")
+        if chosen.count == months.count, months.count > 2 { return "كل الأشهر" }
+        if chosen.count == 2 { return chosen.map(\.shortName).joined(separator: " + ") }
+        return "\(chosen.count.formatted()) أشهر"
     }
 
     private func applyLaunchOptions() async {
@@ -328,19 +306,19 @@ struct EmployeeList: View {
         _employees = Query(descriptor)
     }
 
-    /// النتائج مرتبة بالاسم، ثم بالشهر من الأحدث إلى الأقدم.
-    private var results: [Employee] {
+    /// النتائج مجمّعة بالشهر (الأحدث أولاً)، وداخل كل شهر مرتبة بالاسم.
+    private var sections: [MonthSection] {
         guard !tokens.isEmpty else { return [] }
         let matched = tokens.count > 2 ? employees.filter { e in tokens.allSatisfy { e.nameKey.contains($0) } } : employees
-        guard months.count > 1 else { return matched }
-        let order = Dictionary(months.enumerated().map { ($1.name, $0) }, uniquingKeysWith: { a, _ in a })
-        return matched.sorted {
-            $0.name != $1.name ? $0.name < $1.name : (order[$0.month] ?? 0) < (order[$1.month] ?? 0)
+        let byMonth = Dictionary(grouping: matched, by: \.month)
+        return months.compactMap { month in
+            guard let list = byMonth[month.name], !list.isEmpty else { return nil }
+            return MonthSection(month: month, employees: list)
         }
     }
 
     var body: some View {
-        let results = results
+        let sections = sections
         if !months.isEmpty {
             if tokens.isEmpty {
                 ContentUnavailableView(
@@ -348,26 +326,32 @@ struct EmployeeList: View {
                     systemImage: "magnifyingglass",
                     description: Text(summary)
                 )
-            } else if results.isEmpty {
+            } else if sections.isEmpty {
                 ContentUnavailableView.search
             } else {
-                List(results) { employee in
-                    NavigationLink(value: employee) {
-                        EmployeeRow(employee: employee, showMonth: months.count > 1)
-                    }
-                    .contextMenu {
-                        Button("مشاركة", systemImage: "square.and.arrow.up") {
-                            shareTarget = employee
+                List {
+                    ForEach(sections) { section in
+                        Section(section.month.name) {
+                            ForEach(section.employees) { employee in
+                                NavigationLink(value: employee) {
+                                    EmployeeRow(employee: employee)
+                                }
+                                .contextMenu {
+                                    Button("مشاركة", systemImage: "square.and.arrow.up") {
+                                        shareTarget = employee
+                                    }
+                                }
+                                .swipeActions(edge: .leading) {
+                                    Button("مشاركة", systemImage: "square.and.arrow.up") {
+                                        shareTarget = employee
+                                    }
+                                    .tint(.blue)
+                                }
+                            }
                         }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button("مشاركة", systemImage: "square.and.arrow.up") {
-                            shareTarget = employee
-                        }
-                        .tint(.blue)
                     }
                 }
-                .listStyle(.plain)
+                .listStyle(.insetGrouped)
                 .scrollDismissesKeyboard(.immediately)
                 .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             }
@@ -385,40 +369,36 @@ struct EmployeeList: View {
             return "شهر \(month.name): \(month.employeeCount.formatted()) موظف و\(month.deductionCount.formatted()) استقطاع.\nلتغيير الشهر أو اختيار عدة أشهر استخدم القائمة في الأعلى."
         }
         let employees = months.reduce(0) { $0 + $1.employeeCount }
-        return "\(months.count.formatted()) أشهر مختارة: \(employees.formatted()) سجل موظف.\nالنتائج تُعرض مع اسم الشهر."
+        return "\(months.count.formatted()) أشهر مختارة: \(employees.formatted()) سجل موظف.\nالنتائج تُعرض مجمّعة حسب الشهر."
     }
+}
+
+struct MonthSection: Identifiable {
+    let month: PayrollMonth
+    let employees: [Employee]
+    var id: String { month.name }
 }
 
 struct EmployeeRow: View {
     let employee: Employee
-    var showMonth = false
 
     var body: some View {
         HStack(spacing: 12) {
-            NameAvatar(name: employee.name)
-            VStack(alignment: .leading, spacing: 3) {
+            NameAvatar(name: employee.name, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(employee.name)
-                    .font(.headline)
+                    .font(.body.weight(.medium))
                     .lineLimit(2)
                 Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                if showMonth {
-                    Label(employee.month, systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                }
             }
             Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(Money.format(employee.netSalary))
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                Text("صافي")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            Text(Money.format(employee.netSalary))
+                .font(.body.weight(.semibold).monospacedDigit())
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }
