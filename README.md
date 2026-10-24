@@ -11,7 +11,7 @@
 | الملف | الوظيفة |
 |---|---|
 | `SalaryApp/SalaryApp.swift` | نقطة بدء التطبيق، اتجاه الواجهة من اليمين لليسار |
-| `SalaryApp/Models.swift` | جداول قاعدة البيانات `Employee` و`Deduction`، والحفظ في الخلفية |
+| `SalaryApp/Models.swift` | جداول قاعدة البيانات `PayrollMonth` و`Employee` و`Deduction`، والحفظ في الخلفية، وترتيب الأشهر |
 | `SalaryApp/ExcelImporter.swift` | قراءة xlsx (صفاً صفاً) وcsv والتعرف على الأوراق والأعمدة |
 | `SalaryApp/ArabicText.swift` | توحيد الكتابة العربية للبحث (أ/إ/آ ← ا، ة ← ه، ى ← ي) وقراءة الأرقام |
 | `SalaryApp/ContentView.swift` | شاشة البحث وزر الاستيراد |

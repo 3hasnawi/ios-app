@@ -111,8 +111,12 @@ struct ContentView: View {
                 }
             }
         } label: {
-            Label(currentMonth?.name ?? "لا توجد أشهر", systemImage: "calendar")
-                .labelStyle(.titleAndIcon)
+            // HStack بدل Label: شريط الأدوات يعرض أيقونة Label فقط ويخفي اسم الشهر.
+            HStack(spacing: 4) {
+                Image(systemName: "calendar")
+                Text(currentMonth?.name ?? "لا توجد أشهر")
+                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+            }
         }
         .disabled(months.isEmpty)
     }
