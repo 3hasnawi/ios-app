@@ -4,6 +4,7 @@ import SwiftData
 struct EmployeeDetailView: View {
     let employee: Employee
     @Query private var deductions: [Deduction]
+    @State private var showShare = false
 
     init(employee: Employee) {
         self.employee = employee
@@ -12,54 +13,96 @@ struct EmployeeDetailView: View {
         _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
     }
 
-    private var total: Double {
-        deductions.reduce(0) { $0 + ($1.amount ?? 0) }
-    }
-
     var body: some View {
         List {
             Section {
-                VStack(spacing: 6) {
-                    Text("صافي الراتب")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(Money.format(employee.netSalary))
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                SalaryHeader(employee: employee)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
 
             Section("المعلومات") {
-                LabeledContent("الاسم", value: employee.name)
-                LabeledContent("الرتبة", value: employee.rank.orDash)
-                LabeledContent("محل العمل", value: employee.workplace.orDash)
-                LabeledContent("الشهر", value: employee.month.orDash)
+                InfoRow(title: "الرتبة", value: employee.rank.orDash, systemImage: "star.fill", color: .orange)
+                InfoRow(title: "محل العمل", value: employee.workplace.orDash, systemImage: "building.2.fill", color: .teal)
+                InfoRow(title: "الشهر", value: employee.month.orDash, systemImage: "calendar", color: .purple)
             }
 
-            Section("الاستقطاعات") {
+            Section {
                 if deductions.isEmpty {
-                    Text("لا توجد استقطاعات باسم هذا الموظف")
+                    Label("لا توجد استقطاعات باسم هذا الموظف", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(deductions) { deduction in
                         LabeledContent {
                             Text(Money.format(deduction.amount)).monospacedDigit()
                         } label: {
-                            Text(deduction.title.orDash)
-                            if !deduction.note.isEmpty {
-                                Text(deduction.note)
+                            Label {
+                                Text(deduction.title.orDash)
+                                if !deduction.note.isEmpty {
+                                    Text(deduction.note)
+                                }
+                            } icon: {
+                                Image(systemName: "minus.circle.fill").foregroundStyle(.red)
                             }
                         }
                     }
-                    LabeledContent("مجموع الاستقطاعات") {
-                        Text(Money.format(total)).bold()
+                    LabeledContent {
+                        Text(Money.format(deductions.total))
+                            .bold()
+                            .monospacedDigit()
+                            .foregroundStyle(.red)
+                    } label: {
+                        Text("مجموع الاستقطاعات").bold()
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("الاستقطاعات")
+                    Spacer()
+                    if !deductions.isEmpty {
+                        Text(deductions.count.formatted())
                     }
                 }
             }
         }
+        .listSectionSpacing(.compact)
         .navigationTitle(employee.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("مشاركة", systemImage: "square.and.arrow.up") {
+                    showShare = true
+                }
+            }
+        }
+        .sheet(isPresented: $showShare) {
+            ShareOptionsSheet(employee: employee)
+        }
+        .task {
+            if LaunchOptions.share { showShare = true }
+        }
+    }
+}
+
+private struct InfoRow: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        LabeledContent {
+            Text(value)
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
     }
 }

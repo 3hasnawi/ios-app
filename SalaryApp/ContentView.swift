@@ -5,13 +5,15 @@ import UniformTypeIdentifiers
 /// خيارات تشغيل للاختبار الآلي على المحاكي، مثلاً:
 /// `xcrun simctl launch <device> com.example.SalaryApp -importFile "/a.xlsx|/b.xlsx" -search "احمد" -openFirst YES -selectedMonth "أيلول 2026"`
 /// لا تؤثر على الاستخدام العادي لأنها لا تُضبط إلا من سطر الأوامر.
-private enum LaunchOptions {
+enum LaunchOptions {
     /// مسار ملف أو عدة مسارات مفصولة بـ "|".
     static var importFiles: [String] {
         (UserDefaults.standard.string(forKey: "importFile") ?? "").split(separator: "|").map(String.init)
     }
     static var search: String { UserDefaults.standard.string(forKey: "search") ?? "" }
     static var openFirst: Bool { UserDefaults.standard.bool(forKey: "openFirst") }
+    /// يفتح نافذة المشاركة في صفحة التفاصيل.
+    static var share: Bool { UserDefaults.standard.bool(forKey: "share") }
 
     /// نتيجة الاستيراد تُكتب في Documents/import-report.txt ليقرأها سكربت الاختبار.
     static func writeReport(_ text: String) {
@@ -46,7 +48,7 @@ struct ContentView: View {
         NavigationStack(path: $path) {
             EmployeeList(search: search, month: currentMonth)
                 .navigationTitle("الرواتب")
-                .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "ابحث بالاسم")
+                .adaptiveSearchable(text: $search, prompt: "ابحث بالاسم")
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
@@ -211,6 +213,7 @@ struct ContentView: View {
 
 struct EmployeeList: View {
     @Query private var employees: [Employee]
+    @State private var shareTarget: Employee?
     private let tokens: [String]
     private let month: PayrollMonth?
 
@@ -257,8 +260,20 @@ struct EmployeeList: View {
                     NavigationLink(value: employee) {
                         EmployeeRow(employee: employee)
                     }
+                    .contextMenu {
+                        Button("مشاركة", systemImage: "square.and.arrow.up") {
+                            shareTarget = employee
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button("مشاركة", systemImage: "square.and.arrow.up") {
+                            shareTarget = employee
+                        }
+                        .tint(.blue)
+                    }
                 }
                 .listStyle(.plain)
+                .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             }
         } else {
             ContentUnavailableView(
@@ -274,19 +289,26 @@ struct EmployeeRow: View {
     let employee: Employee
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(employee.name).font(.headline)
+        HStack(spacing: 12) {
+            NameAvatar(name: employee.name)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(employee.name)
+                    .font(.headline)
+                    .lineLimit(1)
                 Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Spacer()
-            Text(Money.format(employee.netSalary))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(Money.format(employee.netSalary))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                Text("صافي")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }

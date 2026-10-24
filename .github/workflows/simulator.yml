@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   simulator:
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         shell: bash
@@ -18,6 +18,14 @@ jobs:
       BUNDLE: com.example.SalaryApp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i ios || true
 
       - name: Generate Xcode project
         run: |
@@ -118,10 +126,20 @@ jobs:
           launch -selectedMonth "أيلول 2026" -search "أحمد علي حسين الدليمي" -openFirst YES
           shot 08-detail-september
 
-          # 9) الوضع الداكن
+          # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
+          launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
+          shot 09-share-sheet 8
+          mkdir -p ci-output/exports
+          cp "$DATA"/tmp/share/* ci-output/exports/ 2>/dev/null || echo "::error::No exported files in tmp/share"
+          ls -la ci-output/exports
+          file ci-output/exports/* || true
+
+          # 10) الوضع الداكن
           xcrun simctl ui "$UDID" appearance dark
           launch -search "أحمد علي حسين الدليمي" -openFirst YES
-          shot 09-detail-dark
+          shot 10-detail-dark
+          launch -search "احمد علي"
+          shot 11-search-dark
 
       - name: Check import result
         run: |
