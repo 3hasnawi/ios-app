@@ -38,14 +38,16 @@ struct SettingsView: View {
 
     private var displaySection: some View {
         Section {
-            SettingRow(title: tr("اللغة", "Language"), systemImage: "globe", color: .indigo) {
+            // العنوان في سطر وأزرار الاختيار تحته بعرض كامل، حتى لا ينكسر العنوان مع الخط الكبير.
+            VStack(alignment: .leading, spacing: 10) {
+                SettingRow(title: tr("اللغة", "Language"), systemImage: "globe", color: .indigo) { EmptyView() }
                 Picker(tr("اللغة", "Language"), selection: $language) {
                     Text("العربية").tag(AppLanguage.arabic.rawValue)
                     Text("English").tag(AppLanguage.english.rawValue)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 170)
             }
+            .padding(.vertical, 2)
 
             VStack(alignment: .leading, spacing: 10) {
                 SettingRow(title: tr("المظهر", "Appearance"), systemImage: "moon.fill", color: Color(.darkGray)) { EmptyView() }
@@ -59,14 +61,12 @@ struct SettingsView: View {
             .padding(.vertical, 2)
 
             VStack(alignment: .leading, spacing: 10) {
-                SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) {
-                    Picker(tr("الأرقام", "Numerals"), selection: $numerals) {
-                        Text("123").tag(AppNumerals.latin.rawValue)
-                        Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 170)
+                SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
+                Picker(tr("الأرقام", "Numerals"), selection: $numerals) {
+                    Text("123").tag(AppNumerals.latin.rawValue)
+                    Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
                 }
+                .pickerStyle(.segmented)
                 LabeledContent(tr("مثال", "Example")) {
                     Text(Money.format(1_250_000))
                         .font(.body.weight(.semibold).monospacedDigit())
@@ -223,6 +223,9 @@ private struct SettingRow<Trailing: View>: View {
                 .background(color.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(title)
                 .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
             Spacer(minLength: 8)
             trailing()
         }
