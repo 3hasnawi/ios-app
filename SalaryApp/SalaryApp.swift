@@ -14,6 +14,6 @@ struct SalaryApp: App {
                 .environment(\.locale, AppSettings.locale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
-        .modelContainer(for: [PayrollMonth.self, Employee.self, Deduction.self])
+        .modelContainer(SharedModel.container)
     }
 }

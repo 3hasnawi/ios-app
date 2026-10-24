@@ -36,6 +36,8 @@ struct ContentView: View {
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
     @State private var showSettings = false
+    /// اسم قادم من اختصار "فتح البحث في الرواتب".
+    @State private var router = ShortcutRouter.shared
     @State private var importAfterSettings = false
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
@@ -166,6 +168,14 @@ struct ContentView: View {
                 }
                 .task {
                     await applyLaunchOptions()
+                }
+                .onChange(of: router.pendingSearch, initial: true) { _, name in
+                    guard let name else { return }
+                    router.pendingSearch = nil
+                    path = []
+                    showSettings = false
+                    search = name
+                    appliedSearch = name
                 }
         }
     }
