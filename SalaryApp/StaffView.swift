@@ -6,8 +6,12 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff }
-    var tab: Tab = LaunchOptions.startTab == "staff" ? .staff : .payroll
+    enum Tab: Hashable { case payroll, staff, search }
+    var tab: Tab = switch LaunchOptions.startTab {
+    case "staff": .staff
+    case "search": .search
+    default: .payroll
+    }
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
@@ -65,6 +69,10 @@ struct RootView: View {
             }
             Tab(tr("الملاك", "Staff"), systemImage: "person.3", value: AppRouter.Tab.staff) {
                 StaffView()
+            }
+            // تبويب البحث الموحّد (زر دائري مستقل في iOS 26).
+            Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
+                UnifiedSearchView()
             }
         }
     }
@@ -265,7 +273,7 @@ struct StaffResultsList: View {
     }
 
     /// أول ثلاث كلمات تُصفّى داخل قاعدة البيانات، والباقي في الذاكرة.
-    private static func predicate(mode: StaffSearchMode, tokens: [String]) -> Predicate<StaffMember> {
+    static func predicate(mode: StaffSearchMode, tokens: [String]) -> Predicate<StaffMember> {
         let a = tokens.first ?? ""
         let b = tokens.count > 1 ? tokens[1] : ""
         let c = tokens.count > 2 ? tokens[2] : ""
@@ -375,6 +383,27 @@ struct StatusChip: View {
 
 // MARK: - صفحة الموظف
 
+/// أقسام معلومات الملاك داخل List (تُستخدم في صفحة الملاك وصفحة البحث الموحّد).
+struct StaffSectionsContent: View {
+    let sections: [StaffSection]
+
+    var body: some View {
+        ForEach(sections, id: \.title) { section in
+            Section(section.title) {
+                ForEach(Array(section.fields.enumerated()), id: \.offset) { _, field in
+                    LabeledContent {
+                        Text(Num.digits(field.value))
+                            .multilineTextAlignment(.trailing)
+                            .textSelection(.enabled)
+                    } label: {
+                        Text(field.label)
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct StaffDetailView: View {
     let member: StaffMember
 
@@ -386,19 +415,7 @@ struct StaffDetailView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             }
-            ForEach(sections, id: \.title) { section in
-                Section(section.title) {
-                    ForEach(Array(section.fields.enumerated()), id: \.offset) { _, field in
-                        LabeledContent {
-                            Text(Num.digits(field.value))
-                                .multilineTextAlignment(.trailing)
-                                .textSelection(.enabled)
-                        } label: {
-                            Text(field.label)
-                        }
-                    }
-                }
-            }
+            StaffSectionsContent(sections: sections)
             Section {
                 Button {
                     ShortcutRouter.shared.pendingSearch = member.name

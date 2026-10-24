@@ -147,6 +147,12 @@ jobs:
           launch -tab staff
           shot 08h-staff-empty
 
+          # 8i) البحث الموحّد: قبل البحث، ثم نتائج كبطاقات
+          launch -tab search
+          shot 08i-unified-empty
+          launch -tab search -search "أحمد علي"
+          shot 08j-unified-results
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8
