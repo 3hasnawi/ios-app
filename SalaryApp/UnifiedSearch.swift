@@ -492,137 +492,155 @@ struct UnifiedCard: View {
 struct UnifiedPersonView: View {
     let person: UnifiedPerson
 
-    enum Part: String, CaseIterable, Identifiable {
-        case salary, staff, months
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .salary: tr("الراتب", "Salary")
-            case .staff: tr("الملاك", "Staff")
-            case .months: tr("الأشهر", "Months")
-            }
-        }
-    }
+    /// "staff" للملاك، وإلا اسم الشهر.
+    private static let staffTag = "staff"
 
-    @State private var part: Part
+    @State private var selection: String
     @State private var autopilot = AutoPilot.shared
     @State private var showShare = false
     @State private var copied = false
+    @Query private var records: [Employee]
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var months: [PayrollMonth]
 
     init(person: UnifiedPerson) {
         self.person = person
-        let start = Part(rawValue: LaunchOptions.personPart)
-        _part = State(initialValue: start ?? (person.employee != nil ? .salary : .staff))
+        let employee = person.employee
+        let key = employee?.matchKey ?? "\u{0}"
+        _records = Query(filter: #Predicate<Employee> { $0.matchKey == key })
+        let wantsStaff = LaunchOptions.personPart == "staff" && person.hasStaff
+        _selection = State(initialValue: wantsStaff || employee == nil ? Self.staffTag : employee!.month)
     }
 
-    private var parts: [Part] {
-        Part.allCases.filter { p in
-            switch p {
-            case .salary, .months: person.employee != nil
-            case .staff: person.staff != nil
-            }
-        }
+    /// رواتب الشخص من الأحدث إلى الأقدم.
+    private var sortedRecords: [Employee] {
+        let order = Dictionary(months.enumerated().map { ($1.name, $0) }, uniquingKeysWith: { a, _ in a })
+        return records.sorted { (order[$0.month] ?? .max) < (order[$1.month] ?? .max) }
+    }
+
+    private var selectedRecord: Employee? {
+        sortedRecords.first { $0.month == selection }
     }
 
     var body: some View {
+        let staff = person.staff
         List {
             Section {
-                header
+                chips(staff: staff)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
-                if parts.count > 1 {
-                    Picker(tr("القسم", "Section"), selection: $part) {
-                        ForEach(parts) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("personPartPicker")
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 0))
-                }
             }
 
-            switch part {
-            case .salary:
-                if let employee = person.employee {
-                    PersonDeductionsSection(employee: employee)
+            if selection == Self.staffTag {
+                if let staff {
                     Section {
-                        HStack(spacing: 10) {
-                            Button {
-                                copyImage(employee)
-                            } label: {
-                                Label(copied ? tr("تم النسخ", "Copied") : tr("نسخ كصورة", "Copy as image"),
-                                      systemImage: copied ? "checkmark" : "doc.on.doc")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(copied ? .green : .blue)
-                            Button {
-                                showShare = true
-                            } label: {
-                                Label(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets())
+                        staffHeader(staff)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                     }
-                }
-            case .staff:
-                if let staff = person.staff {
                     StaffSectionsContent(sections: staff.sections)
                 }
-            case .months:
-                if let employee = person.employee {
-                    PersonMonthsSection(matchKey: employee.matchKey)
+            } else if let record = selectedRecord {
+                Section {
+                    PersonPayslip(employee: record, staff: staff)
+                        .id(record.persistentModelID)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+                Section {
+                    HStack(spacing: 10) {
+                        Button {
+                            copyImage(record)
+                        } label: {
+                            Label(copied ? tr("تم النسخ", "Copied") : tr("نسخ القسيمة كصورة", "Copy payslip as image"),
+                                  systemImage: copied ? "checkmark" : "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(copied ? .green : PayslipDocument.green)
+                        Button {
+                            showShare = true
+                        } label: {
+                            Label(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up")
+                                .labelStyle(.iconOnly)
+                                .padding(.horizontal, 8)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(PayslipDocument.green)
+                    }
+                    .controlSize(.large)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
                 }
             }
         }
         .listSectionSpacing(.compact)
-        .navigationTitle(person.name)
+        .navigationTitle(tr("قسيمة الراتب", "Payslip"))
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: autopilot.partRequest) {
-            if let p = Part(rawValue: autopilot.part), parts.contains(p) { part = p }
+        .onChange(of: selection) { copied = false }
+        .onChange(of: sortedRecords.count, initial: true) {
+            // اختبار المحاكي: -personPart months يفتح الشهر السابق.
+            if LaunchOptions.personPart == "months", sortedRecords.count > 1, selection == sortedRecords[0].month {
+                selection = sortedRecords[1].month
+            }
         }
-        .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
+        .onChange(of: autopilot.partRequest) {
+            let list = sortedRecords
+            switch autopilot.part {
+            case "months" where list.count > 1: selection = list[1].month
+            case "salary" where !list.isEmpty: selection = list[0].month
+            default: break
+            }
+        }
         .sheet(isPresented: $showShare) {
-            if let employee = person.employee { ShareOptionsSheet(employee: employee) }
+            if let record = selectedRecord { ShareOptionsSheet(employee: record) }
         }
     }
 
-    private var header: some View {
-        let chips = [person.staff?.rank ?? person.employee?.rank ?? "",
-                     person.staff?.status ?? "",
-                     person.staff.map { $0.statNumber.isEmpty ? "" : tr("الرقم الإحصائي \($0.statNumber)", "Stat. no. \($0.statNumber)") } ?? ""]
-            .filter { !$0.isEmpty }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(person.name).font(.title3.bold())
-            if !chips.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(chips, id: \.self) { chip in
-                        Text(Num.digits(chip))
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(.white.opacity(0.2), in: Capsule())
-                    }
+    /// أزرار صغيرة: كل شهر له راتب للشخص، ثم الملاك.
+    private func chips(staff: StaffMember?) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(sortedRecords) { record in
+                    chip(record.month, tag: record.month)
+                }
+                if staff != nil {
+                    chip(tr("الملاك", "Staff"), tag: Self.staffTag)
                 }
             }
-            if let employee = person.employee {
-                Text(tr("صافي راتب \(employee.month)", "Net salary, \(employee.month)"))
-                    .font(.caption.weight(.medium))
-                    .opacity(0.85)
-                    .padding(.top, 4)
-                Text(Money.format(employee.netSalary))
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
         }
-        .foregroundStyle(.white)
+        .scrollClipDisabled()
+        .accessibilityIdentifier("personPartPicker")
+    }
+
+    private func chip(_ title: String, tag: String) -> some View {
+        let on = selection == tag
+        return Button {
+            withAnimation(.snappy(duration: 0.2)) { selection = tag }
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(on ? Color.white : Color.primary)
+                .background(on ? AnyShapeStyle(PayslipDocument.green) : AnyShapeStyle(.regularMaterial), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func staffHeader(_ staff: StaffMember) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(staff.name).font(.title3.bold())
+            let line = [staff.rank, staff.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
+            if !line.isEmpty { Text(line).font(.subheadline).foregroundStyle(.secondary) }
+            if !staff.status.isEmpty { StatusChip(status: staff.status) }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Theme.salaryGradient, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
     }
 
     private func copyImage(_ employee: Employee) {
@@ -630,6 +648,28 @@ struct UnifiedPersonView: View {
               let files = try? PayslipExporter.export(employee: employee, deductions: deductions) else { return }
         UIPasteboard.general.image = files.image
         withAnimation { copied = true }
+    }
+}
+
+/// القسيمة الرسمية لشهر واحد (الاستقطاعات من نفس الشهر).
+private struct PersonPayslip: View {
+    let employee: Employee
+    let staff: StaffMember?
+    @Query private var deductions: [Deduction]
+
+    init(employee: Employee, staff: StaffMember?) {
+        self.employee = employee
+        self.staff = staff
+        let key = employee.matchKey
+        let month = employee.month
+        _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
+    }
+
+    var body: some View {
+        PayslipDocument(style: .screen, employee: employee, staff: staff, deductions: deductions)
+            .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
     }
 }
 

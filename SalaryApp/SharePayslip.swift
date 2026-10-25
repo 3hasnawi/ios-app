@@ -117,69 +117,6 @@ private struct OptionLabel: View {
     }
 }
 
-/// صورة النتيجة كما تُرسل: بطاقة الراتب ثم الاستقطاعات، بخلفية فاتحة ثابتة.
-struct PayslipCard: View {
-    let employee: Employee
-    let deductions: [Deduction]
-
-    var body: some View {
-        VStack(spacing: 16) {
-            SalaryHeader(employee: employee)
-
-            VStack(spacing: 0) {
-                HStack {
-                    Text(tr("الاستقطاعات", "Deductions")).font(.headline)
-                    Spacer()
-                    if !deductions.isEmpty {
-                        Text(Num.format(deductions.count)).foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.bottom, 8)
-
-                if deductions.isEmpty {
-                    Text(tr("لا توجد استقطاعات", "No deductions"))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 6)
-                } else {
-                    ForEach(deductions) { deduction in
-                        Divider()
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(deduction.title.orDash).font(.subheadline.weight(.medium))
-                                if !deduction.note.isEmpty {
-                                    Text(deduction.note).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Text(Money.format(deduction.amount)).font(.subheadline.monospacedDigit())
-                        }
-                        .padding(.vertical, 8)
-                    }
-                    Divider()
-                    HStack {
-                        Text(tr("المجموع", "Total")).font(.subheadline.bold())
-                        Spacer()
-                        Text(Money.format(deductions.total))
-                            .font(.subheadline.bold().monospacedDigit())
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.top, 10)
-                }
-            }
-            .padding(18)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-
-            Text(tr("تطبيق الرواتب", "Payroll app"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(20)
-        .frame(width: 390)
-        .background(Color(.systemBackground))
-    }
-}
-
 @MainActor
 enum PayslipExporter {
     struct Files {
@@ -196,7 +133,9 @@ enum PayslipExporter {
 
     /// يرسم البطاقة إلى PNG (للنسخ والمشاركة) وإلى PDF، ويحفظهما في tmp/share.
     static func export(employee: Employee, deductions: [Deduction]) throws -> Files {
-        let card = PayslipCard(employee: employee, deductions: deductions)
+        // صورة النسخ والمشاركة: القسيمة المحايدة (بلا شعار ولا اسم وزارة).
+        let card = PayslipDocument(style: .export, employee: employee, deductions: deductions)
+            .frame(width: 390)
             .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
             .environment(\.colorScheme, .light)
         let renderer = ImageRenderer(content: card)
