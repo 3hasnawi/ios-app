@@ -234,9 +234,27 @@ final class NavigationTests: XCTestCase {
             wait(element("backupStatus"), "صفحة النسخ الاحتياطي")
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
-        step("التقارير: البحث عن جهة ونافذة التصدير") {
+        step("التقارير: بطاقة جهات التنفيذ ثم المعاينة") {
             reportsTab.tap()
             wait(app.navigationBars["التقارير"], "التقارير")
+            let card = element("entitiesCard")
+            if wait(card, "بطاقة جهات التنفيذ") {
+                card.tap()
+                let row = element("reportGroup")
+                if wait(row, "قائمة الجهات") {
+                    row.tap()
+                    let preview = element("previewReport")
+                    if wait(preview, "زر معاينة الجدول") {
+                        preview.tap()
+                        wait(element("reportPDFPreview"), "معاينة الجدول", timeout: 20)
+                        app.swipeDown(velocity: .fast)
+                    }
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                }
+                app.navigationBars.buttons.element(boundBy: 0).tap()
+            }
+        }
+        step("التقارير: نافذة التصدير") {
             let export = element("deductionExportButton")
             if wait(export, "زر التصدير") {
                 export.tap()

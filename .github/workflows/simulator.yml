@@ -207,6 +207,11 @@ jobs:
           shot 08t-export-single 6
           launch -tab reports -exportSheet group
           shot 08u-export-group 6
+          # قائمة جهات التنفيذ، ثم معاينة جدول جهة
+          launch -tab reports -reportsEntities YES -reportByEntity NO
+          shot 08v-entities 6
+          launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي" -previewReport YES
+          shot 08w-report-preview 10
 
           # 8r) تصدير كشف جهة استقطاع (Excel + PDF) بشكل النموذج
           rm -f "$DATA/Documents/import-report.txt"

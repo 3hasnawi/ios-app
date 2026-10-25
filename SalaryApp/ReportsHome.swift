@@ -5,6 +5,8 @@ import SwiftData
 enum ReportsRoute: Hashable {
     /// كل بنود ورقة الرواتب.
     case items
+    /// كل جهات التنفيذ بمبالغها وعدد موظفيها.
+    case entities
     case group(ReportGroup)
 }
 
@@ -20,7 +22,6 @@ struct ReportsView: View {
     @State private var deductionGroups: [ReportGroup] = []
     @State private var loadedKey = ""
     @State private var path: [ReportsRoute] = []
-    @State private var search = ""
     @State private var showExport = false
     @State private var exporter = QuickExporter.shared
     @State private var appliedLaunchOptions = false
@@ -35,15 +36,6 @@ struct ReportsView: View {
 
     private var loadKey: String { "\(month?.name ?? "")|\(month?.deductionCount ?? 0)|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(byEntity)" }
 
-    private var filteredGroups: [ReportGroup] {
-        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
-        guard !tokens.isEmpty else { return deductionGroups }
-        return deductionGroups.filter { group in
-            let key = ArabicText.normalize(group.title)
-            return tokens.allSatisfy { key.contains($0) }
-        }
-    }
-
     var body: some View {
         NavigationStack(path: $path) {
             List {
@@ -52,45 +44,24 @@ struct ReportsView: View {
                                            description: Text(tr("استورد ملفات الرواتب والاستقطاعات أولاً.", "Import payroll and deduction files first.")))
                         .listRowBackground(Color.clear)
                 } else {
-                    if search.isEmpty {
-                        Section {
-                            summaryCard
-                            specialCards
-                        }
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+                    Section {
+                        filters
+                        summaryCard
+                        entitiesCard
+                        specialCards
                     }
-                    entitiesSection
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
             .listSectionSpacing(.compact)
-            .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
-            .safeAreaInset(edge: .top, spacing: 0) { if !months.isEmpty { filters } }
             .navigationTitle(tr("التقارير", "Reports"))
             .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                if !deductionGroups.isEmpty {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            showExport = true
-                        } label: {
-                            // نص وأيقونة معاً (Label وحده يظهر أيقونة فقط في الشريط العلوي).
-                            HStack(spacing: 5) {
-                                Image(systemName: "square.and.arrow.up")
-                                Text(tr("تصدير", "Export"))
-                            }
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 4)
-                        }
-                        .accessibilityLabel(tr("تصدير", "Export"))
-                        .accessibilityIdentifier("deductionExportButton")
-                    }
-                }
-            }
             .navigationDestination(for: ReportsRoute.self) { route in
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
+                case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
                 case .group(let group): ReportDetailView(group: group)
                 }
             }
@@ -172,52 +143,50 @@ struct ReportsView: View {
 
     // MARK: جهات التنفيذ
 
-    @ViewBuilder
-    private var entitiesSection: some View {
-        Section {
-            if deductionGroups.isEmpty {
-                if loadedKey == loadKey {
-                    Text(tr("لا توجد استقطاعات لهذا الشهر.", "No deductions for this month.")).foregroundStyle(.secondary)
-                } else {
-                    ProgressView().frame(maxWidth: .infinity)
+    /// بطاقة عريضة: عدد الجهات ومجموعها، وزر التصدير؛ الضغط يفتح قائمة الجهات.
+    private var entitiesCard: some View {
+        let total = deductionGroups.reduce(0) { $0 + $1.total }
+        return Button {
+            path.append(.entities)
+        } label: {
+            HStack(spacing: 12) {
+                CardIcon(systemImage: "building.columns.fill", color: .indigo)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("جهات التنفيذ", "Execution entities")).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Text(loadedKey == loadKey
+                         ? tr("\(Num.format(deductionGroups.count)) جهة · مديريات ومصارف وجهات أخرى", "\(deductionGroups.count) entities")
+                         : tr("جارٍ الحساب…", "Calculating…"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(Money.format(total)).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(.red)
                 }
-            } else if filteredGroups.isEmpty {
-                Text(tr("لا توجد جهة بهذا الاسم.", "No entity matches.")).foregroundStyle(.secondary)
-            } else {
-                let top = deductionGroups.map(\.total).max() ?? 1
-                ForEach(filteredGroups) { group in
-                    NavigationLink(value: ReportsRoute.group(group)) {
-                        GroupRow(group: group, share: top > 0 ? group.total / top : 0)
-                    }
-                    .accessibilityIdentifier("reportGroup")
-                    .contextMenu {
-                        Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.single(group, format: .excel) }
-                        Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.single(group, format: .pdf) }
-                    }
-                }
+                Spacer(minLength: 44)
+                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
             }
-        } header: {
-            HStack {
-                Text(search.isEmpty
-                     ? tr("جهات التنفيذ (\(Num.format(deductionGroups.count)))", "Execution entities (\(deductionGroups.count))")
-                     : tr("\(Num.format(filteredGroups.count)) من \(Num.format(deductionGroups.count))", "\(filteredGroups.count) of \(deductionGroups.count)"))
-                Spacer()
-                Menu {
-                    Picker(tr("التجميع", "Group by"), selection: $byEntity) {
-                        Text(tr("حسب الفرع", "By branch")).tag(false)
-                        Text(tr("حسب الجهة الرئيسية", "By main entity")).tag(true)
-                    }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            if !deductionGroups.isEmpty {
+                Button {
+                    showExport = true
                 } label: {
-                    HStack(spacing: 3) {
-                        Text(byEntity ? tr("حسب الجهة", "By entity") : tr("حسب الفرع", "By branch"))
-                        Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 32, height: 32)
+                        .background(Color.accentColor.opacity(0.12), in: Circle())
                 }
-                .textCase(nil)
+                .buttonStyle(.plain)
+                .padding(10)
+                .padding(.trailing, 22)
+                .accessibilityLabel(tr("تصدير الاستقطاعات", "Export deductions"))
+                .accessibilityIdentifier("deductionExportButton")
             }
         }
+        .padding(.horizontal, 16)
+        .accessibilityIdentifier("entitiesCard")
     }
 
     private var filters: some View {
@@ -239,7 +208,6 @@ struct ReportsView: View {
             Spacer()
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 6)
     }
 
     private func loadDeductions() async {
@@ -265,6 +233,7 @@ struct ReportsView: View {
         let defaults = UserDefaults.standard
         let payroll = defaults.string(forKey: "reportKind") == "payroll"
         if payroll { path = [.items] }
+        if defaults.bool(forKey: "reportsEntities") { path = [.entities] }
         if LaunchOptions.openReport, let first = testGroup(payroll ? payrollGroups : deductionGroups) {
             path.append(.group(first))
         }
@@ -521,5 +490,93 @@ private struct ExportingHUD: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
         .accessibilityIdentifier("exportingHUD")
+    }
+}
+
+// MARK: - جهات التنفيذ
+
+/// كل جهة بمبلغها وعدد موظفيها، مع البحث والتجميع وزر التصدير.
+struct EntitiesView: View {
+    let month: String
+    let groups: [ReportGroup]
+    let loaded: Bool
+    @Binding var showExport: Bool
+    @AppStorage("reportByEntity") private var byEntity = false
+    @State private var search = UserDefaults.standard.string(forKey: "entitySearch") ?? ""
+    @State private var exporter = QuickExporter.shared
+
+    private var filtered: [ReportGroup] {
+        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
+        guard !tokens.isEmpty else { return groups }
+        return groups.filter { g in tokens.allSatisfy { ArabicText.normalize(g.title).contains($0) } }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                if groups.isEmpty {
+                    if loaded {
+                        Text(tr("لا توجد استقطاعات لهذا الشهر.", "No deductions for this month.")).foregroundStyle(.secondary)
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity)
+                    }
+                } else if filtered.isEmpty {
+                    Text(tr("لا توجد جهة بهذا الاسم.", "No entity matches.")).foregroundStyle(.secondary)
+                } else {
+                    let top = groups.map(\.total).max() ?? 1
+                    ForEach(filtered) { group in
+                        NavigationLink(value: ReportsRoute.group(group)) {
+                            GroupRow(group: group, share: top > 0 ? group.total / top : 0)
+                        }
+                        .accessibilityIdentifier("reportGroup")
+                        .contextMenu {
+                            Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.single(group, format: .excel) }
+                            Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.single(group, format: .pdf) }
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text(search.isEmpty
+                         ? tr("\(Num.format(groups.count)) جهة · \(Money.format(groups.reduce(0) { $0 + $1.total }))", "\(groups.count) entities")
+                         : tr("\(Num.format(filtered.count)) من \(Num.format(groups.count))", "\(filtered.count) of \(groups.count)"))
+                    Spacer()
+                    Menu {
+                        Picker(tr("التجميع", "Group by"), selection: $byEntity) {
+                            Text(tr("حسب الفرع", "By branch")).tag(false)
+                            Text(tr("حسب الجهة الرئيسية", "By main entity")).tag(true)
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(byEntity ? tr("حسب الجهة", "By entity") : tr("حسب الفرع", "By branch"))
+                            Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .textCase(nil)
+                }
+            }
+        }
+        .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
+        .navigationTitle(tr("جهات التنفيذ", "Execution entities"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showExport = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text(tr("تصدير", "Export"))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 4)
+                }
+                .disabled(groups.isEmpty)
+                .accessibilityLabel(tr("تصدير", "Export"))
+            }
+        }
+        .overlay { if exporter.isWorking { ExportingHUD() } }
     }
 }

@@ -97,8 +97,8 @@ actor ReportEngine {
 struct ReportDetailView: View {
     let group: ReportGroup
     @State private var rows: [ReportRow]?
-    @State private var search = ""
     @State private var showExport = false
+    @State private var showPreview = UserDefaults.standard.bool(forKey: "previewReport")
     /// لبند صندوق الشهداء: الملخّص حسب الفئة.
     @State private var fundRows: [FundReport.Row]?
     /// لبند الرعاية الصحية: المشتركون وغير المشتركين.
@@ -108,16 +108,6 @@ struct ReportDetailView: View {
     private var foodRows: [FoodContractReport.Row]? {
         guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
         return FoodContractReport.rows(from: rows)
-    }
-
-    private var filtered: [ReportRow] {
-        guard let rows else { return [] }
-        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
-        guard !tokens.isEmpty else { return rows }
-        return rows.filter { row in
-            let key = ArabicText.normalize(row.name + " " + row.workplace + " " + row.rank)
-            return tokens.allSatisfy { key.contains($0) }
-        }
     }
 
     var body: some View {
@@ -147,42 +137,26 @@ struct ReportDetailView: View {
             if let foodRows, !foodRows.isEmpty { FoodContractSection(rows: foodRows) }
             if let healthLists { HealthCareSection(lists: healthLists) }
 
+            // بدل قائمة الأسماء: معاينة الجدول كما سيُصدَّر، وزر التصدير.
             Section {
-                if rows == nil {
-                    ProgressView().frame(maxWidth: .infinity)
-                } else {
-                    ForEach(filtered) { row in
-                        HStack(alignment: .top, spacing: 10) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(row.name).font(.subheadline.weight(.semibold))
-                                let line = [row.rank, row.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
-                                if !line.isEmpty { Text(line).font(.caption).foregroundStyle(.secondary) }
-                                if group.byEntity, !row.entity.isEmpty, row.entity != group.title {
-                                    Text(row.entity).font(.caption2).foregroundStyle(.secondary)
-                                }
-                                if !row.note.isEmpty { Text(Num.digits(row.note)).font(.caption2).foregroundStyle(.secondary) }
-                            }
-                            Spacer(minLength: 8)
-                            Text(Money.format(row.amount)).font(.subheadline.weight(.semibold).monospacedDigit())
-                        }
-                    }
+                HStack(spacing: 10) {
+                    actionButton(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass", filled: false) { showPreview = true }
+                        .accessibilityIdentifier("previewReport")
+                    actionButton(tr("تصدير", "Export"), systemImage: "square.and.arrow.up", filled: true) { showExport = true }
+                        .accessibilityIdentifier("exportReport")
                 }
-            } header: {
-                if let rows, !search.isEmpty {
-                    Text(tr("\(Num.format(filtered.count)) من \(Num.format(rows.count))", "\(filtered.count) of \(rows.count)"))
+                .disabled(rows?.isEmpty ?? true)
+                .overlay { if rows == nil { ProgressView() } }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            } footer: {
+                if let rows {
+                    Text(tr("\(Num.format(rows.count)) سطر في الجدول، بالشكل المعتمد (A4).", "\(rows.count) rows, in the approved A4 layout."))
                 }
             }
         }
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: tr("ابحث بالاسم أو القسم", "Search name or unit"))
         .navigationTitle(group.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(tr("تصدير", "Export"), systemImage: "square.and.arrow.up") { showExport = true }
-                    .disabled(rows?.isEmpty ?? true)
-                    .accessibilityIdentifier("exportReport")
-            }
-        }
         .alert(tr("تنبيه: الرعاية الصحية", "Health care warning"), isPresented: $healthWarning) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: {
@@ -191,6 +165,9 @@ struct ReportDetailView: View {
         }
         .sheet(isPresented: $showExport) {
             if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
+        }
+        .sheet(isPresented: Binding(get: { showPreview && rows != nil }, set: { showPreview = $0 })) {
+            if let rows { ReportPreviewSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
         }
         .task {
             let container = SharedModel.container
@@ -221,5 +198,18 @@ struct ReportDetailView: View {
                 showExport = true
             }
         }
+    }
+
+    private func actionButton(_ title: String, systemImage: String, filled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.body.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .foregroundStyle(filled ? Color.white : Color.accentColor)
+                .background(filled ? Color.accentColor : Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.accentColor, lineWidth: filled ? 0 : 1.5))
+        }
+        .buttonStyle(.plain)
     }
 }
