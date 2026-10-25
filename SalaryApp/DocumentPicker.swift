@@ -61,7 +61,8 @@ enum FilePicker {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController ?? scene?.windows.first?.rootViewController
-        while let next = top?.presentedViewController { top = next }
+        // لا يُعرض فوق نافذة تُغلق الآن (مثل تنبيه ضُغط زره للتو).
+        while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
         return top
     }
 
@@ -69,7 +70,7 @@ enum FilePicker {
     static func waitUntilSettled() async {
         for _ in 0..<20 {
             guard let top = topController() else { return }
-            if !(top is UIDocumentPickerViewController) && !top.isBeingDismissed && !top.isBeingPresented { return }
+            if !(top is UIDocumentPickerViewController) && !(top is UIAlertController) && !top.isBeingDismissed && !top.isBeingPresented { return }
             try? await Task.sleep(for: .milliseconds(100))
         }
     }

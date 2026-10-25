@@ -178,8 +178,8 @@ enum BackupDestination: String {
 final class BackupManager {
     static let shared = BackupManager()
     static let autoKey = "autoBackupEnabled"
-    private static let folderKey = "autoBackupFolder"
-    /// مجلد يُنشئه التطبيق داخل المجلد المختار في iCloud Drive.
+    /// رابط محفوظ (bookmark) لملف النسخة الذي حفظه المستخدم في iCloud Drive: كل نسخة جديدة تُكتب فوقه.
+    private static let fileKey = "autoBackupFile"
     static let subfolder = "نسخ الرواتب"
     private static let lastKey = "autoBackupLast"
     private static let lastSizeKey = "autoBackupLastSize"
@@ -188,8 +188,8 @@ final class BackupManager {
     private static let errorAtKey = "autoBackupLastErrorAt"
     /// آخر تغيير في البيانات (استيراد أو حذف): إذا كان بعد آخر نسخة ناجحة تُعاد المحاولة تلقائياً.
     private static let changedKey = "backupDataChangedAt"
-    /// اختبار المحاكي: مسار مجلد بدل مجلد iCloud.
-    private static let testFolderKey = "backupTestFolder"
+    /// اختبار المحاكي: مسار ملف بدل iCloud.
+    private static let testFileKey = "backupTestFile"
 
     var isWorking = false
     var message: String?
@@ -204,23 +204,23 @@ final class BackupManager {
     var lastErrorAt: Date? { UserDefaults.standard.object(forKey: Self.errorAtKey) as? Date }
     static var autoEnabled: Bool { UserDefaults.standard.bool(forKey: autoKey) }
 
-    /// "iCloud Drive › نسخ الرواتب"، أو nil إذا لم يُختر مجلد.
+    /// "iCloud Drive › نسخ الرواتب"، أو nil إذا لم يُختر مكان.
     var folderName: String? {
         _ = version
-        return resolveFolder().map { Self.placeName($0.appendingPathComponent(Self.subfolder)) }
+        return resolveFile().map { Self.placeName($0.deletingLastPathComponent()) }
     }
 
-    /// المجلد المختار ليس في iCloud (مثلاً على الآيفون): لا يصلح لجهاز آخر.
+    /// المكان المختار ليس في iCloud (مثلاً على الآيفون): لا يصلح لجهاز آخر.
     var folderIsLocal: Bool {
         _ = version
-        guard let url = resolveFolder(), UserDefaults.standard.string(forKey: Self.testFolderKey) == nil else { return false }
+        guard let url = resolveFile(), UserDefaults.standard.string(forKey: Self.testFileKey) == nil else { return false }
         return !url.path.contains("Mobile Documents")
     }
 
     /// سطر الحالة في صفحة الإعدادات.
     var statusLine: String {
         _ = version
-        if folderName == nil { return tr("⚠️ اختر مجلد iCloud لتعمل النسخ", "⚠️ Choose an iCloud folder") }
+        if folderName == nil { return tr("⚠️ اختر مكان النسخة في iCloud", "⚠️ Choose where to save in iCloud") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
         guard Self.autoEnabled else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
         guard let lastBackup else { return tr("تلقائي · iCloud · لم تُؤخذ نسخة بعد", "Auto · iCloud · no backup yet") }
@@ -247,56 +247,57 @@ final class BackupManager {
         return parts.suffix(2).joined(separator: " › ")
     }
 
-    // MARK: - المجلد
+    // MARK: - مكان النسخة
 
-    /// اختيار مجلد في iCloud Drive: يكفي فتح iCloud Drive والضغط على "فتح"، ويُنشأ مجلد "نسخ الرواتب" داخله.
-    func chooseFolder(then: (() -> Void)? = nil) {
-        FilePicker.presentFolder { [weak self] url in
-            guard let self, let url else { return }
-            let granted = url.startAccessingSecurityScopedResource()
-            defer { if granted { url.stopAccessingSecurityScopedResource() } }
-            // اختار المستخدم مجلد "نسخ الرواتب" نفسه: يُحفظ المجلد الذي فوقه.
-            let base = url.lastPathComponent == Self.subfolder ? url.deletingLastPathComponent() : url
-            if let data = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
-                UserDefaults.standard.set(data, forKey: Self.folderKey)
-                UserDefaults.standard.set(base == url ? "" : Self.subfolder, forKey: "autoBackupPickedSubfolder")
-                UserDefaults.standard.removeObject(forKey: Self.errorKey)
-                self.version += 1
-                then?()
-                // نسخة فورية في المجلد الجديد.
-                Task { await self.backupToDestination() }
-            } else {
-                self.message = BackupError.folderUnavailable.localizedDescription
+    /// تُجهَّز نسخة ثم تظهر نافذة "الحفظ": يختار المستخدم iCloud Drive (أو مجلداً فيه) ويضغط "حفظ".
+    /// يحتفظ التطبيق برابط هذا الملف ويكتب كل نسخة جديدة فوقه.
+    func chooseLocation() {
+        guard !isWorking else { return }
+        isWorking = true
+        Task {
+            defer { isWorking = false; version += 1 }
+            do {
+                let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
+                await FilePicker.waitUntilSettled()
+                guard let saved = await FilePicker.exportForLocation(url) else {
+                    try? FileManager.default.removeItem(at: url)
+                    return
+                }
+                try? FileManager.default.removeItem(at: url)
+                let granted = saved.startAccessingSecurityScopedResource()
+                defer { if granted { saved.stopAccessingSecurityScopedResource() } }
+                guard let data = try? saved.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) else {
+                    throw BackupError.folderUnavailable
+                }
+                let defaults = UserDefaults.standard
+                defaults.set(data, forKey: Self.fileKey)
+                let size = (try? saved.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                defaults.set(Date(), forKey: Self.lastKey)
+                defaults.set(size, forKey: Self.lastSizeKey)
+                defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
+                defaults.removeObject(forKey: Self.errorKey)
+                defaults.removeObject(forKey: Self.errorAtKey)
+                Self.removeDeviceCopies()
+            } catch {
+                message = tr("تعذّر حفظ النسخة: \(error.localizedDescription)", "Couldn't save the backup: \(error.localizedDescription)")
             }
         }
     }
 
-    /// المجلد الذي اختاره المستخدم (تُكتب النسخة في "نسخ الرواتب" داخله).
-    private func resolveFolder() -> URL? {
-        if let test = UserDefaults.standard.string(forKey: Self.testFolderKey) {
-            return URL(fileURLWithPath: test, isDirectory: true)
-        }
-        guard let data = UserDefaults.standard.data(forKey: Self.folderKey) else { return nil }
+    /// ملف النسخة المحفوظ (في iCloud Drive).
+    private func resolveFile() -> URL? {
+        if let test = UserDefaults.standard.string(forKey: Self.testFileKey) { return URL(fileURLWithPath: test) }
+        guard let data = UserDefaults.standard.data(forKey: Self.fileKey) else { return nil }
         var stale = false
-        guard var url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
         if stale {
             let granted = url.startAccessingSecurityScopedResource()
             if let fresh = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
-                UserDefaults.standard.set(fresh, forKey: Self.folderKey)
+                UserDefaults.standard.set(fresh, forKey: Self.fileKey)
             }
             if granted { url.stopAccessingSecurityScopedResource() }
         }
-        // اختار المستخدم "نسخ الرواتب" نفسه.
-        if UserDefaults.standard.string(forKey: "autoBackupPickedSubfolder") == Self.subfolder { url = url.deletingLastPathComponent() }
         return url
-    }
-
-    /// المجلد المحفوظ للوصول (قد يكون "نسخ الرواتب" نفسه) ومسار ملف النسخة.
-    private func target() -> (access: URL, folder: URL)? {
-        guard let base = resolveFolder() else { return nil }
-        let pickedSub = UserDefaults.standard.string(forKey: "autoBackupPickedSubfolder") == Self.subfolder
-        let folder = base.appendingPathComponent(Self.subfolder, isDirectory: true)
-        return (pickedSub ? folder : base, folder)
     }
 
     /// النسخ القديمة على الجهاز (من إصدار سابق) لم تعد مطلوبة: تُحذف لتوفير المساحة.
@@ -345,7 +346,7 @@ final class BackupManager {
 
     /// بيانات تغيّرت بعد آخر نسخة ناجحة (أو فشلت آخر محاولة).
     var needsBackup: Bool {
-        guard Self.autoEnabled, resolveFolder() != nil else { return false }
+        guard Self.autoEnabled, resolveFile() != nil else { return false }
         guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return lastError != nil }
         return changed > (lastBackup ?? .distantPast) || lastError != nil
     }
@@ -360,15 +361,15 @@ final class BackupManager {
     func autoBackup() async -> String? {
         markChanged()
         guard Self.autoEnabled else { return nil }
-        guard resolveFolder() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
+        guard resolveFile() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
         return await backupToDestination()
     }
 
-    /// يكتب النسخة في "نسخ الرواتب" داخل مجلد iCloud المختار (يستبدل السابقة) ويحفظ النتيجة نجاحاً أو فشلاً.
+    /// يكتب النسخة فوق ملف النسخة المحفوظ في iCloud (نسخة واحدة دائماً) ويحفظ النتيجة نجاحاً أو فشلاً.
     @discardableResult
     func backupToDestination() async -> String? {
         guard !isWorking else { return nil }
-        guard let target = target() else {
+        guard let file = resolveFile() else {
             message = BackupError.noFolder.localizedDescription
             return "⚠️ " + BackupError.noFolder.localizedDescription
         }
@@ -381,31 +382,32 @@ final class BackupManager {
             let (url, _) = try await makeBackup(title: tr("نسخ احتياطي إلى iCloud", "Backing up to iCloud"))
             defer { try? FileManager.default.removeItem(at: url) }
             let size = try await Task.detached(priority: .utility) { () throws -> Int64 in
-                let granted = target.access.startAccessingSecurityScopedResource()
-                defer { if granted { target.access.stopAccessingSecurityScopedResource() } }
-                let fm = FileManager.default
-                let folder = target.folder
-                let destination = folder.appendingPathComponent(url.lastPathComponent)
+                let granted = file.startAccessingSecurityScopedResource()
+                defer { if granted { file.stopAccessingSecurityScopedResource() } }
                 var coordinationError: NSError?
                 var writeError: Error?
-                NSFileCoordinator().coordinate(writingItemAt: destination, options: .forReplacing, error: &coordinationError) { target in
+                // الكتابة داخل نفس الملف (لا يُنشأ ملف جديد): الصلاحية على الملف المحفوظ نفسه.
+                NSFileCoordinator().coordinate(writingItemAt: file, options: .forMerging, error: &coordinationError) { target in
                     do {
-                        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                        try? fm.removeItem(at: target)
-                        try fm.copyItem(at: url, to: target)
+                        let input = try FileHandle(forReadingFrom: url)
+                        defer { try? input.close() }
+                        let output = try FileHandle(forWritingTo: target)
+                        defer { try? output.close() }
+                        try output.truncate(atOffset: 0)
+                        while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
+                            try output.write(contentsOf: chunk)
+                        }
+                        try output.synchronize()
                     } catch { writeError = error }
                 }
-                if let error = coordinationError ?? writeError { throw error }
-                // نسخة واحدة فقط: تُحذف أي نسخ قديمة بأسماء أخرى في المجلد.
-                let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-                for old in files where old.lastPathComponent.hasPrefix(BackupFormat.prefix) && old.pathExtension == "zip"
-                    && old.lastPathComponent != destination.lastPathComponent {
-                    try? fm.removeItem(at: old)
+                if let error = coordinationError ?? writeError {
+                    if !FileManager.default.fileExists(atPath: file.path) { throw BackupError.folderUnavailable }
+                    throw error
                 }
-                let attrs = try? fm.attributesOfItem(atPath: destination.path)
+                let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
                 return (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             }.value
-            let place = Self.placeName(target.folder)
+            let place = Self.placeName(file.deletingLastPathComponent())
             let defaults = UserDefaults.standard
             defaults.set(Date(), forKey: Self.lastKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
@@ -422,20 +424,21 @@ final class BackupManager {
         }
     }
 
-    /// اختبار المحاكي (-autoBackupTest YES): مجلد تجريبي بدل iCloud، نسختان، ثم التحقق من بقاء ملف واحد.
+    /// اختبار المحاكي (-autoBackupTest YES): ملف تجريبي بدل iCloud، نسختان فوق نفس الملف.
     func autoBackupSelfTest() async {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let base = docs.appendingPathComponent("icloud-test", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        UserDefaults.standard.set(base.path, forKey: Self.testFolderKey)
+        let folder = docs.appendingPathComponent("icloud-test", isDirectory: true).appendingPathComponent(Self.subfolder, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent(BackupFormat.fileName())
+        if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: Data()) }
+        UserDefaults.standard.set(file.path, forKey: Self.testFileKey)
         UserDefaults.standard.set(true, forKey: Self.autoKey)
         let line = await autoBackup() ?? "nil"
-        let folder = base.appendingPathComponent(Self.subfolder)
-        let file = folder.appendingPathComponent(BackupFormat.fileName())
         let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
         let again = await backupToDestination() ?? "nil"
         let count = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).count
-        LaunchOptions.writeReport("autobackup=\(size > 0 && lastError == nil && count == 1 ? "ok" : "failed") size=\(size) files=\(count) line=\(line) again=\(again)")
+        let valid = (try? Archive(url: file, accessMode: .read))?["manifest.json"] != nil
+        LaunchOptions.writeReport("autobackup=\(size > 0 && valid && lastError == nil && count == 1 ? "ok" : "failed") size=\(size) zip=\(valid) files=\(count) line=\(line) again=\(again)")
     }
 
     // MARK: - الاسترجاع
@@ -534,34 +537,30 @@ final class BackupManager {
 // MARK: - نوافذ الملفات للنسخ
 
 extension FilePicker {
-    /// اختيار مجلد (للنسخ التلقائي).
-    static func presentFolder(onPick: @escaping (URL?) -> Void) {
-        present(types: [.folder], multiple: false) { urls in onPick(urls.first) }
-    }
-
-    /// حفظ ملف في مكان يختاره المستخدم.
-    static func presentExport(_ url: URL, onDone: @escaping (Bool) -> Void) {
-        guard let top = topController() else { onDone(false); return }
-        let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-        let d = ExportDelegate(onDone: onDone)
-        exportDelegate = d
-        picker.delegate = d
-        top.present(picker, animated: true)
+    /// نافذة "حفظ في الملفات" لملف النسخة: يعيد رابط المكان الذي حُفظ فيه (أو nil عند الإلغاء).
+    static func exportForLocation(_ url: URL) async -> URL? {
+        await withCheckedContinuation { continuation in
+            guard let top = topController() else { continuation.resume(returning: nil); return }
+            let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+            let d = ExportDelegate { continuation.resume(returning: $0) }
+            exportDelegate = d
+            picker.delegate = d
+            top.present(picker, animated: true)
+        }
     }
 
     private static var exportDelegate: ExportDelegate?
 
     private final class ExportDelegate: NSObject, UIDocumentPickerDelegate {
-        let onDone: (Bool) -> Void
-        init(onDone: @escaping (Bool) -> Void) { self.onDone = onDone }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            onDone(true)
+        private var onDone: ((URL?) -> Void)?
+        init(onDone: @escaping (URL?) -> Void) { self.onDone = onDone }
+        private func finish(_ url: URL?) {
+            onDone?(url)
+            onDone = nil
             Task { @MainActor in FilePicker.exportDelegate = nil }
         }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onDone(false)
-            Task { @MainActor in FilePicker.exportDelegate = nil }
-        }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { finish(urls.first) }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finish(nil) }
     }
 }
 
@@ -605,7 +604,7 @@ struct BackupView: View {
                     Button {
                         showFolderHelp = true
                     } label: {
-                        Label(tr("اختيار مجلد iCloud", "Choose an iCloud folder"), systemImage: "icloud.and.arrow.up.fill")
+                        Label(tr("حفظ النسخة في iCloud", "Save the backup to iCloud"), systemImage: "icloud.and.arrow.up.fill")
                             .font(.body.weight(.semibold))
                     }
                     .accessibilityIdentifier("chooseICloudFolder")
@@ -626,7 +625,7 @@ struct BackupView: View {
             } header: {
                 Text("iCloud Drive")
             } footer: {
-                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في مجلد \"نسخ الرواتب\" داخل iCloud Drive، فيه كل البيانات: الرواتب والاستقطاعات لكل الأشهر، والملاك، والإعدادات. كل نسخة جديدة تستبدل السابقة، ولا تُحفظ نسخة على الآيفون. إذا فاتت نسخة تُعاد المحاولة تلقائياً عند فتح التطبيق.",
+                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في المكان الذي حفظته فيه داخل iCloud Drive، فيه كل البيانات: الرواتب والاستقطاعات لكل الأشهر، والملاك، والإعدادات. كل نسخة جديدة تستبدل السابقة، ولا تُحفظ نسخة على الآيفون. إذا فاتت نسخة تُعاد المحاولة تلقائياً عند فتح التطبيق.",
                         "One file \"نسخة الرواتب.zip\" in the \"نسخ الرواتب\" folder in iCloud Drive with all data. Each backup replaces the previous one; no copy is kept on the iPhone."))
             }
 
@@ -662,18 +661,18 @@ struct BackupView: View {
             } header: {
                 Text(tr("جهاز آخر أو نسخة يدوية", "Another device or manual copy"))
             } footer: {
-                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اختر نفس المجلد ليستمر النسخ التلقائي منه.",
+                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اضغط \"حفظ النسخة في iCloud\" واحفظها فوق نفس الملف (استبدال) ليستمر النسخ التلقائي من الجهاز الجديد.",
                         "On another device: install the app with the same iCloud account, then Settings › Backup › Restore (or Import files) and pick \"نسخة الرواتب.zip\"."))
             }
         }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
-        .alert(tr("اختيار مجلد iCloud", "Choose an iCloud folder"), isPresented: $showFolderHelp) {
-            Button(tr("متابعة", "Continue")) { manager.chooseFolder() }
+        .alert(tr("حفظ النسخة في iCloud", "Save the backup to iCloud"), isPresented: $showFolderHelp) {
+            Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("في النافذة التالية افتح \"iCloud Drive\" ثم اضغط \"فتح\" (Open) في الأعلى. لا تحتاج اختيار ملف: الزر يختار المجلد المفتوح، والتطبيق يُنشئ داخله مجلد \"نسخ الرواتب\" ويحفظ النسخة فيه.",
-                    "In the next window open \"iCloud Drive\" and tap \"Open\" at the top. The app creates a \"نسخ الرواتب\" folder there."))
+            Text(tr("تُجهَّز النسخة ثم تظهر نافذة الحفظ: اختر \"iCloud Drive\" (يُفضّل مجلداً باسم \"نسخ الرواتب\"، ويمكن إنشاؤه من الزر أعلى النافذة) ثم اضغط \"حفظ\". بعدها تُكتب كل نسخة تلقائية فوق نفس الملف.",
+                    "The backup is prepared, then the save window opens: choose iCloud Drive and tap Save. Every automatic backup then overwrites that same file."))
         }
     }
 
