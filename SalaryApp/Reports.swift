@@ -305,6 +305,8 @@ struct ReportDetailView: View {
     @State private var showExport = false
     /// لبند صندوق الشهداء: الملخّص حسب الفئة.
     @State private var fundRows: [FundReport.Row]?
+    /// لبند الرعاية الصحية: المشتركون وغير المشتركين.
+    @State private var healthLists: HealthCareReport.Lists?
     /// لبند شركة عراق الجوال: كشف عقد الإطعام.
     private var foodRows: [FoodContractReport.Row]? {
         guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
@@ -346,6 +348,7 @@ struct ReportDetailView: View {
 
             if let fundRows { FundSummarySection(rows: fundRows) }
             if let foodRows, !foodRows.isEmpty { FoodContractSection(rows: foodRows) }
+            if let healthLists { HealthCareSection(lists: healthLists) }
 
             Section {
                 if rows == nil {
@@ -384,7 +387,7 @@ struct ReportDetailView: View {
             }
         }
         .sheet(isPresented: $showExport) {
-            if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows) }
+            if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
         }
         .task {
             let container = SharedModel.container
@@ -393,6 +396,11 @@ struct ReportDetailView: View {
                 try await ReportEngine(modelContainer: container).rows(for: group)
             }.value) ?? []
             rows = loaded
+            if group.kind == .payroll, HealthCareReport.applies(to: group.title) {
+                healthLists = try? await Task.detached(priority: .userInitiated) {
+                    try await ReportEngine(modelContainer: container).healthLists(month: group.month, title: group.title)
+                }.value
+            }
             if group.kind == .payroll, FundReport.applies(to: group.title) {
                 fundRows = try? await Task.detached(priority: .userInitiated) {
                     try await ReportEngine(modelContainer: container).fundSummary(month: group.month, title: group.title)

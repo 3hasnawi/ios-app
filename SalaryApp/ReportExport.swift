@@ -113,6 +113,56 @@ nonisolated enum XLSXWriter {
         try package(worksheet: worksheet(sheet), styles: styles, printTitles: "$1:$3", to: url)
     }
 
+    /// ملف بعدة أوراق (اسم الورقة، محتواها).
+    static func package(sheets: [(name: String, xml: String)], styles: String, to url: URL) throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("xlsx-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+        let overrides = sheets.indices.map { "<Override PartName=\"/xl/worksheets/sheet\($0 + 1).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>" }.joined()
+        let types = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+        <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+        <Default Extension="xml" ContentType="application/xml"/>
+        <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+        \(overrides)
+        <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+        </Types>
+        """
+        let book = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+        <bookViews><workbookView/></bookViews>
+        <sheets>\(sheets.enumerated().map { "<sheet name=\"\(esc($0.element.name))\" sheetId=\"\($0.offset + 1)\" r:id=\"rId\($0.offset + 1)\"/>" }.joined())</sheets>
+        </workbook>
+        """
+        let rels = """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        \(sheets.indices.map { "<Relationship Id=\"rId\($0 + 1)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet\($0 + 1).xml\"/>" }.joined())
+        <Relationship Id="rId\(sheets.count + 1)" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+        </Relationships>
+        """
+        var files: [String: String] = [
+            "[Content_Types].xml": types,
+            "_rels/.rels": rootRels,
+            "xl/workbook.xml": book,
+            "xl/_rels/workbook.xml.rels": rels,
+            "xl/styles.xml": styles,
+        ]
+        for (i, sheet) in sheets.enumerated() { files["xl/worksheets/sheet\(i + 1).xml"] = sheet.xml }
+        for (path, text) in files {
+            let file = root.appendingPathComponent(path)
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: file)
+        }
+        try? fm.removeItem(at: url)
+        let archive = try Archive(url: url, accessMode: .create)
+        for path in files.keys.sorted(by: { $0 == "[Content_Types].xml" ? true : ($1 == "[Content_Types].xml" ? false : $0 < $1) }) {
+            try archive.addEntry(with: path, relativeTo: root, compressionMethod: .deflate)
+        }
+    }
+
     /// يجمع أجزاء ملف xlsx (ورقة واحدة) ويضغطها.
     static func package(worksheet: String, styles: String, printTitles: String?, to url: URL) throws {
         let fm = FileManager.default
@@ -275,7 +325,7 @@ nonisolated enum XLSXWriter {
     </Types>
     """
 
-    private static let rootRels = """
+    static let rootRels = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
     <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
@@ -416,6 +466,9 @@ struct ReportExportSheet: View {
     var fundRows: [FundReport.Row]? = nil
     /// شركة عراق الجوال: كشف عقد الإطعام.
     var foodRows: [FoodContractReport.Row]? = nil
+    /// الرعاية الصحية: ورقتا المشتركين وغير المشتركين.
+    var healthLists: HealthCareReport.Lists? = nil
+    @State private var healthFiles: (excel: URL, pdf: URL)?
     @State private var fundFiles: (excel: URL, pdf: URL)?
     @State private var foodFiles: (excel: URL, pdf: URL)?
     @Environment(\.dismiss) private var dismiss
@@ -433,6 +486,25 @@ struct ReportExportSheet: View {
                                 "\(group.month) · \(rows.count) employees · total \(Money.format(group.total))"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+                if let healthLists {
+                    Section {
+                        if let healthFiles {
+                            ShareLink(item: healthFiles.excel) {
+                                Label(tr("Excel (ورقتان)", "Excel (two sheets)"), systemImage: "tablecells.fill")
+                            }
+                            ShareLink(item: healthFiles.pdf) {
+                                Label("PDF", systemImage: "doc.richtext.fill")
+                            }
+                        } else {
+                            ProgressView()
+                        }
+                    } header: {
+                        Text(tr("اشتراكات الرعاية الصحية", "Health care subscriptions"))
+                    } footer: {
+                        Text(tr("المشتركون (\(Num.format(healthLists.subscribers.count))) مع عدد أفراد الأسرة، وغير المشتركين (\(Num.format(healthLists.others.count))).",
+                                "Subscribers (\(healthLists.subscribers.count)) with family size, and non-subscribers (\(healthLists.others.count))."))
                     }
                 }
                 if foodRows != nil {
@@ -503,7 +575,7 @@ struct ReportExportSheet: View {
                         }
                     }
                 } header: {
-                    Text(fundRows != nil || foodRows != nil ? tr("قائمة الأسماء", "Name list") : tr("الصيغة", "Format"))
+                    Text(fundRows != nil || foodRows != nil || healthLists != nil ? tr("قائمة الأسماء", "Name list") : tr("الصيغة", "Format"))
                 }
             }
             .navigationTitle(tr("تصدير الكشف", "Export list"))
@@ -526,6 +598,9 @@ struct ReportExportSheet: View {
                 }
                 if let foodRows {
                     foodFiles = try await FoodContractReport.files(foodRows, month: group.month)
+                }
+                if let healthLists {
+                    healthFiles = try await HealthCareReport.files(healthLists, month: group.month)
                 }
             } catch {
                 failed = error.localizedDescription
