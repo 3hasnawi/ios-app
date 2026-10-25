@@ -209,7 +209,7 @@ nonisolated final class SheetParser {
         var netSalary: Int
         /// (العمود، عنوانه كما في الملف)
         var items: [(Int, String)] = []
-        var pairs: [(name: Int, amount: Int)] = []
+        var pairs: [(name: Int, amount: Int, fallback: String)] = []
     }
 
     private struct DeductionColumns {
@@ -260,7 +260,8 @@ nonisolated final class SheetParser {
                 let n = ArabicText.normalize(nameHeader), a = ArabicText.normalize(amountHeader)
                 guard let nc = headers.firstIndex(of: n), let ac = headers.firstIndex(of: a),
                       !used.contains(nc), !columns.pairs.contains(where: { $0.name == nc }) else { continue }
-                columns.pairs.append((nc, ac))
+                // مبلغ بلا اسم جهة يُحفظ باسم عمود المبلغ حتى لا يضيع من المجموع.
+                columns.pairs.append((nc, ac, row[ac].trimmingCharacters(in: .whitespacesAndNewlines)))
                 used.insert(nc)
                 used.insert(ac)
             }
@@ -289,9 +290,9 @@ nonisolated final class SheetParser {
             if let v = ArabicText.number(from: cell(row, col)), v != 0 { items[title, default: 0] += v }
         }
         for pair in columns.pairs {
+            guard let v = ArabicText.number(from: cell(row, pair.amount)), v != 0 else { continue }
             let title = cell(row, pair.name)
-            guard !title.isEmpty, let v = ArabicText.number(from: cell(row, pair.amount)), v != 0 else { continue }
-            items[title, default: 0] += v
+            items[title.isEmpty ? pair.fallback : title, default: 0] += v
         }
         result.employees.append(ImportedEmployee(
             name: name,
