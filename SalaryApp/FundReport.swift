@@ -192,8 +192,9 @@ nonisolated enum FundReport {
             let cg = context.cgContext
             cg.setLineWidth(0.8)
             UIColor.black.setStroke()
-            draw(title(month: month), CGRect(x: margin, y: margin, width: width, height: 30), size: 15, align: .right)
-            var y = margin + 40
+            // العنوان قد يأخذ سطرين في الصفحة الطولية.
+            draw(title(month: month), CGRect(x: margin, y: margin, width: width, height: 48), size: 15, align: .right)
+            var y = margin + 58
             let h: CGFloat = 30
             func cell(_ c: Int, _ fill: UIColor? = nil) -> CGRect {
                 let r = CGRect(x: xs[c], y: y, width: widths[c], height: h)
