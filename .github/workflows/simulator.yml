@@ -212,6 +212,15 @@ jobs:
           shot 08t-export-single 6
           launch -tab reports -exportSheet group
           shot 08u-export-group 6
+          # التدقيق: الصفحة، ثم فحص المحرك على بيانات الاختبار
+          launch -tab reports -reportsAudit YES
+          shot 08x-audit 8
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -tab reports -auditTest YES
+          for i in $(seq 1 90); do grep -q audit "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
+          r=$(cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "audit=failed no report")
+          case "$r" in audit=ok*) echo "::notice::Audit: $r";; *) echo "::error::Audit: $r";; esac
+          shot 08y-reports-with-audit 4
           # قائمة جهات التنفيذ، ثم معاينة جدول جهة
           launch -tab reports -reportsEntities YES -reportByEntity NO
           shot 08v-entities 6

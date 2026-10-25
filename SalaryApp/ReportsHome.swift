@@ -7,6 +7,8 @@ enum ReportsRoute: Hashable {
     case items
     /// كل جهات التنفيذ بمبالغها وعدد موظفيها.
     case entities
+    /// التدقيق: فحوص الشهر ومقارنة الأشهر.
+    case audit
     case group(ReportGroup)
 }
 
@@ -27,6 +29,10 @@ struct ReportsView: View {
     @State private var appliedLaunchOptions = false
     /// كشف يُعرض في نافذة المعاينة مباشرة من بطاقته.
     @State private var previewGroup: ReportGroup?
+    /// عدد ملاحظات التدقيق للشهر المختار (لبطاقة التدقيق).
+    @State private var auditIssues: Int?
+    @AppStorage(AuditSettings.thresholdKey) private var auditThreshold = 50
+    @AppStorage(AuditSettings.baseKey) private var auditBase = AuditBase.net.rawValue
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } ?? months.first }
 
@@ -49,6 +55,7 @@ struct ReportsView: View {
                     VStack(spacing: 12) {
                         filters
                         summaryCard
+                        auditCard
                         entitiesCard
                         specialCards
                     }
@@ -63,6 +70,7 @@ struct ReportsView: View {
             .navigationDestination(for: ReportsRoute.self) { route in
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
+                case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
                 case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
                 case .group(let group): ReportDetailView(group: group)
                 }
@@ -80,6 +88,11 @@ struct ReportsView: View {
                 Text(exporter.error ?? "")
             }
             .task(id: loadKey) { await loadDeductions() }
+            .task(id: "\(loadKey)|\(auditThreshold)|\(auditBase)") {
+                auditIssues = nil
+                guard let name = month?.name else { return }
+                auditIssues = await AuditView.run(month: name, threshold: auditThreshold, base: AuditBase(rawValue: auditBase) ?? .net)?.issues
+            }
         }
     }
 
@@ -140,6 +153,40 @@ struct ReportsView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("payrollItemsCard")
         }
+    }
+
+    // MARK: التدقيق
+
+    private var auditCard: some View {
+        Button {
+            path.append(.audit)
+        } label: {
+            HStack(spacing: 12) {
+                CardIcon(systemImage: auditIssues == 0 ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                         color: auditIssues == 0 ? .green : .orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("التدقيق", "Audit")).font(.headline).foregroundStyle(.primary)
+                    Group {
+                        if let auditIssues {
+                            Text(auditIssues == 0 ? tr("لا ملاحظات", "No issues") : tr("\(Num.format(auditIssues)) ملاحظات", "\(auditIssues) issues"))
+                                .foregroundStyle(auditIssues == 0 ? Color.green : Color.red)
+                                .fontWeight(.semibold)
+                            + Text(tr(" · مقارنة الأشهر", " · compare months")).foregroundStyle(.secondary)
+                        } else {
+                            Text(tr("جارٍ التدقيق…", "Checking…")).foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("auditCard")
     }
 
     // MARK: جهات التنفيذ
@@ -227,6 +274,15 @@ struct ReportsView: View {
         let payroll = defaults.string(forKey: "reportKind") == "payroll"
         if payroll { path = [.items] }
         if defaults.bool(forKey: "reportsEntities") { path = [.entities] }
+        if defaults.bool(forKey: "reportsAudit") { path = [.audit] }
+        if defaults.bool(forKey: "auditTest"), let month, months.count > 1 {
+            let container = SharedModel.container
+            let a = months[1].name, b = month.name
+            let audit = await AuditView.run(month: b, threshold: 50, base: .net)
+            let cmp = try? await Task.detached { try await ReportEngine(modelContainer: container).compare(from: a, to: b) }.value
+            let checks = audit?.checks.map { "\($0.id)=\($0.ok ? "ok" : String($0.rows.count))" }.joined(separator: " ") ?? "nil"
+            LaunchOptions.writeReport("audit=\(audit == nil || cmp == nil ? "failed" : "ok") issues=\(audit?.issues ?? -1) \(checks) compare added=\(cmp?.added.count ?? -1) removed=\(cmp?.removed.count ?? -1) changed=\(cmp?.changed.count ?? -1) entities=\(cmp?.entities.count ?? -1)")
+        }
         if LaunchOptions.openReport, let first = testGroup(payroll ? payrollGroups : deductionGroups) {
             path.append(.group(first))
         }

@@ -358,9 +358,8 @@ enum UnifiedFinder {
     @MainActor
     static func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) async throws -> [UnifiedPerson] {
         let container = SharedModel.container
-        let hits = try await Task.detached(priority: .userInitiated) {
-            try await UnifiedSearchActor(modelContainer: container).find(search, mode: mode, scope: scope, months: months)
-        }.value
+        // فهرس في الذاكرة: البحث فوري بعد أول تحميل.
+        let hits = try await SearchIndex.shared.hits(search, mode: mode, scope: scope, months: months, container: container)
         try Task.checkCancellation()
         return hits.map(UnifiedPerson.init)
     }

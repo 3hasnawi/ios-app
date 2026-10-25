@@ -360,6 +360,13 @@ final class ImportCenter {
         if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
         if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
         if !warnings.isEmpty { parts += [""] + warnings }
+        // التدقيق التلقائي لأحدث شهر مستورد.
+        if !fromTest, !lines.isEmpty, let auditMonth = newestPayroll?.name ?? months.sorted(by: { MonthName.sortKey($0) > MonthName.sortKey($1) }).first,
+           let audit = await AuditView.run(month: auditMonth, threshold: AuditSettings.threshold, base: AuditSettings.base) {
+            parts += ["", audit.issues == 0
+                      ? tr("🔎 التدقيق (\(auditMonth)): لا ملاحظات.", "🔎 Audit (\(auditMonth)): no issues.")
+                      : tr("🔎 التدقيق (\(auditMonth)): \(Num.format(audit.issues)) ملاحظات — راجعها في التقارير ← التدقيق.", "🔎 Audit (\(auditMonth)): \(audit.issues) issues — see Reports › Audit.")]
+        }
         // نسخ احتياطي تلقائي بعد الاستيراد الناجح (إذا كان مفعّلاً).
         if !fromTest, !lines.isEmpty, let backupLine = await BackupManager.shared.autoBackup() {
             parts += ["", backupLine]

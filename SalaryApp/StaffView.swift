@@ -120,6 +120,9 @@ struct RootView: View {
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await TestData.prepareIfRequested()
+            // تحميل فهرس البحث في الخلفية حتى يكون أول بحث فورياً.
+            let container = SharedModel.container
+            Task.detached(priority: .utility) { await SearchIndex.shared.warmUp(container: container) }
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
             await AutoPilot.shared.run()
