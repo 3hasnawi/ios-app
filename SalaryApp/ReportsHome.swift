@@ -171,24 +171,16 @@ struct ReportsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("entitiesCard")
-            if !deductionGroups.isEmpty {
-                Button {
-                    showExport = true
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.footnote.weight(.bold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor.opacity(0.12), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("تصدير الاستقطاعات", "Export deductions"))
-                .accessibilityIdentifier("deductionExportButton")
-            }
             Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contextMenu {
+            Button(tr("قائمة الجهات", "Entities list"), systemImage: "list.bullet") { path.append(.entities) }
+            Button(tr("تصدير…", "Export…"), systemImage: "square.and.arrow.up") { showExport = true }
+                .disabled(deductionGroups.isEmpty)
+        }
     }
 
     private var filters: some View {
@@ -314,28 +306,14 @@ private struct ReportCard: View {
         }
         .buttonStyle(.plain)
         .disabled(group == nil)
-        // زر التصدير السريع في زاوية البطاقة.
-        // زرّا المعاينة والتصدير السريع في زاوية البطاقة.
-        .overlay(alignment: .topTrailing) {
+        // الضغط المطوّل: معاينة الجدول أو تصديره.
+        .contextMenu {
             if let group {
-                HStack(spacing: 6) {
-                    Button {
-                        onPreview(group)
-                    } label: {
-                        CircleIcon(systemImage: "doc.text.magnifyingglass")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tr("معاينة \(title)", "Preview \(title)"))
-                    .accessibilityIdentifier("cardPreview")
-                    Menu {
-                        Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.special(group, format: .excel) }
-                        Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.special(group, format: .pdf) }
-                    } label: {
-                        CircleIcon(systemImage: "square.and.arrow.up")
-                    }
-                    .accessibilityLabel(tr("تصدير \(title)", "Export \(title)"))
-                }
-                .padding(10)
+                Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { onPreview(group) }
+                Button(tr("فتح التفاصيل", "Open details"), systemImage: "list.bullet.rectangle") { path.append(.group(group)) }
+                Divider()
+                Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.special(group, format: .excel) }
+                Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.special(group, format: .pdf) }
             }
         }
     }
@@ -612,6 +590,7 @@ struct EntitiesView: View {
                 }
                 .disabled(groups.isEmpty)
                 .accessibilityLabel(tr("تصدير", "Export"))
+                .accessibilityIdentifier("deductionExportButton")
             }
         }
         .overlay { if exporter.isWorking { ExportingHUD() } }

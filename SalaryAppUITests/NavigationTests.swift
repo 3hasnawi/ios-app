@@ -255,6 +255,8 @@ final class NavigationTests: XCTestCase {
             }
         }
         step("التقارير: نافذة التصدير") {
+            let card = element("entitiesCard")
+            if wait(card, "بطاقة جهات التنفيذ") { card.tap() }
             let export = element("deductionExportButton")
             if wait(export, "زر التصدير") {
                 export.tap()
