@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
     @State private var lockMessage: String?
     @State private var recentCount = RecentSearches.items.count
+    @AppStorage(ReportSheet.headerKey) private var reportHeader = ReportSheet.defaultHeader
     @State private var confirmClearRecents = false
 
     var body: some View {
@@ -29,6 +30,7 @@ struct SettingsView: View {
                 displaySection
                 securitySection
                 searchSection
+                reportsSection
                 importSection
                 staffSection
                 storageSection
@@ -76,6 +78,23 @@ struct SettingsView: View {
                 Text(tr("يُطلب \(AppLock.methodName) عند فتح التطبيق وعند الرجوع إليه، ويُستخدم رمز الجهاز إذا تعذّر التعرّف. البيانات تُخفى في قائمة التطبيقات المفتوحة.",
                         "\(AppLock.methodName) is required when opening or returning to the app; the device passcode is used if recognition fails. Data is hidden in the app switcher."))
             }
+        }
+    }
+
+    // MARK: - الكشوف
+
+    private var reportsSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                SettingRow(title: tr("رأس الكشوف", "Report header"), systemImage: "doc.text", color: .indigo) { EmptyView() }
+                TextField(tr("اسم الجهة", "Organisation name"), text: $reportHeader)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding(.vertical, 2)
+        } header: {
+            Text(tr("الكشوف المصدّرة", "Exported lists"))
+        } footer: {
+            Text(tr("يظهر في أعلى كل كشف Excel أو PDF.", "Shown at the top of every exported Excel or PDF list."))
         }
     }
 

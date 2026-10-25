@@ -98,14 +98,17 @@ final class Deduction {
     var title: String
     var amount: Double?
     var note: String
+    /// الرتبة كما في ملف الاستقطاعات (إن وُجدت).
+    var rank: String = ""
 
-    init(month: String, employeeName: String, title: String, amount: Double?, note: String) {
+    init(month: String, employeeName: String, title: String, amount: Double?, note: String, rank: String = "") {
         self.month = month
         self.employeeName = employeeName
         self.matchKey = ArabicText.matchKey(employeeName)
         self.title = title
         self.amount = amount
         self.note = note
+        self.rank = rank
     }
 }
 
@@ -130,7 +133,7 @@ actor DataImporter {
             try flush()
         }
         for d in imported.deductions {
-            modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note))
+            modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note, rank: d.rank))
             try flush()
         }
         let record = PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count)
@@ -159,7 +162,7 @@ actor DataImporter {
         try modelContext.delete(model: Deduction.self, where: #Predicate { $0.month == month })
         let total = Double(max(1, deductions.count))
         for (i, d) in deductions.enumerated() {
-            modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note))
+            modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note, rank: d.rank))
             if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }

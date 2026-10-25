@@ -16,6 +16,7 @@ nonisolated struct ImportedDeduction: Sendable {
     var title: String
     var amount: Double?
     var note: String
+    var rank: String = ""
 }
 
 nonisolated struct ImportResult: Sendable {
@@ -217,6 +218,7 @@ nonisolated final class SheetParser {
         var amount: Int
         var title: Int?
         var note: Int?
+        var rank: Int?
     }
 
     private enum Mode {
@@ -276,7 +278,8 @@ nonisolated final class SheetParser {
         if let amount = Self.column(Synonyms.amount, in: headers, used: &used) {
             let title = Self.column(Synonyms.title, in: headers, used: &used)
             let note = Self.column(Synonyms.note, in: headers, used: &used)
-            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note))
+            let rank = Self.column(Synonyms.rank, in: headers, used: &used)
+            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note, rank: rank))
         }
         return .skip
     }
@@ -314,7 +317,8 @@ nonisolated final class SheetParser {
             employeeName: name,
             title: title.isEmpty ? "استقطاع" : title,
             amount: amount,
-            note: cell(row, columns.note)
+            note: cell(row, columns.note),
+            rank: cell(row, columns.rank)
         ))
     }
 

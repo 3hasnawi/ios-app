@@ -192,6 +192,17 @@ jobs:
           launch -tab reports -reportKind payroll -openReport YES
           shot 08q-report-payroll-detail 8
 
+          # 8r) تصدير كشف جهة استقطاع (Excel + PDF) بشكل النموذج
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -tab reports -reportKind deductions -reportByEntity NO -openReport YES -exportReport YES
+          for i in $(seq 1 60); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          cat "$DATA/Documents/import-report.txt" || echo "::error::no export report"
+          shot 08r-report-export 3
+          mkdir -p ci-output/report-export
+          cp "$DATA"/tmp/report-export/* ci-output/report-export/ 2>/dev/null || echo "::error::No exported report files"
+          for f in ci-output/report-export/*.pdf; do sips -s format png "$f" --out "ci-output/report-export/page1.png" >/dev/null 2>&1 || true; done
+          ls -la ci-output/report-export
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8

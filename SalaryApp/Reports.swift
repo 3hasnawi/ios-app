@@ -32,6 +32,8 @@ nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
     let workplace: String
     let amount: Double
     let note: String
+    /// جهة الاستقطاع (الفرع) لهذا السطر.
+    var entity: String = ""
 }
 
 /// حسابات التقارير في الخلفية.
@@ -66,14 +68,16 @@ actor ReportEngine {
             var info: [String: (String, String)] = [:]
             for emp in try modelContext.fetch(e) where info[emp.matchKey] == nil { info[emp.matchKey] = (emp.rank, emp.workplace) }
             var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
-            d.propertiesToFetch = [\.title, \.amount, \.matchKey, \.employeeName, \.note]
+            d.propertiesToFetch = [\.title, \.amount, \.matchKey, \.employeeName, \.note, \.rank]
             var rows: [ReportRow] = []
             for (i, item) in try modelContext.fetch(d).enumerated() {
                 let key = group.byEntity ? Self.entity(of: item.title) : item.title
                 guard key == group.title else { continue }
-                let (rank, workplace) = info[item.matchKey] ?? ("", "")
-                let note = group.byEntity && item.title != group.title ? [item.title, item.note].filter { !$0.isEmpty }.joined(separator: " · ") : item.note
-                rows.append(ReportRow(id: i, name: item.employeeName, rank: rank, workplace: workplace, amount: item.amount ?? 0, note: note))
+                let (payrollRank, workplace) = info[item.matchKey] ?? ("", "")
+                // الرتبة من ملف الاستقطاعات أولاً، وإلا من الرواتب.
+                let rank = item.rank.isEmpty ? payrollRank : item.rank
+                rows.append(ReportRow(id: i, name: item.employeeName, rank: rank, workplace: workplace,
+                                      amount: item.amount ?? 0, note: item.note, entity: item.title))
             }
             return rows.sorted { $0.name < $1.name }
         case .payroll:
@@ -298,6 +302,7 @@ struct ReportDetailView: View {
     let group: ReportGroup
     @State private var rows: [ReportRow]?
     @State private var search = ""
+    @State private var showExport = false
 
     private var filtered: [ReportRow] {
         guard let rows else { return [] }
@@ -342,6 +347,9 @@ struct ReportDetailView: View {
                                 Text(row.name).font(.subheadline.weight(.semibold))
                                 let line = [row.rank, row.workplace].filter { !$0.isEmpty }.joined(separator: " · ")
                                 if !line.isEmpty { Text(line).font(.caption).foregroundStyle(.secondary) }
+                                if group.byEntity, !row.entity.isEmpty, row.entity != group.title {
+                                    Text(row.entity).font(.caption2).foregroundStyle(.secondary)
+                                }
                                 if !row.note.isEmpty { Text(Num.digits(row.note)).font(.caption2).foregroundStyle(.secondary) }
                             }
                             Spacer(minLength: 8)
@@ -358,12 +366,29 @@ struct ReportDetailView: View {
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: tr("ابحث بالاسم أو القسم", "Search name or unit"))
         .navigationTitle(group.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(tr("تصدير", "Export"), systemImage: "square.and.arrow.up") { showExport = true }
+                    .disabled(rows?.isEmpty ?? true)
+                    .accessibilityIdentifier("exportReport")
+            }
+        }
+        .sheet(isPresented: $showExport) {
+            if let rows { ReportExportSheet(group: group, rows: rows) }
+        }
         .task {
             let container = SharedModel.container
             let group = group
-            rows = (try? await Task.detached(priority: .userInitiated) {
+            let loaded = (try? await Task.detached(priority: .userInitiated) {
                 try await ReportEngine(modelContainer: container).rows(for: group)
             }.value) ?? []
+            rows = loaded
+            // اختبار المحاكي: -exportReport YES يكتب ملفي Excel و PDF ويفتح نافذة التصدير.
+            if UserDefaults.standard.bool(forKey: "exportReport") {
+                let ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil
+                LaunchOptions.writeReport(ok ? "export=ok rows=\(loaded.count)" : "export=failed")
+                showExport = true
+            }
         }
     }
 }
