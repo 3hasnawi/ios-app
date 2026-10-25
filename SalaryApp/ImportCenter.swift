@@ -93,8 +93,15 @@ final class ImportCenter {
     private var pickedURLs: [URL] = []
 
     func pick() {
-        guard !isBusy else { return }
-        showPicker = true
+        guard !isBusy else {
+            message = tr("يوجد استيراد قيد العمل، انتظر حتى ينتهي.", "An import is already running; wait for it to finish.")
+            return
+        }
+        // تبدأ قراءة الملفات فور اختيارها، مع شريط التقدّم.
+        FilePicker.present(types: Self.fileTypes) { [weak self] urls in
+            guard let self, !urls.isEmpty else { return }
+            Task { await self.analyze(urls) }
+        }
     }
 
     func picked(_ urls: [URL]) {
@@ -165,7 +172,17 @@ final class ImportCenter {
         isBusy = false
         if autoRun {
             await run()
-        } else if review {
+            return
+        }
+        guard review else { return }
+        await FilePicker.waitUntilSettled()
+        let failed = found.filter { $0.error != nil }
+        if !failed.isEmpty && failed.count == found.count {
+            // لا يوجد ملف صالح: تنبيه بالسبب بدل نافذة مراجعة فارغة.
+            message = ([tr("لم يُقبل أي ملف:", "No file was accepted:")] + failed.map { "\n\($0.fileName)\n\($0.error ?? "")" }).joined(separator: "\n")
+            for c in found { try? FileManager.default.removeItem(at: c.url) }
+            candidates = []
+        } else {
             showReview = true
         }
     }

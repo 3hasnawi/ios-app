@@ -141,7 +141,7 @@ actor StaffImporter {
         case noRows
         var errorDescription: String? {
             switch self {
-            case .noMainTable: tr("لم يُعثر في الملف على جدول الموظفين (الرئيسي).", "No employee table (الرئيسي) was found in the file.")
+            case .noMainTable: tr("لم يُعثر في قاعدة البيانات على جدول الموظفين: المطلوب جدول باسم (الرئيسي) أو جدول فيه عمود (الاسم الكامل).", "No employee table: expected a table named (الرئيسي) or one with a (الاسم الكامل) column.")
             case .noRows: tr("جدول الموظفين فارغ.", "The employee table is empty.")
             }
         }

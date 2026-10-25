@@ -127,10 +127,6 @@ struct RootView: View {
             if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee) }
         }
         // استيراد موحّد: نافذة الملفات، ثم مراجعة ما تعرّف عليه التطبيق، ثم النتيجة.
-        .sheet(isPresented: $importCenter.showPicker, onDismiss: { importCenter.pickerDismissed() }) {
-            DocumentPicker(contentTypes: ImportCenter.fileTypes) { urls in importCenter.picked(urls) }
-                .ignoresSafeArea()
-        }
         .sheet(isPresented: $importCenter.showReview) {
             ImportReviewSheet(center: importCenter)
         }

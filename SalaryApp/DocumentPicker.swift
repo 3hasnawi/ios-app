@@ -36,3 +36,53 @@ struct DocumentPicker: UIViewControllerRepresentable {
         }
     }
 }
+
+/// يعرض نافذة الملفات مباشرة من UIKit (بدون sheet في SwiftUI)، ويستدعي onPick فور الاختيار.
+/// السبب: نافذة الملفات تُغلق نفسها بنفسها، وداخل sheet قد يحدث الإغلاق قبل وصول الملفات،
+/// فيضيع الاختيار ويعود المستخدم للشاشة الرئيسية دون أي شيء.
+@MainActor
+enum FilePicker {
+    private static var delegate: Delegate?
+
+    static func present(types: [UTType], onPick: @escaping ([URL]) -> Void) {
+        guard let top = topController() else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.allowsMultipleSelection = true
+        picker.shouldShowFileExtensions = true
+        let d = Delegate(onPick: onPick)
+        delegate = d
+        picker.delegate = d
+        top.present(picker, animated: true)
+    }
+
+    static func topController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController ?? scene?.windows.first?.rootViewController
+        while let next = top?.presentedViewController { top = next }
+        return top
+    }
+
+    /// ينتظر انتهاء إغلاق نافذة الملفات قبل عرض نافذة أخرى (حد أقصى ثانيتان).
+    static func waitUntilSettled() async {
+        for _ in 0..<20 {
+            guard let top = topController() else { return }
+            if !(top is UIDocumentPickerViewController) && !top.isBeingDismissed && !top.isBeingPresented { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    private final class Delegate: NSObject, UIDocumentPickerDelegate {
+        let onPick: ([URL]) -> Void
+        init(onPick: @escaping ([URL]) -> Void) { self.onPick = onPick }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onPick(urls)
+            Task { @MainActor in FilePicker.delegate = nil }
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            Task { @MainActor in FilePicker.delegate = nil }
+        }
+    }
+}

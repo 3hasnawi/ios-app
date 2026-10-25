@@ -22,23 +22,34 @@ nonisolated struct ImportedDeduction: Sendable {
 nonisolated struct ImportResult: Sendable {
     var employees: [ImportedEmployee] = []
     var deductions: [ImportedDeduction] = []
+    /// أسباب عدم فهم بعض الأوراق (للتنبيه).
+    var problems: [String] = []
 
     mutating func merge(_ other: ImportResult) {
         employees += other.employees
         deductions += other.deductions
+        problems += other.problems
     }
 }
 
 nonisolated enum ImportError: LocalizedError {
     case cannotOpen(String)
     case noData(String)
+    /// الملف فُتح لكن لم تُفهم أوراقه: لكل ورقة سبب.
+    case unrecognized(String, [String])
 
     var errorDescription: String? {
         switch self {
         case .cannotOpen(let file):
-            return tr("تعذّر فتح الملف \(file). تأكد أنه بصيغة xlsx أو csv.", "Couldn't open \(file). Make sure it's an xlsx or csv file.")
+            return tr("تعذّر فتح الملف \(file): ليس ملف xlsx سليماً (ربما بصيغة xls قديمة أو تالف أو محمي بكلمة سر). افتحه في Excel واحفظه بصيغة xlsx.",
+                      "Couldn't open \(file): not a valid xlsx file (maybe old .xls, damaged or password-protected). Open it in Excel and save as xlsx.")
         case .noData(let file):
             return tr("لم يُعثر في \(file) على عمود \"الاسم\" مع عمود صافي الراتب أو مبلغ الاستقطاع.", "\(file) has no \"name\" column with a net salary or deduction amount column.")
+        case .unrecognized(let file, let reasons):
+            let intro = tr("الملف \(file) غير متوافق مع نظام التطبيق:", "\(file) doesn't match the app's format:")
+            let help = tr("المطلوب: ورقة رواتب فيها عمودا (الاسم/Name_m) و(صافي الراتب)، أو ورقة استقطاعات فيها (الاسم) و(المبلغ). العناوين يجب أن تكون في أحد أول ٢٠ صفاً.",
+                          "Expected: a payroll sheet with (name) and (net salary) columns, or a deductions sheet with (name) and (amount). Headers must be within the first 20 rows.")
+            return ([intro] + reasons.map { "• " + $0 } + [help]).joined(separator: "\n")
         }
     }
 }
@@ -57,13 +68,15 @@ nonisolated enum ExcelImporter {
         case "csv", "txt":
             let sheet = SheetParser()
             for row in try readCSV(url) { sheet.consume(row) }
+            sheet.finish()
             result.merge(sheet.result)
             progress?(1)
         default:
             try readXLSX(url, into: &result, progress: progress)
         }
         if result.employees.isEmpty && result.deductions.isEmpty {
-            throw ImportError.noData(url.lastPathComponent)
+            throw ImportError.unrecognized(url.lastPathComponent, result.problems.isEmpty
+                ? [tr("لا توجد صفوف بيانات في الملف.", "The file has no data rows.")] : result.problems)
         }
         return result
     }
@@ -103,8 +116,9 @@ nonisolated enum ExcelImporter {
             progress?(done / total)
         }
 
-        for entry in sheets {
+        for (sheetIndex, entry) in sheets.enumerated() {
             let sheet = SheetParser()
+            sheet.sheetName = sheets.count > 1 ? tr("الورقة \(sheetIndex + 1)", "Sheet \(sheetIndex + 1)") : tr("الورقة", "Sheet")
             let size = Double(entry.uncompressedSize)
             let file = try extract(entry, from: archive, to: tempDir)
             progress?((done + size * 0.15) / total)
@@ -117,6 +131,7 @@ nonisolated enum ExcelImporter {
                 }
             }
             try? FileManager.default.removeItem(at: file)
+            sheet.finish()
             result.merge(sheet.result)
             done += size
             progress?(done / total)
@@ -230,9 +245,15 @@ nonisolated final class SheetParser {
 
     private(set) var result = ImportResult()
     private var mode = Mode.findingHeader(rowsSeen: 0)
+    /// اسم الورقة في رسائل الخطأ.
+    var sheetName = ""
+    /// أول عناوين رآها مع عمود الاسم، لشرح سبب الرفض.
+    private var nameRowHeaders: [String]?
+    private var rowsRead = 0
     private let nameHeaders = Set(Synonyms.name.map(ArabicText.normalize))
 
     func consume(_ row: [String]) {
+        rowsRead += 1
         switch mode {
         case .findingHeader(let seen):
             if let detected = detectHeader(row) {
@@ -253,6 +274,7 @@ nonisolated final class SheetParser {
         let headers = row.map(ArabicText.normalize)
         var used = Set<Int>()
         guard let name = Self.column(Synonyms.name, in: headers, used: &used, exactOnly: true) else { return nil }
+        nameRowHeaders = row.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 
         if let net = Self.column(Synonyms.netSalary, in: headers, used: &used) {
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
@@ -320,6 +342,26 @@ nonisolated final class SheetParser {
             note: cell(row, columns.note),
             rank: cell(row, columns.rank)
         ))
+    }
+
+    /// بعد آخر صف: سبب عدم قبول الورقة إن لم يُقرأ منها شيء.
+    func finish() {
+        guard result.employees.isEmpty, result.deductions.isEmpty else { return }
+        let sheet = sheetName.isEmpty ? tr("الورقة", "Sheet") : sheetName
+        if rowsRead == 0 {
+            return  // ورقة فارغة: لا داعي لذكرها
+        }
+        if let headers = nameRowHeaders {
+            let sample = headers.prefix(8).joined(separator: "، ")
+            switch mode {
+            case .employees: result.problems.append(tr("\(sheet): عناوين الرواتب موجودة لكن لا توجد أسماء تحتها.", "\(sheet): payroll headers found but no names under them."))
+            case .deductions: result.problems.append(tr("\(sheet): عناوين الاستقطاعات موجودة لكن لا توجد صفوف صالحة تحتها.", "\(sheet): deduction headers found but no valid rows."))
+            default: result.problems.append(tr("\(sheet): فيها عمود الاسم لكن لا يوجد عمود (صافي الراتب) ولا (المبلغ). العناوين الموجودة: \(sample)",
+                                               "\(sheet): has a name column but no (net salary) or (amount) column. Headers: \(sample)"))
+            }
+        } else {
+            result.problems.append(tr("\(sheet): لم يُعثر على عمود (الاسم) في أول ٢٠ صفاً.", "\(sheet): no (name) column in the first 20 rows."))
+        }
     }
 
     private func cell(_ row: [String], _ col: Int?) -> String {

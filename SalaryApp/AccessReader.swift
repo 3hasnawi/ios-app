@@ -11,7 +11,7 @@ nonisolated struct AccessReader {
         case tableMissing(String)
         var errorDescription: String? {
             switch self {
-            case .notAccess: tr("الملف ليس قاعدة بيانات Access صالحة.", "This isn't a valid Access database.")
+            case .notAccess: tr("الملف ليس قاعدة بيانات Access بالصيغة المدعومة (accdb من 2007 فأحدث)، أو أنه محمي بكلمة سر أو تالف.", "Not a supported Access database (accdb 2007+), or it's password-protected or damaged.")
             case .tableMissing(let name): tr("لم يُعثر على جدول \"\(name)\" في قاعدة البيانات.", "Table \"\(name)\" wasn't found.")
             }
         }
