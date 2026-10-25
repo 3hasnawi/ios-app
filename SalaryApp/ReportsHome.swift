@@ -365,11 +365,11 @@ private struct ReportCard: View {
         // الضغط المطوّل: معاينة الجدول أو تصديره.
         .contextMenu {
             if let group {
-                Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { onPreview(group) }
+                Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { onPreview(group) }
                 Button(tr("فتح التفاصيل", "Open details"), systemImage: "list.bullet.rectangle") { path.append(.group(group)) }
                 Divider()
-                Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.special(group, format: .excel) }
-                Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.special(group, format: .pdf) }
+                Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { exporter.special(group, format: .excel) }
+                Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { exporter.special(group, format: .pdf) }
             }
         }
     }
@@ -435,10 +435,10 @@ struct PayrollItemsView: View {
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
-                            Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                            Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { previewGroup = group }
                         }
                         .swipeActions(edge: .leading) {
-                            Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                            Button(tr("معاينة", "Preview"), systemImage: ReportSymbols.preview) { previewGroup = group }
                                 .tint(.blue)
                         }
                     }
@@ -595,12 +595,12 @@ struct EntitiesView: View {
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
-                            Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
-                            Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.single(group, format: .excel) }
-                            Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.single(group, format: .pdf) }
+                            Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { previewGroup = group }
+                            Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { exporter.single(group, format: .excel) }
+                            Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { exporter.single(group, format: .pdf) }
                         }
                         .swipeActions(edge: .leading) {
-                            Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                            Button(tr("معاينة", "Preview"), systemImage: ReportSymbols.preview) { previewGroup = group }
                                 .tint(.blue)
                         }
                     }

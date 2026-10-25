@@ -206,37 +206,33 @@ final class NavigationTests: XCTestCase {
 
     // MARK: - الاختبار
 
-    /// يتحقق من مقاس الشريط المخصص وبقاء البحث والمشاركة قابلين للوصول.
-    func testCompactBottomBar() {
+    /// يختبر شريط النظام والبحث والعودة والمشاركة دون فرض مقاس مخصص عليه.
+    func testSystemNavigationBar() {
         let baseArguments = app.launchArguments
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "settings", "-openSettings", "NO",
-                                "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
+                                               "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
         app.launch()
-        let bar = element("compactBottomBar")
-        XCTAssertTrue(bar.waitForExistence(timeout: 30))
-        XCTAssertLessThanOrEqual(bar.frame.height, 68.5)
-        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
-        for id in ["bottomHome", "bottomReports", "bottomSettings", "bottomSearch"] {
-            let button = element(id)
-            XCTAssertTrue(button.isHittable, id)
-            XCTAssertGreaterThanOrEqual(button.frame.width, 44, id)
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44, id)
-        }
-        XCTAssertFalse(element("bottomShare").exists)
-        element("bottomSearch").tap()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30))
+        XCTAssertTrue(settingsTab.isHittable)
+        XCTAssertFalse(app.tabBars.buttons["مشاركة"].exists)
+        reportsTab.tap()
+        XCTAssertTrue(app.navigationBars["التقارير"].waitForExistence(timeout: 8))
+        homeTab.tap()
+        XCTAssertTrue(app.navigationBars["الرئيسية"].waitForExistence(timeout: 8))
+        searchTab.tap()
         XCTAssertTrue(searchField.waitForExistence(timeout: 8))
-        element("bottomSettings").tap()
-        XCTAssertTrue(app.navigationBars["الإعدادات"].waitForExistence(timeout: 8))
-
-        // ملفات الاختبار مستوردة مسبقاً في سير المحاكي، والأسماء كلها وهمية.
+        type("احمد علي")
+        XCTAssertTrue(element("resultCard").waitForExistence(timeout: 10))
+        homeTab.tap()
+        searchTab.tap()
+        XCTAssertTrue(searchField.waitForExistence(timeout: 8))
         app.terminate()
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
                                                "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO",
                                                "-openPerson", "YES", "-share", "NO"]
         app.launch()
-        let share = element("bottomShare")
+        let share = app.tabBars.buttons["مشاركة"]
         XCTAssertTrue(share.waitForExistence(timeout: 20))
-        XCTAssertTrue(share.isHittable)
         share.tap()
         XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
     }

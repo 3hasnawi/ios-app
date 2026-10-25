@@ -378,7 +378,7 @@ struct EmployeeList: View {
         } else {
             ContentUnavailableView(
                 tr("لا توجد بيانات", "No data yet"),
-                systemImage: "tablecells",
+                systemImage: ReportSymbols.excel,
                 description: Text(tr("افتح الإعدادات من زر الترس واضغط \"استيراد ملفات Excel\". كل ملف يُحفظ كشهر باسم الملف، مثل \"تشرين الاول 2026\".", "Open Settings from the gear button and tap \"Import Excel files\". Each file is saved as a month named after the file, like \"October 2026\"."))
             )
         }

@@ -550,10 +550,10 @@ struct ReportExportSheet: View {
                     Section {
                         if let healthFiles {
                             Button { ActivityShare.present([healthFiles.excel]) } label: {
-                                Label(tr("Excel (ورقتان)", "Excel (two sheets)"), systemImage: "tablecells.fill")
+                                Label(tr("Excel (ورقتان)", "Excel (two sheets)"), systemImage: ReportSymbols.excel)
                             }
                             Button { ActivityShare.present([healthFiles.pdf]) } label: {
-                                Label("PDF", systemImage: "doc.richtext.fill")
+                                Label("PDF", systemImage: ReportSymbols.pdf)
                             }
                         } else {
                             ProgressView()
@@ -569,10 +569,10 @@ struct ReportExportSheet: View {
                     Section {
                         if let foodFiles {
                             Button { ActivityShare.present([foodFiles.excel]) } label: {
-                                Label(tr("Excel (عقد الإطعام)", "Excel (food contract)"), systemImage: "tablecells.fill")
+                                Label(tr("Excel (عقد الإطعام)", "Excel (food contract)"), systemImage: ReportSymbols.excel)
                             }
                             Button { ActivityShare.present([foodFiles.pdf]) } label: {
-                                Label(tr("PDF (عقد الإطعام)", "PDF (food contract)"), systemImage: "doc.richtext.fill")
+                                Label(tr("PDF (عقد الإطعام)", "PDF (food contract)"), systemImage: ReportSymbols.pdf)
                             }
                         } else {
                             ProgressView()
@@ -588,10 +588,10 @@ struct ReportExportSheet: View {
                     Section {
                         if let fundFiles {
                             Button { ActivityShare.present([fundFiles.excel]) } label: {
-                                Label(tr("Excel (حسب الفئة)", "Excel (by category)"), systemImage: "tablecells.fill")
+                                Label(tr("Excel (حسب الفئة)", "Excel (by category)"), systemImage: ReportSymbols.excel)
                             }
                             Button { ActivityShare.present([fundFiles.pdf]) } label: {
-                                Label(tr("PDF (حسب الفئة)", "PDF (by category)"), systemImage: "doc.richtext.fill")
+                                Label(tr("PDF (حسب الفئة)", "PDF (by category)"), systemImage: ReportSymbols.pdf)
                             }
                         } else {
                             ProgressView()
@@ -670,9 +670,10 @@ struct ReportExportSheet: View {
 enum ReportFiles {
     /// يكتب الملفين في tmp/report-export (في الخلفية).
     static func make(group: ReportGroup, rows: [ReportRow]) async throws -> (excel: URL, pdf: URL) {
-        let sheet = ReportSheet.make(group: group, rows: rows)
         let name = ReportSheet.fileName(for: group)
         return try await Task.detached(priority: .userInitiated) {
+            // تجهيز الصفوف وقياس أعمدتها جزء من العمل الثقيل أيضاً.
+            let sheet = ReportSheet.make(group: group, rows: rows)
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let excel = folder.appendingPathComponent(name + ".xlsx")

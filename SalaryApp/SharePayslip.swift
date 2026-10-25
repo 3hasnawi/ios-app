@@ -76,14 +76,18 @@ struct ShareOptionsSheet: View {
         .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task {
+        .task(id: mode) {
+            guard mode == .image, files == nil else { return }
             do {
                 files = try PayslipExporter.export(employee: employee, deductions: deductions)
             } catch {
                 errorText = tr("تعذّر تجهيز الصورة: \(error.localizedDescription)", "Couldn't prepare the image: \(error.localizedDescription)")
             }
         }
-        .task(id: reportKey) { await makeReport() }
+        .task(id: "\(reportKey)|\(mode.rawValue)") {
+            guard mode == .report else { return }
+            await makeReport()
+        }
     }
 
     // MARK: تقرير الراتب
@@ -245,7 +249,7 @@ struct ShareOptionsSheet: View {
                 .glassButtonStyle(prominent: true)
 
                 Button { ActivityShare.present([files.pdfURL]) } label: {
-                    OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
+                    OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: ReportSymbols.pdf)
                 }
                 .glassButtonStyle()
             }

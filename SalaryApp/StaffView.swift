@@ -98,27 +98,24 @@ struct RootView: View {
         TabView(selection: selection) {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
-                    .toolbar(.hidden, for: .tabBar)
             }
             Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
                 ReportsView()
-                    .toolbar(.hidden, for: .tabBar)
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
-                    .toolbar(.hidden, for: .tabBar)
             }
-            // البحث يُفتح من العدسة المخصصة مع حقل ثابت أعلى الصفحة.
-            Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search) {
+            if router.payslipToShare != nil {
+                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
+                    Color.clear
+                }
+            }
+            Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
                 UnifiedSearchView()
-                    .toolbar(.hidden, for: .tabBar)
             }
         }
-        // نحتفظ بحالة التبويبات ونستبدل شريط النظام بالتصميم المعتمد فقط.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            CompactBottomBar(selection: selection, showsShare: router.payslipToShare != nil)
-        }
+        // النظام يرسم الزجاج ويحرّك المؤشر ويصغّر الشريط أثناء التمرير.
+        .tabBarMinimizeBehavior(.onScrollDown)
         // بيانات ملاك وهمية وتنقّل آلي لاختبار المحاكي فقط (-fakeStaff، -autopilot).
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)

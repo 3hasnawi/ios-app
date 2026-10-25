@@ -25,7 +25,7 @@ final class PayrollMonth {
 /// موظف واحد كما ورد في ملف الرواتب.
 @Model
 final class Employee {
-    #Index<Employee>([\.month, \.name])
+    #Index<Employee>([\.month, \.name], [\.matchKey])
 
     var month: String = ""
     var name: String
@@ -98,7 +98,7 @@ nonisolated enum PayrollItems {
 /// استقطاع من ورقة الاستقطاعات، مرتبط بالموظف عن طريق الاسم المطبَّع ضمن نفس الشهر.
 @Model
 final class Deduction {
-    #Index<Deduction>([\.month, \.matchKey])
+    #Index<Deduction>([\.month, \.matchKey], [\.matchKey])
 
     var month: String = ""
     var employeeName: String

@@ -132,8 +132,11 @@ struct UnifiedSearchView: View {
                             .accessibilityIdentifier("resultCard")
                             .contextMenu {
                                 Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
-                                if let employee = person.employee {
-                                    Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "doc.richtext") { shareTarget = employee }
+                                if person.hasPayroll {
+                                    // لا نجلب كائن الراتب لكل بطاقة أثناء رسم النتائج.
+                                    Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
+                                        shareTarget = person.employee
+                                    }
                                 }
                                 Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
                             }
@@ -151,8 +154,7 @@ struct UnifiedSearchView: View {
             .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top, spacing: 0) { filters }
-            // حقل ثابت أعلى الصفحة لأن العدسة أصبحت زر تنقل مخصصاً.
-            .adaptiveSearchable(text: $search, prompt: mode.prompt)
+            .searchable(text: $search, prompt: Text(mode.prompt))
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
                 if !search.isEmpty {
@@ -526,11 +528,10 @@ struct UnifiedPersonView: View {
 
     init(person: UnifiedPerson) {
         self.person = person
-        let employee = person.employee
-        let key = employee?.matchKey ?? "\u{0}"
+        let key = person.hasPayroll ? person.hit.key : "\u{0}"
         _records = Query(filter: #Predicate<Employee> { $0.matchKey == key })
         let wantsStaff = LaunchOptions.personPart == "staff" && person.hasStaff
-        _selection = State(initialValue: wantsStaff || employee == nil ? Self.staffTag : employee!.month)
+        _selection = State(initialValue: wantsStaff || !person.hasPayroll ? Self.staffTag : (person.hit.month ?? Self.staffTag))
     }
 
     /// رواتب الشخص من الأحدث إلى الأقدم.
@@ -606,7 +607,7 @@ struct UnifiedPersonView: View {
                     chip(record.month, tag: record.month)
                         .contextMenu {
                             Button(tr("عرض هذا الشهر", "Show this month"), systemImage: "eye") { selection = record.month }
-                            Button(tr("مشاركة تقرير راتب هذا الشهر", "Share this month's salary report"), systemImage: "doc.richtext") {
+                            Button(tr("مشاركة تقرير راتب هذا الشهر", "Share this month's salary report"), systemImage: ReportSymbols.pdf) {
                                 selection = record.month
                                 router.payslipToShare = record
                                 router.showShare = true

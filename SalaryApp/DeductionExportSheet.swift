@@ -182,10 +182,10 @@ struct DeductionExportSheet: View {
         return HStack(spacing: 10) {
             exportButton(.excel,
                          title: mode == .single ? "Excel" : tr("Excel · \(Num.format(count + (summary ? 1 : 0))) ورقة", "Excel · \(count + (summary ? 1 : 0)) sheets"),
-                         systemImage: "tablecells.fill", color: Color(red: 0.12, green: 0.48, blue: 0.27), filled: true)
+                         systemImage: ReportSymbols.excel, color: Color(red: 0.12, green: 0.48, blue: 0.27), filled: true)
             exportButton(.pdf,
                          title: mode == .single ? "PDF" : tr("PDF مجمّع", "Combined PDF"),
-                         systemImage: "doc.richtext.fill", color: Color(red: 0.78, green: 0.16, blue: 0.16), filled: mode == .single)
+                         systemImage: ReportSymbols.pdf, color: Color(red: 0.78, green: 0.16, blue: 0.16), filled: mode == .single)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -194,22 +194,9 @@ struct DeductionExportSheet: View {
     }
 
     private func exportButton(_ format: ExportFormat, title: String, systemImage: String, color: Color, filled: Bool) -> some View {
-        Button {
-            export(format)
-        } label: {
-            HStack(spacing: 6) {
-                if working == format { ProgressView().tint(filled ? .white : color) } else { Image(systemName: systemImage) }
-                Text(title).lineLimit(1).minimumScaleFactor(0.8)
-            }
-            .font(.body.weight(.bold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .foregroundStyle(filled ? .white : color)
-            .background(filled ? color : Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(color, lineWidth: filled ? 0 : 1.5))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(format == .excel ? "exportExcelButton" : "exportPDFButton")
+        ReportActionButton(title: title, systemImage: systemImage, prominent: true,
+                           tint: color, isWorking: working == format) { export(format) }
+            .accessibilityIdentifier(format == .excel ? "exportExcelButton" : "exportPDFButton")
     }
 
     private func export(_ format: ExportFormat) {

@@ -93,3 +93,40 @@ struct SalaryHeader: View {
 extension Array where Element == Deduction {
     var total: Double { reduce(0) { $0 + ($1.amount ?? 0) } }
 }
+
+/// رمز واحد لكل فعل في صفحات التقارير ونوافذها.
+nonisolated enum ReportSymbols {
+    static let preview = "doc.text.magnifyingglass"
+    static let export = "square.and.arrow.up"
+    static let excel = "tablecells"
+    static let pdf = "doc.richtext"
+}
+
+struct ReportActionButton: View {
+    let title: String
+    let systemImage: String
+    var prominent = false
+    var tint: Color = .accentColor
+    var isWorking = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if isWorking {
+                    ProgressView().frame(width: 22, height: 22)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 20, weight: .medium))
+                        .frame(width: 22, height: 22)
+                }
+                Text(title).font(.subheadline.weight(.semibold)).lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, 8)
+        }
+        .glassButtonStyle(prominent: prominent)
+        .buttonBorderShape(.capsule)
+        .tint(tint)
+    }
+}

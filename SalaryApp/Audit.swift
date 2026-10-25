@@ -271,6 +271,32 @@ nonisolated enum AuditExport {
     }
 }
 
+/// إعادة فتح التقارير تشترك في نفس عملية التدقيق بدل تكرار قراءة الشهر.
+actor AuditCache {
+    static let shared = AuditCache()
+    private var tasks: [String: Task<AuditReport, Error>] = [:]
+
+    func report(month: String, threshold: Int, base: AuditBase, container: ModelContainer) async throws -> AuditReport {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
+        let revision = try context.fetch(descriptor).first?.importedAt.timeIntervalSince1970 ?? 0
+        let key = "\(month)|\(revision)|\(threshold)|\(base.rawValue)|\(AppSettings.locale.identifier)"
+        if let task = tasks[key] { return try await task.value }
+        if tasks.count >= 3 { tasks.removeAll() }
+        let task = Task.detached(priority: .utility) {
+            let started = Date()
+            let result = try await ReportEngine(modelContainer: container).audit(month: month, threshold: threshold, base: base)
+            PerfLog.record("audit", since: started)
+            return result
+        }
+        tasks[key] = task
+        do { return try await task.value }
+        catch { tasks.removeValue(forKey: key); throw error }
+    }
+
+    func invalidate() { tasks.removeAll() }
+}
+
 // MARK: - الواجهة
 
 /// صفحة التدقيق: فحوص الشهر، والمقارنة مع شهر آخر، وإعدادات الفحص.
@@ -352,8 +378,8 @@ struct AuditView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { export(excel: true) }
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { export(excel: false) }
+                    Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
+                    Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
                     HStack(spacing: 5) {
                         if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
@@ -376,9 +402,7 @@ struct AuditView: View {
 
     static func run(month: String, threshold: Int, base: AuditBase) async -> AuditReport? {
         let container = SharedModel.container
-        return try? await Task.detached(priority: .userInitiated) {
-            try await ReportEngine(modelContainer: container).audit(month: month, threshold: threshold, base: base)
-        }.value
+        return try? await AuditCache.shared.report(month: month, threshold: threshold, base: base, container: container)
     }
 
     private func export(excel: Bool) {
@@ -460,8 +484,8 @@ struct AuditCheckView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { export(excel: true) }
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { export(excel: false) }
+                    Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
+                    Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
                     HStack(spacing: 5) {
                         if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
@@ -578,8 +602,8 @@ struct CompareView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { export(excel: true) }
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { export(excel: false) }
+                    Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
+                    Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
                     HStack(spacing: 5) {
                         if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }

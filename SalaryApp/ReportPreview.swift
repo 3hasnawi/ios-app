@@ -58,16 +58,9 @@ struct ReportPreviewSheet: View {
                     Button(tr("إغلاق", "Close"), systemImage: "xmark") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showExport = true
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "square.and.arrow.up")
-                            Text(tr("تصدير", "Export"))
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 4)
-                    }
+                    Button(tr("تصدير", "Export"), systemImage: ReportSymbols.export) { showExport = true }
+                        .labelStyle(.iconOnly)
+                        .accessibilityIdentifier("previewExport")
                     .disabled(listFiles == nil)
                 }
             }

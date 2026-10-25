@@ -140,7 +140,7 @@ struct ReportDetailView: View {
             // بدل قائمة الأسماء: معاينة الجدول كما سيُصدَّر، وزر التصدير.
             Section {
                 HStack(spacing: 10) {
-                    actionButton(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass", filled: false) { showPreview = true }
+                    actionButton(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview, filled: false) { showPreview = true }
                         .accessibilityIdentifier("previewReport")
                     actionButton(tr("تصدير", "Export"), systemImage: "square.and.arrow.up", filled: true) { showExport = true }
                         .accessibilityIdentifier("exportReport")
@@ -204,16 +204,6 @@ struct ReportDetailView: View {
     }
 
     private func actionButton(_ title: String, systemImage: String, filled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.body.weight(.bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(filled ? Color.white : Color.accentColor)
-                .background(filled ? Color.accentColor : Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                // الحدّ داخل الزر (strokeBorder) حتى لا يُقصّ عند حافة الصف.
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.accentColor, lineWidth: filled ? 0 : 1.5))
-        }
-        .buttonStyle(.plain)
+        ReportActionButton(title: title, systemImage: systemImage, prominent: filled, action: action)
     }
 }
