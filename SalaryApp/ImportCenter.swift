@@ -304,7 +304,7 @@ final class ImportCenter {
                     if kind != .deductions {
                         let odd = HealthCareReport.irregularCount(in: result.employees)
                         if odd > 0 {
-                            warnings.append(tr("⚠️ \(month): \(Num.format(odd)) مبلغ رعاية صحية لا يقبل القسمة على ٣٥٠٠. راجعه في التقارير ← الرعاية الصحية.",
+                            warnings.append(tr("⚠️ \(month): \(Num.format(odd)) مبلغ رعاية صحية لا يقبل القسمة على \(Num.format(3500)). راجعه في التقارير ← الرعاية الصحية.",
                                                "⚠️ \(month): \(odd) health care amounts are not divisible by 3,500. Check Reports → Health care."))
                         }
                         let key = MonthName.sortKey(month)

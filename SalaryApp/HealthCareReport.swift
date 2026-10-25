@@ -28,7 +28,7 @@ nonisolated enum HealthCareReport {
     struct Lists: Sendable {
         var subscribers: [ReportRow]
         var others: [ReportRow]
-        /// مبالغ لا تقبل القسمة على ٣٥٠٠ (الكشف لا يقبل الكسور).
+        /// مبالغ لا تقبل القسمة على \(Num.format(3500)) (الكشف لا يقبل الكسور).
         var irregular: [ReportRow] { subscribers.filter { !HealthCareReport.isExact($0.amount) } }
     }
 
@@ -271,7 +271,7 @@ struct HealthCareSection: View {
             Section {
                 ForEach(irregular) { row in
                     LabeledContent {
-                        Text("\(Money.format(row.amount)) ÷ ٣٥٠٠ = \(HealthCareReport.familyText(row.amount))")
+                        Text("\(Money.format(row.amount)) ÷ \(Money.format(HealthCareReport.perMember)) = \(Num.digits(HealthCareReport.familyText(row.amount)))")
                             .monospacedDigit()
                             .foregroundStyle(.red)
                     } label: {
@@ -282,7 +282,7 @@ struct HealthCareSection: View {
                     }
                 }
             } header: {
-                Label(tr("مبالغ لا تقبل القسمة على ٣٥٠٠ (\(Num.format(irregular.count)))", "Amounts not divisible by 3,500 (\(irregular.count))"),
+                Label(tr("مبالغ لا تقبل القسمة على \(Num.format(3500)) (\(Num.format(irregular.count)))", "Amounts not divisible by 3,500 (\(irregular.count))"),
                       systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
             } footer: {
@@ -305,7 +305,7 @@ struct HealthCareSection: View {
                 .font(.subheadline)
             }
         } header: {
-            Text(tr("الرعاية الصحية: ٣٥٠٠ لكل فرد", "Health care: 3,500 per member"))
+            Text(tr("الرعاية الصحية: \(Num.format(3500)) لكل فرد", "Health care: 3,500 per member"))
         }
     }
 }

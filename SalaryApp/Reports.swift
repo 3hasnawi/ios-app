@@ -390,7 +390,7 @@ struct ReportDetailView: View {
         .alert(tr("تنبيه: الرعاية الصحية", "Health care warning"), isPresented: $healthWarning) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: {
-            Text(tr("يوجد \(Num.format(healthLists?.irregular.count ?? 0)) مبلغ لا يقبل القسمة على ٣٥٠٠، والكشف لا يقبل الكسور. الأسماء في أعلى الصفحة.",
+            Text(tr("يوجد \(Num.format(healthLists?.irregular.count ?? 0)) مبلغ لا يقبل القسمة على \(Num.format(3500))، والكشف لا يقبل الكسور. الأسماء في أعلى الصفحة.",
                     "\(healthLists?.irregular.count ?? 0) amounts are not divisible by 3,500. The names are at the top of the page."))
         }
         .sheet(isPresented: $showExport) {
