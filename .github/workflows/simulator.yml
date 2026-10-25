@@ -68,6 +68,17 @@ jobs:
               m = dict(re.findall(r"(\w+)=(\d+)", line)); e += int(m["employees"]); d += int(m["deductions"])
           print(f"employees={e} deductions={d} months=2")' > ci-output/expected.txt
           cat ci-output/expected.txt
+          # ملفان منفصلان لنفس الشهر (رواتب فقط، واستقطاعات فقط) لاختبار التعرّف التلقائي
+          .venv/bin/python - <<'PY'
+          from openpyxl import load_workbook, Workbook
+          src = load_workbook("test-files/أيلول 2026.xlsx", read_only=True)
+          for sheet, out in zip(src.worksheets, ["test-files/split/رواتب آب 2026.xlsx", "test-files/split/استقطاعات آب 2026.xlsx"]):
+              wb = Workbook(write_only=True); ws = wb.create_sheet(sheet.title)
+              for row in sheet.iter_rows(values_only=True): ws.append(list(row))
+              import os; os.makedirs("test-files/split", exist_ok=True); wb.save(out)
+          PY
+          sed 's/$/ months=1/' sep.txt > ci-output/expected-split.txt
+          cat ci-output/expected-split.txt
 
       - name: Boot simulator and install
         run: |
@@ -81,7 +92,7 @@ jobs:
           xcrun simctl install "$UDID" build/Build/Products/Release-iphonesimulator/SalaryApp.app
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           mkdir -p "$DATA/Documents"
-          cp test-files/*.xlsx "$DATA/Documents/"
+          cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
       - name: Run app and take screenshots
@@ -107,6 +118,15 @@ jobs:
           done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt
           shot 02-import-done 2
+
+          # 2b) ملفان منفصلان: نافذة المراجعة (التعرّف على النوع والشهر)، ثم الاستيراد
+          SPLIT="$DATA/Documents/رواتب آب 2026.xlsx|$DATA/Documents/استقطاعات آب 2026.xlsx"
+          launch -importFile "$SPLIT" -importReview YES
+          shot 02b-import-review 10
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -importFile "$SPLIT"
+          for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no split report"; } | tee ci-output/import-split-report.txt
 
           # 3) الشاشة الرئيسية: أحدث شهر (تشرين الاول) مختار تلقائياً
           launch
@@ -235,6 +255,11 @@ jobs:
           echo "expected: $expected"; echo "actual:   $actual"
           [ "$expected" = "$actual" ] || { echo "::error::Import mismatch: expected '$expected', got '$(cat ci-output/import-report.txt)'"; exit 1; }
           echo "::notice::Import OK: $(cat ci-output/import-report.txt)"
+          expected=$(sed 's/ $//' ci-output/expected-split.txt)
+          actual=$(sed 's/ seconds=.*//' ci-output/import-split-report.txt)
+          echo "split expected: $expected"; echo "split actual:   $actual"
+          [ "$expected" = "$actual" ] || { echo "::error::Split import mismatch: expected '$expected', got '$(cat ci-output/import-split-report.txt)'"; exit 1; }
+          echo "::notice::Split import OK: $(cat ci-output/import-split-report.txt)"
 
       - name: Publish screenshots to 'screenshots' branch
         if: always()

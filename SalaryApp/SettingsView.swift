@@ -183,7 +183,9 @@ struct SettingsView: View {
             Button {
                 onImport()
             } label: {
-                SettingRow(title: tr("استيراد ملفات Excel", "Import Excel files"), systemImage: "square.and.arrow.down", color: .green) { EmptyView() }
+                SettingRow(title: tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", color: .green) {
+                    if ImportCenter.shared.isBusy { ProgressView() }
+                }
             }
             NavigationLink {
                 SavedMonthsView()
@@ -195,8 +197,8 @@ struct SettingsView: View {
         } header: {
             Text(tr("الاستيراد", "Import"))
         } footer: {
-            Text(tr("كل ملف يُحفظ كشهر باسم الملف. استيراد نفس الشهر مرة أخرى يستبدل بياناته.",
-                    "Each file is saved as a month named after the file. Importing the same month again replaces its data."))
+            Text(tr("رواتب أو استقطاعات (Excel) أو ملاك (Access)، ملف واحد أو عدة ملفات معاً. التطبيق يتعرّف على نوع كل ملف وشهره وتراجعه قبل الاستيراد. ملف الرواتب يستبدل رواتب شهره فقط، وملف الاستقطاعات يستبدل استقطاعاته فقط.",
+                    "Payroll or deductions (Excel) or staff (Access), one or several files. The app recognises each file's type and month for you to review. A payroll file replaces only that month's payroll; a deductions file only its deductions."))
         }
     }
 
@@ -204,15 +206,10 @@ struct SettingsView: View {
 
     private var staffSection: some View {
         Section {
-            Button {
-                onImportStaff()
-            } label: {
-                SettingRow(title: tr("استيراد ملف الملاك (Access)", "Import staff database (Access)"), systemImage: "person.3.fill", color: .teal) {
-                    if importState.isImporting { ProgressView() }
-                }
-            }
-            .disabled(importState.isImporting)
-            if StaffInfo.count > 0 {
+            if StaffInfo.count == 0 {
+                Text(tr("لم يُستورد ملف الملاك بعد. استورده من \"استيراد ملفات\".", "No staff file yet. Import it from \"Import files\"."))
+                    .foregroundStyle(.secondary)
+            } else {
                 LabeledContent(tr("عدد الموظفين", "Employees")) {
                     Text(Num.format(StaffInfo.count))
                 }
@@ -231,8 +228,8 @@ struct SettingsView: View {
         } header: {
             Text(tr("الملاك", "Staff"))
         } footer: {
-            Text(tr("اختر ملف قاعدة البيانات (‎.accdb) كما هو. الاستيراد الجديد يستبدل الملاك القديم كاملاً.",
-                    "Pick the database file (.accdb) as it is. A new import replaces the previous staff data."))
+            Text(tr("ملف قاعدة البيانات (‎.accdb) كما هو. الاستيراد الجديد يستبدل الملاك القديم كاملاً.",
+                    "The database file (.accdb) as it is. A new import replaces the previous staff data."))
         }
         .id(importState.version)
         .confirmationDialog(tr("حذف بيانات الملاك؟", "Delete staff data?"), isPresented: $confirmStaffDelete, titleVisibility: .visible) {

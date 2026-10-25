@@ -44,17 +44,12 @@ struct ContentView: View {
     /// اسم قادم من اختصار "فتح البحث في الرواتب".
     @State private var router = ShortcutRouter.shared
     @State private var importAfterSettings = false
-    @State private var staffImportAfterSettings = false
-    @State private var showStaffPicker = false
-    @State private var pickedStaffFile: URL?
+    @State private var importCenter = ImportCenter.shared
     @State private var appRouter = AppRouter.shared
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
     @State private var path: [Employee] = []
-    @State private var showImporter = false
-    @State private var pickedFiles: [URL] = []
-    @State private var isImporting = false
     @State private var message: String?
     @State private var monthToDelete: PayrollMonth?
 
@@ -95,8 +90,7 @@ struct ContentView: View {
             // الشاشة الرئيسية: ملخص الشهر وآخر عمليات البحث، والشعار خلفية شفافة.
             // البحث نفسه في تبويب العدسة.
             HomeDashboard(months: months, current: currentMonth,
-                          onImportPayroll: { showImporter = true },
-                          onImportStaff: { showStaffPicker = true })
+                          onImport: { importCenter.pick() })
                 .id("\(language)-\(numerals)")
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !months.isEmpty {
@@ -130,39 +124,13 @@ struct ContentView: View {
                     // زر الاستيراد داخل الإعدادات: تُغلق الإعدادات أولاً ثم تُفتح نافذة الملفات.
                     if importAfterSettings {
                         importAfterSettings = false
-                        showImporter = true
-                    }
-                    if staffImportAfterSettings {
-                        staffImportAfterSettings = false
-                        showStaffPicker = true
+                        importCenter.pick()
                     }
                 }) {
                     SettingsView(months: months, onImport: {
                         importAfterSettings = true
                         showSettings = false
-                    }, onImportStaff: {
-                        staffImportAfterSettings = true
-                        showSettings = false
                     })
-                }
-                .sheet(isPresented: $showStaffPicker, onDismiss: {
-                    if let url = pickedStaffFile {
-                        pickedStaffFile = nil
-                        StaffImportState.shared.importDatabase(url)
-                    }
-                }) {
-                    DocumentPicker(contentTypes: accessFileTypes) { urls in
-                        pickedStaffFile = urls.first
-                        showStaffPicker = false
-                    }
-                    .ignoresSafeArea()
-                }
-                .sheet(isPresented: $showImporter, onDismiss: startPendingImport) {
-                    DocumentPicker(contentTypes: fileTypes) { urls in
-                        pickedFiles = urls
-                        showImporter = false
-                    }
-                    .ignoresSafeArea()
                 }
                 .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button(tr("حسناً", "OK"), role: .cancel) {}
@@ -183,15 +151,18 @@ struct ContentView: View {
                 .task {
                     await applyLaunchOptions()
                 }
-                .onChange(of: appRouter.pendingPayrollImport, initial: true) { _, pending in
+                .onChange(of: appRouter.pendingPayrollImport || appRouter.pendingStaffImport, initial: true) { _, pending in
                     guard pending else { return }
                     appRouter.pendingPayrollImport = false
-                    showImporter = true
-                }
-                .onChange(of: appRouter.pendingStaffImport, initial: true) { _, pending in
-                    guard pending else { return }
                     appRouter.pendingStaffImport = false
-                    showStaffPicker = true
+                    importCenter.pick()
+                }
+                // بعد الاستيراد يُعرض أحدث شهر رواتب مستورد.
+                .onChange(of: importCenter.lastPayrollMonth) { _, name in
+                    guard let name else { return }
+                    selectedMonth = name
+                    path = []
+                    importCenter.lastPayrollMonth = nil
                 }
         }
     }
@@ -313,7 +284,9 @@ struct ContentView: View {
         if LaunchOptions.openSettings { showSettings = true }
         let files = LaunchOptions.importFiles
         if !files.isEmpty {
-            await importFiles(files.map { URL(fileURLWithPath: $0) })
+            // اختبار المحاكي: يستورد مباشرة، أو يعرض نافذة المراجعة فقط (-importReview YES).
+            let review = UserDefaults.standard.bool(forKey: "importReview")
+            await importCenter.analyze(files.map { URL(fileURLWithPath: $0) }, autoRun: !review)
         }
         let key = ArabicText.normalize(search)
         if LaunchOptions.openFirst, !key.isEmpty, let monthName = currentMonth?.name {
@@ -325,73 +298,6 @@ struct ContentView: View {
             if let first = try? context.fetch(descriptor).first {
                 path = [first]
             }
-        }
-    }
-
-    /// يبدأ الاستيراد بعد إغلاق نافذة الاختيار، ثم يحذف النسخ المؤقتة.
-    private func startPendingImport() {
-        let urls = pickedFiles
-        pickedFiles = []
-        guard !urls.isEmpty else { return }
-        Task {
-            await importFiles(urls)
-            for url in urls { try? FileManager.default.removeItem(at: url) }
-        }
-    }
-
-    /// كل ملف يصبح شهراً باسم الملف؛ استيراد نفس الشهر مرة أخرى يستبدل بياناته فقط.
-    private func importFiles(_ urls: [URL]) async {
-        isImporting = true
-        let progress = ImportProgress.shared
-        progress.begin(urls.count == 1 ? tr("استيراد ملف الرواتب", "Importing payroll file")
-                                       : tr("استيراد \(Num.format(urls.count)) ملفات رواتب", "Importing \(Num.format(urls.count)) payroll files"))
-        let container = context.container
-        let start = Date()
-        var lines: [String] = []
-        var failures: [String] = []
-        var totals = (employees: 0, deductions: 0)
-        var newest: (sortKey: Int, name: String)?
-
-        for (index, url) in urls.enumerated() {
-            let monthName = MonthName.label(for: url)
-            let share = 1.0 / Double(urls.count)
-            let base = Double(index) * share
-            let counter = urls.count > 1 ? tr(" (\(Num.format(index + 1)) من \(Num.format(urls.count)))", " (\(index + 1) of \(urls.count))") : ""
-            do {
-                // القراءة والحفظ كلاهما في الخلفية حتى تبقى الواجهة سلسة مع الملفات الكبيرة.
-                let reading = progress.sink(base, base + share * 0.55, tr("قراءة \(monthName)\(counter)", "Reading \(monthName)\(counter)"))
-                let imported = try await Task.detached(priority: .userInitiated) {
-                    let granted = url.startAccessingSecurityScopedResource()
-                    defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                    return try ExcelImporter.load(url: url, progress: reading)
-                }.value
-                let saving = progress.sink(base + share * 0.55, base + share, tr("حفظ \(monthName)\(counter)", "Saving \(monthName)\(counter)"))
-                try await Task.detached(priority: .userInitiated) {
-                    try await DataImporter(modelContainer: container).replace(month: monthName, with: imported, progress: saving)
-                }.value
-                lines.append(tr("\(monthName): \(Num.format(imported.employees.count)) موظف و\(Num.format(imported.deductions.count)) استقطاع", "\(monthName): \(Num.format(imported.employees.count)) employees, \(Num.format(imported.deductions.count)) deductions"))
-                totals.employees += imported.employees.count
-                totals.deductions += imported.deductions.count
-                let sortKey = MonthName.sortKey(monthName)
-                if newest == nil || sortKey >= newest!.sortKey { newest = (sortKey, monthName) }
-            } catch {
-                failures.append("\(monthName): \(error.localizedDescription)")
-            }
-        }
-
-        // بعد الاستيراد يُعرض أحدث شهر مستورد.
-        if let newest { selectedMonth = newest.name }
-        path = []
-        isImporting = false
-        progress.end()
-        var parts: [String] = []
-        if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
-        if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
-        message = parts.joined(separator: "\n")
-        if !LaunchOptions.importFiles.isEmpty {
-            let status = failures.isEmpty ? "" : " failed=\(failures.count)"
-            LaunchOptions.writeReport("employees=\(totals.employees) deductions=\(totals.deductions) months=\(lines.count)\(status)"
-                + String(format: " seconds=%.1f\n", Date().timeIntervalSince(start)))
         }
     }
 

@@ -38,8 +38,7 @@ actor HomeStatsLoader {
 struct HomeDashboard: View {
     let months: [PayrollMonth]
     let current: PayrollMonth?
-    var onImportPayroll: () -> Void = {}
-    var onImportStaff: () -> Void = {}
+    var onImport: () -> Void = {}
 
     @State private var stats: HomeStats?
     @State private var staffState = StaffImportState.shared
@@ -128,15 +127,13 @@ struct HomeDashboard: View {
                 .frame(width: 110, height: 110)
             Text(tr("أهلاً بك", "Welcome"))
                 .font(.title2.bold())
-            Text(tr("ابدأ باستيراد ملفات الرواتب (Excel) وملف الملاك (Access).",
-                    "Start by importing payroll files (Excel) and the staff database (Access)."))
+            Text(tr("اختر ملفات الرواتب والاستقطاعات (Excel) وملف الملاك (Access) معاً أو كلاً على حدة، والتطبيق يتعرّف على كل ملف.",
+                    "Pick payroll and deduction files (Excel) and the staff database (Access), together or one by one. The app recognises each file."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button(tr("استيراد ملفات الرواتب", "Import payroll files"), systemImage: "square.and.arrow.down", action: onImportPayroll)
+            Button(tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", action: onImport)
                 .glassButtonStyle(prominent: true)
-            Button(tr("استيراد ملف الملاك", "Import staff database"), systemImage: "person.3.fill", action: onImportStaff)
-                .glassButtonStyle()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)

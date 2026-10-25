@@ -147,6 +147,23 @@ actor StaffImporter {
         }
     }
 
+    /// فحص سريع قبل الاستيراد: عدد سجلات الجدول الرئيسي.
+    nonisolated static func peekCount(at url: URL) throws -> Int {
+        let data = try Data(contentsOf: url, options: .alwaysMapped)
+        return try data.withUnsafeBytes { buffer in
+            let reader = try AccessReader(bytes: buffer)
+            let tables = try reader.userTables()
+            if let page = tables["الرئيسي"] { return try reader.table(at: page).rowCount }
+            var best: Int?
+            for (_, page) in tables {
+                guard let t = try? reader.table(at: page), t.columns.contains(where: { $0.name == "الاسم الكامل" }) else { continue }
+                best = max(best ?? 0, t.rowCount)
+            }
+            guard let best else { throw ImportError.noMainTable }
+            return best
+        }
+    }
+
     /// يقرأ ملف .accdb ويستبدل بيانات الملاك كلها. يعيد عدد الموظفين.
     func importDatabase(at url: URL, progress: ProgressSink? = nil) throws -> Int {
         let data = try Data(contentsOf: url, options: .alwaysMapped)

@@ -98,6 +98,47 @@ actor DataImporter {
         progress?(1)
     }
 
+    /// ملف رواتب فقط: يستبدل رواتب الشهر وتبقى استقطاعاته.
+    func replacePayroll(month: String, with employees: [ImportedEmployee], progress: ProgressSink? = nil) throws {
+        try modelContext.delete(model: Employee.self, where: #Predicate { $0.month == month })
+        let total = Double(max(1, employees.count))
+        for (i, e) in employees.enumerated() {
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary))
+            if i % 4000 == 3999 { try modelContext.save() }
+            if i % 500 == 499 { progress?(Double(i + 1) / total) }
+        }
+        try upsertMonth(month, employees: employees.count, deductions: nil)
+        try modelContext.save()
+        progress?(1)
+    }
+
+    /// ملف استقطاعات فقط: يستبدل استقطاعات الشهر وتبقى رواتبه.
+    func replaceDeductions(month: String, with deductions: [ImportedDeduction], progress: ProgressSink? = nil) throws {
+        try modelContext.delete(model: Deduction.self, where: #Predicate { $0.month == month })
+        let total = Double(max(1, deductions.count))
+        for (i, d) in deductions.enumerated() {
+            modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note))
+            if i % 4000 == 3999 { try modelContext.save() }
+            if i % 500 == 499 { progress?(Double(i + 1) / total) }
+        }
+        try upsertMonth(month, employees: nil, deductions: deductions.count)
+        try modelContext.save()
+        progress?(1)
+    }
+
+    /// سجل الشهر: يُحدّث العدد الذي تغيّر فقط، أو يُنشأ إن لم يكن موجوداً.
+    private func upsertMonth(_ month: String, employees: Int?, deductions: Int?) throws {
+        var descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
+        descriptor.fetchLimit = 1
+        if let existing = try modelContext.fetch(descriptor).first {
+            if let employees { existing.employeeCount = employees }
+            if let deductions { existing.deductionCount = deductions }
+            existing.importedAt = .now
+        } else {
+            modelContext.insert(PayrollMonth(name: month, employeeCount: employees ?? 0, deductionCount: deductions ?? 0))
+        }
+    }
+
     func delete(month: String) throws {
         try removeData(of: month)
         try modelContext.save()

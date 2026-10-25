@@ -74,6 +74,7 @@ struct RootView: View {
     @State private var router = AppRouter.shared
     @State private var staffImport = StaffImportState.shared
     @State private var importProgress = ImportProgress.shared
+    @State private var importCenter = ImportCenter.shared
 
     /// زر "مشاركة" في الشريط ليس صفحة: الضغط عليه يفتح نافذة المشاركة ويبقى التبويب الحالي.
     private var selection: Binding<AppRouter.Tab> {
@@ -121,6 +122,22 @@ struct RootView: View {
         }
         .sheet(isPresented: $router.showShare) {
             if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee) }
+        }
+        // استيراد موحّد: نافذة الملفات، ثم مراجعة ما تعرّف عليه التطبيق، ثم النتيجة.
+        .sheet(isPresented: $importCenter.showPicker, onDismiss: { importCenter.pickerDismissed() }) {
+            DocumentPicker(contentTypes: ImportCenter.fileTypes) { urls in importCenter.picked(urls) }
+                .ignoresSafeArea()
+        }
+        .sheet(isPresented: $importCenter.showReview) {
+            ImportReviewSheet(center: importCenter)
+        }
+        .alert(tr("الاستيراد", "Import"), isPresented: Binding(
+            get: { importCenter.message != nil },
+            set: { if !$0 { importCenter.message = nil } }
+        )) {
+            Button(tr("حسناً", "OK"), role: .cancel) {}
+        } message: {
+            Text(importCenter.message ?? "")
         }
         .alert(tr("الملاك", "Staff"), isPresented: Binding(
             get: { staffImport.message != nil },
