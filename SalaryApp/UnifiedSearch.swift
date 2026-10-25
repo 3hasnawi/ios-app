@@ -525,12 +525,6 @@ struct UnifiedPersonView: View {
     var body: some View {
         let staff = person.staff
         List {
-            Section {
-                chips(staff: staff)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
-
             if selection == Self.staffTag {
                 if let staff {
                     Section {
@@ -575,6 +569,12 @@ struct UnifiedPersonView: View {
             }
         }
         .listSectionSpacing(.compact)
+        .contentMargins(.top, 4, for: .scrollContent)
+        // أزرار الأشهر ثابتة أعلى الصفحة (بدون فراغ فوقها).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            chips(staff: staff)
+                .padding(.bottom, 6)
+        }
         .navigationTitle(tr("قسيمة الراتب", "Payslip"))
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: selection) { copied = false }
