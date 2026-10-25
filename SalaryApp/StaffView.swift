@@ -78,6 +78,7 @@ struct RootView: View {
     @State private var importProgress = ImportProgress.shared
     @State private var importCenter = ImportCenter.shared
     @Environment(\.scenePhase) private var scenePhase
+    @State private var backup = BackupManager.shared
 
     /// زر "مشاركة" في الشريط ليس صفحة: الضغط عليه يفتح نافذة المشاركة ويبقى التبويب الحالي.
     private var selection: Binding<AppRouter.Tab> {
@@ -161,6 +162,24 @@ struct RootView: View {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: {
             Text(staffImport.message ?? "")
+        }
+        // الاسترجاع من نسخة (من الإعدادات أو من "استيراد ملفات") ورسائل النسخ الاحتياطي، أياً كان التبويب.
+        .alert(tr("استرجاع النسخة؟", "Restore this backup?"), isPresented: Binding(
+            get: { backup.pendingRestore != nil },
+            set: { if !$0 && backup.pendingRestore != nil { backup.cancelRestore() } }
+        )) {
+            Button(tr("استرجاع", "Restore"), role: .destructive) { backup.confirmRestore() }
+            Button(tr("إلغاء", "Cancel"), role: .cancel) { backup.cancelRestore() }
+        } message: {
+            if let m = backup.pendingRestore?.manifest {
+                Text(tr("نسخة \(m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale)))\n\(m.months.count) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك\nستُستبدل كل البيانات الحالية بمحتوى النسخة.",
+                        "Backup of \(m.createdAt.formatted())\n\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff\nAll current data will be replaced."))
+            }
+        }
+        .alert(tr("النسخ الاحتياطي", "Backup"), isPresented: Binding(get: { backup.message != nil }, set: { if !$0 { backup.message = nil } })) {
+            Button(tr("حسناً", "OK"), role: .cancel) {}
+        } message: {
+            Text(backup.message ?? "")
         }
     }
 }

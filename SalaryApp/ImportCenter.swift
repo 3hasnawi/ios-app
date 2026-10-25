@@ -79,6 +79,7 @@ final class ImportCenter {
     static let fileTypes: [UTType] = [
         UTType(filenameExtension: "xlsx") ?? .spreadsheet,
         .commaSeparatedText,
+        .zip,
     ] + accessFileTypes
 
     var showPicker = false
@@ -100,6 +101,11 @@ final class ImportCenter {
         // تبدأ قراءة الملفات فور اختيارها، مع شريط التقدّم.
         FilePicker.present(types: Self.fileTypes) { [weak self] urls in
             guard let self, !urls.isEmpty else { return }
+            // ملف نسخة احتياطية (zip): استرجاع بعد التأكيد، مثلاً على جهاز آخر.
+            if let backup = urls.first(where: { $0.pathExtension.lowercased() == "zip" }) {
+                Task { await BackupManager.shared.openForRestore(backup) }
+                return
+            }
             Task { await self.analyze(urls) }
         }
     }
