@@ -22,6 +22,27 @@ nonisolated struct ReportSheet: Sendable {
     let amounts: [Double]
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
+    /// A4 بالعرض إذا كان مجموع عرض الأعمدة أكبر مما تتسعه الصفحة بالطول.
+    var landscape: Bool { columns.reduce(0) { $0 + $1.width } > 96 }
+
+    /// عرض كل عمود بحسب أطول قيمة فيه (مع حد أدنى وأعلى).
+    func fitted() -> ReportSheet {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US")
+        let maxAmount = formatter.string(from: NSNumber(value: max(total, amounts.max() ?? 0)))?.count ?? 8
+        let fittedColumns = columns.enumerated().map { c, column -> Column in
+            let longest: Int
+            switch column.kind {
+            case .serial: longest = String(rows.count).count
+            case .amount: longest = maxAmount
+            case .text: longest = rows.reduce(0) { max($0, $1[c].count) }
+            }
+            let width = min(48, max(Double(column.title.count) + 2, Double(longest) * 1.08 + 2, column.kind == .serial ? 4 : 8))
+            return Column(title: column.title, width: width.rounded(), kind: column.kind)
+        }
+        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts)
+    }
 
     /// "ايلول 2026" ← "ايلول ٢٠٢٦" كما في النموذج.
     static func easternDigits(_ text: String) -> String {
@@ -36,6 +57,10 @@ nonisolated struct ReportSheet: Sendable {
 
     /// من مجموعة تقرير وصفوفها.
     static func make(group: ReportGroup, rows: [ReportRow]) -> ReportSheet {
+        build(group: group, rows: rows).fitted()
+    }
+
+    private static func build(group: ReportGroup, rows: [ReportRow]) -> ReportSheet {
         let header = UserDefaults.standard.string(forKey: headerKey) ?? defaultHeader
         let month = easternDigits(group.month)
         switch group.kind {
@@ -190,7 +215,7 @@ nonisolated enum XLSXWriter {
         <mergeCells count="\(merges.count)">\(merges.map { "<mergeCell ref=\"\($0)\"/>" }.joined())</mergeCells>
         <printOptions horizontalCentered="1"/>
         <pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>
-        <pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>
+        <pageSetup paperSize="9" orientation="\(sheet.landscape ? "landscape" : "portrait")" fitToWidth="1" fitToHeight="0"/>
         </worksheet>
         """
     }
@@ -271,9 +296,10 @@ nonisolated enum XLSXWriter {
 // MARK: - PDF
 
 nonisolated enum PDFReportWriter {
-    /// A4 بالعرض، يتكرر العنوان ورؤوس الأعمدة في كل صفحة، والمجموع في آخر صفحة، ورقم الصفحة في الأسفل.
+    /// A4 بالطول أو بالعرض بحسب عرض الأعمدة، يتكرر العنوان ورؤوس الأعمدة في كل صفحة،
+    /// والمجموع في آخر صفحة، ورقم الصفحة في الأسفل.
     static func write(_ sheet: ReportSheet, to url: URL) throws {
-        let page = CGRect(x: 0, y: 0, width: 842, height: 595)
+        let page = sheet.landscape ? CGRect(x: 0, y: 0, width: 842, height: 595) : CGRect(x: 0, y: 0, width: 595, height: 842)
         let margin: CGFloat = 28
         let tableWidth = page.width - margin * 2
         let rowHeight: CGFloat = 20
@@ -412,7 +438,7 @@ struct ReportExportSheet: View {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("PDF").font(.body.weight(.semibold))
-                                    Text(tr("كشف جاهز للطباعة (A4 بالعرض)", "Print-ready list (A4 landscape)")).font(.caption).foregroundStyle(.secondary)
+                                    Text(tr("كشف جاهز للطباعة بحجم A4", "Print-ready A4 list")).font(.caption).foregroundStyle(.secondary)
                                 }
                             } icon: {
                                 Image(systemName: "doc.richtext.fill").foregroundStyle(.red)
