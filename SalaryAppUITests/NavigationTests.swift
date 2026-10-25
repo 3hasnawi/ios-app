@@ -124,8 +124,11 @@ final class NavigationTests: XCTestCase {
     private func pickFile(_ name: String) -> Bool {
         step("فتح الإعدادات للاستيراد") {
             element("settingsButton").tap()
-            wait(element("importFilesButton"), "زر استيراد ملفات")
-            element("importFilesButton").tap()
+            let button = element("importFilesButton")
+            // الزر في أسفل الإعدادات: تمرير حتى يظهر.
+            for _ in 0..<6 where !(button.exists && button.isHittable) { app.swipeUp() }
+            wait(button, "زر استيراد ملفات")
+            button.tap()
         }
         var picked = false
         step("اختيار \(name) من نافذة الملفات") {

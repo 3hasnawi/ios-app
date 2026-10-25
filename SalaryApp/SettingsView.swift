@@ -205,8 +205,8 @@ struct SettingsView: View {
                 SettingRow(title: tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", color: .green) {
                     if ImportCenter.shared.isBusy { ProgressView() }
                 }
-            .accessibilityIdentifier("importFilesButton")
             }
+            .accessibilityIdentifier("importFilesButton")
             NavigationLink {
                 SavedMonthsView()
             } label: {
