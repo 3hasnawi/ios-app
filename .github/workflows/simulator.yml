@@ -316,6 +316,7 @@ jobs:
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           cp "$DATA/Documents/perf.txt" ci-output/perf.txt 2>/dev/null || echo "::warning::no perf.txt"
           python3 ci/perf_report.py ci-output/uitest.log ci-output/perf.txt | tee ci-output/navigation-report.txt
+          echo "$STATUS" > ci-output/uitest-status.txt
           echo "xcodebuild test status=$STATUS"
           grep -E "error:|XCTAssert|Failed|failed:" ci-output/uitest.log | sort -u | head -30 | sed 's/^/::warning::/' || true
           grep -E "^(PICKER|IMPORT|REJECT|RESULT)" ci-output/uitest.log | sed 's/^/::notice::/' || true
@@ -355,6 +356,11 @@ jobs:
           xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -openSettings YES -openBackup YES
           sleep 6
           xcrun simctl io "$UDID" screenshot ci-output/screenshots/08e3-backup-after-auto.png || true
+
+      - name: Enforce navigation test result
+        run: |
+          [ -f ci-output/uitest-status.txt ] || { echo "::error::UI tests did not produce a result"; exit 1; }
+          [ "$(cat ci-output/uitest-status.txt)" = 0 ] || { echo "::error::UI navigation tests failed; inspect uitest.log"; exit 1; }
 
       - name: Check import result
         run: |

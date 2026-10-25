@@ -668,6 +668,24 @@ struct ReportExportSheet: View {
 }
 
 enum ReportFiles {
+    /// المعاينة تحتاج PDF فقط؛ لا نجهّز Excel أو الكشوف غير المعروضة.
+    static func preview(group: ReportGroup, rows: [ReportRow], fundRows: [FundReport.Row]? = nil,
+                        foodRows: [FoodContractReport.Row]? = nil, healthLists: HealthCareReport.Lists? = nil) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            let started = Date()
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-preview", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent(UUID().uuidString + ".pdf")
+            if let fundRows { try FundReport.writePDF(fundRows, month: group.month, to: url) }
+            else if let foodRows { try FoodContractReport.writePDF(foodRows, month: group.month, to: url) }
+            else if let healthLists { try HealthCareReport.writePDF(healthLists, month: group.month, to: url) }
+            else { try PDFReportWriter.write(ReportSheet.make(group: group, rows: rows), to: url) }
+            try PDFDecor.apply(to: url)
+            PerfLog.record("reportPreview", since: started)
+            return url
+        }.value
+    }
+
     /// يكتب الملفين في tmp/report-export (في الخلفية).
     static func make(group: ReportGroup, rows: [ReportRow]) async throws -> (excel: URL, pdf: URL) {
         let name = ReportSheet.fileName(for: group)

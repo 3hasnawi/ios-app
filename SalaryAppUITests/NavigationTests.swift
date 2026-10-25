@@ -32,6 +32,7 @@ final class NavigationTests: XCTestCase {
     private func issue(_ text: String) {
         issues.append(text)
         print("ISSUE \(String(format: "%.3f", Date().timeIntervalSince1970)) \(text)")
+        if !text.hasPrefix("بطء:") { XCTFail(text) }
     }
 
     private func element(_ id: String) -> XCUIElement {

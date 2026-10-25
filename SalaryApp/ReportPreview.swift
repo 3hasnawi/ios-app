@@ -12,8 +12,8 @@ struct ReportPreviewSheet: View {
 
     enum Part: String { case special, list }
     @State private var part: Part = .special
-    @State private var listFiles: (excel: URL, pdf: URL)?
-    @State private var specialFiles: (excel: URL, pdf: URL)?
+    @State private var listPDF: URL?
+    @State private var specialPDF: URL?
     @State private var failed: String?
     @State private var showExport = false
     @Environment(\.dismiss) private var dismiss
@@ -24,7 +24,7 @@ struct ReportPreviewSheet: View {
         if foodRows != nil { return tr("كشف عقد الإطعام", "Food contract") }
         return tr("المشتركون وغير المشتركين", "Subscribers")
     }
-    private var current: URL? { hasSpecial && part == .special ? specialFiles?.pdf : listFiles?.pdf }
+    private var current: URL? { hasSpecial && part == .special ? specialPDF : listPDF }
 
     var body: some View {
         NavigationStack {
@@ -61,7 +61,7 @@ struct ReportPreviewSheet: View {
                     Button(tr("تصدير", "Export"), systemImage: ReportSymbols.export) { showExport = true }
                         .labelStyle(.iconOnly)
                         .accessibilityIdentifier("previewExport")
-                    .disabled(listFiles == nil)
+                    .disabled(current == nil)
                 }
             }
             .sheet(isPresented: $showExport) {
@@ -71,13 +71,24 @@ struct ReportPreviewSheet: View {
         .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task {
+        .task(id: part) {
+            failed = nil
             do {
-                if let fundRows { specialFiles = try await FundReport.files(fundRows, month: group.month) }
-                if let foodRows { specialFiles = try await FoodContractReport.files(foodRows, month: group.month) }
-                if let healthLists { specialFiles = try await HealthCareReport.files(healthLists, month: group.month) }
-                listFiles = try await ReportFiles.make(group: group, rows: rows)
+                // تجهيز ما يراه المستخدم فقط، دون إنشاء Excel أو كشف مخفي.
+                if hasSpecial && part == .special {
+                    if specialPDF == nil {
+                        let url = try await ReportFiles.preview(group: group, rows: rows,
+                                                               fundRows: fundRows, foodRows: foodRows, healthLists: healthLists)
+                        guard !Task.isCancelled else { return }
+                        specialPDF = url
+                    }
+                } else if listPDF == nil {
+                    let url = try await ReportFiles.preview(group: group, rows: rows)
+                    guard !Task.isCancelled else { return }
+                    listPDF = url
+                }
             } catch {
+                guard !Task.isCancelled else { return }
                 failed = tr("تعذّر تجهيز الجدول: \(error.localizedDescription)", "Couldn't prepare the table: \(error.localizedDescription)")
             }
         }
@@ -95,12 +106,38 @@ struct PDFPreview: UIViewRepresentable {
         view.displayDirection = .vertical
         view.backgroundColor = .systemGray5
         view.pageShadowsEnabled = true
-        view.document = PDFDocument(url: url)
+        context.coordinator.load(url, into: view)
         return view
     }
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func updateUIView(_ view: PDFView, context: Context) {
-        if view.document?.documentURL != url { view.document = PDFDocument(url: url) }
+        context.coordinator.load(url, into: view)
+    }
+
+    static func dismantleUIView(_ view: PDFView, coordinator: Coordinator) {
+        coordinator.task?.cancel()
+        view.document = nil
+    }
+
+    @MainActor final class Coordinator {
+        var task: Task<Void, Never>?
+        private var loadedURL: URL?
+
+        func load(_ url: URL, into view: PDFView) {
+            guard loadedURL != url else { return }
+            loadedURL = url
+            task?.cancel()
+            // فتح ملف متعدد الصفحات لا يحجز خيط التنقل واللمس.
+            task = Task {
+                let started = Date()
+                let document = await Task.detached(priority: .userInitiated) { PDFDocument(url: url) }.value
+                guard !Task.isCancelled else { return }
+                view.document = document
+                PerfLog.record("pdfOpen", since: started)
+            }
+        }
     }
 }
 
