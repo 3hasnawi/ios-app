@@ -555,7 +555,11 @@ struct UnifiedPersonView: View {
         .navigationTitle(tr("قسيمة الراتب", "Payslip"))
         .navigationBarTitleDisplayMode(.inline)
         // زر "مشاركة" في الشريط السفلي يشارك القسيمة المعروضة.
-        .onAppear { router.payslipToShare = selectedRecord }
+        .onAppear {
+            router.payslipToShare = selectedRecord
+            // اختبار المحاكي: -openPerson YES -share YES يفتح نافذة المشاركة.
+            if LaunchOptions.share, LaunchOptions.openPerson, selectedRecord != nil { router.showShare = true }
+        }
         .onChange(of: selection) { router.payslipToShare = selectedRecord }
         .onChange(of: records.count) { router.payslipToShare = selectedRecord }
         .onDisappear { router.payslipToShare = nil }
