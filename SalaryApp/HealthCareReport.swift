@@ -40,8 +40,8 @@ nonisolated enum HealthCareReport {
         let header = UserDefaults.standard.string(forKey: ReportSheet.headerKey) ?? ReportSheet.defaultHeader
         let month = ReportSheet.easternDigits(month)
         return others
-            ? "غير المشتركين في الرعاية الصحية لـ\(header) لشهر \(month)"
-            : "اشتراكات الرعاية الصحية لـ\(header) لشهر \(month)"
+            ? "غير المشتركين في الرعاية الصحية ل\(header) لشهر \(month)"
+            : "اشتراكات الرعاية الصحية ل\(header) لشهر \(month)"
     }
 
     static func fileName(month: String) -> String {
