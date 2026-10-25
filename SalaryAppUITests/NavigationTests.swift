@@ -113,9 +113,9 @@ final class NavigationTests: XCTestCase {
 
     /// يضغط أول عنصر يحتوي أحد النصوص (عناصر نافذة الملفات تختلف حسب اللغة).
     @discardableResult
-    private func tapLabel(_ texts: [String], _ what: String, timeout: TimeInterval = 6) -> Bool {
+    private func tapLabel(_ texts: [String], _ what: String, timeout: TimeInterval = 6, in query: XCUIElementQuery? = nil) -> Bool {
         let predicate = NSPredicate(format: texts.map { _ in "label CONTAINS %@" }.joined(separator: " OR "), argumentArray: texts)
-        let e = app.descendants(matching: .any).matching(predicate).firstMatch
+        let e = (query ?? app.descendants(matching: .any)).matching(predicate).firstMatch
         guard e.waitForExistence(timeout: timeout) else { print("PICKER missing: \(what)"); return false }
         e.tap()
         return true
@@ -132,12 +132,16 @@ final class NavigationTests: XCTestCase {
         }
         var picked = false
         step("اختيار \(name) من نافذة الملفات") {
-            sleep(2)
-            tapLabel(["تصفح", "Browse"], "تبويب تصفح", timeout: 8)
-            tapLabel(["iPhone"], "على iPhone")
-            tapLabel(["الرواتب", "SalaryApp"], "مجلد التطبيق")
-            picked = tapLabel([name], "الملف \(name)", timeout: 8)
-            if picked { tapLabel(["فتح", "Open"], "زر فتح", timeout: 4) }
+            // ننتظر نافذة الملفات نفسها (زر "تصفح" في شريطها السفلي) قبل البحث داخلها.
+            guard tapLabel(["تصفح", "Browse"], "تبويب تصفح", timeout: 20, in: app.buttons) else { return }
+            sleep(1)
+            let fileCell = app.cells.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+            if !fileCell.waitForExistence(timeout: 3) {
+                tapLabel(["iPhone"], "على iPhone", in: app.cells)
+                tapLabel(["الرواتب", "SalaryApp"], "مجلد التطبيق", in: app.cells)
+            }
+            picked = tapLabel([name], "الملف \(name)", timeout: 8, in: app.cells)
+            if picked { tapLabel(["فتح", "Open"], "زر فتح", timeout: 4, in: app.buttons) }
         }
         return picked
     }
