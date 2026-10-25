@@ -147,7 +147,8 @@ struct ReportDetailView: View {
                 }
                 .disabled(rows?.isEmpty ?? true)
                 .overlay { if rows == nil { ProgressView() } }
-                .listRowInsets(EdgeInsets())
+                .frame(maxWidth: .infinity)
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
             } footer: {
                 if let rows {
@@ -155,6 +156,8 @@ struct ReportDetailView: View {
                 }
             }
         }
+        .listSectionSpacing(.compact)
+        .contentMargins(.top, 8, for: .scrollContent)
         .navigationTitle(group.title)
         .navigationBarTitleDisplayMode(.inline)
         .alert(tr("تنبيه: الرعاية الصحية", "Health care warning"), isPresented: $healthWarning) {
@@ -208,7 +211,8 @@ struct ReportDetailView: View {
                 .padding(.vertical, 14)
                 .foregroundStyle(filled ? Color.white : Color.accentColor)
                 .background(filled ? Color.accentColor : Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.accentColor, lineWidth: filled ? 0 : 1.5))
+                // الحدّ داخل الزر (strokeBorder) حتى لا يُقصّ عند حافة الصف.
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.accentColor, lineWidth: filled ? 0 : 1.5))
         }
         .buttonStyle(.plain)
     }
