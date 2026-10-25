@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download candidates
+        env:
+          URLS: ${{ github.event.inputs.urls }}
         run: |
           mkdir -p out && cd out
           UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
@@ -27,7 +29,7 @@ jobs:
           get commons-search2.json "https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srsearch=%D9%88%D8%B2%D8%A7%D8%B1%D8%A9%20%D8%A7%D9%84%D8%AF%D8%A7%D8%AE%D9%84%D9%8A%D8%A9%20%D8%A7%D9%84%D8%B9%D8%B1%D8%A7%D9%82%D9%8A%D8%A9&srlimit=30&format=json"
           get moi-home.html "https://moi.gov.iq/"
           n=0
-          for u in ${{ github.event.inputs.urls }}; do n=$((n+1)); get "extra-$n.$(echo "${u##*.}" | cut -c1-4 | tr -dc 'a-z')" "$u"; done
+          for u in $URLS; do n=$((n+1)); get "extra-$n.$(echo "${u##*.}" | cut -c1-4 | tr -dc 'a-z')" "$u"; done
           # og:image من الصفحات
           for f in extra-*.htm* extra-*; do
             [ -f "$f" ] || continue
