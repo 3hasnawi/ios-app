@@ -427,9 +427,9 @@ struct ReportDetailView: View {
             if UserDefaults.standard.bool(forKey: "exportReport") {
                 var ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil
                 // الكشوف الخاصة بشكلها المعتمد.
-                if let fundRows { ok = ok && (try? await FundReport.files(fundRows, month: group.month)) != nil }
-                if let foodRows { ok = ok && (try? await FoodContractReport.files(foodRows, month: group.month)) != nil }
-                if let healthLists { ok = ok && (try? await HealthCareReport.files(healthLists, month: group.month)) != nil }
+                if let fundRows, (try? await FundReport.files(fundRows, month: group.month)) == nil { ok = false }
+                if let foodRows, (try? await FoodContractReport.files(foodRows, month: group.month)) == nil { ok = false }
+                if let healthLists, (try? await HealthCareReport.files(healthLists, month: group.month)) == nil { ok = false }
                 LaunchOptions.writeReport(ok ? "export=ok rows=\(loaded.count)" : "export=failed")
                 showExport = true
             }
