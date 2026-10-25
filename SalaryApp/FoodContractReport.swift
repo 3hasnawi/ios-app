@@ -146,7 +146,7 @@ nonisolated enum FoodContractReport {
         let page = CGRect(x: 0, y: 0, width: 595, height: 842)
         let margin: CGFloat = 40
         let width = page.width - margin * 2
-        let ratios: [CGFloat] = [8, 30, 26, 30]
+        let ratios: [CGFloat] = [13, 28, 26, 29]
         let widths = ratios.map { $0 / ratios.reduce(0, +) * width }
         var xs: [CGFloat] = []
         var x = page.width - margin
