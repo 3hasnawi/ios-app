@@ -352,7 +352,6 @@ jobs:
           grep -E "^(PICKER|IMPORT|REJECT|RESULT)" ci-output/uitest.log | sed 's/^/::notice::/' || true
 
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
-        if: inputs.quick != true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true

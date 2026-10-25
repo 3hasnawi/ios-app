@@ -377,6 +377,7 @@ enum UnifiedFinder {
         if StaffInfo.count > 0, scope != .payroll || mode != .name {
             var d = FetchDescriptor<StaffMember>(predicate: StaffResultsList.predicate(mode: mode, tokens: tokens), sortBy: [SortDescriptor(\.name)])
             d.fetchLimit = 3000
+            d.propertiesToFetch = [\.name, \.nameKey, \.rank, \.workplace, \.status]
             staff = try context.fetch(d).filter { matches($0, tokens: tokens, mode: mode) }.prefix(150).map { $0 }
         }
         if scope != .staff, mode == .name, !months.isEmpty {

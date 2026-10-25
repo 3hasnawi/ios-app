@@ -36,15 +36,46 @@ actor SearchIndex {
     private var pay: [String: [PayEntry]] = [:]
     private var payByMatch: [String: [String: Int]] = [:]
 
-    func invalidate() { signature = "" }
+    private struct Snapshot: Sendable {
+        let signature: String
+        let staff: [StaffEntry]
+        let staffByMatch: [String: Int]
+        let pay: [String: [PayEntry]]
+        let payByMatch: [String: [String: Int]]
+    }
+    private var warming: Task<Snapshot, Error>?
+    private var generation = 0
 
-    /// يُستدعى بعد فتح التطبيق حتى يكون أول بحث فورياً.
-    func warmUp(container: ModelContainer) {
-        let context = ModelContext(container)
-        try? refreshIfNeeded(context)
+    func invalidate() {
+        signature = ""
+        generation += 1
+        warming?.cancel()
+        warming = nil
     }
 
-    private func currentSignature(_ context: ModelContext) throws -> String {
+    /// لا يحتجز بناء الفهرس طابور البحث؛ أول بحث يستخدم استعلاماً خفيفاً حتى يجهز.
+    func warmUp(container: ModelContainer) async {
+        guard warming == nil else { return }
+        guard let current = try? Self.currentSignature(ModelContext(container)), current != signature else { return }
+        let revision = generation
+        let task = Task.detached(priority: .utility) {
+            let started = Date()
+            let result = try Self.buildSnapshot(ModelContext(container))
+            PerfLog.record("searchIndex", since: started)
+            return result
+        }
+        warming = task
+        defer { if revision == generation { warming = nil } }
+        guard let result = try? await task.value, revision == generation,
+              let latest = try? Self.currentSignature(ModelContext(container)), latest == result.signature else { return }
+        staff = result.staff
+        staffByMatch = result.staffByMatch
+        pay = result.pay
+        payByMatch = result.payByMatch
+        signature = result.signature
+    }
+
+    private nonisolated static func currentSignature(_ context: ModelContext) throws -> String {
         let staffCount = try context.fetchCount(FetchDescriptor<StaffMember>())
         let payCount = try context.fetchCount(FetchDescriptor<Employee>())
         let months = try context.fetch(FetchDescriptor<PayrollMonth>())
@@ -52,17 +83,17 @@ actor SearchIndex {
         return "\(staffCount)|\(StaffInfo.importedAt?.timeIntervalSince1970 ?? 0)|\(payCount)|\(months)"
     }
 
-    private func refreshIfNeeded(_ context: ModelContext) throws {
+    private nonisolated static func buildSnapshot(_ context: ModelContext) throws -> Snapshot {
         let current = try currentSignature(context)
-        guard current != signature else { return }
+        try Task.checkCancellation()
         var s = FetchDescriptor<StaffMember>(sortBy: [SortDescriptor(\.name)])
         s.propertiesToFetch = [\.name, \.nameKey, \.motherKey, \.statNumber, \.unifiedNumber, \.rank, \.workplace, \.status]
-        staff = try context.fetch(s).map {
+        let staff = try context.fetch(s).map {
             StaffEntry(id: $0.persistentModelID, name: $0.name, nameKey: $0.nameKey, motherKey: $0.motherKey,
                        stat: $0.statNumber, unified: $0.unifiedNumber, rank: $0.rank, workplace: $0.workplace,
                        status: $0.status, matchKey: $0.nameKey.replacingOccurrences(of: " ", with: ""))
         }
-        staffByMatch = [:]
+        var staffByMatch: [String: Int] = [:]
         for (i, e) in staff.enumerated() where staffByMatch[e.matchKey] == nil { staffByMatch[e.matchKey] = i }
 
         var p = FetchDescriptor<Employee>(sortBy: [SortDescriptor(\.name)])
@@ -72,20 +103,32 @@ actor SearchIndex {
             byMonth[e.month, default: []].append(PayEntry(id: e.persistentModelID, name: e.name, nameKey: e.nameKey, matchKey: e.matchKey,
                                                           rank: e.rank, workplace: e.workplace, net: e.netSalary))
         }
-        pay = byMonth
-        payByMatch = byMonth.mapValues { list in
+        try Task.checkCancellation()
+        let payByMatch = byMonth.mapValues { list in
             var map: [String: Int] = [:]
             for (i, e) in list.enumerated() where map[e.matchKey] == nil { map[e.matchKey] = i }
             return map
         }
-        signature = current
+        return Snapshot(signature: current, staff: staff, staffByMatch: staffByMatch,
+                        pay: byMonth, payByMatch: payByMatch)
     }
 
     /// نفس نتائج البحث الموحّد السابق (الملاك + رواتب الأشهر المختارة، مربوطة بالاسم بلا مسافات).
-    func hits(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String], container: ModelContainer) throws -> [UnifiedHit] {
+    func hits(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String], container: ModelContainer) async throws -> [UnifiedHit] {
         let tokens = UnifiedFinder.tokens(search, mode: mode)
         guard !tokens.isEmpty else { return [] }
-        try refreshIfNeeded(ModelContext(container))
+        try Task.checkCancellation()
+        let current = try Self.currentSignature(ModelContext(container))
+        if current != signature {
+            if warming == nil { Task { await self.warmUp(container: container) } }
+            // لا ينتظر المستخدم تحميل عشرات الآلاف من الأسماء في الذاكرة.
+            return try await Task.detached(priority: .userInitiated) {
+                let started = Date()
+                let hits = try UnifiedFinder.hits(search, mode: mode, scope: scope, months: months, context: ModelContext(container))
+                PerfLog.record("searchCold", since: started)
+                return hits
+            }.value
+        }
 
         // الملاك.
         var staffHits: [Int] = []

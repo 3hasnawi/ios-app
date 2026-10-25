@@ -306,6 +306,7 @@ enum EmployeeLookup {
         }
         var descriptor = FetchDescriptor<Employee>(predicate: predicate, sortBy: [SortDescriptor(\.name)])
         descriptor.fetchLimit = 2000
+        descriptor.propertiesToFetch = [\.month, \.name, \.nameKey, \.matchKey, \.rank, \.workplace, \.netSalary]
         let order = Dictionary(months.enumerated().map { ($1, $0) }, uniquingKeysWith: { x, _ in x })
         return try context.fetch(descriptor)
             .filter { e in tokens.allSatisfy { e.nameKey.contains($0) } }
