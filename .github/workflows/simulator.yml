@@ -330,7 +330,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow)
           fi
           set +e
           xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
