@@ -87,3 +87,18 @@ enum FilePicker {
         }
     }
 }
+
+/// نافذة المشاركة من UIKit (Google Drive، OneDrive، واتساب، حفظ في الملفات...).
+@MainActor
+enum ActivityShare {
+    static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {
+        guard let top = FilePicker.topController() else { onDone?(false); return }
+        let controller = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, completed, _, _ in onDone?(completed) }
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
+        }
+        top.present(controller, animated: true)
+    }
+}

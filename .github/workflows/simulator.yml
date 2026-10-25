@@ -173,6 +173,8 @@ jobs:
           # 8e) الإعدادات، ثم الواجهة بالإنجليزية والأرقام الهندية
           launch -openSettings YES
           shot 08e-settings
+          launch -openSettings YES -openBackup YES
+          shot 08e2-backup
           launch -appLanguage en -selectedMonth "تشرين الاول 2026|أيلول 2026" -search "أحمد علي حسين الدليمي" -showDeductions YES
           shot 08f-english
           launch -appNumerals arabicIndic -search "احمد علي"
@@ -200,6 +202,11 @@ jobs:
           shot 08p-reports-payroll 6
           launch -tab reports -reportKind payroll -openReport YES
           shot 08q-report-payroll-detail 8
+          # نافذة التصدير العائمة: جهة واحدة (بحث) ثم مجموعة جهات
+          launch -tab reports -exportSheet single -exportSearch "الرمادي"
+          shot 08t-export-single 6
+          launch -tab reports -exportSheet group
+          shot 08u-export-group 6
 
           # 8r) تصدير كشف جهة استقطاع (Excel + PDF) بشكل النموذج
           rm -f "$DATA/Documents/import-report.txt"
@@ -216,6 +223,16 @@ jobs:
             for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             echo "$item: $(cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo '::error::no export report')"
             shot "08s-report-$(echo "$item" | tr ' ' '-')" 2
+            cp "$DATA"/tmp/report-export/* ci-output/report-export/ 2>/dev/null || true
+          done
+          # التصدير المجمّع: Excel بورقة لكل جهة + PDF مجمّع
+          for cat in directorates banks all; do
+            rm -f "$DATA/Documents/import-report.txt"
+            launch -tab reports -bulkExport $cat
+            for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+            r=$(cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "bulk=failed no report")
+            echo "$cat: $r"
+            case "$r" in bulk=ok*) echo "::notice::Bulk $cat: $r";; *) echo "::error::Bulk $cat: $r";; esac
             cp "$DATA"/tmp/report-export/* ci-output/report-export/ 2>/dev/null || true
           done
           n=0
@@ -299,6 +316,18 @@ jobs:
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "backup=failed no report"; } | tee ci-output/backup-report.txt
           grep -q "backup=ok" ci-output/backup-report.txt && echo "::notice::Backup OK: $(cat ci-output/backup-report.txt)" \
             || echo "::error::Backup round trip failed: $(cat ci-output/backup-report.txt)"
+          # النسخ التلقائي إلى مجلد التطبيق (نسخة واحدة تُستبدل)
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -autoBackupTest YES
+          for i in $(seq 1 300); do grep -q autobackup "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "autobackup=failed no report"; } | tee ci-output/autobackup-report.txt
+          grep -q "autobackup=ok" ci-output/autobackup-report.txt && echo "::notice::Auto backup OK: $(cat ci-output/autobackup-report.txt)" \
+            || echo "::error::Auto backup failed: $(cat ci-output/autobackup-report.txt)"
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -openSettings YES -openBackup YES
+          sleep 6
+          xcrun simctl io "$UDID" screenshot ci-output/screenshots/08e3-backup-after-auto.png || true
 
       - name: Check import result
         run: |

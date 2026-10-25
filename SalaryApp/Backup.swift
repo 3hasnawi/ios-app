@@ -166,13 +166,34 @@ actor BackupActor {
     }
 }
 
+/// أين تُحفظ النسخة التلقائية.
+enum BackupDestination: String, CaseIterable, Identifiable {
+    /// مجلد التطبيق على الآيفون (يظهر في تطبيق "الملفات"): يعمل دائماً بلا إعداد.
+    case device
+    /// مجلد يختاره المستخدم مرة واحدة (iCloud Drive): الأنسب لأنه يبقى لو حُذف التطبيق.
+    case folder
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .device: tr("على الآيفون", "On iPhone")
+        case .folder: tr("مجلد في iCloud Drive", "iCloud Drive folder")
+        }
+    }
+}
+
 @MainActor @Observable
 final class BackupManager {
     static let shared = BackupManager()
     static let autoKey = "autoBackupEnabled"
+    static let destinationKey = "autoBackupDestination"
     private static let folderKey = "autoBackupFolder"
     private static let lastKey = "autoBackupLast"
     private static let lastSizeKey = "autoBackupLastSize"
+    private static let lastPlaceKey = "autoBackupLastPlace"
+    private static let errorKey = "autoBackupLastError"
+    private static let errorAtKey = "autoBackupLastErrorAt"
+    /// آخر تغيير في البيانات (استيراد أو حذف): إذا كان بعد آخر نسخة ناجحة تُعاد المحاولة تلقائياً.
+    private static let changedKey = "backupDataChangedAt"
 
     var isWorking = false
     var message: String?
@@ -180,10 +201,42 @@ final class BackupManager {
     var pendingRestore: (folder: URL, manifest: BackupFormat.Manifest)?
     var version = 0
 
-    var folderName: String? { resolveFolder().map { FileManager.default.displayName(atPath: $0.path) } }
+    var folderName: String? { resolveFolder().map(Self.placeName) }
     var lastBackup: Date? { UserDefaults.standard.object(forKey: Self.lastKey) as? Date }
     var lastSize: Int64 { Int64(UserDefaults.standard.integer(forKey: Self.lastSizeKey)) }
+    var lastPlace: String { UserDefaults.standard.string(forKey: Self.lastPlaceKey) ?? "" }
+    var lastError: String? { UserDefaults.standard.string(forKey: Self.errorKey) }
+    var lastErrorAt: Date? { UserDefaults.standard.object(forKey: Self.errorAtKey) as? Date }
     static var autoEnabled: Bool { UserDefaults.standard.bool(forKey: autoKey) }
+    static var destination: BackupDestination {
+        BackupDestination(rawValue: UserDefaults.standard.string(forKey: destinationKey) ?? "") ?? .device
+    }
+
+    /// سطر الحالة في صفحة الإعدادات.
+    var statusLine: String {
+        _ = version
+        if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
+        guard Self.autoEnabled else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
+        let place = Self.destination == .device ? tr("على الآيفون", "On iPhone") : "iCloud"
+        guard let lastBackup else { return tr("تلقائي · \(place) · لم تُؤخذ نسخة بعد", "Auto · \(place) · no backup yet") }
+        return tr("تلقائي · \(place) · \(Self.relative(lastBackup)) ✓", "Auto · \(place) · \(Self.relative(lastBackup)) ✓")
+    }
+
+    var statusColor: Color {
+        _ = version
+        if lastError != nil { return .red }
+        return Self.autoEnabled && lastBackup != nil ? .green : .secondary
+    }
+
+    static func relative(_ date: Date) -> String {
+        date.formatted(.relative(presentation: .named).locale(AppSettings.locale))
+    }
+
+    /// "iCloud Drive › نسخ الرواتب" أو اسم المجلد.
+    nonisolated static func placeName(_ url: URL) -> String {
+        let name = FileManager.default.displayName(atPath: url.path)
+        return url.path.contains("Mobile Documents") ? "iCloud Drive › \(name)" : name
+    }
 
     // MARK: - المجلد
 
@@ -192,7 +245,7 @@ final class BackupManager {
             guard let self, let url else { return }
             let granted = url.startAccessingSecurityScopedResource()
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
-            if let data = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
+            if let data = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
                 UserDefaults.standard.set(data, forKey: Self.folderKey)
                 self.version += 1
                 then?()
@@ -206,10 +259,20 @@ final class BackupManager {
         guard let data = UserDefaults.standard.data(forKey: Self.folderKey) else { return nil }
         var stale = false
         guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
-        if stale, let fresh = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
-            UserDefaults.standard.set(fresh, forKey: Self.folderKey)
+        if stale {
+            let granted = url.startAccessingSecurityScopedResource()
+            if let fresh = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                UserDefaults.standard.set(fresh, forKey: Self.folderKey)
+            }
+            if granted { url.stopAccessingSecurityScopedResource() }
         }
         return url
+    }
+
+    /// مجلد التطبيق على الآيفون: الملفات ← على الآيفون ← الرواتب ← نسخ احتياطية.
+    nonisolated static var deviceFolder: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("نسخ احتياطية", isDirectory: true)
     }
 
     // MARK: - إنشاء نسخة
@@ -231,39 +294,75 @@ final class BackupManager {
         }.value
     }
 
-    /// نسخة يدوية: تُحفظ حيث يختار المستخدم.
-    func backupNow() {
+    /// نسخة يدوية: نافذة المشاركة (Google Drive، OneDrive، واتساب، حفظ في الملفات).
+    func shareNow() {
         guard !isWorking else { return }
         isWorking = true
         Task {
             defer { isWorking = false }
             do {
                 let (url, _) = try await makeBackup(title: tr("نسخة احتياطية", "Backup"))
-                await FilePicker.waitUntilSettled()
-                FilePicker.presentExport(url) { [weak self] saved in
-                    try? FileManager.default.removeItem(at: url)
-                    if saved { self?.message = tr("تم حفظ النسخة الاحتياطية.", "Backup saved.") }
-                }
+                ActivityShare.present([url])
             } catch {
                 message = tr("تعذّر إنشاء النسخة: \(error.localizedDescription)", "Couldn't create the backup: \(error.localizedDescription)")
             }
         }
     }
 
-    /// نسخ تلقائي إلى المجلد المختار (بعد الاستيراد). يعيد سطر النتيجة لرسالة الاستيراد.
+    func markChanged() {
+        UserDefaults.standard.set(Date(), forKey: Self.changedKey)
+    }
+
+    /// بيانات تغيّرت بعد آخر نسخة ناجحة (أو فشلت آخر محاولة).
+    var needsBackup: Bool {
+        guard Self.autoEnabled else { return false }
+        guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return lastError != nil }
+        return changed > (lastBackup ?? .distantPast) || lastError != nil
+    }
+
+    /// عند فتح التطبيق أو الخروج منه: يكمل نسخة فاتت (مثلاً أُغلق التطبيق أثناء النسخ أو فشلت المحاولة).
+    func autoBackupIfNeeded() async {
+        guard needsBackup, !isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
+        _ = await backupToDestination()
+    }
+
+    /// نسخ تلقائي بعد الاستيراد. يعيد سطر النتيجة لرسالة الاستيراد.
     func autoBackup() async -> String? {
+        markChanged()
         guard Self.autoEnabled else { return nil }
-        guard let folder = resolveFolder() else { return "⚠️ " + BackupError.folderUnavailable.localizedDescription }
+        return await backupToDestination()
+    }
+
+    /// يكتب النسخة في المكان المختار (يستبدل السابقة) ويحفظ النتيجة نجاحاً أو فشلاً.
+    @discardableResult
+    func backupToDestination() async -> String? {
+        guard !isWorking else { return nil }
+        isWorking = true
+        defer { isWorking = false; version += 1 }
+        // يكمل النسخ حتى لو خرج المستخدم من التطبيق أثناءه.
+        let task = UIApplication.shared.beginBackgroundTask(withName: "backup")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+        let destination = Self.destination
         do {
+            let folder: URL
+            switch destination {
+            case .device:
+                folder = Self.deviceFolder
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            case .folder:
+                guard let chosen = resolveFolder() else { throw BackupError.folderUnavailable }
+                folder = chosen
+            }
             let (url, _) = try await makeBackup(title: tr("نسخ احتياطي تلقائي", "Auto backup"))
             defer { try? FileManager.default.removeItem(at: url) }
             let size = try await Task.detached(priority: .utility) { () throws -> Int64 in
-                guard folder.startAccessingSecurityScopedResource() else { throw BackupError.folderUnavailable }
-                defer { folder.stopAccessingSecurityScopedResource() }
-                let destination = folder.appendingPathComponent(url.lastPathComponent)
+                // مجلد التطبيق لا يحتاج صلاحية؛ المجلد المختار يحتاجها.
+                let granted = folder.startAccessingSecurityScopedResource()
+                defer { if granted { folder.stopAccessingSecurityScopedResource() } }
+                let target = folder.appendingPathComponent(url.lastPathComponent)
                 var coordinationError: NSError?
                 var writeError: Error?
-                NSFileCoordinator().coordinate(writingItemAt: destination, options: .forReplacing, error: &coordinationError) { target in
+                NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordinationError) { target in
                     do {
                         try? FileManager.default.removeItem(at: target)
                         try FileManager.default.copyItem(at: url, to: target)
@@ -273,18 +372,38 @@ final class BackupManager {
                 // نسخة واحدة فقط: تُحذف أي نسخ قديمة بأسماء أخرى في المجلد.
                 let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
                 for old in files where old.lastPathComponent.hasPrefix(BackupFormat.prefix) && old.pathExtension == "zip"
-                    && old.lastPathComponent != destination.lastPathComponent {
+                    && old.lastPathComponent != target.lastPathComponent {
                     try? FileManager.default.removeItem(at: old)
                 }
-                return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+                let attrs = try? FileManager.default.attributesOfItem(atPath: target.path)
+                return (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             }.value
-            UserDefaults.standard.set(Date(), forKey: Self.lastKey)
-            UserDefaults.standard.set(Int(size), forKey: Self.lastSizeKey)
-            version += 1
-            return tr("☁️ حُفظت نسخة احتياطية في \(folderName ?? "المجلد").", "☁️ Backup saved to \(folderName ?? "the folder").")
+            let place = destination == .device ? tr("على الآيفون › الرواتب › نسخ احتياطية", "On iPhone › Payroll › Backups") : Self.placeName(folder)
+            let defaults = UserDefaults.standard
+            defaults.set(Date(), forKey: Self.lastKey)
+            defaults.set(Int(size), forKey: Self.lastSizeKey)
+            defaults.set(place, forKey: Self.lastPlaceKey)
+            defaults.removeObject(forKey: Self.errorKey)
+            defaults.removeObject(forKey: Self.errorAtKey)
+            return tr("☁️ حُفظت نسخة احتياطية: \(place).", "☁️ Backup saved: \(place).")
         } catch {
-            return tr("⚠️ تعذّر النسخ الاحتياطي التلقائي: \(error.localizedDescription)", "⚠️ Auto backup failed: \(error.localizedDescription)")
+            let reason = (error as? BackupError)?.localizedDescription ?? error.localizedDescription
+            UserDefaults.standard.set(reason, forKey: Self.errorKey)
+            UserDefaults.standard.set(Date(), forKey: Self.errorAtKey)
+            return tr("⚠️ تعذّر النسخ الاحتياطي التلقائي: \(reason)", "⚠️ Auto backup failed: \(reason)")
         }
+    }
+
+    /// اختبار المحاكي (-autoBackupTest YES): نسخ تلقائي إلى مجلد التطبيق ثم التحقق من الملف.
+    func autoBackupSelfTest() async {
+        UserDefaults.standard.set(BackupDestination.device.rawValue, forKey: Self.destinationKey)
+        UserDefaults.standard.set(true, forKey: Self.autoKey)
+        let line = await autoBackup() ?? "nil"
+        let file = Self.deviceFolder.appendingPathComponent(BackupFormat.fileName())
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+        let again = await backupToDestination() ?? "nil"
+        let count = ((try? FileManager.default.contentsOfDirectory(atPath: Self.deviceFolder.path)) ?? []).count
+        LaunchOptions.writeReport("autobackup=\(size > 0 && lastError == nil && count == 1 ? "ok" : "failed") size=\(size) files=\(count) line=\(line) again=\(again)")
     }
 
     // MARK: - الاسترجاع
@@ -412,70 +531,100 @@ extension FilePicker {
     }
 }
 
-// MARK: - قسم الإعدادات
+// MARK: - صفحة النسخ الاحتياطي
 
-struct BackupSection: View {
+struct BackupView: View {
     @State private var manager = BackupManager.shared
     @State private var progress = ImportProgress.shared
-    @AppStorage(BackupManager.autoKey) private var autoEnabled = false
+    @AppStorage(BackupManager.autoKey) private var autoEnabled = true
+    @AppStorage(BackupManager.destinationKey) private var destinationRaw = BackupDestination.device.rawValue
+
+    private var destination: BackupDestination { BackupDestination(rawValue: destinationRaw) ?? .device }
 
     var body: some View {
-        Section {
-            if progress.isActive && manager.isWorking {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(progress.title).font(.subheadline.weight(.semibold))
-                    ProgressView(value: progress.fraction)
-                    Text(progress.detail).font(.caption).foregroundStyle(.secondary)
-                }
+        List {
+            Section {
+                statusCard
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
-            Button {
-                manager.backupNow()
-            } label: {
-                Label(tr("نسخة احتياطية الآن", "Back up now"), systemImage: "arrow.down.doc.fill")
-            }
-            .disabled(manager.isWorking)
-            Button {
-                manager.pickRestore()
-            } label: {
-                Label(tr("استرجاع من نسخة", "Restore from backup"), systemImage: "arrow.counterclockwise")
-            }
-            .disabled(manager.isWorking)
 
-            Toggle(isOn: Binding(get: { autoEnabled }, set: { on in
-                if on && manager.folderName == nil {
-                    manager.chooseFolder { autoEnabled = true }
-                } else {
-                    autoEnabled = on
+            Section {
+                Toggle(tr("نسخ تلقائي بعد كل استيراد", "Auto backup after each import"), isOn: $autoEnabled)
+                    .accessibilityIdentifier("autoBackupToggle")
+                Picker(tr("المكان", "Location"), selection: Binding(get: { destinationRaw }, set: { raw in
+                    // مجلد iCloud: يُختار المجلد أولاً، ولا يتغيّر المكان إن أُلغي الاختيار.
+                    if raw == BackupDestination.folder.rawValue && manager.folderName == nil {
+                        manager.chooseFolder { destinationRaw = raw }
+                    } else {
+                        destinationRaw = raw
+                    }
+                })) {
+                    ForEach(BackupDestination.allCases) { Text($0.title).tag($0.rawValue) }
                 }
-            })) {
-                Label(tr("نسخ تلقائي بعد كل استيراد", "Auto backup after each import"), systemImage: "arrow.triangle.2.circlepath")
-            }
-            if autoEnabled {
-                Button {
-                    manager.chooseFolder()
-                } label: {
-                    LabeledContent {
-                        Text(tr("تغيير", "Change")).foregroundStyle(.tint)
+                if destination == .folder {
+                    Button {
+                        manager.chooseFolder()
                     } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(tr("المجلد", "Folder")).foregroundStyle(.primary)
-                            Text(manager.folderName ?? tr("لم يُختر", "Not chosen")).font(.caption).foregroundStyle(.secondary)
+                        LabeledContent {
+                            Text(tr("تغيير", "Change")).foregroundStyle(.tint)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tr("المجلد", "Folder")).foregroundStyle(.primary)
+                                Text(manager.folderName ?? tr("لم يُختر", "Not chosen")).font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
-                if let last = manager.lastBackup {
-                    LabeledContent(tr("آخر نسخة", "Last backup")) {
-                        Text("\(last.formatted(.relative(presentation: .named).locale(AppSettings.locale))) · \(Num.bytes(manager.lastSize))")
+                Button {
+                    Task { await manager.backupToDestination() }
+                } label: {
+                    HStack {
+                        Text(destination == .device ? tr("نسخ الآن إلى الآيفون", "Back up to iPhone now") : tr("نسخ الآن إلى المجلد", "Back up to the folder now"))
+                        Spacer()
+                        if manager.isWorking { ProgressView() }
                     }
                 }
+                .disabled(manager.isWorking)
+                .accessibilityIdentifier("backupToDestination")
+            } header: {
+                Text(tr("النسخ التلقائي", "Automatic backup"))
+            } footer: {
+                Text(tr("بعد كل استيراد تُكتب نسخة جديدة فوق السابقة، فتبقى نسخة واحدة \"نسخة الرواتب.zip\". إذا فاتت نسخة (أُغلق التطبيق أو تعذّر الوصول للمجلد) تُعاد المحاولة تلقائياً عند فتح التطبيق.\n• على الآيفون: يعمل دائماً بلا إعداد، ويظهر في تطبيق الملفات ← على الآيفون ← الرواتب، لكنه يُحذف إذا حُذف التطبيق.\n• مجلد في iCloud Drive: يبقى حتى لو حُذف التطبيق أو تغيّر الجهاز.\nGoogle Drive وOneDrive لا يسمحان للتطبيقات بالكتابة التلقائية في مجلداتهما، فاستخدم لهما \"مشاركة نسخة الآن\".",
+                        "After each import a new backup replaces the previous one, so there is always one file. A missed backup is retried when the app opens.\n• On iPhone: always works, visible in Files › On My iPhone, but deleted with the app.\n• iCloud Drive folder: survives deleting the app.\nGoogle Drive and OneDrive don't allow automatic writes, so use \"Share a backup now\" for them."))
             }
-        } header: {
-            Text(tr("النسخ الاحتياطي", "Backup"))
-        } footer: {
-            Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" فيه كل البيانات: الرواتب والاستقطاعات لكل الأشهر، والملاك، والإعدادات. احفظها في iCloud Drive أو OneDrive أو Google Drive. كل نسخة جديدة تستبدل السابقة، فلا تتكدس النسخ.",
-                    "One file \"نسخة الرواتب.zip\" with all data: payroll and deductions for every month, staff and settings. Save it to iCloud Drive, OneDrive or Google Drive. Each new backup replaces the previous one."))
+
+            Section {
+                Button {
+                    manager.shareNow()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tr("مشاركة نسخة الآن", "Share a backup now")).foregroundStyle(.primary)
+                            Text("Google Drive · OneDrive · " + tr("واتساب · الملفات", "WhatsApp · Files")).font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up.fill").foregroundStyle(.blue)
+                    }
+                }
+                .disabled(manager.isWorking)
+                .accessibilityIdentifier("shareBackup")
+                Button {
+                    manager.pickRestore()
+                } label: {
+                    Label {
+                        Text(tr("استرجاع من نسخة", "Restore from backup")).foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "arrow.counterclockwise").foregroundStyle(.gray)
+                    }
+                }
+                .disabled(manager.isWorking)
+            } header: {
+                Text(tr("نسخة يدوية", "Manual backup"))
+            }
         }
-        .id(manager.version)
+        .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
+        .navigationBarTitleDisplayMode(.inline)
         .alert(tr("استرجاع النسخة؟", "Restore this backup?"), isPresented: Binding(
             get: { manager.pendingRestore != nil },
             set: { if !$0 && manager.pendingRestore != nil { manager.cancelRestore() } }
@@ -493,5 +642,54 @@ struct BackupSection: View {
         } message: {
             Text(manager.message ?? "")
         }
+    }
+
+    /// آخر نسخة ناجحة، أو سبب فشل آخر محاولة، أو التقدّم أثناء النسخ.
+    @ViewBuilder
+    private var statusCard: some View {
+        let _ = manager.version
+        let failed = manager.lastError != nil
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background((manager.isWorking ? Color.blue : failed ? .red : manager.lastBackup == nil ? .gray : .green).gradient,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 4) {
+                if manager.isWorking && progress.isActive {
+                    Text(progress.title).font(.headline)
+                    ProgressView(value: progress.fraction)
+                    Text(progress.detail).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    if let last = manager.lastBackup {
+                        Text(tr("آخر نسخة: \(Self.stamp(last))", "Last backup: \(Self.stamp(last))")).font(.headline)
+                        Text("\(BackupFormat.fileName()) · \(Num.bytes(manager.lastSize))\n\(manager.lastPlace)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text(tr("لم تُؤخذ نسخة بعد", "No backup yet")).font(.headline)
+                    }
+                    if let error = manager.lastError {
+                        Text(tr("فشلت آخر محاولة\(manager.lastErrorAt.map { " (" + Self.stamp($0) + ")" } ?? ""): \(error)",
+                                "Last attempt failed: \(error)"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                        Button(tr("إعادة المحاولة", "Try again")) { Task { await manager.backupToDestination() } }
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("backupStatus")
+    }
+
+    static func stamp(_ date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? tr("اليوم ", "Today ") + date.formatted(.dateTime.hour().minute().locale(AppSettings.locale))
+            : date.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
     }
 }

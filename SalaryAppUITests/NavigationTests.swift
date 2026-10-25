@@ -61,6 +61,18 @@ final class NavigationTests: XCTestCase {
         return inBar.exists ? inBar : app.buttons["بحث"].firstMatch
     }
 
+    private var settingsTab: XCUIElement {
+        hideKeyboard()
+        let inBar = app.tabBars.buttons["الإعدادات"]
+        return inBar.exists ? inBar : app.buttons["الإعدادات"].firstMatch
+    }
+
+    private var reportsTab: XCUIElement {
+        hideKeyboard()
+        let inBar = app.tabBars.buttons["التقارير"]
+        return inBar.exists ? inBar : app.buttons["التقارير"].firstMatch
+    }
+
     private var homeTab: XCUIElement {
         hideKeyboard()
         let inBar = app.tabBars.buttons["الرئيسية"]
@@ -123,11 +135,10 @@ final class NavigationTests: XCTestCase {
 
     private func pickFile(_ name: String) -> Bool {
         step("فتح الإعدادات للاستيراد") {
-            element("settingsButton").tap()
+            settingsTab.tap()
             let button = element("importFilesButton")
-            // الزر في أسفل الإعدادات: تمرير حتى يظهر.
-            for _ in 0..<6 where !(button.exists && button.isHittable) { app.swipeUp() }
             wait(button, "زر استيراد ملفات")
+            if !button.isHittable { issue("زر الاستيراد يحتاج تمريراً: الإعدادات ليست في صفحة واحدة") }
             button.tap()
         }
         var picked = false
@@ -206,15 +217,35 @@ final class NavigationTests: XCTestCase {
             menu.tap()
             if wait(app.buttons["آخر شهر"], "قائمة الأشهر مرة ثانية") { app.buttons["آخر شهر"].tap() }
         }
-        step("فتح الإعدادات") {
-            element("settingsButton").tap()
+        step("فتح الإعدادات من الشريط السفلي") {
+            settingsTab.tap()
             wait(app.navigationBars["الإعدادات"], "الإعدادات")
         }
-        step("تمرير الإعدادات وإغلاقها") {
-            app.swipeUp()
-            app.swipeDown()
-            app.buttons["تم"].firstMatch.tap()
-            wait(app.navigationBars["الرئيسية"], "الرئيسية بعد الإعدادات")
+        step("الإعدادات في صفحة واحدة") {
+            let backup = element("backupRow")
+            if wait(backup, "صف النسخ الاحتياطي"), !backup.isHittable { issue("الإعدادات تحتاج تمريراً") }
+            backup.tap()
+            wait(element("backupStatus"), "صفحة النسخ الاحتياطي")
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+        step("التقارير: البحث عن جهة ونافذة التصدير") {
+            reportsTab.tap()
+            wait(app.navigationBars["التقارير"], "التقارير")
+            let export = element("deductionExportButton")
+            if wait(export, "زر التصدير") {
+                export.tap()
+                let field = element("exportSearchField")
+                if wait(field, "بحث الجهة في نافذة التصدير") {
+                    field.tap()
+                    field.typeText("فرع")
+                }
+                let group = element("exportModePicker")
+                if group.exists { group.buttons["مجموعة جهات"].tap() }
+                wait(element("exportCategory-directorates"), "خيارات المجموعات")
+                app.swipeDown(velocity: .fast)
+            }
+            homeTab.tap()
+            wait(app.navigationBars["الرئيسية"], "الرئيسية بعد التقارير")
         }
 
         step("تبويب البحث") {

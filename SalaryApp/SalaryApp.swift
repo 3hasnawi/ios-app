@@ -10,6 +10,8 @@ struct SalaryApp: App {
     init() {
         // قياس السلاسة يعمل في اختبار المحاكي فقط (-perfLog YES).
         PerfLog.startIfEnabled()
+        // النسخ التلقائي مفعّل افتراضياً إلى مجلد التطبيق على الآيفون.
+        UserDefaults.standard.register(defaults: [BackupManager.autoKey: true, BackupManager.destinationKey: BackupDestination.device.rawValue])
     }
 
     var body: some Scene {

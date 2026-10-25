@@ -210,9 +210,6 @@ nonisolated enum HealthCareReport {
                         }
                         y += rowH
                     }
-                    if pages > 1 {
-                        draw("صفحة \(p + 1) من \(pages)", CGRect(x: margin, y: page.height - margin - 12, width: width, height: 12), size: 8.5, bold: false)
-                    }
                 }
             }
         }
@@ -227,6 +224,7 @@ nonisolated enum HealthCareReport {
             let pdf = folder.appendingPathComponent(name + ".pdf")
             try writeExcel(lists, month: month, to: excel)
             try writePDF(lists, month: month, to: pdf)
+            try PDFDecor.apply(to: pdf)
             return (excel, pdf)
         }.value
     }

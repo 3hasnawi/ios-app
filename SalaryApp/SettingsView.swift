@@ -1,133 +1,156 @@
 import SwiftUI
 import SwiftData
 
-/// لوحة الإعدادات: اللغة والمظهر والأرقام، والاستيراد، ومساحة البيانات.
+/// الإعدادات في صفحة واحدة بلا تمرير: الخيارات قوائم منسدلة، والتفاصيل في صفحات فرعية.
+/// تبويب في الشريط السفلي.
 struct SettingsView: View {
-    let months: [PayrollMonth]
-    /// يُستدعى عند الضغط على "استيراد ملفات Excel": تُغلق الإعدادات وتُفتح نافذة الملفات.
-    let onImport: () -> Void
-    /// "استيراد ملف الملاك": تُغلق الإعدادات وتُفتح نافذة اختيار ملف Access.
-    var onImportStaff: () -> Void = {}
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var months: [PayrollMonth]
     @State private var importState = StaffImportState.shared
-    @State private var confirmStaffDelete = false
-
+    @State private var importCenter = ImportCenter.shared
+    @State private var backup = BackupManager.shared
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
-    @State private var storeSize: Int64?
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
     @State private var lockMessage: String?
     @State private var recentCount = RecentSearches.items.count
-    @AppStorage(ReportSheet.headerKey) private var reportHeader = ReportSheet.defaultHeader
+    @State private var storeSize: Int64?
     @State private var confirmClearRecents = false
+    /// اختبار المحاكي: -openBackup YES يفتح صفحة النسخ الاحتياطي.
+    @State private var showBackup = UserDefaults.standard.bool(forKey: "openBackup")
 
     var body: some View {
         NavigationStack {
-            Form {
-                displaySection
-                securitySection
-                searchSection
-                reportsSection
-                importSection
-                BackupSection()
-                staffSection
-                storageSection
-            }
-            .navigationTitle(tr("الإعدادات", "Settings"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(tr("تم", "Done")) { dismiss() }
+            List {
+                Section(tr("العرض", "Display")) {
+                    Picker(selection: $language) {
+                        Text("العربية").tag(AppLanguage.arabic.rawValue)
+                        Text("English").tag(AppLanguage.english.rawValue)
+                    } label: {
+                        SettingRow(title: tr("اللغة", "Language"), systemImage: "globe", color: .indigo) { EmptyView() }
+                    }
+                    Picker(selection: $appearance) {
+                        Text(tr("نهاري", "Light")).tag(AppAppearance.light.rawValue)
+                        Text(tr("ليلي", "Dark")).tag(AppAppearance.dark.rawValue)
+                        Text(tr("النظام", "System")).tag(AppAppearance.system.rawValue)
+                    } label: {
+                        SettingRow(title: tr("المظهر", "Appearance"), systemImage: "moon.fill", color: Color(.darkGray)) { EmptyView() }
+                    }
+                    Picker(selection: $numerals) {
+                        Text("123").tag(AppNumerals.latin.rawValue)
+                        Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
+                    } label: {
+                        SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
+                    }
                 }
-            }
-            .task(id: "\(months.count)-\(importState.version)") { storeSize = await Self.storeSize(of: context.container) }
-        }
-        // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
-        .id("\(language)-\(numerals)")
-    }
 
-    // MARK: - الأمان
-
-    private var securitySection: some View {
-        Section {
-            SettingRow(title: tr("القفل بـ \(AppLock.methodName)", "Lock with \(AppLock.methodName)"),
-                       systemImage: AppLock.systemImage, color: .green) {
-                Toggle("", isOn: Binding(get: { lockEnabled }, set: { setLock($0) }))
-                    .labelsHidden()
+                Section {
+                    Picker(selection: lockChoice) {
+                        Text(tr("متوقف", "Off")).tag(-1)
+                        Text(tr("فوراً", "Immediately")).tag(0)
+                        Text(tr("بعد دقيقة", "After 1 minute")).tag(60)
+                        Text(tr("بعد 5 دقائق", "After 5 minutes")).tag(300)
+                        Text(tr("بعد 15 دقيقة", "After 15 minutes")).tag(900)
+                    } label: {
+                        SettingRow(title: tr("قفل \(AppLock.methodName)", "\(AppLock.methodName) lock"), systemImage: AppLock.systemImage, color: .green) { EmptyView() }
+                    }
                     .accessibilityIdentifier("faceIDToggle")
-            }
-            if lockEnabled {
-                Picker(selection: $lockTimeout) {
-                    Text(tr("فوراً", "Immediately")).tag(0)
-                    Text(tr("بعد دقيقة", "After 1 minute")).tag(60)
-                    Text(tr("بعد 5 دقائق", "After 5 minutes")).tag(300)
-                    Text(tr("بعد 15 دقيقة", "After 15 minutes")).tag(900)
-                } label: {
-                    SettingRow(title: tr("القفل عند الخروج", "Lock when leaving"), systemImage: "timer", color: .teal) { EmptyView() }
+                } header: {
+                    Text(tr("الأمان", "Security"))
+                } footer: {
+                    if let lockMessage { Text(lockMessage).foregroundStyle(.red) }
                 }
-                .pickerStyle(.menu)
-            }
-        } header: {
-            Text(tr("الأمان", "Security"))
-        } footer: {
-            if let lockMessage {
-                Text(lockMessage).foregroundStyle(.red)
-            } else {
-                Text(tr("يُطلب \(AppLock.methodName) عند فتح التطبيق وعند الرجوع إليه، ويُستخدم رمز الجهاز إذا تعذّر التعرّف. البيانات تُخفى في قائمة التطبيقات المفتوحة.",
-                        "\(AppLock.methodName) is required when opening or returning to the app; the device passcode is used if recognition fails. Data is hidden in the app switcher."))
-            }
-        }
-    }
 
-    // MARK: - الكشوف
+                Section(tr("البيانات", "Data")) {
+                    Button {
+                        importCenter.pick()
+                    } label: {
+                        SettingRow(title: tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", color: .blue) {
+                            if importCenter.isBusy { ProgressView() }
+                        }
+                    }
+                    .accessibilityIdentifier("importFilesButton")
+                    NavigationLink {
+                        SavedDataView()
+                    } label: {
+                        SettingRow(title: tr("البيانات المحفوظة", "Saved data"), systemImage: "externaldrive.fill", color: .cyan,
+                                   subtitle: dataSummary) { EmptyView() }
+                    }
+                    NavigationLink {
+                        BackupView()
+                    } label: {
+                        SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud.fill", color: .pink,
+                                   subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
+                    }
+                    .accessibilityIdentifier("backupRow")
+                }
 
-    private var reportsSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                SettingRow(title: tr("رأس الكشوف", "Report header"), systemImage: "doc.text", color: .indigo) { EmptyView() }
-                TextField(tr("اسم الجهة", "Organisation name"), text: $reportHeader)
-                    .textFieldStyle(.roundedBorder)
-            }
-            .padding(.vertical, 2)
-        } header: {
-            Text(tr("الكشوف المصدّرة", "Exported lists"))
-        } footer: {
-            Text(tr("يظهر في أعلى كل كشف Excel أو PDF.", "Shown at the top of every exported Excel or PDF list."))
-        }
-    }
-
-    // MARK: - سجل البحث
-
-    private var searchSection: some View {
-        Section {
-            Button(role: .destructive) {
-                confirmClearRecents = true
-            } label: {
-                SettingRow(title: tr("مسح سجل البحث", "Clear search history"), systemImage: "clock.arrow.circlepath", color: .red) {
-                    Text(recentCount > 0 ? Num.format(recentCount) : tr("فارغ", "Empty"))
-                        .foregroundStyle(.secondary)
+                Section(tr("أخرى", "Other")) {
+                    Menu {
+                        Button(tr("مسح سجل البحث", "Clear search history"), systemImage: "trash", role: .destructive) {
+                            confirmClearRecents = true
+                        }
+                        .disabled(recentCount == 0)
+                    } label: {
+                        SettingRow(title: tr("سجل البحث", "Search history"), systemImage: "clock.arrow.circlepath", color: .gray) {
+                            HStack(spacing: 4) {
+                                Text(recentCount > 0 ? Num.format(recentCount) : tr("فارغ", "Empty"))
+                                Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-            .disabled(recentCount == 0)
+            .listSectionSpacing(.compact)
+            .navigationDestination(isPresented: $showBackup) { BackupView() }
+            .navigationTitle(tr("الإعدادات", "Settings"))
+            .navigationBarTitleDisplayMode(.large)
+            .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
+            .onAppear { recentCount = RecentSearches.items.count }
             .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {
                 Button(tr("مسح", "Clear"), role: .destructive) {
                     RecentSearches.clear()
                     recentCount = 0
                 }
             } message: {
-                Text(tr("تُحذف قائمة آخر من بحثت عنهم من الشاشة الرئيسية وصفحة البحث. بيانات الرواتب والملاك لا تتأثر.",
-                        "The recently viewed list is removed from Home and Search. Payroll and staff data are not affected."))
+                Text(tr("تُحذف قائمة آخر من بحثت عنهم. بيانات الرواتب والملاك لا تتأثر.",
+                        "The recently viewed list is removed. Payroll and staff data are not affected."))
             }
-        } header: {
-            Text(tr("البحث", "Search"))
         }
+        // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
+        .id("\(language)-\(numerals)")
+    }
+
+    /// "3 أشهر · 42,108 ملاك · 48 ميغا"
+    private var dataSummary: String {
+        var parts = [tr("\(Num.format(months.count)) أشهر", "\(months.count) months")]
+        if StaffInfo.count > 0 { parts.append(tr("\(Num.format(StaffInfo.count)) ملاك", "\(StaffInfo.count) staff")) }
+        if let storeSize { parts.append(Num.bytes(storeSize)) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// قائمة القفل: "متوقف" أو وقت القفل. التفعيل يحتاج تحققاً ناجحاً أولاً.
+    private var lockChoice: Binding<Int> {
+        Binding(
+            get: { lockEnabled ? lockTimeout : -1 },
+            set: { value in
+                if value < 0 {
+                    setLock(false)
+                } else if lockEnabled {
+                    lockTimeout = value
+                } else {
+                    setLock(true) { lockTimeout = value }
+                }
+            }
+        )
     }
 
     /// التفعيل يحتاج تحققاً ناجحاً أولاً، حتى لا يُقفل المستخدم بقفل لا يعمل على جهازه.
-    private func setLock(_ on: Bool) {
+    private func setLock(_ on: Bool, then: (() -> Void)? = nil) {
         lockMessage = nil
         guard on else {
             lockEnabled = false
@@ -140,87 +163,39 @@ struct SettingsView: View {
         }
         Task {
             switch await AppLock.authenticate(reason: tr("تفعيل قفل تطبيق الرواتب", "Turn on the payroll app lock")) {
-            case .success: lockEnabled = true
+            case .success: lockEnabled = true; then?()
             case .failure: lockMessage = tr("لم يُفعَّل القفل: لم يتم التحقق.", "Lock not turned on: verification failed.")
             }
         }
     }
+}
 
-    // MARK: - العرض
+/// البيانات المحفوظة: الأشهر، والملاك، ومساحة البيانات.
+struct SavedDataView: View {
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var months: [PayrollMonth]
+    @State private var importState = StaffImportState.shared
+    @State private var confirmStaffDelete = false
+    @State private var storeSize: Int64?
+    @Environment(\.modelContext) private var context
 
-    private var displaySection: some View {
-        Section {
-            // العنوان في سطر وأزرار الاختيار تحته بعرض كامل، حتى لا ينكسر العنوان مع الخط الكبير.
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(title: tr("اللغة", "Language"), systemImage: "globe", color: .indigo) { EmptyView() }
-                Picker(tr("اللغة", "Language"), selection: $language) {
-                    Text("العربية").tag(AppLanguage.arabic.rawValue)
-                    Text("English").tag(AppLanguage.english.rawValue)
+    var body: some View {
+        Form {
+            Section(tr("الرواتب والاستقطاعات", "Payroll and deductions")) {
+                NavigationLink {
+                    SavedMonthsView()
+                } label: {
+                    SettingRow(title: tr("الأشهر المحفوظة", "Saved months"), systemImage: "calendar", color: .blue) {
+                        Text(Num.format(months.count)).foregroundStyle(.secondary)
+                    }
                 }
-                .pickerStyle(.segmented)
             }
-            .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(title: tr("المظهر", "Appearance"), systemImage: "moon.fill", color: Color(.darkGray)) { EmptyView() }
-                Picker(tr("المظهر", "Appearance"), selection: $appearance) {
-                    Text(tr("نهاري", "Light")).tag(AppAppearance.light.rawValue)
-                    Text(tr("ليلي", "Dark")).tag(AppAppearance.dark.rawValue)
-                    Text(tr("النظام", "System")).tag(AppAppearance.system.rawValue)
-                }
-                .pickerStyle(.segmented)
-            }
-            .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
-                Picker(tr("الأرقام", "Numerals"), selection: $numerals) {
-                    Text("123").tag(AppNumerals.latin.rawValue)
-                    Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
-                }
-                .pickerStyle(.segmented)
-                LabeledContent(tr("مثال", "Example")) {
-                    Text(Money.format(1_250_000))
-                        .font(.body.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.primary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10))
-            }
-            .padding(.vertical, 2)
-        } header: {
-            Text(tr("العرض", "Display"))
-        } footer: {
-            Text(tr("الأرقام العربية: 123 — الأرقام الهندية: ١٢٣", "Western digits: 123 — Eastern Arabic digits: ١٢٣"))
+            staffSection
+            storageSection
         }
-    }
-
-    // MARK: - الاستيراد
-
-    private var importSection: some View {
-        Section {
-            Button {
-                onImport()
-            } label: {
-                SettingRow(title: tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", color: .green) {
-                    if ImportCenter.shared.isBusy { ProgressView() }
-                }
-            }
-            .accessibilityIdentifier("importFilesButton")
-            NavigationLink {
-                SavedMonthsView()
-            } label: {
-                SettingRow(title: tr("الأشهر المحفوظة", "Saved months"), systemImage: "calendar", color: .blue) {
-                    Text(Num.format(months.count)).foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text(tr("الاستيراد", "Import"))
-        } footer: {
-            Text(tr("رواتب أو استقطاعات (Excel) أو ملاك (Access)، ملف واحد أو عدة ملفات معاً. التطبيق يتعرّف على نوع كل ملف وشهره وتراجعه قبل الاستيراد. ملف الرواتب يستبدل رواتب شهره فقط، وملف الاستقطاعات يستبدل استقطاعاته فقط.",
-                    "Payroll or deductions (Excel) or staff (Access), one or several files. The app recognises each file's type and month for you to review. A payroll file replaces only that month's payroll; a deductions file only its deductions."))
-        }
+        .navigationTitle(tr("البيانات المحفوظة", "Saved data"))
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: "\(months.count)-\(importState.version)") { storeSize = await Self.storeSize(of: context.container) }
     }
 
     // MARK: - الملاك
@@ -314,7 +289,7 @@ struct SettingsView: View {
     }
 
     /// حجم ملفات قاعدة البيانات على الجهاز (الملف الأساسي وملفات -wal و-shm).
-    private static func storeSize(of container: ModelContainer) async -> Int64 {
+    static func storeSize(of container: ModelContainer) async -> Int64 {
         guard let url = container.configurations.first?.url else { return 0 }
         return await Task.detached {
             let fm = FileManager.default
@@ -359,11 +334,13 @@ private struct StorageBar: View {
     }
 }
 
-/// صف إعداد: أيقونة ملوّنة + عنوان + عنصر تحكم في الطرف الآخر.
-private struct SettingRow<Trailing: View>: View {
+/// صف إعداد: أيقونة ملوّنة + عنوان (وسطر وصف اختياري) + عنصر تحكم في الطرف الآخر.
+struct SettingRow<Trailing: View>: View {
     let title: String
     let systemImage: String
     let color: Color
+    var subtitle: String? = nil
+    var subtitleColor: Color = .secondary
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
@@ -373,11 +350,16 @@ private struct SettingRow<Trailing: View>: View {
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
                 .background(color.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text(title)
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .layoutPriority(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(subtitleColor).lineLimit(1)
+                }
+            }
+            .layoutPriority(1)
             Spacer(minLength: 8)
             trailing()
         }
@@ -422,6 +404,7 @@ private struct SavedMonthsView: View {
             Button(tr("حذف", "Delete"), role: .destructive) {
                 guard let name = monthToDelete?.name else { return }
                 let importer = DataImporter(modelContainer: context.container)
+                BackupManager.shared.markChanged()
                 Task { try? await importer.delete(month: name) }
             }
         }

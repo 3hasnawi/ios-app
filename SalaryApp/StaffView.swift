@@ -6,9 +6,10 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, share, reports }
+    enum Tab: Hashable { case payroll, staff, search, share, reports, settings }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
     var tab: Tab = LaunchOptions.startTab == "reports" ? .reports
+        : LaunchOptions.openSettings || LaunchOptions.startTab == "settings" ? .settings
         : LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst) ? .search : .payroll
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
     var pendingStaffImport = false
@@ -53,6 +54,7 @@ final class StaffImportState {
     }
 
     func deleteAll() {
+        BackupManager.shared.markChanged()
         let container = SharedModel.container
         Task {
             try? await Task.detached(priority: .userInitiated) {
@@ -75,6 +77,7 @@ struct RootView: View {
     @State private var staffImport = StaffImportState.shared
     @State private var importProgress = ImportProgress.shared
     @State private var importCenter = ImportCenter.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     /// زر "مشاركة" في الشريط ليس صفحة: الضغط عليه يفتح نافذة المشاركة ويبقى التبويب الحالي.
     private var selection: Binding<AppRouter.Tab> {
@@ -98,6 +101,9 @@ struct RootView: View {
             Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
                 ReportsView()
             }
+            Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
+                SettingsView()
+            }
             // يظهر فقط عند عرض قسيمة، بجانب العدسة لسهولة الوصول.
             if router.payslipToShare != nil {
                 Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
@@ -114,7 +120,16 @@ struct RootView: View {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await TestData.prepareIfRequested()
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
+            if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
             await AutoPilot.shared.run()
+        }
+        // نسخة فاتت (أُغلق التطبيق أثناء النسخ أو تعذّر الوصول للمجلد): تُكمل عند فتح التطبيق أو الخروج منه.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .inactive else { return }
+            Task {
+                if phase == .active { try? await Task.sleep(for: .seconds(3)) }
+                await BackupManager.shared.autoBackupIfNeeded()
+            }
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.
         .overlay(alignment: .bottom) {
@@ -183,11 +198,8 @@ struct StaffView: View {
     @AppStorage("staffSearchMode") private var modeRaw = StaffSearchMode.name.rawValue
     @AppStorage("staffStatusFilter") private var statusFilter = ""
     @State private var path: [StaffMember] = []
-    @State private var showSettings = false
     @State private var showPicker = false
     @State private var pickedFile: URL?
-    @State private var payrollImportAfterSettings = false
-    @State private var staffImportAfterSettings = false
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
 
@@ -224,34 +236,6 @@ struct StaffView: View {
                 .navigationTitle(tr("الملاك", "Staff"))
                 .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: StaffMember.self) { StaffDetailView(member: $0) }
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label(tr("الإعدادات", "Settings"), systemImage: "gearshape")
-                        }
-                    }
-                }
-                .sheet(isPresented: $showSettings, onDismiss: {
-                    if staffImportAfterSettings {
-                        staffImportAfterSettings = false
-                        showPicker = true
-                    }
-                    if payrollImportAfterSettings {
-                        payrollImportAfterSettings = false
-                        router.tab = .payroll
-                        router.pendingPayrollImport = true
-                    }
-                }) {
-                    SettingsView(months: months, onImport: {
-                        payrollImportAfterSettings = true
-                        showSettings = false
-                    }, onImportStaff: {
-                        staffImportAfterSettings = true
-                        showSettings = false
-                    })
-                }
                 .sheet(isPresented: $showPicker, onDismiss: {
                     if let url = pickedFile {
                         pickedFile = nil

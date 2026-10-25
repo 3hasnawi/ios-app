@@ -42,10 +42,8 @@ struct ContentView: View {
     /// تغيير اللغة أو الأرقام يعيد رسم الشاشة بالنصوص والأرقام الجديدة.
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
-    @State private var showSettings = false
     /// اسم قادم من اختصار "فتح البحث في الرواتب".
     @State private var router = ShortcutRouter.shared
-    @State private var importAfterSettings = false
     @State private var importCenter = ImportCenter.shared
     @State private var appRouter = AppRouter.shared
     @State private var search = LaunchOptions.search
@@ -112,28 +110,6 @@ struct ContentView: View {
                 .navigationTitle(tr("الرئيسية", "Home"))
                 .navigationBarTitleDisplayMode(.large)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label(tr("الإعدادات", "Settings"), systemImage: "gearshape")
-                        }
-                        .accessibilityIdentifier("settingsButton")
-                    }
-                }
-                .sheet(isPresented: $showSettings, onDismiss: {
-                    // زر الاستيراد داخل الإعدادات: تُغلق الإعدادات أولاً ثم تُفتح نافذة الملفات.
-                    if importAfterSettings {
-                        importAfterSettings = false
-                        importCenter.pick()
-                    }
-                }) {
-                    SettingsView(months: months, onImport: {
-                        importAfterSettings = true
-                        showSettings = false
-                    })
-                }
                 .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button(tr("حسناً", "OK"), role: .cancel) {}
                 } message: {
@@ -283,7 +259,6 @@ struct ContentView: View {
     }
 
     private func applyLaunchOptions() async {
-        if LaunchOptions.openSettings { showSettings = true }
         let files = LaunchOptions.importFiles
         if !files.isEmpty {
             // اختبار المحاكي: يستورد مباشرة، أو يعرض نافذة المراجعة فقط (-importReview YES).
@@ -304,6 +279,7 @@ struct ContentView: View {
     }
 
     private func deleteMonth(_ name: String) {
+        BackupManager.shared.markChanged()
         let container = context.container
         Task {
             do {

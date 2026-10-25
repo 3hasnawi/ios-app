@@ -242,6 +242,7 @@ nonisolated enum FoodContractReport {
             let pdf = folder.appendingPathComponent(name + ".pdf")
             try writeExcel(rows, month: month, to: excel)
             try writePDF(rows, month: month, to: pdf)
+            try PDFDecor.apply(to: pdf)
             return (excel, pdf)
         }.value
     }

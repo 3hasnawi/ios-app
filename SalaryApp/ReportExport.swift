@@ -114,8 +114,13 @@ nonisolated enum XLSXWriter {
         try package(worksheet: worksheet(sheet), styles: styles, printTitles: "$1:$3", to: url)
     }
 
+    /// ملف بعدة كشوف بالشكل المعتمد: كل كشف في ورقة باسمه، ورأس الكشف يتكرر عند الطباعة.
+    static func writeWorkbook(_ sheets: [(name: String, sheet: ReportSheet)], to url: URL) throws {
+        try package(sheets: sheets.map { ($0.name, worksheet($0.sheet)) }, styles: styles, printTitles: "$1:$3", to: url)
+    }
+
     /// ملف بعدة أوراق (اسم الورقة، محتواها).
-    static func package(sheets: [(name: String, xml: String)], styles: String, to url: URL) throws {
+    static func package(sheets: [(name: String, xml: String)], styles: String, printTitles: String? = nil, to url: URL) throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("xlsx-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: root) }
@@ -130,11 +135,17 @@ nonisolated enum XLSXWriter {
         <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
         </Types>
         """
+        let definedNames = printTitles.map { titles in
+            "<definedNames>" + sheets.enumerated().map { i, sheet in
+                "<definedName name=\"_xlnm.Print_Titles\" localSheetId=\"\(i)\">'\(esc(sheet.name.replacingOccurrences(of: "'", with: "''")))'!\(titles)</definedName>"
+            }.joined() + "</definedNames>"
+        } ?? ""
         let book = """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <bookViews><workbookView/></bookViews>
         <sheets>\(sheets.enumerated().map { "<sheet name=\"\(esc($0.element.name))\" sheetId=\"\($0.offset + 1)\" r:id=\"rId\($0.offset + 1)\"/>" }.joined())</sheets>
+        \(definedNames)
         </workbook>
         """
         let rels = """
@@ -217,7 +228,7 @@ nonisolated enum XLSXWriter {
         value == value.rounded() ? String(Int64(value)) : String(value)
     }
 
-    private static func worksheet(_ sheet: ReportSheet) -> String {
+    static func worksheet(_ sheet: ReportSheet) -> String {
         let last = letter(sheet.columns.count - 1)
         var rows = ""
         // 1: اسم الجهة، 2: عنوان الكشف، 3: رؤوس الأعمدة
@@ -357,6 +368,18 @@ nonisolated enum PDFReportWriter {
     /// A4 بالطول أو بالعرض بحسب عرض الأعمدة، يتكرر العنوان ورؤوس الأعمدة في كل صفحة،
     /// والمجموع في آخر صفحة، ورقم الصفحة في الأسفل.
     static func write(_ sheet: ReportSheet, to url: URL) throws {
+        try write([sheet], to: url)
+    }
+
+    /// عدة كشوف في ملف واحد: كل كشف يبدأ بصفحة جديدة برأسه ومجموعه (PDF مجمّع).
+    static func write(_ sheets: [ReportSheet], to url: URL) throws {
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
+        try renderer.writePDF(to: url) { context in
+            for sheet in sheets { render(sheet, in: context) }
+        }
+    }
+
+    private static func render(_ sheet: ReportSheet, in context: UIGraphicsPDFRendererContext) {
         let page = sheet.landscape ? CGRect(x: 0, y: 0, width: 842, height: 595) : CGRect(x: 0, y: 0, width: 595, height: 842)
         let margin: CGFloat = 28
         let tableWidth = page.width - margin * 2
@@ -403,11 +426,10 @@ nonisolated enum PDFReportWriter {
         amountFormatter.maximumFractionDigits = 2
         func money(_ v: Double) -> String { amountFormatter.string(from: NSNumber(value: v)) ?? String(v) }
 
-        let renderer = UIGraphicsPDFRenderer(bounds: page)
-        try renderer.writePDF(to: url) { context in
+        do {
             let cg = context.cgContext
             for p in 0..<pages {
-                context.beginPage()
+                context.beginPage(withBounds: page, pageInfo: [:])
                 draw(sheet.header, in: CGRect(x: margin, y: headerTop, width: tableWidth, height: 22), font: .boldSystemFont(ofSize: 14))
                 let titleRect = CGRect(x: margin, y: headerTop + 24, width: tableWidth, height: titleHeight)
                 dark.setFill(); cg.fill(titleRect)
@@ -448,10 +470,6 @@ nonisolated enum PDFReportWriter {
                     for c in amountCol..<sheet.columns.count { cg.stroke(cellRect(c, y: y, height: columnsHeight), width: 0.5) }
                     draw("المجموع", in: labelRect, font: .boldSystemFont(ofSize: 11))
                     draw(money(sheet.total), in: cellRect(amountCol, y: y, height: columnsHeight), font: .boldSystemFont(ofSize: 11))
-                }
-                if pages > 1 {
-                    draw("صفحة \(p + 1) من \(pages)", in: CGRect(x: margin, y: page.height - margin - 14, width: tableWidth, height: 14),
-                         font: .systemFont(ofSize: 9), color: .darkGray)
                 }
             }
         }
@@ -622,6 +640,7 @@ enum ReportFiles {
             let pdf = folder.appendingPathComponent(name + ".pdf")
             try XLSXWriter.write(sheet, to: excel)
             try PDFReportWriter.write(sheet, to: pdf)
+            try PDFDecor.apply(to: pdf)
             return (excel, pdf)
         }.value
     }
