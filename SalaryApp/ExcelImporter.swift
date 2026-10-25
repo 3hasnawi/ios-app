@@ -250,6 +250,8 @@ nonisolated final class SheetParser {
     /// أول عناوين رآها مع عمود الاسم، لشرح سبب الرفض.
     private var nameRowHeaders: [String]?
     private var rowsRead = 0
+    /// لكل عمود مبلغ: كم مرة ظهر كل اسم جهة، لإلحاق المبالغ التي اسمها فارغ بالجهة الغالبة.
+    private var pairNames: [String: [String: Int]] = [:]
     private let nameHeaders = Set(Synonyms.name.map(ArabicText.normalize))
 
     func consume(_ row: [String]) {
@@ -317,6 +319,8 @@ nonisolated final class SheetParser {
         for pair in columns.pairs {
             guard let v = ArabicText.number(from: cell(row, pair.amount)), v != 0 else { continue }
             let title = cell(row, pair.name)
+            if !title.isEmpty { pairNames[pair.fallback, default: [:]][title, default: 0] += 1 }
+            // اسم فارغ: يُحفظ مؤقتاً باسم عمود المبلغ، ويُلحق بالجهة الغالبة بعد آخر صف.
             items[title.isEmpty ? pair.fallback : title, default: 0] += v
         }
         result.employees.append(ImportedEmployee(
@@ -346,6 +350,15 @@ nonisolated final class SheetParser {
 
     /// بعد آخر صف: سبب عدم قبول الورقة إن لم يُقرأ منها شيء.
     func finish() {
+        // المبالغ التي خانة اسمها فارغة تُحسب للجهة الأكثر ظهوراً في نفس العمود (مثل شركة عراق الجوال).
+        for (fallback, names) in pairNames {
+            guard let main = names.max(by: { $0.value < $1.value })?.key else { continue }
+            for i in result.employees.indices {
+                if let v = result.employees[i].items.removeValue(forKey: fallback) {
+                    result.employees[i].items[main, default: 0] += v
+                }
+            }
+        }
         guard result.employees.isEmpty, result.deductions.isEmpty else { return }
         let sheet = sheetName.isEmpty ? tr("الورقة", "Sheet") : sheetName
         if rowsRead == 0 {
