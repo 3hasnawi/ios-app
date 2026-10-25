@@ -55,6 +55,14 @@ def employee_row(name, rank, unit, net, phone_deduction):
     row[COL["مبلغ الاستقطاع"]] = 90000 if phone_deduction else 0
     row[COL["2اسم الاستقطاع"]] = " "
     row[COL["طريقة الدفع"]] = "بطاقة"
+    # بنود ورقة الرواتب لتقاريرها (أرقام ثابتة بحسب الاسم حتى تتكرر بين التشغيلات)
+    h = sum(ord(c) for c in name)
+    row[COL["صندوق الشهداء"]] = 3000 if h % 10 < 8 else 0
+    row[COL["الرعاية الصحية"]] = 5000 + (h % 4) * 2500
+    row[COL["نشاط رياضي"]] = 2000 if h % 3 == 0 else 0
+    if h % 5 == 0:
+        row[COL["2اسم الاستقطاع"]] = "شركة عراق الجوال"
+        row[COL["2مبلغ الاستقطاع"]] = 25000 + (h % 7) * 5000
     return row
 
 

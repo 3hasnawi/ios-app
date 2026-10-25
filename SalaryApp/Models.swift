@@ -10,6 +10,8 @@ final class PayrollMonth {
     var importedAt: Date
     var employeeCount: Int
     var deductionCount: Int
+    /// ملخّص تقارير ورقة الرواتب: لكل بند عدد الموظفين والمجموع (JSON). فارغ للأشهر المستوردة قبل هذه الميزة.
+    var itemSummaryData: Data? = nil
 
     init(name: String, employeeCount: Int, deductionCount: Int) {
         self.name = name
@@ -34,8 +36,10 @@ final class Employee {
     var rank: String
     var workplace: String
     var netSalary: Double?
+    /// بنود ورقة الرواتب لهذا الموظف {العنوان: المبلغ} (JSON).
+    var itemsData: Data? = nil
 
-    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?) {
+    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?, items: [String: Double] = [:]) {
         self.month = month
         self.name = name
         let key = ArabicText.normalize(name)
@@ -44,6 +48,42 @@ final class Employee {
         self.rank = rank
         self.workplace = workplace
         self.netSalary = netSalary
+        self.itemsData = PayrollItems.encode(items)
+    }
+
+    var items: [String: Double] { PayrollItems.decode(itemsData) }
+}
+
+/// ترميز سريع لبنود ورقة الرواتب، وملخّص الشهر.
+nonisolated enum PayrollItems {
+    static func encode(_ items: [String: Double]) -> Data? {
+        items.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: items)
+    }
+
+    static func decode(_ data: Data?) -> [String: Double] {
+        guard let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return object.compactMapValues { ($0 as? NSNumber)?.doubleValue }
+    }
+
+    struct Summary: Codable, Sendable, Hashable {
+        var count: Int
+        var total: Double
+    }
+
+    static func summary(of employees: [ImportedEmployee]) -> Data? {
+        var result: [String: Summary] = [:]
+        for e in employees {
+            for (title, amount) in e.items {
+                result[title, default: Summary(count: 0, total: 0)].count += 1
+                result[title]!.total += amount
+            }
+        }
+        return try? JSONEncoder().encode(result)
+    }
+
+    static func decodeSummary(_ data: Data?) -> [String: Summary]? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode([String: Summary].self, from: data)
     }
 }
 
@@ -86,14 +126,16 @@ actor DataImporter {
             if inserted % 500 == 0 { progress?(Double(inserted) / total) }
         }
         for e in imported.employees {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items))
             try flush()
         }
         for d in imported.deductions {
             modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note))
             try flush()
         }
-        modelContext.insert(PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count))
+        let record = PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count)
+        record.itemSummaryData = PayrollItems.summary(of: imported.employees)
+        modelContext.insert(record)
         try modelContext.save()
         progress?(1)
     }
@@ -103,11 +145,11 @@ actor DataImporter {
         try modelContext.delete(model: Employee.self, where: #Predicate { $0.month == month })
         let total = Double(max(1, employees.count))
         for (i, e) in employees.enumerated() {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items))
             if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }
-        try upsertMonth(month, employees: employees.count, deductions: nil)
+        try upsertMonth(month, employees: employees.count, deductions: nil, summary: PayrollItems.summary(of: employees))
         try modelContext.save()
         progress?(1)
     }
@@ -121,21 +163,23 @@ actor DataImporter {
             if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }
-        try upsertMonth(month, employees: nil, deductions: deductions.count)
+        try upsertMonth(month, employees: nil, deductions: deductions.count, summary: nil)
         try modelContext.save()
         progress?(1)
     }
 
     /// سجل الشهر: يُحدّث العدد الذي تغيّر فقط، أو يُنشأ إن لم يكن موجوداً.
-    private func upsertMonth(_ month: String, employees: Int?, deductions: Int?) throws {
+    private func upsertMonth(_ month: String, employees: Int?, deductions: Int?, summary: Data?) throws {
         var descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
         descriptor.fetchLimit = 1
         if let existing = try modelContext.fetch(descriptor).first {
-            if let employees { existing.employeeCount = employees }
+            if let employees { existing.employeeCount = employees; existing.itemSummaryData = summary }
             if let deductions { existing.deductionCount = deductions }
             existing.importedAt = .now
         } else {
-            modelContext.insert(PayrollMonth(name: month, employeeCount: employees ?? 0, deductionCount: deductions ?? 0))
+            let record = PayrollMonth(name: month, employeeCount: employees ?? 0, deductionCount: deductions ?? 0)
+            record.itemSummaryData = summary
+            modelContext.insert(record)
         }
     }
 

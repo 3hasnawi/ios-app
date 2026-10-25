@@ -6,10 +6,10 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, share }
+    enum Tab: Hashable { case payroll, staff, search, share, reports }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
-    var tab: Tab = LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst)
-        ? .search : .payroll
+    var tab: Tab = LaunchOptions.startTab == "reports" ? .reports
+        : LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst) ? .search : .payroll
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
@@ -94,6 +94,9 @@ struct RootView: View {
         TabView(selection: selection) {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
+            }
+            Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
+                ReportsView()
             }
             // يظهر فقط عند عرض قسيمة، بجانب العدسة لسهولة الوصول.
             if router.payslipToShare != nil {

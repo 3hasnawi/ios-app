@@ -19,6 +19,8 @@ enum LaunchOptions {
     /// يفتح صفحة أول نتيجة في البحث الموحّد، وقسمها: salary / staff / months.
     static var openPerson: Bool { UserDefaults.standard.bool(forKey: "openPerson") }
     static var personPart: String { UserDefaults.standard.string(forKey: "personPart") ?? "" }
+    /// يفتح أول مجموعة في تبويب التقارير.
+    static var openReport: Bool { UserDefaults.standard.bool(forKey: "openReport") }
     /// التبويب عند التشغيل: "search" لتبويب العدسة.
     static var startTab: String { UserDefaults.standard.string(forKey: "tab") ?? "" }
 

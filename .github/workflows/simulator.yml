@@ -182,6 +182,16 @@ jobs:
           launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES -share YES
           shot 08m-person-share 8
 
+          # 8n) التقارير: الاستقطاعات حسب الجهة، ثم بنود جدول الرواتب، ثم تفاصيل أول مجموعة
+          launch -tab reports -reportKind deductions
+          shot 08n-reports-deductions 7
+          launch -tab reports -reportKind deductions -reportByEntity YES -openReport YES
+          shot 08o-report-deduction-detail 8
+          launch -tab reports -reportKind payroll
+          shot 08p-reports-payroll 6
+          launch -tab reports -reportKind payroll -openReport YES
+          shot 08q-report-payroll-detail 8
+
           # 9) نافذة المشاركة (نسخ كصورة / تصدير PDF / مشاركة كصورة) + الملفات المُصدَّرة
           launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES
           shot 09-share-sheet 8

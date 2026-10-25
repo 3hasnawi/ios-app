@@ -6,6 +6,9 @@ nonisolated struct ImportedEmployee: Sendable {
     var rank: String
     var workplace: String
     var netSalary: Double?
+    /// مبالغ من أعمدة ورقة الرواتب لتقاريرها (صندوق الشهداء، الرعاية الصحية...)
+    /// ومن أزواج "اسم الاستقطاع / مبلغ الاستقطاع" (مثل شركة عراق الجوال). القيم غير الصفرية فقط.
+    var items: [String: Double] = [:]
 }
 
 nonisolated struct ImportedDeduction: Sendable {
@@ -191,6 +194,12 @@ nonisolated final class SheetParser {
         static let amount = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"]
         static let title = ["نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"]
         static let note = ["الملاحظات", "ملاحظات", "ملاحظة", "note"]
+        /// أعمدة ورقة الرواتب التي تُحفظ لتقاريرها: كل عنوان يحتوي إحدى هذه الكلمات.
+        static let itemKeywords = ["صندوق", "شهداء", "رعاية", "نشاط", "نادي", "تامين", "ضريبة", "توقيفات", "تقاعد", "حماية",
+                                   "تضمين", "ايراد", "رسم", "جوال", "اتصالات", "استقطاعات المصارف", "مجموع الاستقطاعات"]
+        /// أزواج (اسم الجهة، المبلغ) داخل ورقة الرواتب.
+        static let pairs: [(String, String)] = [("اسم الاستقطاع", "مبلغ الاستقطاع"), ("2اسم الاستقطاع", "2مبلغ الاستقطاع"),
+                                                ("اسم استقطاع المؤقته", "استقطاع مؤقت"), ("اسم استقطاع المؤقتة", "استقطاع مؤقت")]
     }
 
     private struct EmployeeColumns {
@@ -198,6 +207,9 @@ nonisolated final class SheetParser {
         var rank: Int?
         var workplace: Int?
         var netSalary: Int
+        /// (العمود، عنوانه كما في الملف)
+        var items: [(Int, String)] = []
+        var pairs: [(name: Int, amount: Int)] = []
     }
 
     private struct DeductionColumns {
@@ -243,7 +255,22 @@ nonisolated final class SheetParser {
         if let net = Self.column(Synonyms.netSalary, in: headers, used: &used) {
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
             let workplace = Self.column(Synonyms.workplace, in: headers, used: &used)
-            return .employees(EmployeeColumns(name: name, rank: rank, workplace: workplace, netSalary: net))
+            var columns = EmployeeColumns(name: name, rank: rank, workplace: workplace, netSalary: net)
+            for (nameHeader, amountHeader) in Synonyms.pairs {
+                let n = ArabicText.normalize(nameHeader), a = ArabicText.normalize(amountHeader)
+                guard let nc = headers.firstIndex(of: n), let ac = headers.firstIndex(of: a),
+                      !used.contains(nc), !columns.pairs.contains(where: { $0.name == nc }) else { continue }
+                columns.pairs.append((nc, ac))
+                used.insert(nc)
+                used.insert(ac)
+            }
+            let keywords = Synonyms.itemKeywords.map(ArabicText.normalize)
+            for (col, header) in headers.enumerated() where !used.contains(col) && !header.isEmpty && !header.contains("%") {
+                guard keywords.contains(where: { header.contains($0) }), !header.hasPrefix(ArabicText.normalize("اسم")) else { continue }
+                let title = row[col].trimmingCharacters(in: .whitespacesAndNewlines)
+                columns.items.append((col, title.isEmpty ? header : title))
+            }
+            return .employees(columns)
         }
         if let amount = Self.column(Synonyms.amount, in: headers, used: &used) {
             let title = Self.column(Synonyms.title, in: headers, used: &used)
@@ -257,11 +284,21 @@ nonisolated final class SheetParser {
         let name = cell(row, columns.name)
         guard !name.isEmpty, !nameHeaders.contains(ArabicText.normalize(name)) else { return }
 
+        var items: [String: Double] = [:]
+        for (col, title) in columns.items {
+            if let v = ArabicText.number(from: cell(row, col)), v != 0 { items[title, default: 0] += v }
+        }
+        for pair in columns.pairs {
+            let title = cell(row, pair.name)
+            guard !title.isEmpty, let v = ArabicText.number(from: cell(row, pair.amount)), v != 0 else { continue }
+            items[title, default: 0] += v
+        }
         result.employees.append(ImportedEmployee(
             name: name,
             rank: cell(row, columns.rank),
             workplace: cell(row, columns.workplace),
-            netSalary: ArabicText.number(from: cell(row, columns.netSalary))
+            netSalary: ArabicText.number(from: cell(row, columns.netSalary)),
+            items: items
         ))
     }
 
