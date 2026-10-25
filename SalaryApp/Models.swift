@@ -38,8 +38,10 @@ final class Employee {
     var netSalary: Double?
     /// بنود ورقة الرواتب لهذا الموظف {العنوان: المبلغ} (JSON).
     var itemsData: Data? = nil
+    /// كل حقول تقرير الراتب من ورقة الرواتب {العمود: القيمة} (JSON): المخصصات والاستقطاعات وبيانات الموظف.
+    var detailsData: Data? = nil
 
-    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?, items: [String: Double] = [:]) {
+    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?, items: [String: Double] = [:], details: [String: String] = [:]) {
         self.month = month
         self.name = name
         let key = ArabicText.normalize(name)
@@ -49,9 +51,15 @@ final class Employee {
         self.workplace = workplace
         self.netSalary = netSalary
         self.itemsData = PayrollItems.encode(items)
+        self.detailsData = details.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: details)
     }
 
     var items: [String: Double] { PayrollItems.decode(itemsData) }
+
+    var details: [String: String] {
+        guard let detailsData, let object = try? JSONSerialization.jsonObject(with: detailsData) as? [String: String] else { return [:] }
+        return object
+    }
 }
 
 /// ترميز سريع لبنود ورقة الرواتب، وملخّص الشهر.
@@ -129,7 +137,7 @@ actor DataImporter {
             if inserted % 500 == 0 { progress?(Double(inserted) / total) }
         }
         for e in imported.employees {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
             try flush()
         }
         for d in imported.deductions {
@@ -148,7 +156,7 @@ actor DataImporter {
         try modelContext.delete(model: Employee.self, where: #Predicate { $0.month == month })
         let total = Double(max(1, employees.count))
         for (i, e) in employees.enumerated() {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
             if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }

@@ -21,7 +21,7 @@ nonisolated enum BackupFormat {
     }
 
     struct MonthRecord: Codable { var name: String; var importedAt: Date; var employeeCount: Int; var deductionCount: Int; var summary: Data? }
-    struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data? }
+    struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data?; var details: Data? }
     struct DeductionRecord: Codable { var month: String; var name: String; var title: String; var amount: Double?; var note: String; var rank: String }
     struct StaffRecord: Codable { var name: String; var mother: String; var stat: String; var unified: String; var rank: String; var status: String; var workplace: String; var details: Data }
 
@@ -77,7 +77,7 @@ actor BackupActor {
         }, from: 0, to: 0.02)
         let employees = try modelContext.fetch(FetchDescriptor<Employee>())
         try writeLines("employees.jsonl", employees.map {
-            BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData)
+            BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData, details: $0.detailsData)
         }, from: 0.02, to: 0.4)
         let employeeCount = employees.count
         let deductions = try modelContext.fetch(FetchDescriptor<Deduction>())
@@ -137,6 +137,7 @@ actor BackupActor {
             let r = try decoder.decode(BackupFormat.EmployeeRecord.self, from: line)
             let e = Employee(month: r.month, name: r.name, rank: r.rank, workplace: r.workplace, netSalary: r.net)
             e.itemsData = r.items
+            e.detailsData = r.details
             modelContext.insert(e)
             try flush()
             if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, employees.count))) }

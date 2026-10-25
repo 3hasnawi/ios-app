@@ -244,6 +244,10 @@ jobs:
           shot 09-share-sheet 8
           mkdir -p ci-output/exports
           cp "$DATA"/tmp/share/* ci-output/exports/ 2>/dev/null || echo "::error::No exported files in tmp/share"
+          ls "$DATA"/tmp/share/ | grep -q "تقرير راتب" && echo "::notice::Salary report PDF created" || echo "::error::No salary report PDF"
+          for f in ci-output/exports/تقرير*.pdf; do [ -f "$f" ] && sips -s format png "$f" --out "ci-output/screenshots/09s-salary-report.png" >/dev/null 2>&1 || true; done
+          launch -search "أحمد علي حسين الدليمي" -openFirst YES -share YES -shareMode image
+          shot 09a-share-image 6
           ls -la ci-output/exports
           file ci-output/exports/* || true
 

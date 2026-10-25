@@ -9,6 +9,8 @@ nonisolated struct ImportedEmployee: Sendable {
     /// مبالغ من أعمدة ورقة الرواتب لتقاريرها (صندوق الشهداء، الرعاية الصحية...)
     /// ومن أزواج "اسم الاستقطاع / مبلغ الاستقطاع" (مثل شركة عراق الجوال). القيم غير الصفرية فقط.
     var items: [String: Double] = [:]
+    /// حقول تقرير الراتب (المخصصات، الاستقطاعات، بيانات الموظف) كما في الملف، غير الفارغة فقط.
+    var details: [String: String] = [:]
 }
 
 nonisolated struct ImportedDeduction: Sendable {
@@ -217,6 +219,17 @@ nonisolated final class SheetParser {
         static let itemKeywords = ["صندوق", "شهداء", "رعاية", "نشاط", "نادي", "تامين", "ضريبة", "توقيفات", "تقاعد", "حماية",
                                    "تضمين", "ايراد", "رسم", "جوال", "اتصالات", "استقطاعات المصارف", "مجموع الاستقطاعات"]
         /// أزواج (اسم الجهة، المبلغ) داخل ورقة الرواتب.
+        /// أعمدة تقرير الراتب (بنفس أسماء ورقة الرواتب المعتمدة).
+        static let reportFields = [
+            "الدرجة الوظيفية", "اسم الوكالة", "اسم المديرية", "NO_markaz",
+            "الاسمي", "عدد العلاوات", "الخطورة", "الارزاق", "الاستثنائية", "الاطفال", "الزوجية", "الشهادة", "منصب",
+            "مخصصات صنف", "نسبة الصنف", "جامعية", "مخصصات نقل", "مؤقتة", "اضافية", "مخصصات اخرى", "لقب علمي", "نسبة من الاسمي",
+            "الاستحقاق", "توقيفات تقاعدية", "الرعاية الصحية", "صندوق الشهداء", "نشاط صحي", "نشاط رياضي", "الضريبة", "تضمين",
+            "ايراد نهائي", "تامين صحي", "مجموع استقطاعات المصارف", "حماية الاجتماعية", "رسم طابع", "اسم الاستقطاع", "مبلغ الاستقطاع",
+            "2اسم الاستقطاع", "2مبلغ الاستقطاع", "% استقطاع 3", "مجموع الاستقطاعات", "استقطاع مؤقت", "اسم استقطاع المؤقته",
+            "اسم الشهدة", "اسم الشهادة", "اسم المنصب", "اسم الصنف", "اسم المخصصات الاخرى", "اسم اللقب العلمي",
+            "الرقم الوظيفي", "الرقم الموحد", "رقم الضمان الصحي", "توطين المصرف", "IBAN", "ملاحظات عامه", "ملاحظات",
+        ]
         static let pairs: [(String, String)] = [("اسم الاستقطاع", "مبلغ الاستقطاع"), ("2اسم الاستقطاع", "2مبلغ الاستقطاع"),
                                                 ("اسم استقطاع المؤقته", "استقطاع مؤقت"), ("اسم استقطاع المؤقتة", "استقطاع مؤقت")]
     }
@@ -229,6 +242,8 @@ nonisolated final class SheetParser {
         /// (العمود، عنوانه كما في الملف)
         var items: [(Int, String)] = []
         var pairs: [(name: Int, amount: Int, fallback: String)] = []
+        /// (العمود، اسم الحقل) لتقرير الراتب.
+        var details: [(Int, String)] = []
     }
 
     private struct DeductionColumns {
@@ -300,6 +315,10 @@ nonisolated final class SheetParser {
                 let title = row[col].trimmingCharacters(in: .whitespacesAndNewlines)
                 columns.items.append((col, title.isEmpty ? header : title))
             }
+            let fields = Dictionary(Synonyms.reportFields.map { (ArabicText.normalize($0), $0) }, uniquingKeysWith: { a, _ in a })
+            for (col, header) in headers.enumerated() {
+                if let key = fields[header], !columns.details.contains(where: { $0.1 == key }) { columns.details.append((col, key)) }
+            }
             return .employees(columns)
         }
         if let amount = Self.column(Synonyms.amount, in: headers, used: &used) {
@@ -326,12 +345,18 @@ nonisolated final class SheetParser {
             // اسم فارغ: يُحفظ مؤقتاً باسم عمود المبلغ، ويُلحق بالجهة الغالبة بعد آخر صف.
             items[title.isEmpty ? pair.fallback : title, default: 0] += v
         }
+        var details: [String: String] = [:]
+        for (col, key) in columns.details {
+            let value = cell(row, col).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty, value != "0" { details[key] = value }
+        }
         result.employees.append(ImportedEmployee(
             name: name,
             rank: cell(row, columns.rank),
             workplace: cell(row, columns.workplace),
             netSalary: ArabicText.number(from: cell(row, columns.netSalary)),
-            items: items
+            items: items,
+            details: details
         ))
     }
 

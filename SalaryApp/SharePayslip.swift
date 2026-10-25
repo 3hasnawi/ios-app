@@ -2,45 +2,70 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// نافذة المشاركة: معاينة القسيمة ثم مشاركتها كصورة أو تصديرها PDF.
+/// نافذة المشاركة: تقرير راتب PDF بشكل برنامج الرواتب الموحد (شهر أو كل الأشهر)،
+/// أو القسيمة المختصرة كصورة/PDF.
 struct ShareOptionsSheet: View {
     let employee: Employee
     @Query private var deductions: [Deduction]
+    @Query private var allMonths: [Employee]
+    @Query private var allDeductions: [Deduction]
     @Environment(\.dismiss) private var dismiss
     @State private var files: PayslipExporter.Files?
     @State private var errorText: String?
+
+    enum Mode: String { case report, image }
+    @State private var mode: Mode = UserDefaults.standard.string(forKey: "shareMode") == "image" ? .image : .report
+    /// الأشهر المختارة للتقرير (فارغة = شهر القسيمة المعروضة).
+    @State private var chosenMonths: Set<String> = []
+    @AppStorage("salaryReportHideZeros") private var hideZeros = false
+    @AppStorage("salaryReportHidePersonal") private var hidePersonal = false
+    @State private var reportURL: URL?
+    @State private var reportPreview: UIImage?
+    @State private var reports: [SalaryReport] = []
+    @State private var reportError: String?
 
     init(employee: Employee) {
         self.employee = employee
         let key = employee.matchKey
         let month = employee.month
         _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
+        _allMonths = Query(filter: #Predicate<Employee> { $0.matchKey == key })
+        _allDeductions = Query(filter: #Predicate<Deduction> { $0.matchKey == key })
+    }
+
+    /// أشهر هذا الموظف، الأحدث أولاً.
+    private var personMonths: [Employee] {
+        var seen = Set<String>()
+        return allMonths.sorted { MonthName.sortKey($0.month) > MonthName.sortKey($1.month) }
+            .filter { seen.insert($0.month).inserted }
+    }
+
+    private var selected: [Employee] {
+        let names = chosenMonths.isEmpty ? [employee.month] : Array(chosenMonths)
+        return personMonths.filter { names.contains($0.month) }
+    }
+
+    private var reportKey: String {
+        "\(selected.map(\.month).joined(separator: "|"))-\(hideZeros)-\(hidePersonal)"
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    preview
-
-                    VStack(spacing: 12) {
-                        if let files {
-                            ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
-                                OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("واتساب، الرسائل، الصور، أو نسخ", "WhatsApp, Messages, Photos, or Copy"), systemImage: "photo.fill")
-                            }
-                            .glassButtonStyle(prominent: true)
-
-                            ShareLink(item: files.pdfURL, preview: SharePreview(files.title, icon: Image(systemName: "doc.richtext"))) {
-                                OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
-                            }
-                            .glassButtonStyle()
-                        }
+                VStack(spacing: 18) {
+                    Picker("", selection: $mode) {
+                        Text(tr("تقرير راتب PDF", "Salary report PDF")).tag(Mode.report)
+                        Text(tr("قسيمة صورة", "Payslip image")).tag(Mode.image)
                     }
-                    .disabled(files == nil)
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("shareModePicker")
+
+                    if mode == .report { reportContent } else { imageContent }
                 }
                 .padding(20)
             }
-            .navigationTitle(tr("مشاركة القسيمة", "Share payslip"))
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle(tr("مشاركة", "Share"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -58,6 +83,174 @@ struct ShareOptionsSheet: View {
                 errorText = tr("تعذّر تجهيز الصورة: \(error.localizedDescription)", "Couldn't prepare the image: \(error.localizedDescription)")
             }
         }
+        .task(id: reportKey) { await makeReport() }
+    }
+
+    // MARK: تقرير الراتب
+
+    @ViewBuilder
+    private var reportContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(tr("الشهر", "Month")).font(.footnote).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(personMonths, id: \.month) { e in
+                        chip(e.month, on: chosenMonths.count <= 1 && (chosenMonths.isEmpty ? e.month == employee.month : chosenMonths.contains(e.month))) {
+                            chosenMonths = [e.month]
+                        }
+                    }
+                    if personMonths.count > 1 {
+                        chip(tr("كل الأشهر", "All months"), on: chosenMonths.count > 1) {
+                            chosenMonths = Set(personMonths.map(\.month))
+                        }
+                    }
+                }
+            }
+            .scrollClipDisabled()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        Group {
+            if let reportPreview {
+                Image(uiImage: reportPreview)
+                    .resizable()
+                    .scaledToFit()
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+                    .frame(maxHeight: 330)
+                    .accessibilityIdentifier("salaryReportPreview")
+            } else if let reportError {
+                Text(reportError).foregroundStyle(.red)
+            } else {
+                ProgressView().frame(height: 330)
+            }
+        }
+
+        let warnings = reports.flatMap { r in r.mismatches.map { "\(r.month): \($0)" } }
+            + reports.filter(\.missingDetails).map { tr("\($0.month): المخصصات وبيانات الموظف غير محفوظة لهذا الشهر. أعد استيراد ملف رواتبه.",
+                                                         "\($0.month): allowances and details aren't saved for this month. Re-import its payroll file.") }
+        if !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(warnings, id: \.self) { Label($0, systemImage: "exclamationmark.triangle.fill").font(.caption) }
+            }
+            .foregroundStyle(.orange)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+
+        VStack(spacing: 0) {
+            Toggle(tr("إخفاء البنود الصفرية", "Hide zero items"), isOn: $hideZeros)
+                .padding(.vertical, 10)
+            Divider()
+            Toggle(tr("إخفاء IBAN والأرقام الشخصية", "Hide IBAN and personal numbers"), isOn: $hidePersonal)
+                .padding(.vertical, 10)
+        }
+        .padding(.horizontal, 14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+        HStack(spacing: 10) {
+            Button {
+                if let reportURL { ActivityShare.present([reportURL]) }
+            } label: {
+                Label(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up")
+                    .font(.body.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .foregroundStyle(.white)
+                    .background(Color(red: 0.78, green: 0.16, blue: 0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .accessibilityIdentifier("shareSalaryReport")
+            Button {
+                if let reportURL { printReport(reportURL) }
+            } label: {
+                Label(tr("طباعة", "Print"), systemImage: "printer")
+                    .font(.body.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .foregroundStyle(Color(red: 0.78, green: 0.16, blue: 0.16))
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color(red: 0.78, green: 0.16, blue: 0.16), lineWidth: 1.5))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(reportURL == nil)
+    }
+
+    private func chip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(on ? .white : .primary)
+                .background(on ? Color.accentColor : Color(.secondarySystemGroupedBackground), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func printReport(_ url: URL) {
+        let controller = UIPrintInteractionController.shared
+        let info = UIPrintInfo.printInfo()
+        info.outputType = .general
+        info.jobName = url.deletingPathExtension().lastPathComponent
+        controller.printInfo = info
+        controller.printingItem = url
+        controller.present(animated: true)
+    }
+
+    private func makeReport() async {
+        reportURL = nil
+        reportPreview = nil
+        reportError = nil
+        let hideZeros = self.hideZeros, hidePersonal = self.hidePersonal
+        let inputs = selected.map { e in
+            SalaryReport.Input(
+                month: e.month, name: e.name, rank: e.rank, workplace: e.workplace, net: e.netSalary,
+                items: e.items, details: e.details,
+                bankDeductions: allDeductions.filter { $0.month == e.month }.map { ($0.title, $0.amount ?? 0) }
+            )
+        }
+        guard !inputs.isEmpty else { return }
+        let name = employee.name
+        do {
+            let result = try await Task.detached(priority: .userInitiated) { () throws -> ([SalaryReport], URL, UIImage?) in
+                let built = inputs.map { SalaryReport.make($0, hideZeros: hideZeros, hidePersonal: hidePersonal) }
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let url = folder.appendingPathComponent(SalaryReport.fileName(name: name, months: inputs.map(\.month)) + ".pdf")
+                try SalaryReportPDF.write(built, to: url)
+                return (built, url, SalaryReportPDF.preview(url))
+            }.value
+            guard !Task.isCancelled else { return }
+            reports = result.0
+            reportURL = result.1
+            reportPreview = result.2
+        } catch {
+            reportError = tr("تعذّر تجهيز التقرير: \(error.localizedDescription)", "Couldn't prepare the report: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: القسيمة المختصرة
+
+    @ViewBuilder
+    private var imageContent: some View {
+        preview
+        VStack(spacing: 12) {
+            if let files {
+                ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
+                    OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("واتساب، الرسائل، الصور، أو نسخ", "WhatsApp, Messages, Photos, or Copy"), systemImage: "photo.fill")
+                }
+                .glassButtonStyle(prominent: true)
+
+                ShareLink(item: files.pdfURL, preview: SharePreview(files.title, icon: Image(systemName: "doc.richtext"))) {
+                    OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
+                }
+                .glassButtonStyle()
+            }
+        }
+        .disabled(files == nil)
     }
 
     @ViewBuilder
@@ -126,7 +319,6 @@ enum PayslipExporter {
         guard let image = renderer.uiImage, let png = image.pngData() else { throw ExportError.renderFailed }
 
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
-        try? FileManager.default.removeItem(at: folder)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let title = "\(employee.name) - \(employee.month)"
