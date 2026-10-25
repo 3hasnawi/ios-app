@@ -303,6 +303,8 @@ struct ReportDetailView: View {
     @State private var rows: [ReportRow]?
     @State private var search = ""
     @State private var showExport = false
+    /// لبند صندوق الشهداء: الملخّص حسب الفئة.
+    @State private var fundRows: [FundReport.Row]?
 
     private var filtered: [ReportRow] {
         guard let rows else { return [] }
@@ -336,6 +338,8 @@ struct ReportDetailView: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            if let fundRows { FundSummarySection(rows: fundRows) }
 
             Section {
                 if rows == nil {
@@ -374,7 +378,7 @@ struct ReportDetailView: View {
             }
         }
         .sheet(isPresented: $showExport) {
-            if let rows { ReportExportSheet(group: group, rows: rows) }
+            if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows) }
         }
         .task {
             let container = SharedModel.container
@@ -383,6 +387,11 @@ struct ReportDetailView: View {
                 try await ReportEngine(modelContainer: container).rows(for: group)
             }.value) ?? []
             rows = loaded
+            if group.kind == .payroll, FundReport.applies(to: group.title) {
+                fundRows = try? await Task.detached(priority: .userInitiated) {
+                    try await ReportEngine(modelContainer: container).fundSummary(month: group.month, title: group.title)
+                }.value
+            }
             // اختبار المحاكي: -exportReport YES يكتب ملفي Excel و PDF ويفتح نافذة التصدير.
             if UserDefaults.standard.bool(forKey: "exportReport") {
                 let ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil

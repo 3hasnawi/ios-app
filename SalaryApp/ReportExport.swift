@@ -110,16 +110,22 @@ nonisolated struct ReportSheet: Sendable {
 nonisolated enum XLSXWriter {
     /// يكتب ملف xlsx بالتنسيق (اتجاه من اليمين، ألوان، حدود، دمج، معادلة المجموع).
     static func write(_ sheet: ReportSheet, to url: URL) throws {
+        try package(worksheet: worksheet(sheet), styles: styles, printTitles: "$1:$3", to: url)
+    }
+
+    /// يجمع أجزاء ملف xlsx (ورقة واحدة) ويضغطها.
+    static func package(worksheet: String, styles: String, printTitles: String?, to url: URL) throws {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("xlsx-\(UUID().uuidString)", isDirectory: true)
         defer { try? fm.removeItem(at: root) }
+        let names = printTitles.map { "<definedNames><definedName name=\"_xlnm.Print_Titles\" localSheetId=\"0\">'الكشف'!\($0)</definedName></definedNames>" } ?? ""
         let files: [String: String] = [
             "[Content_Types].xml": contentTypes,
             "_rels/.rels": rootRels,
-            "xl/workbook.xml": workbook,
+            "xl/workbook.xml": workbook.replacingOccurrences(of: "<!--names-->", with: names),
             "xl/_rels/workbook.xml.rels": workbookRels,
             "xl/styles.xml": styles,
-            "xl/worksheets/sheet1.xml": worksheet(sheet),
+            "xl/worksheets/sheet1.xml": worksheet,
         ]
         for (path, text) in files {
             let file = root.appendingPathComponent(path)
@@ -133,7 +139,7 @@ nonisolated enum XLSXWriter {
         }
     }
 
-    private static func letter(_ index: Int) -> String {
+    static func letter(_ index: Int) -> String {
         var n = index + 1
         var s = ""
         while n > 0 {
@@ -144,7 +150,7 @@ nonisolated enum XLSXWriter {
         return s
     }
 
-    private static func esc(_ text: String) -> String {
+    static func esc(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
@@ -152,11 +158,11 @@ nonisolated enum XLSXWriter {
             .filter { $0 == "\n" || $0 == "\t" || !($0.asciiValue.map { $0 < 32 } ?? false) }
     }
 
-    private static func textCell(_ ref: String, _ text: String, style: Int) -> String {
+    static func textCell(_ ref: String, _ text: String, style: Int) -> String {
         "<c r=\"\(ref)\" s=\"\(style)\" t=\"inlineStr\"><is><t xml:space=\"preserve\">\(esc(text))</t></is></c>"
     }
 
-    private static func number(_ value: Double) -> String {
+    static func number(_ value: Double) -> String {
         value == value.rounded() ? String(Int64(value)) : String(value)
     }
 
@@ -281,7 +287,7 @@ nonisolated enum XLSXWriter {
     <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
     <bookViews><workbookView/></bookViews>
     <sheets><sheet name="الكشف" sheetId="1" r:id="rId1"/></sheets>
-    <definedNames><definedName name="_xlnm.Print_Titles" localSheetId="0">'الكشف'!$1:$3</definedName></definedNames>
+    <!--names-->
     </workbook>
     """
 
@@ -406,6 +412,9 @@ nonisolated enum PDFReportWriter {
 struct ReportExportSheet: View {
     let group: ReportGroup
     let rows: [ReportRow]
+    /// صندوق الشهداء: كشف حسب الفئة بشكله المعتمد.
+    var fundRows: [FundReport.Row]? = nil
+    @State private var fundFiles: (excel: URL, pdf: URL)?
     @Environment(\.dismiss) private var dismiss
     @State private var excel: URL?
     @State private var pdf: URL?
@@ -421,6 +430,24 @@ struct ReportExportSheet: View {
                                 "\(group.month) · \(rows.count) employees · total \(Money.format(group.total))"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+                if fundRows != nil {
+                    Section {
+                        if let fundFiles {
+                            ShareLink(item: fundFiles.excel) {
+                                Label(tr("Excel (حسب الفئة)", "Excel (by category)"), systemImage: "tablecells.fill")
+                            }
+                            ShareLink(item: fundFiles.pdf) {
+                                Label(tr("PDF (حسب الفئة)", "PDF (by category)"), systemImage: "doc.richtext.fill")
+                            }
+                        } else {
+                            ProgressView()
+                        }
+                    } header: {
+                        Text(tr("كشف صندوق الشهداء", "Martyrs fund summary"))
+                    } footer: {
+                        Text(tr("ضباط، موظفين، مراتب، عقود: العدد والمقرر والمجموع.", "Officers, staff, ranks, contracts: count, rate and total."))
                     }
                 }
                 Section {
@@ -454,7 +481,7 @@ struct ReportExportSheet: View {
                         }
                     }
                 } header: {
-                    Text(tr("الصيغة", "Format"))
+                    Text(fundRows != nil ? tr("قائمة الأسماء", "Name list") : tr("الصيغة", "Format"))
                 }
             }
             .navigationTitle(tr("تصدير الكشف", "Export list"))
@@ -472,6 +499,9 @@ struct ReportExportSheet: View {
                 let files = try await ReportFiles.make(group: group, rows: rows)
                 excel = files.excel
                 pdf = files.pdf
+                if let fundRows {
+                    fundFiles = try await FundReport.files(fundRows, month: group.month)
+                }
             } catch {
                 failed = error.localizedDescription
             }
