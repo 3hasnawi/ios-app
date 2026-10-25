@@ -208,8 +208,11 @@ nonisolated final class SheetParser {
         static let netSalary = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"]
         static let workplace = ["محل العمل", "مكان العمل", "جهة العمل", "NO_markaz", "المركز", "القسم", "الوحدة", "الدائرة", "اسم المديرية", "workplace"]
         static let amount = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"]
-        static let title = ["نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"]
-        static let note = ["الملاحظات", "ملاحظات", "ملاحظة", "note"]
+        static let title = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف",
+                            "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"]
+        static let note = ["رقم وتاريخ الاضبارة", "رقم الاضبارة", "الاضبارة", "الملاحظات", "ملاحظات", "ملاحظة", "note"]
+        /// صفوف المجاميع في آخر الكشوف ليست أسماء موظفين.
+        static let totals = ["المجموع", "مجموع", "الاجمالي", "اجمالي", "المجموع الكلي", "المجموع العام", "الاجمالي العام"]
         /// أعمدة ورقة الرواتب التي تُحفظ لتقاريرها: كل عنوان يحتوي إحدى هذه الكلمات.
         static let itemKeywords = ["صندوق", "شهداء", "رعاية", "نشاط", "نادي", "تامين", "ضريبة", "توقيفات", "تقاعد", "حماية",
                                    "تضمين", "ايراد", "رسم", "جوال", "اتصالات", "استقطاعات المصارف", "مجموع الاستقطاعات"]
@@ -252,7 +255,7 @@ nonisolated final class SheetParser {
     private var rowsRead = 0
     /// لكل عمود مبلغ: كم مرة ظهر كل اسم جهة، لإلحاق المبالغ التي اسمها فارغ بالجهة الغالبة.
     private var pairNames: [String: [String: Int]] = [:]
-    private let nameHeaders = Set(Synonyms.name.map(ArabicText.normalize))
+    private let nameHeaders = Set((Synonyms.name + Synonyms.totals).map(ArabicText.normalize))
 
     func consume(_ row: [String]) {
         rowsRead += 1
