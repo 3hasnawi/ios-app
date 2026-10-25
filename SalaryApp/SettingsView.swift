@@ -421,6 +421,9 @@ private struct SavedMonthsView: View {
                         monthToDelete = month
                     }
                 }
+                .contextMenu {
+                    Button(tr("حذف الشهر", "Delete month"), systemImage: "trash", role: .destructive) { monthToDelete = month }
+                }
             }
         }
         .overlay {

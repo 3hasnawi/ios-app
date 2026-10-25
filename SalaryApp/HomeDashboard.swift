@@ -235,6 +235,14 @@ struct HomeDashboard: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(tr("بحث عنه", "Search"), systemImage: "magnifyingglass") {
+                            ShortcutRouter.shared.pendingSearch = item.text
+                            AppRouter.shared.tab = .search
+                        }
+                        Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(item.text) }
+                        Button(tr("حذف من السجل", "Remove from history"), systemImage: "trash", role: .destructive) { RecentSearches.remove(item.text) }
+                    }
                     if i < min(recents.count, 5) - 1 { Divider().padding(.leading, 62) }
                 }
             }

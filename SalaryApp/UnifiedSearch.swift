@@ -61,7 +61,15 @@ enum RecentSearches {
     }
 
     static func clear() { UserDefaults.standard.removeObject(forKey: key) }
+
+    static func remove(_ text: String) {
+        let list = items.filter { $0.text != text }
+        if let data = try? JSONEncoder().encode(list) { UserDefaults.standard.set(data, forKey: key) }
+    }
 }
+
+/// نسخ نص إلى الحافظة.
+@MainActor func copyToClipboard(_ text: String) { UIPasteboard.general.string = text }
 
 // MARK: - تبويب البحث
 
@@ -81,6 +89,8 @@ struct UnifiedSearchView: View {
     @State private var importState = StaffImportState.shared
     @State private var router = ShortcutRouter.shared
     @State private var path: [UnifiedPerson] = []
+    /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
+    @State private var shareTarget: Employee?
     @State private var people: [UnifiedPerson] = []
     @State private var loadedKey = ""
     @State private var autopilot = AutoPilot.shared
@@ -119,6 +129,13 @@ struct UnifiedSearchView: View {
                                 UnifiedCard(person: person)
                             }
                             .accessibilityIdentifier("resultCard")
+                            .contextMenu {
+                                Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
+                                if let employee = person.employee {
+                                    Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "doc.richtext") { shareTarget = employee }
+                                }
+                                Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
+                            }
                         }
                     } header: {
                         if loadedKey == queryKey {
@@ -169,6 +186,7 @@ struct UnifiedSearchView: View {
             }
             .navigationTitle(tr("بحث", "Search"))
             .navigationBarTitleDisplayMode(.large)
+            .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .navigationDestination(for: UnifiedPerson.self) { person in
                 UnifiedPersonView(person: person)
                     .onAppear {
@@ -585,6 +603,14 @@ struct UnifiedPersonView: View {
             HStack(spacing: 8) {
                 ForEach(sortedRecords) { record in
                     chip(record.month, tag: record.month)
+                        .contextMenu {
+                            Button(tr("عرض هذا الشهر", "Show this month"), systemImage: "eye") { selection = record.month }
+                            Button(tr("مشاركة تقرير راتب هذا الشهر", "Share this month's salary report"), systemImage: "doc.richtext") {
+                                selection = record.month
+                                router.payslipToShare = record
+                                router.showShare = true
+                            }
+                        }
                 }
                 if staff != nil {
                     chip(tr("الملاك", "Staff"), tag: Self.staffTag)

@@ -469,9 +469,12 @@ struct StaffSectionsContent: View {
                     LabeledContent {
                         Text(Num.digits(field.value))
                             .multilineTextAlignment(.trailing)
-                            .textSelection(.enabled)
                     } label: {
                         Text(field.label)
+                    }
+                    .contextMenu {
+                        Button(tr("نسخ القيمة", "Copy value"), systemImage: "doc.on.doc") { copyToClipboard(field.value) }
+                        Button(tr("نسخ مع العنوان", "Copy with label"), systemImage: "text.badge.plus") { copyToClipboard("\(field.label): \(field.value)") }
                     }
                 }
             }
