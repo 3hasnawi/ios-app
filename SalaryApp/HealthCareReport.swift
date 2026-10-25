@@ -28,13 +28,29 @@ nonisolated enum HealthCareReport {
     struct Lists: Sendable {
         var subscribers: [ReportRow]
         var others: [ReportRow]
+        /// مبالغ لا تقبل القسمة على ٣٥٠٠ (الكشف لا يقبل الكسور).
+        var irregular: [ReportRow] { subscribers.filter { !HealthCareReport.isExact($0.amount) } }
     }
 
     static func applies(to title: String) -> Bool {
         ArabicText.normalize(title).contains(ArabicText.normalize("الرعاية"))
     }
 
+    static func isExact(_ amount: Double) -> Bool { amount.truncatingRemainder(dividingBy: perMember) == 0 }
+
     static func family(_ amount: Double) -> Int { max(1, Int((amount / perMember).rounded())) }
+
+    /// عدد أفراد الأسرة كما يُكتب في الكشف: عدد صحيح، أو الناتج بكسره إذا كان المبلغ شاذاً (ليُراجع).
+    static func familyText(_ amount: Double) -> String {
+        isExact(amount) ? String(family(amount)) : String(format: "%.2f", amount / perMember)
+    }
+
+    /// للتنبيه بعد استيراد ملف الرواتب.
+    static func irregularCount(in employees: [ImportedEmployee]) -> Int {
+        employees.reduce(0) { count, e in
+            count + e.items.filter { applies(to: $0.key) && $0.value != 0 && !isExact($0.value) }.count
+        }
+    }
 
     static func title(month: String, others: Bool) -> String {
         let header = UserDefaults.standard.string(forKey: ReportSheet.headerKey) ?? ReportSheet.defaultHeader
@@ -72,7 +88,9 @@ nonisolated enum HealthCareReport {
                 + t.textCell("B\(r)", row.rank, style: 4)
                 + t.textCell("C\(r)", row.name, style: 4)
                 + "<c r=\"D\(r)\" s=\"3\"><v>\(t.number(row.amount))</v></c>"
-                + (others ? "" : "<c r=\"E\(r)\" s=\"3\"><v>\(family(row.amount))</v></c>")
+                + (others ? "" : isExact(row.amount)
+                    ? "<c r=\"E\(r)\" s=\"3\"><v>\(family(row.amount))</v></c>"
+                    : "<c r=\"E\(r)\" s=\"5\"><v>\(familyText(row.amount))</v></c>")
                 + "</row>"
         }
         let end = max(2, rows.count + 2)
@@ -104,23 +122,25 @@ nonisolated enum HealthCareReport {
     <font><b/><sz val="16"/><name val="Arial"/></font>
     <font><b/><sz val="12"/><name val="Arial"/></font>
     </fonts>
-    <fills count="4">
+    <fills count="5">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFF7C80"/><bgColor indexed="64"/></patternFill></fill>
     </fills>
     <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>
     </borders>
     <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-    <cellXfs count="5">
+    <cellXfs count="6">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     </cellXfs>
     <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
     </styleSheet>
@@ -178,9 +198,12 @@ nonisolated enum HealthCareReport {
                     let start = p * perPage
                     for i in start..<min(rows.count, start + perPage) {
                         let row = rows[i]
-                        let values = [String(i + 1), row.rank, row.name, Money.plain(row.amount)] + (others ? [] : [String(family(row.amount))])
+                        let values = [String(i + 1), row.rank, row.name, Money.plain(row.amount)] + (others ? [] : [familyText(row.amount)])
                         for (c, v) in values.enumerated() {
                             let r = CGRect(x: xs[c], y: y, width: widths[c], height: rowH)
+                            if c == 4 && !isExact(row.amount) {
+                                UIColor(red: 1, green: 0.49, blue: 0.5, alpha: 1).setFill(); cg.fill(r)
+                            }
                             cg.stroke(r)
                             draw(v, r)
                         }
@@ -243,6 +266,30 @@ struct HealthCareSection: View {
 
     var body: some View {
         let families = Dictionary(grouping: lists.subscribers, by: { HealthCareReport.family($0.amount) }).mapValues(\.count)
+        let irregular = lists.irregular
+        if !irregular.isEmpty {
+            Section {
+                ForEach(irregular) { row in
+                    LabeledContent {
+                        Text("\(Money.format(row.amount)) ÷ ٣٥٠٠ = \(HealthCareReport.familyText(row.amount))")
+                            .monospacedDigit()
+                            .foregroundStyle(.red)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.name).font(.subheadline.weight(.semibold))
+                            if !row.rank.isEmpty { Text(row.rank).font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                }
+            } header: {
+                Label(tr("مبالغ لا تقبل القسمة على ٣٥٠٠ (\(Num.format(irregular.count)))", "Amounts not divisible by 3,500 (\(irregular.count))"),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+            } footer: {
+                Text(tr("الكشف لا يقبل الكسور: راجع هذه المبالغ في ملف الرواتب. تظهر في الملف المصدّر بخانة حمراء.",
+                        "The list doesn't accept fractions: check these amounts in the payroll file. They are marked red in the export."))
+            }
+        }
         Section {
             LabeledContent(tr("المشتركون", "Subscribers")) {
                 Text(Num.format(lists.subscribers.count)).monospacedDigit().bold()

@@ -258,6 +258,7 @@ final class ImportCenter {
         let start = Date()
         var lines: [String] = []
         var failures: [String] = []
+        var warnings: [String] = []
         var totals = (employees: 0, deductions: 0)
         var months = Set<String>()
         var newestPayroll: (key: Int, name: String)?
@@ -301,6 +302,11 @@ final class ImportCenter {
                     if d > 0 { parts.append(tr("\(Num.format(d)) استقطاع", "\(Num.format(d)) deductions")) }
                     lines.append("\(month): " + parts.joined(separator: tr(" و", ", ")))
                     if kind != .deductions {
+                        let odd = HealthCareReport.irregularCount(in: result.employees)
+                        if odd > 0 {
+                            warnings.append(tr("⚠️ \(month): \(Num.format(odd)) مبلغ رعاية صحية لا يقبل القسمة على ٣٥٠٠. راجعه في التقارير ← الرعاية الصحية.",
+                                               "⚠️ \(month): \(odd) health care amounts are not divisible by 3,500. Check Reports → Health care."))
+                        }
                         let key = MonthName.sortKey(month)
                         if newestPayroll == nil || key >= newestPayroll!.key { newestPayroll = (key, month) }
                     }
@@ -322,6 +328,7 @@ final class ImportCenter {
         var parts: [String] = []
         if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
         if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
+        if !warnings.isEmpty { parts += [""] + warnings }
         if autoRun {
             // اختبار المحاكي يقرأ هذا التقرير.
             let status = failures.isEmpty ? "" : " failed=\(failures.count)"

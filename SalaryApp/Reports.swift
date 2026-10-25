@@ -307,6 +307,7 @@ struct ReportDetailView: View {
     @State private var fundRows: [FundReport.Row]?
     /// لبند الرعاية الصحية: المشتركون وغير المشتركين.
     @State private var healthLists: HealthCareReport.Lists?
+    @State private var healthWarning = false
     /// لبند شركة عراق الجوال: كشف عقد الإطعام.
     private var foodRows: [FoodContractReport.Row]? {
         guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
@@ -386,6 +387,12 @@ struct ReportDetailView: View {
                     .accessibilityIdentifier("exportReport")
             }
         }
+        .alert(tr("تنبيه: الرعاية الصحية", "Health care warning"), isPresented: $healthWarning) {
+            Button(tr("حسناً", "OK"), role: .cancel) {}
+        } message: {
+            Text(tr("يوجد \(Num.format(healthLists?.irregular.count ?? 0)) مبلغ لا يقبل القسمة على ٣٥٠٠، والكشف لا يقبل الكسور. الأسماء في أعلى الصفحة.",
+                    "\(healthLists?.irregular.count ?? 0) amounts are not divisible by 3,500. The names are at the top of the page."))
+        }
         .sheet(isPresented: $showExport) {
             if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
         }
@@ -400,6 +407,7 @@ struct ReportDetailView: View {
                 healthLists = try? await Task.detached(priority: .userInitiated) {
                     try await ReportEngine(modelContainer: container).healthLists(month: group.month, title: group.title)
                 }.value
+                if let count = healthLists?.irregular.count, count > 0 { healthWarning = true }
             }
             if group.kind == .payroll, FundReport.applies(to: group.title) {
                 fundRows = try? await Task.detached(priority: .userInitiated) {
