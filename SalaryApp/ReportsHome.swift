@@ -25,6 +25,8 @@ struct ReportsView: View {
     @State private var showExport = false
     @State private var exporter = QuickExporter.shared
     @State private var appliedLaunchOptions = false
+    /// كشف يُعرض في نافذة المعاينة مباشرة من بطاقته.
+    @State private var previewGroup: ReportGroup?
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } ?? months.first }
 
@@ -70,6 +72,7 @@ struct ReportsView: View {
                     DeductionExportSheet(month: month.name, byEntity: byEntity, groups: deductionGroups)
                 }
             }
+            .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
             .overlay { if exporter.isWorking { ExportingHUD() } }
             .alert(tr("التصدير", "Export"), isPresented: Binding(get: { exporter.error != nil }, set: { if !$0 { exporter.error = nil } })) {
                 Button(tr("حسناً", "OK"), role: .cancel) {}
@@ -111,11 +114,11 @@ struct ReportsView: View {
         let health = groups.first { HealthCareReport.applies(to: $0.title) }
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             ReportCard(title: tr("صندوق الشهداء", "Martyrs fund"), subtitle: fund.map { tr("\(Num.format($0.count)) موظف", "\($0.count) employees") },
-                       total: fund?.total, systemImage: "star.fill", color: .green, group: fund, path: $path)
+                       total: fund?.total, systemImage: "star.fill", color: .green, group: fund, path: $path, onPreview: { previewGroup = $0 })
             ReportCard(title: tr("عقد الإطعام", "Food contract"), subtitle: food.map { tr("عراق الجوال · \(Num.format($0.count))", "Iraq Mobile · \($0.count)") },
-                       total: food?.total, systemImage: "fork.knife", color: .orange, group: food, path: $path)
+                       total: food?.total, systemImage: "fork.knife", color: .orange, group: food, path: $path, onPreview: { previewGroup = $0 })
             ReportCard(title: tr("الرعاية الصحية", "Health care"), subtitle: health.map { tr("\(Num.format($0.count)) مشترك", "\($0.count) subscribers") },
-                       total: health?.total, systemImage: "cross.case.fill", color: .red, group: health, path: $path)
+                       total: health?.total, systemImage: "cross.case.fill", color: .red, group: health, path: $path, onPreview: { previewGroup = $0 })
             Button {
                 path.append(.items)
             } label: {
@@ -265,6 +268,18 @@ private struct CardIcon: View {
     }
 }
 
+/// زر دائري صغير في زاوية البطاقة.
+private struct CircleIcon: View {
+    let systemImage: String
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 32, height: 32)
+            .background(Color.accentColor.opacity(0.12), in: Circle())
+    }
+}
+
 private struct ReportCard: View {
     let title: String
     let subtitle: String?
@@ -273,6 +288,7 @@ private struct ReportCard: View {
     let color: Color
     let group: ReportGroup?
     @Binding var path: [ReportsRoute]
+    var onPreview: (ReportGroup) -> Void = { _ in }
     @State private var exporter = QuickExporter.shared
 
     var body: some View {
@@ -299,20 +315,27 @@ private struct ReportCard: View {
         .buttonStyle(.plain)
         .disabled(group == nil)
         // زر التصدير السريع في زاوية البطاقة.
+        // زرّا المعاينة والتصدير السريع في زاوية البطاقة.
         .overlay(alignment: .topTrailing) {
             if let group {
-                Menu {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.special(group, format: .excel) }
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.special(group, format: .pdf) }
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.footnote.weight(.bold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 32, height: 32)
-                        .background(Color.accentColor.opacity(0.12), in: Circle())
+                HStack(spacing: 6) {
+                    Button {
+                        onPreview(group)
+                    } label: {
+                        CircleIcon(systemImage: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tr("معاينة \(title)", "Preview \(title)"))
+                    .accessibilityIdentifier("cardPreview")
+                    Menu {
+                        Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.special(group, format: .excel) }
+                        Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.special(group, format: .pdf) }
+                    } label: {
+                        CircleIcon(systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel(tr("تصدير \(title)", "Export \(title)"))
                 }
                 .padding(10)
-                .accessibilityLabel(tr("تصدير \(title)", "Export \(title)"))
             }
         }
     }
@@ -354,6 +377,7 @@ struct PayrollItemsView: View {
     let groups: [ReportGroup]
     let month: String
     @State private var search = ""
+    @State private var previewGroup: ReportGroup?
 
     private var filtered: [ReportGroup] {
         let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
@@ -376,10 +400,18 @@ struct PayrollItemsView: View {
                             GroupRow(group: group, share: top > 0 ? group.total / top : 0)
                         }
                         .accessibilityIdentifier("reportGroup")
+                        .contextMenu {
+                            Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                                .tint(.blue)
+                        }
                     }
                 }
             }
         }
+        .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن بند", "Search an item"))
         .navigationTitle(tr("بنود الرواتب", "Payroll items"))
         .navigationBarTitleDisplayMode(.inline)
@@ -502,6 +534,7 @@ struct EntitiesView: View {
     @AppStorage("reportByEntity") private var byEntity = false
     @State private var search = UserDefaults.standard.string(forKey: "entitySearch") ?? ""
     @State private var exporter = QuickExporter.shared
+    @State private var previewGroup: ReportGroup?
 
     private var filtered: [ReportGroup] {
         let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
@@ -528,8 +561,13 @@ struct EntitiesView: View {
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
+                            Button(tr("معاينة الجدول", "Preview table"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
                             Button(tr("تصدير Excel", "Export Excel"), systemImage: "tablecells") { exporter.single(group, format: .excel) }
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: "doc.richtext") { exporter.single(group, format: .pdf) }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { previewGroup = group }
+                                .tint(.blue)
                         }
                     }
                 }
@@ -557,6 +595,7 @@ struct EntitiesView: View {
             }
         }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
+        .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
         .navigationTitle(tr("جهات التنفيذ", "Execution entities"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

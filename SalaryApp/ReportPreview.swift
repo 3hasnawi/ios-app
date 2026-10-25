@@ -110,3 +110,45 @@ struct PDFPreview: UIViewRepresentable {
         if view.document?.documentURL != url { view.document = PDFDocument(url: url) }
     }
 }
+
+/// يحمّل صفوف الكشف (والكشف الخاص إن وُجد) ثم يعرض المعاينة: يُفتح من البطاقات والقوائم مباشرة.
+struct ReportPreviewLoader: View {
+    let group: ReportGroup
+    @State private var rows: [ReportRow]?
+    @State private var fundRows: [FundReport.Row]?
+    @State private var healthLists: HealthCareReport.Lists?
+
+    private var foodRows: [FoodContractReport.Row]? {
+        guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
+        return FoodContractReport.rows(from: rows)
+    }
+
+    var body: some View {
+        Group {
+            if let rows {
+                ReportPreviewSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists)
+            } else {
+                ProgressView(tr("جارٍ تجهيز الجدول…", "Preparing the table…"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .presentationDetents([.large])
+            }
+        }
+        .task {
+            let container = SharedModel.container
+            let group = group
+            if group.kind == .payroll, HealthCareReport.applies(to: group.title) {
+                healthLists = try? await Task.detached(priority: .userInitiated) {
+                    try await ReportEngine(modelContainer: container).healthLists(month: group.month, title: group.title)
+                }.value
+            }
+            if group.kind == .payroll, FundReport.applies(to: group.title) {
+                fundRows = try? await Task.detached(priority: .userInitiated) {
+                    try await ReportEngine(modelContainer: container).fundSummary(month: group.month, title: group.title)
+                }.value
+            }
+            rows = (try? await Task.detached(priority: .userInitiated) {
+                try await ReportEngine(modelContainer: container).rows(for: group)
+            }.value) ?? []
+        }
+    }
+}
