@@ -86,9 +86,6 @@ struct SettingsView: View {
                                    subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
                     }
                     .accessibilityIdentifier("backupRow")
-                }
-
-                Section(tr("أخرى", "Other")) {
                     Menu {
                         Button(tr("مسح سجل البحث", "Clear search history"), systemImage: "trash", role: .destructive) {
                             confirmClearRecents = true
@@ -104,11 +101,13 @@ struct SettingsView: View {
                         }
                     }
                 }
+
             }
             .listSectionSpacing(.compact)
             .navigationDestination(isPresented: $showBackup) { BackupView() }
             .navigationTitle(tr("الإعدادات", "Settings"))
-            .navigationBarTitleDisplayMode(.large)
+            // عنوان صغير حتى تتسع الصفحة كلها بلا تمرير.
+            .navigationBarTitleDisplayMode(.inline)
             .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
             .onAppear { recentCount = RecentSearches.items.count }
             .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {

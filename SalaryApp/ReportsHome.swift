@@ -75,9 +75,15 @@ struct ReportsView: View {
                         Button {
                             showExport = true
                         } label: {
-                            Label(tr("تصدير", "Export"), systemImage: "square.and.arrow.up")
-                                .labelStyle(.titleAndIcon)
+                            // نص وأيقونة معاً (Label وحده يظهر أيقونة فقط في الشريط العلوي).
+                            HStack(spacing: 5) {
+                                Image(systemName: "square.and.arrow.up")
+                                Text(tr("تصدير", "Export"))
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 4)
                         }
+                        .accessibilityLabel(tr("تصدير", "Export"))
                         .accessibilityIdentifier("deductionExportButton")
                     }
                 }

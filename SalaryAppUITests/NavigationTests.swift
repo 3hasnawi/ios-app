@@ -185,6 +185,12 @@ final class NavigationTests: XCTestCase {
                 } else { issue("لم تظهر رسالة نتيجة الاستيراد") }
             } else { issue("لم تظهر نافذة المراجعة") }
         }
+        step("انتظار انتهاء النسخ الاحتياطي التلقائي") {
+            let progress = element("importProgress")
+            let start = Date()
+            while progress.exists && Date().timeIntervalSince(start) < 60 { usleep(300_000) }
+            sleep(1)
+        }
         guard pickFile("ملف غير متوافق") else { issue("تعذّر اختيار الملف غير المتوافق"); return }
         step("تنبيه الملف غير المتوافق") {
             let alert = app.alerts.firstMatch
