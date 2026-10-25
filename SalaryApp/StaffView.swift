@@ -98,23 +98,26 @@ struct RootView: View {
         TabView(selection: selection) {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
+                    .toolbar(.hidden, for: .tabBar)
             }
             Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
                 ReportsView()
+                    .toolbar(.hidden, for: .tabBar)
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
+                    .toolbar(.hidden, for: .tabBar)
             }
-            // يظهر فقط عند عرض قسيمة، بجانب العدسة لسهولة الوصول.
-            if router.payslipToShare != nil {
-                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
-                    Color.clear
-                }
-            }
-            // تبويب البحث الموحّد (زر دائري مستقل في iOS 26).
-            Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
+            // البحث يُفتح من العدسة المخصصة مع حقل ثابت أعلى الصفحة.
+            Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search) {
                 UnifiedSearchView()
+                    .toolbar(.hidden, for: .tabBar)
             }
+        }
+        // نحتفظ بحالة التبويبات ونستبدل شريط النظام بالتصميم المعتمد فقط.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            CompactBottomBar(selection: selection, showsShare: router.payslipToShare != nil)
         }
         // بيانات ملاك وهمية وتنقّل آلي لاختبار المحاكي فقط (-fakeStaff، -autopilot).
         .task {
@@ -139,7 +142,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             if importProgress.isActive {
                 ImportProgressBar(progress: importProgress)
-                    .padding(.bottom, 74)
+                    .padding(.bottom, 76)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

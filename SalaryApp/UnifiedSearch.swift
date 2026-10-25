@@ -151,8 +151,8 @@ struct UnifiedSearchView: View {
             .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
             .safeAreaInset(edge: .top, spacing: 0) { filters }
-            // في تبويب العدسة يظهر شريط البحث عند الضغط على العدسة (iOS 26).
-            .searchable(text: $search, prompt: Text(mode.prompt))
+            // حقل ثابت أعلى الصفحة لأن العدسة أصبحت زر تنقل مخصصاً.
+            .adaptiveSearchable(text: $search, prompt: mode.prompt)
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
                 if !search.isEmpty {

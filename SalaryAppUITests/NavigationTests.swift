@@ -206,6 +206,41 @@ final class NavigationTests: XCTestCase {
 
     // MARK: - الاختبار
 
+    /// يتحقق من مقاس الشريط المخصص وبقاء البحث والمشاركة قابلين للوصول.
+    func testCompactBottomBar() {
+        let baseArguments = app.launchArguments
+        app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "settings", "-openSettings", "NO",
+                                "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
+        app.launch()
+        let bar = element("compactBottomBar")
+        XCTAssertTrue(bar.waitForExistence(timeout: 30))
+        XCTAssertLessThanOrEqual(bar.frame.height, 68.5)
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable)
+        for id in ["bottomHome", "bottomReports", "bottomSettings", "bottomSearch"] {
+            let button = element(id)
+            XCTAssertTrue(button.isHittable, id)
+            XCTAssertGreaterThanOrEqual(button.frame.width, 44, id)
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, id)
+        }
+        XCTAssertFalse(element("bottomShare").exists)
+        element("bottomSearch").tap()
+        XCTAssertTrue(searchField.waitForExistence(timeout: 8))
+        element("bottomSettings").tap()
+        XCTAssertTrue(app.navigationBars["الإعدادات"].waitForExistence(timeout: 8))
+
+        // ملفات الاختبار مستوردة مسبقاً في سير المحاكي، والأسماء كلها وهمية.
+        app.terminate()
+        app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
+                                               "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO",
+                                               "-openPerson", "YES", "-share", "NO"]
+        app.launch()
+        let share = element("bottomShare")
+        XCTAssertTrue(share.waitForExistence(timeout: 20))
+        XCTAssertTrue(share.isHittable)
+        share.tap()
+        XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
+    }
+
     func testNavigationFlow() {
         step("تشغيل التطبيق") {
             app.launch()

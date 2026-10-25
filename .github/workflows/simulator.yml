@@ -140,6 +140,8 @@ jobs:
           # 3) الشاشة الرئيسية: أحدث شهر (تشرين الاول) مختار تلقائياً
           launch
           shot 03-month-latest
+          # التصميم المعتمد للشريط المصغّر: دائرة البحث وكبسولة الأيقونات.
+          shot 03a-compact-bottom-bar
 
           # 4) البحث بالاسم
           launch -search "احمد علي"
@@ -192,6 +194,7 @@ jobs:
           launch -tab search -search "أحمد علي"
           shot 08j-unified-results
           launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
+          shot 09a-compact-bottom-bar-share 8
           shot 08k-person-salary
           launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES -personPart months
           shot 08l-person-months
