@@ -39,7 +39,7 @@ nonisolated enum FoodContractReport {
     }
 
     static func fileName(month: String) -> String {
-        "عقد الاطعام - \(month)".replacingOccurrences(of: "/", with: "-")
+        "كشف عقد الاطعام - \(month)".replacingOccurrences(of: "/", with: "-")
     }
 
     private static let splitLabels = ["مجموع الاستقطاع", "حصة صندوق شهداء ٣٪", "المبلغ بعد حسم حصة الصندوق", "ضريبة ١٫٨٪", "شركة عراق الجوال"]

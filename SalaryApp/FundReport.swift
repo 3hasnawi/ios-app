@@ -72,7 +72,7 @@ nonisolated enum FundReport {
     }
 
     static func fileName(month: String) -> String {
-        "صندوق الشهداء - \(month)".replacingOccurrences(of: "/", with: "-")
+        "كشف صندوق الشهداء حسب الفئة - \(month)".replacingOccurrences(of: "/", with: "-")
     }
 
     // MARK: - Excel

@@ -98,8 +98,9 @@ nonisolated struct ReportSheet: Sendable {
         }
     }
 
+    /// اسم ملف قائمة الأسماء (يختلف عن أسماء الكشوف الخاصة حتى لا يكتب أحدهما فوق الآخر).
     static func fileName(for group: ReportGroup) -> String {
-        "\(group.title) - \(group.month)"
+        "قائمة \(group.title) - \(group.month)"
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
     }
@@ -616,7 +617,6 @@ enum ReportFiles {
         let name = ReportSheet.fileName(for: group)
         return try await Task.detached(priority: .userInitiated) {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
-            try? FileManager.default.removeItem(at: folder)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let excel = folder.appendingPathComponent(name + ".xlsx")
             let pdf = folder.appendingPathComponent(name + ".pdf")

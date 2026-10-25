@@ -62,7 +62,7 @@ nonisolated enum HealthCareReport {
     }
 
     static func fileName(month: String) -> String {
-        "الرعاية الصحية - \(month)".replacingOccurrences(of: "/", with: "-")
+        "اشتراكات الرعاية الصحية - \(month)".replacingOccurrences(of: "/", with: "-")
     }
 
     // MARK: - Excel (ورقتان)
