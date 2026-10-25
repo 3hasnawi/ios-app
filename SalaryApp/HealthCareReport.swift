@@ -37,6 +37,12 @@ nonisolated enum HealthCareReport {
         ArabicText.normalize(title).contains(ArabicText.normalize("الرعاية"))
     }
 
+    /// العقود ورجال الأمن غير مشمولين بالرعاية الصحية: لا يدخلون قائمة غير المشتركين.
+    static func notCovered(rank: String) -> Bool {
+        let key = ArabicText.normalize(rank)
+        return ["عقد", "عقود", "رجل امن", "رجل الامن", "رجال الامن"].contains { key.contains(ArabicText.normalize($0)) }
+    }
+
     static func isExact(_ amount: Double) -> Bool { amount.truncatingRemainder(dividingBy: perMember) == 0 }
 
     static func family(_ amount: Double) -> Int { max(1, Int((amount / perMember).rounded())) }
@@ -247,7 +253,7 @@ extension ReportEngine {
         for (i, emp) in try modelContext.fetch(e).enumerated() {
             if let amount = PayrollItems.decode(emp.itemsData)[title], amount != 0 {
                 subscribers.append(ReportRow(id: i, name: emp.name, rank: emp.rank, workplace: emp.workplace, amount: amount, note: ""))
-            } else if (emp.netSalary ?? 0) > 0 {
+            } else if (emp.netSalary ?? 0) > 0, !HealthCareReport.notCovered(rank: emp.rank) {
                 others.append(ReportRow(id: i, name: emp.name, rank: emp.rank, workplace: emp.workplace, amount: 0, note: ""))
             }
         }

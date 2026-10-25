@@ -100,6 +100,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                         }
                     }
+                    .tint(.primary)
                 }
 
             }

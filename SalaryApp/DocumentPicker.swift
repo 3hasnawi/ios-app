@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import LinkPresentation
 
 /// نافذة اختيار الملفات من UIKit مع asCopy = true.
 ///
@@ -89,16 +90,63 @@ enum FilePicker {
 }
 
 /// نافذة المشاركة من UIKit (Google Drive، OneDrive، واتساب، حفظ في الملفات...).
+/// الملف يُنسخ أولاً إلى مجلد ثابت (لا يُحذف أثناء المشاركة)، ويُعرَّف بنوعه (PDF، Excel...) حتى تقبله
+/// التطبيقات مثل واتساب، و"نسخ" يضع الملف نفسه في الحافظة ليُلصق في أي تطبيق.
 @MainActor
 enum ActivityShare {
     static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {
         guard let top = FilePicker.topController() else { onDone?(false); return }
-        let controller = UIActivityViewController(activityItems: urls, applicationActivities: nil)
-        controller.completionWithItemsHandler = { _, completed, _, _ in onDone?(completed) }
+        let files = urls.map(stableCopy)
+        let controller = UIActivityViewController(activityItems: files.map(FileShareItem.init), applicationActivities: nil)
+        controller.completionWithItemsHandler = { activity, completed, _, _ in
+            if completed, activity == .copyToPasteboard {
+                UIPasteboard.general.setItemProviders(files.compactMap { NSItemProvider(contentsOf: $0) }, localOnly: false, expirationDate: nil)
+            }
+            onDone?(completed)
+        }
         if let popover = controller.popoverPresentationController {
             popover.sourceView = top.view
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         }
         top.present(controller, animated: true)
+    }
+
+    /// Library/Caches/مشاركة/<اسم الملف>: يبقى حتى تكتمل المشاركة، ويُستبدل في المرة القادمة.
+    private static func stableCopy(_ url: URL) -> URL {
+        let fm = FileManager.default
+        guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return url }
+        let folder = caches.appendingPathComponent("Shared", isDirectory: true)
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let target = folder.appendingPathComponent(url.lastPathComponent)
+        guard target.standardizedFileURL != url.standardizedFileURL else { return url }
+        try? fm.removeItem(at: target)
+        do { try fm.copyItem(at: url, to: target); return target } catch { return url }
+    }
+}
+
+/// ملف للمشاركة بنوعه الصحيح واسمه ومعاينته.
+final class FileShareItem: NSObject, UIActivityItemSource {
+    let url: URL
+    init(_ url: URL) { self.url = url }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { url }
+
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? { url }
+
+    func activityViewController(_ controller: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
+        (UTType(filenameExtension: url.pathExtension) ?? .data).identifier
+    }
+
+    func activityViewController(_ controller: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        url.deletingPathExtension().lastPathComponent
+    }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = url.lastPathComponent
+        metadata.originalURL = url
+        metadata.url = url
+        metadata.iconProvider = NSItemProvider(contentsOf: url)
+        return metadata
     }
 }

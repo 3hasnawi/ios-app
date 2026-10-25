@@ -239,12 +239,12 @@ struct ShareOptionsSheet: View {
         preview
         VStack(spacing: 12) {
             if let files {
-                ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
+                Button { ActivityShare.present([files.imageURL]) } label: {
                     OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("واتساب، الرسائل، الصور، أو نسخ", "WhatsApp, Messages, Photos, or Copy"), systemImage: "photo.fill")
                 }
                 .glassButtonStyle(prominent: true)
 
-                ShareLink(item: files.pdfURL, preview: SharePreview(files.title, icon: Image(systemName: "doc.richtext"))) {
+                Button { ActivityShare.present([files.pdfURL]) } label: {
                     OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
                 }
                 .glassButtonStyle()

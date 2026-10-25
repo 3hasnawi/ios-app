@@ -180,11 +180,19 @@ final class ImportCenter {
         if !failed.isEmpty && failed.count == found.count {
             // لا يوجد ملف صالح: تنبيه بالسبب بدل نافذة مراجعة فارغة.
             message = ([tr("لم يُقبل أي ملف:", "No file was accepted:")] + failed.map { "\n\($0.fileName)\n\($0.error ?? "")" }).joined(separator: "\n")
-            for c in found { try? FileManager.default.removeItem(at: c.url) }
+            for c in found { Self.removeCopy(c.url) }
             candidates = []
         } else {
             showReview = true
         }
+    }
+
+    /// يحذف نسخة نافذة الملفات المؤقتة فقط، ولا يلمس الملف الأصلي (مثلاً ملف في مجلد التطبيق).
+    nonisolated static func removeCopy(_ url: URL) {
+        let path = url.resolvingSymlinksInPath().path
+        let temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
+        guard path.hasPrefix(temp) || path.contains("-Inbox/") || path.contains("/Inbox/") else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     private static func failed(_ url: URL, _ name: String, _ error: Error) -> ImportCandidate {
@@ -255,7 +263,7 @@ final class ImportCenter {
     // MARK: - الاستيراد
 
     func cancel() {
-        for c in candidates { try? FileManager.default.removeItem(at: c.url) }
+        for c in candidates { Self.removeCopy(c.url) }
         candidates = []
         showReview = false
     }
@@ -336,7 +344,7 @@ final class ImportCenter {
             }
         }
         // نسخ مؤقتة من نافذة الملفات تُحذف بعد الاستيراد (ملفات الاختبار تبقى).
-        if !fromTest { for c in candidates { try? FileManager.default.removeItem(at: c.url) } }
+        if !fromTest { for c in candidates { Self.removeCopy(c.url) } }
         candidates = []
         progress.end()
         isBusy = false

@@ -38,7 +38,9 @@ nonisolated struct ReportSheet: Sendable {
             case .amount: longest = maxAmount
             case .text: longest = rows.reduce(0) { max($0, $1[c].count) }
             }
-            let width = min(48, max(Double(column.title.count) + 2, Double(longest) * 1.08 + 2, column.kind == .serial ? 4 : 8))
+            // الأرقام بخط عريض تحتاج مساحة أكبر (حتى لا يظهر المجموع ##### في Excel).
+            let factor = column.kind == .text ? 1.08 : 1.3
+            let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + 3, column.kind == .serial ? 5 : 8))
             return Column(title: column.title, width: width.rounded(), kind: column.kind)
         }
         return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts)
@@ -379,6 +381,44 @@ nonisolated enum PDFReportWriter {
         }
     }
 
+    /// عرض الأعمدة بالنسبة، مع ضمان أن التسلسل والمبالغ (ومنها المجموع) تظهر كاملة بلا "...":
+    /// يُقاس أطول رقم بخطه الفعلي، والباقي يُوزّع على أعمدة النص.
+    static func columnWidths(_ sheet: ReportSheet, tableWidth: CGFloat) -> [CGFloat] {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.maximumFractionDigits = 2
+        func measure(_ text: String, _ size: CGFloat) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: UIFont.boldSystemFont(ofSize: size)]).width)
+        }
+        let totalWidth = sheet.columns.reduce(0) { $0 + $1.width }
+        var widths = sheet.columns.map { CGFloat($0.width / totalWidth) * tableWidth }
+        var fixed = Set<Int>()
+        for (c, column) in sheet.columns.enumerated() {
+            let need: CGFloat
+            switch column.kind {
+            case .serial:
+                need = max(measure(String(max(sheet.rows.count, 1)), 10), measure(column.title, 10.5)) + 14
+            case .amount:
+                let largest = max(abs(sheet.total), sheet.amounts.map(abs).max() ?? 0)
+                need = max(measure(formatter.string(from: NSNumber(value: largest)) ?? "", 11),
+                           measure(formatter.string(from: NSNumber(value: sheet.total)) ?? "", 11),
+                           measure(column.title, 10.5)) + 16
+            case .text:
+                continue
+            }
+            if need > widths[c] { widths[c] = need; fixed.insert(c) }
+        }
+        // ما زاد على عرض الجدول يُؤخذ من أعمدة النص بنسبتها.
+        let excess = widths.reduce(0, +) - tableWidth
+        let flexible = widths.indices.filter { !fixed.contains($0) && sheet.columns[$0].kind == .text }
+        let flexibleTotal = flexible.reduce(CGFloat(0)) { $0 + widths[$1] }
+        if excess > 0, flexibleTotal > excess {
+            for i in flexible { widths[i] -= excess * widths[i] / flexibleTotal }
+        }
+        return widths
+    }
+
     private static func render(_ sheet: ReportSheet, in context: UIGraphicsPDFRendererContext) {
         let page = sheet.landscape ? CGRect(x: 0, y: 0, width: 842, height: 595) : CGRect(x: 0, y: 0, width: 595, height: 842)
         let margin: CGFloat = 28
@@ -392,8 +432,7 @@ nonisolated enum PDFReportWriter {
         let perPage = max(1, Int((bottom - tableTop) / rowHeight))
         let pages = max(1, Int(ceil(Double(sheet.rows.count + 1) / Double(perPage))))
 
-        let totalWidth = sheet.columns.reduce(0) { $0 + $1.width }
-        let widths = sheet.columns.map { CGFloat($0.width / totalWidth) * tableWidth }
+        let widths = columnWidths(sheet, tableWidth: tableWidth)
         // الأعمدة من اليمين إلى اليسار.
         var xs: [CGFloat] = []
         var x = page.width - margin
@@ -510,10 +549,10 @@ struct ReportExportSheet: View {
                 if let healthLists {
                     Section {
                         if let healthFiles {
-                            ShareLink(item: healthFiles.excel) {
+                            Button { ActivityShare.present([healthFiles.excel]) } label: {
                                 Label(tr("Excel (ورقتان)", "Excel (two sheets)"), systemImage: "tablecells.fill")
                             }
-                            ShareLink(item: healthFiles.pdf) {
+                            Button { ActivityShare.present([healthFiles.pdf]) } label: {
                                 Label("PDF", systemImage: "doc.richtext.fill")
                             }
                         } else {
@@ -529,10 +568,10 @@ struct ReportExportSheet: View {
                 if foodRows != nil {
                     Section {
                         if let foodFiles {
-                            ShareLink(item: foodFiles.excel) {
+                            Button { ActivityShare.present([foodFiles.excel]) } label: {
                                 Label(tr("Excel (عقد الإطعام)", "Excel (food contract)"), systemImage: "tablecells.fill")
                             }
-                            ShareLink(item: foodFiles.pdf) {
+                            Button { ActivityShare.present([foodFiles.pdf]) } label: {
                                 Label(tr("PDF (عقد الإطعام)", "PDF (food contract)"), systemImage: "doc.richtext.fill")
                             }
                         } else {
@@ -548,10 +587,10 @@ struct ReportExportSheet: View {
                 if fundRows != nil {
                     Section {
                         if let fundFiles {
-                            ShareLink(item: fundFiles.excel) {
+                            Button { ActivityShare.present([fundFiles.excel]) } label: {
                                 Label(tr("Excel (حسب الفئة)", "Excel (by category)"), systemImage: "tablecells.fill")
                             }
-                            ShareLink(item: fundFiles.pdf) {
+                            Button { ActivityShare.present([fundFiles.pdf]) } label: {
                                 Label(tr("PDF (حسب الفئة)", "PDF (by category)"), systemImage: "doc.richtext.fill")
                             }
                         } else {
@@ -565,7 +604,7 @@ struct ReportExportSheet: View {
                 }
                 Section {
                     if let excel, let pdf {
-                        ShareLink(item: excel) {
+                        Button { ActivityShare.present([excel]) } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Excel").font(.body.weight(.semibold))
@@ -575,7 +614,7 @@ struct ReportExportSheet: View {
                                 Image(systemName: "tablecells.fill").foregroundStyle(.green)
                             }
                         }
-                        ShareLink(item: pdf) {
+                        Button { ActivityShare.present([pdf]) } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("PDF").font(.body.weight(.semibold))
