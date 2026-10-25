@@ -2,14 +2,13 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// نافذة المشاركة: معاينة النتيجة ثم نسخها كصورة أو تصديرها PDF أو مشاركتها كصورة.
+/// نافذة المشاركة: معاينة القسيمة ثم مشاركتها كصورة أو تصديرها PDF.
 struct ShareOptionsSheet: View {
     let employee: Employee
     @Query private var deductions: [Deduction]
     @Environment(\.dismiss) private var dismiss
     @State private var files: PayslipExporter.Files?
     @State private var errorText: String?
-    @State private var copied = false
 
     init(employee: Employee) {
         self.employee = employee
@@ -25,25 +24,14 @@ struct ShareOptionsSheet: View {
                     preview
 
                     VStack(spacing: 12) {
-                        Button {
-                            copyImage()
-                        } label: {
-                            OptionLabel(
-                                title: copied ? tr("تم نسخ الصورة", "Image copied") : tr("نسخ كصورة", "Copy as image"),
-                                subtitle: tr("للصقها في واتساب أو الملاحظات", "Paste it into WhatsApp or Notes"),
-                                systemImage: copied ? "checkmark.circle.fill" : "doc.on.doc.fill"
-                            )
-                        }
-                        .glassButtonStyle(prominent: true)
-
                         if let files {
+                            ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
+                                OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("واتساب، الرسائل، الصور، أو نسخ", "WhatsApp, Messages, Photos, or Copy"), systemImage: "photo.fill")
+                            }
+                            .glassButtonStyle(prominent: true)
+
                             ShareLink(item: files.pdfURL, preview: SharePreview(files.title, icon: Image(systemName: "doc.richtext"))) {
                                 OptionLabel(title: tr("تصدير PDF", "Export PDF"), subtitle: tr("حفظ في الملفات أو الطباعة أو الإرسال", "Save to Files, print, or send"), systemImage: "doc.richtext.fill")
-                            }
-                            .glassButtonStyle()
-
-                            ShareLink(item: files.imageURL, preview: SharePreview(files.title, image: Image(uiImage: files.image))) {
-                                OptionLabel(title: tr("مشاركة كصورة", "Share as image"), subtitle: tr("إرسال الصورة إلى أي تطبيق", "Send the image to any app"), systemImage: "photo.fill")
                             }
                             .glassButtonStyle()
                         }
@@ -52,7 +40,7 @@ struct ShareOptionsSheet: View {
                 }
                 .padding(20)
             }
-            .navigationTitle(tr("مشاركة النتيجة", "Share result"))
+            .navigationTitle(tr("مشاركة القسيمة", "Share payslip"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -87,11 +75,6 @@ struct ShareOptionsSheet: View {
             ProgressView().frame(height: 360)
         }
     }
-
-    private func copyImage() {
-        guard let files else { return }
-        UIPasteboard.general.image = files.image
-        withAnimation { copied = true }
     }
 }
 

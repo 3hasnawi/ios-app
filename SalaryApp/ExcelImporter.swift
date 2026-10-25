@@ -47,15 +47,16 @@ nonisolated enum ImportError: LocalizedError {
 /// ملف xlsx يُقرأ صفاً صفاً (XMLParser) لأن ورقة رواتب كبيرة قد تتجاوز 50 ميغابايت من XML.
 nonisolated enum ExcelImporter {
 
-    static func load(url: URL) throws -> ImportResult {
+    static func load(url: URL, progress: ProgressSink? = nil) throws -> ImportResult {
         var result = ImportResult()
         switch url.pathExtension.lowercased() {
         case "csv", "txt":
             let sheet = SheetParser()
             for row in try readCSV(url) { sheet.consume(row) }
             result.merge(sheet.result)
+            progress?(1)
         default:
-            try readXLSX(url, into: &result)
+            try readXLSX(url, into: &result, progress: progress)
         }
         if result.employees.isEmpty && result.deductions.isEmpty {
             throw ImportError.noData(url.lastPathComponent)
@@ -65,7 +66,7 @@ nonisolated enum ExcelImporter {
 
     // MARK: - xlsx
 
-    private static func readXLSX(_ url: URL, into result: inout ImportResult) throws {
+    private static func readXLSX(_ url: URL, into result: inout ImportResult, progress: ProgressSink?) throws {
         let archive: Archive
         do {
             archive = try Archive(url: url, accessMode: .read)
@@ -79,28 +80,42 @@ nonisolated enum ExcelImporter {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        var sharedStrings: [String] = []
-        if let entry = archive["xl/sharedStrings.xml"] {
-            let file = try extract(entry, from: archive, to: tempDir)
-            sharedStrings = try SharedStringsReader.read(file)
-            try? FileManager.default.removeItem(at: file)
-        }
-
         let sheets = archive.filter {
             $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml") && !$0.path.contains("_rels")
         }
         guard !sheets.isEmpty else { throw ImportError.cannotOpen(url.lastPathComponent) }
 
+        // التقدّم بحسب حجم أجزاء XML: النصوص المشتركة ثم كل ورقة (فكّ الضغط ثم القراءة).
+        let stringsEntry = archive["xl/sharedStrings.xml"]
+        let total = Double(max(1, (stringsEntry?.uncompressedSize ?? 0) + sheets.reduce(0) { $0 + $1.uncompressedSize }))
+        var done = 0.0
+
+        var sharedStrings: [String] = []
+        if let entry = stringsEntry {
+            let file = try extract(entry, from: archive, to: tempDir)
+            sharedStrings = try SharedStringsReader.read(file)
+            try? FileManager.default.removeItem(at: file)
+            done += Double(entry.uncompressedSize)
+            progress?(done / total)
+        }
+
         for entry in sheets {
             let sheet = SheetParser()
+            let size = Double(entry.uncompressedSize)
             let file = try extract(entry, from: archive, to: tempDir)
+            progress?((done + size * 0.15) / total)
+            let base = done
             try autoreleasepool {
-                try WorksheetReader.read(file, sharedStrings: sharedStrings) {
+                try WorksheetReader.read(file, sharedStrings: sharedStrings, onProgress: { read in
+                    progress?((base + size * (0.15 + 0.85 * read)) / total)
+                }) {
                     sheet.consume($0)
                 }
             }
             try? FileManager.default.removeItem(at: file)
             result.merge(sheet.result)
+            done += size
+            progress?(done / total)
         }
     }
 
@@ -344,15 +359,25 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     private var type: String?
     private var value = ""
     private var capturing = false
+    /// موضع القراءة في الملف لحساب التقدّم.
+    private var stream: InputStream?
+    private var fileSize: Double = 1
+    private var onProgress: ((Double) -> Void)?
+    private var rowsRead = 0
 
     private init(sharedStrings: [String], onRow: @escaping ([String]) -> Void) {
         self.sharedStrings = sharedStrings
         self.onRow = onRow
     }
 
-    static func read(_ file: URL, sharedStrings: [String], onRow: @escaping ([String]) -> Void) throws {
+    static func read(_ file: URL, sharedStrings: [String], onProgress: ((Double) -> Void)? = nil,
+                     onRow: @escaping ([String]) -> Void) throws {
         let reader = WorksheetReader(sharedStrings: sharedStrings, onRow: onRow)
         guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("worksheet") }
+        reader.stream = stream
+        reader.onProgress = onProgress
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        reader.fileSize = max(1, (attributes?[.size] as? NSNumber)?.doubleValue ?? 1)
         let parser = XMLParser(stream: stream)
         parser.delegate = reader
         guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("worksheet") }
@@ -391,6 +416,11 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
             nextColumn = column + 1
         case "row":
             onRow(row)
+            rowsRead += 1
+            if rowsRead % 400 == 0, let onProgress,
+               let offset = (stream?.property(forKey: .fileCurrentOffsetKey) as? NSNumber)?.doubleValue {
+                onProgress(min(1, offset / fileSize))
+            }
         default:
             break
         }

@@ -73,13 +73,17 @@ final class Deduction {
 @ModelActor
 actor DataImporter {
     /// يستبدل بيانات الشهر نفسه فقط، وتبقى الأشهر الأخرى كما هي.
-    func replace(month: String, with imported: ImportResult) throws {
+    func replace(month: String, with imported: ImportResult, progress: ProgressSink? = nil) throws {
         try removeData(of: month)
         // الحفظ على دفعات حتى لا تتراكم عشرات آلاف السجلات غير المحفوظة في الذاكرة.
+        let total = Double(max(1, imported.employees.count + imported.deductions.count))
+        var inserted = 0
         var pending = 0
         func flush() throws {
             pending += 1
-            if pending >= 5000 { try modelContext.save(); pending = 0 }
+            inserted += 1
+            if pending >= 4000 { try modelContext.save(); pending = 0 }
+            if inserted % 500 == 0 { progress?(Double(inserted) / total) }
         }
         for e in imported.employees {
             modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary))
@@ -91,6 +95,7 @@ actor DataImporter {
         }
         modelContext.insert(PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count))
         try modelContext.save()
+        progress?(1)
     }
 
     func delete(month: String) throws {

@@ -42,11 +42,14 @@ enum RecentSearches {
         var inStaff: Bool
     }
 
-    private static let key = "unifiedRecentSearches"
+    static let key = "unifiedRecentSearches"
 
     static var items: [Item] {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
-        return (try? JSONDecoder().decode([Item].self, from: data)) ?? []
+        decode(UserDefaults.standard.data(forKey: key) ?? Data())
+    }
+
+    static func decode(_ data: Data) -> [Item] {
+        data.isEmpty ? [] : (try? JSONDecoder().decode([Item].self, from: data)) ?? []
     }
 
     static func add(_ item: Item) {
@@ -72,7 +75,9 @@ struct UnifiedSearchView: View {
     @AppStorage("unifiedScope") private var scopeRaw = UnifiedScope.all.rawValue
     @AppStorage("unifiedMode") private var modeRaw = StaffSearchMode.name.rawValue
     @AppStorage("selectedMonth") private var selectedMonth = ""
-    @State private var recents = RecentSearches.items
+    /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
+    @AppStorage(RecentSearches.key) private var recentsData = Data()
+    private var recents: [RecentSearches.Item] { RecentSearches.decode(recentsData) }
     @State private var importState = StaffImportState.shared
     @State private var router = ShortcutRouter.shared
     @State private var path: [UnifiedPerson] = []
@@ -168,7 +173,6 @@ struct UnifiedSearchView: View {
                 UnifiedPersonView(person: person)
                     .onAppear {
                         RecentSearches.add(.init(text: person.name, inPayroll: person.hasPayroll, inStaff: person.hasStaff))
-                        recents = RecentSearches.items
                     }
             }
         }
@@ -272,7 +276,6 @@ struct UnifiedSearchView: View {
                     Spacer()
                     Button(tr("مسح", "Clear")) {
                         RecentSearches.clear()
-                        recents = []
                     }
                     .font(.footnote)
                     .textCase(nil)
@@ -497,8 +500,7 @@ struct UnifiedPersonView: View {
 
     @State private var selection: String
     @State private var autopilot = AutoPilot.shared
-    @State private var showShare = false
-    @State private var copied = false
+    @State private var router = AppRouter.shared
     @Query private var records: [Employee]
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
@@ -541,31 +543,6 @@ struct UnifiedPersonView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
-                Section {
-                    HStack(spacing: 10) {
-                        Button {
-                            copyImage(record)
-                        } label: {
-                            Label(copied ? tr("تم النسخ", "Copied") : tr("نسخ القسيمة كصورة", "Copy payslip as image"),
-                                  systemImage: copied ? "checkmark" : "doc.on.doc")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(copied ? .green : PayslipDocument.green)
-                        Button {
-                            showShare = true
-                        } label: {
-                            Label(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up")
-                                .labelStyle(.iconOnly)
-                                .padding(.horizontal, 8)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(PayslipDocument.green)
-                    }
-                    .controlSize(.large)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                }
             }
         }
         .listSectionSpacing(.compact)
@@ -577,7 +554,11 @@ struct UnifiedPersonView: View {
         }
         .navigationTitle(tr("قسيمة الراتب", "Payslip"))
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: selection) { copied = false }
+        // زر "مشاركة" في الشريط السفلي يشارك القسيمة المعروضة.
+        .onAppear { router.payslipToShare = selectedRecord }
+        .onChange(of: selection) { router.payslipToShare = selectedRecord }
+        .onChange(of: records.count) { router.payslipToShare = selectedRecord }
+        .onDisappear { router.payslipToShare = nil }
         .onChange(of: sortedRecords.count, initial: true) {
             // اختبار المحاكي: -personPart months يفتح الشهر السابق.
             if LaunchOptions.personPart == "months", sortedRecords.count > 1, selection == sortedRecords[0].month {
@@ -591,9 +572,6 @@ struct UnifiedPersonView: View {
             case "salary" where !list.isEmpty: selection = list[0].month
             default: break
             }
-        }
-        .sheet(isPresented: $showShare) {
-            if let record = selectedRecord { ShareOptionsSheet(employee: record) }
         }
     }
 
@@ -643,12 +621,6 @@ struct UnifiedPersonView: View {
         .padding(.vertical, 6)
     }
 
-    private func copyImage(_ employee: Employee) {
-        guard let deductions = try? EmployeeLookup.deductions(of: employee),
-              let files = try? PayslipExporter.export(employee: employee, deductions: deductions) else { return }
-        UIPasteboard.general.image = files.image
-        withAnimation { copied = true }
-    }
 }
 
 /// القسيمة الرسمية لشهر واحد (الاستقطاعات من نفس الشهر).

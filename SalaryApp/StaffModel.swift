@@ -148,7 +148,7 @@ actor StaffImporter {
     }
 
     /// يقرأ ملف .accdb ويستبدل بيانات الملاك كلها. يعيد عدد الموظفين.
-    func importDatabase(at url: URL) throws -> Int {
+    func importDatabase(at url: URL, progress: ProgressSink? = nil) throws -> Int {
         let data = try Data(contentsOf: url, options: .alwaysMapped)
         let fileName = url.deletingPathExtension().lastPathComponent
 
@@ -169,6 +169,10 @@ actor StaffImporter {
             }
             guard let mainPage else { throw ImportError.noMainTable }
             let main = try reader.table(at: mainPage)
+            let rowTotal = Double(max(1, main.rowCount))
+            let firstPass = progress?.sub(0, 0.12, tr("فحص قاعدة البيانات", "Scanning the database"))
+            let lists = progress?.sub(0.12, 0.18, tr("تجهيز القوائم", "Preparing lists"))
+            let secondPass = progress?.sub(0.18, 0.55, tr("قراءة الموظفين", "Reading employees"))
 
             let integerTypes: Set<UInt8> = [AccessReader.ColumnType.byte.rawValue, AccessReader.ColumnType.int.rawValue,
                                              AccessReader.ColumnType.long.rawValue]
@@ -181,7 +185,10 @@ actor StaffImporter {
 
             // المرور الأول: القيم المستخدمة في كل عمود مرمّز، لاختيار عمود المفتاح الصحيح في جدول القوائم.
             var used: [String: Set<Int>] = [:]
+            var scanned = 0
             reader.forEachRow(of: mainPage, table: main) { row in
+                scanned += 1
+                if scanned % 500 == 0 { firstPass?(Double(scanned) / rowTotal) }
                 for name in codedTables.keys {
                     if case .int(let v)? = row[name] { used[name, default: []].insert(v) }
                 }
@@ -212,12 +219,16 @@ actor StaffImporter {
                     if hits > bestHits { bestHits = hits; bestMap = map }
                 }
                 if bestHits > 0 { lookups[column] = bestMap }
+                lists?(Double(lookups.count) / Double(max(1, codedTables.count)))
             }
 
             // المرور الثاني: بناء سجل لكل موظف.
             let placed = Set(StaffLayout.sections.flatMap(\.columns) + [StaffLayout.notesColumn] + StaffLayout.recordColumns)
             let otherColumns = main.columns.map(\.name).filter { !placed.contains($0) && !StaffLayout.hidden.contains($0) && $0 != "الاسم الكامل" }
+            var built = 0
             reader.forEachRow(of: mainPage, table: main) { row in
+                built += 1
+                if built % 500 == 0 { secondPass?(Double(built) / rowTotal) }
                 func text(_ column: String) -> String? {
                     guard let value = row[column] else { return nil }
                     return Self.display(value, lookup: lookups[column])
@@ -256,9 +267,12 @@ actor StaffImporter {
         // استبدال الملاك القديم بالجديد، والحفظ على دفعات.
         try modelContext.delete(model: StaffMember.self)
         try modelContext.save()
+        let saving = progress?.sub(0.55, 1, tr("حفظ الملاك", "Saving staff"))
+        let count = Double(members.count)
         for (i, member) in members.enumerated() {
             modelContext.insert(member)
             if i % 3000 == 2999 { try modelContext.save() }
+            if i % 500 == 499 { saving?(Double(i + 1) / count) }
         }
         try modelContext.save()
 

@@ -43,7 +43,9 @@ struct HomeDashboard: View {
 
     @State private var stats: HomeStats?
     @State private var staffState = StaffImportState.shared
-    @State private var recents = RecentSearches.items
+    /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
+    @AppStorage(RecentSearches.key) private var recentsData = Data()
+    private var recents: [RecentSearches.Item] { RecentSearches.decode(recentsData) }
 
     private var previous: PayrollMonth? {
         guard let current, let i = months.firstIndex(where: { $0.name == current.name }), i + 1 < months.count else { return nil }
@@ -114,7 +116,6 @@ struct HomeDashboard: View {
                 UserDefaults.standard.set(data, forKey: "homeStatsCache")
             }
         }
-        .onAppear { recents = RecentSearches.items }
     }
 
     // MARK: - الأجزاء
@@ -207,10 +208,18 @@ struct HomeDashboard: View {
 
     private var recentList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(tr("آخر من بحثت عنهم", "Recently viewed"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+            HStack {
+                Text(tr("آخر من بحثت عنهم", "Recently viewed"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(tr("مسح السجل", "Clear")) {
+                    RecentSearches.clear()
+                }
+                .font(.footnote.weight(.medium))
+                .accessibilityIdentifier("clearRecents")
+            }
+            .padding(.horizontal, 4)
             VStack(spacing: 0) {
                 ForEach(Array(recents.prefix(5).enumerated()), id: \.offset) { i, item in
                     Button {

@@ -164,13 +164,6 @@ struct ContentView: View {
                     }
                     .ignoresSafeArea()
                 }
-                .overlay {
-                    if isImporting {
-                        ProgressView(tr("جارٍ الاستيراد… قد يستغرق دقيقة لكل ملف كبير", "Importing… a large file can take a minute"))
-                            .padding(24)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    }
-                }
                 .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button(tr("حسناً", "OK"), role: .cancel) {}
                 } message: {
@@ -349,23 +342,33 @@ struct ContentView: View {
     /// كل ملف يصبح شهراً باسم الملف؛ استيراد نفس الشهر مرة أخرى يستبدل بياناته فقط.
     private func importFiles(_ urls: [URL]) async {
         isImporting = true
-        let importer = DataImporter(modelContainer: context.container)
+        let progress = ImportProgress.shared
+        progress.begin(urls.count == 1 ? tr("استيراد ملف الرواتب", "Importing payroll file")
+                                       : tr("استيراد \(Num.format(urls.count)) ملفات رواتب", "Importing \(Num.format(urls.count)) payroll files"))
+        let container = context.container
         let start = Date()
         var lines: [String] = []
         var failures: [String] = []
         var totals = (employees: 0, deductions: 0)
         var newest: (sortKey: Int, name: String)?
 
-        for url in urls {
+        for (index, url) in urls.enumerated() {
             let monthName = MonthName.label(for: url)
+            let share = 1.0 / Double(urls.count)
+            let base = Double(index) * share
+            let counter = urls.count > 1 ? tr(" (\(Num.format(index + 1)) من \(Num.format(urls.count)))", " (\(index + 1) of \(urls.count))") : ""
             do {
-                // القراءة في الخلفية حتى لا تتجمد الواجهة مع الملفات الكبيرة.
+                // القراءة والحفظ كلاهما في الخلفية حتى تبقى الواجهة سلسة مع الملفات الكبيرة.
+                let reading = progress.sink(base, base + share * 0.55, tr("قراءة \(monthName)\(counter)", "Reading \(monthName)\(counter)"))
                 let imported = try await Task.detached(priority: .userInitiated) {
                     let granted = url.startAccessingSecurityScopedResource()
                     defer { if granted { url.stopAccessingSecurityScopedResource() } }
-                    return try ExcelImporter.load(url: url)
+                    return try ExcelImporter.load(url: url, progress: reading)
                 }.value
-                try await importer.replace(month: monthName, with: imported)
+                let saving = progress.sink(base + share * 0.55, base + share, tr("حفظ \(monthName)\(counter)", "Saving \(monthName)\(counter)"))
+                try await Task.detached(priority: .userInitiated) {
+                    try await DataImporter(modelContainer: container).replace(month: monthName, with: imported, progress: saving)
+                }.value
                 lines.append(tr("\(monthName): \(Num.format(imported.employees.count)) موظف و\(Num.format(imported.deductions.count)) استقطاع", "\(monthName): \(Num.format(imported.employees.count)) employees, \(Num.format(imported.deductions.count)) deductions"))
                 totals.employees += imported.employees.count
                 totals.deductions += imported.deductions.count
@@ -380,6 +383,7 @@ struct ContentView: View {
         if let newest { selectedMonth = newest.name }
         path = []
         isImporting = false
+        progress.end()
         var parts: [String] = []
         if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
         if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
@@ -392,10 +396,12 @@ struct ContentView: View {
     }
 
     private func deleteMonth(_ name: String) {
-        let importer = DataImporter(modelContainer: context.container)
+        let container = context.container
         Task {
             do {
-                try await importer.delete(month: name)
+                try await Task.detached(priority: .userInitiated) {
+                    try await DataImporter(modelContainer: container).delete(month: name)
+                }.value
                 setSelection(selectedMonths.map(\.name).filter { $0 != name })
                 path = []
             } catch {

@@ -100,6 +100,9 @@ jobs:
           launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
           for i in $(seq 1 300); do
             [ -f "$DATA/Documents/import-report.txt" ] && break
+            # شريط تقدّم الاستيراد أثناء العمل
+            [ "$i" = 5 ] && xcrun simctl io "$UDID" screenshot ci-output/screenshots/01b-importing.png
+            [ "$i" = 12 ] && xcrun simctl io "$UDID" screenshot ci-output/screenshots/01c-importing.png
             sleep 1
           done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt

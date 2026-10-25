@@ -20,12 +20,15 @@ struct SettingsView: View {
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
     @State private var lockMessage: String?
+    @State private var recentCount = RecentSearches.items.count
+    @State private var confirmClearRecents = false
 
     var body: some View {
         NavigationStack {
             Form {
                 displaySection
                 securitySection
+                searchSection
                 importSection
                 staffSection
                 storageSection
@@ -73,6 +76,33 @@ struct SettingsView: View {
                 Text(tr("يُطلب \(AppLock.methodName) عند فتح التطبيق وعند الرجوع إليه، ويُستخدم رمز الجهاز إذا تعذّر التعرّف. البيانات تُخفى في قائمة التطبيقات المفتوحة.",
                         "\(AppLock.methodName) is required when opening or returning to the app; the device passcode is used if recognition fails. Data is hidden in the app switcher."))
             }
+        }
+    }
+
+    // MARK: - سجل البحث
+
+    private var searchSection: some View {
+        Section {
+            Button(role: .destructive) {
+                confirmClearRecents = true
+            } label: {
+                SettingRow(title: tr("مسح سجل البحث", "Clear search history"), systemImage: "clock.arrow.circlepath", color: .red) {
+                    Text(recentCount > 0 ? Num.format(recentCount) : tr("فارغ", "Empty"))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .disabled(recentCount == 0)
+            .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {
+                Button(tr("مسح", "Clear"), role: .destructive) {
+                    RecentSearches.clear()
+                    recentCount = 0
+                }
+            } message: {
+                Text(tr("تُحذف قائمة آخر من بحثت عنهم من الشاشة الرئيسية وصفحة البحث. بيانات الرواتب والملاك لا تتأثر.",
+                        "The recently viewed list is removed from Home and Search. Payroll and staff data are not affected."))
+            }
+        } header: {
+            Text(tr("البحث", "Search"))
         }
     }
 

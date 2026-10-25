@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search }
+    enum Tab: Hashable { case payroll, staff, search, share }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
     var tab: Tab = LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst)
         ? .search : .payroll
@@ -14,6 +14,9 @@ final class AppRouter {
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
     var pendingPayrollImport = false
+    /// القسيمة المعروضة الآن: يظهر زر "مشاركة" في الشريط السفلي بجانب العدسة.
+    var payslipToShare: Employee?
+    var showShare = false
 }
 
 /// حالة استيراد الملاك، يراها التبويبان والإعدادات.
@@ -28,23 +31,33 @@ final class StaffImportState {
     func importDatabase(_ url: URL) {
         guard !isImporting else { return }
         isImporting = true
+        let progress = ImportProgress.shared
+        progress.begin(tr("استيراد الملاك", "Importing staff"))
+        let sink = progress.sink(0, 1, tr("فتح الملف", "Opening the file"))
+        let container = SharedModel.container
         Task {
-            let importer = StaffImporter(modelContainer: SharedModel.container)
             do {
-                let count = try await importer.importDatabase(at: url)
+                // يُنشأ في الخلفية حتى لا تعمل القراءة والحفظ على خيط الواجهة.
+                let count = try await Task.detached(priority: .userInitiated) {
+                    try await StaffImporter(modelContainer: container).importDatabase(at: url, progress: sink)
+                }.value
                 message = tr("تم استيراد الملاك: \(Num.format(count)) موظف.", "Staff imported: \(Num.format(count)) employees.")
             } catch {
                 message = error.localizedDescription
             }
             try? FileManager.default.removeItem(at: url)
             isImporting = false
+            progress.end()
             version += 1
         }
     }
 
     func deleteAll() {
+        let container = SharedModel.container
         Task {
-            try? await StaffImporter(modelContainer: SharedModel.container).deleteAll()
+            try? await Task.detached(priority: .userInitiated) {
+                try await StaffImporter(modelContainer: container).deleteAll()
+            }.value
             version += 1
         }
     }
@@ -60,11 +73,32 @@ let accessFileTypes: [UTType] = [
 struct RootView: View {
     @State private var router = AppRouter.shared
     @State private var staffImport = StaffImportState.shared
+    @State private var importProgress = ImportProgress.shared
+
+    /// زر "مشاركة" في الشريط ليس صفحة: الضغط عليه يفتح نافذة المشاركة ويبقى التبويب الحالي.
+    private var selection: Binding<AppRouter.Tab> {
+        Binding(
+            get: { router.tab },
+            set: { tab in
+                if tab == .share {
+                    router.showShare = true
+                } else {
+                    router.tab = tab
+                }
+            }
+        )
+    }
 
     var body: some View {
-        TabView(selection: $router.tab) {
+        TabView(selection: selection) {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
+            }
+            // يظهر فقط عند عرض قسيمة، بجانب العدسة لسهولة الوصول.
+            if router.payslipToShare != nil {
+                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
+                    Color.clear
+                }
             }
             // تبويب البحث الموحّد (زر دائري مستقل في iOS 26).
             Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
@@ -77,13 +111,16 @@ struct RootView: View {
             await TestData.prepareIfRequested()
             await AutoPilot.shared.run()
         }
-        // استيراد الملاك يعمل في الخلفية أياً كان التبويب.
-        .overlay {
-            if staffImport.isImporting {
-                ProgressView(tr("جارٍ استيراد الملاك… قد يستغرق دقيقة أو اثنتين", "Importing staff… this can take a minute or two"))
-                    .padding(24)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.
+        .overlay(alignment: .bottom) {
+            if importProgress.isActive {
+                ImportProgressBar(progress: importProgress)
+                    .padding(.bottom, 74)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
+        .sheet(isPresented: $router.showShare) {
+            if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee) }
         }
         .alert(tr("الملاك", "Staff"), isPresented: Binding(
             get: { staffImport.message != nil },
