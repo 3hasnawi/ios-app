@@ -75,7 +75,6 @@ struct ShareOptionsSheet: View {
             ProgressView().frame(height: 360)
         }
     }
-    }
 }
 
 private struct OptionLabel: View {
