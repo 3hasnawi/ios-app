@@ -115,56 +115,56 @@ actor BackupActor {
             let data = try Data(contentsOf: folder.appendingPathComponent(name), options: .alwaysMapped)
             return data.split(separator: 0x0A).map { Data($0) }
         }
-        try modelContext.delete(model: Employee.self)
-        try modelContext.delete(model: Deduction.self)
-        try modelContext.delete(model: PayrollMonth.self)
-        try modelContext.delete(model: StaffMember.self)
-        try modelContext.save()
+        // نفحص النسخة كاملة قبل لمس البيانات الحالية.
+        let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
+        guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        let months = try lines("months.jsonl").map { try decoder.decode(BackupFormat.MonthRecord.self, from: $0) }
+        let employees = try lines("employees.jsonl").map { try decoder.decode(BackupFormat.EmployeeRecord.self, from: $0) }
+        let deductions = try lines("deductions.jsonl").map { try decoder.decode(BackupFormat.DeductionRecord.self, from: $0) }
+        let staff = try lines("staff.jsonl").map { try decoder.decode(BackupFormat.StaffRecord.self, from: $0) }
+        guard months.map(\.name).sorted() == manifest.months.sorted(),
+              employees.count == manifest.employees, deductions.count == manifest.deductions,
+              staff.count == manifest.staff else { throw BackupError.notBackup }
+        let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
+        for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
 
-        var pending = 0
-        func flush() throws {
-            pending += 1
-            if pending >= 3000 { try modelContext.save(); pending = 0 }
-        }
-        for line in try lines("months.jsonl") {
-            let r = try decoder.decode(BackupFormat.MonthRecord.self, from: line)
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
+        // حذف الكائنات مؤجل مع إدخال البديل إلى حفظ واحد قابل للتراجع.
+        for item in try modelContext.fetch(FetchDescriptor<Employee>()) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<Deduction>()) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<StaffMember>()) { modelContext.delete(item) }
+        for r in months {
             let m = PayrollMonth(name: r.name, employeeCount: r.employeeCount, deductionCount: r.deductionCount)
             m.importedAt = r.importedAt
             m.itemSummaryData = r.summary
             modelContext.insert(m)
         }
-        let employees = try lines("employees.jsonl")
-        for (i, line) in employees.enumerated() {
-            let r = try decoder.decode(BackupFormat.EmployeeRecord.self, from: line)
+        for (i, r) in employees.enumerated() {
             let e = Employee(month: r.month, name: r.name, rank: r.rank, workplace: r.workplace, netSalary: r.net)
             e.itemsData = r.items
             e.detailsData = r.details
             modelContext.insert(e)
-            try flush()
             if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, employees.count))) }
         }
-        let deductions = try lines("deductions.jsonl")
-        for (i, line) in deductions.enumerated() {
-            let r = try decoder.decode(BackupFormat.DeductionRecord.self, from: line)
+        for (i, r) in deductions.enumerated() {
             modelContext.insert(Deduction(month: r.month, employeeName: r.name, title: r.title, amount: r.amount, note: r.note, rank: r.rank))
-            try flush()
             if i % 1000 == 0 { progress?(0.6 + 0.1 * Double(i) / Double(max(1, deductions.count))) }
         }
-        let staff = try lines("staff.jsonl")
-        for (i, line) in staff.enumerated() {
-            let r = try decoder.decode(BackupFormat.StaffRecord.self, from: line)
+        for (i, r) in staff.enumerated() {
             let s = StaffMember(name: r.name, mother: "", statNumber: r.stat, unifiedNumber: r.unified,
                                 rank: r.rank, status: r.status, workplace: r.workplace, sections: [])
             s.motherKey = r.mother
             s.detailsData = r.details
             modelContext.insert(s)
-            try flush()
             if i % 1000 == 0 { progress?(0.7 + 0.3 * Double(i) / Double(max(1, staff.count))) }
         }
         try modelContext.save()
         progress?(1)
-        let settings = try? decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
-        return settings ?? [:]
+        committed = true
+        return settings.filter { BackupFormat.settingsKeys.contains($0.key) }
     }
 }
 
@@ -386,18 +386,12 @@ final class BackupManager {
                 defer { if granted { file.stopAccessingSecurityScopedResource() } }
                 var coordinationError: NSError?
                 var writeError: Error?
-                // الكتابة داخل نفس الملف (لا يُنشأ ملف جديد): الصلاحية على الملف المحفوظ نفسه.
-                NSFileCoordinator().coordinate(writingItemAt: file, options: .forMerging, error: &coordinationError) { target in
+                // تنسيق الاستبدال مع مزود الملفات يحافظ على صلاحية الوصول المختارة.
+                NSFileCoordinator().coordinate(writingItemAt: file, options: .forReplacing, error: &coordinationError) { target in
                     do {
-                        let input = try FileHandle(forReadingFrom: url)
-                        defer { try? input.close() }
-                        let output = try FileHandle(forWritingTo: target)
-                        defer { try? output.close() }
-                        try output.truncate(atOffset: 0)
-                        while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
-                            try output.write(contentsOf: chunk)
-                        }
-                        try output.synchronize()
+                        // تُكتب النسخة إلى ملف مجاور ثم تُستبدل دفعة واحدة؛ تبقى القديمة عند فشل الكتابة.
+                        let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+                        try contents.write(to: target, options: .atomic)
                     } catch { writeError = error }
                 }
                 if let error = coordinationError ?? writeError {
@@ -457,9 +451,16 @@ final class BackupManager {
             let folder = try await Task.detached(priority: .userInitiated) { () throws -> URL in
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                guard let archive = try? Archive(url: url, accessMode: .read), archive["manifest.json"] != nil else { throw BackupError.notBackup }
-                for entry in archive { _ = try archive.extract(entry, to: dir.appendingPathComponent(entry.path), skipCRC32: true) }
+                var extracted = false
+                defer { if !extracted { try? FileManager.default.removeItem(at: dir) } }
+                guard let archive = try? Archive(url: url, accessMode: .read) else { throw BackupError.notBackup }
+                // الملفات المعروفة فقط، مع فحص سلامة الضغط قبل عرض تأكيد الاسترجاع.
+                for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"] {
+                    guard let entry = archive[name], entry.type == .file else { throw BackupError.notBackup }
+                    _ = try archive.extract(entry, to: dir.appendingPathComponent(name))
+                }
                 ImportCenter.removeCopy(url)
+                extracted = true
                 return dir
             }.value
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
@@ -491,6 +492,7 @@ final class BackupManager {
                     }
                 }
                 UserDefaults.standard.removeObject(forKey: "homeStatsCache")
+                await SearchIndex.shared.invalidate()
                 StaffImportState.shared.version += 1
                 progress.end()
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
@@ -504,8 +506,8 @@ final class BackupManager {
 
     /// اختبار المحاكي (-backupTest YES): نسخ ثم استرجاع ثم مقارنة الأعداد.
     func selfTest() async {
-        let context = SharedModel.container.mainContext
         func counts() -> String {
+            let context = ModelContext(SharedModel.container)
             let e = (try? context.fetchCount(FetchDescriptor<Employee>())) ?? -1
             let d = (try? context.fetchCount(FetchDescriptor<Deduction>())) ?? -1
             let m = (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) ?? -1
@@ -518,11 +520,31 @@ final class BackupManager {
             let (url, _) = try await makeBackup(title: "test")
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             await open(url)
-            guard pendingRestore != nil else { LaunchOptions.writeReport("backup=failed open \(message ?? "")"); return }
+            guard let pending = pendingRestore else { LaunchOptions.writeReport("backup=failed open \(message ?? "")"); return }
+            // سجل تالف متأخر يجب ألا يحذف أو يغيّر البيانات الحالية.
+            let employeesFile = pending.folder.appendingPathComponent("employees.jsonl")
+            let original = try Data(contentsOf: employeesFile)
+            var damaged = original
+            damaged.append(contentsOf: "\n{invalid-json}\n".utf8)
+            try damaged.write(to: employeesFile)
+            let container = SharedModel.container
+            var rejected = false
+            do {
+                _ = try await Task.detached {
+                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: nil)
+                }.value
+            } catch { rejected = true }
+            let preserved = rejected && counts() == before
+            try original.write(to: employeesFile)
+            guard preserved else {
+                cancelRestore()
+                LaunchOptions.writeReport("backup=failed corruptRestore=failed")
+                return
+            }
             confirmRestore()
             while isWorking || pendingRestore != nil { try? await Task.sleep(for: .milliseconds(200)) }
             let after = counts()
-            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
+            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
         } catch {
             LaunchOptions.writeReport("backup=failed \(error.localizedDescription)")
         }

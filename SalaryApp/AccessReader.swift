@@ -93,22 +93,26 @@ nonisolated struct AccessReader {
     // MARK: - تعريف الجدول
 
     func table(at tdefPage: Int) throws -> Table {
+        guard tdefPage > 0, tdefPage < pageCount else { throw ReadError.notAccess }
         var p = page(tdefPage)
         guard p[0] == 2 else { throw ReadError.notAccess }
         var b = [UInt8](p)
         var next = Int(Self.u32(p, 4))
-        var guardCount = 0
-        while next != 0, next < pageCount, guardCount < 1000 {
+        var visited: Set<Int> = [tdefPage]
+        while next != 0 {
+            guard next > 0, next < pageCount, visited.insert(next).inserted,
+                  visited.count <= 1000 else { throw ReadError.notAccess }
             p = page(next)
             b += p[8...]
             next = Int(Self.u32(p, 4))
-            guardCount += 1
         }
 
         let rowCount = Int(Self.u32(b, 0x10))
         let columnCount = Self.u16(b, 0x2d)
         let realIndexCount = Int(Self.u32(b, 0x33))
+        guard realIndexCount <= (b.count - 0x3f) / 12 else { throw ReadError.notAccess }
         var off = 0x3f + realIndexCount * 12
+        guard columnCount <= (b.count - off) / 25 else { throw ReadError.notAccess }
 
         var raw: [(type: UInt8, num: Int, varIdx: Int, flags: UInt8, fixedOff: Int, len: Int)] = []
         for _ in 0..<columnCount {
@@ -124,7 +128,9 @@ nonisolated struct AccessReader {
         }
         var columns: [Column] = []
         for r in raw {
+            guard off <= b.count - 2 else { throw ReadError.notAccess }
             let length = Self.u16(b, off)
+            guard length <= b.count - off - 2, length % 2 == 0 else { throw ReadError.notAccess }
             let nameBytes = Array(b[(off + 2)..<(off + 2 + length)])
             let name = String(bytes: nameBytes, encoding: .utf16LittleEndian) ?? ""
             off += 2 + length
@@ -143,31 +149,33 @@ nonisolated struct AccessReader {
         guard pageNumber > 0, pageNumber < pageCount else { return nil }
         let p = page(pageNumber)
         let count = Self.u16(p, 12)
-        guard index < count else { return nil }
+        guard count <= (Self.pageSize - 14) / 2, index >= 0, index < count else { return nil }
         let startRaw = Self.u16(p, 14 + index * 2)
         let start = startRaw & 0x1FFF
         let end = index == 0 ? Self.pageSize : Self.u16(p, 14 + (index - 1) * 2) & 0x1FFF
-        guard start < end, end <= Self.pageSize else { return nil }
+        guard start >= 14 + count * 2, start < end, end <= Self.pageSize else { return nil }
         return (UnsafeRawBufferPointer(rebasing: p[start..<end]), startRaw)
     }
 
     /// يمر على كل صفوف الجدول ويستدعي `body` بقيم الأعمدة (الفارغة غير موجودة في القاموس).
-    func forEachRow(of tdefPage: Int, table: Table, _ body: ([String: Value]) -> Void) {
+    func forEachRow(of tdefPage: Int, table: Table, _ body: ([String: Value]) -> Void) throws {
         for pageNumber in dataPages[tdefPage] ?? [] {
             let p = page(pageNumber)
             let count = Self.u16(p, 12)
+            guard count <= (Self.pageSize - 14) / 2 else { throw ReadError.notAccess }
             for i in 0..<count {
-                guard let slice = rowSlice(page: pageNumber, index: i) else { continue }
+                guard let slice = rowSlice(page: pageNumber, index: i) else { throw ReadError.notAccess }
                 var row = slice.0
                 let flags = slice.1
                 if flags & 0x8000 != 0 { continue }        // محذوف
                 if flags & 0x4000 != 0 {                   // الصف في صفحة أخرى
-                    guard row.count >= 4 else { continue }
+                    guard row.count >= 4 else { throw ReadError.notAccess }
                     let target = Int(row[1]) | Int(row[2]) << 8 | Int(row[3]) << 16
-                    guard let moved = rowSlice(page: target, index: Int(row[0])) else { continue }
+                    guard let moved = rowSlice(page: target, index: Int(row[0])) else { throw ReadError.notAccess }
                     row = moved.0
                 }
-                if let values = parseRow(row, table: table) { body(values) }
+                guard let values = parseRow(row, table: table) else { throw ReadError.notAccess }
+                body(values)
             }
         }
     }
@@ -316,7 +324,7 @@ nonisolated struct AccessReader {
     func userTables() throws -> [String: Int] {
         let system = try table(at: 2)
         var result: [String: Int] = [:]
-        forEachRow(of: 2, table: system) { row in
+        try forEachRow(of: 2, table: system) { row in
             guard case .int(let type)? = row["Type"], type == 1,
                   case .text(let name)? = row["Name"], !name.hasPrefix("MSys"),
                   case .int(let id)? = row["Id"] else { return }

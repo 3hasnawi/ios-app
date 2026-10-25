@@ -125,57 +125,67 @@ final class Deduction {
 actor DataImporter {
     /// يستبدل بيانات الشهر نفسه فقط، وتبقى الأشهر الأخرى كما هي.
     func replace(month: String, with imported: ImportResult, progress: ProgressSink? = nil) throws {
+        // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
         try removeData(of: month)
-        // الحفظ على دفعات حتى لا تتراكم عشرات آلاف السجلات غير المحفوظة في الذاكرة.
+        // حفظ واحد حتى تبقى بيانات الشهر السابقة عند الفشل.
         let total = Double(max(1, imported.employees.count + imported.deductions.count))
         var inserted = 0
-        var pending = 0
-        func flush() throws {
-            pending += 1
+        func advanceProgress() {
             inserted += 1
-            if pending >= 4000 { try modelContext.save(); pending = 0 }
             if inserted % 500 == 0 { progress?(Double(inserted) / total) }
         }
         for e in imported.employees {
             modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
-            try flush()
+            advanceProgress()
         }
         for d in imported.deductions {
             modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note, rank: d.rank))
-            try flush()
+            advanceProgress()
         }
         let record = PayrollMonth(name: month, employeeCount: imported.employees.count, deductionCount: imported.deductions.count)
         record.itemSummaryData = PayrollItems.summary(of: imported.employees)
         modelContext.insert(record)
         try modelContext.save()
+        committed = true
         progress?(1)
     }
 
     /// ملف رواتب فقط: يستبدل رواتب الشهر وتبقى استقطاعاته.
     func replacePayroll(month: String, with employees: [ImportedEmployee], progress: ProgressSink? = nil) throws {
-        try modelContext.delete(model: Employee.self, where: #Predicate { $0.month == month })
+        // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
+        for item in try modelContext.fetch(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
         let total = Double(max(1, employees.count))
         for (i, e) in employees.enumerated() {
             modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
-            if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }
         try upsertMonth(month, employees: employees.count, deductions: nil, summary: PayrollItems.summary(of: employees))
         try modelContext.save()
+        committed = true
         progress?(1)
     }
 
     /// ملف استقطاعات فقط: يستبدل استقطاعات الشهر وتبقى رواتبه.
     func replaceDeductions(month: String, with deductions: [ImportedDeduction], progress: ProgressSink? = nil) throws {
-        try modelContext.delete(model: Deduction.self, where: #Predicate { $0.month == month })
+        // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
+        for item in try modelContext.fetch(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
         let total = Double(max(1, deductions.count))
         for (i, d) in deductions.enumerated() {
             modelContext.insert(Deduction(month: month, employeeName: d.employeeName, title: d.title, amount: d.amount, note: d.note, rank: d.rank))
-            if i % 4000 == 3999 { try modelContext.save() }
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }
         try upsertMonth(month, employees: nil, deductions: deductions.count, summary: nil)
         try modelContext.save()
+        committed = true
         progress?(1)
     }
 
@@ -200,9 +210,9 @@ actor DataImporter {
     }
 
     private func removeData(of month: String) throws {
-        try modelContext.delete(model: Employee.self, where: #Predicate { $0.month == month })
-        try modelContext.delete(model: Deduction.self, where: #Predicate { $0.month == month })
-        try modelContext.delete(model: PayrollMonth.self, where: #Predicate { $0.name == month })
+        for item in try modelContext.fetch(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })) { modelContext.delete(item) }
     }
 }
 

@@ -203,7 +203,7 @@ actor StaffImporter {
             // المرور الأول: القيم المستخدمة في كل عمود مرمّز، لاختيار عمود المفتاح الصحيح في جدول القوائم.
             var used: [String: Set<Int>] = [:]
             var scanned = 0
-            reader.forEachRow(of: mainPage, table: main) { row in
+            try reader.forEachRow(of: mainPage, table: main) { row in
                 scanned += 1
                 if scanned % 500 == 0 { firstPass?(Double(scanned) / rowTotal) }
                 for name in codedTables.keys {
@@ -214,7 +214,7 @@ actor StaffImporter {
             for (column, page) in codedTables {
                 guard let t = try? reader.table(at: page) else { continue }
                 var rows: [[String: AccessReader.Value]] = []
-                reader.forEachRow(of: page, table: t) { rows.append($0) }
+                try reader.forEachRow(of: page, table: t) { rows.append($0) }
                 let textColumns = t.columns.filter {
                     $0.type == AccessReader.ColumnType.text.rawValue || $0.type == AccessReader.ColumnType.memo.rawValue
                 }
@@ -243,7 +243,7 @@ actor StaffImporter {
             let placed = Set(StaffLayout.sections.flatMap(\.columns) + [StaffLayout.notesColumn] + StaffLayout.recordColumns)
             let otherColumns = main.columns.map(\.name).filter { !placed.contains($0) && !StaffLayout.hidden.contains($0) && $0 != "الاسم الكامل" }
             var built = 0
-            reader.forEachRow(of: mainPage, table: main) { row in
+            try reader.forEachRow(of: mainPage, table: main) { row in
                 built += 1
                 if built % 500 == 0 { secondPass?(Double(built) / rowTotal) }
                 func text(_ column: String) -> String? {
@@ -281,18 +281,20 @@ actor StaffImporter {
         }
         guard !members.isEmpty else { throw ImportError.noRows }
 
-        // استبدال الملاك القديم بالجديد، والحفظ على دفعات.
-        try modelContext.delete(model: StaffMember.self)
-        try modelContext.save()
+        // يبقى الحذف والإدخال في حفظ واحد، فلا نفقد الملاك القديم عند الفشل.
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
+        for member in try modelContext.fetch(FetchDescriptor<StaffMember>()) { modelContext.delete(member) }
         let saving = progress?.sub(0.55, 1, tr("حفظ الملاك", "Saving staff"))
         let count = Double(members.count)
         for (i, member) in members.enumerated() {
             modelContext.insert(member)
-            if i % 3000 == 2999 { try modelContext.save() }
             if i % 500 == 499 { saving?(Double(i + 1) / count) }
         }
         try modelContext.save()
 
+        committed = true
         let statuses = statusCounts.sorted { $0.value > $1.value }.map(\.key)
         StaffInfo.save(count: members.count, fileName: fileName, statuses: statuses)
         return members.count

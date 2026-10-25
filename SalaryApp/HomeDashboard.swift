@@ -51,6 +51,14 @@ struct HomeDashboard: View {
         return months[i + 1]
     }
 
+    // وقت الاستيراد يتغير حتى لو بقي عدد السجلات نفسه.
+    private var statsKey: String {
+        [current, previous].map { month in
+            guard let month else { return "none" }
+            return "\(month.name)|\(month.importedAt.timeIntervalSince1970)|\(month.employeeCount)|\(month.deductionCount)"
+        }.joined(separator: ";")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -93,10 +101,10 @@ struct HomeDashboard: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
-        .task(id: "\(current?.name ?? "")-\(current?.employeeCount ?? 0)-\(months.count)") {
+        .task(id: statsKey) {
             guard let current else { stats = nil; return }
             // الأرقام محفوظة بعد أول حساب: تظهر فوراً في المرات القادمة، وتُعاد فقط عند تغيّر الأشهر.
-            let cacheKey = "homeStats|\(current.name)|\(current.employeeCount)|\(current.deductionCount)|\(previous?.name ?? "")|\(previous?.employeeCount ?? 0)"
+            let cacheKey = statsKey
             if let data = UserDefaults.standard.data(forKey: "homeStatsCache"),
                let cached = try? JSONDecoder().decode([String: HomeStats].self, from: data)[cacheKey] {
                 stats = cached
@@ -107,9 +115,11 @@ struct HomeDashboard: View {
             let previousName = previous?.name
             // يُنشأ في الخلفية حتى لا يعمل الحساب على خيط الواجهة.
             let started = Date()
-            stats = try? await Task.detached(priority: .userInitiated) {
+            let loaded = try? await Task.detached(priority: .userInitiated) {
                 try await HomeStatsLoader(modelContainer: container).stats(month: month, previous: previousName)
             }.value
+            guard !Task.isCancelled else { return }
+            stats = loaded
             PerfLog.record("homeStats", since: started)
             if let stats, let data = try? JSONEncoder().encode([cacheKey: stats]) {
                 UserDefaults.standard.set(data, forKey: "homeStatsCache")

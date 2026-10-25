@@ -36,6 +36,8 @@ actor SearchIndex {
     private var pay: [String: [PayEntry]] = [:]
     private var payByMatch: [String: [String: Int]] = [:]
 
+    func invalidate() { signature = "" }
+
     /// يُستدعى بعد فتح التطبيق حتى يكون أول بحث فورياً.
     func warmUp(container: ModelContainer) {
         let context = ModelContext(container)
@@ -47,7 +49,7 @@ actor SearchIndex {
         let payCount = try context.fetchCount(FetchDescriptor<Employee>())
         let months = try context.fetch(FetchDescriptor<PayrollMonth>())
             .map { "\($0.name)@\($0.importedAt.timeIntervalSince1970)" }.sorted().joined(separator: ",")
-        return "\(staffCount)|\(payCount)|\(months)"
+        return "\(staffCount)|\(StaffInfo.importedAt?.timeIntervalSince1970 ?? 0)|\(payCount)|\(months)"
     }
 
     private func refreshIfNeeded(_ context: ModelContext) throws {

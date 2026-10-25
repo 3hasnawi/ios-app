@@ -329,7 +329,7 @@ jobs:
           printf "" > ci-output/empty.log
           python3 ci/perf_report.py ci-output/empty.log ci-output/perf-autopilot.txt | tee ci-output/autopilot-report.txt
 
-      - name: Backup round trip (back up, restore, compare counts)
+      - name: Backup round trip and rejection of corrupted records
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -339,6 +339,7 @@ jobs:
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "backup=failed no report"; } | tee ci-output/backup-report.txt
           grep -q "backup=ok" ci-output/backup-report.txt && echo "::notice::Backup OK: $(cat ci-output/backup-report.txt)" \
             || echo "::error::Backup round trip failed: $(cat ci-output/backup-report.txt)"
+          grep -q "corruptRestore=ok" ci-output/backup-report.txt || { echo "::error::Corrupt backup changed existing data"; exit 1; }
           # النسخ التلقائي إلى مجلد التطبيق (نسخة واحدة تُستبدل)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
           rm -f "$DATA/Documents/import-report.txt"
