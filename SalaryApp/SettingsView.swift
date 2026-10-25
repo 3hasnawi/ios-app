@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
+    @AppStorage(AppSettings.textSizeKey) private var textSize = -1
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
     @State private var lockMessage: String?
@@ -45,6 +46,7 @@ struct SettingsView: View {
                     } label: {
                         SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
                     }
+                    textSizeRow
                 }
 
                 Section {
@@ -123,6 +125,37 @@ struct SettingsView: View {
         }
         // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
         .id("\(language)-\(numerals)")
+    }
+
+    /// حجم النص: شريط بسبعة مستويات (الوسط = الحجم العادي)، والضغط على "مثل الآيفون" يعيد حجم النظام.
+    private var textSizeRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "textformat.size")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Color.teal.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text("A").font(.system(size: 12, weight: .semibold))
+            Slider(value: Binding(
+                get: { Double(textSize < 0 ? AppSettings.defaultTextSizeIndex : textSize) },
+                set: { textSize = Int($0.rounded()) }
+            ), in: 0...Double(AppSettings.textSizes.count - 1), step: 1)
+            .accessibilityLabel(tr("حجم النص", "Text size"))
+            .accessibilityIdentifier("textSizeSlider")
+            Text("A").font(.system(size: 20, weight: .semibold))
+            Button {
+                textSize = -1
+            } label: {
+                Text(textSize < 0 ? tr("الآيفون", "iPhone") : tr("إعادة", "Reset"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(textSize < 0 ? Color.secondary : Color.accentColor)
+            }
+            .buttonStyle(.borderless)
+            .disabled(textSize < 0)
+        }
+        .padding(.vertical, 2)
+        // الشريط نفسه لا يتغيّر حجمه مع تغيّر الحجم حتى لا يتحرك تحت الإصبع.
+        .dynamicTypeSize(.large)
     }
 
     /// "3 أشهر · 42,108 ملاك · 48 ميغا"

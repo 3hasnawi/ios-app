@@ -30,6 +30,15 @@ nonisolated enum AppSettings {
     static let languageKey = "appLanguage"
     static let appearanceKey = "appAppearance"
     static let numeralsKey = "appNumerals"
+    /// حجم النص داخل التطبيق: -1 = مثل الآيفون، وإلا رقم المستوى في `textSizes`.
+    static let textSizeKey = "appTextSize"
+    /// المستويات من الأصغر إلى الأكبر؛ الرابع (large) هو الحجم العادي في iOS.
+    static let textSizes: [DynamicTypeSize] = [.xSmall, .small, .medium, .large, .xLarge, .xxLarge, .xxxLarge]
+    static let defaultTextSizeIndex = 3
+
+    static func textSize(_ index: Int) -> DynamicTypeSize? {
+        textSizes.indices.contains(index) ? textSizes[index] : nil
+    }
 
     static var language: AppLanguage {
         AppLanguage(rawValue: UserDefaults.standard.string(forKey: languageKey) ?? "") ?? .arabic
