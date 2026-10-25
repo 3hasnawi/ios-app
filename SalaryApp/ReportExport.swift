@@ -611,9 +611,10 @@ struct ReportExportSheet: View {
                                     Text(tr("جدول بالتنسيق ومعادلة المجموع", "Formatted table with a SUM formula")).font(.caption).foregroundStyle(.secondary)
                                 }
                             } icon: {
-                                Image(systemName: "tablecells.fill").foregroundStyle(.green)
+                                Image(systemName: ReportSymbols.excel).foregroundStyle(.green)
                             }
                         }
+                        .accessibilityIdentifier("reportListExcel")
                         Button { ActivityShare.present([pdf]) } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -621,9 +622,10 @@ struct ReportExportSheet: View {
                                     Text(tr("كشف جاهز للطباعة بحجم A4", "Print-ready A4 list")).font(.caption).foregroundStyle(.secondary)
                                 }
                             } icon: {
-                                Image(systemName: "doc.richtext.fill").foregroundStyle(.red)
+                                Image(systemName: ReportSymbols.pdf).foregroundStyle(.red)
                             }
                         }
+                        .accessibilityIdentifier("reportListPDF")
                     } else if let failed {
                         Text(failed).foregroundStyle(.red)
                     } else {

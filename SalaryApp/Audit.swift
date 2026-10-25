@@ -381,12 +381,7 @@ struct AuditView: View {
                     Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
                     Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
-                    HStack(spacing: 5) {
-                        if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
-                        Text(tr("تصدير", "Export"))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
+                    ReportToolbarLabel(isWorking: exporting)
                 }
                 .disabled(report == nil || exporting)
             }
@@ -487,12 +482,7 @@ struct AuditCheckView: View {
                     Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
                     Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
-                    HStack(spacing: 5) {
-                        if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
-                        Text(tr("تصدير", "Export"))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
+                    ReportToolbarLabel(isWorking: exporting)
                 }
                 .disabled(exporting)
             }
@@ -605,12 +595,7 @@ struct CompareView: View {
                     Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
                     Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
                 } label: {
-                    HStack(spacing: 5) {
-                        if exporting { ProgressView() } else { Image(systemName: "square.and.arrow.up") }
-                        Text(tr("تصدير", "Export"))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
+                    ReportToolbarLabel(isWorking: exporting)
                 }
                 .disabled(result == nil || exporting)
             }

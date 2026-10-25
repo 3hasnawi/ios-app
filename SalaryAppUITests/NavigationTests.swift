@@ -238,6 +238,24 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
     }
 
+    func testReportActions() {
+        app.launchArguments += ["-skipLock", "YES", "-tab", "reports", "-reportByEntity", "NO",
+                                "-openReport", "YES", "-openReportTitle", "تنفيذ الرمادي"]
+        app.launch()
+        let preview = element("previewReport")
+        XCTAssertTrue(preview.waitForExistence(timeout: 30))
+        XCTAssertTrue(element("exportReport").isHittable)
+        preview.tap()
+        XCTAssertTrue(element("reportPDFPreview").waitForExistence(timeout: 25))
+        XCTAssertTrue(element("previewExport").isHittable)
+        app.navigationBars.buttons["إغلاق"].tap()
+        XCTAssertTrue(element("exportReport").waitForExistence(timeout: 8))
+        element("exportReport").tap()
+        XCTAssertTrue(app.navigationBars["تصدير الكشف"].waitForExistence(timeout: 15))
+        XCTAssertTrue(element("reportListExcel").waitForExistence(timeout: 25))
+        XCTAssertTrue(element("reportListPDF").isHittable)
+    }
+
     func testNavigationFlow() {
         step("تشغيل التطبيق") {
             app.launch()

@@ -130,3 +130,18 @@ struct ReportActionButton: View {
         .tint(tint)
     }
 }
+
+struct ReportToolbarLabel: View {
+    var isWorking = false
+
+    var body: some View {
+        Group {
+            if isWorking {
+                ProgressView().accessibilityLabel(tr("جارٍ التصدير", "Exporting"))
+            } else {
+                Label(tr("تصدير", "Export"), systemImage: ReportSymbols.export)
+                    .labelStyle(.iconOnly)
+            }
+        }
+    }
+}

@@ -637,12 +637,7 @@ struct EntitiesView: View {
                 Button {
                     showExport = true
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.up")
-                        Text(tr("تصدير", "Export"))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
+                    ReportToolbarLabel()
                 }
                 .disabled(groups.isEmpty)
                 .accessibilityLabel(tr("تصدير", "Export"))
