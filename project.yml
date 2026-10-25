@@ -27,6 +27,9 @@ targets:
           UIImageName: HomeLogo
           UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # مجلد التطبيق يظهر في تطبيق "الملفات": يمكن وضع ملفات الرواتب فيه واختيارها من هناك.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryApp

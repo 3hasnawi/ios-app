@@ -109,6 +109,68 @@ final class NavigationTests: XCTestCase {
         }
     }
 
+    // MARK: - اختيار ملف من نافذة "الملفات" (كما على الجهاز)
+
+    /// يضغط أول عنصر يحتوي أحد النصوص (عناصر نافذة الملفات تختلف حسب اللغة).
+    @discardableResult
+    private func tapLabel(_ texts: [String], _ what: String, timeout: TimeInterval = 6) -> Bool {
+        let predicate = NSPredicate(format: texts.map { _ in "label CONTAINS %@" }.joined(separator: " OR "), argumentArray: texts)
+        let e = app.descendants(matching: .any).matching(predicate).firstMatch
+        guard e.waitForExistence(timeout: timeout) else { print("PICKER missing: \(what)"); return false }
+        e.tap()
+        return true
+    }
+
+    private func pickFile(_ name: String) -> Bool {
+        step("فتح الإعدادات للاستيراد") {
+            element("settingsButton").tap()
+            wait(element("importFilesButton"), "زر استيراد ملفات")
+            element("importFilesButton").tap()
+        }
+        var picked = false
+        step("اختيار \(name) من نافذة الملفات") {
+            sleep(2)
+            tapLabel(["تصفح", "Browse"], "تبويب تصفح", timeout: 8)
+            tapLabel(["iPhone"], "على iPhone")
+            tapLabel(["الرواتب", "SalaryApp"], "مجلد التطبيق")
+            picked = tapLabel([name], "الملف \(name)", timeout: 8)
+            if picked { tapLabel(["فتح", "Open"], "زر فتح", timeout: 4) }
+        }
+        return picked
+    }
+
+    func testImportThroughPicker() {
+        step("تشغيل التطبيق") {
+            app.launch()
+            wait(app.navigationBars["الرئيسية"], "الشاشة الرئيسية", timeout: 30)
+        }
+        guard pickFile("رواتب آب 2026") else { issue("تعذّر اختيار الملف من نافذة الملفات (عناصر النافذة لم تُعثر)"); return }
+        step("ظهور الفحص أو المراجعة بعد الاختيار") {
+            let progress = element("importProgress"), review = element("importAll")
+            let start = Date()
+            while Date().timeIntervalSince(start) < 25 && !progress.exists && !review.exists { usleep(200_000) }
+            if !progress.exists && !review.exists { issue("بعد اختيار الملف لم يظهر شريط الفحص ولا نافذة المراجعة") }
+            if review.waitForExistence(timeout: 30) {
+                review.tap()
+                if app.alerts.firstMatch.waitForExistence(timeout: 30) {
+                    print("IMPORT alert: \(app.alerts.firstMatch.label) \(app.alerts.firstMatch.staticTexts.allElementsBoundByIndex.map(\.label))")
+                    app.alerts.firstMatch.buttons.firstMatch.tap()
+                } else { issue("لم تظهر رسالة نتيجة الاستيراد") }
+            } else { issue("لم تظهر نافذة المراجعة") }
+        }
+        guard pickFile("ملف غير متوافق") else { issue("تعذّر اختيار الملف غير المتوافق"); return }
+        step("تنبيه الملف غير المتوافق") {
+            let alert = app.alerts.firstMatch
+            if alert.waitForExistence(timeout: 30) {
+                let text = alert.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+                print("REJECT alert: \(text)")
+                if !text.contains("غير متوافق") { issue("رسالة الرفض لا تذكر السبب: \(text)") }
+                alert.buttons.firstMatch.tap()
+            } else { issue("لم يظهر تنبيه للملف غير المتوافق") }
+        }
+        print("RESULT import issues=\(issues.count)")
+    }
+
     // MARK: - الاختبار
 
     func testNavigationFlow() {

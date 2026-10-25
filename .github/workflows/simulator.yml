@@ -78,6 +78,11 @@ jobs:
               import os; os.makedirs("test-files/split", exist_ok=True); wb.save(out)
           PY
           sed 's/$/ months=1/' sep.txt > ci-output/expected-split.txt
+          # ملف غير متوافق (لا اسم ولا صافي راتب) لاختبار رسالة الرفض
+          .venv/bin/python -c "
+          from openpyxl import Workbook
+          wb = Workbook(); ws = wb.active; ws.append(['التاريخ', 'الوصف', 'القيمة']); ws.append(['2026-10-01', 'مثال', 100])
+          wb.save('test-files/split/ملف غير متوافق.xlsx')"
           cat ci-output/expected-split.txt
 
       - name: Boot simulator and install
@@ -266,6 +271,7 @@ jobs:
           python3 ci/perf_report.py ci-output/uitest.log ci-output/perf.txt | tee ci-output/navigation-report.txt
           echo "xcodebuild test status=$STATUS"
           grep -E "error:|XCTAssert|Failed|failed:" ci-output/uitest.log | sort -u | head -30 | sed 's/^/::warning::/' || true
+          grep -E "^(PICKER|IMPORT|REJECT|RESULT)" ci-output/uitest.log | sed 's/^/::notice::/' || true
 
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
         run: |
