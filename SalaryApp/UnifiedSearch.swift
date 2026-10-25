@@ -99,7 +99,8 @@ struct UnifiedSearchView: View {
 
     private var scope: UnifiedScope { UnifiedScope(rawValue: scopeRaw) ?? .all }
     private var mode: StaffSearchMode { StaffSearchMode(rawValue: modeRaw) ?? .name }
-    private var trimmed: String { appliedSearch.trimmingCharacters(in: .whitespaces) }
+    /// يشمل البحث الصوتي: تُحذف النقطة وعلامات الترقيم التي يضيفها الإملاء.
+    private var trimmed: String { ArabicText.cleanQuery(appliedSearch) }
 
     /// أشهر الرواتب المختارة (نفس اختيار الشاشة الرئيسية)، أو آخر شهر.
     private var monthNames: [String] {
@@ -445,10 +446,11 @@ enum UnifiedFinder {
 
     static func tokens(_ search: String, mode: StaffSearchMode) -> [String] {
         if mode == .statNumber || mode == .unifiedNumber {
-            let t = ArabicText.latinDigits(search).trimmingCharacters(in: .whitespaces)
+            // الرقم بالصوت قد يُكتب بمسافات أو بأرقام هندية: تبقى الأرقام فقط.
+            let t = ArabicText.latinDigits(search).filter(\.isNumber)
             return t.isEmpty ? [] : [t]
         }
-        return ArabicText.normalize(search).split(separator: " ").map(String.init)
+        return ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
     }
 
     static func matches(_ m: StaffMember, tokens: [String], mode: StaffSearchMode) -> Bool {

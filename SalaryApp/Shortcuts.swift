@@ -287,7 +287,7 @@ enum EmployeeLookup {
 
     /// نفس البحث على أي سياق (يُستدعى من الخلفية في البحث الموحّد).
     nonisolated static func find(_ text: String, in months: [String], context: ModelContext) throws -> [Employee] {
-        let tokens = ArabicText.normalize(text).split(separator: " ").map(String.init)
+        let tokens = ArabicText.normalize(ArabicText.cleanQuery(text)).split(separator: " ").map(String.init)
         guard !tokens.isEmpty, !months.isEmpty else { return [] }
         let a = tokens[0]
         let predicate: Predicate<Employee>

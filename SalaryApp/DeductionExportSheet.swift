@@ -22,7 +22,7 @@ struct DeductionExportSheet: View {
     static let floating = PresentationDetent.height(640)
 
     private var matches: [ReportGroup] {
-        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
+        let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
         let list = groups.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         guard !tokens.isEmpty else { return list }
         return list.filter { g in tokens.allSatisfy { ArabicText.normalize(g.title).contains($0) } }

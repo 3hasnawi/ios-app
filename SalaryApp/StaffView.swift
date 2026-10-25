@@ -339,8 +339,8 @@ struct StaffResultsList: View {
         self.status = status
         let isNumber = mode == .statNumber || mode == .unifiedNumber
         let normalized = isNumber
-            ? ArabicText.latinDigits(search).trimmingCharacters(in: .whitespaces)
-            : ArabicText.normalize(search)
+            ? ArabicText.latinDigits(search).filter(\.isNumber)
+            : ArabicText.normalize(ArabicText.cleanQuery(search))
         tokens = isNumber ? (normalized.isEmpty ? [] : [normalized]) : normalized.split(separator: " ").map(String.init)
         var descriptor = FetchDescriptor<StaffMember>(predicate: Self.predicate(mode: mode, tokens: tokens), sortBy: [SortDescriptor(\.name)])
         descriptor.fetchLimit = tokens.isEmpty ? 1 : 5000

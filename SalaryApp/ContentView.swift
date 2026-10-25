@@ -265,7 +265,7 @@ struct ContentView: View {
             let review = UserDefaults.standard.bool(forKey: "importReview")
             await importCenter.analyze(files.map { URL(fileURLWithPath: $0) }, autoRun: !review)
         }
-        let key = ArabicText.normalize(search)
+        let key = ArabicText.normalize(ArabicText.cleanQuery(search))
         if LaunchOptions.openFirst, !key.isEmpty, let monthName = currentMonth?.name {
             var descriptor = FetchDescriptor<Employee>(
                 predicate: #Predicate { $0.month == monthName && $0.nameKey.contains(key) },
@@ -307,7 +307,7 @@ struct EmployeeList: View {
         self.months = months
         self.showSalary = showSalary
         self.showDeductions = showDeductions
-        tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
+        tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
 
         // قاعدة البيانات تُصفّي بالأشهر المختارة وأول كلمتين، والباقي يُطابق في الذاكرة
         // حتى يجد "محمد حسين" الاسم "محمد علي حسين".

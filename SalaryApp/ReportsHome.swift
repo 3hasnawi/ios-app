@@ -358,7 +358,7 @@ struct PayrollItemsView: View {
     @State private var previewGroup: ReportGroup?
 
     private var filtered: [ReportGroup] {
-        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
+        let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
         guard !tokens.isEmpty else { return groups }
         return groups.filter { g in tokens.allSatisfy { ArabicText.normalize(g.title).contains($0) } }
     }
@@ -515,7 +515,7 @@ struct EntitiesView: View {
     @State private var previewGroup: ReportGroup?
 
     private var filtered: [ReportGroup] {
-        let tokens = ArabicText.normalize(search).split(separator: " ").map(String.init)
+        let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
         guard !tokens.isEmpty else { return groups }
         return groups.filter { g in tokens.allSatisfy { ArabicText.normalize(g.title).contains($0) } }
     }

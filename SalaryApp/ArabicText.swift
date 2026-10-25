@@ -20,6 +20,22 @@ nonisolated enum ArabicText {
             .joined(separator: " ")
     }
 
+    /// نص البحث كما يكتبه المستخدم أو يمليه بالصوت: الإملاء الصوتي يضيف نقطة أو فاصلة أو علامة استفهام
+    /// ("أحمد علي.") فلا يطابق أي اسم. تُحذف علامات الترقيم والرموز وتُوحّد المسافات.
+    static func cleanQuery(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            if CharacterSet.punctuationCharacters.contains(scalar) || CharacterSet.symbols.contains(scalar)
+                || scalar.properties.generalCategory == .format {
+                // "/" و"-" تبقيان (تظهر في أسماء الجهات والأقسام).
+                if scalar == "/" || scalar == "-" { scalars.append(scalar) } else { scalars.append(" ") }
+            } else {
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
     /// الأرقام الهندية (٠١٢) والفارسية ← لاتينية، لمطابقة البحث بالأرقام.
     static func latinDigits(_ text: String) -> String {
         String(String.UnicodeScalarView(text.unicodeScalars.map { s in
