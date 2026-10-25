@@ -136,12 +136,21 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .onChange(of: deductionGroups) {
                 // اختبار المحاكي: -openReport YES يفتح أول مجموعة.
-                if LaunchOptions.openReport, path.isEmpty, let first = groups?.first { path = [first] }
+                if LaunchOptions.openReport, path.isEmpty, let first = testGroup(groups) { path = [first] }
             }
             .onAppear {
-                if LaunchOptions.openReport, kind == .payroll, path.isEmpty, let first = payrollGroups?.first { path = [first] }
+                if LaunchOptions.openReport, kind == .payroll, path.isEmpty, let first = testGroup(payrollGroups) { path = [first] }
             }
         }
+    }
+
+    /// اختبار المحاكي: المجموعة التي يحتوي عنوانها -openReportTitle، وإلا الأولى.
+    private func testGroup(_ groups: [ReportGroup]?) -> ReportGroup? {
+        guard let groups else { return nil }
+        if let wanted = UserDefaults.standard.string(forKey: "openReportTitle"), !wanted.isEmpty {
+            return groups.first { ArabicText.normalize($0.title).contains(ArabicText.normalize(wanted)) }
+        }
+        return groups.first
     }
 
     @ViewBuilder
@@ -416,7 +425,11 @@ struct ReportDetailView: View {
             }
             // اختبار المحاكي: -exportReport YES يكتب ملفي Excel و PDF ويفتح نافذة التصدير.
             if UserDefaults.standard.bool(forKey: "exportReport") {
-                let ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil
+                var ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil
+                // الكشوف الخاصة بشكلها المعتمد.
+                if let fundRows { ok = ok && (try? await FundReport.files(fundRows, month: group.month)) != nil }
+                if let foodRows { ok = ok && (try? await FoodContractReport.files(foodRows, month: group.month)) != nil }
+                if let healthLists { ok = ok && (try? await HealthCareReport.files(healthLists, month: group.month)) != nil }
                 LaunchOptions.writeReport(ok ? "export=ok rows=\(loaded.count)" : "export=failed")
                 showExport = true
             }
