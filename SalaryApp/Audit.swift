@@ -275,14 +275,28 @@ nonisolated enum AuditExport {
 actor AuditCache {
     static let shared = AuditCache()
     private var tasks: [String: Task<AuditReport, Error>] = [:]
+    private var completed: [String: AuditReport] = [:]
+    private var generation = 0
 
-    func report(month: String, threshold: Int, base: AuditBase, container: ModelContainer) async throws -> AuditReport {
+    private func cacheKey(month: String, threshold: Int, base: AuditBase, container: ModelContainer) throws -> String {
         let context = ModelContext(container)
         let descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
         let revision = try context.fetch(descriptor).first?.importedAt.timeIntervalSince1970 ?? 0
-        let key = "\(month)|\(revision)|\(threshold)|\(base.rawValue)|\(AppSettings.locale.identifier)"
+        return "\(month)|\(revision)|\(threshold)|\(base.rawValue)|\(AppSettings.locale.identifier)"
+    }
+
+    /// بطاقة التقارير تعرض نتيجة جاهزة فقط، ولا تبدأ تدقيقاً ثقيلاً أثناء التنقل.
+    func cachedIssues(month: String, threshold: Int, base: AuditBase, container: ModelContainer) throws -> Int? {
+        let key = try cacheKey(month: month, threshold: threshold, base: base, container: container)
+        return completed[key]?.issues
+    }
+
+    func report(month: String, threshold: Int, base: AuditBase, container: ModelContainer) async throws -> AuditReport {
+        let key = try cacheKey(month: month, threshold: threshold, base: base, container: container)
+        if let report = completed[key] { return report }
         if let task = tasks[key] { return try await task.value }
-        if tasks.count >= 3 { tasks.removeAll() }
+        if tasks.count >= 3 { tasks.removeAll(); completed.removeAll() }
+        let revision = generation
         let task = Task.detached(priority: .utility) {
             let started = Date()
             let result = try await ReportEngine(modelContainer: container).audit(month: month, threshold: threshold, base: base)
@@ -290,11 +304,23 @@ actor AuditCache {
             return result
         }
         tasks[key] = task
-        do { return try await task.value }
-        catch { tasks.removeValue(forKey: key); throw error }
+        do {
+            let result = try await task.value
+            guard revision == generation else { throw CancellationError() }
+            completed[key] = result
+            return result
+        } catch {
+            if revision == generation { tasks.removeValue(forKey: key) }
+            throw error
+        }
     }
 
-    func invalidate() { tasks.removeAll() }
+    func invalidate() {
+        generation += 1
+        for task in tasks.values { task.cancel() }
+        tasks.removeAll()
+        completed.removeAll()
+    }
 }
 
 // MARK: - الواجهة
@@ -306,6 +332,8 @@ struct AuditView: View {
     @AppStorage(AuditSettings.thresholdKey) private var threshold = 50
     @AppStorage(AuditSettings.baseKey) private var baseRaw = AuditBase.net.rawValue
     @State private var report: AuditReport?
+    @State private var importState = StaffImportState.shared
+    @Query private var savedMonths: [PayrollMonth]
     @State private var exporting = false
     @State private var error: String?
 
@@ -389,9 +417,11 @@ struct AuditView: View {
         .alert(tr("التصدير", "Export"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
-        .task(id: "\(month)|\(threshold)|\(baseRaw)") {
+        .task(id: "\(month)|\(savedMonths.first { $0.name == month }?.importedAt.timeIntervalSince1970 ?? 0)|\(threshold)|\(baseRaw)|\(importState.version)") {
             report = nil
-            report = await Self.run(month: month, threshold: threshold, base: base)
+            let loaded = await Self.run(month: month, threshold: threshold, base: base)
+            guard !Task.isCancelled else { return }
+            report = loaded
         }
     }
 

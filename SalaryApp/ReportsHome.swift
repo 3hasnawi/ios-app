@@ -88,10 +88,15 @@ struct ReportsView: View {
                 Text(exporter.error ?? "")
             }
             .task(id: loadKey) { await loadDeductions() }
-            .task(id: "\(loadKey)|\(auditThreshold)|\(auditBase)") {
+            .task(id: "\(loadKey)|\(auditThreshold)|\(auditBase)|\(path.count)") {
                 auditIssues = nil
                 guard let name = month?.name else { return }
-                auditIssues = await AuditView.run(month: name, threshold: auditThreshold, base: AuditBase(rawValue: auditBase) ?? .net)?.issues
+                let key = loadKey
+                let issues = try? await AuditCache.shared.cachedIssues(month: name, threshold: auditThreshold,
+                                                                     base: AuditBase(rawValue: auditBase) ?? .net,
+                                                                     container: SharedModel.container)
+                guard !Task.isCancelled, key == loadKey else { return }
+                auditIssues = issues
             }
         }
     }
@@ -173,7 +178,7 @@ struct ReportsView: View {
                                 .fontWeight(.semibold)
                             + Text(tr(" · مقارنة الأشهر", " · compare months")).foregroundStyle(.secondary)
                         } else {
-                            Text(tr("جارٍ التدقيق…", "Checking…")).foregroundStyle(.secondary)
+                            Text(tr("فحوص الشهر ومقارنة الأشهر", "Monthly checks and comparison")).foregroundStyle(.secondary)
                         }
                     }
                     .font(.subheadline)
