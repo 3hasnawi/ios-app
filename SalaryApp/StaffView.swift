@@ -113,6 +113,7 @@ struct RootView: View {
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await TestData.prepareIfRequested()
+            if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             await AutoPilot.shared.run()
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.

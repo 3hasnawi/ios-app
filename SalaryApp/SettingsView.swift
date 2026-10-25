@@ -32,6 +32,7 @@ struct SettingsView: View {
                 searchSection
                 reportsSection
                 importSection
+                BackupSection()
                 staffSection
                 storageSection
             }

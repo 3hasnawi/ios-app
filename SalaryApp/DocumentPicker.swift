@@ -44,10 +44,11 @@ struct DocumentPicker: UIViewControllerRepresentable {
 enum FilePicker {
     private static var delegate: Delegate?
 
-    static func present(types: [UTType], onPick: @escaping ([URL]) -> Void) {
+    static func present(types: [UTType], multiple: Bool = true, onPick: @escaping ([URL]) -> Void) {
         guard let top = topController() else { return }
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
-        picker.allowsMultipleSelection = true
+        // المجلدات تُفتح في مكانها (للنسخ التلقائي)، والملفات تُنسخ.
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: !types.contains(.folder))
+        picker.allowsMultipleSelection = multiple
         picker.shouldShowFileExtensions = true
         let d = Delegate(onPick: onPick)
         delegate = d

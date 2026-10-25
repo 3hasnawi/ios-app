@@ -346,6 +346,10 @@ final class ImportCenter {
         if !lines.isEmpty { parts += [tr("تم الاستيراد:", "Imported:")] + lines }
         if !failures.isEmpty { parts += ["", tr("تعذّر:", "Failed:")] + failures }
         if !warnings.isEmpty { parts += [""] + warnings }
+        // نسخ احتياطي تلقائي بعد الاستيراد الناجح (إذا كان مفعّلاً).
+        if !fromTest, !lines.isEmpty, let backupLine = await BackupManager.shared.autoBackup() {
+            parts += ["", backupLine]
+        }
         if autoRun {
             // اختبار المحاكي يقرأ هذا التقرير.
             let status = failures.isEmpty ? "" : " failed=\(failures.count)"
