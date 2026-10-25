@@ -384,7 +384,7 @@ enum UnifiedFinder {
                 let page = try context.fetch(d)
                 staff += page.filter { matches($0, tokens: tokens, mode: mode) }.prefix(150 - staff.count)
                 if page.count < 200 { break }
-                d.fetchOffset += page.count
+                d.fetchOffset = (d.fetchOffset ?? 0) + page.count
             }
         }
         if scope != .staff, mode == .name, !months.isEmpty {
