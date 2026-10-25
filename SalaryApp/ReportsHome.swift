@@ -38,24 +38,24 @@ struct ReportsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
+            ScrollView {
                 if months.isEmpty {
                     ContentUnavailableView(tr("لا توجد بيانات", "No data"), systemImage: "chart.bar.doc.horizontal",
                                            description: Text(tr("استورد ملفات الرواتب والاستقطاعات أولاً.", "Import payroll and deduction files first.")))
-                        .listRowBackground(Color.clear)
+                        .padding(.top, 80)
                 } else {
-                    Section {
+                    VStack(spacing: 12) {
                         filters
                         summaryCard
                         entitiesCard
                         specialCards
                     }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
                 }
             }
-            .listSectionSpacing(.compact)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle(tr("التقارير", "Reports"))
             .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: ReportsRoute.self) { route in
@@ -100,7 +100,6 @@ struct ReportsView: View {
         .foregroundStyle(.white)
         .padding(16)
         .background(Theme.salaryGradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .padding(.horizontal, 16)
         .accessibilityElement(children: .combine)
     }
 
@@ -110,7 +109,7 @@ struct ReportsView: View {
         let fund = groups.first { FundReport.applies(to: $0.title) }
         let food = groups.first { FoodContractReport.applies(to: $0.title) }
         let health = groups.first { HealthCareReport.applies(to: $0.title) }
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             ReportCard(title: tr("صندوق الشهداء", "Martyrs fund"), subtitle: fund.map { tr("\(Num.format($0.count)) موظف", "\($0.count) employees") },
                        total: fund?.total, systemImage: "star.fill", color: .green, group: fund, path: $path)
             ReportCard(title: tr("عقد الإطعام", "Food contract"), subtitle: food.map { tr("عراق الجوال · \(Num.format($0.count))", "Iraq Mobile · \($0.count)") },
@@ -122,7 +121,7 @@ struct ReportsView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     CardIcon(systemImage: "list.bullet.rectangle", color: .gray)
-                    Text(tr("بنود الرواتب", "Payroll items")).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Text(tr("بنود الرواتب", "Payroll items")).font(.headline).foregroundStyle(.primary)
                     Text(tr("\(Num.format(groups.count)) بند", "\(groups.count) items")).font(.caption).foregroundStyle(.secondary)
                     HStack(spacing: 2) {
                         Text(tr("عرض", "View"))
@@ -132,13 +131,12 @@ struct ReportsView: View {
                     .foregroundStyle(Color.accentColor)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(14)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("payrollItemsCard")
         }
-        .padding(.horizontal, 16)
     }
 
     // MARK: جهات التنفيذ
@@ -146,28 +144,30 @@ struct ReportsView: View {
     /// بطاقة عريضة: عدد الجهات ومجموعها، وزر التصدير؛ الضغط يفتح قائمة الجهات.
     private var entitiesCard: some View {
         let total = deductionGroups.reduce(0) { $0 + $1.total }
-        return Button {
-            path.append(.entities)
-        } label: {
-            HStack(spacing: 12) {
-                CardIcon(systemImage: "building.columns.fill", color: .indigo)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(tr("جهات التنفيذ", "Execution entities")).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
-                    Text(loadedKey == loadKey
-                         ? tr("\(Num.format(deductionGroups.count)) جهة · مديريات ومصارف وجهات أخرى", "\(deductionGroups.count) entities")
-                         : tr("جارٍ الحساب…", "Calculating…"))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Text(Money.format(total)).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(.red)
+        return HStack(spacing: 12) {
+            Button {
+                path.append(.entities)
+            } label: {
+                HStack(spacing: 12) {
+                    CardIcon(systemImage: "building.columns.fill", color: .indigo)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tr("جهات التنفيذ", "Execution entities")).font(.headline).foregroundStyle(.primary)
+                        Text(loadedKey == loadKey
+                             ? tr("\(Num.format(deductionGroups.count)) جهة", "\(deductionGroups.count) entities")
+                             : tr("جارٍ الحساب…", "Calculating…"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text(Money.format(total))
+                            .font(.title3.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.red)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 8)
                 }
-                Spacer(minLength: 44)
-                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .overlay(alignment: .topTrailing) {
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("entitiesCard")
             if !deductionGroups.isEmpty {
                 Button {
                     showExport = true
@@ -175,18 +175,17 @@ struct ReportsView: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.footnote.weight(.bold))
                         .foregroundStyle(Color.accentColor)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 36, height: 36)
                         .background(Color.accentColor.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(10)
-                .padding(.trailing, 22)
                 .accessibilityLabel(tr("تصدير الاستقطاعات", "Export deductions"))
                 .accessibilityIdentifier("deductionExportButton")
             }
+            Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 16)
-        .accessibilityIdentifier("entitiesCard")
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var filters: some View {
@@ -207,7 +206,6 @@ struct ReportsView: View {
             .buttonBorderShape(.capsule)
             Spacer()
         }
-        .padding(.horizontal, 20)
     }
 
     private func loadDeductions() async {
@@ -286,17 +284,17 @@ private struct ReportCard: View {
                     CardIcon(systemImage: systemImage, color: color)
                     Spacer()
                 }
-                Text(title).font(.subheadline.weight(.bold)).foregroundStyle(.primary).lineLimit(1)
+                Text(title).font(.headline).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8)
                 Text(subtitle ?? tr("لا يوجد هذا الشهر", "Not this month")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Text(total.map { Money.format($0) } ?? "—")
-                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .font(.headline.monospacedDigit())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(group == nil)
