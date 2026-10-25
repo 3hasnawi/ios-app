@@ -414,7 +414,10 @@ struct ReportExportSheet: View {
     let rows: [ReportRow]
     /// صندوق الشهداء: كشف حسب الفئة بشكله المعتمد.
     var fundRows: [FundReport.Row]? = nil
+    /// شركة عراق الجوال: كشف عقد الإطعام.
+    var foodRows: [FoodContractReport.Row]? = nil
     @State private var fundFiles: (excel: URL, pdf: URL)?
+    @State private var foodFiles: (excel: URL, pdf: URL)?
     @Environment(\.dismiss) private var dismiss
     @State private var excel: URL?
     @State private var pdf: URL?
@@ -430,6 +433,25 @@ struct ReportExportSheet: View {
                                 "\(group.month) · \(rows.count) employees · total \(Money.format(group.total))"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+                if foodRows != nil {
+                    Section {
+                        if let foodFiles {
+                            ShareLink(item: foodFiles.excel) {
+                                Label(tr("Excel (عقد الإطعام)", "Excel (food contract)"), systemImage: "tablecells.fill")
+                            }
+                            ShareLink(item: foodFiles.pdf) {
+                                Label(tr("PDF (عقد الإطعام)", "PDF (food contract)"), systemImage: "doc.richtext.fill")
+                            }
+                        } else {
+                            ProgressView()
+                        }
+                    } header: {
+                        Text(tr("كشف عقد الإطعام", "Food contract"))
+                    } footer: {
+                        Text(tr("المشتركون حسب مبلغ الاستقطاع، وتفاصيل النسبة (صندوق الشهداء ٣٪، ضريبة ١٫٨٪، حصة الشركة).",
+                                "Subscribers by amount, and the split (martyrs fund 3%, tax 1.8%, company share)."))
                     }
                 }
                 if fundRows != nil {
@@ -481,7 +503,7 @@ struct ReportExportSheet: View {
                         }
                     }
                 } header: {
-                    Text(fundRows != nil ? tr("قائمة الأسماء", "Name list") : tr("الصيغة", "Format"))
+                    Text(fundRows != nil || foodRows != nil ? tr("قائمة الأسماء", "Name list") : tr("الصيغة", "Format"))
                 }
             }
             .navigationTitle(tr("تصدير الكشف", "Export list"))
@@ -501,6 +523,9 @@ struct ReportExportSheet: View {
                 pdf = files.pdf
                 if let fundRows {
                     fundFiles = try await FundReport.files(fundRows, month: group.month)
+                }
+                if let foodRows {
+                    foodFiles = try await FoodContractReport.files(foodRows, month: group.month)
                 }
             } catch {
                 failed = error.localizedDescription

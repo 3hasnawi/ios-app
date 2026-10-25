@@ -305,6 +305,11 @@ struct ReportDetailView: View {
     @State private var showExport = false
     /// لبند صندوق الشهداء: الملخّص حسب الفئة.
     @State private var fundRows: [FundReport.Row]?
+    /// لبند شركة عراق الجوال: كشف عقد الإطعام.
+    private var foodRows: [FoodContractReport.Row]? {
+        guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
+        return FoodContractReport.rows(from: rows)
+    }
 
     private var filtered: [ReportRow] {
         guard let rows else { return [] }
@@ -340,6 +345,7 @@ struct ReportDetailView: View {
             }
 
             if let fundRows { FundSummarySection(rows: fundRows) }
+            if let foodRows, !foodRows.isEmpty { FoodContractSection(rows: foodRows) }
 
             Section {
                 if rows == nil {
@@ -378,7 +384,7 @@ struct ReportDetailView: View {
             }
         }
         .sheet(isPresented: $showExport) {
-            if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows) }
+            if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows) }
         }
         .task {
             let container = SharedModel.container
