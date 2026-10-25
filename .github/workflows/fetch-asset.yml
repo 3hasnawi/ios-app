@@ -2,6 +2,11 @@ name: Fetch logo candidates
 
 on:
   workflow_dispatch:
+    inputs:
+      urls:
+        description: "روابط إضافية مفصولة بمسافة"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -21,6 +26,13 @@ jobs:
           get commons-search.json "https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srsearch=Iraq%20Ministry%20of%20Interior%20logo&srlimit=30&format=json"
           get commons-search2.json "https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srsearch=%D9%88%D8%B2%D8%A7%D8%B1%D8%A9%20%D8%A7%D9%84%D8%AF%D8%A7%D8%AE%D9%84%D9%8A%D8%A9%20%D8%A7%D9%84%D8%B9%D8%B1%D8%A7%D9%82%D9%8A%D8%A9&srlimit=30&format=json"
           get moi-home.html "https://moi.gov.iq/"
+          n=0
+          for u in ${{ github.event.inputs.urls }}; do n=$((n+1)); get "extra-$n.$(echo "${u##*.}" | cut -c1-4 | tr -dc 'a-z')" "$u"; done
+          # og:image من الصفحات
+          for f in extra-*.htm* extra-*; do
+            [ -f "$f" ] || continue
+            grep -oiE '<meta[^>]+og:image[^>]+>' "$f" | grep -oE 'https?://[^"]+' | head -2 | while read -r img; do n=$((n+1)); get "og-$(basename "$f")-$n.img" "$img"; done
+          done
           # صور الشعار في موقع الوزارة
           grep -oiE '(src|href)="[^"]+\.(png|svg|jpg|jpeg|webp)[^"]*"' moi-home.html 2>/dev/null | sed -E 's/^(src|href)="//; s/"$//' | sort -u | head -40 > moi-images.txt || true
           i=0
