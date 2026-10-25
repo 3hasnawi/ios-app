@@ -21,7 +21,8 @@ final class ImportProgress {
 
     func end() {
         fraction = 1
-        withAnimation(.snappy) { isActive = false }
+        // بدون حركة: الحركة كانت تتأجل أحياناً خلف رسالة النتيجة فيبقى الشريط ظاهراً.
+        isActive = false
     }
 
     /// مرحلة من العمل: [start, end] من الشريط كله، مع وصفها.

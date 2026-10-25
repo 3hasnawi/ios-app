@@ -141,7 +141,16 @@ final class NavigationTests: XCTestCase {
                 tapLabel(["الرواتب", "SalaryApp"], "مجلد التطبيق", in: app.cells)
             }
             picked = tapLabel([name], "الملف \(name)", timeout: 8, in: app.cells)
-            if picked { tapLabel(["فتح", "Open"], "زر فتح", timeout: 4, in: app.buttons) }
+            if picked {
+                // زر "فتح" في أعلى النافذة؛ نعيد المحاولة إن لم يُغلق.
+                for _ in 0..<3 {
+                    let open = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "فتح", "Open")).firstMatch
+                    guard open.waitForExistence(timeout: 4) else { break }
+                    open.tap()
+                    sleep(2)
+                    if !open.exists { break }
+                }
+            }
         }
         return picked
     }

@@ -133,6 +133,10 @@ jobs:
           for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no split report"; } | tee ci-output/import-split-report.txt
 
+          # 2c) ملف غير متوافق: رسالة الرفض بالسبب
+          launch -importFile "$DATA/Documents/ملف غير متوافق.xlsx" -importReview YES
+          shot 02c-import-rejected 8
+
           # 3) الشاشة الرئيسية: أحدث شهر (تشرين الاول) مختار تلقائياً
           launch
           shot 03-month-latest
