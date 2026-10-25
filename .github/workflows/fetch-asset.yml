@@ -1,0 +1,42 @@
+name: Fetch logo candidates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download candidates
+        run: |
+          mkdir -p out && cd out
+          UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+          get() { curl -sSL -A "$UA" --max-time 60 -o "$1" "$2" && echo "$1 $(stat -c%s "$1") $2" >> sources.txt || echo "FAIL $1 $2" >> sources.txt; }
+          get commons-IraqMOILogo.png "https://upload.wikimedia.org/wikipedia/commons/9/9e/IraqMOILogo.png"
+          get commons-page.html "https://commons.wikimedia.org/wiki/File:IraqMOILogo.png"
+          get commons-api.json "https://commons.wikimedia.org/w/api.php?action=query&titles=File:IraqMOILogo.png&prop=imageinfo&iiprop=url|size|mime|extmetadata&format=json"
+          get commons-search.json "https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srsearch=Iraq%20Ministry%20of%20Interior%20logo&srlimit=30&format=json"
+          get commons-search2.json "https://commons.wikimedia.org/w/api.php?action=query&list=search&srnamespace=6&srsearch=%D9%88%D8%B2%D8%A7%D8%B1%D8%A9%20%D8%A7%D9%84%D8%AF%D8%A7%D8%AE%D9%84%D9%8A%D8%A9%20%D8%A7%D9%84%D8%B9%D8%B1%D8%A7%D9%82%D9%8A%D8%A9&srlimit=30&format=json"
+          get moi-home.html "https://moi.gov.iq/"
+          # صور الشعار في موقع الوزارة
+          grep -oiE '(src|href)="[^"]+\.(png|svg|jpg|jpeg|webp)[^"]*"' moi-home.html 2>/dev/null | sed -E 's/^(src|href)="//; s/"$//' | sort -u | head -40 > moi-images.txt || true
+          i=0
+          while read -r u; do
+            case "$u" in http*) full="$u";; //*) full="https:$u";; /*) full="https://moi.gov.iq$u";; *) full="https://moi.gov.iq/$u";; esac
+            i=$((i+1)); ext="${u##*.}"; ext="${ext%%\?*}"
+            get "moi-$i.$ext" "$full"
+          done < moi-images.txt
+          ls -la
+          cat sources.txt
+      - name: Push to branch logo-candidates
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out
+          git init -q && git checkout -q -b logo-candidates
+          git config user.name ci && git config user.email ci@example.com
+          git add -A && git commit -qm "logo candidates"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" logo-candidates
