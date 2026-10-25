@@ -117,7 +117,9 @@ final class ImportCenter {
         isBusy = true
         self.autoRun = autoRun
         let progress = ImportProgress.shared
-        progress.begin(urls.count == 1 ? tr("فحص الملف", "Checking file") : tr("فحص \(Num.format(urls.count)) ملفات", "Checking \(urls.count) files"))
+        progress.begin(urls.count == 1 ? tr("فحص الملف", "Checking file")
+                       : urls.count == 2 ? tr("فحص ملفين", "Checking 2 files")
+                       : tr("فحص \(Num.format(urls.count)) ملفات", "Checking \(urls.count) files"))
 
         let existing = existingMonths()
         var found: [ImportCandidate] = []
@@ -357,9 +359,10 @@ struct ImportReviewSheet: View {
                 } header: {
                     VStack(spacing: 4) {
                         Text(center.candidates.count == 1 ? tr("تم التعرّف على الملف", "File recognised")
-                                                          : tr("تم التعرّف على \(Num.format(center.candidates.count)) ملفات", "\(center.candidates.count) files recognised"))
+                             : center.candidates.count == 2 ? tr("تم التعرّف على ملفين", "2 files recognised")
+                             : tr("تم التعرّف على \(Num.format(center.candidates.count)) ملفات", "\(center.candidates.count) files recognised"))
                             .font(.title3.bold())
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(Color(.label))
                         Text(tr("راجع النوع والشهر قبل الاستيراد", "Check the type and month before importing"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
