@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 
 /// ترتيب الرتب من الأعلى إلى الأدنى، لترتيب الكشوف كما في النماذج.

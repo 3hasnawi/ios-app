@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 
 /// كشف صندوق الشهداء بالشكل المعتمد: مجمّع حسب الفئة (ضباط، موظفين، مراتب، عقود)
