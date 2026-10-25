@@ -63,7 +63,7 @@
 | `ContentView.swift` | الرئيسية + `LaunchOptions` |
 | `HomeDashboard.swift` | ملخص الشهر وآخر من بُحث عنهم |
 | `UnifiedSearch.swift` | البحث الموحّد (رواتب + ملاك)، صفحة الشخص بأزرار الأشهر، `RecentSearches`، `copyToClipboard` |
-| `SearchIndex.swift` | فهرس البحث في الذاكرة (يُبنى مرة ويُحدَّث تلقائياً عند تغيّر البيانات) |
+| `SearchIndex.swift` | استعلامات بحث محدودة في الخلفية وذاكرة لآخر 12 نتيجة؛ لا تحميل شامل للملاك والرواتب عند الفتح |
 | `ImportCenter.swift` | الاستيراد الموحّد: اختيار الملفات، التعرّف التلقائي (رواتب/استقطاعات/ملاك/نسخة zip)، نافذة المراجعة، رسالة النتيجة + سطر التدقيق + النسخ التلقائي |
 | `ExcelImporter.swift` | قراءة xlsx/csv، التعرف على الأعمدة من العناوين (`Synonyms`)، بنود الرواتب، حقول تقرير الراتب (`reportFields`) |
 | `AccessReader.swift`, `StaffModel.swift` | قراءة قاعدة الملاك Access وحفظها |

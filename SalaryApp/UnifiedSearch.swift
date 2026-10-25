@@ -360,7 +360,7 @@ enum UnifiedFinder {
     @MainActor
     static func find(_ search: String, mode: StaffSearchMode, scope: UnifiedScope, months: [String]) async throws -> [UnifiedPerson] {
         let container = SharedModel.container
-        // فهرس في الذاكرة: البحث فوري بعد أول تحميل.
+        // استعلام محدود في الخلفية، وتُعاد النتائج الحديثة من الذاكرة.
         let hits = try await SearchIndex.shared.hits(search, mode: mode, scope: scope, months: months, container: container)
         try Task.checkCancellation()
         return hits.map(UnifiedPerson.init)
@@ -376,15 +376,26 @@ enum UnifiedFinder {
         var employees: [Employee] = []
         if StaffInfo.count > 0, scope != .payroll || mode != .name {
             var d = FetchDescriptor<StaffMember>(predicate: StaffResultsList.predicate(mode: mode, tokens: tokens), sortBy: [SortDescriptor(\.name)])
-            d.fetchLimit = 3000
+            d.fetchLimit = 200
             d.propertiesToFetch = [\.name, \.nameKey, \.motherKey, \.statNumber, \.unifiedNumber, \.rank, \.workplace, \.status]
-            staff = try context.fetch(d).filter { matches($0, tokens: tokens, mode: mode) }.prefix(150).map { $0 }
+            // نقرأ على دفعات حتى نجد النتائج، مع إبقاء جميع كلمات البحث معتبرة.
+            while staff.count < 150 {
+                try Task.checkCancellation()
+                let page = try context.fetch(d)
+                staff += page.filter { matches($0, tokens: tokens, mode: mode) }.prefix(150 - staff.count)
+                if page.count < 200 { break }
+                d.fetchOffset += page.count
+            }
         }
         if scope != .staff, mode == .name, !months.isEmpty {
             // لكل شخص: أحدث شهر من الأشهر المختارة.
             var seen = Set<String>()
-            for e in try EmployeeLookup.find(search, in: months, context: context) where seen.insert(e.matchKey).inserted {
-                employees.append(e)
+            for month in months {
+                try Task.checkCancellation()
+                for e in try EmployeeLookup.find(search, in: [month], context: context) where seen.insert(e.matchKey).inserted {
+                    employees.append(e)
+                    if employees.count >= 150 { break }
+                }
                 if employees.count >= 150 { break }
             }
         }
@@ -405,22 +416,31 @@ enum UnifiedFinder {
         // من وُجد في الملاك فقط: البحث عن راتبه بالاسم الكامل في الأشهر المختارة.
         let missingPay = keys.filter { byKey[$0]!.employee == nil }
         if !missingPay.isEmpty, !months.isEmpty {
-            let d = FetchDescriptor<Employee>(predicate: #Predicate { months.contains($0.month) && missingPay.contains($0.matchKey) })
+            try Task.checkCancellation()
+            var d = FetchDescriptor<Employee>(predicate: #Predicate { months.contains($0.month) && missingPay.contains($0.matchKey) })
+            d.propertiesToFetch = [\.name, \.nameKey, \.matchKey, \.month, \.rank, \.workplace, \.netSalary]
             let found = try context.fetch(d).sorted { (order[$0.month] ?? .max) < (order[$1.month] ?? .max) }
             for e in found where byKey[e.matchKey] != nil && byKey[e.matchKey]!.employee == nil {
                 byKey[e.matchKey]!.employee = e
             }
         }
-        // من وُجد في الرواتب فقط: البحث عنه في الملاك بالاسم الكامل.
+        // ربط الأسماء الناقصة باستعلام واحد بدل استعلام منفصل لكل بطاقة.
         if StaffInfo.count > 0 {
-            for key in keys where byKey[key]!.staff == nil {
-                guard let e = byKey[key]!.employee else { continue }
-                let nameKey = e.nameKey
-                var d = FetchDescriptor<StaffMember>(predicate: #Predicate { $0.nameKey == nameKey })
-                d.fetchLimit = 1
-                if let s = try context.fetch(d).first { byKey[key]!.staff = s }
+            try Task.checkCancellation()
+            let names = keys.compactMap { key -> String? in
+                guard byKey[key]!.staff == nil else { return nil }
+                return byKey[key]!.employee?.nameKey
+            }
+            if !names.isEmpty {
+                var d = FetchDescriptor<StaffMember>(predicate: #Predicate { names.contains($0.nameKey) }, sortBy: [SortDescriptor(\.name)])
+                d.propertiesToFetch = [\.name, \.nameKey, \.rank, \.workplace, \.status]
+                for s in try context.fetch(d) {
+                    let key = ArabicText.matchKey(s.name)
+                    if byKey[key] != nil, byKey[key]!.staff == nil { byKey[key]!.staff = s }
+                }
             }
         }
+        try Task.checkCancellation()
 
         return keys.compactMap { key -> UnifiedHit? in
             guard let pair = byKey[key] else { return nil }
