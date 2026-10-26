@@ -49,6 +49,8 @@
 - رابط آخر إصدار: `gh api "repos/3hasnawi/ios-app/releases?per_page=1"`.
 - لقطات المحاكي والتقارير: فرع `screenshots` (`screenshots/*.png`, `report-export/`, `exports/`, `*-report.txt`, `navigation-small.mp4`).
 
+- **رقم الإصدار**: كل بناء يرفع الإصدار تلقائياً إلى `1.<رقم البناء>` (build.yml يمرر MARKETING_VERSION وCURRENT_PROJECT_VERSION)، ويظهر أسفل الإعدادات («الإصدار 1.34 (بناء 34)»). لا تغيّر الأرقام في project.yml يدوياً.
+
 ### خيارات التشغيل للاختبار (Launch arguments)
 تُمرَّر في `simulator.yml` مثل `-tab reports -openReport YES`:
 `-importFile <مسارات|>`، `-importReview YES`، `-tab search|reports|settings`، `-search <نص>`، `-openFirst YES`، `-openPerson YES`، `-personPart months`، `-share YES`، `-shareMode image`، `-openSettings YES`، `-openBackup YES`، `-reportKind payroll`، `-reportByEntity YES|NO`، `-openReport YES`، `-openReportTitle <جزء من الاسم>`، `-exportReport YES`، `-previewReport YES`، `-reportsEntities YES`، `-reportsAudit YES`، `-auditTest YES`، `-compareDeductions YES`، `-deductionAuditTest YES` (حالات محاسبية وهمية وتصدير، للمحاكي فقط)، `-exportSheet single|group`، `-exportSearch <نص>`، `-bulkExport directorates|banks|others|all`، `-backupTest YES`، `-autoBackupTest YES`، `-fakeStaff <عدد>`، `-autopilot YES`، `-perfLog YES`، `-appLanguage en`، `-appNumerals arabicIndic`، `-appTextSize 0..6`، `-faceIDLock YES -lockPreview YES|-skipLock YES`.

@@ -27,12 +27,14 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # رقم الإصدار يرتفع مع كل بناء: 1.<رقم البناء>، ويظهر في الإعدادات.
       - name: Build (unsigned)
         run: |
           set -o pipefail
           xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="1.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             build 2>&1 | tee build.log || {
               # أخطاء الترجمة تظهر كملاحظات في صفحة التشغيل حتى تُقرأ بدون تنزيل السجل.
               grep -E "error:" build.log | sort -u | head -40 | while IFS= read -r line; do echo "::error::$line"; done
@@ -59,5 +61,5 @@ jobs:
           cp SalaryApp-unsigned.ipa SalaryApp.ipa
           TAG="build-${{ github.run_number }}"
           gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
-            --title "تطبيق الرواتب — بناء ${{ github.run_number }}" \
+            --title "تطبيق الرواتب — الإصدار 1.${{ github.run_number }}" \
             --notes "من الفرع ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" --latest
