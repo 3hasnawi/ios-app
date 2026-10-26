@@ -185,8 +185,11 @@ struct UnifiedSearchView: View {
                 appliedSearch = name
             }
             .navigationTitle(tr("بحث", "Search"))
-            // عنوان صغير بلا فراغ فوقه. نوع البحث زر عائم بجانب خانة البحث (أسفل الشاشة).
+            // عنوان صغير بلا فراغ فوقه، ونوع البحث زر في شريط العنوان يفتح قائمة عائمة تحته.
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { modeButton }
+            }
             .overlay { modePicker }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .navigationDestination(for: UnifiedPerson.self) { person in
@@ -198,41 +201,39 @@ struct UnifiedSearchView: View {
         }
     }
 
-    /// نوع البحث: زر عائم بجانب خانة البحث (جهة زر الرجوع للتبويبات)، يفتح قائمة عائمة بالأنواع الأربعة.
+    /// نوع البحث: زر في شريط العنوان.
+    private var modeButton: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { showModes.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: mode.systemImage)
+                Text(mode.title).lineLimit(1)
+                Image(systemName: showModes ? "chevron.up" : "chevron.down").font(.caption.weight(.bold))
+            }
+            .font(.subheadline.weight(.semibold))
+        }
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
+        .accessibilityIdentifier("searchModeMenu")
+        .accessibilityLabel(tr("البحث حسب: \(mode.title)", "Search by: \(mode.title)"))
+    }
+
+    /// القائمة العائمة تحت زر نوع البحث، والخلفية معتمة حتى تُغلق بالضغط خارجها.
     private var modePicker: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .topTrailing) {
             if showModes {
                 Color.black.opacity(0.35)
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation(.snappy(duration: 0.25)) { showModes = false } }
                     .transition(.opacity)
+                modePanel
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .transition(.scale(scale: 0.85, anchor: .topTrailing).combined(with: .opacity))
             }
-            VStack(alignment: .trailing, spacing: 10) {
-                if showModes {
-                    modePanel
-                        .transition(.scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity))
-                }
-                Button {
-                    withAnimation(.snappy(duration: 0.25)) { showModes.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: mode.systemImage)
-                        Text(mode.title).lineLimit(1)
-                        Image(systemName: showModes ? "chevron.down" : "chevron.up").font(.caption.weight(.bold))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                }
-                .glassButtonStyle(prominent: true)
-                .buttonBorderShape(.capsule)
-                .accessibilityIdentifier("searchModeMenu")
-                .accessibilityLabel(tr("البحث حسب: \(mode.title)", "Search by: \(mode.title)"))
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }
 
     private var modePanel: some View {
