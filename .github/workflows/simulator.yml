@@ -420,10 +420,12 @@ jobs:
             set -e
             echo "$t status=$st" | tee -a ci-output/share-report.txt
             grep -E "error:|failed|XCTAssert" "ci-output/share-$t.log" | sort -u | head -8 | sed 's/^/::warning::/' || true
-            cat "$DATA/Documents/import-report.txt" 2>/dev/null | tee -a ci-output/share-report.txt; echo >> ci-output/share-report.txt
+            { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "(no share report)"; } | tee -a ci-output/share-report.txt; echo >> ci-output/share-report.txt
             [ "$st" = 0 ] || fail=1
           done
           # الملفات المحفوظة في "الملفات" (On My iPhone) أثناء هذا الاختبار
+          ls -laR "$DATA/tmp/Sharing" 2>/dev/null | head -20 | tee -a ci-output/share-report.txt || true
+          find "$DEV" -type f -newer ci-output/share-start \( -name "*.pdf" -o -name "*.xlsx" \) -not -path "*/$BUNDLE*" 2>/dev/null | grep -v "/tmp/Sharing/\|/tmp/report-export/" | head -20 | tee -a ci-output/share-report.txt || true
           find "$DEV" -path "*File Provider Storage*" -type f -newer ci-output/share-start \( -name "*.pdf" -o -name "*.xlsx" \) -print0 2>/dev/null | while IFS= read -r -d '' f; do
             size=$(stat -f%z "$f"); head=$(head -c 4 "$f" | xxd -p)
             echo "saved: $(basename "$f") size=$size head=$head" | tee -a ci-output/share-report.txt
