@@ -69,8 +69,8 @@ struct ReportsView: View {
             // عنوان صغير وزر الشهر في شريط العنوان (مثل الرئيسية) حتى تبدأ البطاقات من أعلى الشاشة.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if !months.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) { filters }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !months.isEmpty { filters }
                 }
             }
             .navigationDestination(for: ReportsRoute.self) { route in
@@ -277,9 +277,9 @@ struct ReportsView: View {
             }
             .font(.subheadline.weight(.semibold))
         }
+        .accessibilityIdentifier("reportsMonthMenu")
         .glassButtonStyle(prominent: true)
         .buttonBorderShape(.capsule)
-        .accessibilityIdentifier("reportsMonthMenu")
     }
 
     private func loadDeductions() async {

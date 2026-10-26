@@ -293,6 +293,7 @@ final class NavigationTests: XCTestCase {
         step("التقارير: بطاقة جهات التنفيذ ثم المعاينة") {
             reportsTab.tap()
             wait(app.navigationBars["التقارير"], "التقارير")
+            wait(element("reportsMonthMenu"), "زر شهر التقارير")
             let card = element("entitiesCard")
             if wait(card, "بطاقة جهات التنفيذ") {
                 card.tap()

@@ -147,6 +147,8 @@ jobs:
             if [ "$DEDUCTIONS_ONLY" = true ]; then exit 0; fi
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
+            launch -tab reports
+            shot 08n-reports-root 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي"
             shot 08o-report-deduction-detail 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي" -previewReport YES
