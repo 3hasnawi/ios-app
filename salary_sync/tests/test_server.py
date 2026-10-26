@@ -24,6 +24,13 @@ class SnapshotTests(unittest.TestCase):
         return self.admin.post('/publish', data={"approved": "yes"},
                                files={"file": ("test.json", json.dumps(value, ensure_ascii=False).encode(), "application/json")})
 
+    def test_admin_page_fits_mobile_and_uses_arabic_file_label(self):
+        page = self.admin.get('/')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('viewport-fit=cover', page.text)
+        self.assertIn('اختيار ملف JSON', page.text)
+        self.assertIn('id=\'month-file\'', page.text)
+
     def test_private_reads_and_atomic_replacement(self):
         self.assertEqual(self.client.get('/v1/months').status_code, 401)
         self.assertEqual(self.publish(self.sample).status_code, 200)

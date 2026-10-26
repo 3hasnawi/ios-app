@@ -1,6 +1,6 @@
 name: مزامنة الرواتب (تجريبي)
 slug: salary_sync
-version: "0.1.1"
+version: "0.1.2"
 description: حفظ نسخ شهرية معتمدة وقراءتها من تطبيق الرواتب
 arch:
   - amd64
