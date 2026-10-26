@@ -9,6 +9,7 @@ enum ReportsRoute: Hashable {
     case entities
     /// التدقيق: فحوص الشهر ومقارنة الأشهر.
     case audit
+    case deductionComparison
     case group(ReportGroup)
 }
 
@@ -70,6 +71,7 @@ struct ReportsView: View {
             .navigationDestination(for: ReportsRoute.self) { route in
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
+                case .deductionComparison: DeductionComparisonView(months: months.map(\.name), to: month?.name ?? "")
                 case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
                 case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
                 case .group(let group): ReportDetailView(group: group)
@@ -88,6 +90,18 @@ struct ReportsView: View {
                 Text(exporter.error ?? "")
             }
             .task(id: loadKey) { await loadDeductions() }
+            .task {
+                #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "deductionAuditTest") {
+                    do {
+                        let report = try await Task.detached(priority: .userInitiated) {
+                            try await DeductionAuditSelfTest.run()
+                        }.value
+                        LaunchOptions.writeReport(report)
+                    } catch { LaunchOptions.writeReport("deductionAudit=failed \(error.localizedDescription)") }
+                }
+                #endif
+            }
             .task(id: "\(loadKey)|\(auditThreshold)|\(auditBase)|\(path.count)") {
                 auditIssues = nil
                 guard let name = month?.name else { return }
@@ -280,6 +294,8 @@ struct ReportsView: View {
         if payroll { path = [.items] }
         if defaults.bool(forKey: "reportsEntities") { path = [.entities] }
         if defaults.bool(forKey: "reportsAudit") { path = [.audit] }
+        if defaults.bool(forKey: "compareDeductions") { path = [.deductionComparison] }
+
         if defaults.bool(forKey: "auditTest"), let month, months.count > 1 {
             let container = SharedModel.container
             let a = months[1].name, b = month.name

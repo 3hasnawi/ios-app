@@ -20,6 +20,24 @@ final class NavigationTests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
     }
 
+    func testDeductionComparison() {
+        app.launchArguments += ["-tab", "reports", "-compareDeductions", "YES"]
+        app.launch()
+        guard wait(element("deductionComparisonSummary"), "خلاصة مقارنة الاستقطاعات", timeout: 20) else { return }
+        let deductions = app.segmentedControls.buttons["الاستقطاعات"]
+        app.swipeUp()
+        guard wait(deductions, "عرض الاستقطاعات") else { return }
+        deductions.tap()
+        XCTAssertTrue(deductions.isSelected)
+        let filter = element("deductionChangeFilter")
+        guard wait(filter, "حالات التغيّر") else { return }
+        filter.tap()
+        let increased = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "زاد (")).firstMatch
+        guard wait(increased, "حالة زيادة الاستقطاع") else { return }
+        increased.tap()
+        XCTAssertTrue(filter.label.contains("زاد") || (filter.value as? String)?.contains("زاد") == true)
+    }
+
     // MARK: - أدوات
 
     private func step(_ name: String, _ action: () -> Void) {

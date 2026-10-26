@@ -106,6 +106,22 @@ jobs:
           cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
+      - name: Verify deduction comparison and duplicate accounting
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -deductionAuditTest YES
+          for i in $(seq 1 90); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/deduction-audit-report.txt
+          if ! grep -q '^deductionAudit=ok ' ci-output/deduction-audit-report.txt; then
+            echo "::error::Deduction audit regression test failed"
+            exit 1
+          fi
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
+
       - name: Run app and take screenshots
         run: |
           launch() {
@@ -118,6 +134,8 @@ jobs:
             launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
             for i in $(seq 1 180); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             cat "$DATA/Documents/import-report.txt" | tee ci-output/import-report.txt
+            launch -tab reports -compareDeductions YES
+            shot 08z-deduction-comparison 8
             launch
             shot 03a-system-glass-bar 4
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
@@ -244,6 +262,8 @@ jobs:
           # التدقيق: الصفحة، ثم فحص المحرك على بيانات الاختبار
           launch -tab reports -reportsAudit YES
           shot 08x-audit 8
+          launch -tab reports -compareDeductions YES
+          shot 08z-deduction-comparison 8
           rm -f "$DATA/Documents/import-report.txt"
           launch -tab reports -auditTest YES
           for i in $(seq 1 90); do grep -q audit "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
@@ -330,7 +350,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)
           fi
           set +e
           xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \

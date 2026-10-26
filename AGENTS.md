@@ -51,7 +51,7 @@
 
 ### خيارات التشغيل للاختبار (Launch arguments)
 تُمرَّر في `simulator.yml` مثل `-tab reports -openReport YES`:
-`-importFile <مسارات|>`، `-importReview YES`، `-tab search|reports|settings`، `-search <نص>`، `-openFirst YES`، `-openPerson YES`، `-personPart months`، `-share YES`، `-shareMode image`، `-openSettings YES`، `-openBackup YES`، `-reportKind payroll`، `-reportByEntity YES|NO`، `-openReport YES`، `-openReportTitle <جزء من الاسم>`، `-exportReport YES`، `-previewReport YES`، `-reportsEntities YES`، `-reportsAudit YES`، `-auditTest YES`، `-exportSheet single|group`، `-exportSearch <نص>`، `-bulkExport directorates|banks|others|all`، `-backupTest YES`، `-autoBackupTest YES`، `-fakeStaff <عدد>`، `-autopilot YES`، `-perfLog YES`، `-appLanguage en`، `-appNumerals arabicIndic`، `-appTextSize 0..6`، `-faceIDLock YES -lockPreview YES|-skipLock YES`.
+`-importFile <مسارات|>`، `-importReview YES`، `-tab search|reports|settings`، `-search <نص>`، `-openFirst YES`، `-openPerson YES`، `-personPart months`، `-share YES`، `-shareMode image`، `-openSettings YES`، `-openBackup YES`، `-reportKind payroll`، `-reportByEntity YES|NO`، `-openReport YES`، `-openReportTitle <جزء من الاسم>`، `-exportReport YES`، `-previewReport YES`، `-reportsEntities YES`، `-reportsAudit YES`، `-auditTest YES`، `-compareDeductions YES`، `-deductionAuditTest YES` (حالات محاسبية وهمية وتصدير، للمحاكي فقط)، `-exportSheet single|group`، `-exportSearch <نص>`، `-bulkExport directorates|banks|others|all`، `-backupTest YES`، `-autoBackupTest YES`، `-fakeStaff <عدد>`، `-autopilot YES`، `-perfLog YES`، `-appLanguage en`، `-appNumerals arabicIndic`، `-appTextSize 0..6`، `-faceIDLock YES -lockPreview YES|-skipLock YES`.
 نتائج الاختبارات الآلية تُكتب في `Documents/import-report.txt` عبر `LaunchOptions.writeReport`.
 
 ## ٥. خريطة الملفات
@@ -79,7 +79,9 @@
 | `SalaryReport.swift` | تقرير الراتب الرسمي PDF (شكل «برنامج الرواتب الالكتروني الموحد») |
 | `SharePayslip.swift` | نافذة المشاركة (تقرير راتب PDF أو قسيمة صورة) |
 | `PayslipDocument.swift` | القسيمة (للشاشة وللصورة المحايدة بلا شعار) |
-| `Audit.swift` | التدقيق (فحوص الشهر)، مقارنة الأشهر، تصديرهما |
+| `Audit.swift` | التدقيق (فحوص الشهر ومنها تكرار الاستقطاعات)، مقارنة الرواتب، تصديرهما |
+| `DeductionAudit.swift`, `DeductionComparisonView.swift` | مقارنة استقطاعات شهرين حسب الموظف والجهة والإضبارة، الأعداد والمبالغ، كشف التكرار المحتمل، التصدير |
+| `DeductionAuditSelfTest.swift` | حالات محاسبية وهمية لاختبار مقارنة الاستقطاعات والتكرار والتصدير في المحاكي |
 | `Backup.swift` | النسخ الاحتياطي والاسترجاع وصفحته |
 | `SettingsView.swift` | الإعدادات (صفحة واحدة بلا تمرير) + البيانات المحفوظة |
 | `DocumentPicker.swift` | `FilePicker` (نافذة الملفات من UIKit)، `ActivityShare` (المشاركة بنوع الملف الصحيح) |
@@ -116,6 +118,7 @@
 - صفحة أي جهة/بند: بطاقة المجموع + زرّا «معاينة الجدول» و«تصدير» (بلا قائمة أسماء).
 - الضغط المطوّل يُستخدم حيث تكون هناك إجراءات (نتائج البحث، الأشهر، الحقول، القوائم).
 - الإعدادات في صفحة واحدة بلا تمرير: العرض (اللغة، المظهر، الأرقام، شريط حجم النص)، الأمان (Face ID)، البيانات (استيراد، البيانات المحفوظة، النسخ الاحتياطي، سجل البحث).
+- التدقيق: كشف التكرار المحتمل يطابق الاسم الموحّد والجهة والمبلغ والإضبارة داخل الشهر، بلا حذف تلقائي. مقارنة الاستقطاعات تُظهر بدأ/توقف/زاد/نقص/ثابت بمستويين: مجموع الموظف (توقف كامل عند وصوله للصفر)، والاستقطاع حسب الموظف والجهة والإضبارة. القيود المتعددة لنفس المفتاح تُجمع، وتغيير الإضبارة يظهر كتوقف وبدء. القيود الصفرية لا تُعد استقطاعاً فعلياً؛ المبلغ الفارغ أو السالب يمنع المقارنة برسالة واضحة. الشهر بلا قيود يحتاج تأكيد خلوّه قبل عرض النتائج أو تصديرها. التصدير يشمل كل الحالات والأسماء، والواجهة تعرض أول 500 نتيجة لكل فلتر.
 - البحث يتجاهل علامات الترقيم (الإملاء الصوتي يضيفها) عبر `ArabicText.cleanQuery`.
 
 ## ٨. النسخ الاحتياطي

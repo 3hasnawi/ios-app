@@ -67,7 +67,7 @@ extension ReportEngine {
         e.propertiesToFetch = [\.name, \.matchKey, \.netSalary, \.itemsData, \.detailsData, \.rank, \.workplace]
         let employees = try modelContext.fetch(e)
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
-        d.propertiesToFetch = [\.employeeName, \.matchKey, \.title, \.amount]
+        d.propertiesToFetch = [\.employeeName, \.matchKey, \.title, \.amount, \.note]
         let deductions = try modelContext.fetch(d)
 
         func money(_ v: Double) -> String { Money.format(v) }
@@ -155,6 +155,10 @@ extension ReportEngine {
         checks.append(AuditCheck(id: "net", title: tr("صافي الراتب", "Net salary"),
                                  subtitle: zero.isEmpty ? tr("لا يوجد صافٍ صفر أو سالب", "No zero or negative net") : tr("صافٍ صفر أو سالب أو فارغ", "Zero, negative or empty net"),
                                  ok: zero.isEmpty, rows: zero, amountTitle: "الصافي"))
+
+        checks.append(DeductionReview.duplicates(deductions.map {
+            DeductionSnapshot(name: $0.employeeName, entity: $0.title, note: $0.note, amount: $0.amount)
+        }))
 
         // الملاحظات أولاً.
         let ordered = checks.filter { !$0.ok } + checks.filter(\.ok)
@@ -373,6 +377,16 @@ struct AuditView: View {
             }
 
             Section(tr("المقارنة", "Comparison")) {
+                NavigationLink {
+                    DeductionComparisonView(months: months, to: month)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tr("مقارنة الاستقطاعات", "Compare deductions"))
+                        Text(tr("توقف، بدأ، زاد، نقص؛ لكل موظف ولكل جهة", "Stopped, started, increased, decreased; by employee and entity"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("compareDeductions")
                 NavigationLink {
                     CompareView(months: months, to: month)
                 } label: {
