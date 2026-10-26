@@ -2,21 +2,17 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// نافذة المشاركة: تقرير راتب PDF بشكل برنامج الرواتب الموحد (شهر أو كل الأشهر)،
+/// نافذة المشاركة: تقرير راتب PDF لشهر القسيمة المعروضة،
 /// أو القسيمة المختصرة كصورة/PDF.
 struct ShareOptionsSheet: View {
     let employee: Employee
     @Query private var deductions: [Deduction]
-    @Query private var allMonths: [Employee]
-    @Query private var allDeductions: [Deduction]
     @Environment(\.dismiss) private var dismiss
     @State private var files: PayslipExporter.Files?
     @State private var errorText: String?
 
     enum Mode: String { case report, image }
     @State private var mode: Mode = UserDefaults.standard.string(forKey: "shareMode") == "image" ? .image : .report
-    /// الأشهر المختارة للتقرير (فارغة = شهر القسيمة المعروضة).
-    @State private var chosenMonths: Set<String> = []
     @AppStorage("salaryReportHideZeros") private var hideZeros = false
     @AppStorage("salaryReportHidePersonal") private var hidePersonal = false
     @State private var reportURL: URL?
@@ -29,24 +25,10 @@ struct ShareOptionsSheet: View {
         let key = employee.matchKey
         let month = employee.month
         _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)
-        _allMonths = Query(filter: #Predicate<Employee> { $0.matchKey == key })
-        _allDeductions = Query(filter: #Predicate<Deduction> { $0.matchKey == key })
-    }
-
-    /// أشهر هذا الموظف، الأحدث أولاً.
-    private var personMonths: [Employee] {
-        var seen = Set<String>()
-        return allMonths.sorted { MonthName.sortKey($0.month) > MonthName.sortKey($1.month) }
-            .filter { seen.insert($0.month).inserted }
-    }
-
-    private var selected: [Employee] {
-        let names = chosenMonths.isEmpty ? [employee.month] : Array(chosenMonths)
-        return personMonths.filter { names.contains($0.month) }
     }
 
     private var reportKey: String {
-        "\(selected.map(\.month).joined(separator: "|"))-\(hideZeros)-\(hidePersonal)"
+        "\(employee.month)-\(hideZeros)-\(hidePersonal)"
     }
 
     var body: some View {
@@ -94,26 +76,6 @@ struct ShareOptionsSheet: View {
 
     @ViewBuilder
     private var reportContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(tr("الشهر", "Month")).font(.footnote).foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(personMonths, id: \.month) { e in
-                        chip(e.month, on: chosenMonths.count <= 1 && (chosenMonths.isEmpty ? e.month == employee.month : chosenMonths.contains(e.month))) {
-                            chosenMonths = [e.month]
-                        }
-                    }
-                    if personMonths.count > 1 {
-                        chip(tr("كل الأشهر", "All months"), on: chosenMonths.count > 1) {
-                            chosenMonths = Set(personMonths.map(\.month))
-                        }
-                    }
-                }
-            }
-            .scrollClipDisabled()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-
         Group {
             if let reportPreview {
                 Image(uiImage: reportPreview)
@@ -182,18 +144,6 @@ struct ShareOptionsSheet: View {
         .disabled(reportURL == nil)
     }
 
-    private func chip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .foregroundStyle(on ? .white : .primary)
-                .background(on ? Color.accentColor : Color(.secondarySystemGroupedBackground), in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
     private func printReport(_ url: URL) {
         let controller = UIPrintInteractionController.shared
         let info = UIPrintInfo.printInfo()
@@ -209,14 +159,12 @@ struct ShareOptionsSheet: View {
         reportPreview = nil
         reportError = nil
         let hideZeros = self.hideZeros, hidePersonal = self.hidePersonal
-        let inputs = selected.map { e in
-            SalaryReport.Input(
-                month: e.month, name: e.name, rank: e.rank, workplace: e.workplace, net: e.netSalary,
-                items: e.items, details: e.details,
-                bankDeductions: allDeductions.filter { $0.month == e.month }.map { ($0.title, $0.amount ?? 0) }
-            )
-        }
-        guard !inputs.isEmpty else { return }
+        let inputs = [SalaryReport.Input(
+            month: employee.month, name: employee.name, rank: employee.rank,
+            workplace: employee.workplace, net: employee.netSalary,
+            items: employee.items, details: employee.details,
+            bankDeductions: deductions.map { ($0.title, $0.amount ?? 0) }
+        )]
         let name = employee.name
         do {
             let result = try await Task.detached(priority: .userInitiated) { () throws -> ([SalaryReport], URL, UIImage?) in
