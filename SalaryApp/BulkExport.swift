@@ -145,11 +145,11 @@ nonisolated enum BulkExport {
             sheets.append((names[i + (summary ? 1 : 0)], ReportSheet.make(group: entity.group, rows: entity.rows)))
         }
         let name = fileName(category, month: month)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PDFWork.run {
             let url = try folder().appendingPathComponent(name + ".xlsx")
             try XLSXWriter.writeWorkbook(sheets, to: url)
             return url
-        }.value
+        }
     }
 
     static func pdf(_ entities: [Entity], category: EntityCategory, month: String, summary: Bool) async throws -> URL {
@@ -157,12 +157,12 @@ nonisolated enum BulkExport {
         var sheets = summary ? [summarySheet(ordered, category: category, month: month)] : []
         sheets += ordered.map { ReportSheet.make(group: $0.group, rows: $0.rows) }
         let name = fileName(category, month: month)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PDFWork.run {
             let url = try folder().appendingPathComponent(name + ".pdf")
             try PDFReportWriter.write(sheets, to: url)
             try PDFDecor.apply(to: url)
             return url
-        }.value
+        }
     }
 
     private static func folder() throws -> URL {

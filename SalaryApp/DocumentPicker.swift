@@ -100,9 +100,7 @@ enum ActivityShare {
         let files = urls.map(stableCopy)
         let controller = UIActivityViewController(activityItems: files.map(FileShareItem.init), applicationActivities: nil)
         controller.completionWithItemsHandler = { activity, completed, _, _ in
-            if completed, activity == .copyToPasteboard {
-                UIPasteboard.general.setItemProviders(files.compactMap { NSItemProvider(contentsOf: $0) }, localOnly: false, expirationDate: nil)
-            }
+            if completed, activity == .copyToPasteboard { copyToPasteboard(files) }
             onDone?(completed)
         }
         if let popover = controller.popoverPresentationController {
@@ -110,6 +108,18 @@ enum ActivityShare {
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         }
         top.present(controller, animated: true)
+    }
+
+    /// يضع محتوى الملف نفسه في الحافظة فوراً (وليس رابطاً يُقرأ لاحقاً من التطبيق)،
+    /// فيبقى اللصق ممكناً في واتساب أو الملفات أو البريد حتى لو أُغلق التطبيق أو بقي في الخلفية.
+    static func copyToPasteboard(_ files: [URL]) {
+        let items: [[String: Any]] = files.compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let type = UTType(filenameExtension: url.pathExtension) ?? .data
+            return [type.identifier: data]
+        }
+        guard !items.isEmpty else { return }
+        UIPasteboard.general.setItems(items, options: [.localOnly: false])
     }
 
     /// Library/Caches/مشاركة/<اسم الملف>: يبقى حتى تكتمل المشاركة، ويُستبدل في المرة القادمة.
@@ -132,7 +142,11 @@ final class FileShareItem: NSObject, UIActivityItemSource {
 
     func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { url }
 
-    func activityViewController(_ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? { url }
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        // النسخ: المحتوى نفسه بنوعه (PDF / Excel / صورة)، وما عداه: الملف.
+        if activityType == .copyToPasteboard, let data = try? Data(contentsOf: url) { return data }
+        return url
+    }
 
     func activityViewController(_ controller: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
         (UTType(filenameExtension: url.pathExtension) ?? .data).identifier

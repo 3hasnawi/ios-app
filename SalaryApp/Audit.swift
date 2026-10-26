@@ -225,7 +225,7 @@ nonisolated enum AuditExport {
         let safe = name.replacingOccurrences(of: "/", with: "-")
         let names = BulkExport.sheetNames(sheets.map(\.name))
         let named = zip(names, sheets).map { ($0, $1.sheet) }
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PDFWork.run {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let excel = folder.appendingPathComponent(safe + ".xlsx")
@@ -234,7 +234,7 @@ nonisolated enum AuditExport {
             try PDFReportWriter.write(named.map(\.1), to: pdf)
             try PDFDecor.apply(to: pdf)
             return (excel, pdf)
-        }.value
+        }
     }
 
     static func report(_ r: AuditReport) async throws -> (excel: URL, pdf: URL) {

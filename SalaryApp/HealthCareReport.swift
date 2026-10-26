@@ -164,15 +164,8 @@ nonisolated enum HealthCareReport {
         let rowH: CGFloat = 20
 
         func draw(_ text: String, _ rect: CGRect, size: CGFloat = 10.5, bold: Bool = true) {
-            let style = NSMutableParagraphStyle()
-            style.alignment = .center
-            style.baseWritingDirection = .rightToLeft
-            style.lineBreakMode = .byTruncatingTail
             let font = bold ? ReportFont.bold(size) : ReportFont.regular(size)
-            let s = NSAttributedString(string: text, attributes: [.font: font, .paragraphStyle: style, .foregroundColor: UIColor.black])
-            let h = min(rect.height, s.boundingRect(with: CGSize(width: rect.width - 6, height: 200), options: [.usesLineFragmentOrigin], context: nil).height)
-            s.draw(with: CGRect(x: rect.minX + 3, y: rect.midY - h / 2, width: rect.width - 6, height: h),
-                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+            PDFText.draw(text, in: rect.insetBy(dx: 3, dy: 0), font: font)
         }
 
         let renderer = UIGraphicsPDFRenderer(bounds: page)
@@ -190,7 +183,7 @@ nonisolated enum HealthCareReport {
                 for w in widths { x -= w; xs.append(x) }
                 let perPage = Int((page.height - margin * 2 - 34 - rowH - 16) / rowH)
                 let pages = max(1, Int(ceil(Double(rows.count) / Double(perPage))))
-                for p in 0..<pages {
+                for p in 0..<pages { autoreleasepool {
                     context.beginPage()
                     let titleRect = CGRect(x: margin, y: margin, width: width, height: 30)
                     yellow.setFill(); cg.fill(titleRect); cg.stroke(titleRect)
@@ -216,13 +209,13 @@ nonisolated enum HealthCareReport {
                         }
                         y += rowH
                     }
-                }
+                } }   // autoreleasepool لكل صفحة
             }
         }
     }
 
     static func files(_ lists: Lists, month: String) async throws -> (excel: URL, pdf: URL) {
-        try await Task.detached(priority: .userInitiated) {
+        try await PDFWork.run {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let name = fileName(month: month)
@@ -232,7 +225,7 @@ nonisolated enum HealthCareReport {
             try writePDF(lists, month: month, to: pdf)
             try PDFDecor.apply(to: pdf)
             return (excel, pdf)
-        }.value
+        }
     }
 }
 

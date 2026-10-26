@@ -207,17 +207,7 @@ nonisolated enum SalaryReportPDF {
     }
 
     private static func text(_ string: String, _ rect: CGRect, size: CGFloat, bold: Bool = false, align: NSTextAlignment = .right, color: UIColor = .black) {
-        let style = NSMutableParagraphStyle()
-        style.alignment = align
-        style.baseWritingDirection = .rightToLeft
-        style.lineBreakMode = .byTruncatingTail
-        let attributed = NSAttributedString(string: string, attributes: [
-            .font: bold ? ReportFont.bold(size) : ReportFont.regular(size),
-            .foregroundColor: color, .paragraphStyle: style,
-        ])
-        let h = min(attributed.boundingRect(with: CGSize(width: rect.width, height: 200), options: [.usesLineFragmentOrigin], context: nil).height, rect.height)
-        attributed.draw(with: CGRect(x: rect.minX, y: rect.midY - h / 2, width: rect.width, height: h),
-                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+        PDFText.draw(string, in: rect, font: bold ? ReportFont.bold(size) : ReportFont.regular(size), color: color, align: align)
     }
 
     private static func draw(_ r: SalaryReport, page: CGRect, logo: UIImage?, cg: CGContext) {

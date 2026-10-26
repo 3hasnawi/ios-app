@@ -14,11 +14,11 @@ nonisolated enum PDFDecor {
         let temp = url.deletingLastPathComponent().appendingPathComponent(".decor-\(UUID().uuidString).pdf")
         var mediaBox = CGRect(x: 0, y: 0, width: 595, height: 842)
         guard let context = CGContext(temp as CFURL, mediaBox: &mediaBox, nil) else { return }
-        let logo = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage
+        let logo = watermark
         let stamp = stampText(date)
         let pages = source.numberOfPages
-        for index in 1...pages {
-            guard let page = source.page(at: index) else { continue }
+        for index in 1...pages { autoreleasepool {
+            guard let page = source.page(at: index) else { return }
             var box = page.getBoxRect(.mediaBox)
             let info = [kCGPDFContextMediaBox as String: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary
             context.beginPDFPage(info)
@@ -28,7 +28,7 @@ nonisolated enum PDFDecor {
             context.restoreGState()
             drawFooter(in: box, page: index, of: pages, stamp: stamp, context: context)
             context.endPDFPage()
-        }
+        } }
         context.closePDF()
         _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
     }
@@ -40,6 +40,20 @@ nonisolated enum PDFDecor {
         f.dateFormat = "yyyy/MM/dd   h:mm a"
         return f.string(from: date)
     }
+
+    /// الشعار مصغّراً إلى ٨٠٠ نقطة كحد أقصى (يكفي لطباعة واضحة، ويقلل حجم الملف للمشاركة).
+    private static let watermark: CGImage? = {
+        guard let source = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { return nil }
+        let scale = min(1, 800 / CGFloat(max(source.width, source.height)))
+        guard scale < 1 else { return source }
+        let w = Int(CGFloat(source.width) * scale), h = Int(CGFloat(source.height) * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return source }
+        ctx.interpolationQuality = .high
+        ctx.draw(source, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? source
+    }()
 
     private static func drawWatermark(_ logo: CGImage, in box: CGRect, context: CGContext) {
         let side = min(box.width, box.height) * 0.62
@@ -82,12 +96,7 @@ nonisolated enum PDFDecor {
     }
 
     private static func text(_ string: String, _ rect: CGRect, font: UIFont, color: UIColor, align: NSTextAlignment) {
-        let style = NSMutableParagraphStyle()
-        style.alignment = align
-        style.baseWritingDirection = .rightToLeft
-        style.lineBreakMode = .byTruncatingTail
-        NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
-            .draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+        PDFText.draw(string, in: rect, font: font, color: color, align: align)
     }
 
     private static func arabicDigits(_ n: Int) -> String { ReportSheet.easternDigits(String(n)) }

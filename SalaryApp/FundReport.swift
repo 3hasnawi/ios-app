@@ -178,13 +178,8 @@ nonisolated enum FundReport {
         func num(_ v: Double) -> String { formatter.string(from: NSNumber(value: v)) ?? String(v) }
 
         func draw(_ text: String, _ rect: CGRect, bold: Bool = true, size: CGFloat = 13, align: NSTextAlignment = .center) {
-            let style = NSMutableParagraphStyle()
-            style.alignment = align
-            style.baseWritingDirection = .rightToLeft
             let font = bold ? ReportFont.bold(size) : ReportFont.regular(size)
-            let s = NSAttributedString(string: text, attributes: [.font: font, .paragraphStyle: style, .foregroundColor: UIColor.black])
-            let h = s.boundingRect(with: CGSize(width: rect.width - 8, height: 200), options: [.usesLineFragmentOrigin], context: nil).height
-            s.draw(with: CGRect(x: rect.minX + 4, y: rect.midY - h / 2, width: rect.width - 8, height: h), options: [.usesLineFragmentOrigin], context: nil)
+            PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 0), font: font, align: align, wrap: true)
         }
 
         let renderer = UIGraphicsPDFRenderer(bounds: page)
@@ -227,7 +222,7 @@ nonisolated enum FundReport {
     }
 
     static func files(_ rows: [Row], month: String) async throws -> (excel: URL, pdf: URL) {
-        try await Task.detached(priority: .userInitiated) {
+        try await PDFWork.run {
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let name = fileName(month: month)
@@ -237,7 +232,7 @@ nonisolated enum FundReport {
             try writePDF(rows, month: month, to: pdf)
             try PDFDecor.apply(to: pdf)
             return (excel, pdf)
-        }.value
+        }
     }
 }
 

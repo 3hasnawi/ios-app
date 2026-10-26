@@ -443,16 +443,7 @@ nonisolated enum PDFReportWriter {
         let line = UIColor(red: 0.61, green: 0.72, blue: 0.83, alpha: 1)
 
         func draw(_ text: String, in rect: CGRect, font: UIFont, color: UIColor = .black, align: NSTextAlignment = .center) {
-            let style = NSMutableParagraphStyle()
-            style.alignment = align
-            style.baseWritingDirection = .rightToLeft
-            style.lineBreakMode = .byTruncatingTail
-            let attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
-            let size = attributed.boundingRect(with: CGSize(width: rect.width - 8, height: .greatestFiniteMagnitude),
-                                               options: [.usesLineFragmentOrigin], context: nil).size
-            let h = min(size.height, rect.height)
-            attributed.draw(with: CGRect(x: rect.minX + 4, y: rect.midY - h / 2, width: rect.width - 8, height: h),
-                            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+            PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 0), font: font, color: color, align: align)
         }
 
         func cellRect(_ c: Int, y: CGFloat, height: CGFloat) -> CGRect {
@@ -467,7 +458,7 @@ nonisolated enum PDFReportWriter {
 
         do {
             let cg = context.cgContext
-            for p in 0..<pages {
+            for p in 0..<pages { autoreleasepool {
                 context.beginPage(withBounds: page, pageInfo: [:])
                 draw(sheet.header, in: CGRect(x: margin, y: headerTop, width: tableWidth, height: 22), font: ReportFont.bold(14))
                 let titleRect = CGRect(x: margin, y: headerTop + 24, width: tableWidth, height: titleHeight)
@@ -510,7 +501,7 @@ nonisolated enum PDFReportWriter {
                     draw("المجموع", in: labelRect, font: ReportFont.bold(11))
                     draw(money(sheet.total), in: cellRect(amountCol, y: y, height: columnsHeight), font: ReportFont.bold(11))
                 }
-            }
+            } }   // autoreleasepool: ذاكرة كل صفحة تُحرَّر بعدها
         }
     }
 }
@@ -673,7 +664,7 @@ enum ReportFiles {
     /// المعاينة تحتاج PDF فقط؛ لا نجهّز Excel أو الكشوف غير المعروضة.
     static func preview(group: ReportGroup, rows: [ReportRow], fundRows: [FundReport.Row]? = nil,
                         foodRows: [FoodContractReport.Row]? = nil, healthLists: HealthCareReport.Lists? = nil) async throws -> URL {
-        try await Task.detached(priority: .userInitiated) {
+        try await PDFWork.run {
             let started = Date()
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-preview", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -685,13 +676,13 @@ enum ReportFiles {
             try PDFDecor.apply(to: url)
             PerfLog.record("reportPreview", since: started)
             return url
-        }.value
+        }
     }
 
     /// يكتب الملفين في tmp/report-export (في الخلفية).
     static func make(group: ReportGroup, rows: [ReportRow]) async throws -> (excel: URL, pdf: URL) {
         let name = ReportSheet.fileName(for: group)
-        return try await Task.detached(priority: .userInitiated) {
+        return try await PDFWork.run {
             // تجهيز الصفوف وقياس أعمدتها جزء من العمل الثقيل أيضاً.
             let sheet = ReportSheet.make(group: group, rows: rows)
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("report-export", isDirectory: true)
@@ -702,6 +693,6 @@ enum ReportFiles {
             try PDFReportWriter.write(sheet, to: pdf)
             try PDFDecor.apply(to: pdf)
             return (excel, pdf)
-        }.value
+        }
     }
 }
