@@ -27,14 +27,22 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # رقم الإصدار يرتفع مع كل بناء: 1.<رقم البناء>، ويظهر في الإعدادات.
+      # رقم الإصدار: البناء 35 هو النسخة الرسمية الأولى 1.0، وكل بناء بعده يرفع الرقم (1.1، 1.2، ...).
+      # رقم البناء (CFBundleVersion) يبقى رقم التشغيل. يظهر الاثنان في الإعدادات.
+      - name: Version
+        run: |
+          MINOR=$(( ${{ github.run_number }} - 35 ))
+          if [ "$MINOR" -lt 0 ]; then MINOR=0; fi
+          echo "APP_VERSION=1.$MINOR" >> "$GITHUB_ENV"
+          echo "::notice::Version 1.$MINOR (build ${{ github.run_number }})"
+
       - name: Build (unsigned)
         run: |
           set -o pipefail
           xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            MARKETING_VERSION="1.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             build 2>&1 | tee build.log || {
               # أخطاء الترجمة تظهر كملاحظات في صفحة التشغيل حتى تُقرأ بدون تنزيل السجل.
               grep -E "error:" build.log | sort -u | head -40 | while IFS= read -r line; do echo "::error::$line"; done
@@ -60,6 +68,8 @@ jobs:
         run: |
           cp SalaryApp-unsigned.ipa SalaryApp.ipa
           TAG="build-${{ github.run_number }}"
+          TITLE="تطبيق الرواتب — الإصدار $APP_VERSION"
+          [ "$APP_VERSION" = "1.0" ] && TITLE="$TITLE (النسخة الرسمية الأولى)"
           gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
-            --title "تطبيق الرواتب — الإصدار 1.${{ github.run_number }}" \
+            --title "$TITLE" \
             --notes "من الفرع ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" --latest

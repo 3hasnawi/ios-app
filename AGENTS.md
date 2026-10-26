@@ -49,7 +49,7 @@
 - رابط آخر إصدار: `gh api "repos/3hasnawi/ios-app/releases?per_page=1"`.
 - لقطات المحاكي والتقارير: فرع `screenshots` (`screenshots/*.png`, `report-export/`, `exports/`, `*-report.txt`, `navigation-small.mp4`).
 
-- **رقم الإصدار**: كل بناء يرفع الإصدار تلقائياً إلى `1.<رقم البناء>` (build.yml يمرر MARKETING_VERSION وCURRENT_PROJECT_VERSION)، ويظهر تحت عنوان الإعدادات («الإصدار 1.34 (بناء 34)»). لا تغيّر الأرقام في project.yml يدوياً.
+- **رقم الإصدار**: البناء 35 هو **النسخة الرسمية الأولى 1.0** (اعتمدها المالك). كل بناء بعده يرفع الرقم تلقائياً: `1.<رقم البناء − 35>` (1.1، 1.2، ...)، ورقم البناء يبقى رقم التشغيل. build.yml يمرر MARKETING_VERSION وCURRENT_PROJECT_VERSION، ويظهران تحت عنوان الإعدادات («الإصدار 1.0 (بناء 35)»). لا تغيّر الأرقام في project.yml يدوياً.
 
 ### خيارات التشغيل للاختبار (Launch arguments)
 تُمرَّر في `simulator.yml` مثل `-tab reports -openReport YES`:
