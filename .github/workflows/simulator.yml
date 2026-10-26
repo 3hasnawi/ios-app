@@ -433,7 +433,7 @@ jobs:
           done
           grep -q "saved: .*\.pdf size=[1-9][0-9]* head=25504446" ci-output/share-report.txt && echo "::notice::Saved PDF is valid" || { echo "::error::Saved PDF missing or corrupt"; fail=1; }
           grep -q "saved: .*\.xlsx size=[1-9][0-9]* head=504b0304" ci-output/share-report.txt && echo "::notice::Saved Excel is valid" || { echo "::error::Saved Excel missing or corrupt"; fail=1; }
-          grep -q "PASTEBOARD types=.*com.adobe.pdf" ci-output/share-testCopy.log && echo "::notice::Copy put the PDF on the pasteboard" || { echo "::error::Copy did not put the PDF on the pasteboard"; fail=1; }
+          grep -q "activity=com.apple.UIKit.activity.CopyToPasteboard completed=true .*com.adobe.pdf.* bytes=[1-9]" ci-output/share-report.txt && echo "::notice::Copy put the PDF on the pasteboard" || { echo "::error::Copy did not put the PDF on the pasteboard"; fail=1; }
           exit $fail
 
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)

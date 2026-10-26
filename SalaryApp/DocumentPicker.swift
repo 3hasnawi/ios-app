@@ -101,9 +101,7 @@ enum ActivityShare {
     static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {
         guard let top = FilePicker.topController() else { onDone?(false); return }
         let files = urls.map(stableCopy)
-        let controller = UIActivityViewController(activityItems: files, applicationActivities: [CopyFileActivity()])
-        // "نسخ الملف" الخاص بالتطبيق يضع محتوى الملف في الحافظة مباشرة؛ نسخ النظام يضع رابطاً فقط.
-        controller.excludedActivityTypes = [.copyToPasteboard]
+        let controller = UIActivityViewController(activityItems: files, applicationActivities: nil)
         controller.completionWithItemsHandler = { activity, completed, _, error in
             if completed, activity == .copyToPasteboard { copyToPasteboard(files) }
             #if targetEnvironment(simulator)
@@ -120,16 +118,6 @@ enum ActivityShare {
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         }
         top.present(controller, animated: true)
-    }
-
-    /// اختبار المحاكي: يكتب ما في الحافظة بعد النسخ.
-    static func reportPasteboard(_ source: String, files: [URL]) {
-        #if targetEnvironment(simulator)
-        guard UserDefaults.standard.bool(forKey: "shareTest") else { return }
-        let types = UIPasteboard.general.types.joined(separator: ",")
-        let bytes = UIPasteboard.general.items.first?.values.compactMap { ($0 as? Data)?.count }.first ?? 0
-        LaunchOptions.writeReport("share activity=\(source) completed=true pasteboard=\(types) bytes=\(bytes) file=\(files.first?.lastPathComponent ?? "")")
-        #endif
     }
 
     /// يضع محتوى الملف نفسه في الحافظة فوراً (وليس رابطاً يُقرأ لاحقاً من التطبيق)،
@@ -163,33 +151,5 @@ enum ActivityShare {
         } catch {
             return url
         }
-    }
-}
-
-/// "نسخ الملف" في نافذة المشاركة: محتوى الملف بنوعه (PDF / Excel / صورة) في الحافظة، ليُلصق في الملفات أو البريد أو أي تطبيق يقبل الملفات.
-final class CopyFileActivity: UIActivity {
-    private var files: [URL] = []
-
-    override var activityType: UIActivity.ActivityType? { UIActivity.ActivityType("salaryapp.copyFile") }
-    override var activityTitle: String? { tr("نسخ الملف", "Copy file") }
-    override var activityImage: UIImage? { UIImage(systemName: "doc.on.doc") }
-    override class var activityCategory: UIActivity.Category { .action }
-
-    override func canPerform(withActivityItems activityItems: [Any]) -> Bool {
-        activityItems.contains { ($0 as? URL)?.isFileURL == true }
-    }
-
-    override func prepare(withActivityItems activityItems: [Any]) {
-        files = activityItems.compactMap { $0 as? URL }.filter(\.isFileURL)
-    }
-
-    override func perform() {
-        // يستدعيه النظام على الخيط الرئيسي.
-        let files = files
-        MainActor.assumeIsolated {
-            ActivityShare.copyToPasteboard(files)
-            ActivityShare.reportPasteboard("copyFile", files: files)
-        }
-        activityDidFinish(true)
     }
 }
