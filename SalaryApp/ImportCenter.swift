@@ -195,6 +195,14 @@ final class ImportCenter {
         candidates = found
         isBusy = false
         if autoRun {
+            if found.allSatisfy({ $0.kind == .skip }) {
+                let details = found.map { candidate in
+                    "\(candidate.fileName): \(candidate.error ?? candidate.result?.problems.joined(separator: "; ") ?? "no importable rows")"
+                }
+                LaunchOptions.writeReport("import=failed \(details.joined(separator: " | "))")
+                self.autoRun = false
+                return
+            }
             await run()
             return
         }
