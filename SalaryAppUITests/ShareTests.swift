@@ -73,7 +73,7 @@ final class ShareTests: XCTestCase {
     func testCopy() {
         app.launch()
         openShareSheet()
-        guard let copy = shareAction(["Copy"]) else {
+        guard let copy = shareAction(["Copy file", "نسخ الملف"]) else {
             XCTFail("Copy not found in the share sheet")
             return
         }
