@@ -201,6 +201,34 @@ enum StaffSearchMode: String, CaseIterable, Identifiable {
         }
     }
 
+    var systemImage: String {
+        switch self {
+        case .name: "person.fill"
+        case .mother: "person.2.fill"
+        case .statNumber: "number"
+        case .unifiedNumber: "person.text.rectangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .name: .blue
+        case .mother: .purple
+        case .statNumber: .orange
+        case .unifiedNumber: .teal
+        }
+    }
+
+    /// سطر توضيحي تحت النوع في قائمة البحث.
+    var hint: String {
+        switch self {
+        case .name: tr("الرواتب والملاك", "Payroll and staff")
+        case .mother: tr("للتمييز بين الأسماء المتشابهة", "To tell similar names apart")
+        case .statNumber: tr("من الملاك", "From staff")
+        case .unifiedNumber: tr("من الملاك", "From staff")
+        }
+    }
+
     var prompt: String {
         switch self {
         case .name: tr("ابحث بالاسم", "Search by name")

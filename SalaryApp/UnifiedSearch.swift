@@ -92,6 +92,8 @@ struct UnifiedSearchView: View {
     @State private var people: [UnifiedPerson] = []
     @State private var loadedKey = ""
     @State private var autopilot = AutoPilot.shared
+    /// القائمة العائمة لنوع البحث.
+    @State private var showModes = false
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
 
@@ -183,11 +185,9 @@ struct UnifiedSearchView: View {
                 appliedSearch = name
             }
             .navigationTitle(tr("بحث", "Search"))
-            // عنوان صغير بلا فراغ فوقه، ونوع البحث (الاسم، اسم الأم، الرقم الإحصائي، الموحد) قائمة صغيرة بجانبه.
+            // عنوان صغير بلا فراغ فوقه. نوع البحث زر عائم بجانب خانة البحث (أسفل الشاشة).
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { modeMenu }
-            }
+            .overlay { modePicker }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .navigationDestination(for: UnifiedPerson.self) { person in
                 UnifiedPersonView(person: person)
@@ -198,18 +198,84 @@ struct UnifiedSearchView: View {
         }
     }
 
-    /// نوع البحث: الاسم، اسم الأم، الرقم الإحصائي، الرقم الموحد.
-    private var modeMenu: some View {
-        Menu {
-            Picker(tr("البحث حسب", "Search by"), selection: $modeRaw) {
-                ForEach(StaffSearchMode.allCases) { Text($0.title).tag($0.rawValue) }
+    /// نوع البحث: زر عائم بجانب خانة البحث (جهة زر الرجوع للتبويبات)، يفتح قائمة عائمة بالأنواع الأربعة.
+    private var modePicker: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if showModes {
+                Color.black.opacity(0.35)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(.snappy(duration: 0.25)) { showModes = false } }
+                    .transition(.opacity)
             }
-        } label: {
-            pill(mode.title, systemImage: "magnifyingglass")
+            VStack(alignment: .trailing, spacing: 10) {
+                if showModes {
+                    modePanel
+                        .transition(.scale(scale: 0.85, anchor: .bottomTrailing).combined(with: .opacity))
+                }
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { showModes.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: mode.systemImage)
+                        Text(mode.title).lineLimit(1)
+                        Image(systemName: showModes ? "chevron.down" : "chevron.up").font(.caption.weight(.bold))
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                }
+                .glassButtonStyle(prominent: true)
+                .buttonBorderShape(.capsule)
+                .accessibilityIdentifier("searchModeMenu")
+                .accessibilityLabel(tr("البحث حسب: \(mode.title)", "Search by: \(mode.title)"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
         }
-        .accessibilityIdentifier("searchModeMenu")
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+    }
+
+    private var modePanel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(tr("البحث حسب", "Search by"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+            ForEach(StaffSearchMode.allCases) { option in
+                let on = option == mode
+                Button {
+                    modeRaw = option.rawValue
+                    withAnimation(.snappy(duration: 0.25)) { showModes = false }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: option.systemImage)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(option.color.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(option.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                            Text(option.hint).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        if on {
+                            Image(systemName: "checkmark").font(.body.weight(.bold)).foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(10)
+                    .background(on ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.title)
+            }
+        }
+        .padding(8)
+        .frame(width: 290)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.08)))
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
     }
 
     private func pill(_ title: String, systemImage: String) -> some View {
