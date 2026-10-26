@@ -79,6 +79,10 @@ final class ShareTests: XCTestCase {
         }
         copy.tap()
         sleep(3)
+        // الحافظة مشتركة في المحاكي: يقرأ الاختبار أنواعها (بلا قراءة المحتوى، فلا تظهر نافذة إذن اللصق).
+        let types = UIPasteboard.general.types
+        print("PASTEBOARD types=\(types.joined(separator: ","))")
+        XCTAssertTrue(types.contains("com.adobe.pdf"), "PDF on the pasteboard")
         print("SHARE copied")
     }
 }
