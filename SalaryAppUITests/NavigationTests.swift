@@ -31,6 +31,21 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["تغيّر المبلغ"].exists || app.staticTexts["تغيّر المبلغ"].exists)
     }
 
+    func testStaffSearchModes() {
+        for (option, query) in [("اسم الأم", "فاطمة محمد الدليمي"), ("الرقم الإحصائي", "١٠٠٠٠٠")] {
+            app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-fakeStaff", "100"]
+            app.launch()
+            guard wait(element("searchModeMenu"), "زر نوع البحث") else { return }
+            element("searchModeMenu").tap()
+            guard wait(app.buttons[option], "خيار \(option)") else { return }
+            app.buttons[option].tap()
+            type(query)
+            wait(element("resultCard"), "نتيجة \(option)", timeout: 20)
+            app.terminate()
+            app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
+        }
+    }
+
     // MARK: - أدوات
 
     private func step(_ name: String, _ action: () -> Void) {

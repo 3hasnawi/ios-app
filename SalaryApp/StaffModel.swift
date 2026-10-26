@@ -242,13 +242,18 @@ actor StaffImporter {
             // المرور الثاني: بناء سجل لكل موظف.
             let placed = Set(StaffLayout.sections.flatMap(\.columns) + [StaffLayout.notesColumn] + StaffLayout.recordColumns)
             let otherColumns = main.columns.map(\.name).filter { !placed.contains($0) && !StaffLayout.hidden.contains($0) && $0 != "الاسم الكامل" }
+            let columnNames = main.columns.reduce(into: [String: String]()) { names, column in
+                let key = ArabicText.normalize(column.name)
+                if names[key] == nil { names[key] = column.name }
+            }
             var built = 0
             try reader.forEachRow(of: mainPage, table: main) { row in
                 built += 1
                 if built % 500 == 0 { secondPass?(Double(built) / rowTotal) }
                 func text(_ column: String) -> String? {
-                    guard let value = row[column] else { return nil }
-                    return Self.display(value, lookup: lookups[column])
+                    let actual = columnNames[ArabicText.normalize(column)] ?? column
+                    guard let value = row[actual] else { return nil }
+                    return Self.display(value, lookup: lookups[actual])
                 }
                 guard let name = text("الاسم الكامل") else { return }
 
@@ -269,7 +274,7 @@ actor StaffImporter {
                 if !status.isEmpty { statusCounts[status, default: 0] += 1 }
                 members.append(StaffMember(
                     name: name,
-                    mother: text("اسم الام الكامل") ?? "",
+                    mother: text("اسم الام الكامل") ?? text("اسم الام") ?? "",
                     statNumber: text("الرقم الاحصائي") ?? "",
                     unifiedNumber: text("الرقم الموحد") ?? "",
                     rank: text("الرتبة") ?? "",

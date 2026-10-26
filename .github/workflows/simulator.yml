@@ -379,7 +379,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes)
           fi
           if [ "$DEDUCTIONS_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)

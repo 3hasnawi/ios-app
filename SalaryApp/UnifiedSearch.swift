@@ -389,7 +389,8 @@ enum UnifiedFinder {
 
         var staff: [StaffMember] = []
         var employees: [Employee] = []
-        if StaffInfo.count > 0, scope != .payroll || mode != .name {
+        // عدّاد الملاك في الإعدادات قد يغيب بعد الاسترجاع؛ قاعدة البيانات هي المرجع.
+        if scope != .payroll || mode != .name {
             var d = FetchDescriptor<StaffMember>(predicate: StaffResultsList.predicate(mode: mode, tokens: tokens), sortBy: [SortDescriptor(\.name)])
             d.fetchLimit = 200
             d.propertiesToFetch = [\.name, \.nameKey, \.motherKey, \.statNumber, \.unifiedNumber, \.rank, \.workplace, \.status]
@@ -440,7 +441,7 @@ enum UnifiedFinder {
             }
         }
         // ربط الأسماء الناقصة باستعلام واحد بدل استعلام منفصل لكل بطاقة.
-        if StaffInfo.count > 0 {
+        if !keys.isEmpty {
             try Task.checkCancellation()
             let names = keys.compactMap { key -> String? in
                 guard byKey[key]!.staff == nil else { return nil }

@@ -22,8 +22,9 @@ actor FakeStaffMaker {
         }
         for (i, name) in names.enumerated() {
             let rank = pick(Self.ranks), status = pick(Self.statuses), place = pick(Self.places)
+            let mother = i == 0 ? "فاطمة محمد الدليمي" : "\(pick(Self.first)) \(pick(Self.family))"
             modelContext.insert(StaffMember(
-                name: name, mother: "\(pick(Self.first)) \(pick(Self.family))",
+                name: name, mother: mother,
                 statNumber: String(100000 + i), unifiedNumber: String(9_000_000 + i),
                 rank: rank, status: status, workplace: place,
                 sections: [StaffSection(title: "الوظيفية", fields: [
