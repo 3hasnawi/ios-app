@@ -212,7 +212,7 @@ nonisolated enum SalaryReportPDF {
         style.baseWritingDirection = .rightToLeft
         style.lineBreakMode = .byTruncatingTail
         let attributed = NSAttributedString(string: string, attributes: [
-            .font: bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size),
+            .font: bold ? ReportFont.bold(size) : ReportFont.regular(size),
             .foregroundColor: color, .paragraphStyle: style,
         ])
         let h = min(attributed.boundingRect(with: CGSize(width: rect.width, height: 200), options: [.usesLineFragmentOrigin], context: nil).height, rect.height)

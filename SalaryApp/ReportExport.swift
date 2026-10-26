@@ -389,7 +389,7 @@ nonisolated enum PDFReportWriter {
         formatter.locale = Locale(identifier: "en_US")
         formatter.maximumFractionDigits = 2
         func measure(_ text: String, _ size: CGFloat) -> CGFloat {
-            ceil((text as NSString).size(withAttributes: [.font: UIFont.boldSystemFont(ofSize: size)]).width)
+            ceil((text as NSString).size(withAttributes: [.font: ReportFont.bold(size)]).width)
         }
         let totalWidth = sheet.columns.reduce(0) { $0 + $1.width }
         var widths = sheet.columns.map { CGFloat($0.width / totalWidth) * tableWidth }
@@ -469,16 +469,16 @@ nonisolated enum PDFReportWriter {
             let cg = context.cgContext
             for p in 0..<pages {
                 context.beginPage(withBounds: page, pageInfo: [:])
-                draw(sheet.header, in: CGRect(x: margin, y: headerTop, width: tableWidth, height: 22), font: .boldSystemFont(ofSize: 14))
+                draw(sheet.header, in: CGRect(x: margin, y: headerTop, width: tableWidth, height: 22), font: ReportFont.bold(14))
                 let titleRect = CGRect(x: margin, y: headerTop + 24, width: tableWidth, height: titleHeight)
                 dark.setFill(); cg.fill(titleRect)
-                draw(sheet.title, in: titleRect, font: .boldSystemFont(ofSize: 14), color: .white)
+                draw(sheet.title, in: titleRect, font: ReportFont.bold(14), color: .white)
                 let colY = titleRect.maxY
                 for (c, column) in sheet.columns.enumerated() {
                     let r = cellRect(c, y: colY, height: columnsHeight)
                     light.setFill(); cg.fill(r)
                     line.setStroke(); cg.stroke(r, width: 0.5)
-                    draw(column.title, in: r, font: .boldSystemFont(ofSize: 10.5))
+                    draw(column.title, in: r, font: ReportFont.bold(10.5))
                 }
                 var y = tableTop
                 let start = p * perPage
@@ -489,9 +489,9 @@ nonisolated enum PDFReportWriter {
                             let r = cellRect(c, y: y, height: rowHeight)
                             line.setStroke(); cg.stroke(r, width: 0.5)
                             switch column.kind {
-                            case .serial: draw(String(i + 1), in: r, font: .boldSystemFont(ofSize: 10))
-                            case .amount: draw(money(sheet.amounts[i]), in: r, font: .boldSystemFont(ofSize: 10.5))
-                            case .text: draw(sheet.rows[i][c], in: r, font: .systemFont(ofSize: 10), align: .right)
+                            case .serial: draw(String(i + 1), in: r, font: ReportFont.bold(10))
+                            case .amount: draw(money(sheet.amounts[i]), in: r, font: ReportFont.bold(10.5))
+                            case .text: draw(sheet.rows[i][c], in: r, font: ReportFont.regular(10), align: .right)
                             }
                         }
                         y += rowHeight
@@ -507,8 +507,8 @@ nonisolated enum PDFReportWriter {
                     line.setStroke()
                     cg.stroke(labelRect, width: 0.5)
                     for c in amountCol..<sheet.columns.count { cg.stroke(cellRect(c, y: y, height: columnsHeight), width: 0.5) }
-                    draw("المجموع", in: labelRect, font: .boldSystemFont(ofSize: 11))
-                    draw(money(sheet.total), in: cellRect(amountCol, y: y, height: columnsHeight), font: .boldSystemFont(ofSize: 11))
+                    draw("المجموع", in: labelRect, font: ReportFont.bold(11))
+                    draw(money(sheet.total), in: cellRect(amountCol, y: y, height: columnsHeight), font: ReportFont.bold(11))
                 }
             }
         }

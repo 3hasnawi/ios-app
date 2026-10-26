@@ -168,7 +168,7 @@ nonisolated enum HealthCareReport {
             style.alignment = .center
             style.baseWritingDirection = .rightToLeft
             style.lineBreakMode = .byTruncatingTail
-            let font = bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+            let font = bold ? ReportFont.bold(size) : ReportFont.regular(size)
             let s = NSAttributedString(string: text, attributes: [.font: font, .paragraphStyle: style, .foregroundColor: UIColor.black])
             let h = min(rect.height, s.boundingRect(with: CGSize(width: rect.width - 6, height: 200), options: [.usesLineFragmentOrigin], context: nil).height)
             s.draw(with: CGRect(x: rect.minX + 3, y: rect.midY - h / 2, width: rect.width - 6, height: h),

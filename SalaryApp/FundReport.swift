@@ -181,7 +181,7 @@ nonisolated enum FundReport {
             let style = NSMutableParagraphStyle()
             style.alignment = align
             style.baseWritingDirection = .rightToLeft
-            let font = bold ? UIFont.boldSystemFont(ofSize: size) : UIFont.systemFont(ofSize: size)
+            let font = bold ? ReportFont.bold(size) : ReportFont.regular(size)
             let s = NSAttributedString(string: text, attributes: [.font: font, .paragraphStyle: style, .foregroundColor: UIColor.black])
             let h = s.boundingRect(with: CGSize(width: rect.width - 8, height: 200), options: [.usesLineFragmentOrigin], context: nil).height
             s.draw(with: CGRect(x: rect.minX + 4, y: rect.midY - h / 2, width: rect.width - 8, height: h), options: [.usesLineFragmentOrigin], context: nil)

@@ -72,9 +72,9 @@ nonisolated enum PDFDecor {
         context.scaleBy(x: 1, y: -1)
         let top = box.height - lineY + 4
         let width = (box.width - margin * 2) / 3
-        let font = UIFont.systemFont(ofSize: 8.5)
+        let font = ReportFont.regular(8.5)
         let color = UIColor(white: 0.25, alpha: 1)
-        text(footerText, CGRect(x: box.width - margin - width * 1.4, y: top, width: width * 1.4, height: height), font: .boldSystemFont(ofSize: 8.5), color: color, align: .right)
+        text(footerText, CGRect(x: box.width - margin - width * 1.4, y: top, width: width * 1.4, height: height), font: ReportFont.bold(8.5), color: color, align: .right)
         text("صفحة \(arabicDigits(page)) من \(arabicDigits(pages))", CGRect(x: box.midX - width / 2, y: top, width: width, height: height), font: font, color: color, align: .center)
         text(stamp, CGRect(x: margin, y: top, width: width, height: height), font: font, color: color, align: .left)
         context.restoreGState()

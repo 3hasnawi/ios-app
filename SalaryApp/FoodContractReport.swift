@@ -165,7 +165,7 @@ nonisolated enum FoodContractReport {
             let style = NSMutableParagraphStyle()
             style.alignment = align
             style.baseWritingDirection = .rightToLeft
-            let s = NSAttributedString(string: text, attributes: [.font: UIFont.boldSystemFont(ofSize: size), .paragraphStyle: style, .foregroundColor: UIColor.black])
+            let s = NSAttributedString(string: text, attributes: [.font: ReportFont.bold(size), .paragraphStyle: style, .foregroundColor: UIColor.black])
             let h = s.boundingRect(with: CGSize(width: rect.width - 8, height: 200), options: [.usesLineFragmentOrigin], context: nil).height
             s.draw(with: CGRect(x: rect.minX + 4, y: rect.midY - h / 2, width: rect.width - 8, height: h), options: [.usesLineFragmentOrigin], context: nil)
         }
