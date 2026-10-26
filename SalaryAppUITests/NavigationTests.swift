@@ -350,28 +350,18 @@ final class NavigationTests: XCTestCase {
         }
         for i in 0..<3 { openAndBack(i) }
 
-        step("فلتر النطاق") {
-            let menu = element("scopeMenu")
-            guard wait(menu, "زر النطاق") else { return }
+        step("نوع البحث") {
+            let menu = element("searchModeMenu")
+            guard wait(menu, "زر نوع البحث") else { return }
             menu.tap()
-            if wait(app.buttons["الرواتب"], "خيارات النطاق") { app.buttons["الرواتب"].tap() }
-            wait(element("resultCard"), "النتائج بعد تغيير النطاق")
-            menu.tap()
-            if wait(app.buttons["الكل"], "خيارات النطاق مرة ثانية") { app.buttons["الكل"].tap() }
-        }
-        step("فلتر الأشهر في البحث") {
-            let menu = element("searchMonthMenu")
-            guard wait(menu, "زر الأشهر في البحث") else { return }
-            menu.tap()
-            let second = app.buttons["أيلول 2026"]
-            if wait(second, "قائمة أشهر البحث") { second.tap(); second.tap() }
+            if wait(app.buttons["الاسم"], "خيارات نوع البحث") { app.buttons["الاسم"].tap() }
             dismissMenu()
         }
         step("تضييق البحث") {
             searchField.tap()
             if !app.keyboards.firstMatch.waitForExistence(timeout: 2) { searchField.tap() }
             guard app.keyboards.firstMatch.waitForExistence(timeout: 2) else {
-                issue("حقل البحث لم يستقبل التركيز للكتابة بعد إغلاق قائمة الأشهر")
+                issue("حقل البحث لم يستقبل التركيز للكتابة بعد إغلاق قائمة نوع البحث")
                 return
             }
             searchField.typeText(" حسين")

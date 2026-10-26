@@ -80,9 +80,7 @@ struct UnifiedSearchView: View {
 
     @State private var search = Self.initialSearch
     @State private var appliedSearch = Self.initialSearch
-    @AppStorage("unifiedScope") private var scopeRaw = UnifiedScope.all.rawValue
     @AppStorage("unifiedMode") private var modeRaw = StaffSearchMode.name.rawValue
-    @AppStorage("selectedMonth") private var selectedMonth = ""
     /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
     @AppStorage(RecentSearches.key) private var recentsData = Data()
     private var recents: [RecentSearches.Item] { RecentSearches.decode(recentsData) }
@@ -97,17 +95,15 @@ struct UnifiedSearchView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
 
-    private var scope: UnifiedScope { UnifiedScope(rawValue: scopeRaw) ?? .all }
+    /// البحث دائماً في الرواتب والملاك معاً (بلا شريط نطاق).
+    private var scope: UnifiedScope { .all }
     private var mode: StaffSearchMode { StaffSearchMode(rawValue: modeRaw) ?? .name }
     /// يشمل البحث الصوتي: تُحذف النقطة وعلامات الترقيم التي يضيفها الإملاء.
     private var trimmed: String { ArabicText.cleanQuery(appliedSearch) }
 
-    /// أشهر الرواتب المختارة (نفس اختيار الشاشة الرئيسية)، أو آخر شهر.
-    private var monthNames: [String] {
-        let names = Set(selectedMonth.split(separator: "|").map(String.init))
-        let chosen = months.filter { names.contains($0.name) }.map(\.name)
-        return chosen.isEmpty ? months.prefix(1).map(\.name) : chosen
-    }
+    /// كل الأشهر من الأحدث: لكل شخص يُعرض آخر شهر يوجد فيه اسمه، والشهر يظهر في بطاقته
+    /// ويُختار غيره من صفحة الشخص.
+    private var monthNames: [String] { months.map(\.name) }
 
     private var queryKey: String {
         "\(trimmed)|\(mode.rawValue)|\(scope.rawValue)|\(monthNames.joined(separator: ","))|\(importState.version)"
@@ -153,7 +149,6 @@ struct UnifiedSearchView: View {
             .listStyle(.insetGrouped)
             .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
-            .safeAreaInset(edge: .top, spacing: 0) { filters }
             .searchable(text: $search, prompt: Text(mode.prompt))
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
@@ -188,7 +183,11 @@ struct UnifiedSearchView: View {
                 appliedSearch = name
             }
             .navigationTitle(tr("بحث", "Search"))
-            .navigationBarTitleDisplayMode(.large)
+            // عنوان صغير بلا فراغ فوقه، ونوع البحث (الاسم، اسم الأم، الرقم الإحصائي، الموحد) قائمة صغيرة بجانبه.
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { modeMenu }
+            }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .navigationDestination(for: UnifiedPerson.self) { person in
                 UnifiedPersonView(person: person)
@@ -199,69 +198,18 @@ struct UnifiedSearchView: View {
         }
     }
 
-    /// أزرار صغيرة: النطاق، نوع البحث، أشهر الرواتب.
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                Menu {
-                    Picker(tr("النطاق", "Scope"), selection: $scopeRaw) {
-                        ForEach(UnifiedScope.allCases) { Text($0.title).tag($0.rawValue) }
-                    }
-                } label: {
-                    pill(scope.title, systemImage: "square.stack.3d.up")
-                }
-                .accessibilityIdentifier("scopeMenu")
-                .glassButtonStyle(prominent: true)
-                .buttonBorderShape(.capsule)
-
-                Menu {
-                    Picker(tr("البحث حسب", "Search by"), selection: $modeRaw) {
-                        ForEach(StaffSearchMode.allCases) { Text($0.title).tag($0.rawValue) }
-                    }
-                } label: {
-                    pill(tr("بحث: \(mode.title)", "By: \(mode.title)"), systemImage: "magnifyingglass")
-                }
-                .glassButtonStyle()
-                .buttonBorderShape(.capsule)
-
-                if !months.isEmpty {
-                    Menu {
-                        ForEach(months) { month in
-                            Button {
-                                toggle(month.name)
-                            } label: {
-                                if monthNames.contains(month.name) {
-                                    Label(month.name, systemImage: "checkmark")
-                                } else {
-                                    Text(month.name)
-                                }
-                            }
-                            .menuActionDismissBehavior(.disabled)
-                        }
-                    } label: {
-                        pill(monthNames.count == 1 ? monthNames[0] : tr("\(Num.format(monthNames.count)) أشهر", "\(Num.format(monthNames.count)) months"),
-                             systemImage: "calendar")
-                    }
-                    .accessibilityIdentifier("searchMonthMenu")
-                    .glassButtonStyle()
-                    .buttonBorderShape(.capsule)
-                }
+    /// نوع البحث: الاسم، اسم الأم، الرقم الإحصائي، الرقم الموحد.
+    private var modeMenu: some View {
+        Menu {
+            Picker(tr("البحث حسب", "Search by"), selection: $modeRaw) {
+                ForEach(StaffSearchMode.allCases) { Text($0.title).tag($0.rawValue) }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
+        } label: {
+            pill(mode.title, systemImage: "magnifyingglass")
         }
-        .scrollClipDisabled()
-    }
-
-    private func toggle(_ name: String) {
-        var names = monthNames
-        if let i = names.firstIndex(of: name) {
-            guard names.count > 1 else { return }
-            names.remove(at: i)
-        } else {
-            names.append(name)
-        }
-        selectedMonth = names.joined(separator: "|")
+        .accessibilityIdentifier("searchModeMenu")
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
     }
 
     private func pill(_ title: String, systemImage: String) -> some View {
@@ -307,8 +255,8 @@ struct UnifiedSearchView: View {
                 ContentUnavailableView(
                     tr("ابحث في الرواتب والملاك", "Search payroll and staff"),
                     systemImage: "magnifyingglass",
-                    description: Text(tr("اكتب الاسم في شريط البحث. يمكنك تغيير نوع البحث والأشهر من الأزرار في الأعلى.",
-                                         "Type a name in the search bar. Change the search type and months with the buttons above."))
+                    description: Text(tr("اكتب الاسم في شريط البحث. تظهر لكل شخص آخر شهر يوجد فيه راتبه، ومن صفحته تختار شهراً آخر. نوع البحث من الزر في الأعلى.",
+                                         "Type a name. Each person shows their latest month; pick another month on their page. Change the search type with the button above."))
                 )
                 .listRowBackground(Color.clear)
             }
@@ -506,7 +454,7 @@ struct UnifiedCard: View {
             }
             HStack(spacing: 8) {
                 tile(
-                    title: person.hasPayroll ? tr("راتب \(month ?? "")", "Salary \(month ?? "")") : tr("لا يوجد راتب", "No salary"),
+                    title: person.hasPayroll ? (month ?? tr("الراتب", "Salary")) : tr("لا يوجد راتب", "No salary"),
                     value: person.hasPayroll ? Money.format(hit.netSalary) : "—",
                     color: .primary
                 )
@@ -588,13 +536,12 @@ struct UnifiedPersonView: View {
         }
         .listSectionSpacing(.compact)
         .contentMargins(.top, 4, for: .scrollContent)
-        // أزرار الأشهر ثابتة أعلى الصفحة (بدون فراغ فوقها).
-        .safeAreaInset(edge: .top, spacing: 0) {
-            chips(staff: staff)
-                .padding(.bottom, 6)
-        }
-        .navigationTitle(tr("قسيمة الراتب", "Payslip"))
+        .navigationTitle(selection == Self.staffTag ? tr("الملاك", "Staff") : tr("قسيمة الراتب", "Payslip"))
         .navigationBarTitleDisplayMode(.inline)
+        // الأشهر والملاك قائمة منسدلة بجانب العنوان، فتبدأ القسيمة من أعلى الصفحة.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { partMenu(staff: staff) }
+        }
         // زر "مشاركة" في الشريط السفلي يشارك القسيمة المعروضة.
         .onAppear {
             router.payslipToShare = selectedRecord
@@ -620,46 +567,36 @@ struct UnifiedPersonView: View {
         }
     }
 
-    /// أزرار صغيرة: كل شهر له راتب للشخص، ثم الملاك.
-    private func chips(staff: StaffMember?) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+    /// قائمة منسدلة: كل شهر له راتب للشخص (الأحدث أولاً)، ثم الملاك، ومشاركة تقرير الشهر المعروض.
+    private func partMenu(staff: StaffMember?) -> some View {
+        Menu {
+            Picker(tr("العرض", "Show"), selection: $selection) {
                 ForEach(sortedRecords) { record in
-                    chip(record.month, tag: record.month)
-                        .contextMenu {
-                            Button(tr("عرض هذا الشهر", "Show this month"), systemImage: "eye") { selection = record.month }
-                            Button(tr("مشاركة تقرير راتب هذا الشهر", "Share this month's salary report"), systemImage: ReportSymbols.pdf) {
-                                selection = record.month
-                                router.payslipToShare = record
-                                router.showShare = true
-                            }
-                        }
+                    Label(record.month, systemImage: "calendar").tag(record.month)
                 }
                 if staff != nil {
-                    chip(tr("الملاك", "Staff"), tag: Self.staffTag)
+                    Label(tr("الملاك", "Staff"), systemImage: "person.text.rectangle").tag(Self.staffTag)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-        }
-        .scrollClipDisabled()
-        .accessibilityIdentifier("personPartPicker")
-    }
-
-    private func chip(_ title: String, tag: String) -> some View {
-        let on = selection == tag
-        return Button {
-            withAnimation(.snappy(duration: 0.2)) { selection = tag }
+            if let record = selectedRecord {
+                Section {
+                    Button(tr("مشاركة تقرير راتب \(record.month)", "Share \(record.month) salary report"), systemImage: ReportSymbols.pdf) {
+                        router.payslipToShare = record
+                        router.showShare = true
+                    }
+                }
+            }
         } label: {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .foregroundStyle(on ? Color.white : Color.primary)
-                .background(on ? AnyShapeStyle(PayslipDocument.green) : AnyShapeStyle(.regularMaterial), in: Capsule())
+            HStack(spacing: 6) {
+                Image(systemName: selection == Self.staffTag ? "person.text.rectangle" : "calendar")
+                Text(selection == Self.staffTag ? tr("الملاك", "Staff") : selection).lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption.weight(.bold))
+            }
+            .font(.subheadline.weight(.semibold))
         }
-        .buttonStyle(.plain)
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
+        .accessibilityIdentifier("personPartPicker")
     }
 
     private func staffHeader(_ staff: StaffMember) -> some View {
