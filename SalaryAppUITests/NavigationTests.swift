@@ -46,6 +46,16 @@ final class NavigationTests: XCTestCase {
         }
     }
 
+    func testExecutionAccountsMerge() {
+        app.launchArguments += ["-skipLock", "YES", "-tab", "settings", "-openAccounts", "YES"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["حسابات جهات التنفيذ"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.staticTexts["جهة تجريبية أ"].exists)
+        XCTAssertTrue(app.staticTexts["جهة تجريبية ب"].exists) // غابت من الملف الثاني وبقيت محفوظة.
+        XCTAssertTrue(app.staticTexts["جهة تجريبية ج"].exists)
+        XCTAssertFalse(app.staticTexts["جهة خاطئة"].exists)
+    }
+
     // MARK: - أدوات
 
     private func step(_ name: String, _ action: () -> Void) {

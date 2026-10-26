@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// نوع الملف المستورد.
 nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
-    case payrollAndDeductions, payroll, deductions, staff, skip
+    case payrollAndDeductions, payroll, deductions, staff, executionAccounts, skip
     var id: String { rawValue }
 
     var title: String {
@@ -13,6 +13,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .payroll: tr("رواتب", "Payroll")
         case .deductions: tr("استقطاعات", "Deductions")
         case .staff: tr("ملاك", "Staff")
+        case .executionAccounts: tr("حسابات جهات التنفيذ", "Execution accounts")
         case .skip: tr("تجاهل", "Skip")
         }
     }
@@ -23,6 +24,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .payroll: "banknote.fill"
         case .deductions: "minus.circle.fill"
         case .staff: "person.3.fill"
+        case .executionAccounts: "building.columns.fill"
         case .skip: "xmark.circle"
         }
     }
@@ -33,6 +35,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .payroll: .blue
         case .deductions: .orange
         case .staff: .green
+        case .executionAccounts: .teal
         case .skip: .gray
         }
     }
@@ -59,12 +62,22 @@ struct ImportCandidate: Identifiable {
         if let error { return error }
         if let staffCount { return tr("\(Num.format(staffCount)) موظف في الملاك", "\(Num.format(staffCount)) staff records") }
         guard let result else { return "" }
+        if kind == .executionAccounts {
+            let valid = tr("\(Num.format(result.accounts.count)) حساب صالح", "\(result.accounts.count) valid accounts")
+            let invalid = result.invalidAccounts > 0
+                ? tr(" · \(Num.format(result.invalidAccounts)) IBAN غير صالح سيُتجاهل (\(result.invalidAccountRows.joined(separator: "، ")))",
+                     " · \(result.invalidAccounts) invalid IBANs skipped (\(result.invalidAccountRows.joined(separator: ", ")))") : ""
+            return valid + invalid
+        }
         var parts: [String] = []
         if kind != .deductions, !result.employees.isEmpty {
             parts.append(tr("\(Num.format(result.employees.count)) موظف", "\(Num.format(result.employees.count)) employees"))
         }
         if kind != .payroll, !result.deductions.isEmpty {
             parts.append(tr("\(Num.format(result.deductions.count)) استقطاع", "\(Num.format(result.deductions.count)) deductions"))
+        }
+        if !result.accounts.isEmpty {
+            parts.append(tr("\(Num.format(result.accounts.count)) حساب جهة", "\(result.accounts.count) entity accounts"))
         }
         return parts.joined(separator: " · ")
     }
@@ -164,7 +177,11 @@ final class ImportCenter {
                 }.value
                 let hasPay = !result.employees.isEmpty
                 let hasDed = !result.deductions.isEmpty
-                let kind: ImportKind = hasPay && hasDed ? .payrollAndDeductions : (hasPay ? .payroll : .deductions)
+                let hasAccounts = !result.accounts.isEmpty
+                let kind: ImportKind
+                if hasAccounts && !hasPay && !hasDed { kind = .executionAccounts }
+                else if hasPay && hasDed { kind = .payrollAndDeductions }
+                else { kind = hasPay ? .payroll : .deductions }
                 let allowed: [ImportKind] = hasPay && hasDed ? [.payrollAndDeductions, .payroll, .deductions, .skip] : [kind, .skip]
                 let (month, detected) = Self.month(for: url, existing: existing)
                 found.append(ImportCandidate(url: url, fileName: name, kind: kind, month: month, allowedKinds: allowed,
@@ -249,6 +266,8 @@ final class ImportCenter {
                 if (saved[c.month]?.deductionCount ?? 0) > 0 { lines.append(tr("استقطاعات \(c.month)", "deductions of \(c.month)")) }
             case .staff:
                 if StaffInfo.count > 0 { lines.append(tr("الملاك كاملاً", "all staff data")) }
+            case .executionAccounts:
+                break // تُحدَّث الجهات الموجودة ولا تُحذف الجهات الغائبة من الملف.
             case .skip:
                 break
             }
@@ -291,6 +310,7 @@ final class ImportCenter {
         var failures: [String] = []
         var warnings: [String] = []
         var totals = (employees: 0, deductions: 0)
+        var accountTotals = (added: 0, updated: 0, invalid: 0)
         var months = Set<String>()
         var newestPayroll: (key: Int, name: String)?
 
@@ -311,6 +331,19 @@ final class ImportCenter {
                     StaffImportState.shared.isImporting = false
                     StaffImportState.shared.version += 1
                     lines.append(tr("الملاك: \(Num.format(count)) موظف", "Staff: \(Num.format(count)) employees"))
+                case .executionAccounts:
+                    guard let result = job.result else { continue }
+                    let counts = try await Task.detached(priority: .userInitiated) {
+                        try await ExecutionAccountImporter(modelContainer: container).merge(result.accounts)
+                    }.value
+                    accountTotals.added += counts.added
+                    accountTotals.updated += counts.updated
+                    accountTotals.invalid += result.invalidAccounts
+                    lines.append(tr("حسابات جهات التنفيذ: \(Num.format(counts.added)) جديدة، \(Num.format(counts.updated)) محدّثة",
+                                    "Execution accounts: \(counts.added) added, \(counts.updated) updated"))
+                    if result.invalidAccounts > 0 {
+                        warnings.append(Self.accountWarning(result))
+                    }
                 case .payrollAndDeductions, .payroll, .deductions:
                     guard let result = job.result else { continue }
                     let month = job.month
@@ -340,6 +373,17 @@ final class ImportCenter {
                         }
                         let key = MonthName.sortKey(month)
                         if newestPayroll == nil || key >= newestPayroll!.key { newestPayroll = (key, month) }
+                    }
+                    if !result.accounts.isEmpty {
+                        let counts = try await Task.detached(priority: .userInitiated) {
+                            try await ExecutionAccountImporter(modelContainer: container).merge(result.accounts)
+                        }.value
+                        accountTotals.added += counts.added
+                        accountTotals.updated += counts.updated
+                        accountTotals.invalid += result.invalidAccounts
+                        if result.invalidAccounts > 0 {
+                            warnings.append(Self.accountWarning(result))
+                        }
                     }
                 case .skip:
                     break
@@ -376,7 +420,7 @@ final class ImportCenter {
         if autoRun {
             // اختبار المحاكي يقرأ هذا التقرير.
             let status = failures.isEmpty ? "" : " failed=\(failures.count)"
-            LaunchOptions.writeReport("employees=\(totals.employees) deductions=\(totals.deductions) months=\(months.count)\(status)"
+            LaunchOptions.writeReport("employees=\(totals.employees) deductions=\(totals.deductions) months=\(months.count) accountsAdded=\(accountTotals.added) accountsUpdated=\(accountTotals.updated) accountsInvalid=\(accountTotals.invalid)\(status)"
                 + String(format: " seconds=%.1f\n", Date().timeIntervalSince(start)))
             autoRun = false
         } else {
@@ -387,11 +431,18 @@ final class ImportCenter {
     private static func order(_ kind: ImportKind) -> Int {
         switch kind {
         case .staff: 0
-        case .payrollAndDeductions: 1
-        case .payroll: 2
-        case .deductions: 3
-        case .skip: 4
+        case .executionAccounts: 1
+        case .payrollAndDeductions: 2
+        case .payroll: 3
+        case .deductions: 4
+        case .skip: 5
         }
+    }
+
+    private static func accountWarning(_ result: ImportResult) -> String {
+        let rows = result.invalidAccountRows.joined(separator: "، ")
+        return tr("⚠️ \(Num.format(result.invalidAccounts)) IBAN غير صالح لم يُحفظ (\(rows)). صحّح الخلايا ثم أعد الاستيراد.",
+                  "⚠️ \(result.invalidAccounts) invalid IBANs weren't saved (\(rows)). Fix the cells and import again.")
     }
 }
 

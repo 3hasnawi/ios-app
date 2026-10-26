@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// نوعا التقارير: من جدول الاستقطاعات (حسب الجهة)، ومن بنود ورقة الرواتب (صندوق الشهداء، الرعاية الصحية...).
 nonisolated enum ReportKind: String, CaseIterable, Identifiable, Sendable {
@@ -39,7 +40,7 @@ nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
 /// حسابات التقارير في الخلفية.
 @ModelActor
 actor ReportEngine {
-    static func entity(of title: String) -> String {
+    nonisolated static func entity(of title: String) -> String {
         let main = title.split(separator: "/", maxSplits: 1).first.map(String.init) ?? title
         let trimmed = main.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? title : trimmed
@@ -108,6 +109,7 @@ actor ReportEngine {
 
 struct ReportDetailView: View {
     let group: ReportGroup
+    @Query private var executionAccounts: [ExecutionAccount]
     @State private var rows: [ReportRow]?
     @State private var loadError: String?
     @State private var showExport = false
@@ -121,6 +123,13 @@ struct ReportDetailView: View {
     private var foodRows: [FoodContractReport.Row]? {
         guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
         return FoodContractReport.rows(from: rows)
+    }
+
+    private var executionAccount: ExecutionAccount? {
+        guard group.kind == .deductions else { return nil }
+        let exact = ArabicText.normalize(group.title)
+        let main = ArabicText.normalize(ReportEngine.entity(of: group.title))
+        return executionAccounts.first { $0.key == exact } ?? executionAccounts.first { $0.key == main }
     }
 
     var body: some View {
@@ -144,6 +153,17 @@ struct ReportDetailView: View {
                     }
                 }
                 .padding(.vertical, 4)
+            }
+
+            if let account = executionAccount {
+                Section(tr("حساب جهة التنفيذ", "Execution account")) {
+                    LabeledContent("IBAN") { Text(account.iban).monospaced().textSelection(.enabled).privacySensitive() }
+                    if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
+                    if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
+                    Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
+                        UIPasteboard.general.string = account.iban
+                    }
+                }
             }
 
             if let fundRows { FundSummarySection(rows: fundRows) }

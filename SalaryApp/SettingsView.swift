@@ -21,6 +21,7 @@ struct SettingsView: View {
     /// اختبار المحاكي: -openBackup YES يفتح صفحة النسخ الاحتياطي.
     @State private var showBackup = UserDefaults.standard.bool(forKey: "openBackup")
     @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
+    @State private var showAccounts = UserDefaults.standard.bool(forKey: "openAccounts")
 
     @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
 
@@ -104,6 +105,7 @@ struct SettingsView: View {
             .listSectionSpacing(.compact)
             .navigationDestination(isPresented: $showBackup) { BackupView() }
             .navigationDestination(isPresented: $showNotifications) { NotificationSettingsView() }
+            .navigationDestination(isPresented: $showAccounts) { ExecutionAccountsView() }
             .navigationTitle(tr("الإعدادات", "Settings"))
             // عنوان صغير حتى تتسع الصفحة كلها بلا تمرير.
             .navigationBarTitleDisplayMode(.inline)
@@ -203,6 +205,7 @@ struct SettingsView: View {
 struct SavedDataView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
+    @Query private var accounts: [ExecutionAccount]
     @State private var importState = StaffImportState.shared
     @State private var confirmStaffDelete = false
     @State private var storeSize: Int64?
@@ -235,6 +238,13 @@ struct SavedDataView: View {
                 } label: {
                     SettingRow(title: tr("الأشهر المحفوظة", "Saved months"), systemImage: "calendar", color: .blue) {
                         Text(Num.format(months.count)).foregroundStyle(.secondary)
+                    }
+                }
+                NavigationLink {
+                    ExecutionAccountsView()
+                } label: {
+                    SettingRow(title: tr("حسابات جهات التنفيذ", "Execution accounts"), systemImage: "building.columns.fill", color: .teal) {
+                        Text(Num.format(accounts.count)).foregroundStyle(.secondary)
                     }
                 }
             }

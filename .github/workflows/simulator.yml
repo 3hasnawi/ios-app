@@ -71,6 +71,7 @@ jobs:
           mkdir -p test-files
           .venv/bin/python ci/make_test_xlsx.py "test-files/تشرين الاول 2026.xlsx" oct.txt 26000
           .venv/bin/python ci/make_test_xlsx.py "test-files/أيلول 2026.xlsx" sep.txt 3000 previous
+          .venv/bin/python ci/make_test_iban.py
           # المجموع المتوقع للملفين معاً
           cat oct.txt sep.txt | python3 -c '
           import sys, re
@@ -134,6 +135,18 @@ jobs:
             xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -AppleLocale ar_IQ "$@"
           }
           shot() { sleep "${2:-5}"; xcrun simctl io "$UDID" screenshot "ci-output/screenshots/$1.png"; }
+          check_accounts() {
+            rm -f "$DATA/Documents/import-report.txt"
+            launch -importFile "$DATA/Documents/IBAN-1.xlsx"
+            for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+            grep -q 'accountsAdded=2 accountsUpdated=0 accountsInvalid=0' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN initial import failed'; exit 1; }
+            rm -f "$DATA/Documents/import-report.txt"
+            launch -importFile "$DATA/Documents/IBAN-2.xlsx"
+            for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+            grep -q 'accountsAdded=1 accountsUpdated=1 accountsInvalid=1' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN incremental import failed'; exit 1; }
+            launch -tab settings -openAccounts YES
+            shot 08h-execution-accounts 5
+          }
 
           if [ "$QUICK" = true ]; then
             launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
@@ -145,6 +158,7 @@ jobs:
             shot 03a-system-glass-bar 4
             shot 03b-home-audit-cards 1
             if [ "$DEDUCTIONS_ONLY" = true ]; then exit 0; fi
+            check_accounts
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
             launch -tab reports
@@ -176,6 +190,7 @@ jobs:
           done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt
           shot 02-import-done 2
+          check_accounts
           launch
           shot 03b-home-audit-cards 4
 
@@ -379,7 +394,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes -only-testing:SalaryAppUITests/NavigationTests/testExecutionAccountsMerge)
           fi
           if [ "$DEDUCTIONS_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)

@@ -8,7 +8,7 @@ import ZIPFoundation
 /// يُحفظ في أي مكان من نافذة "الملفات" (iCloud Drive، OneDrive، Google Drive)،
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
-    static let version = 1
+    static let version = 2
     static let prefix = "نسخة الرواتب"
 
     struct Manifest: Codable, Sendable {
@@ -18,12 +18,14 @@ nonisolated enum BackupFormat {
         var employees: Int
         var deductions: Int
         var staff: Int
+        var accounts: Int?
     }
 
     struct MonthRecord: Codable { var name: String; var importedAt: Date; var employeeCount: Int; var deductionCount: Int; var summary: Data? }
     struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data?; var details: Data? }
     struct DeductionRecord: Codable { var month: String; var name: String; var title: String; var amount: Double?; var note: String; var rank: String }
     struct StaffRecord: Codable { var name: String; var mother: String; var stat: String; var unified: String; var rank: String; var status: String; var workplace: String; var details: Data }
+    struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String }
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
@@ -91,17 +93,21 @@ actor BackupActor {
             BackupFormat.StaffRecord(name: $0.name, mother: $0.motherKey, stat: $0.statNumber, unified: $0.unifiedNumber,
                                      rank: $0.rank, status: $0.status, workplace: $0.workplace, details: $0.detailsData)
         }, from: 0.5, to: 0.8)
+        let accounts = try modelContext.fetch(FetchDescriptor<ExecutionAccount>())
+        try writeLines("accounts.jsonl", accounts.map {
+            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
+        }, from: 0.8, to: 0.82)
 
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
-                                             employees: employeeCount, deductions: deductionCount, staff: staff.count)
+                                             employees: employeeCount, deductions: deductionCount, staff: staff.count, accounts: accounts.count)
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
         try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
 
         let out = fm.temporaryDirectory.appendingPathComponent(BackupFormat.fileName())
         try? fm.removeItem(at: out)
         let archive = try Archive(url: out, accessMode: .create)
-        for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"] {
+        for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl"] {
             try archive.addEntry(with: name, relativeTo: dir, compressionMethod: .deflate)
         }
         progress?(1)
@@ -122,9 +128,16 @@ actor BackupActor {
         let employees = try lines("employees.jsonl").map { try decoder.decode(BackupFormat.EmployeeRecord.self, from: $0) }
         let deductions = try lines("deductions.jsonl").map { try decoder.decode(BackupFormat.DeductionRecord.self, from: $0) }
         let staff = try lines("staff.jsonl").map { try decoder.decode(BackupFormat.StaffRecord.self, from: $0) }
+        let accounts: [BackupFormat.AccountRecord]
+        if manifest.version >= 2 {
+            accounts = try lines("accounts.jsonl").map { try decoder.decode(BackupFormat.AccountRecord.self, from: $0) }
+        } else {
+            accounts = []
+        }
         guard months.map(\.name).sorted() == manifest.months.sorted(),
               employees.count == manifest.employees, deductions.count == manifest.deductions,
-              staff.count == manifest.staff else { throw BackupError.notBackup }
+              staff.count == manifest.staff, manifest.version < 2 || manifest.accounts != nil,
+              accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
 
@@ -136,6 +149,7 @@ actor BackupActor {
         for item in try modelContext.fetch(FetchDescriptor<Deduction>()) { modelContext.delete(item) }
         for item in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) { modelContext.delete(item) }
         for item in try modelContext.fetch(FetchDescriptor<StaffMember>()) { modelContext.delete(item) }
+        for item in try modelContext.fetch(FetchDescriptor<ExecutionAccount>()) { modelContext.delete(item) }
         for r in months {
             let m = PayrollMonth(name: r.name, employeeCount: r.employeeCount, deductionCount: r.deductionCount)
             m.importedAt = r.importedAt
@@ -160,6 +174,9 @@ actor BackupActor {
             s.detailsData = r.details
             modelContext.insert(s)
             if i % 1000 == 0 { progress?(0.7 + 0.3 * Double(i) / Double(max(1, staff.count))) }
+        }
+        for r in accounts {
+            modelContext.insert(ExecutionAccount(entity: r.entity, iban: r.iban, branch: r.branch, swift: r.swift))
         }
         try modelContext.save()
         progress?(1)
@@ -459,12 +476,18 @@ final class BackupManager {
                     guard let entry = archive[name], entry.type == .file else { throw BackupError.notBackup }
                     _ = try archive.extract(entry, to: dir.appendingPathComponent(name))
                 }
+                if let entry = archive["accounts.jsonl"], entry.type == .file {
+                    _ = try archive.extract(entry, to: dir.appendingPathComponent("accounts.jsonl"))
+                }
                 ImportCenter.removeCopy(url)
                 extracted = true
                 return dir
             }.value
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
             guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+            if manifest.version >= 2, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("accounts.jsonl").path) {
+                throw BackupError.notBackup
+            }
             await FilePicker.waitUntilSettled()
             pendingRestore = (folder, manifest)
         } catch {
@@ -513,7 +536,8 @@ final class BackupManager {
             let d = (try? context.fetchCount(FetchDescriptor<Deduction>())) ?? -1
             let m = (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) ?? -1
             let s = (try? context.fetchCount(FetchDescriptor<StaffMember>())) ?? -1
-            return "employees=\(e) deductions=\(d) months=\(m) staff=\(s)"
+            let a = (try? context.fetchCount(FetchDescriptor<ExecutionAccount>())) ?? -1
+            return "employees=\(e) deductions=\(d) months=\(m) staff=\(s) accounts=\(a)"
         }
         let before = counts()
         do {

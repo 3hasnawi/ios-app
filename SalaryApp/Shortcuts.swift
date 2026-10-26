@@ -13,7 +13,7 @@ enum SharedModel {
         let started = Date()
         defer { PerfLog.record("container", since: started) }
         do {
-            return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self)
+            return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
         } catch {
             fatalError("تعذّر فتح قاعدة البيانات: \(error)")
         }

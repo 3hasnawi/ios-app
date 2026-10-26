@@ -21,15 +21,28 @@ nonisolated struct ImportedDeduction: Sendable {
     var rank: String = ""
 }
 
+nonisolated struct ImportedExecutionAccount: Sendable {
+    var entity: String
+    var iban: String
+    var branch: String
+    var swift: String
+}
+
 nonisolated struct ImportResult: Sendable {
     var employees: [ImportedEmployee] = []
     var deductions: [ImportedDeduction] = []
+    var accounts: [ImportedExecutionAccount] = []
+    var invalidAccounts = 0
+    var invalidAccountRows: [String] = []
     /// أسباب عدم فهم بعض الأوراق (للتنبيه).
     var problems: [String] = []
 
     mutating func merge(_ other: ImportResult) {
         employees += other.employees
         deductions += other.deductions
+        accounts += other.accounts
+        invalidAccounts += other.invalidAccounts
+        invalidAccountRows += other.invalidAccountRows
         problems += other.problems
     }
 }
@@ -49,8 +62,8 @@ nonisolated enum ImportError: LocalizedError {
             return tr("لم يُعثر في \(file) على عمود \"الاسم\" مع عمود صافي الراتب أو مبلغ الاستقطاع.", "\(file) has no \"name\" column with a net salary or deduction amount column.")
         case .unrecognized(let file, let reasons):
             let intro = tr("الملف \(file) غير متوافق مع نظام التطبيق:", "\(file) doesn't match the app's format:")
-            let help = tr("المطلوب: ورقة رواتب فيها عمودا (الاسم/Name_m) و(صافي الراتب)، أو ورقة استقطاعات فيها (الاسم) و(المبلغ). العناوين يجب أن تكون في أحد أول ٢٠ صفاً.",
-                          "Expected: a payroll sheet with (name) and (net salary) columns, or a deductions sheet with (name) and (amount). Headers must be within the first 20 rows.")
+            let help = tr("المطلوب: رواتب (الاسم/Name_m وصافي الراتب)، أو استقطاعات (الاسم والمبلغ)، أو حسابات جهات (جهة التنفيذ ورقم الايبان). العناوين في أول ٢٠ صفاً.",
+                          "Expected: payroll (name and net salary), deductions (name and amount), or entity accounts (entity and IBAN). Headers must be within the first 20 rows.")
             return ([intro] + reasons.map { "• " + $0 } + [help]).joined(separator: "\n")
         }
     }
@@ -76,7 +89,7 @@ nonisolated enum ExcelImporter {
         default:
             try readXLSX(url, into: &result, progress: progress)
         }
-        if result.employees.isEmpty && result.deductions.isEmpty {
+        if result.employees.isEmpty && result.deductions.isEmpty && result.accounts.isEmpty {
             throw ImportError.unrecognized(url.lastPathComponent, result.problems.isEmpty
                 ? [tr("لا توجد صفوف بيانات في الملف.", "The file has no data rows.")] : result.problems)
         }
@@ -254,10 +267,18 @@ nonisolated final class SheetParser {
         var rank: Int?
     }
 
+    private struct AccountColumns {
+        var entity: Int
+        var iban: Int
+        var branch: Int?
+        var swift: Int?
+    }
+
     private enum Mode {
         case findingHeader(rowsSeen: Int)
         case employees(EmployeeColumns)
         case deductions(DeductionColumns)
+        case accounts(AccountColumns)
         case skip
     }
 
@@ -267,6 +288,7 @@ nonisolated final class SheetParser {
     var sheetName = ""
     /// أول عناوين رآها مع عمود الاسم، لشرح سبب الرفض.
     private var nameRowHeaders: [String]?
+    private var accountHeaderFound = false
     private var rowsRead = 0
     /// لكل عمود مبلغ: كم مرة ظهر كل اسم جهة، لإلحاق المبالغ التي اسمها فارغ بالجهة الغالبة.
     private var pairNames: [String: [String: Int]] = [:]
@@ -285,6 +307,8 @@ nonisolated final class SheetParser {
             readEmployee(row, columns)
         case .deductions(let columns):
             readDeduction(row, columns)
+        case .accounts(let columns):
+            readAccount(row, columns)
         case .skip:
             break
         }
@@ -293,6 +317,15 @@ nonisolated final class SheetParser {
     private func detectHeader(_ row: [String]) -> Mode? {
         let headers = row.map(ArabicText.normalize)
         var used = Set<Int>()
+        // ملفات حسابات الجهات مستقلة عن الرواتب، وقد تضم عمود «المبلغ» الفارغ.
+        if let entity = Self.column(["جهة التنفيذ", "الجهة"], in: headers, used: &used, exactOnly: true),
+           let iban = Self.column(["رقم الايبان", "الايبان", "iban"], in: headers, used: &used) {
+            accountHeaderFound = true
+            let branch = Self.column(["الفرع", "اسم الفرع"], in: headers, used: &used)
+            let swift = Self.column(["swift", "رمز السويفت"], in: headers, used: &used)
+            return .accounts(AccountColumns(entity: entity, iban: iban, branch: branch, swift: swift))
+        }
+        used.removeAll()
         guard let name = Self.column(Synonyms.name, in: headers, used: &used, exactOnly: true) else { return nil }
         nameRowHeaders = row.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 
@@ -376,6 +409,37 @@ nonisolated final class SheetParser {
         ))
     }
 
+    private func readAccount(_ row: [String], _ columns: AccountColumns) {
+        let entity = cell(row, columns.entity)
+        guard !entity.isEmpty else { return }
+        let iban = Self.cleanIBAN(cell(row, columns.iban))
+        guard Self.validIBAN(iban) else {
+            result.invalidAccounts += 1
+            result.invalidAccountRows.append("\(sheetName) \(rowsRead)")
+            return
+        }
+        result.accounts.append(ImportedExecutionAccount(entity: entity, iban: iban,
+                                                       branch: cell(row, columns.branch), swift: cell(row, columns.swift).uppercased()))
+    }
+
+    private static func cleanIBAN(_ text: String) -> String {
+        ArabicText.latinDigits(text).uppercased().filter { !$0.isWhitespace && $0 != "-" }
+    }
+
+    /// IBAN العراقي: طول 23 وحساب mod 97؛ يمنع قبول أرقام Excel المبتورة.
+    private static func validIBAN(_ iban: String) -> Bool {
+        guard iban.count == 23, iban.hasPrefix("IQ"),
+              iban.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...90).contains($0.value) }) else { return false }
+        let shifted = String(iban.dropFirst(4)) + String(iban.prefix(4))
+        var remainder = 0
+        for c in shifted.uppercased().unicodeScalars {
+            let value = c.value
+            let digits = (65...90).contains(value) ? String(value - 55) : String(value - 48)
+            for digit in digits.utf8 { remainder = (remainder * 10 + Int(digit - 48)) % 97 }
+        }
+        return remainder == 1
+    }
+
     /// بعد آخر صف: سبب عدم قبول الورقة إن لم يُقرأ منها شيء.
     func finish() {
         // المبالغ التي خانة اسمها فارغة تُحسب للجهة الأكثر ظهوراً في نفس العمود (مثل شركة عراق الجوال).
@@ -387,10 +451,15 @@ nonisolated final class SheetParser {
                 }
             }
         }
-        guard result.employees.isEmpty, result.deductions.isEmpty else { return }
+        guard result.employees.isEmpty, result.deductions.isEmpty, result.accounts.isEmpty else { return }
         let sheet = sheetName.isEmpty ? tr("الورقة", "Sheet") : sheetName
         if rowsRead == 0 {
             return  // ورقة فارغة: لا داعي لذكرها
+        }
+        if accountHeaderFound {
+            result.problems.append(tr("\(sheet): لم يُعثر على IBAN عراقي صالح؛ راجع الخانات المحفوظة كأرقام في Excel.",
+                                      "\(sheet): no valid Iraqi IBAN; check cells stored as numbers in Excel."))
+            return
         }
         if let headers = nameRowHeaders {
             let sample = headers.prefix(8).joined(separator: "، ")
