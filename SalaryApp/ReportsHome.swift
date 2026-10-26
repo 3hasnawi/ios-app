@@ -317,7 +317,7 @@ struct ReportsView: View {
             let kinds = SalaryChangeKind.allCases.map { "\($0.rawValue)=\(s?.rows($0).count ?? -1)" }.joined(separator: " ")
             let d = digest.deductions
             let dk = DeductionGroupKind.allCases.map { "\($0.rawValue)=\(d?.rows($0).count ?? -1)" }.joined(separator: " ")
-            LaunchOptions.writeReport("audit=\(s == nil || d == nil ? "failed" : "ok") issues=\(digest.issues) \(checks) salary \(kinds) items=\(s?.items.count ?? -1) deductions \(dk)")
+            LaunchOptions.writeReport("audit=\(s == nil || d == nil ? "failed" : "ok") issues=\(digest.issues) \(checks) salary \(kinds) deductions \(dk)")
         }
         if LaunchOptions.openReport, let first = testGroup(payroll ? payrollGroups : deductionGroups) {
             path.append(.group(first))

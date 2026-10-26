@@ -46,31 +46,14 @@ nonisolated struct SalaryChange: Identifiable, Sendable, Hashable {
     var line: String { [rank, workplace].filter { !$0.isEmpty }.joined(separator: " · ") }
 }
 
-/// بند من بنود الرواتب: مجموعه في الشهرين، ومن تغيّر عندهم.
-nonisolated struct ItemDelta: Identifiable, Sendable, Hashable {
-    enum Kind: Int, Sendable { case allowance, entitlement, deduction, deductionTotal, net }
-    let id: Int
-    let title: String
-    let group: Kind
-    let before: Double
-    let after: Double
-    let people: [SalaryChange]
-    var difference: Double { after - before }
-    var isTotal: Bool { group == .entitlement || group == .deductionTotal || group == .net }
-}
-
 nonisolated struct SalaryAudit: Sendable {
     let from: String
     let to: String
-    /// المقارنة متاحة (شهران مختلفان فيهما رواتب).
     let compared: Bool
     let netFrom: Double
     let netTo: Double
     let changes: [SalaryChangeKind: [SalaryChange]]
-    let items: [ItemDelta]
-    /// فحوص شهر "إلى".
     let checks: [AuditCheck]
-    /// مطابقة الملاك (فارغة إذا لم يُستورد الملاك).
     let staffChecks: [AuditCheck]
     var issues: Int { (checks + staffChecks).filter { !$0.ok }.count }
     func rows(_ kind: SalaryChangeKind) -> [SalaryChange] { changes[kind] ?? [] }
@@ -84,20 +67,7 @@ nonisolated enum SalaryItems {
                              "مخصصات صنف", "جامعية", "مخصصات نقل", "مؤقتة", "اضافية", "مخصصات اخرى", "لقب علمي"]
     static let entitlement = "الاستحقاق"
     static let deductionTotal = "مجموع الاستقطاعات"
-    /// الاستقطاعات الثابتة في ورقة الرواتب بترتيب الكشف؛ ما عداها (أسماء جهات) يُجمع في "استقطاعات أخرى".
-    static let deductions = ["توقيفات تقاعدية", "الضريبة", "حماية الاجتماعية", "الرعاية الصحية", "صندوق الشهداء",
-                             "نشاط صحي", "نشاط رياضي", "تامين صحي", "تضمين", "ايراد نهائي", "رسم طابع",
-                             "مجموع استقطاعات المصارف", "استقطاع مؤقت"]
-    static let otherDeductions = "استقطاعات أخرى"
 
-    private static let knownDeductions = Dictionary(deductions.map { (ArabicText.normalize($0), $0) }, uniquingKeysWith: { a, _ in a })
-
-    /// اسم البند الثابت المطابق لعنوان عمود (أو nil لأسماء الجهات).
-    static func deduction(_ title: String) -> String? {
-        let key = ArabicText.normalize(title)
-        if let exact = knownDeductions[key] { return exact }
-        return deductions.first { key.contains(ArabicText.normalize($0)) }
-    }
 }
 
 // MARK: - الحساب
@@ -148,7 +118,6 @@ extension ReportEngine {
         for s in new where newMap[s.key] == nil { newMap[s.key] = s }
 
         var changes: [SalaryChangeKind: [SalaryChange]] = [:]
-        var itemPeople: [String: [SalaryChange]] = [:]
         var id = 0
         func change(_ s: Snapshot, before: Double?, after: Double?, reasons: [String]) -> SalaryChange {
             id += 1
@@ -156,20 +125,6 @@ extension ReportEngine {
                                 before: before, after: after, reasons: reasons)
         }
         func signed(_ v: Double) -> String { (v > 0 ? "+" : v < 0 ? "−" : "") + Money.format(abs(v)) }
-        // تصنيف عناوين البنود مرة واحدة لكل عنوان (توحيد النص العربي مكلف إذا تكرر لكل موظف).
-        let allowanceSet = Set(SalaryItems.allowances)
-        var classes: [String: (item: String, kind: ItemDelta.Kind)] = [:]
-        func classify(_ title: String) -> (item: String, kind: ItemDelta.Kind) {
-            if let known = classes[title] { return known }
-            let result: (item: String, kind: ItemDelta.Kind)
-            if allowanceSet.contains(title) { result = (title, .allowance) }
-            else if title == SalaryItems.entitlement { result = (title, .entitlement) }
-            else if title == SalaryItems.deductionTotal { result = (title, .deductionTotal) }
-            else { result = (SalaryItems.deduction(title) ?? SalaryItems.otherDeductions, .deduction) }
-            classes[title] = result
-            return result
-        }
-
         if compared && !old.isEmpty {
             for s in newMap.values where oldMap[s.key] == nil {
                 changes[.added, default: []].append(change(s, before: nil, after: s.net, reasons: []))
@@ -185,8 +140,6 @@ extension ReportEngine {
                 for title in Set(o.values.keys).union(n.values.keys) {
                     let a = o.values[title] ?? 0, b = n.values[title] ?? 0
                     guard abs(b - a) >= 1 else { continue }
-                    let itemTitle = classify(title).item
-                    itemPeople[itemTitle, default: []].append(change(n, before: a, after: b, reasons: itemTitle == title ? [] : [title]))
                     if title != SalaryItems.entitlement && title != SalaryItems.deductionTotal { deltas.append((title, b - a)) }
                 }
                 if abs(n.net - o.net) >= 1 {
@@ -216,35 +169,11 @@ extension ReportEngine {
             }
         }
 
-        // مجاميع البنود في الشهرين (مرور واحد على الموظفين).
-        func sums(_ list: [Snapshot]) -> [String: Double] {
-            var result: [String: Double] = [:]
-            for s in list { for (k, v) in s.values { result[classify(k).item, default: 0] += v } }
-            return result
-        }
-        let before = sums(old), after = sums(new)
-        try Task.checkCancellation()
-        var items: [ItemDelta] = []
-        func add(_ title: String, _ group: ItemDelta.Kind) {
-            let a = before[title] ?? 0, b = after[title] ?? 0
-            guard a != 0 || b != 0 else { return }
-            let people = (itemPeople[title] ?? []).sorted { abs($0.difference) > abs($1.difference) }
-            items.append(ItemDelta(id: items.count, title: title, group: group, before: a, after: b, people: people))
-        }
-        for title in SalaryItems.allowances { add(title, .allowance) }
-        add(SalaryItems.entitlement, .entitlement)
-        for title in SalaryItems.deductions { add(title, .deduction) }
-        add(SalaryItems.otherDeductions, .deduction)
-        add(SalaryItems.deductionTotal, .deductionTotal)
-        let netPeople = (changes[.net] ?? [])
-        items.append(ItemDelta(id: items.count, title: tr("الصافي", "Net"), group: .net,
-                               before: old.reduce(0) { $0 + $1.net }, after: new.reduce(0) { $0 + $1.net }, people: netPeople))
-
         let checks = try salaryChecks(new)
         let staff = try staffChecks(new)
         return SalaryAudit(from: from, to: to, compared: compared && !old.isEmpty,
                            netFrom: old.reduce(0) { $0 + $1.net }, netTo: new.reduce(0) { $0 + $1.net },
-                           changes: changes, items: items, checks: checks, staffChecks: staff)
+                           changes: changes, checks: checks, staffChecks: staff)
     }
 
     // MARK: فحوص الشهر

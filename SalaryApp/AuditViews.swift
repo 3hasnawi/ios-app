@@ -573,7 +573,6 @@ struct SalaryAuditView: View {
     @State private var exporting = false
     @State private var error: String?
     @State private var openKind: SalaryChangeKind?
-    @State private var showItems = false
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
@@ -618,27 +617,6 @@ struct SalaryAuditView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets())
                     }
-                    Section {
-                        Button {
-                            showItems = true
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(tr("مقارنة البنود", "Item comparison")).font(.subheadline.weight(.semibold))
-                                    Text(tr("مجموع كل بند في الشهرين والفرق", "Each item's total in both months")).font(.caption).foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: "list.number").foregroundStyle(.indigo)
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("salaryItems")
-                        .contextMenu {
-                            Button(tr("فتح", "Open"), systemImage: "list.number") { showItems = true }
-                            Button(tr("تصدير الكشف الشامل Excel", "Export full Excel"), systemImage: ReportSymbols.excel) { run(excel: true) { try await AuditExport.salary(audit) } }
-                            Button(tr("تصدير الكشف الشامل PDF", "Export full PDF"), systemImage: ReportSymbols.pdf) { run(excel: false) { try await AuditExport.salary(audit) } }
-                        }
-                    }
                 } else {
                     Section {
                         Text(from == to ? tr("اختر شهرين مختلفين للمقارنة.", "Choose two different months.")
@@ -672,9 +650,6 @@ struct SalaryAuditView: View {
         .navigationDestination(item: $openKind) { kind in
             if let audit { SalaryChangeListView(audit: audit, kind: kind) }
         }
-        .navigationDestination(isPresented: $showItems) {
-            if let audit { ItemsComparisonView(audit: audit) }
-        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -691,7 +666,7 @@ struct SalaryAuditView: View {
                 ChangeExportSheet(title: tr("تصدير متغيرات الرواتب", "Export payroll changes"),
                                   span: tr("من \(audit.from) إلى \(audit.to)", "From \(audit.from) to \(audit.to)"),
                                   choices: [ExportChoice(id: "all", title: tr("كشف شامل بكل المتغيرات", "Full report"),
-                                                         subtitle: tr("خلاصة + كل الحالات + مقارنة البنود", "Summary + all cases + items"),
+                                                         subtitle: tr("خلاصة + جميع حالات التغيّر", "Summary + all change cases"),
                                                          count: SalaryChangeKind.allCases.reduce(0) { $0 + audit.rows($1).count })]
                                     + SalaryChangeKind.allCases.map {
                                         ExportChoice(id: $0.rawValue, title: $0.reportTitle, subtitle: tr("كشف منفصل", "Separate report"), count: audit.rows($0).count)
@@ -713,14 +688,11 @@ struct SalaryAuditView: View {
                 let loaded = try await AuditResults.shared.salary(from: from, to: to, container: SharedModel.container)
                 guard !Task.isCancelled else { return }
                 audit = loaded
-                // اختبار المحاكي: -salaryAuditKind net يفتح قائمة، -salaryItems YES مقارنة البنود، -auditExportSheet YES نافذة التصدير.
+                // اختبار المحاكي: -salaryAuditKind net يفتح قائمة، -auditExportSheet YES نافذة التصدير.
                 let defaults = UserDefaults.standard
                 if let raw = defaults.string(forKey: "salaryAuditKind"), let kind = SalaryChangeKind(rawValue: raw) {
                     defaults.removeObject(forKey: "salaryAuditKind")
                     openKind = kind
-                } else if defaults.bool(forKey: "salaryItems") {
-                    defaults.removeObject(forKey: "salaryItems")
-                    showItems = true
                 } else if defaults.bool(forKey: "auditExportSheet") {
                     defaults.removeObject(forKey: "auditExportSheet")
                     showExport = true
@@ -882,155 +854,6 @@ private struct SalaryChangeRow: View {
         case .added: .green
         case .removed: .red
         default: row.difference > 0 ? .orange : row.difference < 0 ? .red : .secondary
-        }
-    }
-}
-
-/// مجموع كل بند في الشهرين والفرق؛ الضغط على البند يعرض من تغيّر عندهم.
-struct ItemsComparisonView: View {
-    let audit: SalaryAudit
-    @State private var exporting = false
-
-    var body: some View {
-        List {
-            Section {
-                HStack {
-                    Text(tr("البند", "Item")).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(audit.from).frame(width: 92, alignment: .trailing)
-                    Text(audit.to).frame(width: 92, alignment: .trailing)
-                    Text(tr("الفرق", "Diff")).frame(width: 80, alignment: .trailing)
-                }
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.7)
-                ForEach(audit.items) { item in
-                    NavigationLink {
-                        ItemPeopleView(item: item, from: audit.from, to: audit.to)
-                    } label: {
-                        HStack {
-                            Text(item.title).fontWeight(item.isTotal ? .bold : .regular)
-                                .frame(maxWidth: .infinity, alignment: .leading).lineLimit(1).minimumScaleFactor(0.7)
-                            Text(Money.format(item.before)).frame(width: 92, alignment: .trailing)
-                            Text(Money.format(item.after)).frame(width: 92, alignment: .trailing)
-                            Text((item.difference > 0 ? "+" : "") + Money.format(item.difference)).frame(width: 80, alignment: .trailing)
-                                .foregroundStyle(diffColor(item))
-                        }
-                        .font(.caption.monospacedDigit().weight(item.isTotal ? .bold : .regular))
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                    }
-                    .disabled(item.people.isEmpty)
-                    .contextMenu {
-                        Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(item, excel: true) }
-                            .disabled(item.people.isEmpty)
-                        Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(item, excel: false) }
-                            .disabled(item.people.isEmpty)
-                        Button(tr("نسخ", "Copy"), systemImage: "doc.on.doc") {
-                            copyToClipboard("\(item.title): \(Money.format(item.before)) ← \(Money.format(item.after)) (\(Money.format(item.difference)))")
-                        }
-                    }
-                }
-            } footer: {
-                Text(tr("الضغط على أي بند: الموظفون الذين تغيّر عندهم.", "Tap an item to see who changed."))
-            }
-        }
-        .navigationTitle(tr("مقارنة البنود", "Item comparison"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(tr("تصدير الكشف الشامل Excel", "Export full Excel"), systemImage: ReportSymbols.excel) { exportAll(excel: true) }
-                    Button(tr("تصدير الكشف الشامل PDF", "Export full PDF"), systemImage: ReportSymbols.pdf) { exportAll(excel: false) }
-                } label: { ReportToolbarLabel(isWorking: exporting) }
-                .disabled(exporting)
-            }
-        }
-    }
-
-    /// زيادة المخصصات أو الصافي، أو نقص الاستقطاعات: برتقالي؛ والعكس أحمر.
-    private func diffColor(_ item: ItemDelta) -> Color {
-        guard item.difference != 0 else { return .secondary }
-        let income = item.group == .allowance || item.group == .entitlement || item.group == .net
-        return income == (item.difference > 0) ? .orange : .red
-    }
-
-    private func export(_ item: ItemDelta, excel: Bool) {
-        exporting = true
-        Task {
-            defer { exporting = false }
-            if let files = try? await AuditExport.item(item, from: audit.from, to: audit.to) {
-                ActivityShare.present([excel ? files.excel : files.pdf])
-            }
-        }
-    }
-
-    private func exportAll(excel: Bool) {
-        exporting = true
-        Task {
-            defer { exporting = false }
-            if let files = try? await AuditExport.salary(audit) {
-                ActivityShare.present([excel ? files.excel : files.pdf])
-            }
-        }
-    }
-}
-
-struct ItemPeopleView: View {
-    let item: ItemDelta
-    let from: String
-    let to: String
-    @State private var search = ""
-    @State private var exporting = false
-
-    private var filtered: [SalaryChange] {
-        let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
-        guard !tokens.isEmpty else { return item.people }
-        return item.people.filter { r in tokens.allSatisfy { ArabicText.normalize(r.name + " " + r.line).contains($0) } }
-    }
-
-    var body: some View {
-        List {
-            Section {
-                let rows = filtered
-                ForEach(rows.prefix(500)) { row in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(row.name).font(.subheadline.weight(.semibold))
-                            Spacer(minLength: 8)
-                            Text((row.difference > 0 ? "+" : "") + Money.format(row.difference))
-                                .font(.subheadline.weight(.bold).monospacedDigit())
-                                .foregroundStyle(row.difference > 0 ? .orange : .red)
-                        }
-                        if !row.line.isEmpty { Text(row.line).font(.caption).foregroundStyle(.secondary) }
-                        Text("\(Money.format(row.before)) ← \(Money.format(row.after))" + (row.reasons.isEmpty ? "" : " · " + row.reasons.joined(separator: "، ")))
-                            .font(.caption.monospacedDigit())
-                    }
-                    .personActions(name: row.name, month: to)
-                }
-            } header: {
-                Text(tr("\(Num.format(filtered.count)) موظف · \(from) ← \(to)", "\(filtered.count) employees · \(from) → \(to)"))
-            } footer: {
-                if filtered.count > 500 { Text(tr("يظهر أول 500؛ التصدير يشمل الجميع.", "First 500 shown; export has all.")) }
-            }
-        }
-        .adaptiveSearchable(text: $search, prompt: tr("ابحث بالاسم", "Search name"))
-        .navigationTitle(item.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(excel: true) }
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(excel: false) }
-                } label: { ReportToolbarLabel(isWorking: exporting) }
-                .disabled(exporting)
-            }
-        }
-    }
-
-    private func export(excel: Bool) {
-        exporting = true
-        Task {
-            defer { exporting = false }
-            if let files = try? await AuditExport.item(item, from: from, to: to) {
-                ActivityShare.present([excel ? files.excel : files.pdf])
-            }
         }
     }
 }

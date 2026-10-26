@@ -203,27 +203,7 @@ nonisolated enum AuditExport {
         ).fitted()
     }
 
-    /// مقارنة البنود: الأثر على الصافي (المخصصات +، الاستقطاعات −)، فمجموعها = فرق الصافي.
-    private static func itemsSheet(_ a: SalaryAudit) -> ReportSheet {
-        let rows = a.items.filter { !$0.isTotal }
-        return ReportSheet(
-            header: header, title: "مقارنة البنود · \(ReportSheet.easternDigits(a.from)) ← \(ReportSheet.easternDigits(a.to))",
-            columns: [
-                .init(title: "ت", width: 5, kind: .serial),
-                .init(title: "البند", width: 26, kind: .text),
-                .init(title: a.from, width: 18, kind: .text),
-                .init(title: a.to, width: 18, kind: .text),
-                .init(title: "الفرق", width: 16, kind: .text),
-                .init(title: "الأثر على الصافي", width: 18, kind: .amount),
-            ],
-            rows: rows.enumerated().map { i, r in
-                [String(i + 1), r.title, Money.format(r.before), Money.format(r.after), Money.format(r.difference), ""]
-            },
-            amounts: rows.map { $0.group == .allowance ? $0.difference : -$0.difference }
-        ).fitted()
-    }
-
-    /// kinds = nil: كشف شامل بكل المتغيرات (خلاصة + كل حالة + مقارنة البنود).
+    /// الكشف الشامل: الخلاصة ثم حالات تغيّر الرواتب.
     static func salary(_ a: SalaryAudit, kinds: [SalaryChangeKind]? = nil) async throws -> (excel: URL, pdf: URL) {
         let span = "\(ReportSheet.easternDigits(a.from)) ← \(ReportSheet.easternDigits(a.to))"
         var sheets: [(String, ReportSheet)] = []
@@ -244,29 +224,7 @@ nonisolated enum AuditExport {
         for kind in kinds ?? SalaryChangeKind.allCases where !a.rows(kind).isEmpty {
             sheets.append((kind.title, salarySheet(kind, a.rows(kind), from: a.from, to: a.to)))
         }
-        if kinds == nil, !a.items.isEmpty { sheets.append(("مقارنة البنود", itemsSheet(a))) }
         return try await files(name: "متغيرات الرواتب - \(a.from) - \(a.to)", sheets: sheets)
-    }
-
-    /// موظفو بند واحد تغيّر عندهم.
-    static func item(_ item: ItemDelta, from: String, to: String) async throws -> (excel: URL, pdf: URL) {
-        let sheet = ReportSheet(
-            header: header, title: "\(item.title) · \(ReportSheet.easternDigits(from)) ← \(ReportSheet.easternDigits(to))",
-            columns: [
-                .init(title: "ت", width: 5, kind: .serial),
-                .init(title: "الاسم الكامل", width: 30, kind: .text),
-                .init(title: "الرتبة", width: 11, kind: .text),
-                .init(title: from, width: 14, kind: .text),
-                .init(title: to, width: 14, kind: .text),
-                .init(title: "الفرق", width: 14, kind: .amount),
-            ],
-            rows: item.people.enumerated().map { i, r in
-                [String(i + 1), r.name + (r.reasons.isEmpty ? "" : " (\(r.reasons.joined(separator: "، ")))"), r.rank,
-                 Money.format(r.before ?? 0), Money.format(r.after ?? 0), ""]
-            },
-            amounts: item.people.map(\.difference)
-        ).fitted()
-        return try await files(name: "\(item.title) - \(from) - \(to)", sheets: [(item.title, sheet)])
     }
 
     // MARK: الاستقطاعات
