@@ -17,6 +17,8 @@ final class AppRouter {
     var pendingPayrollImport = false
     /// القسيمة المعروضة الآن: يظهر زر "مشاركة" في الشريط السفلي بجانب العدسة.
     var payslipToShare: Employee?
+    /// صفحة في تبويب التقارير تُفتح من إشعار (التدقيق، الرواتب، الاستقطاعات).
+    var pendingReport: ReportsRoute?
     var showShare = false
 }
 

@@ -20,6 +20,8 @@ nonisolated struct ReportSheet: Sendable {
     /// قيم الصفوف نصوصاً، وعمود المبلغ رقماً في `amounts`.
     let rows: [[String]]
     let amounts: [Double]
+    /// سطر "المجموع" في آخر الجدول (يُخفى في جداول الخلاصة التي لا معنى لجمع أرقامها).
+    var showTotal = true
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
     /// A4 بالعرض إذا كان مجموع عرض الأعمدة أكبر مما تتسعه الصفحة بالطول.
@@ -43,7 +45,7 @@ nonisolated struct ReportSheet: Sendable {
             let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + 3, column.kind == .serial ? 5 : 8))
             return Column(title: column.title, width: width.rounded(), kind: column.kind)
         }
-        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts)
+        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal)
     }
 
     /// "ايلول 2026" ← "ايلول ٢٠٢٦" كما في النموذج.
@@ -268,10 +270,10 @@ nonisolated enum XLSXWriter {
                 totalCells += "<c r=\"\(ref)\" s=\"\(c < amountCol ? 7 : 9)\"/>"
             }
         }
-        rows += "<row r=\"\(totalRow)\" ht=\"22\" customHeight=\"1\">\(totalCells)</row>"
+        if sheet.showTotal { rows += "<row r=\"\(totalRow)\" ht=\"22\" customHeight=\"1\">\(totalCells)</row>" }
 
         var merges = ["A1:\(last)1", "A2:\(last)2"]
-        if amountCol > 1 { merges.append("A\(totalRow):\(letter(amountCol - 1))\(totalRow)") }
+        if sheet.showTotal, amountCol > 1 { merges.append("A\(totalRow):\(letter(amountCol - 1))\(totalRow)") }
         let cols = sheet.columns.enumerated().map { "<col min=\"\($0.offset + 1)\" max=\"\($0.offset + 1)\" width=\"\($0.element.width)\" customWidth=\"1\"/>" }.joined()
 
         return """
@@ -488,7 +490,7 @@ nonisolated enum PDFReportWriter {
                         y += rowHeight
                     }
                 }
-                if p == pages - 1 {
+                if p == pages - 1, sheet.showTotal {
                     let amountCol = sheet.amountColumn
                     let labelRect = (0..<max(1, amountCol)).map { cellRect($0, y: y, height: columnsHeight) }.reduce(CGRect.null) { $0.union($1) }
                     for c in 0..<sheet.columns.count {

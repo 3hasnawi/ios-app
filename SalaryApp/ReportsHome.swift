@@ -10,6 +10,7 @@ enum ReportsRoute: Hashable {
     /// التدقيق: فحوص الشهر ومقارنة الأشهر.
     case audit
     case deductionComparison
+    case salaryAudit
     case group(ReportGroup)
 }
 
@@ -28,12 +29,11 @@ struct ReportsView: View {
     @State private var showExport = false
     @State private var exporter = QuickExporter.shared
     @State private var appliedLaunchOptions = false
+    @State private var router = AppRouter.shared
     /// كشف يُعرض في نافذة المعاينة مباشرة من بطاقته.
     @State private var previewGroup: ReportGroup?
     /// عدد ملاحظات التدقيق للشهر المختار (لبطاقة التدقيق).
     @State private var auditIssues: Int?
-    @AppStorage(AuditSettings.thresholdKey) private var auditThreshold = 50
-    @AppStorage(AuditSettings.baseKey) private var auditBase = AuditBase.net.rawValue
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } ?? months.first }
 
@@ -71,7 +71,8 @@ struct ReportsView: View {
             .navigationDestination(for: ReportsRoute.self) { route in
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
-                case .deductionComparison: DeductionComparisonView(months: months.map(\.name), to: month?.name ?? "")
+                case .deductionComparison: DeductionAuditView(months: months.map(\.name))
+                case .salaryAudit: SalaryAuditView(months: months.map(\.name))
                 case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
                 case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
                 case .group(let group): ReportDetailView(group: group)
@@ -102,13 +103,17 @@ struct ReportsView: View {
                 }
                 #endif
             }
-            .task(id: "\(loadKey)|\(auditThreshold)|\(auditBase)|\(path.count)") {
+            .onChange(of: router.pendingReport, initial: true) { _, route in
+                guard let route else { return }
+                path = [route]
+                router.pendingReport = nil
+            }
+            .task(id: "\(loadKey)|\(path.count)") {
                 auditIssues = nil
-                guard let name = month?.name else { return }
+                guard let name = months.first?.name else { return }
                 let key = loadKey
-                let issues = try? await AuditCache.shared.cachedIssues(month: name, threshold: auditThreshold,
-                                                                     base: AuditBase(rawValue: auditBase) ?? .net,
-                                                                     container: SharedModel.container)
+                let previous = months.count > 1 ? months[1].name : ""
+                let issues = await AuditResults.shared.cachedIssues(month: name, previous: previous, container: SharedModel.container)
                 guard !Task.isCancelled, key == loadKey else { return }
                 auditIssues = issues
             }
@@ -190,9 +195,9 @@ struct ReportsView: View {
                             Text(auditIssues == 0 ? tr("لا ملاحظات", "No issues") : tr("\(Num.format(auditIssues)) ملاحظات", "\(auditIssues) issues"))
                                 .foregroundStyle(auditIssues == 0 ? Color.green : Color.red)
                                 .fontWeight(.semibold)
-                            + Text(tr(" · مقارنة الأشهر", " · compare months")).foregroundStyle(.secondary)
+                            + Text(tr(" · الرواتب والاستقطاعات", " · payroll and deductions")).foregroundStyle(.secondary)
                         } else {
-                            Text(tr("فحوص الشهر ومقارنة الأشهر", "Monthly checks and comparison")).foregroundStyle(.secondary)
+                            Text(tr("الرواتب والاستقطاعات · آخر شهرين", "Payroll and deductions · last two months")).foregroundStyle(.secondary)
                         }
                     }
                     .font(.subheadline)
@@ -206,6 +211,11 @@ struct ReportsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("auditCard")
+        .contextMenu {
+            Button(tr("فتح", "Open"), systemImage: "checkmark.shield") { path.append(.audit) }
+            Button(tr("تدقيق الرواتب", "Payroll audit"), systemImage: "banknote") { path.append(.salaryAudit) }
+            Button(tr("تدقيق الاستقطاعات", "Deduction audit"), systemImage: "arrow.left.arrow.right") { path.append(.deductionComparison) }
+        }
     }
 
     // MARK: جهات التنفيذ
@@ -296,13 +306,18 @@ struct ReportsView: View {
         if defaults.bool(forKey: "reportsAudit") { path = [.audit] }
         if defaults.bool(forKey: "compareDeductions") { path = [.deductionComparison] }
 
-        if defaults.bool(forKey: "auditTest"), let month, months.count > 1 {
-            let container = SharedModel.container
-            let a = months[1].name, b = month.name
-            let audit = await AuditView.run(month: b, threshold: 50, base: .net)
-            let cmp = try? await Task.detached { try await ReportEngine(modelContainer: container).compare(from: a, to: b) }.value
-            let checks = audit?.checks.map { "\($0.id)=\($0.ok ? "ok" : String($0.rows.count))" }.joined(separator: " ") ?? "nil"
-            LaunchOptions.writeReport("audit=\(audit == nil || cmp == nil ? "failed" : "ok") issues=\(audit?.issues ?? -1) \(checks) compare added=\(cmp?.added.count ?? -1) removed=\(cmp?.removed.count ?? -1) changed=\(cmp?.changed.count ?? -1) entities=\(cmp?.entities.count ?? -1)")
+        if defaults.bool(forKey: "salaryAudit") { path = [.salaryAudit] }
+
+        if defaults.bool(forKey: "auditTest"), months.count > 1 {
+            let a = months[1].name, b = months[0].name
+            let digest = await AuditDigest.run(month: b, previous: a, container: SharedModel.container)
+            let checks = ((digest.salary?.checks ?? []) + (digest.salary?.staffChecks ?? []) + digest.deductionChecks)
+                .map { "\($0.id)=\($0.ok ? "ok" : String($0.rows.count))" }.joined(separator: " ")
+            let s = digest.salary
+            let kinds = SalaryChangeKind.allCases.map { "\($0.rawValue)=\(s?.rows($0).count ?? -1)" }.joined(separator: " ")
+            let d = digest.deductions
+            let dk = DeductionGroupKind.allCases.map { "\($0.rawValue)=\(d?.rows($0).count ?? -1)" }.joined(separator: " ")
+            LaunchOptions.writeReport("audit=\(s == nil || d == nil ? "failed" : "ok") issues=\(digest.issues) \(checks) salary \(kinds) items=\(s?.items.count ?? -1) deductions \(dk)")
         }
         if LaunchOptions.openReport, let first = testGroup(payroll ? payrollGroups : deductionGroups) {
             path.append(.group(first))

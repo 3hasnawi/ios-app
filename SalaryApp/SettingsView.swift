@@ -22,6 +22,9 @@ struct SettingsView: View {
     @State private var confirmClearRecents = false
     /// اختبار المحاكي: -openBackup YES يفتح صفحة النسخ الاحتياطي.
     @State private var showBackup = UserDefaults.standard.bool(forKey: "openBackup")
+    @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
+
+    @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
 
     var body: some View {
         NavigationStack {
@@ -60,8 +63,15 @@ struct SettingsView: View {
                         SettingRow(title: tr("قفل \(AppLock.methodName)", "\(AppLock.methodName) lock"), systemImage: AppLock.systemImage, color: .green) { EmptyView() }
                     }
                     .accessibilityIdentifier("faceIDToggle")
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        SettingRow(title: tr("الإشعارات", "Notifications"), systemImage: "bell.badge.fill", color: .red,
+                                   subtitle: notifyOn ? tr("مفعّلة بعد كل استيراد", "On after each import") : tr("متوقفة", "Off")) { EmptyView() }
+                    }
+                    .accessibilityIdentifier("notificationsRow")
                 } header: {
-                    Text(tr("الأمان", "Security"))
+                    Text(tr("الأمان والإشعارات", "Security and notifications"))
                 } footer: {
                     if let lockMessage { Text(lockMessage).foregroundStyle(.red) }
                 }
@@ -105,22 +115,25 @@ struct SettingsView: View {
                     .tint(.primary)
                 } header: {
                     Text(tr("البيانات", "Data"))
-                } footer: {
-                    // رقم الإصدار يرتفع مع كل بناء، للتمييز بين النسخ.
-                    Text(AppVersion.label)
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 8)
-                        .accessibilityIdentifier("appVersion")
                 }
 
             }
             .listSectionSpacing(.compact)
             .navigationDestination(isPresented: $showBackup) { BackupView() }
+            .navigationDestination(isPresented: $showNotifications) { NotificationSettingsView() }
             .navigationTitle(tr("الإعدادات", "Settings"))
             // عنوان صغير حتى تتسع الصفحة كلها بلا تمرير.
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // رقم الإصدار تحت العنوان (يرتفع مع كل بناء، للتمييز بين النسخ).
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text(tr("الإعدادات", "Settings")).font(.headline)
+                        Text(AppVersion.label).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("appVersion")
+                    }
+                }
+            }
             .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
             .onAppear { recentCount = RecentSearches.items.count }
             .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {

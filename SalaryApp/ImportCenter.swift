@@ -362,7 +362,9 @@ final class ImportCenter {
         if !warnings.isEmpty { parts += [""] + warnings }
         // التدقيق التلقائي لأحدث شهر مستورد.
         if !fromTest, !lines.isEmpty, let auditMonth = newestPayroll?.name ?? months.sorted(by: { MonthName.sortKey($0) > MonthName.sortKey($1) }).first,
-           let audit = await AuditView.run(month: auditMonth, threshold: AuditSettings.threshold, base: AuditSettings.base) {
+           let pair = AuditDigest.months(container: SharedModel.container, latest: auditMonth) {
+            let audit = await AuditDigest.run(month: pair.month, previous: pair.previous, container: SharedModel.container)
+            await AuditNotifications.post(audit)
             parts += ["", audit.issues == 0
                       ? tr("🔎 التدقيق (\(auditMonth)): لا ملاحظات.", "🔎 Audit (\(auditMonth)): no issues.")
                       : tr("🔎 التدقيق (\(auditMonth)): \(Num.format(audit.issues)) ملاحظات — راجعها في التقارير ← التدقيق.", "🔎 Audit (\(auditMonth)): \(audit.issues) issues — see Reports › Audit.")]

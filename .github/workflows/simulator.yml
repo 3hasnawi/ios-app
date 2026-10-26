@@ -273,6 +273,18 @@ jobs:
           shot 08x-audit 8
           launch -tab reports -compareDeductions YES
           shot 08z-deduction-comparison 8
+          launch -tab reports -compareDeductions YES -deductionKind changed
+          shot 08z2-deduction-changed 10
+          launch -tab reports -compareDeductions YES -auditExportSheet YES
+          shot 08z3-deduction-export 10
+          launch -tab reports -salaryAudit YES
+          shot 08x2-salary-audit 12
+          launch -tab reports -salaryAudit YES -salaryAuditKind net
+          shot 08x3-salary-net 12
+          launch -tab reports -salaryAudit YES -salaryItems YES
+          shot 08x4-salary-items 12
+          launch -tab settings -openNotifications YES
+          shot 08w2-notifications 5
           rm -f "$DATA/Documents/import-report.txt"
           launch -tab reports -auditTest YES
           for i in $(seq 1 90); do grep -q audit "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done

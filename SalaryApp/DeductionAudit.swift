@@ -44,6 +44,33 @@ nonisolated struct DeductionChange: Identifiable, Sendable {
     var difference: Double { after - before }
 }
 
+/// حالات العرض والتصدير: توقف، جديد، تغيّر المبلغ (زاد أو نقص لنفس الجهة والإضبارة).
+nonisolated enum DeductionGroupKind: String, CaseIterable, Identifiable, Sendable {
+    case stopped, started, changed
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .stopped: tr("توقف عنهم", "Stopped")
+        case .started: tr("استقطاع جديد", "New")
+        case .changed: tr("تغيّر المبلغ", "Amount changed")
+        }
+    }
+    var reportTitle: String {
+        switch self {
+        case .stopped: tr("الاستقطاعات المتوقفة", "Stopped deductions")
+        case .started: tr("الاستقطاعات الجديدة", "New deductions")
+        case .changed: tr("تغيّر مبلغ الاستقطاع (نفس الجهة والإضبارة)", "Changed deduction amounts")
+        }
+    }
+    func contains(_ kind: DeductionChangeKind) -> Bool {
+        switch self {
+        case .stopped: kind == .stopped
+        case .started: kind == .started
+        case .changed: kind == .increased || kind == .decreased
+        }
+    }
+}
+
 nonisolated struct DeductionComparison: Sendable {
     let from: String
     let to: String
@@ -52,6 +79,10 @@ nonisolated struct DeductionComparison: Sendable {
     let emptyMonths: [String]
     var before: Double { people.reduce(0) { $0 + $1.before } }
     var after: Double { people.reduce(0) { $0 + $1.after } }
+    /// لكل استقطاع (الموظف + الجهة + الإضبارة)، الأكبر فرقاً أولاً.
+    func rows(_ kind: DeductionGroupKind) -> [DeductionChange] {
+        entries.filter { kind.contains($0.kind) }.sorted { abs($0.difference) > abs($1.difference) }
+    }
 }
 
 nonisolated enum DeductionReview {
@@ -157,50 +188,5 @@ extension ReportEngine {
             }
         }
         return try DeductionReview.compare(from: from, to: to, old: load(from), new: load(to))
-    }
-}
-
-extension AuditExport {
-    static func deductions(_ result: DeductionComparison) async throws -> (excel: URL, pdf: URL) {
-        let span = tr("من \(result.from) إلى \(result.to)", "From \(result.from) to \(result.to)")
-        var sheets: [(name: String, sheet: ReportSheet)] = []
-        let summary = DeductionChangeKind.allCases.enumerated().map { i, kind in
-            AuditRow(id: i, name: kind.title,
-                     detail: tr("عدد الموظفين حسب مجموع استقطاعاتهم", "Employees by total deductions"),
-                     amount: Double(result.people.filter { $0.kind == kind }.count))
-        }
-        sheets.append((tr("أعداد الموظفين", "Employee counts"), sheet(title: span, rows: summary, amountTitle: tr("عدد الموظفين", "Employees"))))
-        let entrySummary = DeductionChangeKind.allCases.enumerated().map { i, kind in
-            let entries = result.entries.filter { $0.kind == kind }
-            return AuditRow(id: i, name: kind.title,
-                            detail: tr("عدد الموظفين: ", "Employees: ") + Num.format(Set(entries.map(\.person)).count),
-                            amount: Double(entries.count))
-        }
-        sheets.append((tr("أعداد الاستقطاعات", "Deduction counts"), sheet(title: span, rows: entrySummary, amountTitle: tr("عدد الاستقطاعات", "Deductions"))))
-        let totals = [AuditRow(id: 0, name: tr("فرق مجموع الاستقطاعات", "Total deduction difference"),
-                               detail: tr("السابق: ", "Previous: ") + Money.format(result.before)
-                               + tr(" · الحالي: ", " · Current: ") + Money.format(result.after), amount: result.after - result.before)]
-        sheets.append((tr("المبالغ", "Amounts"), sheet(title: span, rows: totals, amountTitle: tr("الفرق", "Difference"))))
-        for (label, rows) in [(tr("الموظفون", "Employees"), result.people), (tr("الاستقطاعات", "Deductions"), result.entries)] {
-            let header = UserDefaults.standard.string(forKey: ReportSheet.headerKey) ?? ReportSheet.defaultHeader
-            let report = ReportSheet(header: header, title: "\(label) · \(span)", columns: [
-                .init(title: tr("الاسم", "Name"), width: 30, kind: .text),
-                .init(title: tr("الجهة", "Entity"), width: 25, kind: .text),
-                .init(title: tr("الإضبارة", "Case reference"), width: 25, kind: .text),
-                .init(title: tr("الحالة", "Status"), width: 12, kind: .text),
-                .init(title: tr("السابق", "Previous"), width: 16, kind: .text),
-                .init(title: tr("الحالي", "Current"), width: 16, kind: .text),
-                .init(title: tr("الفرق", "Difference"), width: 16, kind: .amount)
-            ], rows: rows.map { [$0.name, $0.entity, $0.note, $0.kind.title, Money.format($0.before), Money.format($0.after), ""] },
-                                     amounts: rows.map(\.difference)).fitted()
-            sheets.append((label, report))
-        }
-        if !result.emptyMonths.isEmpty {
-            sheets.append((tr("تنبيه", "Notice"), sheet(title: span, rows: [
-                AuditRow(id: 0, name: tr("شهر بلا قيود", "Month without entries"),
-                         detail: tr("اعتُبرت الأشهر التالية خالية بتأكيد المستخدم: ", "Treated as empty with user confirmation: ") + result.emptyMonths.joined(separator: "، "), amount: 0)
-            ])))
-        }
-        return try await files(name: tr("مقارنة الاستقطاعات ", "Deduction comparison ") + result.from + " - " + result.to, sheets: sheets)
     }
 }

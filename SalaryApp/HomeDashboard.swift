@@ -79,7 +79,7 @@ struct HomeDashboard: View {
                              noteColor: .secondary, systemImage: "calendar")
                         // الفحوص تُحمّل عند فتح البطاقة فقط حتى تبقى الرئيسية خفيفة.
                         NavigationLink {
-                            DeductionComparisonView(months: months.map(\.name), to: current.name)
+                            DeductionAuditView(months: months.map(\.name))
                         } label: {
                             actionTile(tr("مقارنة الاستقطاعات", "Compare deductions"),
                                        detail: tr("بين شهرين", "Between two months"),

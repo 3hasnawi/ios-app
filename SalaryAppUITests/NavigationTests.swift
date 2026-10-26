@@ -23,21 +23,12 @@ final class NavigationTests: XCTestCase {
     func testDeductionComparison() {
         app.launchArguments += ["-tab", "reports", "-compareDeductions", "YES"]
         app.launch()
-        guard wait(element("deductionComparisonSummary"), "خلاصة مقارنة الاستقطاعات", timeout: 20) else { return }
-        let deductions = app.segmentedControls.buttons["الاستقطاعات"]
-        app.swipeUp()
-        guard wait(deductions, "عرض الاستقطاعات") else { return }
-        deductions.tap()
-        XCTAssertTrue(deductions.isSelected)
-        let filter = element("deductionChangeFilter")
-        guard wait(filter, "حالات التغيّر") else { return }
-        filter.tap()
-        // ترتيب النص والعدد في تسهيلات الاستخدام قد يختلف مع اتجاه العربية.
-        let increased = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "زاد", "(")).firstMatch
-        guard wait(increased, "حالة زيادة الاستقطاع") else { return }
-        increased.tap()
-        XCTAssertTrue(filter.label.contains("زاد") || (filter.value as? String)?.contains("زاد") == true)
+        guard wait(element("deductionAuditSummary"), "خلاصة مقارنة الاستقطاعات", timeout: 30) else { return }
+        let changed = element("deductionTile-changed")
+        guard wait(changed, "بطاقة تغيّر المبلغ") else { return }
+        changed.tap()
+        guard wait(element("deductionChangeList"), "قائمة تغيّر المبلغ") else { return }
+        XCTAssertTrue(app.navigationBars["تغيّر المبلغ"].exists || app.staticTexts["تغيّر المبلغ"].exists)
     }
 
     // MARK: - أدوات

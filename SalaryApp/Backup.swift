@@ -493,7 +493,7 @@ final class BackupManager {
                 }
                 UserDefaults.standard.removeObject(forKey: "homeStatsCache")
                 await SearchIndex.shared.invalidate()
-                await AuditCache.shared.invalidate()
+                await AuditResults.shared.invalidate()
                 StaffImportState.shared.version += 1
                 progress.end()
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
