@@ -411,6 +411,7 @@ jobs:
           touch ci-output/share-start
           fail=0
           for t in testSaveToFiles testSaveExcelToFiles testCopy; do
+            DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
             rm -f "$DATA/Documents/import-report.txt"
             set +e
             xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
@@ -418,6 +419,7 @@ jobs:
               CODE_SIGNING_ALLOWED=NO > "ci-output/share-$t.log" 2>&1
             st=$?
             set -e
+            DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
             echo "$t status=$st" | tee -a ci-output/share-report.txt
             grep -E "error:|failed|XCTAssert" "ci-output/share-$t.log" | sort -u | head -8 | sed 's/^/::warning::/' || true
             { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "(no share report)"; } | tee -a ci-output/share-report.txt; echo >> ci-output/share-report.txt

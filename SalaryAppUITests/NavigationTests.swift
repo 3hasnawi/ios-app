@@ -63,11 +63,6 @@ final class NavigationTests: XCTestCase {
         return false
     }
 
-    /// يغلق القائمة المنبثقة بالضغط أعلى الشاشة (منطقة شريط الحالة).
-    private func dismissMenu() {
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)).tap()
-    }
-
     private var searchTab: XCUIElement {
         let inBar = app.tabBars.buttons["بحث"]
         return inBar.exists ? inBar : app.buttons["بحث"].firstMatch
@@ -339,6 +334,19 @@ final class NavigationTests: XCTestCase {
             searchTab.tap()
             wait(searchField, "شريط البحث")
         }
+        // عند تفعيل البحث يخفي النظام شريط العنوان؛ نتحقق من زر النوع قبل الكتابة.
+        step("نوع البحث") {
+            let menu = element("searchModeMenu")
+            guard wait(menu, "زر نوع البحث") else { return }
+            menu.tap()
+            let mother = app.buttons["اسم الأم"]
+            guard wait(mother, "خيار اسم الأم") else { return }
+            mother.tap()
+            guard wait(menu, "زر نوع البحث بعد الاختيار") else { return }
+            menu.tap()
+            let name = app.buttons["الاسم"]
+            if wait(name, "خيار الاسم") { name.tap() }
+        }
         step("كتابة اسم") {
             type("احمد علي")
             wait(element("resultCard"), "نتائج البحث")
@@ -350,13 +358,6 @@ final class NavigationTests: XCTestCase {
         }
         for i in 0..<3 { openAndBack(i) }
 
-        step("نوع البحث") {
-            let menu = element("searchModeMenu")
-            guard wait(menu, "زر نوع البحث") else { return }
-            menu.tap()
-            if wait(app.buttons["الاسم"], "خيارات نوع البحث") { app.buttons["الاسم"].tap() }
-            dismissMenu()
-        }
         step("تضييق البحث") {
             searchField.tap()
             if !app.keyboards.firstMatch.waitForExistence(timeout: 2) { searchField.tap() }

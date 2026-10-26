@@ -213,10 +213,10 @@ struct UnifiedSearchView: View {
             }
             .font(.subheadline.weight(.semibold))
         }
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
         .accessibilityIdentifier("searchModeMenu")
         .accessibilityLabel(tr("البحث حسب: \(mode.title)", "Search by: \(mode.title)"))
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
     }
 
     /// القائمة العائمة تحت زر نوع البحث، والخلفية معتمة حتى تُغلق بالضغط خارجها.
