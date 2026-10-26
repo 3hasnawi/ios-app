@@ -27,11 +27,11 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # رقم الإصدار: البناء 35 هو النسخة الرسمية الأولى 1.0، وكل بناء بعده يرفع الرقم (1.1، 1.2، ...).
+      # رقم الإصدار: البناء 36 هو النسخة الرسمية الأولى 1.0، وكل بناء بعده يرفع الرقم (1.1، 1.2، ...).
       # رقم البناء (CFBundleVersion) يبقى رقم التشغيل. يظهر الاثنان في الإعدادات.
       - name: Version
         run: |
-          MINOR=$(( ${{ github.run_number }} - 35 ))
+          MINOR=$(( ${{ github.run_number }} - 36 ))
           if [ "$MINOR" -lt 0 ]; then MINOR=0; fi
           echo "APP_VERSION=1.$MINOR" >> "$GITHUB_ENV"
           echo "::notice::Version 1.$MINOR (build ${{ github.run_number }})"
