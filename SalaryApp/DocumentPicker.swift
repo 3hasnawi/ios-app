@@ -184,8 +184,12 @@ final class CopyFileActivity: UIActivity {
     }
 
     override func perform() {
-        ActivityShare.copyToPasteboard(files)
-        ActivityShare.reportPasteboard("copyFile", files: files)
+        // يستدعيه النظام على الخيط الرئيسي.
+        let files = files
+        MainActor.assumeIsolated {
+            ActivityShare.copyToPasteboard(files)
+            ActivityShare.reportPasteboard("copyFile", files: files)
+        }
         activityDidFinish(true)
     }
 }
