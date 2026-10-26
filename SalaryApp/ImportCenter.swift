@@ -62,11 +62,10 @@ struct ImportCandidate: Identifiable {
         if let error { return error }
         if let staffCount { return tr("\(Num.format(staffCount)) موظف في الملاك", "\(Num.format(staffCount)) staff records") }
         guard let result else { return "" }
-        if kind == .executionAccounts {
+        if kind == .executionAccounts || (result.invalidAccounts > 0 && result.employees.isEmpty && result.deductions.isEmpty) {
             let valid = tr("\(Num.format(result.accounts.count)) حساب صالح", "\(result.accounts.count) valid accounts")
             let invalid = result.invalidAccounts > 0
-                ? tr(" · \(Num.format(result.invalidAccounts)) IBAN غير صالح سيُتجاهل (\(result.invalidAccountRows.joined(separator: "، ")))",
-                     " · \(result.invalidAccounts) invalid IBANs skipped (\(result.invalidAccountRows.joined(separator: ", ")))") : ""
+                ? tr(" · \(Num.format(result.invalidAccounts)) IBAN غير صالح سيُتجاهل", " · \(result.invalidAccounts) invalid IBANs skipped") : ""
             return valid + invalid
         }
         var parts: [String] = []
@@ -180,9 +179,11 @@ final class ImportCenter {
                 let hasAccounts = !result.accounts.isEmpty
                 let kind: ImportKind
                 if hasAccounts && !hasPay && !hasDed { kind = .executionAccounts }
+                else if result.invalidAccounts > 0 && !hasPay && !hasDed { kind = .skip }
                 else if hasPay && hasDed { kind = .payrollAndDeductions }
                 else { kind = hasPay ? .payroll : .deductions }
-                let allowed: [ImportKind] = hasPay && hasDed ? [.payrollAndDeductions, .payroll, .deductions, .skip] : [kind, .skip]
+                let allowed: [ImportKind] = kind == .skip ? [.skip]
+                    : hasPay && hasDed ? [.payrollAndDeductions, .payroll, .deductions, .skip] : [kind, .skip]
                 let (month, detected) = Self.month(for: url, existing: existing)
                 found.append(ImportCandidate(url: url, fileName: name, kind: kind, month: month, allowedKinds: allowed,
                                              result: result, staffCount: nil, error: nil, monthDetected: detected))
@@ -284,6 +285,14 @@ final class ImportCenter {
     }
 
     var importableCount: Int { candidates.filter { $0.kind != .skip }.count }
+
+    var reviewActionTitle: String {
+        if importableCount == 1, let candidate = candidates.first(where: { $0.kind == .executionAccounts }),
+           let result = candidate.result, result.invalidAccounts > 0 {
+            return tr("استيراد \(Num.format(result.accounts.count)) حساباً صالحاً", "Import \(result.accounts.count) valid accounts")
+        }
+        return importableCount <= 1 ? tr("استيراد", "Import") : tr("استيراد الكل", "Import all")
+    }
 
     // MARK: - الاستيراد
 
@@ -440,9 +449,12 @@ final class ImportCenter {
     }
 
     private static func accountWarning(_ result: ImportResult) -> String {
-        let rows = result.invalidAccountRows.joined(separator: "، ")
-        return tr("⚠️ \(Num.format(result.invalidAccounts)) IBAN غير صالح لم يُحفظ (\(rows)). صحّح الخلايا ثم أعد الاستيراد.",
-                  "⚠️ \(result.invalidAccounts) invalid IBANs weren't saved (\(rows)). Fix the cells and import again.")
+        let title = tr("⚠️ \(Num.format(result.invalidAccounts)) IBAN غير صالح لم يُحفظ:",
+                       "⚠️ \(result.invalidAccounts) invalid IBANs weren't saved:")
+        let details = result.invalidAccountDetails.map { item in
+            "\(item.location): \(item.displayValue)\n\(item.reason.explanation) \(item.reason.solution)"
+        }
+        return ([title] + details).joined(separator: "\n")
     }
 }
 
@@ -465,7 +477,7 @@ struct ImportReviewSheet: View {
                              : tr("تم التعرّف على \(Num.format(center.candidates.count)) ملفات", "\(center.candidates.count) files recognised"))
                             .font(.title3.bold())
                             .foregroundStyle(Color(.label))
-                        Text(tr("راجع النوع والشهر قبل الاستيراد", "Check the type and month before importing"))
+                        Text(tr("راجع نوع الملف والبيانات قبل الاستيراد", "Check the file type and data before importing"))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -503,7 +515,7 @@ struct ImportReviewSheet: View {
                 Button {
                     Task { await center.run() }
                 } label: {
-                    Text(center.importableCount <= 1 ? tr("استيراد", "Import") : tr("استيراد الكل", "Import all"))
+                    Text(center.reviewActionTitle)
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -566,6 +578,24 @@ private struct CandidateRow: View {
                         Text(tr("لم يُعرف الشهر من اسم الملف، اختره من القائمة.", "Couldn't tell the month from the file name; pick it."))
                             .font(.caption2)
                             .foregroundStyle(.red)
+                    }
+                }
+                if let invalid = item.result?.invalidAccountDetails, !invalid.isEmpty {
+                    ForEach(invalid) { account in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(account.location).font(.caption.weight(.bold))
+                            Text(account.displayValue)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.red)
+                                .textSelection(.enabled)
+                                .environment(\.layoutDirection, .leftToRight)
+                            Text(account.reason.explanation).font(.caption).foregroundStyle(.red)
+                            Text(account.reason.solution).font(.caption).foregroundStyle(.primary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(9)
+                        .background(Color.red.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+                        .accessibilityIdentifier("invalidIBANRow")
                     }
                 }
             }

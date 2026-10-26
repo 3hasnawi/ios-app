@@ -28,12 +28,47 @@ nonisolated struct ImportedExecutionAccount: Sendable {
     var swift: String
 }
 
+/// خلل في خلية IBAN؛ تبقى القيمة الأصلية ظاهرة في مراجعة الاستيراد لتصحيحها في Excel.
+nonisolated struct InvalidExecutionAccount: Sendable, Identifiable {
+    enum Reason: Sendable {
+        case empty, missingPrefix, wrongLength(Int), invalidCharacters, invalidChecksum
+
+        var explanation: String {
+            switch self {
+            case .empty: tr("الخلية فارغة.", "The cell is empty.")
+            case .missingPrefix: tr("الرقم لا يبدأ بـ IQ، لذلك ليس IBAN عراقياً كاملاً.", "The number doesn't start with IQ, so it isn't a complete Iraqi IBAN.")
+            case .wrongLength(let count): tr("الطول \(Num.format(count)) خانة، والمطلوب 23 خانة.", "It has \(count) characters; 23 are required.")
+            case .invalidCharacters: tr("يحتوي على رموز غير مقبولة في IBAN.", "It contains characters not allowed in an IBAN.")
+            case .invalidChecksum: tr("خانات التحقق في IBAN غير صحيحة.", "The IBAN check digits are invalid.")
+            }
+        }
+
+        var solution: String {
+            switch self {
+            case .empty: tr("أدخل IBAN الكامل من مستند البنك بعد ضبط الخلية كنص.", "Enter the full IBAN from the bank document after formatting the cell as Text.")
+            case .missingPrefix: tr("استبدل رقم الحساب بـIBAN الكامل من البنك، واضبط خلية Excel كنص؛ لا تضف IQ بالتخمين.",
+                                     "Replace the account number with the complete bank-issued IBAN and format the Excel cell as Text; don't guess the IQ prefix.")
+            case .wrongLength: tr("راجع الرقم الأصلي لدى البنك وأدخل الخانات الناقصة في خلية نصية؛ لا تضف أصفاراً بالتخمين.",
+                                  "Check the bank-issued number and enter the missing characters in a Text cell; don't guess zeros.")
+            case .invalidCharacters: tr("الصق IBAN الأصلي كنص دون علامات أو رموز إضافية.", "Paste the original IBAN as Text without extra symbols.")
+            case .invalidChecksum: tr("طابق IBAN مع مستند البنك وصحّح الرقم الأصلي.", "Compare the IBAN with the bank document and correct the source number.")
+            }
+        }
+    }
+
+    let location: String
+    let entered: String
+    let reason: Reason
+    var id: String { location }
+    var displayValue: String { entered.isEmpty ? tr("خلية فارغة", "Empty cell") : entered }
+}
+
 nonisolated struct ImportResult: Sendable {
     var employees: [ImportedEmployee] = []
     var deductions: [ImportedDeduction] = []
     var accounts: [ImportedExecutionAccount] = []
-    var invalidAccounts = 0
-    var invalidAccountRows: [String] = []
+    var invalidAccountDetails: [InvalidExecutionAccount] = []
+    var invalidAccounts: Int { invalidAccountDetails.count }
     /// أسباب عدم فهم بعض الأوراق (للتنبيه).
     var problems: [String] = []
 
@@ -41,8 +76,7 @@ nonisolated struct ImportResult: Sendable {
         employees += other.employees
         deductions += other.deductions
         accounts += other.accounts
-        invalidAccounts += other.invalidAccounts
-        invalidAccountRows += other.invalidAccountRows
+        invalidAccountDetails += other.invalidAccountDetails
         problems += other.problems
     }
 }
@@ -89,7 +123,7 @@ nonisolated enum ExcelImporter {
         default:
             try readXLSX(url, into: &result, progress: progress)
         }
-        if result.employees.isEmpty && result.deductions.isEmpty && result.accounts.isEmpty {
+        if result.employees.isEmpty && result.deductions.isEmpty && result.accounts.isEmpty && result.invalidAccountDetails.isEmpty {
             throw ImportError.unrecognized(url.lastPathComponent, result.problems.isEmpty
                 ? [tr("لا توجد صفوف بيانات في الملف.", "The file has no data rows.")] : result.problems)
         }
@@ -412,10 +446,12 @@ nonisolated final class SheetParser {
     private func readAccount(_ row: [String], _ columns: AccountColumns) {
         let entity = cell(row, columns.entity)
         guard !entity.isEmpty else { return }
-        let iban = Self.cleanIBAN(cell(row, columns.iban))
-        guard Self.validIBAN(iban) else {
-            result.invalidAccounts += 1
-            result.invalidAccountRows.append("\(sheetName) \(rowsRead)")
+        let entered = cell(row, columns.iban)
+        let iban = Self.cleanIBAN(entered)
+        if let reason = Self.ibanProblem(iban) {
+            result.invalidAccountDetails.append(InvalidExecutionAccount(
+                location: tr("\(sheetName) · الصف \(Num.format(rowsRead))", "\(sheetName) · row \(rowsRead)"),
+                entered: entered, reason: reason))
             return
         }
         result.accounts.append(ImportedExecutionAccount(entity: entity, iban: iban,
@@ -427,9 +463,11 @@ nonisolated final class SheetParser {
     }
 
     /// IBAN العراقي: طول 23 وحساب mod 97؛ يمنع قبول أرقام Excel المبتورة.
-    private static func validIBAN(_ iban: String) -> Bool {
-        guard iban.count == 23, iban.hasPrefix("IQ"),
-              iban.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...90).contains($0.value) }) else { return false }
+    private static func ibanProblem(_ iban: String) -> InvalidExecutionAccount.Reason? {
+        if iban.isEmpty { return .empty }
+        if !iban.hasPrefix("IQ") { return .missingPrefix }
+        if iban.count != 23 { return .wrongLength(iban.count) }
+        if !iban.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...90).contains($0.value) }) { return .invalidCharacters }
         let shifted = String(iban.dropFirst(4)) + String(iban.prefix(4))
         var remainder = 0
         for c in shifted.uppercased().unicodeScalars {
@@ -437,7 +475,7 @@ nonisolated final class SheetParser {
             let digits = (65...90).contains(value) ? String(value - 55) : String(value - 48)
             for digit in digits.utf8 { remainder = (remainder * 10 + Int(digit - 48)) % 97 }
         }
-        return remainder == 1
+        return remainder == 1 ? nil : .invalidChecksum
     }
 
     /// بعد آخر صف: سبب عدم قبول الورقة إن لم يُقرأ منها شيء.

@@ -141,9 +141,11 @@ jobs:
             for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             grep -q 'accountsAdded=2 accountsUpdated=0 accountsInvalid=0' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN initial import failed'; exit 1; }
             rm -f "$DATA/Documents/import-report.txt"
+            launch -importFile "$DATA/Documents/IBAN-2.xlsx" -importReview YES
+            shot 02d-iban-review 6
             launch -importFile "$DATA/Documents/IBAN-2.xlsx"
             for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
-            grep -q 'accountsAdded=1 accountsUpdated=1 accountsInvalid=1' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN incremental import failed'; exit 1; }
+            grep -q 'accountsAdded=1 accountsUpdated=1 accountsInvalid=3' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN incremental import failed'; exit 1; }
             launch -tab settings -openAccounts YES
             shot 08h-execution-accounts 5
           }
