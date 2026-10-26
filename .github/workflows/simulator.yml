@@ -144,7 +144,11 @@ jobs:
             if [ ! -f "$DATA/Documents/import-report.txt" ]; then
               xcrun simctl io "$UDID" screenshot ci-output/screenshots/02d-iban-stalled.png || true
               xcrun simctl spawn "$UDID" log show --last 3m --style compact --predicate 'process == "SalaryApp" AND (messageType == fault OR messageType == error)' 2>/dev/null | tail -60 || true
-              find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -name 'SalaryApp*' -mmin -5 -print | head -5 || true
+              for crash in $(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -name 'SalaryApp*' -mmin -5 | head -3); do
+                echo "::group::Crash report $(basename "$crash")"
+                head -c 28000 "$crash" || true
+                echo '::endgroup::'
+              done
             fi
             grep -q 'accountsAdded=2 accountsUpdated=0 accountsInvalid=0' "$DATA/Documents/import-report.txt" || { echo '::error::IBAN initial import failed'; exit 1; }
             rm -f "$DATA/Documents/import-report.txt"
