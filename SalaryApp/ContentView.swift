@@ -91,18 +91,10 @@ struct ContentView: View {
             // البحث نفسه في تبويب العدسة.
             HomeDashboard(months: months, current: currentMonth)
                 .id("\(language)-\(numerals)")
-                .safeAreaInset(edge: .top, spacing: 0) {
+                // زر الأشهر في شريط العنوان (لا يغطي البطاقات عند التمرير).
+                .toolbar {
                     if !months.isEmpty {
-                        // فلترة النتائج: زرّان صغيران، كل واحد يفتح قائمة تقبل خياراً واحداً أو عدة خيارات.
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                monthMenu
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 4)
-                            .padding(.bottom, 8)
-                        }
-                        .scrollClipDisabled()
+                        ToolbarItem(placement: .topBarTrailing) { monthMenu }
                     }
                 }
                 .background(Color(.systemGroupedBackground))

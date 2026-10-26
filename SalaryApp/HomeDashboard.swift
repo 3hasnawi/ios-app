@@ -194,8 +194,8 @@ struct HomeCardsSettingsView: View {
                     }
                 }
             } footer: {
-                Text(tr("بطاقة الصافي تظهر دائماً. يمكنك أيضاً إخفاء أي بطاقة بالضغط المطول عليها في الرئيسية.",
-                        "The net card always shows. You can also hide a card by long-pressing it on Home."))
+                Text(tr("بطاقة الصافي تظهر دائماً. يمكنك أيضاً إخفاء أي بطاقة بالضغط المطول عليها.",
+                        "The net card always shows. You can also hide a card by long-pressing it."))
             }
             Section {
                 Button(tr("إظهار كل البطاقات", "Show all cards")) { hiddenRaw = "" }
@@ -224,6 +224,7 @@ struct HomeDashboard: View {
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
     @State private var route: HomeRoute?
+    @State private var showCustomize = false
     @State private var staffState = StaffImportState.shared
     @State private var backup = BackupManager.shared
     @AppStorage(HomeCard.hiddenKey) private var hiddenRaw = ""
@@ -271,6 +272,15 @@ struct HomeDashboard: View {
                     if !hidden.contains(.recents), !recents.isEmpty { recentRow }
                     if !hidden.contains(.categories) { categoriesCard }
                     if !hidden.contains(.dataStatus) { dataStatusCard(current) }
+                    Button {
+                        showCustomize = true
+                    } label: {
+                        Label(tr("تخصيص البطاقات", "Customize cards"), systemImage: "slider.horizontal.3")
+                            .font(.footnote.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .accessibilityIdentifier("homeCustomize")
                 } else {
                     if StaffInfo.count > 0 { staffOnlyCard }
                     if !hidden.contains(.recents), !recents.isEmpty { recentRow }
@@ -306,6 +316,17 @@ struct HomeDashboard: View {
             case .deductions: DeductionAuditView(months: months.map(\.name))
             case .backup: BackupView()
             }
+        }
+        .sheet(isPresented: $showCustomize) {
+            NavigationStack {
+                HomeCardsSettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(tr("تم", "Done")) { showCustomize = false }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
         }
         .task(id: statsKey) { await loadOverview() }
         .task(id: auditKey) { await loadAudit() }

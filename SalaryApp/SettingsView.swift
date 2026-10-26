@@ -17,20 +17,12 @@ struct SettingsView: View {
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
     @State private var lockMessage: String?
-    @State private var recentCount = RecentSearches.items.count
     @State private var storeSize: Int64?
-    @State private var confirmClearRecents = false
     /// اختبار المحاكي: -openBackup YES يفتح صفحة النسخ الاحتياطي.
     @State private var showBackup = UserDefaults.standard.bool(forKey: "openBackup")
     @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
 
     @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
-    @AppStorage(HomeCard.hiddenKey) private var homeHidden = ""
-    private var homeCardsLine: String {
-        let hidden = HomeCard.hidden(homeHidden).count
-        return hidden == 0 ? tr("كل البطاقات ظاهرة", "All cards shown")
-            : tr("\(Num.format(HomeCard.allCases.count - hidden)) من \(Num.format(HomeCard.allCases.count)) ظاهرة", "\(HomeCard.allCases.count - hidden) of \(HomeCard.allCases.count) shown")
-    }
 
     var body: some View {
         NavigationStack {
@@ -56,13 +48,6 @@ struct SettingsView: View {
                         SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
                     }
                     textSizeRow
-                    NavigationLink {
-                        HomeCardsSettingsView()
-                    } label: {
-                        SettingRow(title: tr("بطاقات الرئيسية", "Home cards"), systemImage: "rectangle.grid.1x2.fill", color: .blue,
-                                   subtitle: homeCardsLine) { EmptyView() }
-                    }
-                    .accessibilityIdentifier("homeCardsRow")
                 }
 
                 Section {
@@ -111,21 +96,6 @@ struct SettingsView: View {
                                    subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
                     }
                     .accessibilityIdentifier("backupRow")
-                    Menu {
-                        Button(tr("مسح سجل البحث", "Clear search history"), systemImage: "trash", role: .destructive) {
-                            confirmClearRecents = true
-                        }
-                        .disabled(recentCount == 0)
-                    } label: {
-                        SettingRow(title: tr("سجل البحث", "Search history"), systemImage: "clock.arrow.circlepath", color: .gray) {
-                            HStack(spacing: 4) {
-                                Text(recentCount > 0 ? Num.format(recentCount) : tr("فارغ", "Empty"))
-                                Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                    .tint(.primary)
                 } header: {
                     Text(tr("البيانات", "Data"))
                 }
@@ -148,16 +118,6 @@ struct SettingsView: View {
                 }
             }
             .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
-            .onAppear { recentCount = RecentSearches.items.count }
-            .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {
-                Button(tr("مسح", "Clear"), role: .destructive) {
-                    RecentSearches.clear()
-                    recentCount = 0
-                }
-            } message: {
-                Text(tr("تُحذف قائمة آخر من بحثت عنهم. بيانات الرواتب والملاك لا تتأثر.",
-                        "The recently viewed list is removed. Payroll and staff data are not affected."))
-            }
         }
         // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
         .id("\(language)-\(numerals)")
@@ -247,9 +207,28 @@ struct SavedDataView: View {
     @State private var confirmStaffDelete = false
     @State private var storeSize: Int64?
     @Environment(\.modelContext) private var context
+    @State private var recentCount = RecentSearches.items.count
+    @State private var confirmClearRecents = false
 
     var body: some View {
         Form {
+            Section(tr("البحث", "Search")) {
+                Menu {
+                    Button(tr("مسح سجل البحث", "Clear search history"), systemImage: "trash", role: .destructive) {
+                        confirmClearRecents = true
+                    }
+                    .disabled(recentCount == 0)
+                } label: {
+                    SettingRow(title: tr("سجل البحث", "Search history"), systemImage: "clock.arrow.circlepath", color: .gray) {
+                        HStack(spacing: 4) {
+                            Text(recentCount > 0 ? Num.format(recentCount) : tr("فارغ", "Empty"))
+                            Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(.primary)
+            }
             Section(tr("الرواتب والاستقطاعات", "Payroll and deductions")) {
                 NavigationLink {
                     SavedMonthsView()
@@ -261,6 +240,16 @@ struct SavedDataView: View {
             }
             staffSection
             storageSection
+        }
+        .onAppear { recentCount = RecentSearches.items.count }
+        .confirmationDialog(tr("مسح سجل البحث؟", "Clear search history?"), isPresented: $confirmClearRecents, titleVisibility: .visible) {
+            Button(tr("مسح", "Clear"), role: .destructive) {
+                RecentSearches.clear()
+                recentCount = 0
+            }
+        } message: {
+            Text(tr("تُحذف قائمة آخر من بحثت عنهم. بيانات الرواتب والملاك لا تتأثر.",
+                    "The recently viewed list is removed. Payroll and staff data are not affected."))
         }
         .navigationTitle(tr("البيانات المحفوظة", "Saved data"))
         .navigationBarTitleDisplayMode(.inline)

@@ -156,6 +156,19 @@ extension ReportEngine {
                                 before: before, after: after, reasons: reasons)
         }
         func signed(_ v: Double) -> String { (v > 0 ? "+" : v < 0 ? "−" : "") + Money.format(abs(v)) }
+        // تصنيف عناوين البنود مرة واحدة لكل عنوان (توحيد النص العربي مكلف إذا تكرر لكل موظف).
+        let allowanceSet = Set(SalaryItems.allowances)
+        var classes: [String: (item: String, kind: ItemDelta.Kind)] = [:]
+        func classify(_ title: String) -> (item: String, kind: ItemDelta.Kind) {
+            if let known = classes[title] { return known }
+            let result: (item: String, kind: ItemDelta.Kind)
+            if allowanceSet.contains(title) { result = (title, .allowance) }
+            else if title == SalaryItems.entitlement { result = (title, .entitlement) }
+            else if title == SalaryItems.deductionTotal { result = (title, .deductionTotal) }
+            else { result = (SalaryItems.deduction(title) ?? SalaryItems.otherDeductions, .deduction) }
+            classes[title] = result
+            return result
+        }
 
         if compared && !old.isEmpty {
             for s in newMap.values where oldMap[s.key] == nil {
@@ -172,12 +185,7 @@ extension ReportEngine {
                 for title in Set(o.values.keys).union(n.values.keys) {
                     let a = o.values[title] ?? 0, b = n.values[title] ?? 0
                     guard abs(b - a) >= 1 else { continue }
-                    let itemTitle: String
-                    if SalaryItems.allowances.contains(title) || title == SalaryItems.entitlement || title == SalaryItems.deductionTotal {
-                        itemTitle = title
-                    } else {
-                        itemTitle = SalaryItems.deduction(title) ?? SalaryItems.otherDeductions
-                    }
+                    let itemTitle = classify(title).item
                     itemPeople[itemTitle, default: []].append(change(n, before: a, after: b, reasons: itemTitle == title ? [] : [title]))
                     if title != SalaryItems.entitlement && title != SalaryItems.deductionTotal { deltas.append((title, b - a)) }
                 }
@@ -185,15 +193,15 @@ extension ReportEngine {
                     let reasons = deltas.sorted { abs($0.diff) > abs($1.diff) }.prefix(4).map { "\($0.title) \(signed($0.diff))" }
                     changes[.net, default: []].append(change(n, before: o.net, after: n.net, reasons: reasons))
                 }
-                if !o.rank.isEmpty, !n.rank.isEmpty, SalaryAuditRules.rank(o.rank) != SalaryAuditRules.rank(n.rank) {
+                if !o.rank.isEmpty, !n.rank.isEmpty, o.rank != n.rank, SalaryAuditRules.rank(o.rank) != SalaryAuditRules.rank(n.rank) {
                     changes[.rank, default: []].append(change(n, before: o.net, after: n.net, reasons: ["\(o.rank) ← \(n.rank)"]))
                 }
-                if !o.workplace.isEmpty, !n.workplace.isEmpty,
+                if !o.workplace.isEmpty, !n.workplace.isEmpty, o.workplace != n.workplace,
                    ArabicText.matchKey(o.workplace) != ArabicText.matchKey(n.workplace) {
                     changes[.workplace, default: []].append(change(n, before: o.net, after: n.net, reasons: ["\(o.workplace) ← \(n.workplace)"]))
                 }
                 let ibanChanged = !o.iban.isEmpty && !n.iban.isEmpty && o.iban != n.iban
-                let bankChanged = !o.bank.isEmpty && !n.bank.isEmpty && ArabicText.matchKey(o.bank) != ArabicText.matchKey(n.bank)
+                let bankChanged = !o.bank.isEmpty && !n.bank.isEmpty && o.bank != n.bank && ArabicText.matchKey(o.bank) != ArabicText.matchKey(n.bank)
                 if ibanChanged || bankChanged || (o.iban.isEmpty != n.iban.isEmpty) {
                     var reasons: [String] = []
                     if bankChanged { reasons.append("\(o.bank) ← \(n.bank)") }
@@ -208,25 +216,26 @@ extension ReportEngine {
             }
         }
 
-        // مجاميع البنود في الشهرين.
-        var items: [ItemDelta] = []
-        func total(_ list: [Snapshot], _ match: (String) -> Bool) -> Double {
-            list.reduce(0) { sum, s in sum + s.values.reduce(0) { match($1.key) ? $0 + $1.value : $0 } }
+        // مجاميع البنود في الشهرين (مرور واحد على الموظفين).
+        func sums(_ list: [Snapshot]) -> [String: Double] {
+            var result: [String: Double] = [:]
+            for s in list { for (k, v) in s.values { result[classify(k).item, default: 0] += v } }
+            return result
         }
-        func add(_ title: String, _ group: ItemDelta.Kind, _ match: (String) -> Bool) {
-            let a = total(old, match), b = total(new, match)
+        let before = sums(old), after = sums(new)
+        try Task.checkCancellation()
+        var items: [ItemDelta] = []
+        func add(_ title: String, _ group: ItemDelta.Kind) {
+            let a = before[title] ?? 0, b = after[title] ?? 0
             guard a != 0 || b != 0 else { return }
             let people = (itemPeople[title] ?? []).sorted { abs($0.difference) > abs($1.difference) }
             items.append(ItemDelta(id: items.count, title: title, group: group, before: a, after: b, people: people))
         }
-        for title in SalaryItems.allowances { add(title, .allowance) { $0 == title } }
-        add(SalaryItems.entitlement, .entitlement) { $0 == SalaryItems.entitlement }
-        let fixedKeys = Set(SalaryItems.allowances + [SalaryItems.entitlement, SalaryItems.deductionTotal])
-        for title in SalaryItems.deductions {
-            add(title, .deduction) { !fixedKeys.contains($0) && SalaryItems.deduction($0) == title }
-        }
-        add(SalaryItems.otherDeductions, .deduction) { !fixedKeys.contains($0) && SalaryItems.deduction($0) == nil }
-        add(SalaryItems.deductionTotal, .deductionTotal) { $0 == SalaryItems.deductionTotal }
+        for title in SalaryItems.allowances { add(title, .allowance) }
+        add(SalaryItems.entitlement, .entitlement)
+        for title in SalaryItems.deductions { add(title, .deduction) }
+        add(SalaryItems.otherDeductions, .deduction)
+        add(SalaryItems.deductionTotal, .deductionTotal)
         let netPeople = (changes[.net] ?? [])
         items.append(ItemDelta(id: items.count, title: tr("الصافي", "Net"), group: .net,
                                before: old.reduce(0) { $0 + $1.net }, after: new.reduce(0) { $0 + $1.net }, people: netPeople))
@@ -341,8 +350,15 @@ extension ReportEngine {
 
         // ٥. الرعاية الصحية: مبالغ لا تقبل القسمة على 3,500.
         var odd: [AuditRow] = []
+        var healthKeys: [String: Bool] = [:]
+        func isHealth(_ title: String) -> Bool {
+            if let known = healthKeys[title] { return known }
+            let value = HealthCareReport.applies(to: title)
+            healthKeys[title] = value
+            return value
+        }
         for (i, s) in employees.enumerated() {
-            for (title, amount) in s.values where HealthCareReport.applies(to: title) && amount != 0 && !HealthCareReport.isExact(amount) {
+            for (title, amount) in s.values where amount != 0 && isHealth(title) && !HealthCareReport.isExact(amount) {
                 odd.append(AuditRow(id: i, name: s.name, detail: tr("\(money(amount)) ÷ 3,500 = \(HealthCareReport.familyText(amount))", "\(money(amount)) ÷ 3,500"), amount: amount))
             }
         }
@@ -369,6 +385,13 @@ extension ReportEngine {
             if byName[k] == nil { byName[k] = i }
         }
         var matched = Set<Int>()
+        var ranks: [String: String] = [:]
+        func rank(_ text: String) -> String {
+            if let known = ranks[text] { return known }
+            let value = SalaryAuditRules.rank(text)
+            ranks[text] = value
+            return value
+        }
         var noStaff: [AuditRow] = [], rankRows: [AuditRow] = []
         for (i, s) in employees.enumerated() {
             guard let index = (s.unified.isEmpty ? nil : byUnified[s.unified]) ?? byName[s.key] else {
@@ -377,14 +400,18 @@ extension ReportEngine {
             }
             matched.insert(index)
             let m = staff[index]
-            if !s.rank.isEmpty, !m.rank.isEmpty, SalaryAuditRules.rank(s.rank) != SalaryAuditRules.rank(m.rank) {
+            if !s.rank.isEmpty, !m.rank.isEmpty, s.rank != m.rank, rank(s.rank) != rank(m.rank) {
                 rankRows.append(AuditRow(id: i, name: s.name,
                                          detail: tr("الرواتب: \(s.rank) · الملاك: \(m.rank)", "Payroll: \(s.rank) · staff: \(m.rank)"),
                                          amount: s.net))
             }
         }
         var noSalary: [AuditRow] = []
-        for (i, m) in staff.enumerated() where !matched.contains(i) && SalaryAuditRules.active(m.status) {
+        var statuses: [String: Bool] = [:]
+        for (i, m) in staff.enumerated() where !matched.contains(i) {
+            let active = statuses[m.status] ?? SalaryAuditRules.active(m.status)
+            statuses[m.status] = active
+            guard active else { continue }
             noSalary.append(AuditRow(id: i, name: m.name,
                                      detail: [m.rank, m.status, m.workplace].filter { !$0.isEmpty }.joined(separator: " · "), amount: 0))
         }
