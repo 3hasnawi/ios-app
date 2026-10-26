@@ -89,8 +89,7 @@ struct ContentView: View {
             // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
             // الشاشة الرئيسية: ملخص الشهر وآخر عمليات البحث، والشعار خلفية شفافة.
             // البحث نفسه في تبويب العدسة.
-            HomeDashboard(months: months, current: currentMonth,
-                          onImport: { importCenter.pick() })
+            HomeDashboard(months: months, current: currentMonth)
                 .id("\(language)-\(numerals)")
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if !months.isEmpty {

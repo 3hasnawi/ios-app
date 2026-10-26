@@ -38,7 +38,6 @@ actor HomeStatsLoader {
 struct HomeDashboard: View {
     let months: [PayrollMonth]
     let current: PayrollMonth?
-    var onImport: () -> Void = {}
 
     @State private var stats: HomeStats?
     @State private var staffState = StaffImportState.shared
@@ -78,6 +77,27 @@ struct HomeDashboard: View {
                         tile(tr("الأشهر المحفوظة", "Saved months"), Num.format(months.count),
                              note: months.first?.importedAt.formatted(.relative(presentation: .named).locale(AppSettings.locale)),
                              noteColor: .secondary, systemImage: "calendar")
+                        // الفحوص تُحمّل عند فتح البطاقة فقط حتى تبقى الرئيسية خفيفة.
+                        NavigationLink {
+                            DeductionComparisonView(months: months.map(\.name), to: current.name)
+                        } label: {
+                            actionTile(tr("مقارنة الاستقطاعات", "Compare deductions"),
+                                       detail: tr("بين شهرين", "Between two months"),
+                                       note: tr("توقف · زيادة · نقصان", "Stopped · Increased · Decreased"),
+                                       systemImage: "arrow.left.arrow.right")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("homeCompareDeductions")
+                        NavigationLink {
+                            AuditView(month: current.name, months: months.map(\.name))
+                        } label: {
+                            actionTile(tr("تدقيق الشهر", "Month audit"),
+                                       detail: tr("مراجعة البيانات", "Review data"),
+                                       note: tr("التكرار والملاحظات", "Duplicates and issues"),
+                                       systemImage: "checkmark.shield")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("homeAuditMonth")
                     }
                 } else if StaffInfo.count > 0 {
                     staffTile
@@ -137,13 +157,11 @@ struct HomeDashboard: View {
                 .frame(width: 110, height: 110)
             Text(tr("أهلاً بك", "Welcome"))
                 .font(.title2.bold())
-            Text(tr("اختر ملفات الرواتب والاستقطاعات (Excel) وملف الملاك (Access) معاً أو كلاً على حدة، والتطبيق يتعرّف على كل ملف.",
-                    "Pick payroll and deduction files (Excel) and the staff database (Access), together or one by one. The app recognises each file."))
+            Text(tr("من الإعدادات اختر «استيراد ملفات» لإضافة الرواتب والاستقطاعات (Excel) والملاك (Access).",
+                    "Open Settings and choose Import files to add payroll, deductions (Excel), and staff (Access)."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Button(tr("استيراد ملفات", "Import files"), systemImage: "square.and.arrow.down", action: onImport)
-                .glassButtonStyle(prominent: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
@@ -209,6 +227,26 @@ struct HomeDashboard: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func actionTile(_ title: String, detail: String, note: String, systemImage: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(detail)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }

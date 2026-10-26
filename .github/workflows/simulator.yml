@@ -138,6 +138,7 @@ jobs:
             shot 08z-deduction-comparison 8
             launch
             shot 03a-system-glass-bar 4
+            shot 03b-home-audit-cards 1
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي"
@@ -167,6 +168,8 @@ jobs:
           done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt
           shot 02-import-done 2
+          launch
+          shot 03b-home-audit-cards 4
 
           # 2b) ملفان منفصلان: نافذة المراجعة (التعرّف على النوع والشهر)، ثم الاستيراد
           SPLIT="$DATA/Documents/رواتب آب 2026.xlsx|$DATA/Documents/استقطاعات آب 2026.xlsx"
