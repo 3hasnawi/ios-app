@@ -203,6 +203,30 @@ final class BackupManager {
     var lastError: String? { UserDefaults.standard.string(forKey: Self.errorKey) }
     var lastErrorAt: Date? { UserDefaults.standard.object(forKey: Self.errorAtKey) as? Date }
     static var autoEnabled: Bool { UserDefaults.standard.bool(forKey: autoKey) }
+    var serverConfigured: Bool { ServerBackup.configured }
+    var serverWritable: Bool { ServerBackup.writable }
+
+    func configureServer(address: String, token: String, readOnly: Bool) {
+        do {
+            try ServerBackup.save(address: address, token: token, readOnly: readOnly)
+            let defaults = UserDefaults.standard
+            defaults.removeObject(forKey: Self.lastKey)
+            defaults.removeObject(forKey: Self.lastPlaceKey)
+            defaults.removeObject(forKey: Self.errorKey)
+            markChanged()
+            version += 1
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func disconnectServer() {
+        ServerBackup.remove()
+        UserDefaults.standard.removeObject(forKey: Self.lastKey)
+        UserDefaults.standard.removeObject(forKey: Self.lastPlaceKey)
+        UserDefaults.standard.removeObject(forKey: Self.errorKey)
+        version += 1
+    }
 
     /// "iCloud Drive › نسخ الرواتب"، أو nil إذا لم يُختر مكان.
     var folderName: String? {
@@ -220,6 +244,13 @@ final class BackupManager {
     /// سطر الحالة في صفحة الإعدادات.
     var statusLine: String {
         _ = version
+        if serverConfigured {
+            if !serverWritable { return tr("السيرفر · قارئ فقط", "Server · read only") }
+            if !Self.autoEnabled { return tr("السيرفر · النسخ التلقائي متوقف", "Server · automatic backup off") }
+            if lastError != nil { return tr("⚠️ فشل آخر نسخ إلى السيرفر", "⚠️ Last server backup failed") }
+            guard let lastBackup else { return tr("السيرفر · لم تُؤخذ نسخة بعد", "Server · no backup yet") }
+            return tr("السيرفر · \(Self.relative(lastBackup)) ✓", "Server · \(Self.relative(lastBackup)) ✓")
+        }
         if folderName == nil { return tr("⚠️ اختر مكان النسخة في iCloud", "⚠️ Choose where to save in iCloud") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
         guard Self.autoEnabled else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
@@ -229,6 +260,7 @@ final class BackupManager {
 
     var statusColor: Color {
         _ = version
+        if serverConfigured { return !serverWritable || !Self.autoEnabled ? .secondary : lastError != nil ? .red : lastBackup != nil ? .green : .secondary }
         if folderName == nil || lastError != nil { return .red }
         return Self.autoEnabled && lastBackup != nil ? .green : .secondary
     }
@@ -346,9 +378,12 @@ final class BackupManager {
 
     /// بيانات تغيّرت بعد آخر نسخة ناجحة (أو فشلت آخر محاولة).
     var needsBackup: Bool {
-        guard Self.autoEnabled, resolveFile() != nil else { return false }
-        guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return lastError != nil }
-        return changed > (lastBackup ?? .distantPast) || lastError != nil
+        if serverConfigured && !serverWritable { return false }
+        guard Self.autoEnabled, serverConfigured || resolveFile() != nil else { return false }
+        guard let lastBackup else { return true }
+        let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date ?? .distantPast
+        return changed > lastBackup || lastError != nil ||
+            (serverConfigured && Date().timeIntervalSince(lastBackup) >= 24 * 60 * 60)
     }
 
     /// عند فتح التطبيق أو الخروج منه: يكمل نسخة فاتت (مثلاً أُغلق التطبيق أثناء النسخ أو فشلت المحاولة).
@@ -361,13 +396,15 @@ final class BackupManager {
     func autoBackup() async -> String? {
         markChanged()
         guard Self.autoEnabled else { return nil }
-        guard resolveFile() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
+        if serverConfigured && !serverWritable { return nil }
+        guard serverConfigured || resolveFile() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
         return await backupToDestination()
     }
 
-    /// يكتب النسخة فوق ملف النسخة المحفوظ في iCloud (نسخة واحدة دائماً) ويحفظ النتيجة نجاحاً أو فشلاً.
+    /// السيرفر هو الوجهة التلقائية عند ربطه، وإلا يبقى مسار iCloud القديم.
     @discardableResult
     func backupToDestination() async -> String? {
+        if serverConfigured { return serverWritable ? await backupToServer() : nil }
         guard !isWorking else { return nil }
         guard let file = resolveFile() else {
             message = BackupError.noFolder.localizedDescription
@@ -415,6 +452,44 @@ final class BackupManager {
             UserDefaults.standard.set(reason, forKey: Self.errorKey)
             UserDefaults.standard.set(Date(), forKey: Self.errorAtKey)
             return tr("⚠️ تعذّر النسخ الاحتياطي التلقائي: \(reason)", "⚠️ Auto backup failed: \(reason)")
+        }
+    }
+
+    private func backupToServer() async -> String? {
+        guard !isWorking else { return nil }
+        isWorking = true
+        defer { isWorking = false; version += 1 }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+        do {
+            let (file, _) = try await makeBackup(title: tr("نسخ احتياطي إلى السيرفر", "Backing up to server"))
+            defer { try? FileManager.default.removeItem(at: file) }
+            let size = try await ServerBackup.upload(file)
+            let defaults = UserDefaults.standard
+            defaults.set(Date(), forKey: Self.lastKey)
+            defaults.set(Int(size), forKey: Self.lastSizeKey)
+            defaults.set(tr("سيرفر الرواتب", "Payroll server"), forKey: Self.lastPlaceKey)
+            defaults.removeObject(forKey: Self.errorKey)
+            defaults.removeObject(forKey: Self.errorAtKey)
+            return tr("☁️ حُفظت النسخة على السيرفر.", "☁️ Backup saved on the server.")
+        } catch {
+            UserDefaults.standard.set(error.localizedDescription, forKey: Self.errorKey)
+            UserDefaults.standard.set(Date(), forKey: Self.errorAtKey)
+            return tr("⚠️ تعذّر النسخ إلى السيرفر: \(error.localizedDescription)",
+                      "⚠️ Server backup failed: \(error.localizedDescription)")
+        }
+    }
+
+    func downloadFromServer() async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false; version += 1 }
+        do {
+            let file = try await ServerBackup.download()
+            await open(file)
+        } catch {
+            message = tr("تعذّر تنزيل النسخة: \(error.localizedDescription)",
+                         "Couldn't download the backup: \(error.localizedDescription)")
         }
     }
 
@@ -594,6 +669,9 @@ struct BackupView: View {
     @State private var progress = ImportProgress.shared
     @AppStorage(BackupManager.autoKey) private var autoEnabled = true
     @State private var showFolderHelp = false
+    @State private var serverAddress = ""
+    @State private var serverToken = ""
+    @State private var serverReadOnly = false
 
     var body: some View {
         List {
@@ -603,6 +681,51 @@ struct BackupView: View {
                     .listRowBackground(Color.clear)
             }
 
+            Section {
+                if manager.serverConfigured {
+                    LabeledContent(tr("العنوان", "Address"), value: serverAddress)
+                    if manager.serverWritable {
+                        Toggle(tr("نسخ تلقائي", "Automatic backup"), isOn: $autoEnabled)
+                        Button {
+                            Task { await manager.backupToDestination() }
+                        } label: {
+                            Label(tr("نسخ الآن إلى السيرفر", "Back up to server now"), systemImage: "arrow.up.doc")
+                        }
+                        .disabled(manager.isWorking)
+                    } else {
+                        Label(tr("هذا الجهاز قارئ فقط", "This device is read only"), systemImage: "eye")
+                    }
+                    Button(tr("إلغاء ربط السيرفر", "Disconnect server"), role: .destructive) {
+                        manager.disconnectServer()
+                        serverToken = ""
+                    }
+                } else {
+                    TextField(tr("عنوان HTTPS للسيرفر", "Server HTTPS address"), text: $serverAddress)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Toggle(tr("هذا الجهاز قارئ فقط", "This device is read only"), isOn: $serverReadOnly)
+                    SecureField(serverReadOnly ? tr("رمز القارئ", "Reader token") : tr("رمز الآيفون الكاتب", "iPhone writer token"), text: $serverToken)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button(tr("ربط السيرفر", "Connect server")) {
+                        manager.configureServer(address: serverAddress, token: serverToken, readOnly: serverReadOnly)
+                        if manager.serverConfigured { serverToken = "" }
+                    }
+                }
+            } header: {
+                Text(tr("سيرفر النسخ الاحتياطي", "Backup server"))
+            } footer: {
+                if (manager.serverConfigured && !manager.serverWritable) || (!manager.serverConfigured && serverReadOnly) {
+                    Text(tr("جهاز القراءة ينزّل النسخة عند طلبك ولا يرفع بياناته.",
+                            "A read-only device downloads the backup when requested and cannot upload."))
+                } else {
+                    Text(tr("بعد ربطه تُرفع النسخة بعد الاستيراد، وتُحدّث يومياً عند فتح التطبيق. لا يستطيع iOS ضمان النسخ في ساعة محددة والتطبيق مغلق.",
+                            "After connecting, backups upload after imports and refresh daily when the app opens. iOS cannot guarantee a fixed schedule while the app is closed."))
+                }
+            }
+
+            if !manager.serverConfigured {
             Section {
                 if let folder = manager.folderName {
                     Button {
@@ -651,8 +774,17 @@ struct BackupView: View {
                 Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في المكان الذي حفظته فيه داخل iCloud Drive، فيه كل البيانات: الرواتب والاستقطاعات لكل الأشهر، والملاك، والإعدادات. كل نسخة جديدة تستبدل السابقة، ولا تُحفظ نسخة على الآيفون. إذا فاتت نسخة تُعاد المحاولة تلقائياً عند فتح التطبيق.",
                         "One file \"نسخة الرواتب.zip\" in the \"نسخ الرواتب\" folder in iCloud Drive with all data. Each backup replaces the previous one; no copy is kept on the iPhone."))
             }
+            }
 
             Section {
+                if manager.serverConfigured {
+                    Button {
+                        Task { await manager.downloadFromServer() }
+                    } label: {
+                        Label(tr("استرجاع من السيرفر", "Restore from server"), systemImage: "arrow.down.doc")
+                    }
+                    .disabled(manager.isWorking)
+                }
                 Button {
                     manager.pickRestore()
                 } label: {
@@ -684,12 +816,21 @@ struct BackupView: View {
             } header: {
                 Text(tr("جهاز آخر أو نسخة يدوية", "Another device or manual copy"))
             } footer: {
-                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اضغط \"حفظ النسخة في iCloud\" واحفظها فوق نفس الملف (استبدال) ليستمر النسخ التلقائي من الجهاز الجديد.",
-                        "On another device: install the app with the same iCloud account, then Settings › Backup › Restore (or Import files) and pick \"نسخة الرواتب.zip\"."))
+                if manager.serverConfigured {
+                    Text(tr("يُنزل التطبيق الملف ويفحص بصمته ثم يطلب تأكيد الاسترجاع. استخدم رمز قراءة فقط على الأجهزة التي لا ترفع البيانات.",
+                            "The app downloads and verifies the backup before asking to restore. Use a read-only token on devices that do not upload."))
+                } else {
+                    Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\".",
+                            "On another device: install the app with the same iCloud account, then Settings › Backup › Restore and select \"نسخة الرواتب.zip\"."))
+                }
             }
         }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            serverAddress = UserDefaults.standard.string(forKey: ServerBackup.addressKey) ?? ""
+            serverReadOnly = UserDefaults.standard.bool(forKey: ServerBackup.readOnlyKey)
+        }
         .alert(tr("حفظ النسخة في iCloud", "Save the backup to iCloud"), isPresented: $showFolderHelp) {
             Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
@@ -717,7 +858,10 @@ struct BackupView: View {
                     ProgressView(value: progress.fraction)
                     Text(progress.detail).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    if let last = manager.lastBackup {
+                    if manager.serverConfigured && !manager.serverWritable {
+                        Text(tr("جاهز لتنزيل النسخة من السيرفر", "Ready to download from server"))
+                            .font(.headline)
+                    } else if let last = manager.lastBackup {
                         Text(tr("آخر نسخة: \(Self.stamp(last))", "Last backup: \(Self.stamp(last))")).font(.headline)
                         Text("\(BackupFormat.fileName()) · \(Num.bytes(manager.lastSize))\n\(manager.lastPlace)")
                             .font(.caption).foregroundStyle(.secondary)

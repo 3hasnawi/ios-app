@@ -45,6 +45,8 @@ final class StaffImportState {
                     try await StaffImporter(modelContainer: container).importDatabase(at: url, progress: sink)
                 }.value
                 message = tr("تم استيراد الملاك: \(Num.format(count)) موظف.", "Staff imported: \(Num.format(count)) employees.")
+                BackupManager.shared.markChanged()
+                if let backupLine = await BackupManager.shared.autoBackup() { message = (message ?? "") + "\n" + backupLine }
             } catch {
                 message = error.localizedDescription
             }
@@ -132,6 +134,12 @@ struct RootView: View {
             Task {
                 if phase == .active { try? await Task.sleep(for: .seconds(3)) }
                 await BackupManager.shared.autoBackupIfNeeded()
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await BackupManager.shared.autoBackupIfNeeded()
+                try? await Task.sleep(for: .seconds(60 * 60))
             }
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.

@@ -1,7 +1,7 @@
-name: مزامنة الرواتب (تجريبي)
+name: خادم النسخ الاحتياطي (تجريبي)
 slug: salary_sync
-version: "0.1.2"
-description: حفظ نسخ شهرية معتمدة وقراءتها من تطبيق الرواتب
+version: "0.2.0"
+description: حفظ نسخة التطبيق الكاملة واسترجاعها للأجهزة المصرح لها
 arch:
   - amd64
   - aarch64
@@ -14,4 +14,4 @@ panel_icon: mdi:database-lock
 ports:
   8080/tcp: null
 ports_description:
-  8080/tcp: واجهة قراءة التطبيق (اتصال خاص فقط)
+  8080/tcp: واجهة النسخ للأجهزة (اتصال HTTPS خاص فقط)
