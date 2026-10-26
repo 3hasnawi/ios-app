@@ -230,8 +230,6 @@ jobs:
           shot 08e-settings
           launch -openSettings YES -openBackup YES
           shot 08e2-backup
-          # حقول ربط خادم النسخ وزر الاسترجاع تظهر في صفحة النسخ الاحتياطي.
-          shot 08e2-server-link 1
           # حجم النص: أصغر مستوى ثم أكبر مستوى
           launch -openSettings YES -appTextSize 0
           shot 08e4-text-small
