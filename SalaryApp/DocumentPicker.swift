@@ -90,15 +90,33 @@ enum FilePicker {
     }
 }
 
-/// نافذة المشاركة من UIKit (Google Drive، OneDrive، واتساب، حفظ في الملفات...).
-/// الملف يُنسخ أولاً إلى مجلد ثابت (لا يُحذف أثناء المشاركة)، ويُعرَّف بنوعه (PDF، Excel...) حتى تقبله
-/// التطبيقات مثل واتساب، و"نسخ" يضع الملف نفسه في الحافظة ليُلصق في أي تطبيق.
+/// نافذة المشاركة من UIKit (واتساب، تيليجرام، البريد، حفظ في الملفات...).
+///
+/// الملف يُقدَّم كـ"ملف" بنوعه (PDF / Excel / صورة) عبر NSItemProvider: عند الإرسال ينسخ النظام الملف نفسه
+/// إلى التطبيق المستلم، بدل أن يقرأ المستلم رابطاً داخل مجلد هذا التطبيق (كان واتساب يفشل عند الإرسال).
+/// و"نسخ" يضع محتوى الملف في الحافظة فوراً.
 @MainActor
 enum ActivityShare {
     static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {
         guard let top = FilePicker.topController() else { onDone?(false); return }
         let files = urls.map(stableCopy)
-        let controller = UIActivityViewController(activityItems: files.map(FileShareItem.init), applicationActivities: nil)
+        let configuration = UIActivityItemsConfiguration(itemProviders: files.map(provider))
+        configuration.metadataProvider = { key in
+            key == .title ? files.map(\.lastPathComponent).joined(separator: "، ") : nil
+        }
+        configuration.perItemMetadataProvider = { index, key in
+            guard files.indices.contains(index) else { return nil }
+            switch key {
+            case .title: return files[index].lastPathComponent
+            case .linkPresentationMetadata:
+                let metadata = LPLinkMetadata()
+                metadata.title = files[index].lastPathComponent
+                metadata.iconProvider = NSItemProvider(contentsOf: files[index])
+                return metadata
+            default: return nil
+            }
+        }
+        let controller = UIActivityViewController(activityItemsConfiguration: configuration)
         controller.completionWithItemsHandler = { activity, completed, _, _ in
             if completed, activity == .copyToPasteboard { copyToPasteboard(files) }
             onDone?(completed)
@@ -108,6 +126,18 @@ enum ActivityShare {
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         }
         top.present(controller, animated: true)
+    }
+
+    /// الملف بنوعه واسمه؛ المستلم يأخذ نسخة منه (لا يحتاج صلاحية على مجلد التطبيق).
+    private static func provider(_ url: URL) -> NSItemProvider {
+        let type = UTType(filenameExtension: url.pathExtension) ?? .data
+        let provider = NSItemProvider()
+        provider.suggestedName = url.deletingPathExtension().lastPathComponent
+        provider.registerFileRepresentation(for: type, visibility: .all, openInPlace: false) { completion in
+            completion(url, false, nil)
+            return nil
+        }
+        return provider
     }
 
     /// يضع محتوى الملف نفسه في الحافظة فوراً (وليس رابطاً يُقرأ لاحقاً من التطبيق)،
@@ -132,36 +162,5 @@ enum ActivityShare {
         guard target.standardizedFileURL != url.standardizedFileURL else { return url }
         try? fm.removeItem(at: target)
         do { try fm.copyItem(at: url, to: target); return target } catch { return url }
-    }
-}
-
-/// ملف للمشاركة بنوعه الصحيح واسمه ومعاينته.
-final class FileShareItem: NSObject, UIActivityItemSource {
-    let url: URL
-    init(_ url: URL) { self.url = url }
-
-    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { url }
-
-    func activityViewController(_ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
-        // النسخ: المحتوى نفسه بنوعه (PDF / Excel / صورة)، وما عداه: الملف.
-        if activityType == .copyToPasteboard, let data = try? Data(contentsOf: url) { return data }
-        return url
-    }
-
-    func activityViewController(_ controller: UIActivityViewController, dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?) -> String {
-        (UTType(filenameExtension: url.pathExtension) ?? .data).identifier
-    }
-
-    func activityViewController(_ controller: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
-        url.deletingPathExtension().lastPathComponent
-    }
-
-    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
-        let metadata = LPLinkMetadata()
-        metadata.title = url.lastPathComponent
-        metadata.originalURL = url
-        metadata.url = url
-        metadata.iconProvider = NSItemProvider(contentsOf: url)
-        return metadata
     }
 }
