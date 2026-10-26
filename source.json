@@ -1,0 +1,38 @@
+{
+  "name": "تطبيق الرواتب",
+  "subtitle": "تطبيق الرواتب والتقارير المحاسبية",
+  "description": "المصدر الرسمي لإصدارات تطبيق الرواتب.",
+  "iconURL": "https://raw.githubusercontent.com/3hasnawi/ios-app/main/SalaryApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+  "website": "https://github.com/3hasnawi/ios-app",
+  "tintColor": "#173A46",
+  "apps": [
+    {
+      "name": "الرواتب",
+      "bundleIdentifier": "com.example.SalaryApp",
+      "developerName": "3hasnawi",
+      "subtitle": "الرواتب والتقارير المحاسبية",
+      "localizedDescription": "إدارة بيانات الرواتب والاستقطاعات، التدقيق، والبحث وتصدير الكشوفات.",
+      "iconURL": "https://raw.githubusercontent.com/3hasnawi/ios-app/main/SalaryApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "tintColor": "#173A46",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "1",
+          "marketingVersion": "1.5 (بناء 41)",
+          "date": "2026-10-26T18:05:01Z",
+          "downloadURL": "https://github.com/3hasnawi/ios-app/releases/download/build-41/SalaryApp.ipa",
+          "size": 4661355,
+          "minOSVersion": "26.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSFaceIDUsageDescription": "يُستخدم Face ID لقفل تطبيق الرواتب وحماية بيانات الموظفين."
+        }
+      }
+    }
+  ],
+  "news": []
+}

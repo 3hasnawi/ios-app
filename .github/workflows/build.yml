@@ -73,3 +73,19 @@ jobs:
           gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
             --title "$TITLE" \
             --notes "من الفرع ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" --latest
+
+      - name: Update AltStore source
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          python3 ci/update_altstore_source.py --ipa SalaryApp.ipa \
+            --tag "build-${{ github.run_number }}" \
+            --title "$APP_VERSION (بناء ${{ github.run_number }})"
+          git add source.json
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m "Update AltStore source for build ${{ github.run_number }}"
+            git push origin main
+          fi
