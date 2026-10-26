@@ -285,6 +285,10 @@ jobs:
           shot 08x4-salary-items 12
           launch -tab settings -openNotifications YES
           shot 08w2-notifications 5
+          launch
+          shot 03c-home-dashboard 14
+          launch -homeScroll YES
+          shot 03d-home-dashboard-bottom 16
           rm -f "$DATA/Documents/import-report.txt"
           launch -tab reports -auditTest YES
           for i in $(seq 1 90); do grep -q audit "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done

@@ -107,7 +107,8 @@ struct ContentView: View {
                 }
                 .background(Color(.systemGroupedBackground))
                 .navigationTitle(tr("الرئيسية", "Home"))
-                .navigationBarTitleDisplayMode(.large)
+                // عنوان صغير حتى تبدأ البطاقات من أعلى الشاشة.
+                .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button(tr("حسناً", "OK"), role: .cancel) {}

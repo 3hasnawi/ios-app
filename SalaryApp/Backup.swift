@@ -491,7 +491,7 @@ final class BackupManager {
                         UserDefaults.standard.set(value, forKey: key)
                     }
                 }
-                UserDefaults.standard.removeObject(forKey: "homeStatsCache")
+                for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 await SearchIndex.shared.invalidate()
                 await AuditResults.shared.invalidate()
                 StaffImportState.shared.version += 1

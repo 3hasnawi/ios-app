@@ -212,6 +212,11 @@ struct ReportDetailView: View {
                 }
                 guard !Task.isCancelled else { return }
                 rows = loaded
+                // "تصدير" من الضغط المطوّل على بطاقة في الرئيسية: يفتح نافذة التصدير مباشرة.
+                if UserDefaults.standard.bool(forKey: "homeExportReport") {
+                    UserDefaults.standard.removeObject(forKey: "homeExportReport")
+                    showExport = true
+                }
                 // اختبار المحاكي: -exportReport YES يكتب ملفي Excel و PDF ويفتح نافذة التصدير.
                 if UserDefaults.standard.bool(forKey: "exportReport") {
                     var ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil

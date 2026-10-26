@@ -25,6 +25,12 @@ struct SettingsView: View {
     @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
 
     @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
+    @AppStorage(HomeCard.hiddenKey) private var homeHidden = ""
+    private var homeCardsLine: String {
+        let hidden = HomeCard.hidden(homeHidden).count
+        return hidden == 0 ? tr("كل البطاقات ظاهرة", "All cards shown")
+            : tr("\(Num.format(HomeCard.allCases.count - hidden)) من \(Num.format(HomeCard.allCases.count)) ظاهرة", "\(HomeCard.allCases.count - hidden) of \(HomeCard.allCases.count) shown")
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,6 +56,13 @@ struct SettingsView: View {
                         SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
                     }
                     textSizeRow
+                    NavigationLink {
+                        HomeCardsSettingsView()
+                    } label: {
+                        SettingRow(title: tr("بطاقات الرئيسية", "Home cards"), systemImage: "rectangle.grid.1x2.fill", color: .blue,
+                                   subtitle: homeCardsLine) { EmptyView() }
+                    }
+                    .accessibilityIdentifier("homeCardsRow")
                 }
 
                 Section {
