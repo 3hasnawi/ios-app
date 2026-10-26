@@ -93,6 +93,7 @@
 | `AppLock.swift` | قفل Face ID |
 | `Shortcuts.swift` | اختصارات Siri، `SharedModel`, `EmployeeLookup` |
 | `DesignSystem.swift`, `Localization.swift`, `ArabicText.swift` | الألوان، الإعدادات العامة و`tr`، توحيد النص العربي و`cleanQuery` |
+| `salary_sync/`، `repository.yaml` | إضافة Home Assistant OS التجريبية لخزن نسخ شهرية وهمية وواجهة قراءة برمز؛ ليست موصولة بالتطبيق بعد ولا تُستخدم لبيانات حقيقية حتى اكتمال التحقق والصلاحيات. |
 | `TestData.swift`, `PerfLog.swift` | بيانات وهمية وقياس السلاسة للمحاكي |
 
 ## ٦. قواعد البيانات والكشوف (معتمدة من المالك)

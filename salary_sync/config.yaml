@@ -1,0 +1,17 @@
+name: مزامنة الرواتب (تجريبي)
+slug: salary_sync
+version: "0.1.0"
+description: حفظ نسخ شهرية معتمدة وقراءتها من تطبيق الرواتب
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:database-lock
+ports:
+  8080/tcp: null
+ports_description:
+  8080/tcp: واجهة قراءة التطبيق (اتصال خاص فقط)
