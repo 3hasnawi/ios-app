@@ -32,7 +32,9 @@ final class NavigationTests: XCTestCase {
         let filter = element("deductionChangeFilter")
         guard wait(filter, "حالات التغيّر") else { return }
         filter.tap()
-        let increased = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "زاد (")).firstMatch
+        // ترتيب النص والعدد في تسهيلات الاستخدام قد يختلف مع اتجاه العربية.
+        let increased = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "زاد", "(")).firstMatch
         guard wait(increased, "حالة زيادة الاستقطاع") else { return }
         increased.tap()
         XCTAssertTrue(filter.label.contains("زاد") || (filter.value as? String)?.contains("زاد") == true)
