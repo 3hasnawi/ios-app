@@ -401,6 +401,39 @@ jobs:
           grep -E "error:|XCTAssert|Failed|failed:" ci-output/uitest.log | sort -u | head -30 | sed 's/^/::warning::/' || true
           grep -E "^(PICKER|IMPORT|REJECT|RESULT)" ci-output/uitest.log | sed 's/^/::notice::/' || true
 
+      # المشاركة الحقيقية: "حفظ في الملفات" (PDF وExcel) ثم "نسخ"، والتحقق أن الملف المحفوظ سليم وأن الحافظة فيها الملف.
+      - name: Share sheet end-to-end (Save to Files, Copy)
+        if: inputs.deductions_only != true
+        run: |
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          DEV="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data"
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          touch ci-output/share-start
+          fail=0
+          for t in testSaveToFiles testSaveExcelToFiles testCopy; do
+            rm -f "$DATA/Documents/import-report.txt"
+            set +e
+            xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
+              -destination "id=$UDID" -derivedDataPath build -only-testing:SalaryAppUITests/ShareTests/$t \
+              CODE_SIGNING_ALLOWED=NO > "ci-output/share-$t.log" 2>&1
+            st=$?
+            set -e
+            echo "$t status=$st" | tee -a ci-output/share-report.txt
+            grep -E "error:|failed|XCTAssert" "ci-output/share-$t.log" | sort -u | head -8 | sed 's/^/::warning::/' || true
+            cat "$DATA/Documents/import-report.txt" 2>/dev/null | tee -a ci-output/share-report.txt; echo >> ci-output/share-report.txt
+            [ "$st" = 0 ] || fail=1
+          done
+          # الملفات المحفوظة في "الملفات" (On My iPhone) أثناء هذا الاختبار
+          find "$DEV" -path "*File Provider Storage*" -type f -newer ci-output/share-start \( -name "*.pdf" -o -name "*.xlsx" \) -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            size=$(stat -f%z "$f"); head=$(head -c 4 "$f" | xxd -p)
+            echo "saved: $(basename "$f") size=$size head=$head" | tee -a ci-output/share-report.txt
+            mkdir -p ci-output/shared-files && cp "$f" ci-output/shared-files/
+          done
+          grep -q "saved: .*\.pdf size=[1-9][0-9]* head=25504446" ci-output/share-report.txt && echo "::notice::Saved PDF is valid" || { echo "::error::Saved PDF missing or corrupt"; fail=1; }
+          grep -q "saved: .*\.xlsx size=[1-9][0-9]* head=504b0304" ci-output/share-report.txt && echo "::notice::Saved Excel is valid" || { echo "::error::Saved Excel missing or corrupt"; fail=1; }
+          grep -q "activity=com.apple.UIKit.activity.CopyToPasteboard completed=true .*com.adobe.pdf.* bytes=[1-9]" ci-output/share-report.txt && echo "::notice::Copy put the PDF on the pasteboard" || { echo "::error::Copy did not put the PDF on the pasteboard"; fail=1; }
+          exit $fail
+
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
         if: inputs.deductions_only != true
         run: |

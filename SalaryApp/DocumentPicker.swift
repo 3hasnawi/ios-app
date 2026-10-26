@@ -92,33 +92,25 @@ enum FilePicker {
 
 /// نافذة المشاركة من UIKit (واتساب، تيليجرام، البريد، حفظ في الملفات...).
 ///
-/// الملف يُقدَّم كـ"ملف" بنوعه (PDF / Excel / صورة) عبر NSItemProvider: عند الإرسال ينسخ النظام الملف نفسه
-/// إلى التطبيق المستلم، بدل أن يقرأ المستلم رابطاً داخل مجلد هذا التطبيق (كان واتساب يفشل عند الإرسال).
-/// و"نسخ" يضع محتوى الملف في الحافظة فوراً.
+/// الطريقة الموصى بها من Apple والمجرّبة مع واتساب و"حفظ في الملفات": رابط الملف نفسه (file URL) بلا أي تغليف.
+/// (جُرّب سابقاً ShareLink، ثم UIActivityItemSource مع LPLinkMetadata، ثم NSItemProvider بتمثيل ملف؛
+///  الأخيرة جعلت الملفات تصل تالفة ولا تُحفظ على iOS 27.)
+/// الملف يُنسخ أولاً إلى مجلد مؤقت خاص بهذه المشاركة حتى لا يُستبدل أثناء إرساله، و"نسخ" يضع محتوى الملف في الحافظة.
 @MainActor
 enum ActivityShare {
     static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {
         guard let top = FilePicker.topController() else { onDone?(false); return }
         let files = urls.map(stableCopy)
-        let configuration = UIActivityItemsConfiguration(itemProviders: files.map(provider))
-        configuration.metadataProvider = { key in
-            key == .title ? files.map(\.lastPathComponent).joined(separator: "، ") : nil
-        }
-        configuration.perItemMetadataProvider = { index, key in
-            guard files.indices.contains(index) else { return nil }
-            switch key {
-            case .title: return files[index].lastPathComponent
-            case .linkPresentationMetadata:
-                let metadata = LPLinkMetadata()
-                metadata.title = files[index].lastPathComponent
-                metadata.iconProvider = NSItemProvider(contentsOf: files[index])
-                return metadata
-            default: return nil
-            }
-        }
-        let controller = UIActivityViewController(activityItemsConfiguration: configuration)
-        controller.completionWithItemsHandler = { activity, completed, _, _ in
+        let controller = UIActivityViewController(activityItems: files, applicationActivities: nil)
+        controller.completionWithItemsHandler = { activity, completed, _, error in
             if completed, activity == .copyToPasteboard { copyToPasteboard(files) }
+            #if targetEnvironment(simulator)
+            if UserDefaults.standard.bool(forKey: "shareTest") {
+                let types = UIPasteboard.general.types.joined(separator: ",")
+                let bytes = UIPasteboard.general.items.first?.values.compactMap { ($0 as? Data)?.count }.first ?? 0
+                LaunchOptions.writeReport("share activity=\(activity?.rawValue ?? "none") completed=\(completed) error=\(error?.localizedDescription ?? "none") pasteboard=\(types) bytes=\(bytes) file=\(files.first?.lastPathComponent ?? "")")
+            }
+            #endif
             onDone?(completed)
         }
         if let popover = controller.popoverPresentationController {
@@ -126,18 +118,6 @@ enum ActivityShare {
             popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         }
         top.present(controller, animated: true)
-    }
-
-    /// الملف بنوعه واسمه؛ المستلم يأخذ نسخة منه (لا يحتاج صلاحية على مجلد التطبيق).
-    private static func provider(_ url: URL) -> NSItemProvider {
-        let type = UTType(filenameExtension: url.pathExtension) ?? .data
-        let provider = NSItemProvider()
-        provider.suggestedName = url.deletingPathExtension().lastPathComponent
-        provider.registerFileRepresentation(for: type, visibility: .all, openInPlace: false) { completion in
-            completion(url, false, nil)
-            return nil
-        }
-        return provider
     }
 
     /// يضع محتوى الملف نفسه في الحافظة فوراً (وليس رابطاً يُقرأ لاحقاً من التطبيق)،
@@ -152,15 +132,24 @@ enum ActivityShare {
         UIPasteboard.general.setItems(items, options: [.localOnly: false])
     }
 
-    /// Library/Caches/مشاركة/<اسم الملف>: يبقى حتى تكتمل المشاركة، ويُستبدل في المرة القادمة.
+    /// tmp/Sharing/<معرّف>/<اسم الملف>: نسخة مستقلة لكل مشاركة؛ النسخ القديمة تُحذف عند المشاركة التالية.
     private static func stableCopy(_ url: URL) -> URL {
         let fm = FileManager.default
-        guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return url }
-        let folder = caches.appendingPathComponent("Shared", isDirectory: true)
-        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        let target = folder.appendingPathComponent(url.lastPathComponent)
-        guard target.standardizedFileURL != url.standardizedFileURL else { return url }
-        try? fm.removeItem(at: target)
-        do { try fm.copyItem(at: url, to: target); return target } catch { return url }
+        let root = fm.temporaryDirectory.appendingPathComponent("Sharing", isDirectory: true)
+        // نسخ المشاركات السابقة (أقدم من ساعة) لم تعد تلزم.
+        if let old = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.creationDateKey]) {
+            for dir in old where ((try? dir.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < Date().addingTimeInterval(-3600) {
+                try? fm.removeItem(at: dir)
+            }
+        }
+        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let target = folder.appendingPathComponent(url.lastPathComponent)
+            try fm.copyItem(at: url, to: target)
+            return target
+        } catch {
+            return url
+        }
     }
 }
