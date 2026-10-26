@@ -164,6 +164,7 @@ jobs:
           }
 
           if [ "$QUICK" = true ]; then
+            check_accounts
             launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
             for i in $(seq 1 180); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             cat "$DATA/Documents/import-report.txt" | tee ci-output/import-report.txt
@@ -173,7 +174,6 @@ jobs:
             shot 03a-system-glass-bar 4
             shot 03b-home-audit-cards 1
             if [ "$DEDUCTIONS_ONLY" = true ]; then exit 0; fi
-            check_accounts
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
             launch -tab reports
