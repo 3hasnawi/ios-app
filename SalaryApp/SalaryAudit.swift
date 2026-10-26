@@ -141,7 +141,8 @@ extension ReportEngine {
     func salaryAudit(from: String, to: String) throws -> SalaryAudit {
         let new = try snapshots(to)
         let compared = !from.isEmpty && from != to
-        let old = compared ? try snapshots(from) : []
+        var old: [Snapshot] = []
+        if compared { old = try snapshots(from) }
         var oldMap: [String: Snapshot] = [:], newMap: [String: Snapshot] = [:]
         for s in old where oldMap[s.key] == nil { oldMap[s.key] = s }
         for s in new where newMap[s.key] == nil { newMap[s.key] = s }
@@ -394,7 +395,7 @@ extension ReportEngine {
             AuditCheck(id: "staffNoSalary", title: tr("في الملاك بلا راتب", "In staff without salary"),
                        subtitle: noSalary.isEmpty ? tr("كل المستمرين في الملاك لهم راتب", "Every active staff member has a salary")
                                                   : tr("مستمرون في الملاك وليس لهم راتب هذا الشهر", "Active staff without salary this month"),
-                       ok: noSalary.isEmpty, rows: noSalary, detailTitle: "الرتبة · الحالة · محل العمل", amountTitle: " "),
+                       ok: noSalary.isEmpty, rows: noSalary, amountTitle: " ", detailTitle: "الرتبة · الحالة · محل العمل"),
             AuditCheck(id: "salaryNoStaff", title: tr("لهم راتب وليسوا في الملاك", "Salary without staff record"),
                        subtitle: noStaff.isEmpty ? tr("كل من له راتب موجود في الملاك", "Everyone paid is in staff")
                                                  : tr("بالرقم الموحد أو الاسم", "By unified number or name"),

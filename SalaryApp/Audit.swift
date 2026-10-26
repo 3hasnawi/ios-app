@@ -97,11 +97,16 @@ nonisolated struct AuditDigest: Sendable {
         return (month, names.indices.contains(i + 1) ? names[i + 1] : "")
     }
 
+    private static func comparison(previous: String, month: String, container: ModelContainer) async -> DeductionComparison? {
+        if previous.isEmpty { return nil }
+        return try? await AuditResults.shared.deductions(from: previous, to: month, container: container)
+    }
+
     static func run(month: String, previous: String, container: ModelContainer) async -> AuditDigest {
         let results = AuditResults.shared
         async let salary = try? results.salary(from: previous, to: month, container: container)
         async let checks = (try? results.deductionChecks(month: month, container: container)) ?? []
-        async let deductions: DeductionComparison? = previous.isEmpty ? nil : try? results.deductions(from: previous, to: month, container: container)
+        async let deductions = comparison(previous: previous, month: month, container: container)
         return await AuditDigest(month: month, previous: previous, salary: salary, deductionChecks: checks, deductions: deductions)
     }
 }
