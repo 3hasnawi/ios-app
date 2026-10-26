@@ -54,7 +54,6 @@ struct ReportsView: View {
                         .padding(.top, 80)
                 } else {
                     VStack(spacing: 12) {
-                        filters
                         summaryCard
                         auditCard
                         entitiesCard
@@ -67,7 +66,13 @@ struct ReportsView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle(tr("التقارير", "Reports"))
-            .navigationBarTitleDisplayMode(.large)
+            // عنوان صغير وزر الشهر في شريط العنوان (مثل الرئيسية) حتى تبدأ البطاقات من أعلى الشاشة.
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if !months.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) { filters }
+                }
+            }
             .navigationDestination(for: ReportsRoute.self) { route in
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
@@ -260,23 +265,21 @@ struct ReportsView: View {
     }
 
     private var filters: some View {
-        HStack {
-            Menu {
-                Picker(tr("الشهر", "Month"), selection: Binding(get: { month?.name ?? "" }, set: { monthName = $0 })) {
-                    ForEach(months) { Text($0.name).tag($0.name) }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                    Text(month?.name ?? "").lineLimit(1)
-                    Image(systemName: "chevron.down").font(.caption.weight(.bold))
-                }
-                .font(.subheadline.weight(.semibold))
+        Menu {
+            Picker(tr("الشهر", "Month"), selection: Binding(get: { month?.name ?? "" }, set: { monthName = $0 })) {
+                ForEach(months) { Text($0.name).tag($0.name) }
             }
-            .glassButtonStyle(prominent: true)
-            .buttonBorderShape(.capsule)
-            Spacer()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                Text(month?.name ?? "").lineLimit(1)
+                Image(systemName: "chevron.down").font(.caption.weight(.bold))
+            }
+            .font(.subheadline.weight(.semibold))
         }
+        .glassButtonStyle(prominent: true)
+        .buttonBorderShape(.capsule)
+        .accessibilityIdentifier("reportsMonthMenu")
     }
 
     private func loadDeductions() async {
