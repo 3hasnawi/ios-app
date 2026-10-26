@@ -2,7 +2,7 @@ import SwiftUI
 
 /// قسيمة الراتب بشكل المستند الرسمي (جداول بحدود على ورق فاتح).
 /// نسختان:
-///  - `.screen` داخل التطبيق: ترويسة الوزارة وشعارها، الرقم الإحصائي، وختم الحالة من الملاك.
+///  - `.screen` داخل التطبيق: ترويسة الوزارة وشعارها، محل العمل، وختم الحالة من الملاك.
 ///  - `.export` صورة النسخ والمشاركة: محايدة ("قسيمة راتب" فقط، بلا شعار ولا اسم وزارة)، ومحل العمل بدل الرقم الإحصائي.
 /// الحقول الفارغة لا تظهر.
 struct PayslipDocument: View {
@@ -18,7 +18,6 @@ struct PayslipDocument: View {
     let name: String
     let rank: String
     let workplace: String
-    let statNumber: String
     let status: String
     let month: String
     let net: Double?
@@ -34,10 +33,8 @@ struct PayslipDocument: View {
     private var total: Double { lines.reduce(0) { $0 + ($1.amount ?? 0) } }
 
     private var infoRows: [(String, String)] {
-        let third = style == .screen
-            ? (tr("الرقم الإحصائي", "Stat. number"), statNumber)
-            : (tr("محل العمل", "Workplace"), workplace)
-        return [(tr("الاسم", "Name"), name), (tr("الرتبة", "Rank"), rank), third]
+        [(tr("الاسم", "Name"), name), (tr("الرتبة", "Rank"), rank),
+         (tr("محل العمل", "Workplace"), workplace)]
             .filter { !$0.1.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
@@ -246,7 +243,6 @@ extension PayslipDocument {
             name: employee.name,
             rank: employee.rank.isEmpty ? (staff?.rank ?? "") : employee.rank,
             workplace: employee.workplace.isEmpty ? (staff?.workplace ?? "") : employee.workplace,
-            statNumber: staff?.statNumber ?? "",
             status: staff?.status ?? "",
             month: employee.month,
             net: employee.netSalary,
