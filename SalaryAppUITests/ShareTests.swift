@@ -30,13 +30,18 @@ final class ShareTests: XCTestCase {
 
     /// زر في نافذة المشاركة (قد يحتاج تمريراً لقائمة الإجراءات).
     private func shareAction(_ labels: [String]) -> XCUIElement? {
-        for _ in 0..<4 {
-            for label in labels {
-                let candidates = [app.buttons[label], app.cells[label], app.staticTexts[label]]
-                if let hit = candidates.first(where: { $0.waitForExistence(timeout: 2) }) { return hit }
+        let predicate = NSPredicate(format: labels.map { _ in "label ==[c] %@ OR identifier ==[c] %@" }.joined(separator: " OR "),
+                                    argumentArray: labels.flatMap { [$0, $0] })
+        for attempt in 0..<4 {
+            let hit = app.descendants(matching: .any).matching(predicate).firstMatch
+            if hit.waitForExistence(timeout: 4) { return hit }
+            // قائمة الإجراءات أسفل نافذة المشاركة: تكبير النافذة بسحب خفيف من مقبضها.
+            if attempt < 3 {
+                let sheet = app.otherElements["ActivityListView"].firstMatch
+                (sheet.exists ? sheet : app).swipeUp(velocity: .slow)
             }
-            app.swipeUp()
         }
+        print("SHARE-SHEET-TREE\n" + app.debugDescription)
         return nil
     }
 
