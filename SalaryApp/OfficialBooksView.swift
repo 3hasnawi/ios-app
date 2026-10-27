@@ -307,7 +307,7 @@ struct OfficialBookDetailView: View {
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") {
-                                do { try OfficialBookShare.present(book) } catch { error = error.localizedDescription }
+                                do { try OfficialBookShare.present(book) } catch { self.error = error.localizedDescription }
                             }
                         }
                     }
