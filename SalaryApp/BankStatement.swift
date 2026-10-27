@@ -239,36 +239,7 @@ struct BankStatementView: View {
                     Button(tr("إعداد الحساب", "Account settings"), systemImage: "slider.horizontal.3") { showSettings = true }
                 }
             }
-            .sheet(isPresented: $showSettings) {
-                NavigationStack {
-                    Form {
-                        Section(tr("الحساب", "Account")) {
-                            TextField(tr("اسم الحساب", "Account name"), text: $accountName)
-                            TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
-                        }
-                        if let month {
-                            Section(tr("مبالغ يدوية · \(month.name)", "Manual amounts · \(month.name)")) {
-                                TextField(tr("الإجازات المتراكمة", "Accumulated leave"), value: amountBinding(\.accumulatedLeave, month: month.name), format: .number.locale(AppSettings.locale))
-                                    .keyboardType(.decimalPad)
-                                TextField(tr("مكافآت منتسبين", "Employee rewards"), value: amountBinding(\.employeeRewards, month: month.name), format: .number.locale(AppSettings.locale))
-                                    .keyboardType(.decimalPad)
-                                TextField(tr("قائمة مفردة", "Single list"), value: amountBinding(\.singleList, month: month.name), format: .number.locale(AppSettings.locale))
-                                    .keyboardType(.decimalPad)
-                            } footer: {
-                                Text(tr("تُحفظ هذه المبالغ لهذا الشهر فقط وتُضاف إلى إجمالي كشف البنك والنسخة الاحتياطية.",
-                                        "These amounts belong to this month only and are included in the bank total and backup."))
-                            }
-                        }
-                        Section(tr("طريقة الاحتساب", "Calculation")) {
-                            Text(tr("صافي الرواتب (كاش وبطاقة) + المبالغ اليدوية للشهر + الرعاية الصحية + صندوق الشهداء + النشاط الرياضي + الضريبة + الحماية الاجتماعية + شركة عراق الجوال + مجموع استقطاعات المصارف + التقاعد والضمان الاجتماعي (12% من اسمي رتبة عقود فقط + توقيفاتهم التقاعدية). لا يُستخدم مجموع الاستقطاعات. يجب أن يطابق عمود المصارف ملف الاستقطاعات التنفيذية.",
-                                    "Cash and card net payroll + this month's manual amounts + health care + martyrs fund + sport + tax + social protection + Iraq Mobile + bank deductions + pension/social security (12% of nominal pay for the عقود rank only, plus their retirement deductions). The overall deduction total is not used. Bank deductions must match the execution file."))
-                        }
-                    }
-                    .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button(tr("تم", "Done")) { showSettings = false } } }
-                }
-            }
+            .sheet(isPresented: $showSettings) { bankSettingsSheet }
             .task(id: loadKey) {
                 guard let month else { summary = nil; return }
                 summary = nil
@@ -294,6 +265,53 @@ struct BankStatementView: View {
             .task {
                 if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
             }
+        }
+    }
+
+    private var bankSettingsSheet: some View {
+        NavigationStack {
+            Form {
+                Section(tr("الحساب", "Account")) {
+                    TextField(tr("اسم الحساب", "Account name"), text: $accountName)
+                    TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
+                }
+                if let month {
+                    BankManualAmountFields(
+                        month: month.name,
+                        accumulatedLeave: amountBinding(\.accumulatedLeave, month: month.name),
+                        employeeRewards: amountBinding(\.employeeRewards, month: month.name),
+                        singleList: amountBinding(\.singleList, month: month.name)
+                    )
+                }
+                Section(tr("طريقة الاحتساب", "Calculation")) {
+                    Text(tr("صافي الرواتب (كاش وبطاقة) + المبالغ اليدوية للشهر + الرعاية الصحية + صندوق الشهداء + النشاط الرياضي + الضريبة + الحماية الاجتماعية + شركة عراق الجوال + مجموع استقطاعات المصارف + التقاعد والضمان الاجتماعي (12% من اسمي رتبة عقود فقط + توقيفاتهم التقاعدية). لا يُستخدم مجموع الاستقطاعات. يجب أن يطابق عمود المصارف ملف الاستقطاعات التنفيذية.",
+                            "Cash and card net payroll + this month's manual amounts + health care + martyrs fund + sport + tax + social protection + Iraq Mobile + bank deductions + pension/social security (12% of nominal pay for the عقود rank only, plus their retirement deductions). The overall deduction total is not used. Bank deductions must match the execution file."))
+                }
+            }
+            .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(tr("تم", "Done")) { showSettings = false } } }
+        }
+    }
+}
+
+private struct BankManualAmountFields: View {
+    let month: String
+    @Binding var accumulatedLeave: Double
+    @Binding var employeeRewards: Double
+    @Binding var singleList: Double
+
+    var body: some View {
+        Section(tr("مبالغ يدوية · \(month)", "Manual amounts · \(month)")) {
+            TextField(tr("الإجازات المتراكمة", "Accumulated leave"), value: $accumulatedLeave, format: .number)
+                .keyboardType(.decimalPad)
+            TextField(tr("مكافآت منتسبين", "Employee rewards"), value: $employeeRewards, format: .number)
+                .keyboardType(.decimalPad)
+            TextField(tr("قائمة مفردة", "Single list"), value: $singleList, format: .number)
+                .keyboardType(.decimalPad)
+        } footer: {
+            Text(tr("تُحفظ هذه المبالغ لهذا الشهر فقط وتُضاف إلى إجمالي كشف البنك والنسخة الاحتياطية.",
+                    "These amounts belong to this month only and are included in the bank total and backup."))
         }
     }
 }
