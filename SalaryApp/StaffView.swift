@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, share, bank, settings }
+    enum Tab: Hashable { case payroll, staff, search, bank, settings }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
     var tab: Tab = LaunchOptions.startTab == "bank" ? .bank
         : LaunchOptions.startTab == "reports" ? .payroll
@@ -16,8 +16,9 @@ final class AppRouter {
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
     var pendingPayrollImport = false
-    /// القسيمة المعروضة الآن: يظهر زر مشاركتها في الشريط السفلي.
+    /// القسيمة المعروضة الآن للمشاركة من الضغط المطوّل عليها.
     var payslipToShare: Employee?
+    var shareMode: ShareOptionsSheet.Mode?
     /// صفحة التقارير تُفتح من بطاقة الرئيسية، وتبقى مساراتها الداخلية كما هي.
     var showReports = LaunchOptions.startTab == "reports"
     /// صفحة في تبويب التقارير تُفتح من إشعار (التدقيق، الرواتب، الاستقطاعات).
@@ -99,10 +100,7 @@ struct RootView: View {
     private var selection: Binding<AppRouter.Tab> {
         Binding(
             get: { router.tab },
-            set: { tab in
-                if tab == .share { router.showShare = true }
-                else { router.tab = tab }
-            }
+            set: { router.tab = $0 }
         )
     }
 
@@ -116,11 +114,6 @@ struct RootView: View {
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
-            }
-            if router.payslipToShare != nil {
-                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
-                    Color.clear
-                }
             }
             Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
                 UnifiedSearchView()
@@ -156,8 +149,8 @@ struct RootView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .sheet(isPresented: $router.showShare) {
-            if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee) }
+        .sheet(isPresented: $router.showShare, onDismiss: { router.shareMode = nil }) {
+            if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee, initialMode: router.shareMode) }
         }
         // استيراد موحّد: نافذة الملفات، ثم مراجعة ما تعرّف عليه التطبيق، ثم النتيجة.
         .sheet(isPresented: $importCenter.showReview) {

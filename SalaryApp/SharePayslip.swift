@@ -12,7 +12,7 @@ struct ShareOptionsSheet: View {
     @State private var errorText: String?
 
     enum Mode: String { case report, image }
-    @State private var mode: Mode = UserDefaults.standard.string(forKey: "shareMode") == "image" ? .image : .report
+    @State private var mode: Mode
     @AppStorage("salaryReportHideZeros") private var hideZeros = false
     @AppStorage("salaryReportHidePersonal") private var hidePersonal = false
     @State private var reportURL: URL?
@@ -20,8 +20,9 @@ struct ShareOptionsSheet: View {
     @State private var reports: [SalaryReport] = []
     @State private var reportError: String?
 
-    init(employee: Employee) {
+    init(employee: Employee, initialMode: Mode? = nil) {
         self.employee = employee
+        _mode = State(initialValue: initialMode ?? (UserDefaults.standard.string(forKey: "shareMode") == "image" ? .image : .report))
         let key = employee.matchKey
         let month = employee.month
         _deductions = Query(filter: #Predicate { $0.month == month && $0.matchKey == key }, sort: \Deduction.title)

@@ -727,6 +727,15 @@ struct UnifiedPersonView: View {
                 Section {
                     PersonPayslip(employee: record, staff: staff)
                         .id(record.persistentModelID)
+                        .accessibilityIdentifier("personPayslip")
+                        .contextMenu {
+                            Button(tr("تقرير راتب PDF", "Salary report PDF"), systemImage: ReportSymbols.pdf) {
+                                share(record, mode: .report)
+                            }
+                            Button(tr("قسيمة صورة", "Payslip image"), systemImage: "photo") {
+                                share(record, mode: .image)
+                            }
+                        }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                 }
@@ -740,7 +749,7 @@ struct UnifiedPersonView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { partMenu(staff: staff) }
         }
-        // المشاركة في الشريط السفلي؛ التقارير في الرئيسية كي لا يظهر تبويب «المزيد».
+        // الضغط المطوّل على القسيمة يفتح خيارات المشاركة؛ بلا تبويب مشاركة إضافي.
         .onAppear {
             router.payslipToShare = selectedRecord
             // اختبار المحاكي: -openPerson YES -share YES يفتح نافذة المشاركة.
@@ -765,7 +774,7 @@ struct UnifiedPersonView: View {
         }
     }
 
-    /// قائمة منسدلة: كل شهر له راتب للشخص (الأحدث أولاً)، ثم الملاك، ومشاركة تقرير الشهر المعروض.
+    /// قائمة منسدلة: كل شهر له راتب للشخص (الأحدث أولاً)، ثم الملاك.
     private func partMenu(staff: StaffMember?) -> some View {
         Menu {
             Picker(tr("العرض", "Show"), selection: $selection) {
@@ -774,14 +783,6 @@ struct UnifiedPersonView: View {
                 }
                 if staff != nil {
                     Label(tr("الملاك", "Staff"), systemImage: "person.text.rectangle").tag(Self.staffTag)
-                }
-            }
-            if let record = selectedRecord {
-                Section {
-                    Button(tr("مشاركة تقرير راتب \(record.month)", "Share \(record.month) salary report"), systemImage: ReportSymbols.pdf) {
-                        router.payslipToShare = record
-                        router.showShare = true
-                    }
                 }
             }
         } label: {
@@ -795,6 +796,12 @@ struct UnifiedPersonView: View {
         .glassButtonStyle(prominent: true)
         .buttonBorderShape(.capsule)
         .accessibilityIdentifier("personPartPicker")
+    }
+
+    private func share(_ record: Employee, mode: ShareOptionsSheet.Mode) {
+        router.payslipToShare = record
+        router.shareMode = mode
+        router.showShare = true
     }
 
     private func staffHeader(_ staff: StaffMember) -> some View {

@@ -262,11 +262,15 @@ final class NavigationTests: XCTestCase {
                                                "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO",
                                                "-openPerson", "YES", "-share", "NO"]
         app.launch()
-        let share = app.tabBars.buttons["مشاركة"]
-        XCTAssertTrue(share.waitForExistence(timeout: 20))
+        let payslip = element("personPayslip")
+        XCTAssertTrue(payslip.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.tabBars.buttons["مشاركة"].exists)
         XCTAssertFalse(app.tabBars.buttons["المزيد"].exists || app.tabBars.buttons["More"].exists)
         XCTAssertTrue(searchTab.exists)
-        share.tap()
+        payslip.press(forDuration: 1.0)
+        let image = app.buttons["قسيمة صورة"]
+        XCTAssertTrue(image.waitForExistence(timeout: 5))
+        image.tap()
         XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
     }
 
