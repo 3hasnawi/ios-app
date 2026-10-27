@@ -164,12 +164,23 @@ final class ImportCenter {
                     let count = try await Task.detached(priority: .userInitiated) {
                         let granted = url.startAccessingSecurityScopedResource()
                         defer { if granted { url.stopAccessingSecurityScopedResource() } }
+                        // قد يستدعي مزود الملفات نافذة الاختيار قبل اكتمال نسخته المؤقتة.
+                        for attempt in 0..<3 {
+                            do { return try StaffImporter.peekCount(at: url) }
+                            catch AccessReader.ReadError.notAccess where attempt < 2 {
+                                try await Task.sleep(for: .milliseconds(attempt == 0 ? 300 : 700))
+                            }
+                        }
                         return try StaffImporter.peekCount(at: url)
                     }.value
                     found.append(ImportCandidate(url: url, fileName: name, kind: .staff, month: "", allowedKinds: [.staff, .skip],
                                                  result: nil, staffCount: count, error: nil, monthDetected: true))
                 } catch {
-                    found.append(Self.failed(url, url.lastPathComponent, error))
+                    let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                    let detail = error.localizedDescription + (size.map {
+                        tr(" حجم الملف: \(ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)).", " File size: \(ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)).")
+                    } ?? "")
+                    found.append(Self.failed(url, url.lastPathComponent, detail))
                 }
                 sink(1)
                 continue
@@ -236,8 +247,12 @@ final class ImportCenter {
     }
 
     private static func failed(_ url: URL, _ name: String, _ error: Error) -> ImportCandidate {
+        failed(url, name, error.localizedDescription)
+    }
+
+    private static func failed(_ url: URL, _ name: String, _ error: String) -> ImportCandidate {
         ImportCandidate(url: url, fileName: name, kind: .skip, month: "", allowedKinds: [.skip],
-                        result: nil, staffCount: nil, error: error.localizedDescription, monthDetected: false)
+                        result: nil, staffCount: nil, error: error, monthDetected: false)
     }
 
     private func existingMonths() -> [PayrollMonth] {
