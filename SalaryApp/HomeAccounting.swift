@@ -178,7 +178,7 @@ struct HomeAccounting: View {
 
     private func footnote(_ kind: HomeActionKind) -> String {
         switch kind {
-        case .reports, .special: tr("عرض الكشوف ←", "Open reports ←")
+        case .reports, .special: return tr("عرض الكشوف ←", "Open reports ←")
         case .salaryAudit:
             let count = audit?.issues.filter { $0.route == "salary" }.count ?? 0
             return audit == nil ? tr("جارٍ الفحص…", "Checking…") :
