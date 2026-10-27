@@ -355,9 +355,7 @@ final class ImportCenter {
                 case .executionAccounts:
                     guard let result = job.result else { continue }
                     LaunchOptions.writeImportStage("save-accounts")
-                    let counts = try await Task.detached(priority: .userInitiated) {
-                        try await ExecutionAccountImporter(modelContainer: container).merge(result.accounts)
-                    }.value
+                    let counts = try ExecutionAccountStore.merge(result.accounts)
                     LaunchOptions.writeImportStage("saved-accounts")
                     accountTotals.added += counts.added
                     accountTotals.updated += counts.updated
@@ -398,9 +396,7 @@ final class ImportCenter {
                         if newestPayroll == nil || key >= newestPayroll!.key { newestPayroll = (key, month) }
                     }
                     if !result.accounts.isEmpty {
-                        let counts = try await Task.detached(priority: .userInitiated) {
-                            try await ExecutionAccountImporter(modelContainer: container).merge(result.accounts)
-                        }.value
+                        let counts = try ExecutionAccountStore.merge(result.accounts)
                         accountTotals.added += counts.added
                         accountTotals.updated += counts.updated
                         accountTotals.invalid += result.invalidAccounts

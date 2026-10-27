@@ -93,9 +93,9 @@ actor BackupActor {
             BackupFormat.StaffRecord(name: $0.name, mother: $0.motherKey, stat: $0.statNumber, unified: $0.unifiedNumber,
                                      rank: $0.rank, status: $0.status, workplace: $0.workplace, details: $0.detailsData)
         }, from: 0.5, to: 0.8)
-        let accounts = try modelContext.fetch(FetchDescriptor<ExecutionAccount>())
+        let accounts = try ExecutionAccountStore.load()
         try writeLines("accounts.jsonl", accounts.map {
-            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swiftCode)
+            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
         }, from: 0.8, to: 0.82)
 
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
@@ -140,6 +140,9 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        let accountData = try ExecutionAccountStore.encode(accounts.map {
+            SavedExecutionAccount(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
+        })
 
         modelContext.autosaveEnabled = false
         var committed = false
@@ -149,7 +152,6 @@ actor BackupActor {
         for item in try modelContext.fetch(FetchDescriptor<Deduction>()) { modelContext.delete(item) }
         for item in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) { modelContext.delete(item) }
         for item in try modelContext.fetch(FetchDescriptor<StaffMember>()) { modelContext.delete(item) }
-        for item in try modelContext.fetch(FetchDescriptor<ExecutionAccount>()) { modelContext.delete(item) }
         for r in months {
             let m = PayrollMonth(name: r.name, employeeCount: r.employeeCount, deductionCount: r.deductionCount)
             m.importedAt = r.importedAt
@@ -175,10 +177,8 @@ actor BackupActor {
             modelContext.insert(s)
             if i % 1000 == 0 { progress?(0.7 + 0.3 * Double(i) / Double(max(1, staff.count))) }
         }
-        for r in accounts {
-            modelContext.insert(ExecutionAccount(entity: r.entity, iban: r.iban, branch: r.branch, swift: r.swift))
-        }
         try modelContext.save()
+        ExecutionAccountStore.saveEncoded(accountData)
         progress?(1)
         committed = true
         return settings.filter { BackupFormat.settingsKeys.contains($0.key) }
@@ -536,7 +536,7 @@ final class BackupManager {
             let d = (try? context.fetchCount(FetchDescriptor<Deduction>())) ?? -1
             let m = (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) ?? -1
             let s = (try? context.fetchCount(FetchDescriptor<StaffMember>())) ?? -1
-            let a = (try? context.fetchCount(FetchDescriptor<ExecutionAccount>())) ?? -1
+            let a = (try? ExecutionAccountStore.load().count) ?? -1
             return "employees=\(e) deductions=\(d) months=\(m) staff=\(s) accounts=\(a)"
         }
         let before = counts()

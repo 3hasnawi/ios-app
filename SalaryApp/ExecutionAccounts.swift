@@ -2,59 +2,94 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// حساب جهة تنفيذ مستقل عن الأشهر، يُحدَّث بالاسم عند استيراد ملف IBAN جديد.
+/// النموذج السابق يبقى ضمن مخطط SwiftData حتى تفتح قواعد بيانات الإصدارات المثبّتة.
 @Model
 final class ExecutionAccount {
+    #Index<ExecutionAccount>([\.key])
+
     var key: String
     var entity: String
     var iban: String
     var branch: String
-    var swiftCode: String
+    var swift: String
 
     init(entity: String, iban: String, branch: String, swift: String) {
         self.key = ArabicText.normalize(entity)
         self.entity = entity
         self.iban = iban
         self.branch = branch
-        self.swiftCode = swift
+        self.swift = swift
     }
 }
 
-@ModelActor
-actor ExecutionAccountImporter {
-    func merge(_ rows: [ImportedExecutionAccount]) throws -> (added: Int, updated: Int) {
-        var existing = Dictionary(try modelContext.fetch(FetchDescriptor<ExecutionAccount>()).map { ($0.key, $0) },
-                                  uniquingKeysWith: { first, _ in first })
+/// عدد الجهات صغير؛ تخزينها كبيانات واحدة يتجنب خلل قراءة النموذج من SwiftData.
+nonisolated struct SavedExecutionAccount: Codable, Sendable, Identifiable {
+    let entity: String
+    let iban: String
+    let branch: String
+    let swift: String
+
+    var key: String { ArabicText.normalize(entity) }
+    var id: String { key }
+}
+
+nonisolated enum ExecutionAccountStore {
+    static let storageKey = "executionAccountsData"
+
+    static func decode(_ data: Data) throws -> [SavedExecutionAccount] {
+        if data.isEmpty { return [] }
+        return try JSONDecoder().decode([SavedExecutionAccount].self, from: data)
+    }
+
+    static func load() throws -> [SavedExecutionAccount] {
+        try decode(UserDefaults.standard.data(forKey: storageKey) ?? Data())
+    }
+
+    static func encode(_ rows: [SavedExecutionAccount]) throws -> Data {
+        try JSONEncoder().encode(rows)
+    }
+
+    static func saveEncoded(_ data: Data) {
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    static func merge(_ rows: [ImportedExecutionAccount]) throws -> (added: Int, updated: Int) {
+        var saved = try load()
+        var positions = Dictionary(uniqueKeysWithValues: saved.enumerated().map { ($0.element.key, $0.offset) })
         var added = 0, updated = 0
         for row in rows {
             let key = ArabicText.normalize(row.entity)
-            if let account = existing[key] {
-                if account.entity != row.entity || account.iban != row.iban || (!row.branch.isEmpty && account.branch != row.branch)
-                    || (!row.swift.isEmpty && account.swiftCode != row.swift) {
-                    account.entity = row.entity
-                    account.iban = row.iban
-                    if !row.branch.isEmpty { account.branch = row.branch }
-                    if !row.swift.isEmpty { account.swiftCode = row.swift }
+            if let index = positions[key] {
+                let previous = saved[index]
+                let next = SavedExecutionAccount(entity: row.entity, iban: row.iban,
+                    branch: row.branch.isEmpty ? previous.branch : row.branch,
+                    swift: row.swift.isEmpty ? previous.swift : row.swift)
+                if previous.entity != next.entity || previous.iban != next.iban || previous.branch != next.branch || previous.swift != next.swift {
+                    saved[index] = next
                     updated += 1
                 }
             } else {
-                let account = ExecutionAccount(entity: row.entity, iban: row.iban, branch: row.branch, swift: row.swift)
-                modelContext.insert(account)
-                existing[key] = account
+                positions[key] = saved.count
+                saved.append(SavedExecutionAccount(entity: row.entity, iban: row.iban, branch: row.branch, swift: row.swift))
                 added += 1
             }
         }
-        try modelContext.save()
+        saveEncoded(try encode(saved))
         return (added, updated)
     }
 }
 
 /// صفحة الحسابات الدائمة داخل البيانات المحفوظة، مع البحث والنسخ.
 struct ExecutionAccountsView: View {
-    @Query(sort: \ExecutionAccount.entity) private var accounts: [ExecutionAccount]
+    @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @State private var search = ""
 
-    private var filtered: [ExecutionAccount] {
+    private var accounts: [SavedExecutionAccount] {
+        ((try? ExecutionAccountStore.decode(accountData)) ?? [])
+            .sorted { $0.entity.localizedStandardCompare($1.entity) == .orderedAscending }
+    }
+
+    private var filtered: [SavedExecutionAccount] {
         let query = ArabicText.normalize(ArabicText.cleanQuery(search))
         guard !query.isEmpty else { return accounts }
         return accounts.filter { ArabicText.normalize($0.entity).contains(query)
@@ -76,7 +111,7 @@ struct ExecutionAccountsView: View {
                             Text(account.entity).font(.headline)
                             if !account.branch.isEmpty { Text(account.branch).font(.subheadline).foregroundStyle(.secondary) }
                             Text(account.iban).font(.subheadline.monospaced()).textSelection(.enabled).privacySensitive()
-                            if !account.swiftCode.isEmpty { Text("SWIFT: \(account.swiftCode)").font(.caption).foregroundStyle(.secondary) }
+                            if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
                         }
                         .padding(.vertical, 5)
                         .contextMenu {

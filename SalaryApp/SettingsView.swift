@@ -205,7 +205,7 @@ struct SettingsView: View {
 struct SavedDataView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
-    @Query private var accounts: [ExecutionAccount]
+    @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @State private var importState = StaffImportState.shared
     @State private var confirmStaffDelete = false
     @State private var storeSize: Int64?
@@ -244,7 +244,7 @@ struct SavedDataView: View {
                     ExecutionAccountsView()
                 } label: {
                     SettingRow(title: tr("حسابات جهات التنفيذ", "Execution accounts"), systemImage: "building.columns.fill", color: .teal) {
-                        Text(Num.format(accounts.count)).foregroundStyle(.secondary)
+                        Text(Num.format(((try? ExecutionAccountStore.decode(accountData)) ?? []).count)).foregroundStyle(.secondary)
                     }
                 }
             }

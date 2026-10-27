@@ -109,7 +109,7 @@ actor ReportEngine {
 
 struct ReportDetailView: View {
     let group: ReportGroup
-    @Query private var executionAccounts: [ExecutionAccount]
+    @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @State private var rows: [ReportRow]?
     @State private var loadError: String?
     @State private var showExport = false
@@ -125,10 +125,11 @@ struct ReportDetailView: View {
         return FoodContractReport.rows(from: rows)
     }
 
-    private var executionAccount: ExecutionAccount? {
+    private var executionAccount: SavedExecutionAccount? {
         guard group.kind == .deductions else { return nil }
         let exact = ArabicText.normalize(group.title)
         let main = ArabicText.normalize(ReportEngine.entity(of: group.title))
+        let executionAccounts = (try? ExecutionAccountStore.decode(accountData)) ?? []
         return executionAccounts.first { $0.key == exact } ?? executionAccounts.first { $0.key == main }
     }
 
@@ -159,7 +160,7 @@ struct ReportDetailView: View {
                 Section(tr("حساب جهة التنفيذ", "Execution account")) {
                     LabeledContent("IBAN") { Text(account.iban).monospaced().textSelection(.enabled).privacySensitive() }
                     if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
-                    if !account.swiftCode.isEmpty { LabeledContent("SWIFT", value: account.swiftCode) }
+                    if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
                     Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = account.iban
                     }
