@@ -142,11 +142,15 @@ jobs:
             for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo '::warning::No IBAN import report was written'
             if [ ! -f "$DATA/Documents/import-report.txt" ]; then
+              cat "$DATA/Documents/import-stage.txt" 2>/dev/null || true
+              cp "$DATA/Documents/import-stage.txt" ci-output/import-stage.txt 2>/dev/null || true
               xcrun simctl io "$UDID" screenshot ci-output/screenshots/02d-iban-stalled.png || true
               xcrun simctl spawn "$UDID" log show --last 3m --style compact --predicate 'process == "SalaryApp" AND (messageType == fault OR messageType == error)' 2>/dev/null | tail -60 || true
+              xcrun simctl spawn "$UDID" log show --last 3m --style compact --predicate 'eventMessage CONTAINS "SalaryApp"' 2>/dev/null | tail -200 > ci-output/iban-system.log || true
               for crash in $(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -name 'SalaryApp*' -mmin -5 | head -3); do
                 echo "::group::Crash report $(basename "$crash")"
                 head -c 28000 "$crash" || true
+                cp "$crash" ci-output/ 2>/dev/null || true
                 echo '::endgroup::'
               done
             fi

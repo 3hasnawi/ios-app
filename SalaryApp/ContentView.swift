@@ -29,6 +29,13 @@ enum LaunchOptions {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         try? text.write(to: docs.appendingPathComponent("import-report.txt"), atomically: true, encoding: .utf8)
     }
+
+    static func writeImportStage(_ stage: String) {
+        #if targetEnvironment(simulator)
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        try? stage.write(to: docs.appendingPathComponent("import-stage.txt"), atomically: true, encoding: .utf8)
+        #endif
+    }
 }
 
 struct ContentView: View {
@@ -253,6 +260,7 @@ struct ContentView: View {
     private func applyLaunchOptions() async {
         let files = LaunchOptions.importFiles
         if !files.isEmpty {
+            LaunchOptions.writeImportStage("launch")
             // اختبار المحاكي: يستورد مباشرة، أو يعرض نافذة المراجعة فقط (-importReview YES).
             let review = UserDefaults.standard.bool(forKey: "importReview")
             await importCenter.analyze(files.map { URL(fileURLWithPath: $0) }, autoRun: !review)

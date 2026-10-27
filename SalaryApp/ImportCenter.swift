@@ -138,6 +138,7 @@ final class ImportCenter {
     // MARK: - الفحص
 
     func analyze(_ urls: [URL], autoRun: Bool = false, review: Bool = true) async {
+        LaunchOptions.writeImportStage("analyze")
         guard !isBusy else { return }
         isBusy = true
         self.autoRun = autoRun
@@ -169,11 +170,13 @@ final class ImportCenter {
                 continue
             }
             do {
+                LaunchOptions.writeImportStage("read-xlsx")
                 let result = try await Task.detached(priority: .userInitiated) {
                     let granted = url.startAccessingSecurityScopedResource()
                     defer { if granted { url.stopAccessingSecurityScopedResource() } }
                     return try ExcelImporter.load(url: url, progress: sink)
                 }.value
+                LaunchOptions.writeImportStage("read-complete")
                 let hasPay = !result.employees.isEmpty
                 let hasDed = !result.deductions.isEmpty
                 let hasAccounts = !result.accounts.isEmpty
@@ -311,6 +314,7 @@ final class ImportCenter {
     }
 
     func run() async {
+        LaunchOptions.writeImportStage("run")
         guard !isBusy else { return }
         let jobs = candidates.filter { $0.kind != .skip }
             // الملف الجامع أولاً حتى لا يمحو ملفاً منفصلاً لنفس الشهر.
@@ -350,9 +354,11 @@ final class ImportCenter {
                     lines.append(tr("الملاك: \(Num.format(count)) موظف", "Staff: \(Num.format(count)) employees"))
                 case .executionAccounts:
                     guard let result = job.result else { continue }
+                    LaunchOptions.writeImportStage("save-accounts")
                     let counts = try await Task.detached(priority: .userInitiated) {
                         try await ExecutionAccountImporter(modelContainer: container).merge(result.accounts)
                     }.value
+                    LaunchOptions.writeImportStage("saved-accounts")
                     accountTotals.added += counts.added
                     accountTotals.updated += counts.updated
                     accountTotals.invalid += result.invalidAccounts
@@ -435,6 +441,7 @@ final class ImportCenter {
             parts += ["", backupLine]
         }
         if autoRun {
+            LaunchOptions.writeImportStage("complete")
             // اختبار المحاكي يقرأ هذا التقرير.
             let status = failures.isEmpty ? "" : " failed=\(failures.count)"
             LaunchOptions.writeReport("employees=\(totals.employees) deductions=\(totals.deductions) months=\(months.count) accountsAdded=\(accountTotals.added) accountsUpdated=\(accountTotals.updated) accountsInvalid=\(accountTotals.invalid)\(status)"
