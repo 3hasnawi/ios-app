@@ -106,6 +106,58 @@ actor SmartFieldSearch {
     }
 }
 
+/// عند غياب النتائج السريعة فقط، يفحص حقول الملاك والرواتب المحفوظة داخل السجلات على دفعات.
+@ModelActor
+actor SmartDetailSearch {
+    func find(_ query: String, months: [String]) throws -> [UnifiedHit] {
+        let tokens = ArabicText.normalize(ArabicText.latinDigits(ArabicText.cleanQuery(query)))
+            .split(separator: " ").map(String.init)
+        guard !tokens.isEmpty else { return [] }
+        func matches(_ text: String) -> Bool {
+            let normalized = ArabicText.normalize(ArabicText.latinDigits(text))
+            return tokens.allSatisfy { normalized.contains($0) }
+        }
+        var hits: [UnifiedHit] = []
+        var staffQuery = FetchDescriptor<StaffMember>(sortBy: [SortDescriptor(\.name)])
+        staffQuery.fetchLimit = 400
+        staffQuery.propertiesToFetch = [\.name, \.rank, \.workplace, \.status, \.detailsData]
+        while hits.count < 30 {
+            try Task.checkCancellation()
+            let page = try modelContext.fetch(staffQuery)
+            for member in page {
+                guard let field = member.sections.flatMap(\.fields).first(where: { matches($0.value) }) else { continue }
+                hits.append(UnifiedHit(key: ArabicText.matchKey(member.name), name: member.name,
+                    subtitle: tr("مطابقة في \(field.label)", "Match in \(field.label)"), employeeID: nil,
+                    staffID: member.persistentModelID, month: nil, netSalary: nil, staffStatus: member.status))
+                if hits.count >= 30 { break }
+            }
+            if page.count < 400 { break }
+            staffQuery.fetchOffset = (staffQuery.fetchOffset ?? 0) + page.count
+        }
+        if hits.count >= 30 { return hits }
+        var payrollQuery = FetchDescriptor<Employee>(predicate: #Predicate { months.contains($0.month) })
+        payrollQuery.fetchLimit = 400
+        payrollQuery.propertiesToFetch = [\.name, \.matchKey, \.rank, \.workplace, \.month,
+                                          \.netSalary, \.detailsData, \.itemsData]
+        while hits.count < 40 {
+            try Task.checkCancellation()
+            let page = try modelContext.fetch(payrollQuery)
+            for employee in page {
+                let detail = employee.details.first(where: { matches($0.value) })
+                let item = employee.items.first(where: { matches($0.key) || matches(String($0.value)) })
+                guard let label = detail?.key ?? item?.key else { continue }
+                hits.append(UnifiedHit(key: employee.matchKey, name: employee.name, subtitle: label,
+                    employeeID: employee.persistentModelID, staffID: nil, month: employee.month,
+                    netSalary: employee.netSalary, staffStatus: nil))
+                if hits.count >= 40 { break }
+            }
+            if page.count < 400 { break }
+            payrollQuery.fetchOffset = (payrollQuery.fetchOffset ?? 0) + page.count
+        }
+        return hits
+    }
+}
+
 enum SmartSearch {
     @MainActor
     static func find(_ query: String, months: [PayrollMonth], accountData: Data) async throws -> SmartSearchResults {
@@ -132,7 +184,7 @@ enum SmartSearch {
             extras = SmartFieldHits()
         }
         var seen = Set<String>()
-        let people: [UnifiedPerson] = hits.filter { seen.insert($0.key).inserted }.prefix(100).map(UnifiedPerson.init)
+        var people: [UnifiedPerson] = hits.filter { seen.insert($0.key).inserted }.prefix(100).map(UnifiedPerson.init)
         let accounts: [SavedExecutionAccount] = Array(try ExecutionAccountStore.decode(accountData).filter { account in
             let text = ArabicText.normalize([account.entity, account.branch, account.swift, account.iban].joined(separator: " "))
             return tokens.allSatisfy { text.contains($0) } || account.iban.contains(ArabicText.latinDigits(query))
@@ -158,6 +210,15 @@ enum SmartSearch {
                 }
             }
             groups = Array(groups.prefix(50))
+        }
+        if people.isEmpty && groups.isEmpty && accounts.isEmpty && matchedMonths.isEmpty && normalized.count >= 3 {
+            // ينتظر هدوء الكتابة؛ البحث العميق لا يفحص عشرات آلاف السجلات مع كل حرف.
+            try await Task.sleep(for: .milliseconds(500))
+            let work = Task.detached(priority: .utility) {
+                try await SmartDetailSearch(modelContainer: container).find(query, months: monthNames)
+            }
+            let deep = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+            people = deep.map(UnifiedPerson.init)
         }
         try Task.checkCancellation()
         return SmartSearchResults(people: people, groups: groups, accounts: accounts, months: matchedMonths)
