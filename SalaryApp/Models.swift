@@ -40,8 +40,10 @@ final class Employee {
     var itemsData: Data? = nil
     /// كل حقول تقرير الراتب من ورقة الرواتب {العمود: القيمة} (JSON): المخصصات والاستقطاعات وبيانات الموظف.
     var detailsData: Data? = nil
+    /// لقطة مستقلة لكل أعمدة صف Excel كما وردت، بما فيها الصفر والفراغ والعناوين المتكررة.
+    var rawColumnsData: Data? = nil
 
-    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?, items: [String: Double] = [:], details: [String: String] = [:]) {
+    init(month: String, name: String, rank: String, workplace: String, netSalary: Double?, items: [String: Double] = [:], details: [String: String] = [:], rawColumnsData: Data? = nil) {
         self.month = month
         self.name = name
         let key = ArabicText.normalize(name)
@@ -52,6 +54,7 @@ final class Employee {
         self.netSalary = netSalary
         self.itemsData = PayrollItems.encode(items)
         self.detailsData = details.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: details)
+        self.rawColumnsData = rawColumnsData
     }
 
     var items: [String: Double] { PayrollItems.decode(itemsData) }
@@ -59,6 +62,32 @@ final class Employee {
     var details: [String: String] {
         guard let detailsData, let object = try? JSONSerialization.jsonObject(with: detailsData) as? [String: String] else { return [:] }
         return object
+    }
+
+    var rawColumns: PayrollColumnSnapshot? { PayrollColumnSnapshot.decode(rawColumnsData) }
+}
+
+/// ترتيب الأعمدة وقيم الخلايا من ورقة الرواتب؛ لا تتدخل في مفاتيح التقارير المعتمدة.
+nonisolated struct PayrollColumnSnapshot: Codable, Sendable {
+    var headers: [String]
+    var values: [String]
+
+    static func encode(headers: [String], values: [String]) -> Data? {
+        let count = max(headers.count, values.count)
+        let snapshot = Self(headers: headers + Array(repeating: "", count: count - headers.count),
+                            values: values + Array(repeating: "", count: count - values.count))
+        return try? JSONEncoder().encode(snapshot)
+    }
+
+    static func decode(_ data: Data?) -> Self? {
+        guard let data, let snapshot = try? JSONDecoder().decode(Self.self, from: data),
+              snapshot.headers.count == snapshot.values.count else { return nil }
+        return snapshot
+    }
+
+    func values(named title: String) -> [String] {
+        let key = ArabicText.normalize(title)
+        return headers.indices.filter { ArabicText.normalize(headers[$0]) == key }.map { values[$0] }
     }
 }
 
@@ -138,7 +167,7 @@ actor DataImporter {
             if inserted % 500 == 0 { progress?(Double(inserted) / total) }
         }
         for e in imported.employees {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details, rawColumnsData: e.rawColumnsData))
             advanceProgress()
         }
         for d in imported.deductions {
@@ -162,7 +191,7 @@ actor DataImporter {
         for item in try modelContext.fetch(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
         let total = Double(max(1, employees.count))
         for (i, e) in employees.enumerated() {
-            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details))
+            modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details, rawColumnsData: e.rawColumnsData))
             if i % 500 == 499 { progress?(Double(i + 1) / total) }
         }
         try upsertMonth(month, employees: employees.count, deductions: nil, summary: PayrollItems.summary(of: employees))

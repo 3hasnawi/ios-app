@@ -129,6 +129,7 @@ struct RootView: View {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await staffImport.refreshStoredCount()
             await TestData.prepareIfRequested()
+            TestData.checkRawPayrollIfRequested()
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
             await BackupManager.shared.autoBackupIfNeeded()

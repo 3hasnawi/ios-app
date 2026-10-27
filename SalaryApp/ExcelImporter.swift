@@ -11,6 +11,8 @@ nonisolated struct ImportedEmployee: Sendable {
     var items: [String: Double] = [:]
     /// حقول تقرير الراتب (المخصصات، الاستقطاعات، بيانات الموظف) كما في الملف، غير الفارغة فقط.
     var details: [String: String] = [:]
+    /// صف الورقة بكامل أعمدته، منفصل عن الحقول المستخدمة في الحسابات الحالية.
+    var rawColumnsData: Data? = nil
 }
 
 nonisolated struct ImportedDeduction: Sendable {
@@ -286,6 +288,7 @@ nonisolated final class SheetParser {
         var rank: Int?
         var workplace: Int?
         var netSalary: Int
+        var headers: [String] = []
         /// (العمود، عنوانه كما في الملف)
         var items: [(Int, String)] = []
         var pairs: [(name: Int, amount: Int, fallback: String)] = []
@@ -367,6 +370,7 @@ nonisolated final class SheetParser {
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
             let workplace = Self.column(Synonyms.workplace, in: headers, used: &used)
             var columns = EmployeeColumns(name: name, rank: rank, workplace: workplace, netSalary: net)
+            columns.headers = row
             for (nameHeader, amountHeader) in Synonyms.pairs {
                 let n = ArabicText.normalize(nameHeader), a = ArabicText.normalize(amountHeader)
                 guard let nc = headers.firstIndex(of: n), let ac = headers.firstIndex(of: a),
@@ -423,7 +427,8 @@ nonisolated final class SheetParser {
             workplace: cell(row, columns.workplace),
             netSalary: ArabicText.number(from: cell(row, columns.netSalary)),
             items: items,
-            details: details
+            details: details,
+            rawColumnsData: PayrollColumnSnapshot.encode(headers: columns.headers, values: row)
         ))
     }
 

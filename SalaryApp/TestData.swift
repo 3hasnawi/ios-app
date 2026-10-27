@@ -40,6 +40,22 @@ actor FakeStaffMaker {
 }
 
 enum TestData {
+    /// يتأكد من بقاء عمود غير معروف مسبقاً وكل ترتيب الورقة بعد الاستيراد الوهمي.
+    @MainActor
+    static func checkRawPayrollIfRequested() {
+        guard UserDefaults.standard.bool(forKey: "rawColumnsTest") else { return }
+        var query = FetchDescriptor<Employee>(predicate: #Predicate { $0.name == "أحمد علي حسين الدليمي" })
+        query.fetchLimit = 1
+        let employee = try? SharedModel.container.mainContext.fetch(query).first
+        let snapshot = employee?.rawColumns
+        let passed = snapshot != nil && snapshot?.headers.count == snapshot?.values.count &&
+            snapshot?.values(named: "حقل مستقبلي تجريبي").first == "قيمة تجريبية" &&
+            snapshot?.values(named: "NOTA1").first == "" &&
+            snapshot?.values(named: "الرفرنس").first == "0" &&
+            snapshot?.values(named: "الاسمي").first != nil && employee?.details["الاسمي"] != nil
+        LaunchOptions.writeReport("rawColumns=\(passed ? "ok" : "failed") count=\(snapshot?.headers.count ?? 0)")
+    }
+
     @MainActor
     static func prepareIfRequested() async {
         let count = UserDefaults.standard.integer(forKey: "fakeStaff")
