@@ -99,12 +99,6 @@ final class NavigationTests: XCTestCase {
         return inBar.exists ? inBar : app.buttons["الإعدادات"].firstMatch
     }
 
-    private var reportsTab: XCUIElement {
-        hideKeyboard()
-        let inBar = app.tabBars.buttons["التقارير"]
-        return inBar.exists ? inBar : app.buttons["التقارير"].firstMatch
-    }
-
     private var homeTab: XCUIElement {
         hideKeyboard()
         let inBar = app.tabBars.buttons["الرئيسية"]
@@ -251,9 +245,10 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 30))
         XCTAssertTrue(settingsTab.isHittable)
         XCTAssertFalse(app.tabBars.buttons["مشاركة"].exists)
-        reportsTab.tap()
-        XCTAssertTrue(app.navigationBars["التقارير"].waitForExistence(timeout: 8))
         homeTab.tap()
+        element("homeReportsEntry").tap()
+        XCTAssertTrue(app.navigationBars["التقارير"].waitForExistence(timeout: 8))
+        element("closeReports").tap()
         XCTAssertTrue(app.navigationBars["الرئيسية"].waitForExistence(timeout: 8))
         searchTab.tap()
         XCTAssertTrue(searchField.waitForExistence(timeout: 8))
@@ -269,6 +264,8 @@ final class NavigationTests: XCTestCase {
         app.launch()
         let share = app.tabBars.buttons["مشاركة"]
         XCTAssertTrue(share.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.tabBars.buttons["المزيد"].exists || app.tabBars.buttons["More"].exists)
+        XCTAssertTrue(searchTab.exists)
         share.tap()
         XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
     }
@@ -320,7 +317,9 @@ final class NavigationTests: XCTestCase {
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
         step("التقارير: بطاقة جهات التنفيذ ثم المعاينة") {
-            reportsTab.tap()
+            homeTab.tap()
+            let entry = element("homeReportsEntry")
+            if wait(entry, "بطاقة التقارير") { entry.tap() }
             wait(app.navigationBars["التقارير"], "التقارير")
             wait(element("reportsMonthMenu"), "زر شهر التقارير")
             let card = element("entitiesCard")
@@ -356,7 +355,7 @@ final class NavigationTests: XCTestCase {
                 wait(element("exportCategory-directorates"), "خيارات المجموعات")
                 app.swipeDown(velocity: .fast)
             }
-            homeTab.tap()
+            element("closeReports").tap()
             wait(app.navigationBars["الرئيسية"], "الرئيسية بعد التقارير")
         }
 

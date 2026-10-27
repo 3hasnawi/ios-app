@@ -265,6 +265,7 @@ struct HomeDashboard: View {
                 }
                 if let current {
                     netCard(current)
+                    reportsEntry
                     if !hidden.contains(.attention) { attentionCard }
                     if !hidden.contains(.changes) { changesCard }
                     if !hidden.contains(.entities) { entitiesCard(current) }
@@ -283,6 +284,7 @@ struct HomeDashboard: View {
                     .accessibilityIdentifier("homeCustomize")
                 } else {
                     if StaffInfo.count > 0 { staffOnlyCard }
+                    reportsEntry
                     if !hidden.contains(.recents), !recents.isEmpty { recentRow }
                 }
             }
@@ -333,6 +335,33 @@ struct HomeDashboard: View {
     }
 
     // MARK: التحميل
+
+    /// مدخل ثابت للتقارير بعد نقلها من الشريط السفلي.
+    private var reportsEntry: some View {
+        Button {
+            AppRouter.shared.showReports = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: 40, height: 40)
+                    .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("التقارير", "Reports")).font(.headline)
+                    Text(tr("التدقيق والكشوفات وجهات التنفيذ", "Audits, statements and execution entities"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("homeReportsEntry")
+    }
 
     private static let overviewCacheKey = "homeOverviewCache"
     private static let auditCacheKey = "homeAuditCache"
@@ -928,10 +957,11 @@ struct HomeDashboard: View {
         .padding(.vertical, 4)
     }
 
-    /// يفتح صفحة في تبويب التقارير على شهر الرئيسية.
+    /// يفتح التقارير من الرئيسية على شهرها المعروض.
     private func openReports(_ route: ReportsRoute, month: PayrollMonth) {
         UserDefaults.standard.set(month.name, forKey: "reportMonth")
         AppRouter.shared.pendingReport = route
-        AppRouter.shared.tab = .reports
+        AppRouter.shared.tab = .payroll
+        AppRouter.shared.showReports = true
     }
 }

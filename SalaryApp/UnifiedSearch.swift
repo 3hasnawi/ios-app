@@ -205,7 +205,8 @@ struct UnifiedSearchView: View {
                                 ForEach(smartResults.months, id: \.self) { month in
                                     Button {
                                         UserDefaults.standard.set(month, forKey: "reportMonth")
-                                        AppRouter.shared.tab = .reports
+                                        AppRouter.shared.tab = .payroll
+                                        AppRouter.shared.showReports = true
                                     } label: {
                                         Label(month, systemImage: "calendar")
                                     }
@@ -738,17 +739,8 @@ struct UnifiedPersonView: View {
         // الأشهر والملاك قائمة منسدلة بجانب العنوان، فتبدأ القسيمة من أعلى الصفحة.
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { partMenu(staff: staff) }
-            if let record = selectedRecord {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up") {
-                        router.payslipToShare = record
-                        router.showShare = true
-                    }
-                    .accessibilityIdentifier("personShareButton")
-                }
-            }
         }
-        // المشاركة في شريط العنوان؛ بقاء خمسة تبويبات يمنع إدراج البحث في «المزيد».
+        // المشاركة في الشريط السفلي؛ التقارير في الرئيسية كي لا يظهر تبويب «المزيد».
         .onAppear {
             router.payslipToShare = selectedRecord
             // اختبار المحاكي: -openPerson YES -share YES يفتح نافذة المشاركة.

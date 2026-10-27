@@ -19,6 +19,8 @@ enum ReportsRoute: Hashable {
 /// بطاقات للكشوف الخاصة (صندوق الشهداء، عقد الإطعام، الرعاية الصحية، بنود الرواتب) مع زر تصدير سريع في كل بطاقة،
 /// ثم جهات التنفيذ مع البحث، وزر "تصدير" واحد يفتح نافذة التصدير (جهة واحدة أو مجموعة جهات).
 struct ReportsView: View {
+    var presentedFromHome = false
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @AppStorage("reportMonth") private var monthName = ""
@@ -69,6 +71,12 @@ struct ReportsView: View {
             // عنوان صغير وزر الشهر في شريط العنوان (مثل الرئيسية) حتى تبدأ البطاقات من أعلى الشاشة.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if presentedFromHome {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(tr("إغلاق", "Close"), systemImage: "xmark") { dismiss() }
+                            .accessibilityIdentifier("closeReports")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !months.isEmpty { filters }
                 }

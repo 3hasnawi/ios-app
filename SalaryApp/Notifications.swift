@@ -119,14 +119,17 @@ enum AuditNotifications {
         case "import":
             router.tab = .settings
         case "salary":
-            router.tab = .reports
+            router.tab = .payroll
             router.pendingReport = .salaryAudit
+            router.showReports = true
         case "deductions":
-            router.tab = .reports
+            router.tab = .payroll
             router.pendingReport = .deductionComparison
+            router.showReports = true
         default:
-            router.tab = .reports
+            router.tab = .payroll
             router.pendingReport = .audit
+            router.showReports = true
         }
     }
 }

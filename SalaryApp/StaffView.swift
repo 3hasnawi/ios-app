@@ -6,18 +6,20 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, reports, bank, settings }
+    enum Tab: Hashable { case payroll, staff, search, share, bank, settings }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
     var tab: Tab = LaunchOptions.startTab == "bank" ? .bank
-        : LaunchOptions.startTab == "reports" ? .reports
+        : LaunchOptions.startTab == "reports" ? .payroll
         : LaunchOptions.openSettings || LaunchOptions.startTab == "settings" ? .settings
         : LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst) ? .search : .payroll
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
     var pendingPayrollImport = false
-    /// القسيمة المعروضة الآن لزر المشاركة في شريط عنوان صفحة الشخص.
+    /// القسيمة المعروضة الآن: يظهر زر مشاركتها في الشريط السفلي.
     var payslipToShare: Employee?
+    /// صفحة التقارير تُفتح من بطاقة الرئيسية، وتبقى مساراتها الداخلية كما هي.
+    var showReports = LaunchOptions.startTab == "reports"
     /// صفحة في تبويب التقارير تُفتح من إشعار (التدقيق، الرواتب، الاستقطاعات).
     var pendingReport: ReportsRoute?
     var showShare = false
@@ -97,7 +99,10 @@ struct RootView: View {
     private var selection: Binding<AppRouter.Tab> {
         Binding(
             get: { router.tab },
-            set: { router.tab = $0 }
+            set: { tab in
+                if tab == .share { router.showShare = true }
+                else { router.tab = tab }
+            }
         )
     }
 
@@ -106,14 +111,16 @@ struct RootView: View {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
                 ContentView()
             }
-            Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
-                ReportsView()
-            }
             Tab(tr("كشف البنك", "Bank statement"), systemImage: "building.columns", value: AppRouter.Tab.bank) {
                 BankStatementView()
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
+            }
+            if router.payslipToShare != nil {
+                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
+                    Color.clear
+                }
             }
             Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
                 UnifiedSearchView()
@@ -121,6 +128,9 @@ struct RootView: View {
         }
         // النظام يرسم الزجاج ويحرّك المؤشر ويصغّر الشريط أثناء التمرير.
         .tabBarMinimizeBehavior(.onScrollDown)
+        .fullScreenCover(isPresented: $router.showReports) {
+            ReportsView(presentedFromHome: true)
+        }
         // بيانات ملاك وهمية وتنقّل آلي لاختبار المحاكي فقط (-fakeStaff، -autopilot).
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
