@@ -157,24 +157,25 @@ nonisolated struct AccessReader {
         return (UnsafeRawBufferPointer(rebasing: p[start..<end]), startRaw)
     }
 
-    /// يمر على كل صفوف الجدول ويستدعي `body` بقيم الأعمدة (الفارغة غير موجودة في القاموس).
+    /// يتجاوز الصف المفرد غير القابل للقراءة؛ قواعد Access الحية قد تحتوي سجلات محذوفة
+    /// أو مؤشرات نقل قديمة، ولا ينبغي أن تُسقط جدول الموظفين كله.
     func forEachRow(of tdefPage: Int, table: Table, _ body: ([String: Value]) -> Void) throws {
         for pageNumber in dataPages[tdefPage] ?? [] {
             let p = page(pageNumber)
             let count = Self.u16(p, 12)
             guard count <= (Self.pageSize - 14) / 2 else { throw ReadError.notAccess }
             for i in 0..<count {
-                guard let slice = rowSlice(page: pageNumber, index: i) else { throw ReadError.notAccess }
+                guard let slice = rowSlice(page: pageNumber, index: i) else { continue }
                 var row = slice.0
                 let flags = slice.1
                 if flags & 0x8000 != 0 { continue }        // محذوف
                 if flags & 0x4000 != 0 {                   // الصف في صفحة أخرى
-                    guard row.count >= 4 else { throw ReadError.notAccess }
+                    guard row.count >= 4 else { continue }
                     let target = Int(row[1]) | Int(row[2]) << 8 | Int(row[3]) << 16
-                    guard let moved = rowSlice(page: target, index: Int(row[0])) else { throw ReadError.notAccess }
+                    guard let moved = rowSlice(page: target, index: Int(row[0])) else { continue }
                     row = moved.0
                 }
-                guard let values = parseRow(row, table: table) else { throw ReadError.notAccess }
+                guard let values = parseRow(row, table: table) else { continue }
                 body(values)
             }
         }
