@@ -148,8 +148,19 @@ struct ReportDetailView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
-                            Text(tr("الموظفون", "Employees")).font(.caption).foregroundStyle(.secondary)
-                            Text(Num.format(group.count)).font(.title2.bold())
+                            Text(group.kind == .deductions ? tr("أسطر الكشف", "Report rows") : tr("الموظفون", "Employees"))
+                                .font(.caption).foregroundStyle(.secondary)
+                            if group.kind == .deductions {
+                                if let rows {
+                                    Text(Num.format(rows.count)).font(.title2.bold())
+                                } else {
+                                    ProgressView().frame(height: 28)
+                                }
+                                Text(tr("\(Num.format(group.count)) موظف مختلف", "\(Num.format(group.count)) distinct employees"))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            } else {
+                                Text(Num.format(group.count)).font(.title2.bold())
+                            }
                         }
                     }
                 }
