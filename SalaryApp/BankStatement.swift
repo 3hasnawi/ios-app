@@ -21,7 +21,15 @@ nonisolated struct BankStatementSummary: Sendable {
     var breakdown: [String: Double] = [:]
 
     var netSalary: Double { cashNet + cardNet + unclassifiedNet }
-    var contractContribution: Double { contractNominal * 0.12 + contractRetirement }
+    var contractNominalShare: Double {
+        // يُصفّر كسر الدينار بعد حساب 12% من مجموع الاسمي، قبل إضافته للتوقيفات.
+        let nominal = Decimal(string: String(contractNominal), locale: Locale(identifier: "en_US_POSIX")) ?? 0
+        var calculated = nominal * 12 / 100
+        var whole = Decimal()
+        NSDecimalRound(&whole, &calculated, 0, .down)
+        return NSDecimalNumber(decimal: whole).doubleValue
+    }
+    var contractContribution: Double { contractNominalShare + contractRetirement }
     var executionDifference: Double { bankDeductions - executionDeductions }
     var executionMatched: Bool { executionCount > 0 && missingExecutionAmount == 0 && abs(executionDifference) < 1 }
     var bankTotal: Double { netSalary + bankDeductions + breakdown.values.reduce(0, +) + contractContribution }
@@ -175,7 +183,7 @@ struct BankStatementView: View {
                     }
                     Section(tr("التقاعد والضمان الاجتماعي", "Pension and social security")) {
                         LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
-                        LabeledContent(tr("12% من اسمي العقود", "12% of contract nominal pay"), value: Money.format(summary.contractNominal * 0.12))
+                        LabeledContent(tr("12% من اسمي العقود", "12% of contract nominal pay"), value: Money.format(summary.contractNominalShare))
                         LabeledContent(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), value: Money.format(summary.contractRetirement))
                         LabeledContent(tr("المبلغ المحتسب", "Included amount"), value: Money.format(summary.contractContribution))
                         Text(tr("مجموع الاسمي أساس للحساب فقط · رتبة عقود حصراً · عددهم \(Num.format(summary.contractCount))",
