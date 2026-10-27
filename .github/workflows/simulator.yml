@@ -291,6 +291,8 @@ jobs:
           shot 08e-settings
           launch -openSettings YES -openBackup YES
           shot 08e2-backup
+          launch -openHomeCustomize YES
+          shot 08e6-home-customize
           # حجم النص: أصغر مستوى ثم أكبر مستوى
           launch -openSettings YES -appTextSize 0
           shot 08e4-text-small

@@ -56,9 +56,6 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
             for c in s.checks where !c.ok {
                 issues.append(Issue(id: c.id, title: c.title, detail: tr("فحص الشهر", "Monthly check"), count: c.rows.count, route: "salary"))
             }
-            for c in s.staffChecks where !c.ok {
-                issues.append(Issue(id: c.id, title: c.title, detail: tr("مطابقة الملاك", "Staff match"), count: c.rows.count, route: "salary"))
-            }
         }
         for c in d.deductionChecks where !c.ok {
             issues.append(Issue(id: c.id, title: c.title, detail: tr("الاستقطاعات", "Deductions"), count: c.rows.count, route: "deductions"))
@@ -175,38 +172,6 @@ enum HomeCard: String, CaseIterable, Identifiable {
     }
 }
 
-/// صفحة الإعدادات: أي بطاقات تظهر في الرئيسية.
-struct HomeCardsSettingsView: View {
-    @AppStorage(HomeCard.hiddenKey) private var hiddenRaw = ""
-
-    var body: some View {
-        Form {
-            Section {
-                ForEach(HomeCard.allCases) { card in
-                    Toggle(isOn: Binding(
-                        get: { !HomeCard.hidden(hiddenRaw).contains(card) },
-                        set: { show in
-                            var set = HomeCard.hidden(hiddenRaw)
-                            if show { set.remove(card) } else { set.insert(card) }
-                            hiddenRaw = HomeCard.raw(set)
-                        })) {
-                        SettingRow(title: card.title, systemImage: card.systemImage, color: card.color, subtitle: card.subtitle) { EmptyView() }
-                    }
-                }
-            } footer: {
-                Text(tr("بطاقة الصافي تظهر دائماً. يمكنك أيضاً إخفاء أي بطاقة بالضغط المطول عليها.",
-                        "The net card always shows. You can also hide a card by long-pressing it."))
-            }
-            Section {
-                Button(tr("إظهار كل البطاقات", "Show all cards")) { hiddenRaw = "" }
-                    .disabled(hiddenRaw.isEmpty)
-            }
-        }
-        .navigationTitle(tr("بطاقات الرئيسية", "Home cards"))
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 // MARK: - الرئيسية
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
@@ -225,8 +190,8 @@ struct HomeDashboard: View {
     @State private var audit: HomeAudit?
     @State private var route: HomeRoute?
     @State private var showCustomize = false
-    @State private var staffState = StaffImportState.shared
     @State private var backup = BackupManager.shared
+    @AppStorage(HomeTileLayout.key) private var layoutRaw = ""
     @AppStorage(HomeCard.hiddenKey) private var hiddenRaw = ""
     /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
     @AppStorage(RecentSearches.key) private var recentsData = Data()
@@ -252,7 +217,7 @@ struct HomeDashboard: View {
         } + trendMonths).joined(separator: ";")
     }
 
-    private var auditKey: String { "\(statsKey)|staff:\(StaffInfo.importedAt?.timeIntervalSince1970 ?? 0)|\(staffState.version)|\(AppSettings.locale.identifier)" }
+    private var auditKey: String { "\(statsKey)|\(AppSettings.locale.identifier)" }
 
     private var summary: [String: PayrollItems.Summary] { PayrollItems.decodeSummary(current?.itemSummaryData) ?? [:] }
 
@@ -260,19 +225,15 @@ struct HomeDashboard: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if months.isEmpty && StaffInfo.count == 0 {
-                    welcome
-                }
                 if let current {
-                    netCard(current)
-                    reportsEntry
-                    if !hidden.contains(.attention) { attentionCard }
-                    if !hidden.contains(.changes) { changesCard }
-                    if !hidden.contains(.entities) { entitiesCard(current) }
-                    if !hidden.contains(.special) { specialCards(current) }
-                    if !hidden.contains(.recents), !recents.isEmpty { recentRow }
-                    if !hidden.contains(.categories) { categoriesCard }
-                    if !hidden.contains(.dataStatus) { dataStatusCard(current) }
+                    homeTile(0, compact: false, month: current)
+                    HStack(alignment: .top, spacing: 12) {
+                        homeTile(1, compact: true, month: current)
+                        homeTile(2, compact: true, month: current)
+                    }
+                    ForEach(3..<HomeTileLayout.defaults.count, id: \.self) { index in
+                        homeTile(index, compact: false, month: current)
+                    }
                     Button {
                         showCustomize = true
                     } label: {
@@ -282,16 +243,12 @@ struct HomeDashboard: View {
                             .padding(.vertical, 6)
                     }
                     .accessibilityIdentifier("homeCustomize")
-                } else {
-                    if StaffInfo.count > 0 { staffOnlyCard }
-                    reportsEntry
-                    if !hidden.contains(.recents), !recents.isEmpty { recentRow }
-                }
+                } else { welcome }
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .padding(.bottom, 24)
-            .animation(.snappy, value: hiddenRaw)
+            .animation(.snappy, value: layoutRaw)
             Color.clear.frame(height: 1).id("homeBottom")
         }
         .task(id: audit == nil) {
@@ -321,7 +278,7 @@ struct HomeDashboard: View {
         }
         .sheet(isPresented: $showCustomize) {
             NavigationStack {
-                HomeCardsSettingsView()
+                HomeLayoutSettingsView()
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button(tr("تم", "Done")) { showCustomize = false }
@@ -330,11 +287,127 @@ struct HomeDashboard: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .task {
+            if UserDefaults.standard.bool(forKey: "openHomeCustomize") { showCustomize = true }
+        }
         .task(id: statsKey) { await loadOverview() }
-        .task(id: auditKey) { await loadAudit() }
+        .task(id: "\(auditKey)|\(layoutRaw)") { await loadAudit() }
     }
 
     // MARK: التحميل
+
+    /// كل موضع يقبل أي بطاقة؛ اختيار بطاقة معروضة في موضع آخر يبدّل موقعيهما.
+    @ViewBuilder
+    private func homeTile(_ index: Int, compact: Bool, month: PayrollMonth) -> some View {
+        let kind = HomeTileLayout.decode(layoutRaw)[index]
+        if kind != .hidden {
+            HomeTileCard(kind: kind, spec: tileSpec(kind, month: month), compact: compact) {
+                openTile(kind, month: month)
+            }
+            .contextMenu {
+                Menu {
+                    Section(tr("الرواتب", "Payroll")) {
+                        tileChoices(HomeTileKind.payroll, index: index, selected: kind)
+                    }
+                    Section(tr("الاستقطاعات والتدقيق", "Deductions and audit")) {
+                        tileChoices(HomeTileKind.deductions, index: index, selected: kind)
+                    }
+                    Section(tr("الأدوات", "Tools")) {
+                        tileChoices(HomeTileKind.navigation, index: index, selected: kind)
+                    }
+                } label: {
+                    Label(tr("تخصيص بطاقة البيانات", "Customize data card"), systemImage: "slider.horizontal.3")
+                }
+                Button(tr("إخفاء البطاقة", "Hide card"), systemImage: "eye.slash") {
+                    layoutRaw = HomeTileLayout.select(.hidden, at: index, in: layoutRaw)
+                }
+            }
+            .accessibilityIdentifier(kind == .reports ? "homeReportsEntry" : kind == .net ? "homeNetCard" : "homeSlot\(index)")
+        }
+    }
+
+    @ViewBuilder
+    private func tileChoices(_ kinds: [HomeTileKind], index: Int, selected: HomeTileKind) -> some View {
+        ForEach(kinds) { kind in
+            Button {
+                layoutRaw = HomeTileLayout.select(kind, at: index, in: layoutRaw)
+            } label: {
+                if kind == selected { Label(kind.title, systemImage: "checkmark") }
+                else { Text(kind.title) }
+            }
+        }
+    }
+
+    private func tileSpec(_ kind: HomeTileKind, month: PayrollMonth) -> HomeTileSpec {
+        let payrollRecents = recents.filter(\.inPayroll)
+        switch kind {
+        case .net:
+            var change = ""
+            if let now = overview?.netTotal, let before = overview?.previousNetTotal, before > 0 {
+                let percent = (now - before) / before * 100
+                change = tr("\(percent >= 0 ? "+" : "")\(percent.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% عن الشهر السابق",
+                            "\(percent >= 0 ? "+" : "")\(percent.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% vs previous month")
+            }
+            return HomeTileSpec(title: tr("صافي رواتب \(month.name)", "Net payroll · \(month.name)"),
+                                value: Money.format(overview?.netTotal), subtitle: change)
+        case .employees:
+            return HomeTileSpec(title: kind.title, value: Num.format(overview?.employees ?? month.employeeCount),
+                                subtitle: tr("من ملف رواتب \(month.name)", "From \(month.name) payroll"))
+        case .deductionCount:
+            return HomeTileSpec(title: kind.title, value: Num.format(month.deductionCount),
+                                subtitle: tr("\(Num.format(overview?.entityCount ?? 0)) جهة تنفيذ", "\(overview?.entityCount ?? 0) entities"))
+        case .deductionTotal:
+            return HomeTileSpec(title: kind.title, value: Money.format(overview?.entityTotal),
+                                subtitle: tr("ملف الاستقطاعات · \(month.name)", "Deduction file · \(month.name)"))
+        case .attention:
+            return HomeTileSpec(title: kind.title, value: audit.map { Num.format($0.issues.count) } ?? "—",
+                                subtitle: audit?.issues.isEmpty == true ? tr("لا ملاحظات هذا الشهر", "No issues this month") : tr("ملاحظات الرواتب والاستقطاعات", "Payroll and deduction issues"),
+                                rows: audit?.issues.prefix(2).map(\.title) ?? [])
+        case .reports:
+            return HomeTileSpec(title: kind.title, value: "", subtitle: tr("التدقيق والكشوفات وجهات التنفيذ", "Audits, statements and entities"))
+        case .recents:
+            return HomeTileSpec(title: kind.title, value: "", subtitle: payrollRecents.isEmpty ? tr("لا يوجد بحث رواتب بعد", "No payroll searches yet") : "",
+                                rows: Array(payrollRecents.prefix(2).map(\.text)))
+        case .changes:
+            let count = audit.map { $0.added + $0.removed + $0.stopped + $0.started + $0.changed }
+            return HomeTileSpec(title: kind.title, value: count.map(Num.format) ?? "—",
+                                subtitle: previous.map { tr("مقارنة بـ\($0.name)", "Compared with \($0.name)") } ?? "",
+                                rows: audit.map { [tr("\(Num.format($0.added)) موظفون جدد", "\($0.added) new employees"),
+                                                    tr("\(Num.format($0.stopped)) استقطاعات توقفت", "\($0.stopped) stopped deductions")] } ?? [])
+        case .entities:
+            return HomeTileSpec(title: kind.title, value: overview.map { Num.format($0.entityCount) } ?? "—",
+                                subtitle: Money.format(overview?.entityTotal),
+                                rows: overview?.topEntities.prefix(2).map { "\($0.title) · \(Money.format($0.total))" } ?? [])
+        case .categories:
+            return HomeTileSpec(title: kind.title, value: "", subtitle: tr("توزيع الرواتب حسب الرتبة", "Payroll by rank"),
+                                rows: overview?.categories.prefix(3).map { "\($0.title) · \(Num.format($0.count))" } ?? [])
+        case .special:
+            return HomeTileSpec(title: kind.title, value: "", subtitle: tr("من بنود الرواتب", "From payroll items"),
+                                rows: [tr("صندوق الشهداء", "Martyrs fund"), tr("الرعاية الصحية", "Health care"), tr("عقد الإطعام", "Food contract")])
+        case .fileStatus:
+            return HomeTileSpec(title: kind.title, value: "", subtitle: month.name,
+                                rows: [tr("الرواتب: \(Num.format(month.employeeCount)) موظف", "Payroll: \(month.employeeCount) employees"),
+                                       tr("الاستقطاعات: \(Num.format(month.deductionCount)) قيد", "Deductions: \(month.deductionCount) entries")])
+        case .hidden:
+            return HomeTileSpec(title: "", value: "", subtitle: "")
+        }
+    }
+
+    private func openTile(_ kind: HomeTileKind, month: PayrollMonth) {
+        switch kind {
+        case .reports, .special: AppRouter.shared.showReports = true
+        case .attention: route = .audit
+        case .changes: route = .salary
+        case .deductionCount, .deductionTotal, .entities: openReports(.entities, month: month)
+        case .employees: AppRouter.shared.tab = .search
+        case .recents:
+            if let item = recents.first(where: \.inPayroll) {
+                ShortcutRouter.shared.pendingSearch = item.text
+                AppRouter.shared.tab = .search
+            }
+        case .net, .categories, .fileStatus, .hidden: break
+        }
+    }
 
     /// مدخل ثابت للتقارير بعد نقلها من الشريط السفلي.
     private var reportsEntry: some View {
@@ -391,7 +464,9 @@ struct HomeDashboard: View {
 
     /// التدقيق أثقل: يُعرض المحفوظ فوراً، ويُحسب في الخلفية بعد ظهور الرئيسية (أو يؤخذ جاهزاً بعد الاستيراد).
     private func loadAudit() async {
-        guard let current, hidden.isSuperset(of: [.attention, .changes]) == false else { return }
+        guard let current else { return }
+        let visible = HomeTileLayout.decode(layoutRaw)
+        guard visible.contains(.attention) || visible.contains(.changes) else { return }
         let cacheKey = auditKey
         if let data = UserDefaults.standard.data(forKey: Self.auditCacheKey),
            let cached = try? JSONDecoder().decode([String: HomeAudit].self, from: data)[cacheKey] {
@@ -814,9 +889,6 @@ struct HomeDashboard: View {
                 statusLine(month.deductionCount > 0,
                            month.deductionCount > 0 ? tr("استقطاعات \(month.name) · \(Num.format(month.deductionCount)) قيد", "\(month.name) deductions · \(month.deductionCount)")
                                                     : tr("لم يُستورد ملف استقطاعات \(month.name)", "No deductions file for \(month.name)"), note: nil)
-                statusLine(StaffInfo.count > 0,
-                           StaffInfo.count > 0 ? tr("الملاك · \(Num.format(StaffInfo.count)) سجل", "Staff · \(StaffInfo.count)") : tr("لم يُستورد الملاك", "No staff file"),
-                           note: StaffInfo.importedAt.map(BackupManager.relative))
                 HStack(spacing: 8) {
                     Image(systemName: "icloud.fill").font(.footnote).foregroundStyle(backup.statusColor)
                         .frame(width: 18)
@@ -826,7 +898,6 @@ struct HomeDashboard: View {
                 Text(tr("الأشهر المحفوظة: \(Num.format(months.count))", "Saved months: \(months.count)"))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            .id(staffState.version)
         }
         .contextMenu {
             Button(tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud") { route = .backup }
@@ -855,35 +926,14 @@ struct HomeDashboard: View {
                 .frame(width: 110, height: 110)
             Text(tr("أهلاً بك", "Welcome"))
                 .font(.title2.bold())
-            Text(tr("من الإعدادات اختر «استيراد ملفات» لإضافة الرواتب والاستقطاعات (Excel) والملاك (Access).",
-                    "Open Settings and choose Import files to add payroll, deductions (Excel), and staff (Access)."))
+            Text(tr("من الإعدادات اختر «استيراد ملفات» لإضافة الرواتب والاستقطاعات.",
+                    "Open Settings and choose Import files to add payroll and deductions."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-    }
-
-    private var staffOnlyCard: some View {
-        Button {
-            UserDefaults.standard.set(UnifiedScope.staff.rawValue, forKey: "unifiedScope")
-            AppRouter.shared.tab = .search
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "person.3.fill").foregroundStyle(.white).frame(width: 40, height: 40)
-                    .background(Color.teal.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("الملاك", "Staff")).font(.footnote).foregroundStyle(.secondary)
-                    Text(Num.format(StaffInfo.count)).font(.title2.bold().monospacedDigit()).foregroundStyle(.primary)
-                }
-                Spacer()
-            }
-            .padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .id(staffState.version)
     }
 
     // MARK: أدوات البطاقات
