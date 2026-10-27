@@ -148,7 +148,7 @@ struct ReportDetailView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
-                            Text(group.kind == .deductions ? tr("أسطر الكشف", "Report rows") : tr("الموظفون", "Employees"))
+                            Text(group.kind == .deductions ? tr("عدد الموظفين", "Employee count") : tr("الموظفون", "Employees"))
                                 .font(.caption).foregroundStyle(.secondary)
                             if group.kind == .deductions {
                                 if let rows {
