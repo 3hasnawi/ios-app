@@ -517,6 +517,7 @@ final class BackupManager {
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 await StaffImportState.shared.refreshStoredCount()
                 await SearchIndex.shared.invalidate()
+                await SmartGroupCatalog.shared.invalidate()
                 await AuditResults.shared.invalidate()
                 StaffImportState.shared.version += 1
                 progress.end()

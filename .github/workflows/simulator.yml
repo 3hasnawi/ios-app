@@ -193,6 +193,8 @@ jobs:
             if [ "$DEDUCTIONS_ONLY" = true ]; then exit 0; fi
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
+            launch -tab search -search "تنفيذ الرمادي"
+            shot 09b-smart-entity-search 5
             launch -tab reports
             shot 08n-reports-root 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي"
@@ -248,6 +250,8 @@ jobs:
           # 4) البحث بالاسم
           launch -search "احمد علي"
           shot 04-search
+          launch -tab search -search "تنفيذ الرمادي"
+          shot 04b-smart-entity-search
 
           # 5) تفاصيل موظف لديه استقطاعات من ورقة الاستقطاعات فقط
           #    (الاسم هناك مكتوب "احمد" بلا همزة، وعمود "شركة الاتصالات" داخل ورقة الرواتب يجب ألا يظهر)

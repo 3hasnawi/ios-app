@@ -81,6 +81,8 @@ struct UnifiedSearchView: View {
     @State private var search = Self.initialSearch
     @State private var appliedSearch = Self.initialSearch
     @AppStorage("unifiedMode") private var modeRaw = StaffSearchMode.name.rawValue
+    @AppStorage("unifiedSmartMode") private var smart = true
+    @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
     @AppStorage(RecentSearches.key) private var recentsData = Data()
     private var recents: [RecentSearches.Item] { RecentSearches.decode(recentsData) }
@@ -90,6 +92,7 @@ struct UnifiedSearchView: View {
     /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
     @State private var shareTarget: Employee?
     @State private var people: [UnifiedPerson] = []
+    @State private var smartResults = SmartSearchResults()
     @State private var loadedKey = ""
     @State private var searchError: String?
     @State private var autopilot = AutoPilot.shared
@@ -109,7 +112,8 @@ struct UnifiedSearchView: View {
     private var monthNames: [String] { months.map(\.name) }
 
     private var queryKey: String {
-        "\(trimmed)|\(mode.rawValue)|\(scope.rawValue)|\(monthNames.joined(separator: ","))|\(importState.version)"
+        let revision = months.map { "\($0.name)@\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",")
+        return "\(trimmed)|\(smart)|\(mode.rawValue)|\(revision)|\(accountData.hashValue)|\(importState.version)"
     }
 
     var body: some View {
@@ -123,9 +127,11 @@ struct UnifiedSearchView: View {
                                                description: Text(searchError))
                             .listRowBackground(Color.clear)
                     }
-                } else if loadedKey == queryKey && people.isEmpty {
+                } else if smart && loadedKey != queryKey {
+                    Section { ProgressView().frame(maxWidth: .infinity) }
+                } else if loadedKey == queryKey && (smart ? smartResults.isEmpty : people.isEmpty) {
                     Section {
-                        if mode != .name && StaffInfo.count == 0 {
+                        if !smart && mode != .name && StaffInfo.count == 0 {
                             ContentUnavailableView(tr("بيانات الملاك غير متوفرة", "Staff data unavailable"), systemImage: "person.3.fill",
                                                    description: Text(tr("اسم الأم والرقم الإحصائي من ملف الملاك. أعد استيراد ملف Access من الإعدادات ← البيانات المحفوظة.",
                                                                         "Mother's name and statistical number come from the staff database. Reimport the Access file from Settings › Saved data.")))
@@ -136,28 +142,75 @@ struct UnifiedSearchView: View {
                         }
                     }
                 } else {
-                    Section {
-                        ForEach(people) { person in
-                            NavigationLink(value: person) {
-                                UnifiedCard(person: person)
-                            }
-                            .accessibilityIdentifier("resultCard")
-                            .contextMenu {
-                                Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
-                                if person.hasPayroll {
-                                    // لا نجلب كائن الراتب لكل بطاقة أثناء رسم النتائج.
-                                    Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
-                                        shareTarget = person.employee
-                                    }
+                    if !people.isEmpty || !smart {
+                        Section {
+                            ForEach(people) { person in
+                                NavigationLink(value: person) {
+                                    UnifiedCard(person: person)
                                 }
-                                Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
+                                .accessibilityIdentifier("resultCard")
+                                .contextMenu {
+                                    Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
+                                    if person.hasPayroll {
+                                        Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
+                                            shareTarget = person.employee
+                                        }
+                                    }
+                                    Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
+                                }
+                            }
+                        } header: {
+                            if loadedKey == queryKey {
+                                Text(tr("\(Num.format(people.count)) شخص", "\(Num.format(people.count)) people"))
+                            } else {
+                                ProgressView()
                             }
                         }
-                    } header: {
-                        if loadedKey == queryKey {
-                            Text(tr("\(Num.format(people.count)) شخص", "\(Num.format(people.count)) people"))
-                        } else {
-                            ProgressView()
+                    }
+                    if smart {
+                        if !smartResults.groups.isEmpty {
+                            Section(tr("جهات التنفيذ وبنود الرواتب", "Entities and payroll items")) {
+                                ForEach(smartResults.groups) { group in
+                                    NavigationLink {
+                                        ReportDetailView(group: group)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(group.title).font(.body.weight(.semibold))
+                                            Text("\(group.kind == .deductions ? tr("جهة تنفيذ", "Execution entity") : tr("بند راتب", "Payroll item")) · \(group.month) · \(Money.format(group.total))")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .accessibilityIdentifier("smartReportResult")
+                                }
+                            }
+                        }
+                        if !smartResults.accounts.isEmpty {
+                            Section(tr("حسابات جهات التنفيذ", "Execution accounts")) {
+                                ForEach(smartResults.accounts) { account in
+                                    NavigationLink {
+                                        SmartAccountDetailView(account: account)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(account.entity).font(.body.weight(.semibold))
+                                            Text(account.iban).font(.caption.monospaced())
+                                                .foregroundStyle(.secondary).privacySensitive()
+                                        }
+                                    }
+                                    .accessibilityIdentifier("smartAccountResult")
+                                }
+                            }
+                        }
+                        if !smartResults.months.isEmpty {
+                            Section(tr("الأشهر", "Months")) {
+                                ForEach(smartResults.months, id: \.self) { month in
+                                    Button {
+                                        UserDefaults.standard.set(month, forKey: "reportMonth")
+                                        AppRouter.shared.tab = .reports
+                                    } label: {
+                                        Label(month, systemImage: "calendar")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -165,7 +218,7 @@ struct UnifiedSearchView: View {
             .listStyle(.insetGrouped)
             .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
-            .searchable(text: $search, prompt: Text(mode.prompt))
+            .searchable(text: $search, prompt: Text(smart ? tr("ابحث في كل بيانات التطبيق", "Search all app data") : mode.prompt))
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
                 if !search.isEmpty {
@@ -177,18 +230,26 @@ struct UnifiedSearchView: View {
             // البحث نفسه: يُحسب عند تغيّر النص أو الخيارات.
             .task(id: queryKey) {
                 let key = queryKey
-                guard !trimmed.isEmpty else { people = []; searchError = nil; loadedKey = key; return }
+                guard !trimmed.isEmpty else { people = []; smartResults = SmartSearchResults(); searchError = nil; loadedKey = key; return }
                 let started = Date()
                 do {
-                    let found = try await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)
-                    guard !Task.isCancelled else { return }
-                    people = found
+                    if smart {
+                        let found = try await SmartSearch.find(trimmed, months: months, accountData: accountData)
+                        guard !Task.isCancelled else { return }
+                        smartResults = found
+                        people = found.people
+                    } else {
+                        let found = try await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)
+                        guard !Task.isCancelled else { return }
+                        people = found
+                    }
                     searchError = nil
                 } catch is CancellationError {
                     return
                 } catch {
                     guard !Task.isCancelled else { return }
                     people = []
+                    smartResults = SmartSearchResults()
                     searchError = error.localizedDescription
                 }
                 loadedKey = key
@@ -203,6 +264,7 @@ struct UnifiedSearchView: View {
                 guard let name else { return }
                 router.pendingSearch = nil
                 path = []
+                smart = false
                 modeRaw = StaffSearchMode.name.rawValue
                 search = name
                 appliedSearch = name
@@ -230,14 +292,14 @@ struct UnifiedSearchView: View {
             withAnimation(.snappy(duration: 0.25)) { showModes.toggle() }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: mode.systemImage)
-                Text(mode.title).lineLimit(1)
+                Image(systemName: smart ? "sparkle.magnifyingglass" : mode.systemImage)
+                Text(smart ? tr("بحث شامل", "All data") : mode.title).lineLimit(1)
                 Image(systemName: showModes ? "chevron.up" : "chevron.down").font(.caption.weight(.bold))
             }
             .font(.subheadline.weight(.semibold))
         }
         .accessibilityIdentifier("searchModeMenu")
-        .accessibilityLabel(tr("البحث حسب: \(mode.title)", "Search by: \(mode.title)"))
+        .accessibilityLabel(tr("البحث حسب: \(smart ? "بحث شامل" : mode.title)", "Search by: \(smart ? "All data" : mode.title)"))
         .glassButtonStyle(prominent: true)
         .buttonBorderShape(.capsule)
     }
@@ -266,9 +328,31 @@ struct UnifiedSearchView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
+            Button {
+                smart = true
+                withAnimation(.snappy(duration: 0.25)) { showModes = false }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .font(.callout.weight(.semibold)).foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.blue.gradient, in: RoundedRectangle(cornerRadius: 11))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(tr("بحث شامل", "All data")).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                        Text(tr("أشخاص، جهات، حسابات، أشهر", "People, entities, accounts, months"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    if smart { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                }
+                .padding(10)
+                .background(smart ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
             ForEach(StaffSearchMode.allCases) { option in
-                let on = option == mode
+                let on = !smart && option == mode
                 Button {
+                    smart = false
                     modeRaw = option.rawValue
                     withAnimation(.snappy(duration: 0.25)) { showModes = false }
                 } label: {
@@ -343,10 +427,10 @@ struct UnifiedSearchView: View {
         } else {
             Section {
                 ContentUnavailableView(
-                    tr("ابحث في الرواتب والملاك", "Search payroll and staff"),
+                    tr("ابحث في بيانات التطبيق", "Search app data"),
                     systemImage: "magnifyingglass",
-                    description: Text(tr("اكتب الاسم في شريط البحث. تظهر لكل شخص آخر شهر يوجد فيه راتبه، ومن صفحته تختار شهراً آخر. نوع البحث من الزر في الأعلى.",
-                                         "Type a name. Each person shows their latest month; pick another month on their page. Change the search type with the button above."))
+                    description: Text(tr("ابحث عن شخص، جهة تنفيذ، رقم حساب، بند راتب أو شهر. استخدم الزر في الأعلى للبحث المحدد باسم الأم أو الرقم.",
+                                         "Search people, entities, account numbers, payroll items or months. Use the top button to search specifically by mother's name or number."))
                 )
                 .listRowBackground(Color.clear)
             }
@@ -355,6 +439,28 @@ struct UnifiedSearchView: View {
 }
 
 enum SourceKind { case payroll, staff }
+
+private struct SmartAccountDetailView: View {
+    let account: SavedExecutionAccount
+
+    var body: some View {
+        List {
+            Section(tr("حساب جهة التنفيذ", "Execution account")) {
+                LabeledContent(tr("الجهة", "Entity"), value: account.entity)
+                LabeledContent("IBAN") {
+                    Text(account.iban).monospaced().textSelection(.enabled).privacySensitive()
+                }
+                if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
+                if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
+                Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = account.iban
+                }
+            }
+        }
+        .navigationTitle(account.entity)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
 struct SourceTag: View {
     let kind: SourceKind
