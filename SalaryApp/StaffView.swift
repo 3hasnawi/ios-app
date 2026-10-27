@@ -187,8 +187,8 @@ struct RootView: View {
             Button(tr("إلغاء", "Cancel"), role: .cancel) { backup.cancelRestore() }
         } message: {
             if let m = backup.pendingRestore?.manifest {
-                Text(tr("نسخة \(m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale)))\n\(m.months.count) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك\nستُستبدل كل البيانات الحالية بمحتوى النسخة.",
-                        "Backup of \(m.createdAt.formatted())\n\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff\nAll current data will be replaced."))
+                Text(tr("نسخة \(m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale)))\n\(m.months.count) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك · \(Num.format(m.books ?? 0)) كتب PDF\nستُستبدل كل البيانات الحالية، بما فيها الكتب، بمحتوى النسخة.",
+                        "Backup of \(m.createdAt.formatted())\n\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff · \(m.books ?? 0) PDFs\nAll current data, including documents, will be replaced."))
             }
         }
         .alert(tr("النسخ الاحتياطي", "Backup"), isPresented: Binding(get: { backup.message != nil }, set: { if !$0 { backup.message = nil } })) {

@@ -289,6 +289,8 @@ jobs:
           # 8e) الإعدادات، ثم الواجهة بالإنجليزية والأرقام الهندية
           launch -openSettings YES
           shot 08e-settings
+          launch -tab settings -openBooks YES
+          shot 08e0-official-books
           launch -tab settings -openAbout YES
           shot 08e1-about
           launch -openSettings YES -openBackup YES

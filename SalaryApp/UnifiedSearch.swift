@@ -87,6 +87,7 @@ struct UnifiedSearchView: View {
     @AppStorage(RecentSearches.key) private var recentsData = Data()
     private var recents: [RecentSearches.Item] { RecentSearches.decode(recentsData) }
     @State private var importState = StaffImportState.shared
+    @State private var bookStore = OfficialBookStore.shared
     @State private var router = ShortcutRouter.shared
     @State private var path: [UnifiedPerson] = []
     /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
@@ -113,7 +114,7 @@ struct UnifiedSearchView: View {
 
     private var queryKey: String {
         let revision = months.map { "\($0.name)@\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",")
-        return "\(trimmed)|\(smart)|\(mode.rawValue)|\(revision)|\(accountData.hashValue)|\(importState.version)"
+        return "\(trimmed)|\(smart)|\(mode.rawValue)|\(revision)|\(accountData.hashValue)|\(importState.version)|\(bookStore.revision)"
     }
 
     var body: some View {
@@ -168,6 +169,21 @@ struct UnifiedSearchView: View {
                         }
                     }
                     if smart {
+                        if !smartResults.books.isEmpty {
+                            Section(tr("الكتب الرسمية", "Official documents")) {
+                                ForEach(smartResults.books) { book in
+                                    NavigationLink {
+                                        OfficialBookDetailView(id: book.id)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(book.title).font(.body.weight(.semibold))
+                                            Text("\(book.month) · \(tr("\(Num.format(book.pages)) صفحات", "\(book.pages) pages"))")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if !smartResults.groups.isEmpty {
                             Section(tr("جهات التنفيذ وبنود الرواتب", "Entities and payroll items")) {
                                 ForEach(smartResults.groups) { group in
@@ -430,8 +446,8 @@ struct UnifiedSearchView: View {
                 ContentUnavailableView(
                     tr("ابحث في بيانات التطبيق", "Search app data"),
                     systemImage: "magnifyingglass",
-                    description: Text(tr("ابحث عن شخص، جهة تنفيذ، رقم حساب، بند راتب أو شهر. استخدم الزر في الأعلى للبحث المحدد باسم الأم أو الرقم.",
-                                         "Search people, entities, account numbers, payroll items or months. Use the top button to search specifically by mother's name or number."))
+                    description: Text(tr("ابحث عن شخص، جهة تنفيذ، كتاب رسمي يشمل إشعاره، رقم حساب، بند راتب أو شهر. استخدم الزر في الأعلى للبحث المحدد باسم الأم أو الرقم.",
+                                         "Search people, entities, official documents and their notices, account numbers, payroll items or months. Use the top button to search specifically by mother's name or number."))
                 )
                 .listRowBackground(Color.clear)
             }

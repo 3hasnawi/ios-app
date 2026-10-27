@@ -55,7 +55,7 @@
 تُمرَّر في `simulator.yml` مثل `-tab reports -openReport YES`:
 `-importFile <مسارات|>`، `-importReview YES`، `-tab search|reports|bank|settings`، `-openBankSettings YES`، `-search <نص>`، `-openFirst YES`، `-openPerson YES`، `-personPart months`، `-share YES`، `-shareMode image`، `-openSettings YES`، `-openBackup YES`، `-reportKind payroll`، `-reportByEntity YES|NO`، `-openReport YES`، `-openReportTitle <جزء من الاسم>`، `-exportReport YES`، `-previewReport YES`، `-reportsEntities YES`، `-reportsAudit YES`، `-auditTest YES`، `-compareDeductions YES`، `-deductionKind stopped|started|changed`، `-salaryAudit YES`، `-salaryAuditKind added|removed|net|rank|workplace|bank`، `-auditExportSheet YES`، `-openNotifications YES`، `-homeScroll YES`، `-deductionAuditTest YES` (حالات محاسبية وهمية وتصدير، للمحاكي فقط)، `-exportSheet single|group`، `-exportSearch <نص>`، `-bulkExport directorates|banks|others|all`، `-backupTest YES`، `-autoBackupTest YES`، `-fakeStaff <عدد>`، `-autopilot YES`، `-perfLog YES`، `-appLanguage en`، `-appNumerals arabicIndic`، `-appTextSize 0..6`، `-faceIDLock YES -lockPreview YES|-skipLock YES`.
 نتائج الاختبارات الآلية تُكتب في `Documents/import-report.txt` عبر `LaunchOptions.writeReport`.
-`-tab settings -openAbout YES` يفتح صفحة «حول» لالتقاطها في المحاكي.
+`-tab settings -openAbout YES` يفتح صفحة «حول»، و`-tab settings -openBooks YES` يفتح أرشيف الكتب لالتقاطهما في المحاكي عند طلبه صراحة.
 
 ## ٥. خريطة الملفات
 
@@ -65,6 +65,7 @@
 | `StaffView.swift` | `AppRouter` (التبويبات)، `RootView`: الشريط السفلي (الرئيسية، كشف البنك، الإعدادات، العدسة)، التقارير من بطاقة الرئيسية ومشاركة القسيمة بالضغط المطوّل، تنبيهات الاستيراد والاسترجاع، تشغيل الاختبارات الآلية |
 | `ContentView.swift` | الرئيسية + `LaunchOptions` |
 | `AboutView.swift` | صفحة «حول»: معلومات البرنامج ورقم الإصدار الفعلي وصورة المطوّر الدائرية |
+| `OfficialBooks.swift`, `OfficialBooksView.swift` | ماسح الكتب والإشعارات (١–٣ صفحات)، حفظ PDF بحسب الشهر، الاسم والجهة، البحث والمعاينة والمشاركة، وملفاتها داخل النسخة الاحتياطية |
 | `HomeDashboard.swift`, `HomeAccounting.swift` | الرئيسية المحاسبية: صافي الرواتب مع أعداد الضباط والموظفين والمراتب والعقود، بطاقتا التقارير والتدقيق قابلتان للتخصيص بالضغط المطوّل، وشريط دوّار لحالات الفحوص والمتغيرات يفتح نتائجها مباشرة؛ مصدرها الرواتب والاستقطاعات فقط |
 | `UnifiedSearch.swift` | البحث الموحّد (رواتب + ملاك)، صفحة الشخص بأزرار الأشهر، `RecentSearches`، `copyToClipboard` |
 | `SearchIndex.swift` | استعلامات بحث محدودة في الخلفية وذاكرة لآخر 12 نتيجة؛ لا تحميل شامل للملاك والرواتب عند الفتح |
@@ -147,6 +148,7 @@
 - **زر التقويم الزجاجي الدائري**: الاسم الذي اعتمده المالك لزر اختيار الشهر المختصر (أيقونة تقويم داخل زر زجاجي دائري). يُستخدم في الرئيسية، التقارير، كشف البنك، قسيمة الراتب، واختيار شهري التدقيق؛ يبقى اسم الشهر المختار ظاهراً في محتوى الصفحة أو قرب زر المقارنة. قائمة الرئيسية تعرض الأشهر فقط: أحدث شهر تلقائياً، واختيار شهر واحد بضغطة واحدة؛ لا اختيار متعدد ولا أمر حذف فيها. حذف بيانات الأشهر من الإعدادات ← الأشهر المحفوظة فقط.
 - **حسابات جهات التنفيذ**: ملف Excel فيه «جهة التنفيذ»، «رقم الايبان»، «الفرع»، «SWIFT» يتعرف عليه الاستيراد الموحّد. يُضاف الجديد ويُحدّث الموجود بالاسم الموحّد ولا تُحذف الجهات الغائبة في الملف التالي. IBAN غير الصالح يُرفض ويبقى الحساب السابق؛ في مراجعة الاستيراد يظهر الرقم المدخل بالأحمر مع موضع الخلية وسبب الخلل وحلّه، وتتكرر التفاصيل في نتيجة الاستيراد. الإدارة في الإعدادات ← البيانات المحفوظة؛ ويظهر الحساب المطابق في تفاصيل جهة التقرير. تدخل الحسابات في النسخة الاحتياطية.
 - **نافذة المشاركة**: تقرير الراتب يخص شهر القسيمة المعروضة فقط، بلا شريط لاختيار الأشهر داخل النافذة.
+- **الكتب الرسمية وإشعارات التحويل**: الإشعار صفحة ضمن الكتاب نفسه وليس نوعًا مستقلًا. الماسح الأصلي يصور ١–٣ صفحات في PDF واحد؛ يُسمّى ويُربط بالشهر وبجهة تنفيذ اختيارية. الأرشيف في الإعدادات ← البيانات المحفوظة، ويظهر بالبحث العام بالاسم/الشهر/الجهة؛ المعاينة والمشاركة من PDF نفسه. ملفات PDF والفهرس تدخل النسخة الاحتياطية (الصيغة ٣) وتُفحص قبل الاسترجاع. لا ترفع صور كتب حقيقية إلى المستودع.
 - البحث يتجاهل علامات الترقيم (الإملاء الصوتي يضيفها) عبر `ArabicText.cleanQuery`.
 
 ## ٨. النسخ الاحتياطي

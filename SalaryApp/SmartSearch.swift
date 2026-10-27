@@ -7,8 +7,9 @@ struct SmartSearchResults {
     var groups: [ReportGroup] = []
     var accounts: [SavedExecutionAccount] = []
     var months: [String] = []
+    var books: [OfficialBook] = []
 
-    var isEmpty: Bool { people.isEmpty && groups.isEmpty && accounts.isEmpty && months.isEmpty }
+    var isEmpty: Bool { people.isEmpty && groups.isEmpty && accounts.isEmpty && months.isEmpty && books.isEmpty }
 }
 
 /// يُحسب فهرس الجهات مرة لكل نسخة بيانات، بدلاً من جمع كل الاستقطاعات عند كل حرف.
@@ -193,6 +194,10 @@ enum SmartSearch {
             let key = ArabicText.normalize(name)
             return tokens.allSatisfy { key.contains($0) }
         }.prefix(12))
+        let books = Array(OfficialBookStore.shared.books.filter { book in
+            let text = ArabicText.normalize([book.title, book.month, book.entity ?? ""].joined(separator: " "))
+            return tokens.allSatisfy { text.contains($0) }
+        }.prefix(30))
         var groups: [ReportGroup] = []
         if normalized.count >= 2 {
             let signature = months.map { "\($0.name)@\($0.importedAt.timeIntervalSince1970)" }.joined(separator: "|")
@@ -211,7 +216,7 @@ enum SmartSearch {
             }
             groups = Array(groups.prefix(50))
         }
-        if people.isEmpty && groups.isEmpty && accounts.isEmpty && matchedMonths.isEmpty && normalized.count >= 3 {
+        if people.isEmpty && groups.isEmpty && accounts.isEmpty && matchedMonths.isEmpty && books.isEmpty && normalized.count >= 3 {
             // ينتظر هدوء الكتابة؛ البحث العميق لا يفحص عشرات آلاف السجلات مع كل حرف.
             try await Task.sleep(for: .milliseconds(500))
             let work = Task.detached(priority: .utility) {
@@ -221,6 +226,6 @@ enum SmartSearch {
             people = deep.map(UnifiedPerson.init)
         }
         try Task.checkCancellation()
-        return SmartSearchResults(people: people, groups: groups, accounts: accounts, months: matchedMonths)
+        return SmartSearchResults(people: people, groups: groups, accounts: accounts, months: matchedMonths, books: books)
     }
 }

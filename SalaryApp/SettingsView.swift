@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var importState = StaffImportState.shared
     @State private var importCenter = ImportCenter.shared
     @State private var backup = BackupManager.shared
+    @State private var bookStore = OfficialBookStore.shared
     @Environment(\.modelContext) private var context
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
@@ -23,6 +24,7 @@ struct SettingsView: View {
     @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
     @State private var showAccounts = UserDefaults.standard.bool(forKey: "openAccounts")
     @State private var showAbout = UserDefaults.standard.bool(forKey: "openAbout")
+    @State private var showBooks = UserDefaults.standard.bool(forKey: "openBooks")
 
     @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
 
@@ -118,6 +120,7 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $showNotifications) { NotificationSettingsView() }
             .navigationDestination(isPresented: $showAccounts) { ExecutionAccountsView() }
             .navigationDestination(isPresented: $showAbout) { AboutView() }
+            .navigationDestination(isPresented: $showBooks) { OfficialBooksView() }
             .navigationTitle(tr("الإعدادات", "Settings"))
             // عنوان صغير حتى تتسع الصفحة كلها بلا تمرير.
             .navigationBarTitleDisplayMode(.inline)
@@ -126,7 +129,9 @@ struct SettingsView: View {
                     Text(tr("الإعدادات", "Settings")).font(.headline)
                 }
             }
-            .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
+            .task(id: "\(months.count)-\(importState.version)-\(bookStore.revision)") {
+                storeSize = await SavedDataView.storeSize(of: context.container)
+            }
         }
         // يُعاد رسم اللوحة فوراً عند تغيير اللغة أو الأرقام.
         .id("\(language)-\(numerals)")
@@ -214,8 +219,10 @@ struct SavedDataView: View {
     private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @State private var importState = StaffImportState.shared
+    @State private var bookStore = OfficialBookStore.shared
     @State private var confirmStaffDelete = false
     @State private var storeSize: Int64?
+    @State private var bookBytes: Int64 = 0
     @Environment(\.modelContext) private var context
     @State private var recentCount = RecentSearches.items.count
     @State private var confirmClearRecents = false
@@ -254,6 +261,13 @@ struct SavedDataView: View {
                         Text(Num.format(((try? ExecutionAccountStore.decode(accountData)) ?? []).count)).foregroundStyle(.secondary)
                     }
                 }
+                NavigationLink {
+                    OfficialBooksView()
+                } label: {
+                    SettingRow(title: tr("الكتب الرسمية", "Official documents"), systemImage: "doc.viewfinder", color: .indigo) {
+                        Text(Num.format(OfficialBookStore.shared.books.count)).foregroundStyle(.secondary)
+                    }
+                }
             }
             staffSection
             storageSection
@@ -270,7 +284,10 @@ struct SavedDataView: View {
         }
         .navigationTitle(tr("البيانات المحفوظة", "Saved data"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: "\(months.count)-\(importState.version)") { storeSize = await Self.storeSize(of: context.container) }
+        .task(id: "\(months.count)-\(importState.version)-\(bookStore.revision)") {
+            storeSize = await Self.storeSize(of: context.container)
+            bookBytes = OfficialBookFiles.bytes()
+        }
     }
 
     // MARK: - الملاك
@@ -355,19 +372,23 @@ struct SavedDataView: View {
 
     /// حجم كل شهر = الحجم الكلي موزعاً حسب عدد السجلات (موظفون + استقطاعات).
     private var segments: [StorageSegment] {
-        guard let storeSize, !months.isEmpty || StaffInfo.count > 0 else { return [] }
+        guard let storeSize else { return [] }
         let palette: [Color] = [.blue, .indigo, .cyan, .teal, .purple, .mint, .orange, .pink]
         // سجل الملاك أكبر بكثير من سجل الراتب (فيه كل الحقول)، فوزنه تقريبي ×8.
         var parts = months.map { (name: $0.name, weight: max($0.employeeCount + $0.deductionCount, 1)) }
         if StaffInfo.count > 0 { parts.append((name: tr("الملاك", "Staff"), weight: StaffInfo.count * 8)) }
-        let total = Double(parts.reduce(0) { $0 + $1.weight })
-        return parts.enumerated().map { i, part in
+        let total = Double(max(parts.reduce(0) { $0 + $1.weight }, 1))
+        var result = parts.enumerated().map { i, part in
             StorageSegment(
                 name: part.name,
-                bytes: Int64(Double(storeSize) * Double(part.weight) / total),
+                bytes: Int64(Double(max(storeSize - bookBytes, 0)) * Double(part.weight) / total),
                 color: i == months.count ? .teal : palette[i % palette.count]
             )
         }
+        if bookBytes > 0 {
+            result.append(StorageSegment(name: tr("الكتب الرسمية", "Official documents"), bytes: bookBytes, color: .brown))
+        }
+        return result
     }
 
     /// حجم ملفات قاعدة البيانات على الجهاز (الملف الأساسي وملفات -wal و-shm).
@@ -378,11 +399,12 @@ struct SavedDataView: View {
             let dir = url.deletingLastPathComponent()
             let base = url.lastPathComponent
             let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
-            return files
+            let databaseBytes = files
                 .filter { $0.lastPathComponent.hasPrefix(base) }
                 .reduce(Int64(0)) { sum, file in
                     sum + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
                 }
+            return databaseBytes + OfficialBookFiles.bytes()
         }.value
     }
 }

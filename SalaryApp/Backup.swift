@@ -4,11 +4,11 @@ import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
-/// النسخ الاحتياطي: ملف zip واحد فيه كل البيانات (الأشهر، الرواتب، الاستقطاعات، الملاك) والإعدادات.
+/// النسخ الاحتياطي: ملف zip واحد فيه كل البيانات (الأشهر، الرواتب، الاستقطاعات، الملاك، الكتب المصوّرة) والإعدادات.
 /// يُحفظ في أي مكان من نافذة "الملفات" (iCloud Drive، OneDrive، Google Drive)،
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
-    static let version = 2
+    static let version = 3
     static let prefix = "نسخة الرواتب"
 
     struct Manifest: Codable, Sendable {
@@ -19,6 +19,7 @@ nonisolated enum BackupFormat {
         var deductions: Int
         var staff: Int
         var accounts: Int?
+        var books: Int?
     }
 
     struct MonthRecord: Codable { var name: String; var importedAt: Date; var employeeCount: Int; var deductionCount: Int; var summary: Data? }
@@ -100,10 +101,12 @@ actor BackupActor {
         try writeLines("accounts.jsonl", accounts.map {
             BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
         }, from: 0.8, to: 0.82)
+        let books = try OfficialBookFiles.stage(into: dir.appendingPathComponent("books", isDirectory: true))
 
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
-                                             employees: employeeCount, deductions: deductionCount, staff: staff.count, accounts: accounts.count)
+                                             employees: employeeCount, deductions: deductionCount, staff: staff.count,
+                                             accounts: accounts.count, books: books.count)
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
         try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
 
@@ -112,6 +115,10 @@ actor BackupActor {
         let archive = try Archive(url: out, accessMode: .create)
         for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl"] {
             try archive.addEntry(with: name, relativeTo: dir, compressionMethod: .deflate)
+        }
+        try archive.addEntry(with: "books/index.json", relativeTo: dir, compressionMethod: .deflate)
+        for book in books {
+            try archive.addEntry(with: "books/\(book.id.uuidString).pdf", relativeTo: dir, compressionMethod: .deflate)
         }
         progress?(1)
         return (out, manifest)
@@ -146,10 +153,26 @@ actor BackupActor {
         let accountData = try ExecutionAccountStore.encode(accounts.map {
             SavedExecutionAccount(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
         })
+        let booksFolder = folder.appendingPathComponent("books", isDirectory: true)
+        if manifest.version >= 3 {
+            guard let expected = manifest.books else { throw BackupError.notBackup }
+            _ = try OfficialBookFiles.validateArchive(in: booksFolder, expected: expected)
+        } else {
+            try OfficialBookFiles.write([], in: booksFolder)
+        }
+        let preparedBooks = try OfficialBookFiles.prepareReplacement(from: booksFolder)
+        var booksInstalled = false
+        var previousBooks: URL?
+        defer { if !booksInstalled { try? FileManager.default.removeItem(at: preparedBooks) } }
 
         modelContext.autosaveEnabled = false
         var committed = false
-        defer { if !committed { modelContext.rollback() } }
+        defer {
+            if !committed {
+                modelContext.rollback()
+                if booksInstalled { OfficialBookFiles.rollBackInstallation(previousBooks) }
+            }
+        }
         // حذف الكائنات مؤجل مع إدخال البديل إلى حفظ واحد قابل للتراجع.
         for item in try modelContext.fetch(FetchDescriptor<Employee>()) { modelContext.delete(item) }
         for item in try modelContext.fetch(FetchDescriptor<Deduction>()) { modelContext.delete(item) }
@@ -180,8 +203,11 @@ actor BackupActor {
             modelContext.insert(s)
             if i % 1000 == 0 { progress?(0.7 + 0.3 * Double(i) / Double(max(1, staff.count))) }
         }
+        previousBooks = try OfficialBookFiles.installPrepared(preparedBooks)
+        booksInstalled = true
         try modelContext.save()
         ExecutionAccountStore.saveEncoded(accountData)
+        if let previousBooks { try? FileManager.default.removeItem(at: previousBooks) }
         progress?(1)
         committed = true
         return settings.filter { BackupFormat.settingsKeys.contains($0.key) }
@@ -530,6 +556,26 @@ final class BackupManager {
                 if let entry = archive["accounts.jsonl"], entry.type == .file {
                     _ = try archive.extract(entry, to: dir.appendingPathComponent("accounts.jsonl"))
                 }
+                let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self,
+                    from: Data(contentsOf: dir.appendingPathComponent("manifest.json")))
+                guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+                if manifest.version >= 3 {
+                    guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
+                          let index = archive["books/index.json"], index.type == .file,
+                          index.uncompressedSize < 10_000_000 else { throw BackupError.notBackup }
+                    let booksDir = dir.appendingPathComponent("books", isDirectory: true)
+                    try FileManager.default.createDirectory(at: booksDir, withIntermediateDirectories: true)
+                    _ = try archive.extract(index, to: booksDir.appendingPathComponent("index.json"))
+                    let books = try OfficialBookFiles.read(in: booksDir)
+                    guard books.count == expected, Set(books.map(\.id)).count == expected else { throw BackupError.notBackup }
+                    for book in books {
+                        let name = "books/\(book.id.uuidString).pdf"
+                        guard let entry = archive[name], entry.type == .file,
+                              entry.uncompressedSize < 60_000_000 else { throw BackupError.notBackup }
+                        _ = try archive.extract(entry, to: OfficialBookFiles.file(book.id, in: booksDir))
+                    }
+                    _ = try OfficialBookFiles.validateArchive(in: booksDir, expected: expected)
+                }
                 ImportCenter.removeCopy(url)
                 extracted = true
                 return dir
@@ -537,6 +583,9 @@ final class BackupManager {
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
             guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
             if manifest.version >= 2, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("accounts.jsonl").path) {
+                throw BackupError.notBackup
+            }
+            if manifest.version >= 3, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("books/index.json").path) {
                 throw BackupError.notBackup
             }
             await FilePicker.waitUntilSettled()
@@ -570,6 +619,7 @@ final class BackupManager {
                 await SearchIndex.shared.invalidate()
                 await SmartGroupCatalog.shared.invalidate()
                 await AuditResults.shared.invalidate()
+                OfficialBookStore.shared.reload()
                 StaffImportState.shared.version += 1
                 progress.end()
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
@@ -738,8 +788,8 @@ struct BackupView: View {
             } header: {
                 Text("iCloud Drive")
             } footer: {
-                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في iCloud Drive، فيه كل البيانات والإعدادات. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ إذا فات الموعد تُؤخذ النسخة عند فتح التطبيق. لا يضمن النظام وقتاً ثابتاً والتطبيق مغلق.",
-                        "One backup file in iCloud Drive contains all data and settings. Periodic backups run while the app is open, and iOS may run them in the background. Missed backups run on the next launch; iOS doesn't guarantee an exact time while the app is closed."))
+                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في iCloud Drive، فيه البيانات والإعدادات وملفات PDF للكتب بصفحاتها وإشعاراتها. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ إذا فات الموعد تُؤخذ النسخة عند فتح التطبيق. لا يضمن النظام وقتاً ثابتاً والتطبيق مغلق.",
+                        "One backup file in iCloud Drive contains data, settings and scanned document PDFs. Periodic backups run while the app is open, and iOS may run them in the background. Missed backups run on the next launch; iOS doesn't guarantee an exact time while the app is closed."))
             }
 
             Section {
