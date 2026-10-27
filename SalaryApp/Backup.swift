@@ -29,6 +29,7 @@ nonisolated enum BackupFormat {
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
+                               "autoBackupEnabled", "backupSchedule",
                                "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementManualAmounts",
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
@@ -37,13 +38,14 @@ nonisolated enum BackupFormat {
 }
 
 enum BackupError: LocalizedError {
-    case notBackup, newerVersion, folderUnavailable, noFolder
+    case notBackup, newerVersion, folderUnavailable, noFolder, emptyArchive
     var errorDescription: String? {
         switch self {
         case .notBackup: tr("الملف ليس نسخة احتياطية من تطبيق الرواتب.", "This file isn't a payroll app backup.")
         case .newerVersion: tr("النسخة من إصدار أحدث من التطبيق. حدّث التطبيق ثم أعد المحاولة.", "The backup is from a newer app version. Update the app first.")
         case .folderUnavailable: tr("تعذّر الوصول إلى مجلد iCloud. اختر المجلد من جديد في الإعدادات ← النسخ الاحتياطي.", "The iCloud folder can't be reached. Choose it again in Settings › Backup.")
         case .noFolder: tr("لم يُختر مجلد iCloud بعد. اختره من الإعدادات ← النسخ الاحتياطي.", "No iCloud folder chosen yet. Choose it in Settings › Backup.")
+        case .emptyArchive: tr("النسخة الناتجة فارغة؛ لم يُستبدل الملف السابق.", "The new backup is empty; the previous file was preserved.")
         }
     }
 }
@@ -192,10 +194,23 @@ enum BackupDestination: String {
     case folder
 }
 
+enum BackupSchedule: String, CaseIterable {
+    case off, hourly, daily
+
+    var interval: TimeInterval? {
+        switch self {
+        case .off: nil
+        case .hourly: 60 * 60
+        case .daily: 24 * 60 * 60
+        }
+    }
+}
+
 @MainActor @Observable
 final class BackupManager {
     static let shared = BackupManager()
     static let autoKey = "autoBackupEnabled"
+    static let scheduleKey = "backupSchedule"
     /// رابط محفوظ (bookmark) لملف النسخة الذي حفظه المستخدم في iCloud Drive: كل نسخة جديدة تُكتب فوقه.
     private static let fileKey = "autoBackupFile"
     static let subfolder = "نسخ الرواتب"
@@ -221,6 +236,9 @@ final class BackupManager {
     var lastError: String? { UserDefaults.standard.string(forKey: Self.errorKey) }
     var lastErrorAt: Date? { UserDefaults.standard.object(forKey: Self.errorAtKey) as? Date }
     static var autoEnabled: Bool { UserDefaults.standard.bool(forKey: autoKey) }
+    static var schedule: BackupSchedule {
+        BackupSchedule(rawValue: UserDefaults.standard.string(forKey: scheduleKey) ?? "") ?? .off
+    }
 
     /// "iCloud Drive › نسخ الرواتب"، أو nil إذا لم يُختر مكان.
     var folderName: String? {
@@ -240,15 +258,16 @@ final class BackupManager {
         _ = version
         if folderName == nil { return tr("⚠️ اختر مكان النسخة في iCloud", "⚠️ Choose where to save in iCloud") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
-        guard Self.autoEnabled else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
+        guard Self.autoEnabled || Self.schedule != .off else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
         guard let lastBackup else { return tr("تلقائي · iCloud · لم تُؤخذ نسخة بعد", "Auto · iCloud · no backup yet") }
-        return tr("تلقائي · iCloud · \(Self.relative(lastBackup)) ✓", "Auto · iCloud · \(Self.relative(lastBackup)) ✓")
+        let schedule = Self.schedule == .hourly ? tr("كل ساعة", "Hourly") : Self.schedule == .daily ? tr("كل يوم", "Daily") : tr("بعد الاستيراد", "After import")
+        return tr("\(schedule) · iCloud · \(Self.relative(lastBackup)) ✓", "\(schedule) · iCloud · \(Self.relative(lastBackup)) ✓")
     }
 
     var statusColor: Color {
         _ = version
         if folderName == nil || lastError != nil { return .red }
-        return Self.autoEnabled && lastBackup != nil ? .green : .secondary
+        return (Self.autoEnabled || Self.schedule != .off) && lastBackup != nil ? .green : .secondary
     }
 
     static func relative(_ date: Date) -> String {
@@ -276,6 +295,7 @@ final class BackupManager {
             defer { isWorking = false; version += 1 }
             do {
                 let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
+                let preparedSize = try Self.archiveSize(url)
                 await FilePicker.waitUntilSettled()
                 guard let saved = await FilePicker.exportForLocation(url) else {
                     try? FileManager.default.removeItem(at: url)
@@ -289,13 +309,15 @@ final class BackupManager {
                 }
                 let defaults = UserDefaults.standard
                 defaults.set(data, forKey: Self.fileKey)
-                let size = (try? saved.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                // iCloud قد يبلغ عن 0 أو عن الحجم القديم قبل إتمام الرفع.
+                let size = Int(preparedSize)
                 defaults.set(Date(), forKey: Self.lastKey)
                 defaults.set(size, forKey: Self.lastSizeKey)
                 defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
                 defaults.removeObject(forKey: Self.errorKey)
                 defaults.removeObject(forKey: Self.errorAtKey)
                 Self.removeDeviceCopies()
+                BackupBackground.schedule()
             } catch {
                 message = tr("تعذّر حفظ النسخة: \(error.localizedDescription)", "Couldn't save the backup: \(error.localizedDescription)")
             }
@@ -343,6 +365,14 @@ final class BackupManager {
         }.value
     }
 
+    private static func archiveSize(_ url: URL) throws -> Int64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        guard size > 0 else { throw BackupError.emptyArchive }
+        guard (try? Archive(url: url, accessMode: .read))?["manifest.json"] != nil else { throw BackupError.notBackup }
+        return size
+    }
+
     /// نسخة يدوية: نافذة المشاركة (Google Drive، OneDrive، واتساب، حفظ في الملفات).
     func shareNow() {
         guard !isWorking else { return }
@@ -362,11 +392,16 @@ final class BackupManager {
         UserDefaults.standard.set(Date(), forKey: Self.changedKey)
     }
 
-    /// بيانات تغيّرت بعد آخر نسخة ناجحة (أو فشلت آخر محاولة).
+    /// بيانات تغيّرت بعد آخر نسخة ناجحة أو حان موعد النسخة الدورية.
     var needsBackup: Bool {
-        guard Self.autoEnabled, resolveFile() != nil else { return false }
-        guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return lastError != nil }
-        return changed > (lastBackup ?? .distantPast) || lastError != nil
+        guard resolveFile() != nil else { return false }
+        // لا نحاول كل دقيقة عند تعذّر الاتصال بمزود iCloud.
+        if let lastErrorAt, Date().timeIntervalSince(lastErrorAt) < 10 * 60 { return false }
+        let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let pendingChange = changed.map { $0 > (lastBackup ?? .distantPast) && Date().timeIntervalSince($0) >= 120 } ?? false
+        let afterImport = Self.autoEnabled && (pendingChange || lastError != nil)
+        let periodic = Self.schedule.interval.map { Date().timeIntervalSince(lastBackup ?? .distantPast) >= $0 } ?? false
+        return afterImport || periodic
     }
 
     /// عند فتح التطبيق أو الخروج منه: يكمل نسخة فاتت (مثلاً أُغلق التطبيق أثناء النسخ أو فشلت المحاولة).
@@ -399,25 +434,30 @@ final class BackupManager {
         do {
             let (url, _) = try await makeBackup(title: tr("نسخ احتياطي إلى iCloud", "Backing up to iCloud"))
             defer { try? FileManager.default.removeItem(at: url) }
+            let preparedSize = try Self.archiveSize(url)
             let size = try await Task.detached(priority: .utility) { () throws -> Int64 in
                 let granted = file.startAccessingSecurityScopedResource()
                 defer { if granted { file.stopAccessingSecurityScopedResource() } }
                 var coordinationError: NSError?
                 var writeError: Error?
+                var didWrite = false
                 // تنسيق الاستبدال مع مزود الملفات يحافظ على صلاحية الوصول المختارة.
                 NSFileCoordinator().coordinate(writingItemAt: file, options: .forReplacing, error: &coordinationError) { target in
                     do {
                         // تُكتب النسخة إلى ملف مجاور ثم تُستبدل دفعة واحدة؛ تبقى القديمة عند فشل الكتابة.
                         let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+                        guard !contents.isEmpty else { throw BackupError.emptyArchive }
                         try contents.write(to: target, options: .atomic)
+                        didWrite = true
                     } catch { writeError = error }
                 }
                 if let error = coordinationError ?? writeError {
                     if !FileManager.default.fileExists(atPath: file.path) { throw BackupError.folderUnavailable }
                     throw error
                 }
-                let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
-                return (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+                guard didWrite else { throw BackupError.folderUnavailable }
+                // حجم مزود iCloud الوصفي قد يبقى صفراً مؤقتاً بعد الكتابة؛ نعتمد حجم البيانات المكتوبة.
+                return preparedSize
             }.value
             let place = Self.placeName(file.deletingLastPathComponent())
             let defaults = UserDefaults.standard
@@ -427,6 +467,7 @@ final class BackupManager {
             defaults.removeObject(forKey: Self.errorKey)
             defaults.removeObject(forKey: Self.errorAtKey)
             Self.removeDeviceCopies()
+            BackupBackground.schedule()
             return tr("☁️ حُفظت نسخة احتياطية: \(place).", "☁️ Backup saved: \(place).")
         } catch {
             let reason = (error as? BackupError)?.localizedDescription ?? error.localizedDescription
@@ -446,11 +487,20 @@ final class BackupManager {
         UserDefaults.standard.set(file.path, forKey: Self.testFileKey)
         UserDefaults.standard.set(true, forKey: Self.autoKey)
         let line = await autoBackup() ?? "nil"
-        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+        let firstSize = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
         let again = await backupToDestination() ?? "nil"
+        let replacementSize = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+        // نسخة دورية بلا استيراد جديد: الموعد وحده يكفي لتشغيلها.
+        UserDefaults.standard.set(BackupSchedule.hourly.rawValue, forKey: Self.scheduleKey)
+        UserDefaults.standard.set(Date().addingTimeInterval(-2 * 60 * 60), forKey: Self.lastKey)
+        let periodicDue = needsBackup
+        await autoBackupIfNeeded()
+        let periodicSize = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
         let count = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).count
         let valid = (try? Archive(url: file, accessMode: .read))?["manifest.json"] != nil
-        LaunchOptions.writeReport("autobackup=\(size > 0 && valid && lastError == nil && count == 1 ? "ok" : "failed") size=\(size) zip=\(valid) files=\(count) line=\(line) again=\(again)")
+        let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
+            && periodicDue && valid && lastError == nil && count == 1
+        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
     }
 
     // MARK: - الاسترجاع
@@ -620,6 +670,7 @@ struct BackupView: View {
     @State private var manager = BackupManager.shared
     @State private var progress = ImportProgress.shared
     @AppStorage(BackupManager.autoKey) private var autoEnabled = true
+    @AppStorage(BackupManager.scheduleKey) private var scheduleRaw = BackupSchedule.off.rawValue
     @State private var showFolderHelp = false
 
     var body: some View {
@@ -661,6 +712,18 @@ struct BackupView: View {
                 }
                 Toggle(tr("نسخ تلقائي بعد كل استيراد", "Auto backup after each import"), isOn: $autoEnabled)
                     .accessibilityIdentifier("autoBackupToggle")
+                Picker(tr("نسخ دوري", "Periodic backup"), selection: $scheduleRaw) {
+                    Text(tr("متوقف", "Off")).tag(BackupSchedule.off.rawValue)
+                    Text(tr("كل ساعة", "Every hour")).tag(BackupSchedule.hourly.rawValue)
+                    Text(tr("كل يوم", "Every day")).tag(BackupSchedule.daily.rawValue)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("backupSchedulePicker")
+                .onChange(of: scheduleRaw) {
+                    manager.version += 1
+                    BackupBackground.schedule()
+                    Task { await manager.autoBackupIfNeeded() }
+                }
                 Button {
                     Task { await manager.backupToDestination() }
                 } label: {
@@ -675,8 +738,8 @@ struct BackupView: View {
             } header: {
                 Text("iCloud Drive")
             } footer: {
-                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في المكان الذي حفظته فيه داخل iCloud Drive، فيه كل البيانات: الرواتب والاستقطاعات لكل الأشهر، والملاك، والإعدادات. كل نسخة جديدة تستبدل السابقة، ولا تُحفظ نسخة على الآيفون. إذا فاتت نسخة تُعاد المحاولة تلقائياً عند فتح التطبيق.",
-                        "One file \"نسخة الرواتب.zip\" in the \"نسخ الرواتب\" folder in iCloud Drive with all data. Each backup replaces the previous one; no copy is kept on the iPhone."))
+                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في iCloud Drive، فيه كل البيانات والإعدادات. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ إذا فات الموعد تُؤخذ النسخة عند فتح التطبيق. لا يضمن النظام وقتاً ثابتاً والتطبيق مغلق.",
+                        "One backup file in iCloud Drive contains all data and settings. Periodic backups run while the app is open, and iOS may run them in the background. Missed backups run on the next launch; iOS doesn't guarantee an exact time while the app is closed."))
             }
 
             Section {
@@ -746,7 +809,7 @@ struct BackupView: View {
                 } else {
                     if let last = manager.lastBackup {
                         Text(tr("آخر نسخة: \(Self.stamp(last))", "Last backup: \(Self.stamp(last))")).font(.headline)
-                        Text("\(BackupFormat.fileName()) · \(Num.bytes(manager.lastSize))\n\(manager.lastPlace)")
+                        Text("\(BackupFormat.fileName()) · \(manager.lastSize > 0 ? Num.bytes(manager.lastSize) : tr("الحجم غير متاح", "Size unavailable"))\n\(manager.lastPlace)")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
                         Text(tr("لم تُؤخذ نسخة بعد", "No backup yet")).font(.headline)

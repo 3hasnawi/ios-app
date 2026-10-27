@@ -32,6 +32,8 @@ targets:
         # مجلد التطبيق يظهر في تطبيق "الملفات": يمكن وضع ملفات الرواتب فيه واختيارها من هناك.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        UIBackgroundModes: [processing]
+        BGTaskSchedulerPermittedIdentifiers: [com.example.SalaryApp.periodicBackup]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryApp

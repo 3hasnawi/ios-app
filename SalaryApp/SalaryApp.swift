@@ -13,6 +13,8 @@ struct SalaryApp: App {
         PerfLog.startIfEnabled()
         // النسخ التلقائي مفعّل افتراضياً (إلى مجلد iCloud بعد اختياره).
         UserDefaults.standard.register(defaults: [BackupManager.autoKey: true])
+        BackupBackground.register()
+        BackupBackground.schedule()
         AuditNotifications.registerDefaults()
     }
 

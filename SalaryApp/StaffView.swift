@@ -131,6 +131,7 @@ struct RootView: View {
             await TestData.prepareIfRequested()
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
+            await BackupManager.shared.autoBackupIfNeeded()
             await AutoPilot.shared.run()
         }
         // نسخة فاتت (أُغلق التطبيق أثناء النسخ أو تعذّر الوصول للمجلد): تُكمل عند فتح التطبيق أو الخروج منه.
@@ -140,6 +141,11 @@ struct RootView: View {
                 if phase == .active { try? await Task.sleep(for: .seconds(3)) }
                 await BackupManager.shared.autoBackupIfNeeded()
             }
+        }
+        // أثناء بقاء التطبيق مفتوحاً تُراجع ساعة النسخ دون انتظار استيراد جديد.
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard scenePhase == .active else { return }
+            Task { await BackupManager.shared.autoBackupIfNeeded() }
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.
         .overlay(alignment: .bottom) {
