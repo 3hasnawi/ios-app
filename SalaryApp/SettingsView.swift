@@ -22,12 +22,23 @@ struct SettingsView: View {
     @State private var showBackup = UserDefaults.standard.bool(forKey: "openBackup")
     @State private var showNotifications = UserDefaults.standard.bool(forKey: "openNotifications")
     @State private var showAccounts = UserDefaults.standard.bool(forKey: "openAccounts")
+    @State private var showAbout = UserDefaults.standard.bool(forKey: "openAbout")
 
     @AppStorage(AuditNotifications.enabledKey) private var notifyOn = false
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        AboutView()
+                    } label: {
+                        SettingRow(title: tr("حول", "About"), systemImage: "info.circle.fill", color: .teal,
+                                   subtitle: tr("معلومات التطبيق والمطوّر", "App and developer information")) { EmptyView() }
+                    }
+                    .accessibilityIdentifier("aboutRow")
+                }
+
                 Section(tr("العرض", "Display")) {
                     Picker(selection: $language) {
                         Text("العربية").tag(AppLanguage.arabic.rawValue)
@@ -106,17 +117,13 @@ struct SettingsView: View {
             .navigationDestination(isPresented: $showBackup) { BackupView() }
             .navigationDestination(isPresented: $showNotifications) { NotificationSettingsView() }
             .navigationDestination(isPresented: $showAccounts) { ExecutionAccountsView() }
+            .navigationDestination(isPresented: $showAbout) { AboutView() }
             .navigationTitle(tr("الإعدادات", "Settings"))
             // عنوان صغير حتى تتسع الصفحة كلها بلا تمرير.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // رقم الإصدار تحت العنوان (يرتفع مع كل بناء، للتمييز بين النسخ).
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text(tr("الإعدادات", "Settings")).font(.headline)
-                        Text(AppVersion.label).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("appVersion")
-                    }
+                    Text(tr("الإعدادات", "Settings")).font(.headline)
                 }
             }
             .task(id: "\(months.count)-\(importState.version)") { storeSize = await SavedDataView.storeSize(of: context.container) }
