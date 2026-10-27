@@ -568,6 +568,8 @@ struct ChangeExportSheet: View {
 
 struct SalaryAuditView: View {
     let months: [String]
+    let initialKind: SalaryChangeKind?
+    let initialCheckID: String?
     @State private var from: String
     @State private var to: String
     @State private var audit: SalaryAudit?
@@ -576,14 +578,23 @@ struct SalaryAuditView: View {
     @State private var exporting = false
     @State private var error: String?
     @State private var openKind: SalaryChangeKind?
+    @State private var openCheck: AuditCheck?
+    @State private var openedInitial = false
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
-    init(months: [String]) {
+    init(months: [String], to selectedMonth: String = "", initialKind: SalaryChangeKind? = nil, initialCheckID: String? = nil) {
         self.months = months
+        self.initialKind = initialKind
+        self.initialCheckID = initialCheckID
         let d = MonthPairPicker.defaults(months)
-        _from = State(initialValue: d.from)
-        _to = State(initialValue: d.to)
+        if let index = months.firstIndex(of: selectedMonth) {
+            _to = State(initialValue: selectedMonth)
+            _from = State(initialValue: months.indices.contains(index + 1) ? months[index + 1] : "")
+        } else {
+            _from = State(initialValue: d.from)
+            _to = State(initialValue: d.to)
+        }
     }
 
     private var loadKey: String {
@@ -653,6 +664,9 @@ struct SalaryAuditView: View {
         .navigationDestination(item: $openKind) { kind in
             if let audit { SalaryChangeListView(audit: audit, kind: kind) }
         }
+        .navigationDestination(item: $openCheck) { check in
+            AuditCheckView(check: check, month: to)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -691,6 +705,11 @@ struct SalaryAuditView: View {
                 let loaded = try await AuditResults.shared.salary(from: from, to: to, container: SharedModel.container)
                 guard !Task.isCancelled else { return }
                 audit = loaded
+                if !openedInitial {
+                    openedInitial = true
+                    if let initialKind, !loaded.rows(initialKind).isEmpty { openKind = initialKind }
+                    else if let initialCheckID { openCheck = loaded.checks.first { $0.id == initialCheckID } }
+                }
                 // اختبار المحاكي: -salaryAuditKind net يفتح قائمة، -auditExportSheet YES نافذة التصدير.
                 let defaults = UserDefaults.standard
                 if let raw = defaults.string(forKey: "salaryAuditKind"), let kind = SalaryChangeKind(rawValue: raw) {
@@ -865,6 +884,8 @@ private struct SalaryChangeRow: View {
 
 struct DeductionAuditView: View {
     let months: [String]
+    let initialKind: DeductionGroupKind?
+    let initialCheckID: String?
     @State private var from: String
     @State private var to: String
     @State private var result: DeductionComparison?
@@ -875,14 +896,23 @@ struct DeductionAuditView: View {
     @State private var exporting = false
     @State private var error: String?
     @State private var openKind: DeductionGroupKind?
+    @State private var openCheck: AuditCheck?
+    @State private var openedInitial = false
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
-    init(months: [String], to: String = "") {
+    init(months: [String], to selectedMonth: String = "", initialKind: DeductionGroupKind? = nil, initialCheckID: String? = nil) {
         self.months = months
+        self.initialKind = initialKind
+        self.initialCheckID = initialCheckID
         let d = MonthPairPicker.defaults(months)
-        _from = State(initialValue: d.from)
-        _to = State(initialValue: d.to)
+        if let index = months.firstIndex(of: selectedMonth) {
+            _to = State(initialValue: selectedMonth)
+            _from = State(initialValue: months.indices.contains(index + 1) ? months[index + 1] : "")
+        } else {
+            _from = State(initialValue: d.from)
+            _to = State(initialValue: d.to)
+        }
     }
 
     private var loadKey: String {
@@ -958,6 +988,9 @@ struct DeductionAuditView: View {
         .navigationDestination(item: $openKind) { kind in
             if let result { DeductionChangeListView(result: result, kind: kind) }
         }
+        .navigationDestination(item: $openCheck) { check in
+            AuditCheckView(check: check, month: to)
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -999,11 +1032,19 @@ struct DeductionAuditView: View {
             let container = SharedModel.container
             let month = to
             checks = try? await AuditResults.shared.deductionChecks(month: month, container: container)
+            if !openedInitial, let initialCheckID, let check = checks?.first(where: { $0.id == initialCheckID }) {
+                openedInitial = true
+                openCheck = check
+            }
             guard months.count >= 2, from != to else { return }
             do {
                 let loaded = try await AuditResults.shared.deductions(from: from, to: to, container: container)
                 guard !Task.isCancelled else { return }
                 result = loaded
+                if !openedInitial, let initialKind, !loaded.rows(initialKind).isEmpty {
+                    openedInitial = true
+                    openKind = initialKind
+                }
                 let defaults = UserDefaults.standard
                 if let raw = defaults.string(forKey: "deductionKind"), let kind = DeductionGroupKind(rawValue: raw) {
                     defaults.removeObject(forKey: "deductionKind")

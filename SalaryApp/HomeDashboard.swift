@@ -33,15 +33,18 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
         var route: String
     }
     var issues: [Issue] = []
+    var salaryAvailable = false
     var compared = false
     var added = 0, removed = 0, rank = 0, workplace = 0, net = 0, bank = 0
     var hasDeductions = false
+    var deductionComparisonBlocked = false
     var stopped = 0, started = 0, changed = 0
 
     init() {}
 
     init(_ d: AuditDigest) {
         if let s = d.salary {
+            salaryAvailable = true
             compared = s.compared
             added = s.rows(.added).count
             removed = s.rows(.removed).count
@@ -54,17 +57,20 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
                                     detail: tr("مقارنة بـ\(d.previous)", "vs \(d.previous)"), count: bank, route: "salary"))
             }
             for c in s.checks where !c.ok {
-                issues.append(Issue(id: c.id, title: c.title, detail: tr("فحص الشهر", "Monthly check"), count: c.rows.count, route: "salary"))
+                issues.append(Issue(id: c.id, title: c.title, detail: c.subtitle, count: c.rows.count, route: "salary"))
             }
         }
         for c in d.deductionChecks where !c.ok {
-            issues.append(Issue(id: c.id, title: c.title, detail: tr("الاستقطاعات", "Deductions"), count: c.rows.count, route: "deductions"))
+            issues.append(Issue(id: c.id, title: c.title, detail: c.subtitle, count: c.rows.count, route: "deductions"))
         }
-        if let c = d.deductions, c.emptyMonths.isEmpty {
-            hasDeductions = true
-            stopped = c.rows(.stopped).count
-            started = c.rows(.started).count
-            changed = c.rows(.changed).count
+        if let c = d.deductions {
+            deductionComparisonBlocked = !c.emptyMonths.isEmpty
+            if c.emptyMonths.isEmpty {
+                hasDeductions = true
+                stopped = c.rows(.stopped).count
+                started = c.rows(.started).count
+                changed = c.rows(.changed).count
+            }
         }
     }
 }
@@ -177,6 +183,8 @@ enum HomeCard: String, CaseIterable, Identifiable {
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
     case audit, salary, deductions, backup
+    case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
+    case salaryCheck(String), deductionCheck(String)
     var id: Self { self }
 }
 
@@ -189,7 +197,6 @@ struct HomeDashboard: View {
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
     @State private var route: HomeRoute?
-    @State private var showCustomize = false
     @State private var backup = BackupManager.shared
     @AppStorage(HomeTileLayout.key) private var layoutRaw = ""
     @AppStorage(HomeCard.hiddenKey) private var hiddenRaw = ""
@@ -217,7 +224,7 @@ struct HomeDashboard: View {
         } + trendMonths).joined(separator: ";")
     }
 
-    private var auditKey: String { "\(statsKey)|\(AppSettings.locale.identifier)" }
+    private var auditKey: String { "v3|\(statsKey)|\(AppSettings.locale.identifier)" }
 
     private var summary: [String: PayrollItems.Summary] { PayrollItems.decodeSummary(current?.itemSummaryData) ?? [:] }
 
@@ -226,23 +233,10 @@ struct HomeDashboard: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let current {
-                    homeTile(0, compact: false, month: current)
-                    HStack(alignment: .top, spacing: 12) {
-                        homeTile(1, compact: true, month: current)
-                        homeTile(2, compact: true, month: current)
-                    }
-                    ForEach(3..<HomeTileLayout.defaults.count, id: \.self) { index in
-                        homeTile(index, compact: false, month: current)
-                    }
-                    Button {
-                        showCustomize = true
-                    } label: {
-                        Label(tr("تخصيص البطاقات", "Customize cards"), systemImage: "slider.horizontal.3")
-                            .font(.footnote.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                    }
-                    .accessibilityIdentifier("homeCustomize")
+                    HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
+                                   openReports: { AppRouter.shared.showReports = true },
+                                   openRoute: { route = $0 },
+                                   openEntities: { openReports(.entities, month: current) })
                 } else { welcome }
             }
             .padding(.horizontal, 16)
@@ -271,27 +265,17 @@ struct HomeDashboard: View {
         .navigationDestination(item: $route) { route in
             switch route {
             case .audit: AuditView(months: months.map(\.name))
-            case .salary: SalaryAuditView(months: months.map(\.name))
-            case .deductions: DeductionAuditView(months: months.map(\.name))
+            case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")
+            case .deductions: DeductionAuditView(months: months.map(\.name), to: current?.name ?? "")
             case .backup: BackupView()
+            case .salaryChange(let kind): SalaryAuditView(months: months.map(\.name), to: current?.name ?? "", initialKind: kind)
+            case .deductionChange(let kind): DeductionAuditView(months: months.map(\.name), to: current?.name ?? "", initialKind: kind)
+            case .salaryCheck(let id): SalaryAuditView(months: months.map(\.name), to: current?.name ?? "", initialCheckID: id)
+            case .deductionCheck(let id): DeductionAuditView(months: months.map(\.name), to: current?.name ?? "", initialCheckID: id)
             }
-        }
-        .sheet(isPresented: $showCustomize) {
-            NavigationStack {
-                HomeLayoutSettingsView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button(tr("تم", "Done")) { showCustomize = false }
-                        }
-                    }
-            }
-            .presentationDetents([.medium, .large])
-        }
-        .task {
-            if UserDefaults.standard.bool(forKey: "openHomeCustomize") { showCustomize = true }
         }
         .task(id: statsKey) { await loadOverview() }
-        .task(id: "\(auditKey)|\(layoutRaw)") { await loadAudit() }
+        .task(id: auditKey) { await loadAudit() }
     }
 
     // MARK: التحميل
@@ -465,8 +449,6 @@ struct HomeDashboard: View {
     /// التدقيق أثقل: يُعرض المحفوظ فوراً، ويُحسب في الخلفية بعد ظهور الرئيسية (أو يؤخذ جاهزاً بعد الاستيراد).
     private func loadAudit() async {
         guard let current else { return }
-        let visible = HomeTileLayout.decode(layoutRaw)
-        guard visible.contains(.attention) || visible.contains(.changes) else { return }
         let cacheKey = auditKey
         if let data = UserDefaults.standard.data(forKey: Self.auditCacheKey),
            let cached = try? JSONDecoder().decode([String: HomeAudit].self, from: data)[cacheKey] {

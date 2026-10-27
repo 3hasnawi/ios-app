@@ -293,8 +293,6 @@ jobs:
           shot 08e1-about
           launch -openSettings YES -openBackup YES
           shot 08e2-backup
-          launch -openHomeCustomize YES
-          shot 08e6-home-customize
           # حجم النص: أصغر مستوى ثم أكبر مستوى
           launch -openSettings YES -appTextSize 0
           shot 08e4-text-small
@@ -351,7 +349,7 @@ jobs:
           launch -tab settings -openNotifications YES
           shot 08w2-notifications 5
           launch
-          shot 03c-home-dashboard 14
+          shot 03c-home-accounting 14
           launch -homeScroll YES
           shot 03d-home-dashboard-bottom 16
           rm -f "$DATA/Documents/import-report.txt"
