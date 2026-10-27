@@ -197,6 +197,8 @@ jobs:
             shot 09b-smart-entity-search 5
             launch -tab reports
             shot 08n-reports-root 6
+            launch -tab bank
+            shot 08p-bank-statement 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي"
             shot 08o-report-deduction-detail 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي" -previewReport YES
@@ -227,6 +229,8 @@ jobs:
           check_accounts
           launch
           shot 03b-home-audit-cards 4
+          launch -tab bank
+          shot 03c-bank-statement 6
 
           # 2b) ملفان منفصلان: نافذة المراجعة (التعرّف على النوع والشهر)، ثم الاستيراد
           SPLIT="$DATA/Documents/رواتب آب 2026.xlsx|$DATA/Documents/استقطاعات آب 2026.xlsx"

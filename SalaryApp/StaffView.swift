@@ -6,9 +6,10 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, share, reports, settings }
+    enum Tab: Hashable { case payroll, staff, search, share, reports, bank, settings }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
-    var tab: Tab = LaunchOptions.startTab == "reports" ? .reports
+    var tab: Tab = LaunchOptions.startTab == "bank" ? .bank
+        : LaunchOptions.startTab == "reports" ? .reports
         : LaunchOptions.openSettings || LaunchOptions.startTab == "settings" ? .settings
         : LaunchOptions.startTab == "search" || (!LaunchOptions.search.isEmpty && !LaunchOptions.openFirst) ? .search : .payroll
     /// يفتح نافذة اختيار ملف الملاك في تبويب الملاك.
@@ -114,6 +115,9 @@ struct RootView: View {
             }
             Tab(tr("التقارير", "Reports"), systemImage: "chart.bar.doc.horizontal", value: AppRouter.Tab.reports) {
                 ReportsView()
+            }
+            Tab(tr("كشف البنك", "Bank statement"), systemImage: "building.columns", value: AppRouter.Tab.bank) {
+                BankStatementView()
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
