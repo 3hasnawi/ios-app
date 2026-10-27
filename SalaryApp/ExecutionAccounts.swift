@@ -5,8 +5,6 @@ import UIKit
 /// حساب جهة تنفيذ مستقل عن الأشهر، يُحدَّث بالاسم عند استيراد ملف IBAN جديد.
 @Model
 final class ExecutionAccount {
-    #Index<ExecutionAccount>([\.key])
-
     var key: String
     var entity: String
     var iban: String
