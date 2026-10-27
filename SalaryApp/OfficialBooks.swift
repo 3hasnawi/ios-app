@@ -2,6 +2,7 @@ import SwiftUI
 import VisionKit
 import ImageIO
 import CoreGraphics
+import UIKit
 
 /// بيانات الكتاب فقط؛ الصفحات تبقى ملف PDF مستقلًا ولا تُحمَّل أثناء البحث.
 nonisolated struct OfficialBook: Codable, Sendable, Identifiable, Hashable {
@@ -138,6 +139,23 @@ nonisolated enum OfficialBookPDF {
     }
 }
 
+/// تدوير صفحة مصوّرة قبل تجميع PDF، مع الإبقاء على الصفحات الأخرى كما هي.
+nonisolated enum OfficialBookImage {
+    static func rotateClockwise(_ data: Data) throws -> Data {
+        guard let image = UIImage(data: data) else { throw OfficialBookError.damagedPDF }
+        let size = CGSize(width: image.size.height, height: image.size.width)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let rotated = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            renderer.cgContext.translateBy(x: size.width, y: 0)
+            renderer.cgContext.rotate(by: .pi / 2)
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        guard let result = rotated.jpegData(compressionQuality: 0.86) else { throw OfficialBookError.damagedPDF }
+        return result
+    }
+}
+
 @MainActor @Observable
 final class OfficialBookStore {
     static let shared = OfficialBookStore()
@@ -235,11 +253,12 @@ final class OfficialBookStore {
 
 /// ماسح iOS الأصلي: يحسن حواف الورقة ويعيد الصور دون طلب الوصول إلى الصور الشخصية.
 struct OfficialBookScanner: UIViewControllerRepresentable {
+    var maxPages = 3
     let onComplete: ([Data]) -> Void
     let onFailure: (String) -> Void
     let onCancel: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onComplete: onComplete, onFailure: onFailure, onCancel: onCancel) }
+    func makeCoordinator() -> Coordinator { Coordinator(maxPages: maxPages, onComplete: onComplete, onFailure: onFailure, onCancel: onCancel) }
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
         let controller = VNDocumentCameraViewController()
         controller.delegate = context.coordinator
@@ -248,15 +267,19 @@ struct OfficialBookScanner: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
 
     final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+        let maxPages: Int
         let onComplete: ([Data]) -> Void
         let onFailure: (String) -> Void
         let onCancel: () -> Void
-        init(onComplete: @escaping ([Data]) -> Void, onFailure: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
-            self.onComplete = onComplete; self.onFailure = onFailure; self.onCancel = onCancel
+        init(maxPages: Int, onComplete: @escaping ([Data]) -> Void, onFailure: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+            self.maxPages = maxPages; self.onComplete = onComplete; self.onFailure = onFailure; self.onCancel = onCancel
         }
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
-            guard (1...3).contains(scan.pageCount) else {
-                controller.dismiss(animated: true) { self.onFailure(OfficialBookError.invalidPages.localizedDescription) }
+            guard (1...maxPages).contains(scan.pageCount) else {
+                let message = maxPages == 1
+                    ? tr("أعد تصوير صفحة واحدة فقط.", "Retake one page only.")
+                    : OfficialBookError.invalidPages.localizedDescription
+                controller.dismiss(animated: true) { self.onFailure(message) }
                 return
             }
             var images: [Data] = []

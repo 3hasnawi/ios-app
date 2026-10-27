@@ -54,8 +54,8 @@ struct OfficialBooksView: View {
                 .disabled(monthNames.isEmpty)
                 .accessibilityIdentifier("scanOfficialBook")
             } footer: {
-                Text(tr("امسح الكتاب وإشعار التحويل ضمن صفحاته (١–٣ صفحات). يُحفظان PDF واحدًا تحت الشهر المختار.",
-                        "Scan the letter and its transfer notice as pages of one PDF (1–3 pages) under the selected month."))
+                Text(tr("يحدد الماسح حواف الورقة ويلتقطها تلقائيًا. صوّر الكتاب وإشعاره ضمن ١–٣ صفحات، ثم راجع الصفحات وعدّلها قبل الحفظ.",
+                        "The scanner detects edges and captures automatically. Scan the letter and its notice as 1–3 pages, then review and edit before saving."))
             }
 
             Section(tr("الكتب المحفوظة", "Saved documents")) {
@@ -142,20 +142,23 @@ struct OfficialBooksView: View {
 /// تأكيد اسم الكتاب وشهره بعد المسح، أو تعديل الاسم والجهة دون تغيير الملف.
 private struct OfficialBookEditor: View {
     let months: [String]
-    let images: [Data]?
     let existing: OfficialBook?
+    @State private var images: [Data]?
     @State private var title: String
     @State private var month: String
     @State private var entity: String
     @State private var saving = false
+    @State private var rotatingPage: Int?
+    @State private var retakePage: Int?
+    @State private var showingRetake = false
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
     @State private var store = OfficialBookStore.shared
 
     init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?) {
         self.months = months
-        self.images = images
         self.existing = existing
+        _images = State(initialValue: images)
         _title = State(initialValue: existing?.title ?? "")
         _month = State(initialValue: initialMonth)
         _entity = State(initialValue: existing?.entity ?? "")
@@ -177,6 +180,43 @@ private struct OfficialBookEditor: View {
                     }
                     TextField(tr("جهة التنفيذ المرتبطة (اختياري)", "Related entity (optional)"), text: $entity)
                 }
+                if let images {
+                    Section {
+                        ForEach(images.indices, id: \.self) { index in
+                            HStack(spacing: 12) {
+                                if let image = UIImage(data: images[index]) {
+                                    Image(uiImage: image)
+                                        .resizable().scaledToFit()
+                                        .frame(width: 72, height: 92)
+                                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                                        .accessibilityHidden(true)
+                                }
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(tr("الصفحة \(Num.format(index + 1))", "Page \(index + 1)"))
+                                        .font(.subheadline.weight(.semibold))
+                                    HStack(spacing: 18) {
+                                        Button(tr("تدوير", "Rotate"), systemImage: "rotate.right") { rotate(index) }
+                                            .disabled(rotatingPage != nil || saving)
+                                        Button(tr("إعادة التصوير", "Retake"), systemImage: "camera") {
+                                            retakePage = index
+                                            showingRetake = true
+                                        }
+                                        .disabled(rotatingPage != nil || saving)
+                                    }
+                                    .font(.caption)
+                                    .buttonStyle(.borderless)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    } header: {
+                        Text(tr("مراجعة الصفحات", "Review pages"))
+                    } footer: {
+                        Text(tr("يمكن تعديل القصّ من معاينة الماسح، أو تدوير أي صفحة وإعادة تصويرها هنا. الإشعار يبقى صفحة من الكتاب نفسه.",
+                                "Adjust cropping in the scanner preview, or rotate and retake a page here. The notice stays a page of the same document."))
+                    }
+                }
                 Section {
                     Text(tr("الاسم والشهر يظهران في البحث. الجهة المرتبطة تُحفظ لربط الكتاب بكشفها لاحقًا.",
                             "The name and month appear in search. The related entity is saved for future report links."))
@@ -191,13 +231,45 @@ private struct OfficialBookEditor: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(tr("حفظ", "Save")) { save() }
-                        .disabled(saving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || month.isEmpty)
+                        .disabled(saving || rotatingPage != nil || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || month.isEmpty)
                 }
+            }
+            .sheet(isPresented: $showingRetake) {
+                OfficialBookScanner(maxPages: 1, onComplete: { replacement in
+                    showingRetake = false
+                    if let index = retakePage, let page = replacement.first, images?.indices.contains(index) == true {
+                        images?[index] = page
+                    }
+                    retakePage = nil
+                }, onFailure: { message in
+                    showingRetake = false
+                    retakePage = nil
+                    error = message
+                }, onCancel: {
+                    showingRetake = false
+                    retakePage = nil
+                })
             }
             .alert(tr("تعذّر الحفظ", "Could not save"), isPresented: Binding(
                 get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button(tr("حسناً", "OK"), role: .cancel) {}
             } message: { Text(error ?? "") }
+        }
+    }
+
+    private func rotate(_ index: Int) {
+        guard let data = images?[index] else { return }
+        rotatingPage = index
+        Task {
+            do {
+                let rotated = try await Task.detached(priority: .userInitiated) {
+                    try OfficialBookImage.rotateClockwise(data)
+                }.value
+                images?[index] = rotated
+            } catch {
+                self.error = error.localizedDescription
+            }
+            rotatingPage = nil
         }
     }
 
