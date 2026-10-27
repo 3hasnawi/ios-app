@@ -95,7 +95,7 @@ actor BackupActor {
         }, from: 0.5, to: 0.8)
         let accounts = try modelContext.fetch(FetchDescriptor<ExecutionAccount>())
         try writeLines("accounts.jsonl", accounts.map {
-            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
+            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swiftCode)
         }, from: 0.8, to: 0.82)
 
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,

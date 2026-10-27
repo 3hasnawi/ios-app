@@ -9,14 +9,14 @@ final class ExecutionAccount {
     var entity: String
     var iban: String
     var branch: String
-    var swift: String
+    var swiftCode: String
 
     init(entity: String, iban: String, branch: String, swift: String) {
         self.key = ArabicText.normalize(entity)
         self.entity = entity
         self.iban = iban
         self.branch = branch
-        self.swift = swift
+        self.swiftCode = swift
     }
 }
 
@@ -30,11 +30,11 @@ actor ExecutionAccountImporter {
             let key = ArabicText.normalize(row.entity)
             if let account = existing[key] {
                 if account.entity != row.entity || account.iban != row.iban || (!row.branch.isEmpty && account.branch != row.branch)
-                    || (!row.swift.isEmpty && account.swift != row.swift) {
+                    || (!row.swift.isEmpty && account.swiftCode != row.swift) {
                     account.entity = row.entity
                     account.iban = row.iban
                     if !row.branch.isEmpty { account.branch = row.branch }
-                    if !row.swift.isEmpty { account.swift = row.swift }
+                    if !row.swift.isEmpty { account.swiftCode = row.swift }
                     updated += 1
                 }
             } else {
@@ -76,7 +76,7 @@ struct ExecutionAccountsView: View {
                             Text(account.entity).font(.headline)
                             if !account.branch.isEmpty { Text(account.branch).font(.subheadline).foregroundStyle(.secondary) }
                             Text(account.iban).font(.subheadline.monospaced()).textSelection(.enabled).privacySensitive()
-                            if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
+                            if !account.swiftCode.isEmpty { Text("SWIFT: \(account.swiftCode)").font(.caption).foregroundStyle(.secondary) }
                         }
                         .padding(.vertical, 5)
                         .contextMenu {

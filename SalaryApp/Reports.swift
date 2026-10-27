@@ -159,7 +159,7 @@ struct ReportDetailView: View {
                 Section(tr("حساب جهة التنفيذ", "Execution account")) {
                     LabeledContent("IBAN") { Text(account.iban).monospaced().textSelection(.enabled).privacySensitive() }
                     if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
-                    if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
+                    if !account.swiftCode.isEmpty { LabeledContent("SWIFT", value: account.swiftCode) }
                     Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = account.iban
                     }
