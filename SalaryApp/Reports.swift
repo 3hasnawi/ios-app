@@ -153,11 +153,12 @@ struct ReportDetailView: View {
                             if group.kind == .deductions {
                                 if let rows {
                                     Text(Num.format(rows.count)).font(.title2.bold())
+                                    Text(tr("المكرر: \(Num.format(max(0, rows.count - group.count))) سطر",
+                                            "Repeated names: \(Num.format(max(0, rows.count - group.count))) rows"))
+                                        .font(.caption2).foregroundStyle(.secondary)
                                 } else {
                                     ProgressView().frame(height: 28)
                                 }
-                                Text(tr("\(Num.format(group.count)) موظف مختلف", "\(Num.format(group.count)) distinct employees"))
-                                    .font(.caption2).foregroundStyle(.secondary)
                             } else {
                                 Text(Num.format(group.count)).font(.title2.bold())
                             }
