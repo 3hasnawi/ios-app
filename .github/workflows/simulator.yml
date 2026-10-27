@@ -12,6 +12,10 @@ on:
         description: Recheck only the deduction comparison UI (use with quick)
         type: boolean
         default: false
+      backup_only:
+        description: Check account import and backup without navigation or sharing UI tests
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # لنشر الصور في فرع screenshots
@@ -26,6 +30,7 @@ jobs:
       BUNDLE: com.example.SalaryApp
       QUICK: ${{ inputs.quick }}
       DEDUCTIONS_ONLY: ${{ inputs.deductions_only }}
+      BACKUP_ONLY: ${{ inputs.backup_only }}
     steps:
       - uses: actions/checkout@v4
 
@@ -174,6 +179,7 @@ jobs:
             for i in $(seq 1 180); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             cat "$DATA/Documents/import-report.txt" | tee ci-output/import-report.txt
             grep -Fq "$(cat ci-output/expected.txt)" ci-output/import-report.txt || { echo '::error::Payroll import did not complete'; exit 1; }
+            if [ "$BACKUP_ONLY" = true ]; then exit 0; fi
             launch -tab reports -compareDeductions YES
             shot 08z-deduction-comparison 8
             launch
@@ -396,6 +402,7 @@ jobs:
           shot 11-search-dark
 
       - name: Navigation test (taps, typing, open/back, scrolling) with video and lag log
+        if: inputs.backup_only != true
         run: |
           xcrun simctl ui "$UDID" appearance light
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -441,7 +448,7 @@ jobs:
 
       # المشاركة الحقيقية: "حفظ في الملفات" (PDF وExcel) ثم "نسخ"، والتحقق أن الملف المحفوظ سليم وأن الحافظة فيها الملف.
       - name: Share sheet end-to-end (Save to Files, Copy)
-        if: inputs.deductions_only != true
+        if: inputs.deductions_only != true && inputs.backup_only != true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           DEV="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data"
@@ -477,7 +484,7 @@ jobs:
           exit $fail
 
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
-        if: inputs.deductions_only != true
+        if: inputs.deductions_only != true && inputs.backup_only != true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -490,7 +497,7 @@ jobs:
           python3 ci/perf_report.py ci-output/empty.log ci-output/perf-autopilot.txt | tee ci-output/autopilot-report.txt
 
       - name: Backup round trip and rejection of corrupted records
-        if: inputs.quick != true
+        if: inputs.quick != true || inputs.backup_only == true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -515,6 +522,7 @@ jobs:
           xcrun simctl io "$UDID" screenshot ci-output/screenshots/08e3-backup-after-auto.png || true
 
       - name: Enforce navigation test result
+        if: inputs.backup_only != true
         run: |
           [ -f ci-output/uitest-status.txt ] || { echo "::error::UI tests did not produce a result"; exit 1; }
           [ "$(cat ci-output/uitest-status.txt)" = 0 ] || { echo "::error::UI navigation tests failed; inspect uitest.log"; exit 1; }
