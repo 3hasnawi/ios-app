@@ -251,35 +251,38 @@ struct MonthPairPicker: View {
     }
 
     private func chip(_ label: String, _ selection: Binding<String>) -> some View {
-        Menu {
-            Section {
-                Button(tr("آخر شهرين تلقائياً", "Last two months"), systemImage: "arrow.counterclockwise") {
-                    to = months.first ?? to
-                    from = months.count > 1 ? months[1] : from
+        HStack(spacing: 6) {
+            Menu {
+                Section {
+                    Button(tr("آخر شهرين تلقائياً", "Last two months"), systemImage: "arrow.counterclockwise") {
+                        to = months.first ?? to
+                        from = months.count > 1 ? months[1] : from
+                    }
+                    Button(tr("تبديل الشهرين", "Swap months"), systemImage: "arrow.left.arrow.right") {
+                        let a = from
+                        from = to
+                        to = a
+                    }
                 }
-                Button(tr("تبديل الشهرين", "Swap months"), systemImage: "arrow.left.arrow.right") {
-                    let a = from
-                    from = to
-                    to = a
+                Picker(label, selection: selection) {
+                    ForEach(months, id: \.self) { Text($0).tag($0) }
                 }
+            } label: {
+                Image(systemName: "calendar")
+                    .accessibilityLabel(tr("اختيار شهر \(label): \(selection.wrappedValue)", "Choose \(label) month: \(selection.wrappedValue)"))
             }
-            Picker(label, selection: selection) {
-                ForEach(months, id: \.self) { Text($0).tag($0) }
-            }
-        } label: {
-            VStack(spacing: 1) {
+            .glassButtonStyle()
+            .buttonBorderShape(.circle)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.caption2).foregroundStyle(.secondary)
-                HStack(spacing: 4) {
-                    Text(selection.wrappedValue).lineLimit(1).minimumScaleFactor(0.8)
-                    Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
+                Text(selection.wrappedValue)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity)
     }
 
     static func defaults(_ months: [String]) -> (from: String, to: String) {

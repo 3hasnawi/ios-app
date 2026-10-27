@@ -190,11 +190,12 @@ struct ContentView: View {
                 }
             }
         } label: {
-            pillLabel(monthMenuTitle, systemImage: "calendar")
+            Image(systemName: "calendar")
+                .accessibilityLabel(tr("اختيار الأشهر: \(monthMenuTitle)", "Choose months: \(monthMenuTitle)"))
         }
         .accessibilityIdentifier("homeMonthMenu")
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
+        .glassButtonStyle()
+        .buttonBorderShape(.circle)
     }
 
     private var monthMenuTitle: String {

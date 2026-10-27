@@ -139,7 +139,8 @@ struct ReportsView: View {
         let total = deductionGroups.reduce(0) { $0 + $1.total }
         let people = month?.deductionCount ?? 0
         return VStack(alignment: .leading, spacing: 2) {
-            Text(tr("مجموع الاستقطاعات", "Total deductions")).font(.caption).opacity(0.85)
+            Text(tr("مجموع الاستقطاعات · \(month?.name ?? "")", "Total deductions · \(month?.name ?? "")"))
+                .font(.caption).opacity(0.85)
             Text(Money.format(total))
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .monospacedDigit()
@@ -278,16 +279,12 @@ struct ReportsView: View {
                 ForEach(months) { Text($0.name).tag($0.name) }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "calendar")
-                Text(month?.name ?? "").lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption.weight(.bold))
-            }
-            .font(.subheadline.weight(.semibold))
+            Image(systemName: "calendar")
+                .accessibilityLabel(tr("اختيار الشهر: \(month?.name ?? "")", "Choose month: \(month?.name ?? "")"))
         }
         .accessibilityIdentifier("reportsMonthMenu")
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
+        .glassButtonStyle()
+        .buttonBorderShape(.circle)
     }
 
     private func loadDeductions() async {

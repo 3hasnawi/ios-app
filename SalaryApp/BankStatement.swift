@@ -138,8 +138,8 @@ struct BankStatementView: View {
                             Text(accountName.isEmpty ? tr("حساب البنك", "Bank account") : accountName)
                                 .font(.headline).foregroundStyle(.white)
                             Text(summary.executionMatched
-                                 ? tr("المبلغ المطلوب للشهر", "Monthly amount")
-                                 : tr("مبلغ أولي · يحتاج مطابقة التنفيذ", "Provisional amount · reconcile execution deductions"))
+                                 ? tr("المبلغ المطلوب · \(summary.month)", "Monthly amount · \(summary.month)")
+                                 : tr("مبلغ أولي · \(summary.month) · يحتاج مطابقة التنفيذ", "Provisional amount · \(summary.month) · reconcile execution deductions"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
                             Text(Money.format(summary.bankTotal + manualAmounts.total))
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -228,12 +228,20 @@ struct BankStatementView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         ForEach(months) { candidate in
-                            Button(candidate.name) { selectedMonth = candidate.name }
+                            Button {
+                                selectedMonth = candidate.name
+                            } label: {
+                                if candidate.name == month?.name { Label(candidate.name, systemImage: "checkmark") }
+                                else { Text(candidate.name) }
+                            }
                         }
                     } label: {
-                        Label(month?.name ?? tr("الشهر", "Month"), systemImage: "calendar")
+                        Image(systemName: "calendar")
+                            .accessibilityLabel(tr("اختيار الشهر: \(month?.name ?? "")", "Choose month: \(month?.name ?? "")"))
                     }
                     .disabled(months.isEmpty)
+                    .glassButtonStyle()
+                    .buttonBorderShape(.circle)
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button(tr("إعداد الحساب", "Account settings"), systemImage: "slider.horizontal.3") { showSettings = true }

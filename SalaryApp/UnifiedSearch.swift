@@ -786,15 +786,12 @@ struct UnifiedPersonView: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: selection == Self.staffTag ? "person.text.rectangle" : "calendar")
-                Text(selection == Self.staffTag ? tr("الملاك", "Staff") : selection).lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption.weight(.bold))
-            }
-            .font(.subheadline.weight(.semibold))
+            Image(systemName: selection == Self.staffTag ? "person.text.rectangle" : "calendar")
+                .accessibilityLabel(tr("اختيار الشهر أو الملاك: \(selection == Self.staffTag ? tr("الملاك", "Staff") : selection)",
+                                       "Choose month or staff: \(selection == Self.staffTag ? tr("الملاك", "Staff") : selection)"))
         }
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
+        .glassButtonStyle()
+        .buttonBorderShape(.circle)
         .accessibilityIdentifier("personPartPicker")
     }
 
