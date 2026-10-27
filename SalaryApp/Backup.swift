@@ -29,7 +29,7 @@ nonisolated enum BackupFormat {
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
-                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementExecutionRule",
+                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN",
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).

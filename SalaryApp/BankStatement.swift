@@ -1,8 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// مصادر كشف حساب البنك للشهر. ملف الاستقطاعات يُعرض مستقلاً حتى لا يختلط
-/// بسطر «مجموع الاستقطاعات» القادم من ورقة الرواتب.
+/// ملف جهات التنفيذ داخل مجموع استقطاعات الرواتب؛ يُعرض للمطابقة فقط.
 nonisolated struct BankStatementSummary: Sendable {
     let month: String
     var payrollCount = 0
@@ -16,8 +15,7 @@ nonisolated struct BankStatementSummary: Sendable {
     var breakdown: [String: Double] = [:]
 
     var nonRetirementDeductions: Double { payrollDeductions - retirement }
-    var totalWithoutSeparateExecution: Double { netSalary + nonRetirementDeductions }
-    var totalWithSeparateExecution: Double { totalWithoutSeparateExecution + executionDeductions }
+    var bankTotal: Double { netSalary + nonRetirementDeductions }
 }
 
 @ModelActor
@@ -73,32 +71,17 @@ actor BankStatementEngine {
     }
 }
 
-/// طريقة إضافة ملف جهات التنفيذ إلى مجموع ورقة الرواتب.
-enum BankExecutionRule: String, CaseIterable, Identifiable {
-    case review, included, separate
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .review: tr("أحتاج مطابقة المصدر", "Source needs review")
-        case .included: tr("ضمن مجموع الاستقطاعات", "Included in payroll deductions")
-        case .separate: tr("يُضاف من ملف منفصل", "Added from a separate file")
-        }
-    }
-}
-
 struct BankStatementView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @AppStorage("bankStatementMonth") private var selectedMonth = ""
     @AppStorage("bankStatementAccountName") private var accountName = ""
     @AppStorage("bankStatementIBAN") private var iban = ""
-    @AppStorage("bankStatementExecutionRule") private var ruleRaw = BankExecutionRule.review.rawValue
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
-    private var rule: BankExecutionRule { BankExecutionRule(rawValue: ruleRaw) ?? .review }
     private var loadKey: String { "\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
 
     var body: some View {
@@ -109,21 +92,11 @@ struct BankStatementView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(accountName.isEmpty ? tr("حساب البنك", "Bank account") : accountName)
                                 .font(.headline).foregroundStyle(.white)
-                            Text(rule == .review ? tr("اختر مصدر جهات التنفيذ لاعتماد المبلغ", "Choose the execution source to confirm the amount")
-                                                  : tr("المبلغ المطلوب للشهر", "Monthly amount"))
+                            Text(tr("المبلغ المطلوب للشهر", "Monthly amount"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
-                            if rule == .review {
-                                Text(tr("دون إضافة ملف الجهات: \(Money.format(summary.totalWithoutSeparateExecution))",
-                                        "Without separate execution file: \(Money.format(summary.totalWithoutSeparateExecution))"))
-                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                                Text(tr("مع إضافة ملف الجهات: \(Money.format(summary.totalWithSeparateExecution))",
-                                        "With separate execution file: \(Money.format(summary.totalWithSeparateExecution))"))
-                                    .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
-                            } else {
-                                Text(Money.format(rule == .separate ? summary.totalWithSeparateExecution : summary.totalWithoutSeparateExecution))
-                                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                                    .monospacedDigit().foregroundStyle(.white)
-                            }
+                            Text(Money.format(summary.bankTotal))
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .monospacedDigit().foregroundStyle(.white)
                             if !iban.isEmpty { Text(iban).font(.footnote.monospaced()).foregroundStyle(.white.opacity(0.8)).privacySensitive() }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -137,11 +110,8 @@ struct BankStatementView: View {
                         LabeledContent(tr("استقطاعات ورقة الرواتب", "Payroll deductions"), value: Money.format(summary.payrollDeductions))
                         LabeledContent(tr("التوقيفات التقاعدية المستبعدة", "Excluded retirement deductions"), value: Money.format(summary.retirement))
                         LabeledContent(tr("استقطاعات جهات التنفيذ", "Execution deductions"), value: Money.format(summary.executionDeductions))
-                        Text(rule == .review
-                             ? tr("حدد هل مبالغ ملف الجهات داخلة في مجموع ورقة الرواتب قبل اعتماد الكشف.", "Check whether execution records are already included in payroll before confirming the statement.")
-                             : rule == .included
-                             ? tr("جهات التنفيذ معروضة للمطابقة، ولا تُضاف مرتين إلى المجموع.", "Execution deductions are shown for reconciliation and aren't added twice.")
-                             : tr("جهات التنفيذ من الملف المنفصل مضافة إلى المجموع.", "Execution deductions from the separate file are added to the total."))
+                        Text(tr("جهات التنفيذ ضمن مجموع الاستقطاعات؛ مبلغ الملف معروض للمطابقة فقط ولا يُضاف مرة ثانية.",
+                                "Execution deductions are included in payroll deductions; the file amount is shown only for reconciliation."))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section(tr("تفصيل الاستقطاعات", "Deduction breakdown")) {
@@ -191,13 +161,9 @@ struct BankStatementView: View {
                             TextField(tr("اسم الحساب", "Account name"), text: $accountName)
                             TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
                         }
-                        Section(tr("استقطاعات جهات التنفيذ", "Execution deductions")) {
-                            Picker(tr("طريقة الاحتساب", "Calculation rule"), selection: $ruleRaw) {
-                                ForEach(BankExecutionRule.allCases) { option in Text(option.title).tag(option.rawValue) }
-                            }
-                        } footer: {
-                            Text(tr("الصافي ومجموع الاستقطاعات والتوقيفات التقاعدية من ورقة الرواتب. ملف جهات التنفيذ يُضاف فقط إذا لم تكن مبالغه ضمن مجموع الاستقطاعات.",
-                                    "Net pay, deduction total and retirement deductions come from payroll. Add execution records only if they aren't included in the payroll deduction total."))
+                        Section(tr("طريقة الاحتساب", "Calculation")) {
+                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية. جهات التنفيذ داخلة في مجموع الاستقطاعات.",
+                                    "Net payroll + payroll deductions − retirement deductions. Execution deductions are already included."))
                         }
                     }
                     .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
@@ -226,7 +192,6 @@ struct BankStatementView: View {
             }
             .onChange(of: accountName) { BackupManager.shared.markChanged() }
             .onChange(of: iban) { BackupManager.shared.markChanged() }
-            .onChange(of: ruleRaw) { BackupManager.shared.markChanged() }
         }
     }
 }
