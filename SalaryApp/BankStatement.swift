@@ -27,6 +27,15 @@ nonisolated struct BankStatementSummary: Sendable {
     var bankTotal: Double { netSalary + bankDeductions + breakdown.values.reduce(0, +) + contractContribution }
 }
 
+/// مبالغ تُدخل يدوياً لكل شهر ولا تتأثر بإعادة استيراد ملف الرواتب.
+nonisolated struct BankManualAmounts: Codable, Equatable {
+    var accumulatedLeave = 0.0
+    var employeeRewards = 0.0
+    var singleList = 0.0
+
+    var total: Double { accumulatedLeave + employeeRewards + singleList }
+}
+
 @ModelActor
 actor BankStatementEngine {
     func summary(month: String) throws -> BankStatementSummary {
@@ -91,12 +100,34 @@ struct BankStatementView: View {
     @AppStorage("bankStatementMonth") private var selectedMonth = ""
     @AppStorage("bankStatementAccountName") private var accountName = ""
     @AppStorage("bankStatementIBAN") private var iban = ""
+    @AppStorage("bankStatementManualAmounts") private var manualAmountsData = Data()
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
+    private var manualAmounts: BankManualAmounts { amounts(for: month?.name ?? "") }
+
+    private func amounts(for name: String) -> BankManualAmounts {
+        guard !name.isEmpty else { return BankManualAmounts() }
+        let saved = (try? JSONDecoder().decode([String: BankManualAmounts].self, from: manualAmountsData)) ?? [:]
+        return saved[name] ?? BankManualAmounts()
+    }
+
+    private func amountBinding(_ field: WritableKeyPath<BankManualAmounts, Double>, month name: String) -> Binding<Double> {
+        Binding(
+            get: { amounts(for: name)[keyPath: field] },
+            set: { value in
+                guard !name.isEmpty, value.isFinite else { return }
+                var saved = (try? JSONDecoder().decode([String: BankManualAmounts].self, from: manualAmountsData)) ?? [:]
+                var entry = saved[name] ?? BankManualAmounts()
+                entry[keyPath: field] = max(0, value)
+                saved[name] = entry
+                if let encoded = try? JSONEncoder().encode(saved) { manualAmountsData = encoded }
+            }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -110,7 +141,7 @@ struct BankStatementView: View {
                                  ? tr("المبلغ المطلوب للشهر", "Monthly amount")
                                  : tr("مبلغ أولي · يحتاج مطابقة التنفيذ", "Provisional amount · reconcile execution deductions"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
-                            Text(Money.format(summary.bankTotal))
+                            Text(Money.format(summary.bankTotal + manualAmounts.total))
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
                                 .monospacedDigit().foregroundStyle(.white)
                             if !iban.isEmpty { Text(iban).font(.footnote.monospaced()).foregroundStyle(.white.opacity(0.8)).privacySensitive() }
@@ -128,6 +159,13 @@ struct BankStatementView: View {
                             LabeledContent(tr("غير مصنف", "Unclassified"), value: Money.format(summary.unclassifiedNet))
                         }
                         LabeledContent(tr("مجموع الصافي", "Total net pay"), value: Money.format(summary.netSalary))
+                    }
+                    Section(tr("مبالغ تُضاف للرواتب", "Amounts added to payroll")) {
+                        LabeledContent(tr("الإجازات المتراكمة", "Accumulated leave"), value: Money.format(manualAmounts.accumulatedLeave))
+                        LabeledContent(tr("مكافآت منتسبين", "Employee rewards"), value: Money.format(manualAmounts.employeeRewards))
+                        LabeledContent(tr("قائمة مفردة", "Single list"), value: Money.format(manualAmounts.singleList))
+                        Text(tr("مبالغ هذا الشهر تُدخل من إعداد الحساب.", "Enter this month's amounts in Account settings."))
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section(tr("الاستقطاعات المحتسبة", "Included deductions")) {
                         LabeledContent(tr("مجموع استقطاعات المصارف", "Bank deductions"), value: Money.format(summary.bankDeductions))
@@ -208,9 +246,22 @@ struct BankStatementView: View {
                             TextField(tr("اسم الحساب", "Account name"), text: $accountName)
                             TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
                         }
+                        if let month {
+                            Section(tr("مبالغ يدوية · \(month.name)", "Manual amounts · \(month.name)")) {
+                                TextField(tr("الإجازات المتراكمة", "Accumulated leave"), value: amountBinding(\.accumulatedLeave, month: month.name), format: .number.locale(AppSettings.locale))
+                                    .keyboardType(.decimalPad)
+                                TextField(tr("مكافآت منتسبين", "Employee rewards"), value: amountBinding(\.employeeRewards, month: month.name), format: .number.locale(AppSettings.locale))
+                                    .keyboardType(.decimalPad)
+                                TextField(tr("قائمة مفردة", "Single list"), value: amountBinding(\.singleList, month: month.name), format: .number.locale(AppSettings.locale))
+                                    .keyboardType(.decimalPad)
+                            } footer: {
+                                Text(tr("تُحفظ هذه المبالغ لهذا الشهر فقط وتُضاف إلى إجمالي كشف البنك والنسخة الاحتياطية.",
+                                        "These amounts belong to this month only and are included in the bank total and backup."))
+                            }
+                        }
                         Section(tr("طريقة الاحتساب", "Calculation")) {
-                            Text(tr("صافي الرواتب (كاش وبطاقة) + الرعاية الصحية + صندوق الشهداء + النشاط الرياضي + الضريبة + الحماية الاجتماعية + شركة عراق الجوال + مجموع استقطاعات المصارف + التقاعد والضمان الاجتماعي (12% من اسمي رتبة عقود فقط + توقيفاتهم التقاعدية). لا يُستخدم مجموع الاستقطاعات. يجب أن يطابق عمود المصارف ملف الاستقطاعات التنفيذية.",
-                                    "Cash and card net payroll + health care + martyrs fund + sport + tax + social protection + Iraq Mobile + bank deductions + pension/social security (12% of nominal pay for the عقود rank only, plus their retirement deductions). The overall deduction total is not used. Bank deductions must match the execution file."))
+                            Text(tr("صافي الرواتب (كاش وبطاقة) + المبالغ اليدوية للشهر + الرعاية الصحية + صندوق الشهداء + النشاط الرياضي + الضريبة + الحماية الاجتماعية + شركة عراق الجوال + مجموع استقطاعات المصارف + التقاعد والضمان الاجتماعي (12% من اسمي رتبة عقود فقط + توقيفاتهم التقاعدية). لا يُستخدم مجموع الاستقطاعات. يجب أن يطابق عمود المصارف ملف الاستقطاعات التنفيذية.",
+                                    "Cash and card net payroll + this month's manual amounts + health care + martyrs fund + sport + tax + social protection + Iraq Mobile + bank deductions + pension/social security (12% of nominal pay for the عقود rank only, plus their retirement deductions). The overall deduction total is not used. Bank deductions must match the execution file."))
                         }
                     }
                     .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
@@ -239,6 +290,10 @@ struct BankStatementView: View {
             }
             .onChange(of: accountName) { BackupManager.shared.markChanged() }
             .onChange(of: iban) { BackupManager.shared.markChanged() }
+            .onChange(of: manualAmountsData) { BackupManager.shared.markChanged() }
+            .task {
+                if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
+            }
         }
     }
 }

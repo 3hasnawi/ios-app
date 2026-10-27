@@ -199,6 +199,8 @@ jobs:
             shot 08n-reports-root 6
             launch -tab bank
             shot 08p-bank-statement 6
+            launch -tab bank -openBankSettings YES
+            shot 08q-bank-manual-amounts 5
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي"
             shot 08o-report-deduction-detail 6
             launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي" -previewReport YES
@@ -231,6 +233,8 @@ jobs:
           shot 03b-home-audit-cards 4
           launch -tab bank
           shot 03c-bank-statement 6
+          launch -tab bank -openBankSettings YES
+          shot 03d-bank-manual-amounts 5
 
           # 2b) ملفان منفصلان: نافذة المراجعة (التعرّف على النوع والشهر)، ثم الاستيراد
           SPLIT="$DATA/Documents/رواتب آب 2026.xlsx|$DATA/Documents/استقطاعات آب 2026.xlsx"
