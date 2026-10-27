@@ -91,7 +91,7 @@ nonisolated enum FoodContractReport {
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-        <sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>
+        <sheetViews><sheetView rightToLeft="true" workbookViewId="0"/></sheetViews>
         <sheetFormatPr defaultRowHeight="20"/>
         <cols><col min="1" max="1" width="7" customWidth="1"/><col min="2" max="2" width="28" customWidth="1"/><col min="3" max="3" width="22" customWidth="1"/><col min="4" max="4" width="22" customWidth="1"/></cols>
         <sheetData>\(xml)</sheetData>

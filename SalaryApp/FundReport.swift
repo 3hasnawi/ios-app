@@ -109,7 +109,7 @@ nonisolated enum FundReport {
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-        <sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>
+        <sheetViews><sheetView rightToLeft="true" workbookViewId="0"/></sheetViews>
         <sheetFormatPr defaultRowHeight="20"/>
         <cols>\(cols)</cols>
         <sheetData>\(xml)</sheetData>

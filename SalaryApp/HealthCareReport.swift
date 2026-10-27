@@ -108,7 +108,7 @@ nonisolated enum HealthCareReport {
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <sheetPr><tabColor rgb="\(tab)"/><pageSetUpPr fitToPage="1"/></sheetPr>
-        <sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+        <sheetViews><sheetView rightToLeft="true" workbookViewId="0"><pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/></sheetView></sheetViews>
         <sheetFormatPr defaultRowHeight="20"/>
         <cols>\(cols)</cols>
         <sheetData>\(xml)</sheetData>

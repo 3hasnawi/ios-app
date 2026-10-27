@@ -280,7 +280,7 @@ nonisolated enum XLSXWriter {
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
         <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
-        <sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+        <sheetViews><sheetView rightToLeft="true" workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A4" sqref="A4"/></sheetView></sheetViews>
         <sheetFormatPr defaultRowHeight="20"/>
         <cols>\(cols)</cols>
         <sheetData>\(rows)</sheetData>
