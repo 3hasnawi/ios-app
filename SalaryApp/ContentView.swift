@@ -57,43 +57,20 @@ struct ContentView: View {
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
     @State private var path: [Employee] = []
-    @State private var message: String?
-    @State private var monthToDelete: PayrollMonth?
 
     private let fileTypes: [UTType] = [
         UTType(filenameExtension: "xlsx") ?? .spreadsheet,
         .commaSeparatedText,
     ]
 
-    /// الأشهر المختارة (تُحفظ مفصولة بـ "|")، أو أحدث شهر إذا لم يُختر شيء.
-    private var selectedMonths: [PayrollMonth] {
-        let names = Set(selectedMonth.split(separator: "|").map(String.init))
-        let chosen = months.filter { names.contains($0.name) }
-        return chosen.isEmpty ? Array(months.prefix(1)) : chosen
-    }
-
-    private var currentMonth: PayrollMonth? { selectedMonths.first }
-
-    private func setSelection(_ names: [String]) {
-        selectedMonth = names.joined(separator: "|")
-        path = []
-    }
-
-    private func toggle(_ month: PayrollMonth) {
-        var names = selectedMonths.map(\.name)
-        if let i = names.firstIndex(of: month.name) {
-            guard names.count > 1 else { return }   // يبقى شهر واحد على الأقل
-            names.remove(at: i)
-        } else {
-            names.append(month.name)
-        }
-        setSelection(names)
+    /// الاختيار القديم المتعدد لا يطابق اسماً واحداً، فيُفتح أحدث شهر تلقائياً.
+    private var currentMonth: PayrollMonth? {
+        months.first { $0.name == selectedMonth } ?? months.first
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            // التصميم "آيفون أصلي زجاجي": عنوان كبير، زر الأشهر تحته، النتائج مجمّعة بالأشهر،
-            // والبحث شريط زجاجي في أسفل الشاشة (iOS 26) أو تحت العنوان (iOS 18).
+            // اختيار شهر واحد من تقويم شريط العنوان؛ أحدث شهر هو الافتراضي.
             // الشاشة الرئيسية: ملخص الشهر وآخر عمليات البحث، والشعار خلفية شفافة.
             // البحث نفسه في تبويب العدسة.
             HomeDashboard(months: months, current: currentMonth)
@@ -109,22 +86,6 @@ struct ContentView: View {
                 // عنوان صغير حتى تبدأ البطاقات من أعلى الشاشة.
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
-                .alert(tr("الاستيراد", "Import"), isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-                    Button(tr("حسناً", "OK"), role: .cancel) {}
-                } message: {
-                    Text(message ?? "")
-                }
-                .confirmationDialog(
-                    tr("حذف بيانات \(monthToDelete?.name ?? "")؟", "Delete \(monthToDelete?.name ?? "")?"),
-                    isPresented: Binding(get: { monthToDelete != nil }, set: { if !$0 { monthToDelete = nil } }),
-                    titleVisibility: .visible
-                ) {
-                    Button(tr("حذف", "Delete"), role: .destructive) {
-                        if let name = monthToDelete?.name { deleteMonth(name) }
-                    }
-                } message: {
-                    Text(tr("يُحذف الموظفون والاستقطاعات لهذا الشهر فقط. يمكنك استيراد الملف مرة أخرى لاحقاً.", "Only this month's employees and deductions are deleted. You can import the file again later."))
-                }
                 .task {
                     await applyLaunchOptions()
                 }
@@ -138,73 +99,35 @@ struct ContentView: View {
                 // بعد الاستيراد يُعرض أحدث شهر رواتب مستورد.
                 .onChange(of: importCenter.lastPayrollMonth) { _, name in
                     guard let name else { return }
-                    selectedMonth = name
+                    selectedMonth = months.first?.name ?? name
                     path = []
                     importCenter.lastPayrollMonth = nil
+                }
+                .onChange(of: months.first?.name) { _, newest in
+                    selectedMonth = newest ?? ""
                 }
         }
     }
 
-    /// خيارات سريعة لعدد الأشهر (الأحدث أولاً).
-    private var quickCounts: [Int] { [1, 3, 6].filter { $0 < months.count } }
-
-    /// عدد الأشهر الأحدث المختارة إذا كان الاختيار "آخر n أشهر" بالضبط، وإلا nil.
-    private var latestCount: Int? {
-        let chosen = selectedMonths.map(\.name)
-        let latest = months.prefix(chosen.count).map(\.name)
-        return Set(chosen) == Set(latest) ? chosen.count : nil
-    }
-
-    /// زر الأشهر: آخر شهر / 3 / 6 / الكل، أو تحديد أشهر بعينها (شهر أو عدة أشهر).
+    /// اختيار شهر واحد بضغطة واحدة؛ إدارة الحذف موجودة في الإعدادات فقط.
     private var monthMenu: some View {
-        let chosen = Set(selectedMonths.map(\.name))
-        let latest = latestCount
-        return Menu {
-            Section(tr("عدد الأشهر", "Number of months")) {
-                ForEach(quickCounts, id: \.self) { n in
-                    Button {
-                        setSelection(months.prefix(n).map(\.name))
-                    } label: {
-                        checkLabel(n == 1 ? tr("آخر شهر", "Latest month") : tr("آخر \(Num.format(n)) أشهر", "Last \(Num.format(n)) months"), latest == n)
-                    }
-                }
+        Menu {
+            ForEach(months) { month in
                 Button {
-                    setSelection(months.map(\.name))
+                    selectedMonth = month.name
+                    path = []
                 } label: {
-                    checkLabel(tr("كل الأشهر", "All months"), chosen.count == months.count)
-                }
-            }
-            Section(tr("أشهر محددة", "Specific months")) {
-                ForEach(months) { month in
-                    Button {
-                        toggle(month)
-                    } label: {
-                        Label(month.name, systemImage: chosen.contains(month.name) ? "checkmark.circle.fill" : "circle")
-                    }
-                    .menuActionDismissBehavior(.disabled)
-                }
-            }
-            Menu(tr("حذف شهر", "Delete a month"), systemImage: "trash") {
-                ForEach(months) { month in
-                    Button(month.name, role: .destructive) { monthToDelete = month }
+                    if month.name == currentMonth?.name { Label(month.name, systemImage: "checkmark") }
+                    else { Text(month.name) }
                 }
             }
         } label: {
             Image(systemName: "calendar")
-                .accessibilityLabel(tr("اختيار الأشهر: \(monthMenuTitle)", "Choose months: \(monthMenuTitle)"))
+                .accessibilityLabel(tr("اختيار الشهر: \(currentMonth?.name ?? "")", "Choose month: \(currentMonth?.name ?? "")"))
         }
         .accessibilityIdentifier("homeMonthMenu")
         .glassButtonStyle()
         .buttonBorderShape(.circle)
-    }
-
-    private var monthMenuTitle: String {
-        let chosen = selectedMonths
-        if chosen.count == months.count, months.count > 1 { return tr("كل الأشهر", "All months") }
-        if chosen.count == 1 { return chosen[0].name }
-        if latestCount != nil { return tr("آخر \(Num.format(chosen.count)) أشهر", "Last \(Num.format(chosen.count)) months") }
-        if chosen.count == 2 { return chosen.map(\.shortName).joined(separator: " + ") }
-        return tr("\(Num.format(chosen.count)) أشهر", "\(Num.format(chosen.count)) months")
     }
 
     /// زر العرض: تفاصيل الراتب و/أو الاستقطاعات (يبقى واحد على الأقل مختاراً).
@@ -243,11 +166,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private func checkLabel(_ title: String, _ on: Bool) -> some View {
-        if on { Label(title, systemImage: "checkmark") } else { Text(title) }
-    }
-
     private func pillLabel(_ title: String, systemImage: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
@@ -280,21 +198,6 @@ struct ContentView: View {
         }
     }
 
-    private func deleteMonth(_ name: String) {
-        BackupManager.shared.markChanged()
-        let container = context.container
-        Task {
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try await DataImporter(modelContainer: container).delete(month: name)
-                }.value
-                setSelection(selectedMonths.map(\.name).filter { $0 != name })
-                path = []
-            } catch {
-                message = error.localizedDescription
-            }
-        }
-    }
 }
 
 struct EmployeeList: View {
