@@ -31,6 +31,17 @@ final class StaffImportState {
     /// يزيد بعد كل استيراد أو حذف حتى تُحدّث الواجهة.
     var version = 0
 
+    /// يصحّح العدد الظاهر بعد تحديث التطبيق أو استرجاع نسخة اعتماداً على السجلات الفعلية.
+    func refreshStoredCount() async {
+        let container = SharedModel.container
+        let actual = try? await Task.detached(priority: .utility) {
+            try ModelContext(container).fetchCount(FetchDescriptor<StaffMember>())
+        }.value
+        guard let actual, actual != StaffInfo.count else { return }
+        StaffInfo.reconcile(count: actual)
+        version += 1
+    }
+
     func importDatabase(_ url: URL) {
         guard !isImporting else { return }
         isImporting = true
@@ -121,6 +132,7 @@ struct RootView: View {
         // بيانات ملاك وهمية وتنقّل آلي لاختبار المحاكي فقط (-fakeStaff، -autopilot).
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
+            await staffImport.refreshStoredCount()
             await TestData.prepareIfRequested()
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }

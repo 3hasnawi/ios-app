@@ -271,7 +271,7 @@ struct SavedDataView: View {
     private var staffSection: some View {
         Section {
             if StaffInfo.count == 0 {
-                Text(tr("لم يُستورد ملف الملاك بعد. استورده من \"استيراد ملفات\".", "No staff file yet. Import it from \"Import files\"."))
+                Text(tr("لا توجد سجلات ملاك محفوظة. استورد ملف Access الأصلي أدناه.", "No staff records are saved. Import the original Access file below."))
                     .foregroundStyle(.secondary)
             } else {
                 LabeledContent(tr("عدد الموظفين", "Employees")) {
@@ -289,11 +289,18 @@ struct SavedDataView: View {
                     confirmStaffDelete = true
                 }
             }
+            Button {
+                ImportCenter.shared.pickStaff()
+            } label: {
+                Label(StaffInfo.count == 0 ? tr("استيراد ملف الملاك", "Import staff database")
+                                           : tr("إعادة استيراد الملاك", "Reimport staff database"),
+                      systemImage: "square.and.arrow.down")
+            }
         } header: {
             Text(tr("الملاك", "Staff"))
         } footer: {
-            Text(tr("ملف قاعدة البيانات (‎.accdb) كما هو. الاستيراد الجديد يستبدل الملاك القديم كاملاً.",
-                    "The database file (.accdb) as it is. A new import replaces the previous staff data."))
+            Text(tr("اختر ملف Access الأصلي (‎.accdb أو ‎.mdb)، وليس كشف الرواتب. الاستيراد الجديد يستبدل الملاك القديم بعد نجاح القراءة فقط.",
+                    "Choose the original Access file (.accdb or .mdb), not a payroll sheet. The old staff data is replaced only after a successful import."))
         }
         .id(importState.version)
         .confirmationDialog(tr("حذف بيانات الملاك؟", "Delete staff data?"), isPresented: $confirmStaffDelete, titleVisibility: .visible) {

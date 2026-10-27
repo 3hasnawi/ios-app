@@ -130,9 +130,10 @@ struct ContentView: View {
                 }
                 .onChange(of: appRouter.pendingPayrollImport || appRouter.pendingStaffImport, initial: true) { _, pending in
                     guard pending else { return }
+                    let staff = appRouter.pendingStaffImport
                     appRouter.pendingPayrollImport = false
                     appRouter.pendingStaffImport = false
-                    importCenter.pick()
+                    if staff { importCenter.pickStaff() } else { importCenter.pick() }
                 }
                 // بعد الاستيراد يُعرض أحدث شهر رواتب مستورد.
                 .onChange(of: importCenter.lastPayrollMonth) { _, name in

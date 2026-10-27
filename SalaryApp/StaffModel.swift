@@ -69,6 +69,13 @@ nonisolated enum StaffInfo {
     static func clear() {
         for key in [countKey, dateKey, fileKey, statusesKey] { UserDefaults.standard.removeObject(forKey: key) }
     }
+
+    /// العداد القديم قد يبقى بعد استرجاع نسخة بلا سجلات ملاك؛ قاعدة البيانات هي المرجع.
+    static func reconcile(count actual: Int) {
+        guard count != actual else { return }
+        if actual == 0 { clear() }
+        else { UserDefaults.standard.set(actual, forKey: countKey) }
+    }
 }
 
 // MARK: - ترتيب الحقول في الأقسام (مثل نافذة Access)
@@ -246,6 +253,10 @@ actor StaffImporter {
                 let key = ArabicText.normalize(column.name)
                 if names[key] == nil { names[key] = column.name }
             }
+            let motherColumns = main.columns.map(\.name).filter {
+                let key = ArabicText.normalize($0)
+                return key.contains("اسم الام") || key.contains("اسم الوالده")
+            }
             var built = 0
             try reader.forEachRow(of: mainPage, table: main) { row in
                 built += 1
@@ -272,9 +283,11 @@ actor StaffImporter {
 
                 let status = text("الحالة الوظيفية") ?? ""
                 if !status.isEmpty { statusCounts[status, default: 0] += 1 }
+                let mother = text("اسم الام الكامل") ?? text("اسم الام")
+                    ?? motherColumns.compactMap { text($0) }.first ?? ""
                 members.append(StaffMember(
                     name: name,
-                    mother: text("اسم الام الكامل") ?? text("اسم الام") ?? "",
+                    mother: mother,
                     statNumber: text("الرقم الاحصائي") ?? "",
                     unifiedNumber: text("الرقم الموحد") ?? "",
                     rank: text("الرتبة") ?? "",

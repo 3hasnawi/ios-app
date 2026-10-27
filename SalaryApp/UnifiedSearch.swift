@@ -91,6 +91,7 @@ struct UnifiedSearchView: View {
     @State private var shareTarget: Employee?
     @State private var people: [UnifiedPerson] = []
     @State private var loadedKey = ""
+    @State private var searchError: String?
     @State private var autopilot = AutoPilot.shared
     /// القائمة العائمة لنوع البحث.
     @State private var showModes = false
@@ -116,10 +117,23 @@ struct UnifiedSearchView: View {
             List {
                 if trimmed.isEmpty {
                     emptyState
+                } else if loadedKey == queryKey, let searchError {
+                    Section {
+                        ContentUnavailableView(tr("تعذّر البحث", "Search failed"), systemImage: "magnifyingglass",
+                                               description: Text(searchError))
+                            .listRowBackground(Color.clear)
+                    }
                 } else if loadedKey == queryKey && people.isEmpty {
                     Section {
-                        ContentUnavailableView.search(text: trimmed)
-                            .listRowBackground(Color.clear)
+                        if mode != .name && StaffInfo.count == 0 {
+                            ContentUnavailableView(tr("بيانات الملاك غير متوفرة", "Staff data unavailable"), systemImage: "person.3.fill",
+                                                   description: Text(tr("اسم الأم والرقم الإحصائي من ملف الملاك. أعد استيراد ملف Access من الإعدادات ← البيانات المحفوظة.",
+                                                                        "Mother's name and statistical number come from the staff database. Reimport the Access file from Settings › Saved data.")))
+                                .listRowBackground(Color.clear)
+                        } else {
+                            ContentUnavailableView.search(text: trimmed)
+                                .listRowBackground(Color.clear)
+                        }
                     }
                 } else {
                     Section {
@@ -163,11 +177,20 @@ struct UnifiedSearchView: View {
             // البحث نفسه: يُحسب عند تغيّر النص أو الخيارات.
             .task(id: queryKey) {
                 let key = queryKey
-                guard !trimmed.isEmpty else { people = []; loadedKey = key; return }
+                guard !trimmed.isEmpty else { people = []; searchError = nil; loadedKey = key; return }
                 let started = Date()
-                let found = (try? await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)) ?? []
-                guard !Task.isCancelled else { return }
-                people = found
+                do {
+                    let found = try await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)
+                    guard !Task.isCancelled else { return }
+                    people = found
+                    searchError = nil
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    people = []
+                    searchError = error.localizedDescription
+                }
                 loadedKey = key
                 PerfLog.record("search", since: started)
                 if LaunchOptions.openPerson, path.isEmpty, let first = people.first { path = [first] }

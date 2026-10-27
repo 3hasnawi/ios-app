@@ -105,13 +105,18 @@ final class ImportCenter {
     private var autoRun = false
     private var pickedURLs: [URL] = []
 
-    func pick() {
+    func pick() { pick(types: Self.fileTypes, multiple: true) }
+
+    /// إعادة استيراد الملاك من ملف Access فقط، حتى لا يُختار كشف رواتب بالخطأ.
+    func pickStaff() { pick(types: accessFileTypes, multiple: false) }
+
+    private func pick(types: [UTType], multiple: Bool) {
         guard !isBusy else {
             message = tr("يوجد استيراد قيد العمل، انتظر حتى ينتهي.", "An import is already running; wait for it to finish.")
             return
         }
         // تبدأ قراءة الملفات فور اختيارها، مع شريط التقدّم.
-        FilePicker.present(types: Self.fileTypes) { [weak self] urls in
+        FilePicker.present(types: types, multiple: multiple) { [weak self] urls in
             guard let self, !urls.isEmpty else { return }
             // ملف نسخة احتياطية (zip): استرجاع بعد التأكيد، مثلاً على جهاز آخر.
             if let backup = urls.first(where: { $0.pathExtension.lowercased() == "zip" }) {
@@ -164,7 +169,7 @@ final class ImportCenter {
                     found.append(ImportCandidate(url: url, fileName: name, kind: .staff, month: "", allowedKinds: [.staff, .skip],
                                                  result: nil, staffCount: count, error: nil, monthDetected: true))
                 } catch {
-                    found.append(Self.failed(url, name, error))
+                    found.append(Self.failed(url, url.lastPathComponent, error))
                 }
                 sink(1)
                 continue
@@ -191,7 +196,7 @@ final class ImportCenter {
                 found.append(ImportCandidate(url: url, fileName: name, kind: kind, month: month, allowedKinds: allowed,
                                              result: result, staffCount: nil, error: nil, monthDetected: detected))
             } catch {
-                found.append(Self.failed(url, name, error))
+                found.append(Self.failed(url, url.lastPathComponent, error))
             }
         }
         progress.end()
