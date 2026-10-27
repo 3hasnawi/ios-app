@@ -169,9 +169,11 @@ jobs:
 
           if [ "$QUICK" = true ]; then
             check_accounts
+            rm -f "$DATA/Documents/import-report.txt"
             launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
             for i in $(seq 1 180); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
             cat "$DATA/Documents/import-report.txt" | tee ci-output/import-report.txt
+            grep -Fq "$(cat ci-output/expected.txt)" ci-output/import-report.txt || { echo '::error::Payroll import did not complete'; exit 1; }
             launch -tab reports -compareDeductions YES
             shot 08z-deduction-comparison 8
             launch
