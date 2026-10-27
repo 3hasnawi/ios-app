@@ -1,25 +1,30 @@
 import SwiftUI
 import SwiftData
 
-/// ملف جهات التنفيذ داخل مجموع استقطاعات الرواتب؛ يُعرض للمطابقة فقط.
+/// كشف البنك من بنود الرواتب المحددة، بلا استخدام «مجموع الاستقطاعات».
 nonisolated struct BankStatementSummary: Sendable {
     let month: String
     var payrollCount = 0
-    var netSalary = 0.0
-    var payrollDeductions = 0.0
-    var retirement = 0.0
+    var cashNet = 0.0
+    var cardNet = 0.0
+    var unclassifiedNet = 0.0
+    var unclassifiedCount = 0
+    var bankDeductions = 0.0
     var contractNominal = 0.0
+    var contractRetirement = 0.0
     var contractCount = 0
     var missingContractNominal = 0
     var executionDeductions = 0.0
     var executionCount = 0
+    var missingExecutionAmount = 0
     var missingNet = 0
-    var missingDeductionTotal = 0
     var breakdown: [String: Double] = [:]
 
-    var nonRetirementDeductions: Double { payrollDeductions - retirement }
-    var contractContribution: Double { contractNominal * 0.17 }
-    var bankTotal: Double { netSalary + nonRetirementDeductions + contractContribution }
+    var netSalary: Double { cashNet + cardNet + unclassifiedNet }
+    var contractContribution: Double { contractNominal * 0.12 + contractRetirement }
+    var executionDifference: Double { bankDeductions - executionDeductions }
+    var executionMatched: Bool { executionCount > 0 && missingExecutionAmount == 0 && abs(executionDifference) < 1 }
+    var bankTotal: Double { netSalary + bankDeductions + breakdown.values.reduce(0, +) + contractContribution }
 }
 
 @ModelActor
@@ -31,8 +36,6 @@ actor BankStatementEngine {
         for (index, employee) in try modelContext.fetch(payroll).enumerated() {
             if index.isMultiple(of: 512) { try Task.checkCancellation() }
             result.payrollCount += 1
-            if let net = employee.netSalary { result.netSalary += net }
-            else { result.missingNet += 1 }
             let details = employee.details
             let items = employee.items
             func amount(_ keys: [String]) -> Double? {
@@ -45,13 +48,19 @@ actor BankStatementEngine {
                 }
                 return nil
             }
-            if let total = amount(["مجموع الاستقطاعات"]) { result.payrollDeductions += total }
-            else { result.missingDeductionTotal += 1 }
-            result.retirement += amount(["توقيفات تقاعدية", "التوقيفات التقاعدية"]) ?? 0
-            if FundReport.category(of: employee.rank) == 3 {
+            if let net = employee.netSalary {
+                let payment = ArabicText.normalize(details["طريقة الدفع"] ?? "")
+                if payment.contains("بطاق") || payment.contains("كارت") || payment.contains("ماستر") { result.cardNet += net }
+                else if payment.contains("كاش") || payment.contains("نقد") { result.cashNet += net }
+                else { result.unclassifiedNet += net; result.unclassifiedCount += 1 }
+            } else { result.missingNet += 1 }
+            result.bankDeductions += amount(["مجموع استقطاعات المصارف"]) ?? 0
+            // «عقد» غير مشمول؛ المعادلة تخص الرتبة المكتوبة «عقود» فقط.
+            if ArabicText.normalize(employee.rank) == ArabicText.normalize("عقود") {
                 result.contractCount += 1
                 if let nominal = amount(["الاسمي"]) { result.contractNominal += nominal }
                 else { result.missingContractNominal += 1 }
+                result.contractRetirement += amount(["توقيفات تقاعدية", "التوقيفات التقاعدية"]) ?? 0
             }
             for (sources, label) in [(["صندوق الشهداء", "صندوق شهداء الشرطة"], "صندوق شهداء الشرطة"),
                                      (["الرعاية الصحية", "رعاية صحية"], "الرعاية الصحية"),
@@ -65,17 +74,13 @@ actor BankStatementEngine {
             }
         }
         var deductions = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
-        deductions.propertiesToFetch = [\.title, \.amount]
+        deductions.propertiesToFetch = [\.amount]
         for (index, item) in try modelContext.fetch(deductions).enumerated() {
             if index.isMultiple(of: 512) { try Task.checkCancellation() }
-            let key = ArabicText.normalize(item.title)
-            if key.contains(ArabicText.normalize("توقيفات تقاعدية")) { continue }
-            result.executionDeductions += item.amount ?? 0
+            if let value = item.amount { result.executionDeductions += value }
+            else { result.missingExecutionAmount += 1 }
             result.executionCount += 1
         }
-        let named = result.breakdown.values.reduce(0, +)
-        let other = result.nonRetirementDeductions - named
-        if abs(other) >= 1 { result.breakdown["بنود أخرى / فرق المطابقة"] = other }
         return result
     }
 }
@@ -101,7 +106,9 @@ struct BankStatementView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(accountName.isEmpty ? tr("حساب البنك", "Bank account") : accountName)
                                 .font(.headline).foregroundStyle(.white)
-                            Text(tr("المبلغ المطلوب للشهر", "Monthly amount"))
+                            Text(summary.executionMatched
+                                 ? tr("المبلغ المطلوب للشهر", "Monthly amount")
+                                 : tr("مبلغ أولي · يحتاج مطابقة التنفيذ", "Provisional amount · reconcile execution deductions"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
                             Text(Money.format(summary.bankTotal))
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -114,28 +121,55 @@ struct BankStatementView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
-                    Section(tr("مصادر المبلغ", "Amount sources")) {
-                        LabeledContent(tr("صافي الرواتب", "Net payroll"), value: Money.format(summary.netSalary))
-                        LabeledContent(tr("استقطاعات ورقة الرواتب", "Payroll deductions"), value: Money.format(summary.payrollDeductions))
-                        LabeledContent(tr("التوقيفات التقاعدية المستبعدة", "Excluded retirement deductions"), value: Money.format(summary.retirement))
-                        LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
-                        LabeledContent(tr("التقاعد والضمان الاجتماعي", "Pension and social security"), value: Money.format(summary.contractContribution))
-                        Text(tr("17% من اسمي العقود · عددهم \(Num.format(summary.contractCount))", "17% of contract nominal pay · \(summary.contractCount) employees"))
-                            .font(.footnote).foregroundStyle(.secondary)
-                        LabeledContent(tr("استقطاعات جهات التنفيذ", "Execution deductions"), value: Money.format(summary.executionDeductions))
-                        Text(tr("جهات التنفيذ ضمن مجموع الاستقطاعات؛ مبلغ الملف معروض للمطابقة فقط ولا يُضاف مرة ثانية.",
-                                "Execution deductions are included in payroll deductions; the file amount is shown only for reconciliation."))
-                            .font(.footnote).foregroundStyle(.secondary)
+                    Section(tr("صافي الرواتب", "Net payroll")) {
+                        LabeledContent(tr("كاش", "Cash"), value: Money.format(summary.cashNet))
+                        LabeledContent(tr("بطاقة", "Card"), value: Money.format(summary.cardNet))
+                        if summary.unclassifiedCount > 0 {
+                            LabeledContent(tr("غير مصنف", "Unclassified"), value: Money.format(summary.unclassifiedNet))
+                        }
+                        LabeledContent(tr("مجموع الصافي", "Total net pay"), value: Money.format(summary.netSalary))
                     }
-                    Section(tr("تفصيل الاستقطاعات", "Deduction breakdown")) {
-                        ForEach(summary.breakdown.keys.sorted(), id: \.self) { key in
-                            LabeledContent(key, value: Money.format(summary.breakdown[key]))
+                    Section(tr("الاستقطاعات المحتسبة", "Included deductions")) {
+                        LabeledContent(tr("مجموع استقطاعات المصارف", "Bank deductions"), value: Money.format(summary.bankDeductions))
+                        ForEach(["الرعاية الصحية", "صندوق شهداء الشرطة", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال"], id: \.self) { key in
+                            LabeledContent(key, value: Money.format(summary.breakdown[key] ?? 0))
                         }
                     }
-                    if summary.missingNet > 0 || summary.missingDeductionTotal > 0 || summary.missingContractNominal > 0 {
+                    Section(tr("التقاعد والضمان الاجتماعي", "Pension and social security")) {
+                        LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
+                        LabeledContent(tr("12% من اسمي العقود", "12% of contract nominal pay"), value: Money.format(summary.contractNominal * 0.12))
+                        LabeledContent(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), value: Money.format(summary.contractRetirement))
+                        LabeledContent(tr("المبلغ المحتسب", "Included amount"), value: Money.format(summary.contractContribution))
+                        Text(tr("مجموع الاسمي أساس للحساب فقط · رتبة عقود حصراً · عددهم \(Num.format(summary.contractCount))",
+                                "Nominal total is a calculation base only · عقود rank only · \(summary.contractCount) employees"))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Section(tr("مطابقة الاستقطاعات التنفيذية", "Execution deduction reconciliation")) {
+                        LabeledContent(tr("ملف جهات التنفيذ", "Execution file"), value: Money.format(summary.executionDeductions))
+                        if summary.executionCount == 0 {
+                            Label(tr("لا توجد قيود تنفيذية للمطابقة في هذا الشهر.", "No execution entries are available for this month."), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        } else if summary.missingExecutionAmount > 0 {
+                            Label(tr("المطابقة غير مكتملة", "Reconciliation is incomplete"), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                            Text(tr("توجد \(Num.format(summary.missingExecutionAmount)) قيود تنفيذية بلا مبلغ.",
+                                    "\(summary.missingExecutionAmount) execution entries have no amount."))
+                                .font(.footnote).foregroundStyle(.red)
+                        } else if abs(summary.executionDifference) >= 1 {
+                            Label(tr("لا تتطابق المبالغ · الفرق \(Money.format(summary.executionDifference))", "Amounts differ · difference \(Money.format(summary.executionDifference))"), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                        } else {
+                            Label(tr("المبلغان متطابقان", "Amounts match"), systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                        Text(tr("يُحتسب مبلغ عمود المصارف مرة واحدة فقط؛ ملف جهات التنفيذ للمطابقة.",
+                                "The payroll bank-deduction amount is counted once; the execution file is used for reconciliation."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if summary.missingNet > 0 || summary.missingContractNominal > 0 || summary.unclassifiedCount > 0 {
                         Section {
-                            Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي، و\(Num.format(summary.missingDeductionTotal)) بلا مجموع استقطاعات، و\(Num.format(summary.missingContractNominal)) عقود بلا راتب اسمي؛ راجع مصدر البيانات قبل اعتماد المبلغ.",
-                                    "\(summary.missingNet) payroll rows lack net pay, \(summary.missingDeductionTotal) lack deduction totals, and \(summary.missingContractNominal) contract rows lack nominal pay; review the source before using this amount."))
+                            Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي، و\(Num.format(summary.missingContractNominal)) عقود بلا راتب اسمي، و\(Num.format(summary.unclassifiedCount)) رواتب بلا طريقة دفع محفوظة. أعد استيراد الشهر لتصنيف الكاش والبطاقة.",
+                                    "\(summary.missingNet) payroll rows lack net pay, \(summary.missingContractNominal) contract rows lack nominal pay, and \(summary.unclassifiedCount) lack a saved payment method. Reimport the month to split cash and card."))
                                 .foregroundStyle(.orange)
                         }
                     }
@@ -175,8 +209,8 @@ struct BankStatementView: View {
                             TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
                         }
                         Section(tr("طريقة الاحتساب", "Calculation")) {
-                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية + التقاعد والضمان الاجتماعي (17% من مجموع اسمي العقود). جهات التنفيذ داخلة في مجموع الاستقطاعات.",
-                                    "Net payroll + payroll deductions − retirement deductions + pension and social security (17% of contract nominal pay). Execution deductions are already included."))
+                            Text(tr("صافي الرواتب (كاش وبطاقة) + الرعاية الصحية + صندوق الشهداء + النشاط الرياضي + الضريبة + الحماية الاجتماعية + شركة عراق الجوال + مجموع استقطاعات المصارف + التقاعد والضمان الاجتماعي (12% من اسمي رتبة عقود فقط + توقيفاتهم التقاعدية). لا يُستخدم مجموع الاستقطاعات. يجب أن يطابق عمود المصارف ملف الاستقطاعات التنفيذية.",
+                                    "Cash and card net payroll + health care + martyrs fund + sport + tax + social protection + Iraq Mobile + bank deductions + pension/social security (12% of nominal pay for the عقود rank only, plus their retirement deductions). The overall deduction total is not used. Bank deductions must match the execution file."))
                         }
                     }
                     .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
