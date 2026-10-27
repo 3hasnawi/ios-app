@@ -240,7 +240,7 @@ final class NavigationTests: XCTestCase {
 
     /// يختبر شريط النظام والبحث والعودة والمشاركة دون فرض مقاس مخصص عليه.
     func testSystemNavigationBar() {
-        let baseArguments = app.launchArguments
+        let baseArguments = app.launchArguments + ["-unifiedMode", "name"]
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "settings", "-openSettings", "NO",
                                                "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
         app.launch()
