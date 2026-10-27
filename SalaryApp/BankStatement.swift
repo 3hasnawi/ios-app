@@ -303,17 +303,57 @@ private struct BankManualAmountFields: View {
 
     var body: some View {
         Section {
-            TextField(tr("الإجازات المتراكمة", "Accumulated leave"), value: $accumulatedLeave, format: .number)
-                .keyboardType(.decimalPad)
-            TextField(tr("مكافآت منتسبين", "Employee rewards"), value: $employeeRewards, format: .number)
-                .keyboardType(.decimalPad)
-            TextField(tr("قائمة مفردة", "Single list"), value: $singleList, format: .number)
-                .keyboardType(.decimalPad)
+            BankManualAmountRow(title: tr("الإجازات المتراكمة", "Accumulated leave"), amount: $accumulatedLeave)
+            BankManualAmountRow(title: tr("مكافآت منتسبين", "Employee rewards"), amount: $employeeRewards)
+            BankManualAmountRow(title: tr("قائمة مفردة", "Single list"), amount: $singleList)
         } header: {
             Text(tr("مبالغ يدوية · \(month)", "Manual amounts · \(month)"))
         } footer: {
             Text(tr("تُحفظ هذه المبالغ لهذا الشهر فقط وتُضاف إلى إجمالي كشف البنك والنسخة الاحتياطية.",
                     "These amounts belong to this month only and are included in the bank total and backup."))
+        }
+    }
+}
+
+private struct BankManualAmountRow: View {
+    let title: String
+    @Binding var amount: Double
+    @State private var input: String
+
+    init(title: String, amount: Binding<Double>) {
+        self.title = title
+        _amount = amount
+        // حالة التحرير منفصلة عن القيمة المحفوظة كي لا يعيد التنسيق ضبط المؤشر مع كل رقم.
+        _input = State(initialValue: amount.wrappedValue == 0 ? "" :
+            amount.wrappedValue.formatted(.number.grouping(.never).precision(.fractionLength(0...2)).locale(Locale(identifier: "en_US_POSIX"))))
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TextField(tr("المبلغ", "Amount"), text: $input)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(minWidth: 100)
+                .accessibilityLabel(title)
+                .onChange(of: input) {
+                    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty { amount = 0 }
+                    else if let value = ArabicText.number(from: trimmed), value.isFinite, value >= 0 {
+                        amount = value
+                    }
+                }
+            if !input.isEmpty {
+                Button {
+                    input = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tr("مسح \(title)", "Clear \(title)"))
+            }
         }
     }
 }
