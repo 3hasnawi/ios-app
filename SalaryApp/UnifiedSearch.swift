@@ -738,8 +738,17 @@ struct UnifiedPersonView: View {
         // الأشهر والملاك قائمة منسدلة بجانب العنوان، فتبدأ القسيمة من أعلى الصفحة.
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { partMenu(staff: staff) }
+            if let record = selectedRecord {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up") {
+                        router.payslipToShare = record
+                        router.showShare = true
+                    }
+                    .accessibilityIdentifier("personShareButton")
+                }
+            }
         }
-        // زر "مشاركة" في الشريط السفلي يشارك القسيمة المعروضة.
+        // المشاركة في شريط العنوان؛ بقاء خمسة تبويبات يمنع إدراج البحث في «المزيد».
         .onAppear {
             router.payslipToShare = selectedRecord
             // اختبار المحاكي: -openPerson YES -share YES يفتح نافذة المشاركة.

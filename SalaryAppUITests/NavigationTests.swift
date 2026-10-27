@@ -137,6 +137,10 @@ final class NavigationTests: XCTestCase {
         step("فتح النتيجة \(index + 1)") {
             cards.element(boundBy: index).tap()
             wait(element("personPartPicker"), "صفحة الشخص")
+            if app.tabBars.buttons["المزيد"].exists || app.tabBars.buttons["More"].exists {
+                issue("ظهر تبويب المزيد فوق القسيمة وأضيف شريط تنقّل ثانٍ")
+            }
+            if !searchTab.exists { issue("اختفى تبويب البحث عند فتح القسيمة") }
         }
         step("أقسام صفحة الشخص") {
             let picker = element("personPartPicker")

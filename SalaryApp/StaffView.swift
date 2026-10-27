@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class AppRouter {
     static let shared = AppRouter()
-    enum Tab: Hashable { case payroll, staff, search, share, reports, bank, settings }
+    enum Tab: Hashable { case payroll, staff, search, reports, bank, settings }
     /// البحث يفتح تبويب العدسة؛ إلا عند فتح صفحة موظف مباشرة (اختبار المحاكي).
     var tab: Tab = LaunchOptions.startTab == "bank" ? .bank
         : LaunchOptions.startTab == "reports" ? .reports
@@ -16,7 +16,7 @@ final class AppRouter {
     var pendingStaffImport = false
     /// يفتح نافذة اختيار ملفات الرواتب في تبويب الرواتب.
     var pendingPayrollImport = false
-    /// القسيمة المعروضة الآن: يظهر زر "مشاركة" في الشريط السفلي بجانب العدسة.
+    /// القسيمة المعروضة الآن لزر المشاركة في شريط عنوان صفحة الشخص.
     var payslipToShare: Employee?
     /// صفحة في تبويب التقارير تُفتح من إشعار (التدقيق، الرواتب، الاستقطاعات).
     var pendingReport: ReportsRoute?
@@ -94,17 +94,10 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var backup = BackupManager.shared
 
-    /// زر "مشاركة" في الشريط ليس صفحة: الضغط عليه يفتح نافذة المشاركة ويبقى التبويب الحالي.
     private var selection: Binding<AppRouter.Tab> {
         Binding(
             get: { router.tab },
-            set: { tab in
-                if tab == .share {
-                    router.showShare = true
-                } else {
-                    router.tab = tab
-                }
-            }
+            set: { router.tab = $0 }
         )
     }
 
@@ -121,11 +114,6 @@ struct RootView: View {
             }
             Tab(tr("الإعدادات", "Settings"), systemImage: "gearshape", value: AppRouter.Tab.settings) {
                 SettingsView()
-            }
-            if router.payslipToShare != nil {
-                Tab(tr("مشاركة", "Share"), systemImage: "square.and.arrow.up", value: AppRouter.Tab.share) {
-                    Color.clear
-                }
             }
             Tab(tr("بحث", "Search"), systemImage: "magnifyingglass", value: AppRouter.Tab.search, role: .search) {
                 UnifiedSearchView()
