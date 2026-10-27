@@ -913,6 +913,16 @@ struct HomeDashboard: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button {
+                backup.pickRestore()
+            } label: {
+                Label(tr("استرجاع بياناتي من نسخة iCloud", "Restore my data from iCloud backup"),
+                      systemImage: "icloud.and.arrow.down")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(backup.isWorking)
+            .accessibilityIdentifier("restoreFromEmptyHome")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)

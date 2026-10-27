@@ -20,6 +20,10 @@ nonisolated enum BackupFormat {
         var staff: Int
         var accounts: Int?
         var books: Int?
+        var hasData: Bool {
+            !months.isEmpty || employees > 0 || deductions > 0 || staff > 0 ||
+            (accounts ?? 0) > 0 || (books ?? 0) > 0
+        }
     }
 
     struct MonthRecord: Codable { var name: String; var importedAt: Date; var employeeCount: Int; var deductionCount: Int; var summary: Data? }
@@ -39,7 +43,7 @@ nonisolated enum BackupFormat {
 }
 
 enum BackupError: LocalizedError {
-    case notBackup, newerVersion, folderUnavailable, noFolder, emptyArchive
+    case notBackup, newerVersion, folderUnavailable, noFolder, emptyArchive, emptyData, emptyRestore, dataLossRisk
     var errorDescription: String? {
         switch self {
         case .notBackup: tr("الملف ليس نسخة احتياطية من تطبيق الرواتب.", "This file isn't a payroll app backup.")
@@ -47,6 +51,9 @@ enum BackupError: LocalizedError {
         case .folderUnavailable: tr("تعذّر الوصول إلى مجلد iCloud. اختر المجلد من جديد في الإعدادات ← النسخ الاحتياطي.", "The iCloud folder can't be reached. Choose it again in Settings › Backup.")
         case .noFolder: tr("لم يُختر مجلد iCloud بعد. اختره من الإعدادات ← النسخ الاحتياطي.", "No iCloud folder chosen yet. Choose it in Settings › Backup.")
         case .emptyArchive: tr("النسخة الناتجة فارغة؛ لم يُستبدل الملف السابق.", "The new backup is empty; the previous file was preserved.")
+        case .emptyData: tr("لا توجد بيانات محفوظة للنسخ؛ لم يُستبدل ملف النسخة السابقة.", "There is no saved data to back up; the previous backup was preserved.")
+        case .emptyRestore: tr("النسخة المختارة لا تحتوي بيانات؛ لم تُستبدل بيانات التطبيق.", "The selected backup contains no data; app data was preserved.")
+        case .dataLossRisk: tr("النسخة السابقة تحتوي بيانات غير موجودة الآن. لم تُستبدل؛ استرجع البيانات أولاً أو احفظ النسخة الجديدة في مجلد آخر.", "The previous backup contains data missing from this app. It was preserved; restore first or save the new backup in another folder.")
         }
     }
 }
@@ -134,6 +141,7 @@ actor BackupActor {
         // نفحص النسخة كاملة قبل لمس البيانات الحالية.
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
         guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        guard manifest.hasData else { throw BackupError.emptyRestore }
         let months = try lines("months.jsonl").map { try decoder.decode(BackupFormat.MonthRecord.self, from: $0) }
         let employees = try lines("employees.jsonl").map { try decoder.decode(BackupFormat.EmployeeRecord.self, from: $0) }
         let deductions = try lines("deductions.jsonl").map { try decoder.decode(BackupFormat.DeductionRecord.self, from: $0) }
@@ -257,6 +265,10 @@ final class BackupManager {
     var version = 0
 
     var lastBackup: Date? { UserDefaults.standard.object(forKey: Self.lastKey) as? Date }
+    var hasUnbackedChanges: Bool {
+        guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return false }
+        return changed > (lastBackup ?? .distantPast)
+    }
     var lastSize: Int64 { Int64(UserDefaults.standard.integer(forKey: Self.lastSizeKey)) }
     var lastPlace: String { UserDefaults.standard.string(forKey: Self.lastPlaceKey) ?? "" }
     var lastError: String? { UserDefaults.standard.string(forKey: Self.errorKey) }
@@ -284,6 +296,7 @@ final class BackupManager {
         _ = version
         if folderName == nil { return tr("⚠️ اختر مكان النسخة في iCloud", "⚠️ Choose where to save in iCloud") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
+        if hasUnbackedChanges { return tr("⚠️ تغيّرت البيانات منذ آخر نسخة", "⚠️ Data changed since the last backup") }
         guard Self.autoEnabled || Self.schedule != .off else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
         guard let lastBackup else { return tr("تلقائي · iCloud · لم تُؤخذ نسخة بعد", "Auto · iCloud · no backup yet") }
         let schedule = Self.schedule == .hourly ? tr("كل ساعة", "Hourly") : Self.schedule == .daily ? tr("كل يوم", "Daily") : tr("بعد الاستيراد", "After import")
@@ -293,6 +306,7 @@ final class BackupManager {
     var statusColor: Color {
         _ = version
         if folderName == nil || lastError != nil { return .red }
+        if hasUnbackedChanges { return .orange }
         return (Self.autoEnabled || Self.schedule != .off) && lastBackup != nil ? .green : .secondary
     }
 
@@ -386,9 +400,15 @@ final class BackupManager {
         defer { progress.end() }
         let sink = progress.sink(0, 1, tr("تجهيز النسخة", "Preparing backup"))
         let container = SharedModel.container
-        return try await Task.detached(priority: .userInitiated) {
+        let result = try await Task.detached(priority: .userInitiated) {
             try await BackupActor(modelContainer: container).export(settings: settings, progress: sink)
         }.value
+        // حاوية جديدة فارغة بعد إعادة تثبيت التطبيق لا يجوز أن تمحو آخر نسخة صالحة.
+        guard result.1.hasData else {
+            try? FileManager.default.removeItem(at: result.0)
+            throw BackupError.emptyData
+        }
+        return result
     }
 
     private static func archiveSize(_ url: URL) throws -> Int64 {
@@ -397,6 +417,36 @@ final class BackupManager {
         guard size > 0 else { throw BackupError.emptyArchive }
         guard (try? Archive(url: url, accessMode: .read))?["manifest.json"] != nil else { throw BackupError.notBackup }
         return size
+    }
+
+    /// يمنع تحديث حاوية ناقصة من محو أشهر أو ملاك أو حسابات كانت في نسخة iCloud السابقة.
+    nonisolated static func checkReplacement(_ current: BackupFormat.Manifest, at file: URL) throws {
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        if (attributes[.size] as? NSNumber)?.intValue == 0 { return }
+        var coordinationError: NSError?
+        var readError: Error?
+        var previous: BackupFormat.Manifest?
+        NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordinationError) { target in
+            do {
+                guard let archive = try? Archive(url: target, accessMode: .read),
+                      let entry = archive["manifest.json"], entry.uncompressedSize < 1_000_000 else {
+                    throw BackupError.notBackup
+                }
+                var data = Data()
+                _ = try archive.extract(entry) { data.append($0) }
+                previous = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
+            } catch { readError = error }
+        }
+        if let error = coordinationError ?? readError { throw error }
+        guard let previous else { throw BackupError.folderUnavailable }
+        guard previous.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        let lostMonth = !Set(previous.months).isSubset(of: Set(current.months))
+        let lostRows = previous.employees > 0 && current.employees == 0 ||
+            previous.deductions > 0 && current.deductions == 0 ||
+            previous.staff > 0 && current.staff == 0 ||
+            (previous.accounts ?? 0) > 0 && (current.accounts ?? 0) == 0 ||
+            (previous.books ?? 0) > 0 && (current.books ?? 0) == 0
+        guard !lostMonth && !lostRows else { throw BackupError.dataLossRisk }
     }
 
     /// نسخة يدوية: نافذة المشاركة (Google Drive، OneDrive، واتساب، حفظ في الملفات).
@@ -416,6 +466,7 @@ final class BackupManager {
 
     func markChanged() {
         UserDefaults.standard.set(Date(), forKey: Self.changedKey)
+        version += 1
     }
 
     /// بيانات تغيّرت بعد آخر نسخة ناجحة أو حان موعد النسخة الدورية.
@@ -458,12 +509,13 @@ final class BackupManager {
         let task = UIApplication.shared.beginBackgroundTask(withName: "backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         do {
-            let (url, _) = try await makeBackup(title: tr("نسخ احتياطي إلى iCloud", "Backing up to iCloud"))
+            let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي إلى iCloud", "Backing up to iCloud"))
             defer { try? FileManager.default.removeItem(at: url) }
             let preparedSize = try Self.archiveSize(url)
             let size = try await Task.detached(priority: .utility) { () throws -> Int64 in
                 let granted = file.startAccessingSecurityScopedResource()
                 defer { if granted { file.stopAccessingSecurityScopedResource() } }
+                try Self.checkReplacement(manifest, at: file)
                 var coordinationError: NSError?
                 var writeError: Error?
                 var didWrite = false
@@ -559,6 +611,7 @@ final class BackupManager {
                 let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self,
                     from: Data(contentsOf: dir.appendingPathComponent("manifest.json")))
                 guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+                guard manifest.hasData else { throw BackupError.emptyRestore }
                 if manifest.version >= 3 {
                     guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
                           let index = archive["books/index.json"], index.type == .file,
@@ -729,6 +782,9 @@ struct BackupView: View {
                 statusCard
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+            } footer: {
+                Text(tr("قبل أي تحديث من AppStar تأكد أن آخر نسخة ناجحة بتاريخ اليوم. إذا احتاج المثبّت إلى إعادة التثبيت فقد يفقد iOS حاوية البيانات المحلية؛ يمكن استرجاعها من نسخة iCloud.",
+                        "Before updating through AppStar, confirm a successful backup today. If the installer reinstalls the app, iOS may lose local data; restore it from the iCloud backup."))
             }
 
             Section {
@@ -834,8 +890,8 @@ struct BackupView: View {
             Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("تُجهَّز النسخة ثم تظهر نافذة الحفظ: اختر \"iCloud Drive\" (يُفضّل مجلداً باسم \"نسخ الرواتب\"، ويمكن إنشاؤه من الزر أعلى النافذة) ثم اضغط \"حفظ\". بعدها تُكتب كل نسخة تلقائية فوق نفس الملف.",
-                    "The backup is prepared, then the save window opens: choose iCloud Drive and tap Save. Every automatic backup then overwrites that same file."))
+            Text(tr("تُجهَّز النسخة ثم تظهر نافذة الحفظ. إذا وجدت نسخة قديمة، استرجعها أولاً أو احفظ الجديدة في مجلد مختلف كي لا تستبدلها. بعد اختيار الملف تُكتب النسخ التلقائية فوقه.",
+                    "The save window opens after preparing the backup. If an older backup exists, restore it first or save this one in another folder. Automatic backups then replace the chosen file."))
         }
     }
 
@@ -844,12 +900,13 @@ struct BackupView: View {
     private var statusCard: some View {
         let _ = manager.version
         let failed = manager.lastError != nil
+        let pending = manager.hasUnbackedChanges
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
+            Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed || pending ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background((manager.isWorking ? Color.blue : failed ? .red : manager.lastBackup == nil ? .gray : .green).gradient,
+                .background((manager.isWorking ? Color.blue : failed ? .red : pending ? .orange : manager.lastBackup == nil ? .gray : .green).gradient,
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 if manager.isWorking && progress.isActive {
@@ -871,6 +928,11 @@ struct BackupView: View {
                             .foregroundStyle(.red)
                         Button(tr("إعادة المحاولة", "Try again")) { Task { await manager.backupToDestination() } }
                             .font(.subheadline.weight(.semibold))
+                    } else if pending {
+                        Text(tr("هناك بيانات أحدث من آخر نسخة. انتظر اكتمال النسخ أو اضغط «نسخ الآن» قبل تحديث التطبيق.",
+                                "Newer data hasn't been backed up. Wait for backup or tap Back up now before updating the app."))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
                     }
                 }
             }
