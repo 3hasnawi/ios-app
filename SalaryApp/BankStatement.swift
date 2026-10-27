@@ -8,6 +8,9 @@ nonisolated struct BankStatementSummary: Sendable {
     var netSalary = 0.0
     var payrollDeductions = 0.0
     var retirement = 0.0
+    var contractNominal = 0.0
+    var contractCount = 0
+    var missingContractNominal = 0
     var executionDeductions = 0.0
     var executionCount = 0
     var missingNet = 0
@@ -15,7 +18,8 @@ nonisolated struct BankStatementSummary: Sendable {
     var breakdown: [String: Double] = [:]
 
     var nonRetirementDeductions: Double { payrollDeductions - retirement }
-    var bankTotal: Double { netSalary + nonRetirementDeductions }
+    var contractContribution: Double { contractNominal * 0.17 }
+    var bankTotal: Double { netSalary + nonRetirementDeductions + contractContribution }
 }
 
 @ModelActor
@@ -23,7 +27,7 @@ actor BankStatementEngine {
     func summary(month: String) throws -> BankStatementSummary {
         var result = BankStatementSummary(month: month)
         var payroll = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })
-        payroll.propertiesToFetch = [\.netSalary, \.detailsData, \.itemsData]
+        payroll.propertiesToFetch = [\.rank, \.netSalary, \.detailsData, \.itemsData]
         for (index, employee) in try modelContext.fetch(payroll).enumerated() {
             if index.isMultiple(of: 512) { try Task.checkCancellation() }
             result.payrollCount += 1
@@ -44,6 +48,11 @@ actor BankStatementEngine {
             if let total = amount(["مجموع الاستقطاعات"]) { result.payrollDeductions += total }
             else { result.missingDeductionTotal += 1 }
             result.retirement += amount(["توقيفات تقاعدية", "التوقيفات التقاعدية"]) ?? 0
+            if FundReport.category(of: employee.rank) == 3 {
+                result.contractCount += 1
+                if let nominal = amount(["الاسمي"]) { result.contractNominal += nominal }
+                else { result.missingContractNominal += 1 }
+            }
             for (sources, label) in [(["صندوق الشهداء", "صندوق شهداء الشرطة"], "صندوق شهداء الشرطة"),
                                      (["الرعاية الصحية", "رعاية صحية"], "الرعاية الصحية"),
                                      (["نشاط رياضي", "النشاط الرياضي"], "النشاط الرياضي"),
@@ -109,6 +118,10 @@ struct BankStatementView: View {
                         LabeledContent(tr("صافي الرواتب", "Net payroll"), value: Money.format(summary.netSalary))
                         LabeledContent(tr("استقطاعات ورقة الرواتب", "Payroll deductions"), value: Money.format(summary.payrollDeductions))
                         LabeledContent(tr("التوقيفات التقاعدية المستبعدة", "Excluded retirement deductions"), value: Money.format(summary.retirement))
+                        LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
+                        LabeledContent(tr("حصة العقود (17% من الاسمي)", "Contract share (17% of nominal)"), value: Money.format(summary.contractContribution))
+                        Text(tr("عدد موظفي العقود: \(Num.format(summary.contractCount))", "Contract employees: \(summary.contractCount)"))
+                            .font(.footnote).foregroundStyle(.secondary)
                         LabeledContent(tr("استقطاعات جهات التنفيذ", "Execution deductions"), value: Money.format(summary.executionDeductions))
                         Text(tr("جهات التنفيذ ضمن مجموع الاستقطاعات؛ مبلغ الملف معروض للمطابقة فقط ولا يُضاف مرة ثانية.",
                                 "Execution deductions are included in payroll deductions; the file amount is shown only for reconciliation."))
@@ -119,10 +132,10 @@ struct BankStatementView: View {
                             LabeledContent(key, value: Money.format(summary.breakdown[key]))
                         }
                     }
-                    if summary.missingNet > 0 || summary.missingDeductionTotal > 0 {
+                    if summary.missingNet > 0 || summary.missingDeductionTotal > 0 || summary.missingContractNominal > 0 {
                         Section {
-                            Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي و\(Num.format(summary.missingDeductionTotal)) بلا مجموع استقطاعات؛ راجع مصدر البيانات قبل اعتماد المبلغ.",
-                                    "\(summary.missingNet) payroll rows lack net pay and \(summary.missingDeductionTotal) lack deduction totals; review the source before using this amount."))
+                            Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي، و\(Num.format(summary.missingDeductionTotal)) بلا مجموع استقطاعات، و\(Num.format(summary.missingContractNominal)) عقود بلا راتب اسمي؛ راجع مصدر البيانات قبل اعتماد المبلغ.",
+                                    "\(summary.missingNet) payroll rows lack net pay, \(summary.missingDeductionTotal) lack deduction totals, and \(summary.missingContractNominal) contract rows lack nominal pay; review the source before using this amount."))
                                 .foregroundStyle(.orange)
                         }
                     }
@@ -162,8 +175,8 @@ struct BankStatementView: View {
                             TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
                         }
                         Section(tr("طريقة الاحتساب", "Calculation")) {
-                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية. جهات التنفيذ داخلة في مجموع الاستقطاعات.",
-                                    "Net payroll + payroll deductions − retirement deductions. Execution deductions are already included."))
+                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية + 17% من مجموع الراتب الاسمي لرتبة عقود. جهات التنفيذ داخلة في مجموع الاستقطاعات.",
+                                    "Net payroll + payroll deductions − retirement deductions + 17% of contract nominal pay. Execution deductions are already included."))
                         }
                     }
                     .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))

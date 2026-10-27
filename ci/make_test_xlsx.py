@@ -94,11 +94,13 @@ wb = Workbook(write_only=True)
 main = wb.create_sheet("ورقة1")
 main.append(HEADERS)
 
-# Two fixed employees the screenshots look up. The deduction sheet spells the first one
-# without hamza ("احمد") to check that matching ignores spelling differences.
+# أسماء وهمية ثابتة للقطات، بينها عقدان للتحقق بصرياً من حصة ١٧٪ في كشف البنك.
+# ورقة الاستقطاعات تكتب الاسم الأول دون همزة لاختبار مطابقة الاسم.
 fixed = [
     ("أحمد علي حسين الدليمي", "نقيب", "قسم النجدة / المقر", 1398000 if previous else 1452300, True),
     ("عمر خالد جاسم العبيدي", "مفوض3", "فوج الطوارئ الأول", 987650, False),
+    ("ليث سعد رعد العاني", "عقود", "قسم النجدة / المقر", 1120000, False),
+    ("زياد مهند عمر الراوي", "عقد", "مدرسة التدريب", 1080000, False),
 ]
 names = []
 for name, rank, unit, net, phone in fixed:
