@@ -119,8 +119,8 @@ struct BankStatementView: View {
                         LabeledContent(tr("استقطاعات ورقة الرواتب", "Payroll deductions"), value: Money.format(summary.payrollDeductions))
                         LabeledContent(tr("التوقيفات التقاعدية المستبعدة", "Excluded retirement deductions"), value: Money.format(summary.retirement))
                         LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
-                        LabeledContent(tr("حصة العقود (17% من الاسمي)", "Contract share (17% of nominal)"), value: Money.format(summary.contractContribution))
-                        Text(tr("عدد موظفي العقود: \(Num.format(summary.contractCount))", "Contract employees: \(summary.contractCount)"))
+                        LabeledContent(tr("التقاعد والضمان الاجتماعي", "Pension and social security"), value: Money.format(summary.contractContribution))
+                        Text(tr("17% من اسمي العقود · عددهم \(Num.format(summary.contractCount))", "17% of contract nominal pay · \(summary.contractCount) employees"))
                             .font(.footnote).foregroundStyle(.secondary)
                         LabeledContent(tr("استقطاعات جهات التنفيذ", "Execution deductions"), value: Money.format(summary.executionDeductions))
                         Text(tr("جهات التنفيذ ضمن مجموع الاستقطاعات؛ مبلغ الملف معروض للمطابقة فقط ولا يُضاف مرة ثانية.",
@@ -175,8 +175,8 @@ struct BankStatementView: View {
                             TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
                         }
                         Section(tr("طريقة الاحتساب", "Calculation")) {
-                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية + 17% من مجموع الراتب الاسمي لرتبة عقود. جهات التنفيذ داخلة في مجموع الاستقطاعات.",
-                                    "Net payroll + payroll deductions − retirement deductions + 17% of contract nominal pay. Execution deductions are already included."))
+                            Text(tr("صافي الرواتب + مجموع الاستقطاعات − التوقيفات التقاعدية + التقاعد والضمان الاجتماعي (17% من مجموع اسمي العقود). جهات التنفيذ داخلة في مجموع الاستقطاعات.",
+                                    "Net payroll + payroll deductions − retirement deductions + pension and social security (17% of contract nominal pay). Execution deductions are already included."))
                         }
                     }
                     .navigationTitle(tr("مصادر كشف البنك", "Bank statement sources"))
