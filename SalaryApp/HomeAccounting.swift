@@ -61,9 +61,15 @@ struct HomeAccounting: View {
     let openEntities: () -> Void
 
     @AppStorage(HomeActionLayout.key) private var actionsRaw = ""
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedReview = 0
 
     private let green = Color(red: 0.07, green: 0.25, blue: 0.22)
+    // الأخضر الداكن مناسب لسطح البطاقة العلوية، لكنه لا يُقرأ فوق بطاقات الوضع الليلي.
+    private var accent: Color {
+        colorScheme == .dark ? Color(red: 0.43, green: 0.86, blue: 0.71) : green
+    }
+    private var cardSurface: Color { Color(.secondarySystemGroupedBackground) }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -103,7 +109,7 @@ struct HomeAccounting: View {
                 category(3, title: tr("عقود", "Contracts"), symbol: "doc.text")
             }
             .padding(.vertical, 12)
-            .background(Color(.secondarySystemGroupedBackground))
+            .background(cardSurface)
         }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(green.opacity(0.10)))
@@ -121,7 +127,7 @@ struct HomeAccounting: View {
             }
             Text(title).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
         }
-        .foregroundStyle(green)
+        .foregroundStyle(accent)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
@@ -132,19 +138,19 @@ struct HomeAccounting: View {
             VStack(alignment: .leading, spacing: 10) {
                 Image(systemName: kind.symbol)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.08, green: 0.48, blue: 0.39))
+                    .foregroundStyle(accent)
                 Text(kind.title).font(.headline).foregroundStyle(.primary)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Text(detail(kind)).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
-                Text(footnote(kind)).font(.caption2).foregroundStyle(green)
+                Text(footnote(kind)).font(.caption2).foregroundStyle(accent)
                     .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 166, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 21))
-            .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(green.opacity(0.12)))
+            .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
+            .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(accent.opacity(0.18)))
             .contentShape(RoundedRectangle(cornerRadius: 21))
         }
         .buttonStyle(.plain)
@@ -264,15 +270,15 @@ struct HomeAccounting: View {
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 108)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 21))
+            .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
         } else if reviewItems.isEmpty {
             Label(previous == nil
                   ? tr("لا يوجد شهر سابق للمقارنة؛ فحوص الشهر الحالي فقط", "No previous month; current checks only")
                   : tr("لا توجد ملاحظات أو متغيرات للمراجعة", "No issues or changes to review"),
                   systemImage: previous == nil ? "info.circle" : "checkmark.shield")
-                .font(.subheadline.weight(.medium)).foregroundStyle(green)
+                .font(.subheadline.weight(.medium)).foregroundStyle(accent)
                 .frame(maxWidth: .infinity, minHeight: 108)
-                .background(green.opacity(0.08), in: RoundedRectangle(cornerRadius: 21))
+                .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
         } else {
             VStack(spacing: 2) {
                 TabView(selection: $selectedReview) {
@@ -280,7 +286,7 @@ struct HomeAccounting: View {
                         let item = reviewItems[index]
                         Button { openRoute(item.route) } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: item.symbol).font(.title3)
+                                Image(systemName: item.symbol).font(.title3).foregroundStyle(accent)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(tr("حالة للمراجعة · \(Num.format(index + 1)) من \(Num.format(reviewItems.count))",
                                             "Review item · \(index + 1) of \(reviewItems.count)"))
@@ -290,11 +296,11 @@ struct HomeAccounting: View {
                                     Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold))
+                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(accent)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(16)
-                            .background(green.opacity(0.09), in: RoundedRectangle(cornerRadius: 21))
+                            .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
                             .contentShape(RoundedRectangle(cornerRadius: 21))
                         }
                         .buttonStyle(.plain)
@@ -305,7 +311,7 @@ struct HomeAccounting: View {
                 .frame(height: 112)
                 HStack(spacing: 5) {
                     ForEach(reviewItems.indices, id: \.self) { index in
-                        Circle().fill(index == selectedReview ? green : green.opacity(0.25))
+                        Circle().fill(index == selectedReview ? accent : accent.opacity(0.35))
                             .frame(width: index == selectedReview ? 6 : 4, height: index == selectedReview ? 6 : 4)
                     }
                 }
