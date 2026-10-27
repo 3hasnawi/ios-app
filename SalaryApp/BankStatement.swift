@@ -302,13 +302,15 @@ private struct BankManualAmountFields: View {
     @Binding var singleList: Double
 
     var body: some View {
-        Section(tr("مبالغ يدوية · \(month)", "Manual amounts · \(month)")) {
+        Section {
             TextField(tr("الإجازات المتراكمة", "Accumulated leave"), value: $accumulatedLeave, format: .number)
                 .keyboardType(.decimalPad)
             TextField(tr("مكافآت منتسبين", "Employee rewards"), value: $employeeRewards, format: .number)
                 .keyboardType(.decimalPad)
             TextField(tr("قائمة مفردة", "Single list"), value: $singleList, format: .number)
                 .keyboardType(.decimalPad)
+        } header: {
+            Text(tr("مبالغ يدوية · \(month)", "Manual amounts · \(month)"))
         } footer: {
             Text(tr("تُحفظ هذه المبالغ لهذا الشهر فقط وتُضاف إلى إجمالي كشف البنك والنسخة الاحتياطية.",
                     "These amounts belong to this month only and are included in the bank total and backup."))
