@@ -3,6 +3,11 @@
   <ItemGroup>
     <Compile Include="../WindowsApp/BackupReader.cs" Link="BackupReader.cs" />
     <Compile Include="../WindowsApp/PayrollMath.cs" Link="PayrollMath.cs" />
+    <Compile Include="../WindowsApp/DeductionComparison.cs" Link="DeductionComparison.cs" />
+    <Compile Include="../WindowsApp/PdfExport.cs" Link="PdfExport.cs" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.9" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.9" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="7.3.0.3" />
     <Compile Include="../WindowsApp/ExcelExport.cs" Link="ExcelExport.cs" />
     <None Include="plist.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

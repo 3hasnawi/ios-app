@@ -19,12 +19,14 @@ public sealed partial class MainWindow : Window
         section = page; PageTitle.Text = title;
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         SearchPanel.Visibility = page == "search" ? Visibility.Visible : Visibility.Collapsed;
-        DataPanel.Visibility = page is "reports" or "bank" or "audit" or "staff" or "books" ? Visibility.Visible : Visibility.Collapsed;
+        DataPanel.Visibility = page is "reports" or "payroll" or "bank" or "audit" or "staff" or "books" ? Visibility.Visible : Visibility.Collapsed;
+        ComparePicker.Visibility = page == "audit" ? Visibility.Visible : Visibility.Collapsed;
         if (DataPanel.Visibility == Visibility.Visible) RefreshData();
     }
     private void Home_Click(object sender, RoutedEventArgs e) => ShowSection("home", "الرئيسية");
     private void SearchPage_Click(object sender, RoutedEventArgs e) => ShowSection("search", "البحث الشامل");
     private void Reports_Click(object sender, RoutedEventArgs e) => ShowSection("reports", "جهات التنفيذ");
+    private void PayrollReports_Click(object sender, RoutedEventArgs e) => ShowSection("payroll", "تقارير بنود الرواتب");
     private void Bank_Click(object sender, RoutedEventArgs e) => ShowSection("bank", "كشف حساب البنك");
     private void Audit_Click(object sender, RoutedEventArgs e) => ShowSection("audit", "التدقيق");
     private void Staff_Click(object sender, RoutedEventArgs e) => ShowSection("staff", "الملاك");
@@ -58,6 +60,7 @@ public sealed partial class MainWindow : Window
             var loaded = await Task.Run(() => BackupReader.Read(path));
             var previous = data?.ArchivePath; data = loaded; retained = true;
             MonthPicker.ItemsSource = loaded.Manifest.Months; MonthPicker.SelectedIndex = loaded.Manifest.Months.Length > 0 ? 0 : -1;
+            ComparePicker.ItemsSource = loaded.Manifest.Months; ComparePicker.SelectedIndex = loaded.Manifest.Months.Length > 1 ? 1 : -1;
             var reference = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
             var timestamp = loaded.Manifest.CreatedAt;
             var date = timestamp > 0 && timestamp < 252423993599 ? reference.AddSeconds(timestamp).ToLocalTime().ToString("g") : "غير معروف";
@@ -110,13 +113,16 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException) { }
     }
     private sealed record EntitySelection(string Month, string Title);
+    private sealed record PayrollSelection(string Month, string Title);
     private sealed record BankAmount(string Label, double Value);
+    private sealed record AuditSelection(string Title, List<string> Lines);
+    private void CompareChanged(object sender, SelectionChangedEventArgs e) => RefreshData();
     private void DataFilterChanged(object sender, TextChangedEventArgs e) => RefreshData();
     private async void RefreshData()
     {
         if (DataPanel == null || DataPanel.Visibility != Visibility.Visible) return;
         var snapshot = data; if (snapshot == null) { DataCaption.Text = "افتح نسخة احتياطية أولاً."; DataResults.ItemsSource = null; return; }
-        var page = section; var month = MonthPicker.SelectedItem as string ?? ""; var q = PayrollMath.Normalize(DataFilter.Text);
+        var page = section; var month = MonthPicker.SelectedItem as string ?? ""; var comparisonMonth = ComparePicker.SelectedItem as string ?? ""; var q = PayrollMath.Normalize(DataFilter.Text);
         try
         {
             var result = await Task.Run(() => {
@@ -131,6 +137,19 @@ public sealed partial class MainWindow : Window
                         rows.Add(new($"{g.Key}   ·   الموظفون: {g.Count():N0}   ·   المكرر: {g.Count() - unique:N0}   ·   المبلغ: {g.Sum(x => x.Amount ?? 0):N0}", new EntitySelection(month, g.Key)));
                     }
                     caption = $"{groups.Count:N0} جهة · اضغط جهة لمعاينة تفاصيلها · تظهر أول 500";
+                }
+                else if (page == "payroll")
+                {
+                    var sums = new Dictionary<string, (int Count, double Total)>();
+                    foreach (var employee in snapshot.Employees.Where(x => x.Month == month))
+                        foreach (var item in PayrollMath.Decode<double>(employee.Items))
+                        {
+                            var previous = sums.GetValueOrDefault(item.Key);
+                            sums[item.Key] = (previous.Count + 1, previous.Total + item.Value);
+                        }
+                    var matching = sums.Where(x => Match(x.Key)).OrderByDescending(x => x.Value.Total).ToList();
+                    rows.AddRange(matching.Select(x => new DisplayItem($"{x.Key}   ·   الموظفون: {x.Value.Count:N0}   ·   المبلغ: {x.Value.Total:N0}", new PayrollSelection(month, x.Key))));
+                    caption = $"{matching.Count:N0} بند · اضغط بنداً لعرض التفاصيل وتصدير Excel";
                 }
                 else if (page == "staff")
                 {
@@ -153,15 +172,32 @@ public sealed partial class MainWindow : Window
                     rows.Add(new($"أسماء رواتب مكررة: {duplicates:N0} اسم", ""));
                     rows.Add(new($"استقطاعات بلا اسم مطابق في الرواتب: {withoutSalary:N0} سجل", ""));
                     rows.Add(new($"رواتب بلا صافي: {current.Count(x => x.Net == null):N0}", ""));
-                    var index = Array.IndexOf(snapshot.Manifest.Months, month);
-                    if (index >= 0 && index + 1 < snapshot.Manifest.Months.Length)
+                    var duplicatesDeduction = DeductionComparison.Duplicates(snapshot, month);
+                    var duplicateLines = duplicatesDeduction.Select(g => $"{g[0].Name} · {g[0].Title} · {g[0].Note} · {g[0].Amount:N0} · {g.Count} مرات").ToList();
+                    rows.Add(new($"تكرار محتمل في الاستقطاعات: {duplicateLines.Count:N0} حالة", new AuditSelection("التكرار المحتمل", duplicateLines)));
+                    if (!string.IsNullOrEmpty(comparisonMonth) && comparisonMonth != month)
                     {
-                        var previousMonth = snapshot.Manifest.Months[index + 1];
+                        try
+                        {
+                            var result = DeductionComparison.Compare(snapshot, comparisonMonth, month);
+                            foreach (var kind in new[] { "استقطاع جديد", "استقطاع متوقف", "زاد", "نقص" })
+                            {
+                                var changes = result.Entries.Where(x => x.Kind == kind).Select(x => $"{x.Name} · {x.Entity} · {x.Reference} · {x.Before:N0} ← {x.After:N0}").ToList();
+                                rows.Add(new($"{kind}: {changes.Count:N0} استقطاع", new AuditSelection(kind, changes)));
+                            }
+                            var stoppedPeople = result.People.Where(x => x.After == 0).Select(x => $"{x.Name} · السابق {x.Before:N0}").ToList();
+                            rows.Add(new($"توقف الاستقطاع بالكامل: {stoppedPeople.Count:N0} موظف", new AuditSelection("توقف الاستقطاع بالكامل", stoppedPeople)));
+                        }
+                        catch (InvalidDataException ex) { rows.Add(new(ex.Message, "")); }
+                    }
+                    if (!string.IsNullOrEmpty(comparisonMonth) && comparisonMonth != month)
+                    {
+                        var previousMonth = comparisonMonth;
                         var previous = snapshot.Employees.Where(x => x.Month == previousMonth).GroupBy(x => PayrollMath.Key(x.Name)).ToDictionary(g => g.Key, g => g.ToList());
                         var changed = groups.Count(x => x.Value.Count == 1 && previous.TryGetValue(x.Key, out var old) && old.Count == 1 && x.Value[0].Net.HasValue && old[0].Net.HasValue && x.Value[0].Net != old[0].Net);
                         rows.Add(new($"تغير صافي الراتب: {changed:N0} · مقارنة بـ {previousMonth}", ""));
                     }
-                    caption = "فحوص أولية بالأسماء فقط، وليست بديلاً عن التدقيق الكامل في الآيفون؛ الأسماء المكررة مستبعدة من مقارنة الصافي.";
+                    caption = "المقارنة بالاسم والجهة والإضبارة؛ تراجع حالات التكرار دون حذف. فحوص الرواتب لا تزال أولية وليست بديلاً عن تدقيق الآيفون.";
                 }
                 else
                 {
@@ -176,7 +212,7 @@ public sealed partial class MainWindow : Window
                 }
                 return (rows, caption);
             });
-            if (section != page || (MonthPicker.SelectedItem as string ?? "") != month || PayrollMath.Normalize(DataFilter.Text) != q) return;
+            if (section != page || (MonthPicker.SelectedItem as string ?? "") != month || (ComparePicker.SelectedItem as string ?? "") != comparisonMonth || PayrollMath.Normalize(DataFilter.Text) != q) return;
             DataResults.ItemsSource = result.rows; DataCaption.Text = result.caption;
         }
         catch (Exception ex) { if (section == page) { DataResults.ItemsSource = null; DataCaption.Text = ex.Message; } }
@@ -187,6 +223,12 @@ public sealed partial class MainWindow : Window
         try
         {
             if (item.Value is Book book) { await SaveBook(book); return; }
+            if (item.Value is AuditSelection audit)
+            {
+                var contents = new TextBox { Text = string.Join("\n", audit.Lines), IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
+                await new ContentDialog { Title = audit.Title, Content = contents, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                return;
+            }
             if (item.Value is BankAmount amount)
             {
                 var action = await new ContentDialog { Title = amount.Label, Content = amount.Value.ToString("N0"), PrimaryButtonText = "نسخ الرقم", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
@@ -228,10 +270,22 @@ public sealed partial class MainWindow : Window
                 text = $"الشهر: {entity.Month}\nالمجموع: {entries.Sum(x => x.Amount ?? 0):N0}\nعدد الموظفين: {entries.Count:N0}\nالمكرر: {entries.Count - entries.Select(x => PayrollMath.Key(x.Name)).Distinct().Count():N0}\n" +
                     (account == null ? "" : $"IBAN: {account.Iban}\nالفرع: {account.Branch}\n") + "\n" + string.Join("\n", entries.Select(x => $"{x.Name} · {x.Amount:N0} · {x.Note}"));
             }
+            else if (item.Value is PayrollSelection payroll)
+            {
+                title = payroll.Title;
+                var snapshot = data;
+                text = await Task.Run(() => {
+                    var entries = snapshot.Employees.Where(x => x.Month == payroll.Month).Select(x => (Employee: x, Items: PayrollMath.Decode<double>(x.Items)))
+                        .Where(x => x.Items.ContainsKey(payroll.Title)).Select(x => (x.Employee, Amount: x.Items[payroll.Title])).ToList();
+                    return $"الشهر: {payroll.Month}\nعدد الموظفين: {entries.Count:N0}\nالمجموع: {entries.Sum(x => x.Amount):N0}\n\n" +
+                        string.Join("\n", entries.Take(500).Select(x => $"{x.Employee.Name} · {x.Employee.Rank} · {x.Employee.Workplace} · {x.Amount:N0}")) +
+                        (entries.Count > 500 ? "\n... تعرض المعاينة أول 500 سجل؛ التصدير يشمل الجميع." : "");
+                });
+            }
             else return;
             var textBox = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
             var dialog = new ContentDialog { Title = title, Content = textBox, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
-            if (item.Value is EntitySelection) dialog.PrimaryButtonText = "تصدير Excel";
+            if (item.Value is EntitySelection or PayrollSelection) dialog.PrimaryButtonText = "تصدير Excel";
             var action = await dialog.ShowAsync();
             if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
             {
@@ -240,6 +294,14 @@ public sealed partial class MainWindow : Window
                 InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
                 var file = await picker.PickSaveFileAsync();
                 if (file != null) { var snapshot = data; await Task.Run(() => ExcelExport.Entity(file.Path, snapshot, selected.Month, selected.Title)); }
+            }
+            else if (action == ContentDialogResult.Primary && item.Value is PayrollSelection selectedPayroll && data != null)
+            {
+                var picker = new FileSavePicker { SuggestedFileName = "كشف بند الرواتب" };
+                picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
+                InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                var file = await picker.PickSaveFileAsync();
+                if (file != null) { var snapshot = data; await Task.Run(() => ExcelExport.Payroll(file.Path, snapshot, selectedPayroll.Month, selectedPayroll.Title)); }
             }
         }
         catch (Exception ex) { await Error(ex.Message); }

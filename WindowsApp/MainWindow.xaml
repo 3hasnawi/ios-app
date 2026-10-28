@@ -7,6 +7,7 @@
       <Button Content="⌂   الرئيسية" HorizontalAlignment="Stretch" Click="Home_Click"/>
       <Button Content="⌕   البحث" HorizontalAlignment="Stretch" Click="SearchPage_Click"/>
       <Button Content="▤   التقارير" HorizontalAlignment="Stretch" Click="Reports_Click"/>
+      <Button Content="▤   بنود الرواتب" HorizontalAlignment="Stretch" Click="PayrollReports_Click"/>
       <Button Content="▥   كشف البنك" HorizontalAlignment="Stretch" Click="Bank_Click"/>
       <Button Content="✓   التدقيق" HorizontalAlignment="Stretch" Click="Audit_Click"/>
       <Button Content="☷   الملاك" HorizontalAlignment="Stretch" Click="Staff_Click"/>
@@ -30,7 +31,7 @@
           <Border Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="التقارير" FontSize="20" FontWeight="SemiBold"/><Button Content="عرض الجهات" Click="Reports_Click"/></StackPanel></Border>
           <Border Grid.Column="1" Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="تدقيق الرواتب" FontSize="20" FontWeight="SemiBold"/><Button Content="عرض الفحوص" Click="Audit_Click"/></StackPanel></Border>
         </Grid>
-        <Border Background="#E8EFEA" CornerRadius="12" Padding="20"><TextBlock Text="حالات المراجعة ستتوفر بعد إضافة التدقيق." TextWrapping="Wrap"/></Border>
+        <Border Background="#E8EFEA" CornerRadius="12" Padding="20"><Button Content="عرض فحوص ومقارنة الاستقطاعات" Click="Audit_Click"/></Border>
       </StackPanel>
       <StackPanel x:Name="SearchPanel" Visibility="Collapsed" Spacing="14">
         <TextBox x:Name="SearchBox" PlaceholderText="ابحث عن اسم موظف أو جهة تنفيذ" TextChanged="SearchChanged"/>
@@ -38,6 +39,7 @@
         <ListView x:Name="SearchResults" MaxHeight="500" SelectionMode="Single" ItemClick="Item_Click" IsItemClickEnabled="True"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding Display}" TextWrapping="Wrap" Padding="10"/></DataTemplate></ListView.ItemTemplate></ListView>
       </StackPanel>
       <StackPanel x:Name="DataPanel" Visibility="Collapsed" Spacing="14">
+        <ComboBox x:Name="ComparePicker" Visibility="Collapsed" Header="مقارنة بالشهر" MinWidth="200" HorizontalAlignment="Right" SelectionChanged="CompareChanged"/>
         <TextBox x:Name="DataFilter" PlaceholderText="بحث في القائمة" TextChanged="DataFilterChanged"/>
         <TextBlock x:Name="DataCaption" Foreground="#61726A" TextWrapping="Wrap"/>
         <ListView x:Name="DataResults" MaxHeight="550" SelectionMode="Single" IsItemClickEnabled="True" ItemClick="Item_Click"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding Display}" TextWrapping="Wrap" Padding="10"/></DataTemplate></ListView.ItemTemplate></ListView>

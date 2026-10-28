@@ -7,7 +7,19 @@ internal static class ExcelExport
     // يُنشأ الملف كاملاً في مكان مؤقت قبل استبدال الملف الذي اختاره المستخدم.
     public static void Entity(string path, BackupData data, string month, string title)
     {
-        var rows = data.Deductions.Where(d => d.Month == month && d.Title == title).ToList();
+        var rows = data.Deductions.Where(d => d.Month == month && d.Title == title)
+            .Select(d => new ReportLine(d.Name, d.Rank ?? "", d.Amount, d.Note ?? "")).ToList();
+        WriteReport(path, month, title, rows);
+    }
+    public static void Payroll(string path, BackupData data, string month, string title)
+    {
+        var rows = data.Employees.Where(x => x.Month == month).Select(x => (Employee: x, Items: PayrollMath.Decode<double>(x.Items)))
+            .Where(x => x.Items.ContainsKey(title)).Select(x => new ReportLine(x.Employee.Name, x.Employee.Rank, x.Items[title], x.Employee.Workplace)).ToList();
+        WriteReport(path, month, title, rows);
+    }
+    private sealed record ReportLine(string Name, string Rank, double? Amount, string Note);
+    private static void WriteReport(string path, string month, string title, List<ReportLine> rows)
+    {
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -36,7 +48,7 @@ internal static class ExcelExport
                     }
                     xml.WriteEndElement();
                 }
-                Row(("جهة التنفيذ", false), (title, false), ("الشهر", false), (month, false));
+                Row(("الكشف", false), (title, false), ("الشهر", false), (month, false));
                 Row(("الاسم", false), ("الرتبة", false), ("المبلغ", false), ("ملاحظات", false));
                 foreach (var d in rows) Row((d.Name ?? "", false), (d.Rank ?? "", false), (d.Amount?.ToString("R", CultureInfo.InvariantCulture) ?? "", d.Amount.HasValue), (d.Note ?? "", false));
                 Row(("المجموع", false), ("", false), (rows.Sum(x => x.Amount ?? 0).ToString("R", CultureInfo.InvariantCulture), true));
