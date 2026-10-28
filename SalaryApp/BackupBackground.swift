@@ -31,7 +31,7 @@ enum BackupBackground {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         let raw = UserDefaults.standard.string(forKey: scheduleKey) ?? ""
         guard let interval = BackupSchedule(rawValue: raw)?.interval,
-              (UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil) else { return }
+              (BackupServerConfig.ready || UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil) else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false

@@ -1,0 +1,18 @@
+name: Salary Backup
+version: "1.0.0"
+slug: salary_backup_server
+description: Private backup receiver for the Salary app
+url: https://github.com/3hasnawi/ios-app
+arch:
+  - amd64
+  - aarch64
+startup: services
+boot: auto
+ports:
+  8765/tcp: 8765
+ports_description:
+  8765/tcp: Local backup API
+options:
+  token: ""
+schema:
+  token: password

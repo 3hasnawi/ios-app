@@ -24,6 +24,9 @@ targets:
         CFBundleLocalizations: [ar]
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSLocalNetworkUsageDescription: يُستخدم الاتصال بالشبكة المحلية لإرسال النسخة الاحتياطية إلى السيرفر الخاص.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSFaceIDUsageDescription: يُستخدم Face ID لقفل تطبيق الرواتب وحماية بيانات الموظفين.
         NSCameraUsageDescription: يُستخدم الماسح الضوئي لتصوير الكتب الرسمية وحفظها بصيغة PDF داخل التطبيق.
         UILaunchScreen:

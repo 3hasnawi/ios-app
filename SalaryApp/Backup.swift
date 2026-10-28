@@ -269,6 +269,7 @@ final class BackupManager {
 
     var lastBackup: Date? { UserDefaults.standard.object(forKey: Self.lastKey) as? Date }
     var hasUnbackedChanges: Bool {
+        if BackupServerConfig.enabled && UserDefaults.standard.bool(forKey: BackupServerConfig.pendingKey) { return true }
         guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return false }
         return changed > (lastBackup ?? .distantPast)
     }
@@ -290,7 +291,7 @@ final class BackupManager {
     /// سطر الحالة في صفحة الإعدادات.
     var statusLine: String {
         _ = version
-        if folderName == nil { return tr("⚠️ اختر ملف النسخة الاحتياطية", "⚠️ Choose a backup file") }
+        if folderName == nil && !BackupServerConfig.ready { return tr("⚠️ اختر ملف النسخة الاحتياطية أو فعّل السيرفر", "⚠️ Choose a backup file or enable the server") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
         if hasUnbackedChanges { return tr("⚠️ تغيّرت البيانات منذ آخر نسخة", "⚠️ Data changed since the last backup") }
         guard Self.autoEnabled || Self.schedule != .off else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
@@ -301,7 +302,7 @@ final class BackupManager {
 
     var statusColor: Color {
         _ = version
-        if folderName == nil || lastError != nil { return .red }
+        if (folderName == nil && !BackupServerConfig.ready) || lastError != nil { return .red }
         if hasUnbackedChanges { return .orange }
         return (Self.autoEnabled || Self.schedule != .off) && lastBackup != nil ? .green : .secondary
     }
@@ -338,14 +339,18 @@ final class BackupManager {
                 // التصدير يحفظ نسخة، ولا يضمن صلاحية تحديثها بعد إغلاق نافذة الملفات.
                 defaults.removeObject(forKey: Self.fileKey)
                 defaults.removeObject(forKey: Self.folderKey)
-                defaults.set(Date(), forKey: Self.lastKey)
-                defaults.set(Int(size), forKey: Self.lastSizeKey)
-                defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
-                defaults.removeObject(forKey: Self.errorKey)
-                defaults.removeObject(forKey: Self.errorAtKey)
+                if !BackupServerConfig.ready {
+                    defaults.set(Date(), forKey: Self.lastKey)
+                    defaults.set(Int(size), forKey: Self.lastSizeKey)
+                    defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
+                    defaults.removeObject(forKey: Self.errorKey)
+                    defaults.removeObject(forKey: Self.errorAtKey)
+                }
                 BackupBackground.schedule()
                 await FilePicker.waitUntilSettled()
-                message = tr("حُفظت النسخة. النسخ التلقائي غير مرتبط بمكان حفظ حالياً؛ احتفظ بنسخك السابقة.", "Backup saved. Automatic backup is not currently linked to a destination; keep your previous backups.")
+                message = BackupServerConfig.ready
+                    ? tr("حُفظت النسخة اليدوية؛ يبقى السيرفر وجهة النسخ التلقائي.", "Manual backup saved; the server remains the automatic destination.")
+                    : tr("حُفظت النسخة. النسخ التلقائي غير مرتبط بمكان حفظ حالياً؛ احتفظ بنسخك السابقة.", "Backup saved. Automatic backup is not currently linked to a destination; keep your previous backups.")
             } catch {
                 message = tr("تعذّر حفظ النسخة: \(error.localizedDescription)", "Couldn't save the backup: \(error.localizedDescription)")
             }
@@ -466,14 +471,15 @@ final class BackupManager {
 
     /// بيانات تغيّرت بعد آخر نسخة ناجحة أو حان موعد النسخة الدورية.
     var needsBackup: Bool {
-        guard resolveFile() != nil else { return false }
+        guard BackupServerConfig.ready || resolveFile() != nil else { return false }
         // لا نحاول كل دقيقة عند تعذّر الاتصال بمزود iCloud.
         if let lastErrorAt, Date().timeIntervalSince(lastErrorAt) < 10 * 60 { return false }
         let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         let pendingChange = changed.map { $0 > (lastBackup ?? .distantPast) && Date().timeIntervalSince($0) >= 120 } ?? false
+        let firstServerBackup = BackupServerConfig.ready && UserDefaults.standard.bool(forKey: BackupServerConfig.pendingKey)
         let afterImport = Self.autoEnabled && (pendingChange || lastError != nil)
         let periodic = Self.schedule.interval.map { Date().timeIntervalSince(lastBackup ?? .distantPast) >= $0 } ?? false
-        return afterImport || periodic
+        return firstServerBackup || afterImport || periodic
     }
 
     /// عند فتح التطبيق أو الخروج منه: يكمل نسخة فاتت (مثلاً أُغلق التطبيق أثناء النسخ أو فشلت المحاولة).
@@ -486,7 +492,7 @@ final class BackupManager {
     func autoBackup() async -> String? {
         markChanged()
         guard Self.autoEnabled else { return nil }
-        guard resolveFile() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
+        guard BackupServerConfig.ready || resolveFile() != nil else { return "⚠️ " + BackupError.noFolder.localizedDescription }
         return await backupToDestination()
     }
 
@@ -494,6 +500,7 @@ final class BackupManager {
     @discardableResult
     func backupToDestination() async -> String? {
         guard !isWorking else { return nil }
+        if BackupServerConfig.enabled { return await backupToServer() }
         guard let file = resolveFile() else {
             message = BackupError.noFolder.localizedDescription
             return "⚠️ " + BackupError.noFolder.localizedDescription
@@ -554,6 +561,58 @@ final class BackupManager {
             UserDefaults.standard.set(reason, forKey: Self.errorKey)
             UserDefaults.standard.set(Date(), forKey: Self.errorAtKey)
             return tr("⚠️ تعذّر النسخ الاحتياطي التلقائي: \(reason)", "⚠️ Auto backup failed: \(reason)")
+        }
+    }
+
+    private func backupToServer() async -> String? {
+        guard let base = BackupServerConfig.url(BackupServerConfig.address), BackupServerConfig.ready else {
+            message = tr("تحقق من إعدادات السيرفر المحلي.", "Check local server settings.")
+            return "⚠️ " + (message ?? "")
+        }
+        isWorking = true
+        defer { isWorking = false; version += 1 }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+        do {
+            let (file, _) = try await makeBackup(title: tr("نسخ إلى السيرفر", "Backing up to server"))
+            defer { try? FileManager.default.removeItem(at: file) }
+            let expected = try Self.archiveSize(file)
+            let size = try await BackupServerUpload.upload(file: file, base: base, token: BackupServerConfig.token)
+            guard size == expected else { throw BackupError.emptyArchive }
+            let defaults = UserDefaults.standard
+            defaults.set(Date(), forKey: Self.lastKey)
+            defaults.set(Int(size), forKey: Self.lastSizeKey)
+            defaults.set(tr("السيرفر المحلي", "Local server"), forKey: Self.lastPlaceKey)
+            defaults.removeObject(forKey: BackupServerConfig.pendingKey)
+            defaults.removeObject(forKey: Self.errorKey)
+            defaults.removeObject(forKey: Self.errorAtKey)
+            BackupBackground.schedule()
+            return tr("حُفظت النسخة في السيرفر المحلي.", "Backup saved on the local server.")
+        } catch {
+            UserDefaults.standard.set(error.localizedDescription, forKey: Self.errorKey)
+            UserDefaults.standard.set(Date(), forKey: Self.errorAtKey)
+            return tr("تعذّر النسخ إلى السيرفر: \(error.localizedDescription)", "Server backup failed: \(error.localizedDescription)")
+        }
+    }
+
+    func restoreFromServer() {
+        guard !isWorking, BackupServerConfig.ready, let base = BackupServerConfig.url(BackupServerConfig.address) else { return }
+        isWorking = true
+        Task {
+            defer { isWorking = false; version += 1 }
+            do {
+                var request = URLRequest(url: base.appendingPathComponent("v1/backups/latest"))
+                request.setValue("Bearer " + BackupServerConfig.token, forHTTPHeaderField: "Authorization")
+                request.timeoutInterval = 600
+                let (temporary, response) = try await URLSession.shared.download(for: request)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw BackupError.notBackup }
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("server-restore-\(UUID().uuidString).zip")
+                try FileManager.default.moveItem(at: temporary, to: file)
+                await open(file)
+                try? FileManager.default.removeItem(at: file)
+            } catch {
+                message = tr("تعذّر تنزيل النسخة من السيرفر: \(error.localizedDescription)", "Could not download the server backup: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -781,9 +840,14 @@ struct BackupView: View {
     @AppStorage(BackupManager.autoKey) private var autoEnabled = true
     @AppStorage(BackupManager.scheduleKey) private var scheduleRaw = BackupSchedule.off.rawValue
     @State private var showFolderHelp = false
+    @State private var showServerSettings = false
+    @AppStorage(BackupServerConfig.enabledKey) private var serverEnabled = false
+    @AppStorage(BackupServerConfig.addressKey) private var serverAddress = ""
     @State private var chosenProvider = "iCloud Drive"
 
     var body: some View {
+        let _ = serverEnabled
+        let _ = serverAddress
         List {
             Section {
                 statusCard
@@ -795,6 +859,9 @@ struct BackupView: View {
             }
 
             Section {
+                Button { showServerSettings = true } label: {
+                    Label(tr("سيرفر النسخ المحلي", "Local backup server"), systemImage: "externaldrive.connected.to.line.below")
+                }
                 Menu {
                     ForEach(["iCloud Drive", "OneDrive", "Google Drive"], id: \.self) { provider in
                         Button(provider) {
@@ -841,7 +908,7 @@ struct BackupView: View {
                         if manager.isWorking { ProgressView() }
                     }
                 }
-                .disabled(manager.isWorking || manager.folderName == nil)
+                .disabled(manager.isWorking || (!BackupServerConfig.ready && manager.folderName == nil))
                 .accessibilityIdentifier("backupToDestination")
             } header: {
                 Text(tr("النسخ التلقائي", "Automatic backup"))
@@ -851,6 +918,11 @@ struct BackupView: View {
             }
 
             Section {
+                if BackupServerConfig.ready {
+                    Button(tr("استرجاع آخر نسخة من السيرفر", "Restore latest server backup"), systemImage: "arrow.down.doc") {
+                        manager.restoreFromServer()
+                    }.disabled(manager.isWorking)
+                }
                 Button {
                     manager.pickRestore()
                 } label: {
@@ -886,6 +958,7 @@ struct BackupView: View {
                         "On another device, open Restore and select your backup from its provider in Files."))
             }
         }
+        .sheet(isPresented: $showServerSettings) { BackupServerSettings() }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
         .alert(tr("حفظ نسخة احتياطية", "Save a backup"), isPresented: $showFolderHelp) {
@@ -902,7 +975,7 @@ struct BackupView: View {
     private var statusCard: some View {
         let _ = manager.version
         let failed = manager.lastError != nil
-        let pending = manager.hasUnbackedChanges || manager.folderName == nil
+        let pending = manager.hasUnbackedChanges || (manager.folderName == nil && !BackupServerConfig.ready)
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed || pending ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
                 .font(.title3.weight(.bold))
@@ -930,7 +1003,7 @@ struct BackupView: View {
                             .foregroundStyle(.red)
                         Button(tr("إعادة المحاولة", "Try again")) { Task { await manager.backupToDestination() } }
                             .font(.subheadline.weight(.semibold))
-                    } else if manager.folderName == nil {
+                    } else if manager.folderName == nil && !BackupServerConfig.ready {
                         Text(tr("النسخ التلقائي غير مرتبط بمكان حفظ. يمكنك حفظ نسخة يدوياً.", "Automatic backup is not linked to a destination. You can save a backup manually."))
                             .font(.caption.weight(.semibold)).foregroundStyle(.orange)
                     } else if pending {
