@@ -94,6 +94,9 @@ struct PayslipDocument: View {
                     .background(.white, in: Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text(tr("وزارة الداخلية", "Ministry of Interior")).font(.subheadline.bold())
+                    Text(tr("قيادة شرطة محافظة الأنبار", "Anbar Governorate Police Command"))
+                        .font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(tr("قسيمة راتب · \(month)", "Payslip · \(month)")).font(.caption).opacity(0.85)
                 }
                 Spacer()
