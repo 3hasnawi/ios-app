@@ -328,20 +328,19 @@ final class BackupManager {
 
     // MARK: - مكان النسخة
 
-    /// تُجهَّز نسخة ثم تظهر نافذة "الحفظ": يختار المستخدم iCloud Drive (أو مجلداً فيه) ويضغط "حفظ".
-    /// يحتفظ التطبيق برابط هذا الملف ويكتب كل نسخة جديدة فوقه.
+    /// اختيار نسخة موجودة يمنح التطبيق صلاحية الوصول إليها للنسخ اللاحقة.
     func chooseLocation() {
         guard !isWorking else { return }
         Task {
             await FilePicker.waitUntilSettled()
-            guard let folder = await FilePicker.pickBackupFolder() else { return }
-            let granted = folder.startAccessingSecurityScopedResource()
-            defer { if granted { folder.stopAccessingSecurityScopedResource() } }
+            guard let file = await FilePicker.pickBackupFile() else { return }
+            let granted = file.startAccessingSecurityScopedResource()
+            defer { if granted { file.stopAccessingSecurityScopedResource() } }
             do {
                 guard granted else { throw BackupError.folderUnavailable }
-                let data = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                UserDefaults.standard.set(data, forKey: Self.folderKey)
-                UserDefaults.standard.removeObject(forKey: Self.fileKey)
+                let data = try file.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                UserDefaults.standard.set(data, forKey: Self.fileKey)
+                UserDefaults.standard.removeObject(forKey: Self.folderKey)
                 version += 1
                 _ = await backupToDestination()
             } catch {
@@ -505,7 +504,7 @@ final class BackupManager {
             defer { try? FileManager.default.removeItem(at: url) }
             let preparedSize = try Self.archiveSize(url)
             let scope = resolveBookmark(Self.folderKey) ?? file
-            let size = try await Task.detached(priority: .utility) { () throws -> Int64 in
+            let (size, refreshedBookmark) = try await Task.detached(priority: .utility) { () throws -> (Int64, Data?) in
                 let granted = scope.startAccessingSecurityScopedResource()
                 defer { if granted { scope.stopAccessingSecurityScopedResource() } }
                 try Self.checkReplacement(manifest, at: file)
@@ -528,8 +527,14 @@ final class BackupManager {
                 }
                 guard didWrite else { throw BackupError.folderUnavailable }
                 // حجم مزود iCloud الوصفي قد يبقى صفراً مؤقتاً بعد الكتابة؛ نعتمد حجم البيانات المكتوبة.
-                return preparedSize
+                let bookmark = try? file.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                return (preparedSize, bookmark)
             }.value
+            if UserDefaults.standard.data(forKey: Self.folderKey) == nil,
+               UserDefaults.standard.string(forKey: Self.testFileKey) == nil,
+               let refreshedBookmark {
+                UserDefaults.standard.set(refreshedBookmark, forKey: Self.fileKey)
+            }
             let place = Self.placeName(file.deletingLastPathComponent())
             let defaults = UserDefaults.standard
             defaults.set(Date(), forKey: Self.lastKey)
@@ -733,11 +738,11 @@ final class BackupManager {
 // MARK: - نوافذ الملفات للنسخ
 
 extension FilePicker {
-    /// اختيار المجلد مباشرة يمنح صلاحية مستمرة للملف داخله.
-    static func pickBackupFolder() async -> URL? {
+    /// فتح النسخة الأصلية، لا نسخة مؤقتة، يمنح صلاحية للوصول إليها لاحقاً.
+    static func pickBackupFile() async -> URL? {
         await withCheckedContinuation { continuation in
             guard let top = topController() else { continuation.resume(returning: nil); return }
-            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip], asCopy: false)
             let d = ExportDelegate { continuation.resume(returning: $0) }
             exportDelegate = d
             picker.delegate = d
@@ -873,7 +878,7 @@ struct BackupView: View {
             } header: {
                 Text(tr("جهاز آخر أو نسخة يدوية", "Another device or manual copy"))
             } footer: {
-                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اضغط \"حفظ النسخة في iCloud\" واحفظها فوق نفس الملف (استبدال) ليستمر النسخ التلقائي من الجهاز الجديد.",
+                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اضغط \"حفظ النسخة في iCloud\" واختر ملف النسخة لربطه بالنسخ التلقائي على الجهاز الجديد.",
                         "On another device: install the app with the same iCloud account, then Settings › Backup › Restore (or Import files) and pick \"نسخة الرواتب.zip\"."))
             }
         }
@@ -883,8 +888,8 @@ struct BackupView: View {
             Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("اختر مجلداً داخل iCloud Drive ليحفظ التطبيق نسخة الآن ثم يحدّثها تلقائياً. للحفاظ على نسخة قديمة اختر مجلداً مختلفاً.",
-                    "Choose a folder in iCloud Drive. The app saves a backup now and updates it automatically. Choose another folder to keep an older backup."))
+            Text(tr("اختر ملف نسخة الرواتب.zip الموجود في iCloud Drive لربطه بالنسخ التلقائي. للحفاظ على نسخة قديمة، أنشئ ملفاً آخر أولاً من «مشاركة نسخة الآن» واختره هنا.",
+                    "Choose an existing salary backup ZIP in iCloud Drive for automatic updates. To preserve an old backup, first create another using Share a backup now and select it here."))
         }
     }
 
