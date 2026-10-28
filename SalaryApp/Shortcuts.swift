@@ -190,6 +190,12 @@ struct OpenSearchIntent: AppIntent {
 struct SalaryShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: SmartLookupIntent(),
+            phrases: ["بحث ذكي في \(.applicationName)", "Smart search in \(.applicationName)"],
+            shortTitle: "البحث الذكي",
+            systemImageName: "magnifyingglass"
+        )
+        AppShortcut(
             intent: SearchEmployeeIntent(),
             phrases: [
                 "ابحث عن موظف في \(.applicationName)",

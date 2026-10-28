@@ -130,6 +130,9 @@ struct RootView: View {
             await staffImport.refreshStoredCount()
             await TestData.prepareIfRequested()
             TestData.checkRawPayrollIfRequested()
+            #if targetEnvironment(simulator)
+            await SmartShortcutSelfTest.runIfRequested()
+            #endif
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
             await BackupManager.shared.autoBackupIfNeeded()

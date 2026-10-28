@@ -233,6 +233,11 @@ jobs:
           for i in $(seq 1 30); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "rawColumns=failed"; } | tee ci-output/raw-columns-report.txt
           rg -q 'rawColumns=ok' ci-output/raw-columns-report.txt
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -smartShortcutTest YES
+          for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "smartShortcut=failed"; } | tee ci-output/smart-shortcut-report.txt
+          rg -q 'smartShortcut=ok' ci-output/smart-shortcut-report.txt
           check_accounts
           launch
           shot 03b-home-audit-cards 4
