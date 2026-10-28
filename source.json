@@ -17,6 +17,15 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "1.26",
+          "buildVersion": "62",
+          "marketingVersion": "1.26 (بناء 62)",
+          "date": "2026-10-28T20:15:52+00:00",
+          "downloadURL": "https://github.com/3hasnawi/ios-app/releases/download/build-62/SalaryApp.ipa",
+          "size": 5070346,
+          "minOSVersion": "26.0"
+        },
+        {
           "version": "1.24",
           "buildVersion": "60",
           "marketingVersion": "1.24 (بناء 60)",
@@ -165,7 +174,8 @@
         "entitlements": [],
         "privacy": {
           "NSCameraUsageDescription": "يُستخدم الماسح الضوئي لتصوير الكتب الرسمية وحفظها بصيغة PDF داخل التطبيق.",
-          "NSFaceIDUsageDescription": "يُستخدم Face ID لقفل تطبيق الرواتب وحماية بيانات الموظفين."
+          "NSFaceIDUsageDescription": "يُستخدم Face ID لقفل تطبيق الرواتب وحماية بيانات الموظفين.",
+          "NSLocalNetworkUsageDescription": "يُستخدم الاتصال بالشبكة المحلية لإرسال النسخة الاحتياطية إلى السيرفر الخاص."
         }
       }
     }
