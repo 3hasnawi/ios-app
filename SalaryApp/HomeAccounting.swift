@@ -92,12 +92,18 @@ struct HomeAccounting: View {
                     .font(.system(size: 35, weight: .bold, design: .rounded))
                     .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
                     .foregroundStyle(.white)
-                if let now = overview?.netTotal, let before = overview?.previousNetTotal, before > 0 {
-                    let change = (now - before) / before * 100
-                    Text(tr("\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% عن الشهر السابق",
-                            "\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% vs previous month"))
-                        .font(.caption).foregroundStyle(.white.opacity(0.85))
+                HStack(spacing: 8) {
+                    if let now = overview?.netTotal, let before = overview?.previousNetTotal, before > 0 {
+                        let change = (now - before) / before * 100
+                        Text(tr("\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% عن الشهر السابق",
+                                "\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% vs previous month"))
+                            .lineLimit(1).minimumScaleFactor(0.75)
+                    }
+                    Spacer(minLength: 4)
+                    Text(tr("\(Num.format(overview?.employees ?? month.employeeCount)) موظف", "\(Num.format(overview?.employees ?? month.employeeCount)) employees"))
+                        .lineLimit(1).minimumScaleFactor(0.75)
                 }
+                .font(.caption).foregroundStyle(.white.opacity(0.85))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
