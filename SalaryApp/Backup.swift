@@ -322,24 +322,32 @@ final class BackupManager {
 
     // MARK: - مكان النسخة
 
-    /// اختيار نسخة موجودة يمنح التطبيق صلاحية الوصول إليها للنسخ اللاحقة.
+    /// تصدير نسخة مستقلة يفتح نافذة «حفظ» التي يختار منها المستخدم المكان.
     func chooseLocation() {
         guard !isWorking else { return }
+        isWorking = true
         Task {
-            await FilePicker.waitUntilSettled()
-            guard let file = await FilePicker.pickBackupFile() else { return }
-            let granted = file.startAccessingSecurityScopedResource()
-            defer { if granted { file.stopAccessingSecurityScopedResource() } }
+            defer { isWorking = false; version += 1 }
             do {
-                guard granted else { throw BackupError.folderUnavailable }
-                let data = try file.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                UserDefaults.standard.set(data, forKey: Self.fileKey)
-                UserDefaults.standard.removeObject(forKey: Self.folderKey)
-                version += 1
+                let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
+                defer { try? FileManager.default.removeItem(at: url) }
+                let size = try Self.archiveSize(url)
                 await FilePicker.waitUntilSettled()
-                if let result = await backupToDestination() { message = result }
+                guard let saved = await FilePicker.exportBackup(url) else { return }
+                let defaults = UserDefaults.standard
+                // التصدير يحفظ نسخة، ولا يضمن صلاحية تحديثها بعد إغلاق نافذة الملفات.
+                defaults.removeObject(forKey: Self.fileKey)
+                defaults.removeObject(forKey: Self.folderKey)
+                defaults.set(Date(), forKey: Self.lastKey)
+                defaults.set(Int(size), forKey: Self.lastSizeKey)
+                defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
+                defaults.removeObject(forKey: Self.errorKey)
+                defaults.removeObject(forKey: Self.errorAtKey)
+                BackupBackground.schedule()
+                await FilePicker.waitUntilSettled()
+                message = tr("حُفظت النسخة. النسخ التلقائي غير مرتبط بمكان حفظ حالياً؛ احتفظ بنسخك السابقة.", "Backup saved. Automatic backup is not currently linked to a destination; keep your previous backups.")
             } catch {
-                message = tr("تعذّر حفظ مكان النسخة: \(error.localizedDescription)", "Couldn't save backup location: \(error.localizedDescription)")
+                message = tr("تعذّر حفظ النسخة: \(error.localizedDescription)", "Couldn't save the backup: \(error.localizedDescription)")
             }
         }
     }
@@ -733,11 +741,11 @@ final class BackupManager {
 // MARK: - نوافذ الملفات للنسخ
 
 extension FilePicker {
-    /// فتح النسخة الأصلية، لا نسخة مؤقتة، يمنح صلاحية للوصول إليها لاحقاً.
-    static func pickBackupFile() async -> URL? {
+    /// يُصدّر الملف ليختار المستخدم مكان الحفظ من نافذة الملفات.
+    static func exportBackup(_ url: URL) async -> URL? {
         await withCheckedContinuation { continuation in
             guard let top = topController() else { continuation.resume(returning: nil); return }
-            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip], asCopy: false)
+            let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
             let d = ExportDelegate { continuation.resume(returning: $0) }
             exportDelegate = d
             picker.delegate = d
@@ -805,7 +813,7 @@ struct BackupView: View {
                             }
                         }
                     } else {
-                        Label(tr("اختيار مكان النسخة", "Choose backup location"), systemImage: "cloud")
+                        Label(tr("حفظ نسخة احتياطية", "Save a backup"), systemImage: "cloud")
                             .font(.body.weight(.semibold))
                     }
                 }
@@ -838,8 +846,8 @@ struct BackupView: View {
             } header: {
                 Text(tr("النسخ التلقائي", "Automatic backup"))
             } footer: {
-                Text(tr("يحدّث التطبيق ملف نسخة واحداً تختاره من تطبيق الملفات. ثبّت OneDrive أو Google Drive وفعّل ظهوره في الملفات لاختياره. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ لا يُضمن الوقت أو اكتمال رفع المزوّد.",
-                        "The app updates one backup file selected in Files. Install OneDrive or Google Drive and enable it in Files to select it. Periodic backups run while the app is open; background timing and provider uploads are not guaranteed."))
+                Text(tr("اختر «حفظ نسخة احتياطية» لحفظ نسخة يدوياً في تطبيق الملفات. لا يُفعّل الحفظ اليدوي النسخ التلقائي، الذي يحتاج صلاحية مستمرة للمكان.",
+                        "Choose Save a backup to save manually in Files. Manual export does not enable automatic backup, which requires ongoing access to the destination."))
             }
 
             Section {
@@ -880,12 +888,12 @@ struct BackupView: View {
         }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
-        .alert(tr("اختيار ملف النسخة", "Choose backup file"), isPresented: $showFolderHelp) {
+        .alert(tr("حفظ نسخة احتياطية", "Save a backup"), isPresented: $showFolderHelp) {
             Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("من تطبيق الملفات اختر \(chosenProvider) ثم ملف نسخة الرواتب.zip. للبدء، أنشئ ملفاً باستخدام «مشاركة نسخة الآن» واحفظه في الخدمة. سيُحدَّث الملف المختار تلقائياً؛ احتفظ بنسخة قديمة منفصلة.",
-                    "In Files select \(chosenProvider) and the salary backup ZIP. First use Share a backup now to create a file in the service. Keep an older backup separately."))
+            Text(tr("ستظهر نافذة «حفظ» بعد تجهيز النسخة. اختر \(chosenProvider) والمجلد المناسب. لا يستبدل التصدير النسخ السابقة إلا إذا اخترت ذلك في تطبيق الملفات.",
+                    "The Save window opens after preparing the backup. Choose \(chosenProvider) and a folder. Existing backups are replaced only if you choose to do so in Files."))
         }
     }
 
@@ -894,7 +902,7 @@ struct BackupView: View {
     private var statusCard: some View {
         let _ = manager.version
         let failed = manager.lastError != nil
-        let pending = manager.hasUnbackedChanges
+        let pending = manager.hasUnbackedChanges || manager.folderName == nil
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed || pending ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
                 .font(.title3.weight(.bold))
@@ -922,6 +930,9 @@ struct BackupView: View {
                             .foregroundStyle(.red)
                         Button(tr("إعادة المحاولة", "Try again")) { Task { await manager.backupToDestination() } }
                             .font(.subheadline.weight(.semibold))
+                    } else if manager.folderName == nil {
+                        Text(tr("النسخ التلقائي غير مرتبط بمكان حفظ. يمكنك حفظ نسخة يدوياً.", "Automatic backup is not linked to a destination. You can save a backup manually."))
+                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
                     } else if pending {
                         Text(tr("هناك بيانات أحدث من آخر نسخة. انتظر اكتمال النسخ أو اضغط «نسخ الآن» قبل تحديث التطبيق.",
                                 "Newer data hasn't been backed up. Wait for backup or tap Back up now before updating the app."))
