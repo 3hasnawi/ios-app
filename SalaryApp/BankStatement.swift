@@ -149,10 +149,10 @@ struct BankStatementView: View {
                                  ? tr("المبلغ المطلوب · \(summary.month)", "Monthly amount · \(summary.month)")
                                  : tr("مبلغ أولي · \(summary.month) · يحتاج مطابقة التنفيذ", "Provisional amount · \(summary.month) · reconcile execution deductions"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
-                            Text(Money.format(summary.bankTotal + manualAmounts.total))
+                            copyValue(Money.format(summary.bankTotal + manualAmounts.total))
                                 .font(.system(size: 30, weight: .bold, design: .rounded))
                                 .monospacedDigit().foregroundStyle(.white)
-                            if !iban.isEmpty { Text(iban).font(.footnote.monospaced()).foregroundStyle(.white.opacity(0.8)).privacySensitive() }
+                            if !iban.isEmpty { copyValue(iban).font(.footnote.monospaced()).foregroundStyle(.white.opacity(0.8)).privacySensitive() }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
@@ -161,49 +161,57 @@ struct BankStatementView: View {
                         .listRowBackground(Color.clear)
                     }
                     Section(tr("صافي الرواتب", "Net payroll")) {
-                        LabeledContent(tr("كاش", "Cash"), value: Money.format(summary.cashNet))
-                        LabeledContent(tr("بطاقة", "Card"), value: Money.format(summary.cardNet))
+                        copyAmountRow(tr("كاش", "Cash"), amount: summary.cashNet)
+                        copyAmountRow(tr("بطاقة", "Card"), amount: summary.cardNet)
                         if summary.unclassifiedCount > 0 {
-                            LabeledContent(tr("غير مصنف", "Unclassified"), value: Money.format(summary.unclassifiedNet))
+                            copyAmountRow(tr("غير مصنف", "Unclassified"), amount: summary.unclassifiedNet)
                         }
-                        LabeledContent(tr("مجموع الصافي", "Total net pay"), value: Money.format(summary.netSalary))
+                        copyAmountRow(tr("مجموع الصافي", "Total net pay"), amount: summary.netSalary)
                     }
                     Section(tr("مبالغ تُضاف للرواتب", "Amounts added to payroll")) {
-                        LabeledContent(tr("الإجازات المتراكمة", "Accumulated leave"), value: Money.format(manualAmounts.accumulatedLeave))
-                        LabeledContent(tr("مكافآت منتسبين", "Employee rewards"), value: Money.format(manualAmounts.employeeRewards))
-                        LabeledContent(tr("قائمة مفردة", "Single list"), value: Money.format(manualAmounts.singleList))
+                        copyAmountRow(tr("الإجازات المتراكمة", "Accumulated leave"), amount: manualAmounts.accumulatedLeave)
+                        copyAmountRow(tr("مكافآت منتسبين", "Employee rewards"), amount: manualAmounts.employeeRewards)
+                        copyAmountRow(tr("قائمة مفردة", "Single list"), amount: manualAmounts.singleList)
                         Text(tr("مبالغ هذا الشهر تُدخل من إعداد الحساب.", "Enter this month's amounts in Account settings."))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Section(tr("الاستقطاعات المحتسبة", "Included deductions")) {
-                        LabeledContent(tr("مجموع استقطاعات المصارف", "Bank deductions"), value: Money.format(summary.bankDeductions))
+                        copyAmountRow(tr("مجموع استقطاعات المصارف", "Bank deductions"), amount: summary.bankDeductions)
                         ForEach(["الرعاية الصحية", "صندوق شهداء الشرطة", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال"], id: \.self) { key in
-                            LabeledContent(key, value: Money.format(summary.breakdown[key] ?? 0))
+                            copyAmountRow(key, amount: summary.breakdown[key] ?? 0)
                         }
                     }
                     Section(tr("التقاعد والضمان الاجتماعي", "Pension and social security")) {
-                        LabeledContent(tr("مجموع الاسمي للعقود", "Contract nominal total"), value: Money.format(summary.contractNominal))
-                        LabeledContent(tr("12% من اسمي العقود", "12% of contract nominal pay"), value: Money.format(summary.contractNominalShare))
-                        LabeledContent(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), value: Money.format(summary.contractRetirement))
-                        LabeledContent(tr("المبلغ المحتسب", "Included amount"), value: Money.format(summary.contractContribution))
-                        Text(tr("مجموع الاسمي أساس للحساب فقط · رتبة عقود حصراً · عددهم \(Num.format(summary.contractCount))",
+                        copyAmountRow(tr("مجموع الاسمي للعقود", "Contract nominal total"), amount: summary.contractNominal)
+                        copyAmountRow(tr("12% من اسمي العقود", "12% of contract nominal pay"), amount: summary.contractNominalShare)
+                        copyAmountRow(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), amount: summary.contractRetirement)
+                        copyAmountRow(tr("المبلغ المحتسب", "Included amount"), amount: summary.contractContribution)
+                        Menu {
+                            copyAction(Num.format(summary.contractCount), title: tr("نسخ العدد", "Copy count"))
+                        } label: {
+                            Text(tr("مجموع الاسمي أساس للحساب فقط · رتبة عقود حصراً · عددهم \(Num.format(summary.contractCount))",
                                 "Nominal total is a calculation base only · عقود rank only · \(summary.contractCount) employees"))
                             .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                     Section(tr("مطابقة الاستقطاعات التنفيذية", "Execution deduction reconciliation")) {
-                        LabeledContent(tr("ملف جهات التنفيذ", "Execution file"), value: Money.format(summary.executionDeductions))
+                        copyAmountRow(tr("ملف جهات التنفيذ", "Execution file"), amount: summary.executionDeductions)
                         if summary.executionCount == 0 {
                             Label(tr("لا توجد قيود تنفيذية للمطابقة في هذا الشهر.", "No execution entries are available for this month."), systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(.orange)
                         } else if summary.missingExecutionAmount > 0 {
                             Label(tr("المطابقة غير مكتملة", "Reconciliation is incomplete"), systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(.red)
-                            Text(tr("توجد \(Num.format(summary.missingExecutionAmount)) قيود تنفيذية بلا مبلغ.",
+                            Menu { copyAction(Num.format(summary.missingExecutionAmount), title: tr("نسخ العدد", "Copy count")) } label: {
+                                Text(tr("توجد \(Num.format(summary.missingExecutionAmount)) قيود تنفيذية بلا مبلغ.",
                                     "\(summary.missingExecutionAmount) execution entries have no amount."))
                                 .font(.footnote).foregroundStyle(.red)
+                            }
                         } else if abs(summary.executionDifference) >= 1 {
-                            Label(tr("لا تتطابق المبالغ · الفرق \(Money.format(summary.executionDifference))", "Amounts differ · difference \(Money.format(summary.executionDifference))"), systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.red)
+                            Menu { copyAction(Money.format(summary.executionDifference)) } label: {
+                                Label(tr("لا تتطابق المبالغ · الفرق \(Money.format(summary.executionDifference))", "Amounts differ · difference \(Money.format(summary.executionDifference))"), systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.red)
+                            }
                         } else {
                             Label(tr("المبلغان متطابقان", "Amounts match"), systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
@@ -214,9 +222,15 @@ struct BankStatementView: View {
                     }
                     if summary.missingNet > 0 || summary.missingContractNominal > 0 || summary.unclassifiedCount > 0 {
                         Section {
-                            Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي، و\(Num.format(summary.missingContractNominal)) عقود بلا راتب اسمي، و\(Num.format(summary.unclassifiedCount)) رواتب بلا طريقة دفع محفوظة. أعد استيراد الشهر لتصنيف الكاش والبطاقة.",
+                            Menu {
+                                copyAction(Num.format(summary.missingNet), title: tr("نسخ عدد الرواتب بلا صافي", "Copy missing net count"))
+                                copyAction(Num.format(summary.missingContractNominal), title: tr("نسخ عدد العقود بلا اسمي", "Copy missing nominal count"))
+                                copyAction(Num.format(summary.unclassifiedCount), title: tr("نسخ عدد الرواتب بلا طريقة دفع", "Copy unclassified count"))
+                            } label: {
+                                Text(tr("توجد \(Num.format(summary.missingNet)) رواتب بلا صافي، و\(Num.format(summary.missingContractNominal)) عقود بلا راتب اسمي، و\(Num.format(summary.unclassifiedCount)) رواتب بلا طريقة دفع محفوظة. أعد استيراد الشهر لتصنيف الكاش والبطاقة.",
                                     "\(summary.missingNet) payroll rows lack net pay, \(summary.missingContractNominal) contract rows lack nominal pay, and \(summary.unclassifiedCount) lack a saved payment method. Reimport the month to split cash and card."))
                                 .foregroundStyle(.orange)
+                            }
                         }
                     }
                 } else if let loadError {
@@ -281,6 +295,21 @@ struct BankStatementView: View {
             .task {
                 if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
             }
+        }
+    }
+
+    private func copyAction(_ value: String, title: String? = nil) -> some View {
+        Button(title ?? tr("نسخ", "Copy"), systemImage: "doc.on.doc") { copyToClipboard(value) }
+    }
+
+    private func copyValue(_ value: String) -> some View {
+        Menu { copyAction(value) } label: { Text(value) }
+        .accessibilityHint(tr("اضغط لإظهار خيار النسخ", "Tap to show copy option"))
+    }
+
+    private func copyAmountRow(_ title: String, amount: Double) -> some View {
+        LabeledContent(title) {
+            copyValue(Money.format(amount)).foregroundStyle(.secondary)
         }
     }
 
