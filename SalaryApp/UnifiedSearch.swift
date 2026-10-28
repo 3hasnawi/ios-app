@@ -92,6 +92,8 @@ struct UnifiedSearchView: View {
     @State private var path: [UnifiedPerson] = []
     /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
     @State private var shareTarget: Employee?
+    @State private var preparingStaffReport = false
+    @State private var staffReportError: String?
     @State private var people: [UnifiedPerson] = []
     @State private var smartResults = SmartSearchResults()
     @State private var loadedKey = ""
@@ -156,6 +158,16 @@ struct UnifiedSearchView: View {
                                         Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
                                             shareTarget = person.employee
                                         }
+                                    }
+                                    if person.hasStaff {
+                                        Button(tr("مشاركة تقرير الملاك", "Share staff report"), systemImage: "doc.text") {
+                                            guard let member = person.staff else {
+                                                staffReportError = tr("لم يعد سجل الملاك متاحاً.", "The staff record is no longer available.")
+                                                return
+                                            }
+                                            shareStaffReport(member)
+                                        }
+                                        .disabled(preparingStaffReport)
                                     }
                                     Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
                                 }
@@ -294,11 +306,31 @@ struct UnifiedSearchView: View {
             }
             .overlay { modePicker }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
+            .alert(tr("تقرير الملاك", "Staff report"), isPresented: Binding(
+                get: { staffReportError != nil }, set: { if !$0 { staffReportError = nil } })) {
+                Button(tr("حسناً", "OK"), role: .cancel) {}
+            } message: { Text(staffReportError ?? "") }
             .navigationDestination(for: UnifiedPerson.self) { person in
                 UnifiedPersonView(person: person)
                     .onAppear {
                         RecentSearches.add(.init(text: person.name, inPayroll: person.hasPayroll, inStaff: person.hasStaff))
                     }
+            }
+        }
+    }
+
+    private func shareStaffReport(_ member: StaffMember) {
+        guard !preparingStaffReport else { return }
+        let data = StaffReportData(member)
+        let logo = UIImage(named: "HomeLogo")?.pngData()
+        preparingStaffReport = true
+        Task {
+            defer { preparingStaffReport = false }
+            do {
+                let url = try await StaffReport.make(data, logo: logo)
+                ActivityShare.present([url])
+            } catch {
+                staffReportError = error.localizedDescription
             }
         }
     }

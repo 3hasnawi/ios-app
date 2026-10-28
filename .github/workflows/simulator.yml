@@ -238,6 +238,11 @@ jobs:
           for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "smartShortcut=failed"; } | tee ci-output/smart-shortcut-report.txt
           rg -q 'smartShortcut=ok' ci-output/smart-shortcut-report.txt
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -staffReportTest YES
+          for i in $(seq 1 60); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "staffReport=failed"; } | tee ci-output/staff-report.txt
+          rg -q 'staffReport=ok' ci-output/staff-report.txt
           check_accounts
           launch
           shot 03b-home-audit-cards 4
