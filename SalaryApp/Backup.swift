@@ -49,8 +49,8 @@ enum BackupError: LocalizedError {
         case .notBackup: tr("الملف ليس نسخة احتياطية من تطبيق الرواتب.", "This file isn't a payroll app backup.")
         case .unavailableArchive: tr("تعذّر التحقق من النسخة السابقة لأن حجمها غير متاح. لم تُستبدل؛ تأكد من توفر الملف ثم أعد المحاولة.", "The previous backup could not be verified because its size is unavailable. It was preserved; make it available and retry.")
         case .newerVersion: tr("النسخة من إصدار أحدث من التطبيق. حدّث التطبيق ثم أعد المحاولة.", "The backup is from a newer app version. Update the app first.")
-        case .folderUnavailable: tr("تعذّر الوصول إلى مجلد iCloud. اختر المجلد من جديد في الإعدادات ← النسخ الاحتياطي.", "The iCloud folder can't be reached. Choose it again in Settings › Backup.")
-        case .noFolder: tr("لم يُختر مجلد iCloud بعد. اختره من الإعدادات ← النسخ الاحتياطي.", "No iCloud folder chosen yet. Choose it in Settings › Backup.")
+        case .folderUnavailable: tr("تعذّر الوصول إلى ملف النسخة. اختره من جديد في الإعدادات ← النسخ الاحتياطي.", "The backup file can't be reached. Choose it again in Settings › Backup.")
+        case .noFolder: tr("لم يُختر ملف النسخة بعد. اختره من الإعدادات ← النسخ الاحتياطي.", "No backup file chosen yet. Choose it in Settings › Backup.")
         case .emptyArchive: tr("النسخة الناتجة فارغة؛ لم يُستبدل الملف السابق.", "The new backup is empty; the previous file was preserved.")
         case .emptyData: tr("لا توجد بيانات محفوظة للنسخ؛ لم يُستبدل ملف النسخة السابقة.", "There is no saved data to back up; the previous backup was preserved.")
         case .emptyRestore: tr("النسخة المختارة لا تحتوي بيانات؛ لم تُستبدل بيانات التطبيق.", "The selected backup contains no data; app data was preserved.")
@@ -287,23 +287,16 @@ final class BackupManager {
         return resolveFile().map { Self.placeName($0.deletingLastPathComponent()) }
     }
 
-    /// المكان المختار ليس في iCloud (مثلاً على الآيفون): لا يصلح لجهاز آخر.
-    var folderIsLocal: Bool {
-        _ = version
-        guard let url = resolveFile(), UserDefaults.standard.string(forKey: Self.testFileKey) == nil else { return false }
-        return !url.path.contains("Mobile Documents")
-    }
-
     /// سطر الحالة في صفحة الإعدادات.
     var statusLine: String {
         _ = version
-        if folderName == nil { return tr("⚠️ اختر مكان النسخة في iCloud", "⚠️ Choose where to save in iCloud") }
+        if folderName == nil { return tr("⚠️ اختر ملف النسخة الاحتياطية", "⚠️ Choose a backup file") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
         if hasUnbackedChanges { return tr("⚠️ تغيّرت البيانات منذ آخر نسخة", "⚠️ Data changed since the last backup") }
         guard Self.autoEnabled || Self.schedule != .off else { return lastBackup == nil ? tr("متوقف", "Off") : tr("متوقف · آخر نسخة \(Self.relative(lastBackup!))", "Off · last \(Self.relative(lastBackup!))") }
-        guard let lastBackup else { return tr("تلقائي · iCloud · لم تُؤخذ نسخة بعد", "Auto · iCloud · no backup yet") }
+        guard let lastBackup else { return tr("تلقائي · لم تُؤخذ نسخة بعد", "Auto · no backup yet") }
         let schedule = Self.schedule == .hourly ? tr("كل ساعة", "Hourly") : Self.schedule == .daily ? tr("كل يوم", "Daily") : tr("بعد الاستيراد", "After import")
-        return tr("\(schedule) · iCloud · \(Self.relative(lastBackup)) ✓", "\(schedule) · iCloud · \(Self.relative(lastBackup)) ✓")
+        return tr("\(schedule) · \(Self.relative(lastBackup)) ✓", "\(schedule) · \(Self.relative(lastBackup)) ✓")
     }
 
     var statusColor: Color {
@@ -503,7 +496,7 @@ final class BackupManager {
         let task = UIApplication.shared.beginBackgroundTask(withName: "backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         do {
-            let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي إلى iCloud", "Backing up to iCloud"))
+            let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي", "Backing up"))
             defer { try? FileManager.default.removeItem(at: url) }
             let preparedSize = try Self.archiveSize(url)
             let scope = resolveBookmark(Self.folderKey) ?? file
@@ -780,6 +773,7 @@ struct BackupView: View {
     @AppStorage(BackupManager.autoKey) private var autoEnabled = true
     @AppStorage(BackupManager.scheduleKey) private var scheduleRaw = BackupSchedule.off.rawValue
     @State private var showFolderHelp = false
+    @State private var chosenProvider = "iCloud Drive"
 
     var body: some View {
         List {
@@ -788,39 +782,34 @@ struct BackupView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } footer: {
-                Text(tr("قبل أي تحديث من AppStar تأكد أن آخر نسخة ناجحة بتاريخ اليوم. إذا احتاج المثبّت إلى إعادة التثبيت فقد يفقد iOS حاوية البيانات المحلية؛ يمكن استرجاعها من نسخة iCloud.",
-                        "Before updating through AppStar, confirm a successful backup today. If the installer reinstalls the app, iOS may lose local data; restore it from the iCloud backup."))
+                Text(tr("قبل أي تحديث من AppStar تأكد أن آخر نسخة ناجحة بتاريخ اليوم. إذا احتاج المثبّت إلى إعادة التثبيت فقد يفقد iOS حاوية البيانات المحلية؛ يمكن استرجاعها من النسخة الاحتياطية.",
+                        "Before updating through AppStar, confirm a successful backup today. If the installer reinstalls the app, iOS may lose local data; restore it from the backup."))
             }
 
             Section {
-                if let folder = manager.folderName {
-                    Button {
-                        showFolderHelp = true
-                    } label: {
+                Menu {
+                    ForEach(["iCloud Drive", "OneDrive", "Google Drive"], id: \.self) { provider in
+                        Button(provider) {
+                            chosenProvider = provider
+                            showFolderHelp = true
+                        }
+                    }
+                } label: {
+                    if let folder = manager.folderName {
                         LabeledContent {
                             Text(tr("تغيير", "Change")).foregroundStyle(.tint)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(tr("مكان النسخة", "Backup location")).foregroundStyle(.primary)
-                                Text(folder).font(.caption).foregroundStyle(manager.folderIsLocal ? .orange : .secondary)
+                                Text(folder).font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                    }
-                    if manager.folderIsLocal {
-                        Label(tr("المجلد المختار على الآيفون وليس في iCloud، فلن تصل النسخة لجهاز آخر.", "This folder is on the iPhone, not iCloud."),
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                } else {
-                    Button {
-                        showFolderHelp = true
-                    } label: {
-                        Label(tr("حفظ النسخة في iCloud", "Save the backup to iCloud"), systemImage: "icloud.and.arrow.up.fill")
+                    } else {
+                        Label(tr("اختيار مكان النسخة", "Choose backup location"), systemImage: "cloud")
                             .font(.body.weight(.semibold))
                     }
-                    .accessibilityIdentifier("chooseICloudFolder")
                 }
+                .accessibilityIdentifier("chooseICloudFolder")
                 Toggle(tr("نسخ تلقائي بعد كل استيراد", "Auto backup after each import"), isOn: $autoEnabled)
                     .accessibilityIdentifier("autoBackupToggle")
                 Picker(tr("نسخ دوري", "Periodic backup"), selection: $scheduleRaw) {
@@ -839,7 +828,7 @@ struct BackupView: View {
                     Task { await manager.backupToDestination() }
                 } label: {
                     HStack {
-                        Text(tr("نسخ الآن إلى iCloud", "Back up to iCloud now"))
+                        Text(tr("نسخ الآن", "Back up now"))
                         Spacer()
                         if manager.isWorking { ProgressView() }
                     }
@@ -847,10 +836,10 @@ struct BackupView: View {
                 .disabled(manager.isWorking || manager.folderName == nil)
                 .accessibilityIdentifier("backupToDestination")
             } header: {
-                Text("iCloud Drive")
+                Text(tr("النسخ التلقائي", "Automatic backup"))
             } footer: {
-                Text(tr("النسخة ملف واحد \"نسخة الرواتب.zip\" في iCloud Drive، فيه البيانات والإعدادات وملفات PDF للكتب بصفحاتها وإشعاراتها. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ إذا فات الموعد تُؤخذ النسخة عند فتح التطبيق. لا يضمن النظام وقتاً ثابتاً والتطبيق مغلق.",
-                        "One backup file in iCloud Drive contains data, settings and scanned document PDFs. Periodic backups run while the app is open, and iOS may run them in the background. Missed backups run on the next launch; iOS doesn't guarantee an exact time while the app is closed."))
+                Text(tr("يحدّث التطبيق ملف نسخة واحداً تختاره من تطبيق الملفات. ثبّت OneDrive أو Google Drive وفعّل ظهوره في الملفات لاختياره. النسخ الدوري يعمل أثناء فتح التطبيق، ويحاول iOS تشغيله بالخلفية؛ لا يُضمن الوقت أو اكتمال رفع المزوّد.",
+                        "The app updates one backup file selected in Files. Install OneDrive or Google Drive and enable it in Files to select it. Periodic backups run while the app is open; background timing and provider uploads are not guaranteed."))
             }
 
             Section {
@@ -860,7 +849,7 @@ struct BackupView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tr("استرجاع من نسخة", "Restore from backup")).foregroundStyle(.primary)
-                            Text(tr("من iCloud Drive ← نسخ الرواتب ← نسخة الرواتب.zip", "iCloud Drive › نسخ الرواتب › نسخة الرواتب.zip"))
+                            Text(tr("اختر النسخة من تطبيق الملفات", "Choose a backup in Files"))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     } icon: {
@@ -885,18 +874,18 @@ struct BackupView: View {
             } header: {
                 Text(tr("جهاز آخر أو نسخة يدوية", "Another device or manual copy"))
             } footer: {
-                Text(tr("على جهاز آخر: ثبّت التطبيق وسجّل الدخول بنفس حساب iCloud، ثم الإعدادات ← النسخ الاحتياطي ← استرجاع من نسخة (أو \"استيراد ملفات\") واختر \"نسخة الرواتب.zip\". بعدها اضغط \"حفظ النسخة في iCloud\" واختر ملف النسخة لربطه بالنسخ التلقائي على الجهاز الجديد.",
-                        "On another device: install the app with the same iCloud account, then Settings › Backup › Restore (or Import files) and pick \"نسخة الرواتب.zip\"."))
+                Text(tr("على جهاز آخر: افتح «استرجاع من نسخة» واختر الملف من الخدمة المناسبة في تطبيق الملفات.",
+                        "On another device, open Restore and select your backup from its provider in Files."))
             }
         }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
-        .alert(tr("حفظ النسخة في iCloud", "Save the backup to iCloud"), isPresented: $showFolderHelp) {
+        .alert(tr("اختيار ملف النسخة", "Choose backup file"), isPresented: $showFolderHelp) {
             Button(tr("متابعة", "Continue")) { manager.chooseLocation() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("اختر ملف نسخة الرواتب.zip الموجود في iCloud Drive لربطه بالنسخ التلقائي. للحفاظ على نسخة قديمة، أنشئ ملفاً آخر أولاً من «مشاركة نسخة الآن» واختره هنا.",
-                    "Choose an existing salary backup ZIP in iCloud Drive for automatic updates. To preserve an old backup, first create another using Share a backup now and select it here."))
+            Text(tr("من تطبيق الملفات اختر \(chosenProvider) ثم ملف نسخة الرواتب.zip. للبدء، أنشئ ملفاً باستخدام «مشاركة نسخة الآن» واحفظه في الخدمة. سيُحدَّث الملف المختار تلقائياً؛ احتفظ بنسخة قديمة منفصلة.",
+                    "In Files select \(chosenProvider) and the salary backup ZIP. First use Share a backup now to create a file in the service. Keep an older backup separately."))
         }
     }
 
