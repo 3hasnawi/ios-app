@@ -66,11 +66,21 @@ enum FilePicker {
         return top
     }
 
-    /// ينتظر انتهاء إغلاق نافذة الملفات قبل عرض نافذة أخرى (حد أقصى ثانيتان).
+    /// ننتظر اكتمال الإغلاق فعلياً؛ تجاهل النافذة أثناء إغلاقها قد يفتح التالية قبل انتهاء الانتقال.
     static func waitUntilSettled() async {
-        for _ in 0..<20 {
-            guard let top = topController() else { return }
-            if !(top is UIDocumentPickerViewController) && !(top is UIAlertController) && !top.isBeingDismissed && !top.isBeingPresented { return }
+        for _ in 0..<40 {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+            var controller = scene?.windows.first(where: \.isKeyWindow)?.rootViewController ?? scene?.windows.first?.rootViewController
+            var transitioning = false
+            while let current = controller {
+                if current.isBeingDismissed || current.isBeingPresented ||
+                    current is UIDocumentPickerViewController || current is UIAlertController {
+                    transitioning = true
+                }
+                controller = current.presentedViewController
+            }
+            if !transitioning { return }
             try? await Task.sleep(for: .milliseconds(100))
         }
     }
