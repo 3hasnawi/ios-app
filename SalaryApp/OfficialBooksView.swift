@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import VisionKit
 
-private struct ScannedBookDraft: Identifiable {
+struct ScannedBookDraft: Identifiable {
     let id = UUID()
     let images: [Data]
 }
@@ -140,7 +140,7 @@ struct OfficialBooksView: View {
 }
 
 /// تأكيد اسم الكتاب وشهره بعد المسح، أو تعديل الاسم والجهة دون تغيير الملف.
-private struct OfficialBookEditor: View {
+struct OfficialBookEditor: View {
     let months: [String]
     let existing: OfficialBook?
     @State private var images: [Data]?

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import VisionKit
 
 /// خيارات تشغيل للاختبار الآلي على المحاكي، مثلاً:
 /// `xcrun simctl launch <device> com.example.SalaryApp -importFile "/a.xlsx|/b.xlsx" -search "احمد" -openFirst YES -selectedMonth "أيلول 2026"`
@@ -57,6 +58,10 @@ struct ContentView: View {
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
     @State private var path: [Employee] = []
+    @State private var showingBookScanner = false
+    @State private var bookDraft: ScannedBookDraft?
+    @State private var scannedBookMonth = ""
+    @State private var scanError: String?
 
     private let fileTypes: [UTType] = [
         UTType(filenameExtension: "xlsx") ?? .spreadsheet,
@@ -77,6 +82,7 @@ struct ContentView: View {
                 .id("\(language)-\(numerals)")
                 // زر الأشهر في شريط العنوان (لا يغطي البطاقات عند التمرير).
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { scanBookButton }
                     if !months.isEmpty {
                         ToolbarItem(placement: .topBarTrailing) { monthMenu }
                     }
@@ -85,6 +91,26 @@ struct ContentView: View {
                 .navigationTitle(tr("الرئيسية", "Home"))
                 // عنوان صغير حتى تبدأ البطاقات من أعلى الشاشة.
                 .navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented: $showingBookScanner) {
+                    OfficialBookScanner(onComplete: { images in
+                        showingBookScanner = false
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(250))
+                            bookDraft = ScannedBookDraft(images: images)
+                        }
+                    }, onFailure: { message in
+                        showingBookScanner = false
+                        scanError = message
+                    }, onCancel: { showingBookScanner = false })
+                }
+                .sheet(item: $bookDraft) { draft in
+                    OfficialBookEditor(months: months.map(\.name), initialMonth: scannedBookMonth,
+                                       images: draft.images, existing: nil)
+                }
+                .alert(tr("الكتب الرسمية", "Official documents"), isPresented: Binding(
+                    get: { scanError != nil }, set: { if !$0 { scanError = nil } })) {
+                    Button(tr("حسناً", "OK"), role: .cancel) {}
+                } message: { Text(scanError ?? "") }
                 .navigationDestination(for: Employee.self) { EmployeeDetailView(employee: $0) }
                 .task {
                     await applyLaunchOptions()
@@ -107,6 +133,27 @@ struct ContentView: View {
                     selectedMonth = newest ?? ""
                 }
         }
+    }
+
+    private var scanBookButton: some View {
+        Button {
+            guard let currentMonth else {
+                scanError = tr("استورد شهراً أولاً لحفظ الكتاب ضمنه.", "Import a month first to save a document in it.")
+                return
+            }
+            guard VNDocumentCameraViewController.isSupported else {
+                scanError = OfficialBookError.unavailableCamera.localizedDescription
+                return
+            }
+            scannedBookMonth = currentMonth.name
+            showingBookScanner = true
+        } label: {
+            Image(systemName: "doc.viewfinder")
+        }
+        .accessibilityLabel(tr("مسح كتاب جديد", "Scan a document"))
+        .accessibilityIdentifier("homeScanOfficialBook")
+        .glassButtonStyle()
+        .buttonBorderShape(.circle)
     }
 
     /// اختيار شهر واحد بضغطة واحدة؛ إدارة الحذف موجودة في الإعدادات فقط.
