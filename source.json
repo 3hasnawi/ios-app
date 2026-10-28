@@ -17,6 +17,15 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "1.27",
+          "buildVersion": "63",
+          "marketingVersion": "1.27 (بناء 63)",
+          "date": "2026-10-28T20:56:53+00:00",
+          "downloadURL": "https://github.com/3hasnawi/ios-app/releases/download/build-63/SalaryApp.ipa",
+          "size": 5076136,
+          "minOSVersion": "26.0"
+        },
+        {
           "version": "1.26",
           "buildVersion": "62",
           "marketingVersion": "1.26 (بناء 62)",
