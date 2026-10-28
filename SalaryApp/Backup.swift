@@ -43,10 +43,11 @@ nonisolated enum BackupFormat {
 }
 
 enum BackupError: LocalizedError {
-    case notBackup, newerVersion, folderUnavailable, noFolder, emptyArchive, emptyData, emptyRestore, dataLossRisk
+    case notBackup, unavailableArchive, newerVersion, folderUnavailable, noFolder, emptyArchive, emptyData, emptyRestore, dataLossRisk
     var errorDescription: String? {
         switch self {
         case .notBackup: tr("الملف ليس نسخة احتياطية من تطبيق الرواتب.", "This file isn't a payroll app backup.")
+        case .unavailableArchive: tr("تعذّر التحقق من النسخة السابقة لأن حجمها غير متاح. لم تُستبدل؛ تأكد من توفر الملف ثم أعد المحاولة.", "The previous backup could not be verified because its size is unavailable. It was preserved; make it available and retry.")
         case .newerVersion: tr("النسخة من إصدار أحدث من التطبيق. حدّث التطبيق ثم أعد المحاولة.", "The backup is from a newer app version. Update the app first.")
         case .folderUnavailable: tr("تعذّر الوصول إلى مجلد iCloud. اختر المجلد من جديد في الإعدادات ← النسخ الاحتياطي.", "The iCloud folder can't be reached. Choose it again in Settings › Backup.")
         case .noFolder: tr("لم يُختر مجلد iCloud بعد. اختره من الإعدادات ← النسخ الاحتياطي.", "No iCloud folder chosen yet. Choose it in Settings › Backup.")
@@ -342,7 +343,8 @@ final class BackupManager {
                 UserDefaults.standard.set(data, forKey: Self.fileKey)
                 UserDefaults.standard.removeObject(forKey: Self.folderKey)
                 version += 1
-                _ = await backupToDestination()
+                await FilePicker.waitUntilSettled()
+                if let result = await backupToDestination() { message = result }
             } catch {
                 message = tr("تعذّر حفظ مكان النسخة: \(error.localizedDescription)", "Couldn't save backup location: \(error.localizedDescription)")
             }
@@ -413,7 +415,8 @@ final class BackupManager {
         let attributes: [FileAttributeKey: Any]
         do { attributes = try FileManager.default.attributesOfItem(atPath: file.path) }
         catch let error as NSError where error.domain == NSCocoaErrorDomain && (error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError) { return }
-        if (attributes[.size] as? NSNumber)?.intValue == 0 { return }
+        // حجم iCloud قد يكون صفراً لملف لم يُنزّل؛ لا نعتبر ذلك إذناً بمحو النسخة.
+        if (attributes[.size] as? NSNumber)?.intValue == 0 { throw BackupError.unavailableArchive }
         var coordinationError: NSError?
         var readError: Error?
         var previous: BackupFormat.Manifest?
@@ -559,7 +562,6 @@ final class BackupManager {
         let folder = docs.appendingPathComponent("icloud-test", isDirectory: true).appendingPathComponent(Self.subfolder, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent(BackupFormat.fileName())
-        if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: Data()) }
         UserDefaults.standard.set(file.path, forKey: Self.testFileKey)
         UserDefaults.standard.set(true, forKey: Self.autoKey)
         let line = await autoBackup() ?? "nil"
@@ -760,8 +762,13 @@ extension FilePicker {
             onDone = nil
             Task { @MainActor in FilePicker.exportDelegate = nil }
         }
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { finish(urls.first) }
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finish(nil) }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            let url = urls.first
+            controller.dismiss(animated: true) { self.finish(url) }
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            controller.dismiss(animated: true) { self.finish(nil) }
+        }
     }
 }
 

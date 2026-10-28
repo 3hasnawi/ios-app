@@ -6,6 +6,7 @@ enum BackupBackground {
     private static let identifier = "com.example.SalaryApp.periodicBackup"
     private static let scheduleKey = "backupSchedule"
     private static let fileKey = "autoBackupFile"
+    private static let folderKey = "autoBackupFolder"
     private static let lastKey = "autoBackupLast"
 
     static func register() {
@@ -30,7 +31,7 @@ enum BackupBackground {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         let raw = UserDefaults.standard.string(forKey: scheduleKey) ?? ""
         guard let interval = BackupSchedule(rawValue: raw)?.interval,
-              UserDefaults.standard.data(forKey: fileKey) != nil else { return }
+              (UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil) else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
