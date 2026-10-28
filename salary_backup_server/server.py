@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import threading
 import zipfile
@@ -14,6 +15,7 @@ from pathlib import Path
 DATA = Path(os.environ.get("SALARY_BACKUP_DIR", "/data/backups"))
 MAX_SIZE = 2 * 1024 * 1024 * 1024
 LOCK = threading.Lock()
+DASHBOARD = Path(__file__).with_name("dashboard.html")
 
 
 def valid_archive(path):
@@ -38,6 +40,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -48,10 +51,36 @@ class Handler(BaseHTTPRequestHandler):
         except TypeError:
             return False
     def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            content = DASHBOARD.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            return
         if not self.authorized():
             return self.response(401, {"error": "unauthorized"})
         if self.path == "/v1/status":
-            return self.response(200, {"service": "salary-backup", "version": 1})
+            try:
+                DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
+                disk = shutil.disk_usage(DATA)
+                backups = []
+                for file in DATA.glob("backup-*.zip"):
+                    try:
+                        stat = file.stat()
+                    except FileNotFoundError:
+                        continue
+                    backups.append({"id": file.name, "size": stat.st_size,
+                                    "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
+                backups.sort(key=lambda b: b["created_at"], reverse=True)
+                return self.response(200, {"service": "salary-backup", "version": 1,
+                    "disk_total": disk.total, "disk_used": disk.used, "disk_free": disk.free,
+                    "backup_count": len(backups), "backup_bytes": sum(b["size"] for b in backups),
+                    "backups": backups[:200]})
+            except OSError:
+                return self.response(503, {"error": "storage unavailable"})
         if self.path != "/v1/backups/latest":
             return self.response(404, {"error": "not found"})
         files = sorted(DATA.glob("backup-*.zip"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
