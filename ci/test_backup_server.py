@@ -8,6 +8,8 @@ from pathlib import Path
 import tempfile
 import threading
 import zipfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "salary_backup_server"))
 
 spec = importlib.util.spec_from_file_location("backup_server", Path(__file__).resolve().parents[1] / "salary_backup_server/server.py")
 server_module = importlib.util.module_from_spec(spec)
@@ -17,6 +19,7 @@ with tempfile.TemporaryDirectory() as directory:
     server_module.DATA = Path(directory)
     server = server_module.ThreadingHTTPServer(("127.0.0.1", 0), server_module.Handler)
     server.token = "a" * 32
+    server.drive = server_module.DriveSync({}, Path(directory) / "google.json", server_module.DATA)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     def request(method, path, body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
@@ -37,11 +40,23 @@ with tempfile.TemporaryDirectory() as directory:
     assert request("POST", "/v1/backups", b"bad", {**headers, "X-Content-SHA256": hashlib.sha256(b"bad").hexdigest()})[0] == 400
     assert request("POST", "/v1/backups", data, headers)[0] == 201
     assert request("POST", "/v1/backups", data, headers)[0] == 201
-    assert len(list(server_module.DATA.glob("*.zip"))) == 2
+    assert len(list(server_module.DATA.glob("*.zip"))) == 1
+    # النسخة التي لا تتضمن الشهر القديم لا تستبدل الملف الموجود.
+    missing = io.BytesIO()
+    with zipfile.ZipFile(missing, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 4, "months": ["other"], "employees": 1}))
+    missing_data = missing.getvalue()
+    missing_headers = {**headers, "X-Content-SHA256": hashlib.sha256(missing_data).hexdigest()}
+    assert request("POST", "/v1/backups", missing_data, missing_headers)[0] == 400
+    assert (server_module.DATA / "backup-current.zip").read_bytes() == data
+    # ترحيل النسخ السابقة يتم بعد نجاح النسخة الجديدة فقط.
+    (server_module.DATA / "backup-legacy.zip").write_bytes(data)
+    assert request("POST", "/v1/backups", data, headers)[0] == 201
+    assert len(list(server_module.DATA.glob("backup-*.zip"))) == 1
     status, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
     details = json.loads(body)
-    assert status == 200 and details["backup_count"] == 2 and details["backup_bytes"] == len(data) * 2
-    assert len(details["backups"]) == 2 and details["disk_total"] >= details["disk_free"] > 0
+    assert status == 200 and details["backup_count"] == 1 and details["backup_bytes"] == len(data)
+    assert len(details["backups"]) == 1 and details["disk_total"] >= details["disk_free"] > 0
     assert request("GET", "/v1/backups/latest", headers={"Authorization": "Bearer " + server.token}) == (200, data)
     assert request("GET", "/v1/backups/latest")[0] == 401
     server.shutdown()

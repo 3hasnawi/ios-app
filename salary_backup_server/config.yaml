@@ -1,5 +1,5 @@
 name: Salary Backup
-version: "1.1.0"
+version: "1.2.0"
 slug: salary_backup_server
 description: Private backup receiver for the Salary app
 url: https://github.com/3hasnawi/ios-app
@@ -17,5 +17,11 @@ ports_description:
   8765/tcp: Local backup API
 options:
   token: ""
+  google_drive_enabled: false
+  google_client_id: ""
+  google_client_secret: ""
 schema:
   token: password
+  google_drive_enabled: bool
+  google_client_id: str
+  google_client_secret: password

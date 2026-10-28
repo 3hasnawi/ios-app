@@ -93,7 +93,7 @@
 | `DeductionAudit.swift` | مقارنة استقطاعات شهرين حسب الموظف والجهة والإضبارة (`DeductionReview`)، `DeductionGroupKind` (توقف/جديد/تغيّر المبلغ)، كشف التكرار المحتمل |
 | `DeductionAuditSelfTest.swift` | حالات محاسبية وهمية لاختبار مقارنة الاستقطاعات والتكرار والتصدير في المحاكي |
 | `Backup.swift` | النسخ الاحتياطي والاسترجاع وصفحته |
-| `BackupServer.swift`, `salary_backup_server/` | نسخ السيرفر المحلي عبر إضافة Home Assistant، عنوان IP خاص وHTTP محلي فقط، رمز في سلسلة المفاتيح، نسخ مستقلة واسترجاع آخر نسخة؛ راجع دليل الإضافة و`ci/test_backup_server.py` |
+| `BackupServer.swift`, `salary_backup_server/` | نسخ السيرفر المحلي عبر إضافة Home Assistant، عنوان IP خاص وHTTP محلي فقط، رمز في سلسلة المفاتيح، ملف محلي واحد مع حماية الاستبدال، نسخ اختياري إلى Google Drive بتفويض الجهاز، واسترجاع آخر نسخة؛ راجع دليل الإضافة و`ci/test_backup_server.py` و`ci/test_google_device_flow.py` |
 | `SettingsView.swift` | الإعدادات (صفحة واحدة بلا تمرير) + البيانات المحفوظة |
 | `DocumentPicker.swift` | `FilePicker` (نافذة الملفات من UIKit)، `ActivityShare` (المشاركة بنوع الملف الصحيح) |
 | `AppLock.swift` | قفل Face ID |

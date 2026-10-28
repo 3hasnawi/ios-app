@@ -40,7 +40,8 @@ nonisolated enum BackupServerConfig {
             (bytes[0] == 192 && bytes[1] == 168) else { return nil }
         return parts.url
     }
-    static var ready: Bool { enabled && url(address) != nil && token.utf8.count >= 32 }
+    static var configured: Bool { url(address) != nil && token.utf8.count >= 32 }
+    static var ready: Bool { enabled && configured }
 }
 
 nonisolated enum BackupServerUpload {

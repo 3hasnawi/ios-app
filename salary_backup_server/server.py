@@ -3,11 +3,11 @@ import hmac
 import json
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import threading
 import zipfile
+from google_drive import DriveSync
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +30,15 @@ def valid_archive(path):
             raise ValueError("empty backup")
         if archive.testzip() is not None:
             raise ValueError("corrupt backup")
+        return manifest
+
+
+def ensure_no_missing_data(current, previous):
+    if not set(previous.get("months", [])).issubset(set(current.get("months", []))):
+        raise ValueError("previous backup contains missing months")
+    for key in ("employees", "deductions", "staff", "accounts", "books"):
+        if (previous.get(key) or 0) > 0 and not (current.get(key) or 0):
+            raise ValueError("previous backup contains missing data")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -78,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.response(200, {"service": "salary-backup", "version": 1,
                     "disk_total": disk.total, "disk_used": disk.used, "disk_free": disk.free,
                     "backup_count": len(backups), "backup_bytes": sum(b["size"] for b in backups),
-                    "backups": backups[:200]})
+                    "backups": backups[:200], "google_drive": self.server.drive.info()})
             except OSError:
                 return self.response(503, {"error": "storage unavailable"})
         if self.path != "/v1/backups/latest":
@@ -97,6 +106,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             self.close_connection = True
             return self.response(401, {"error": "unauthorized"})
+        if self.path in ("/v1/google/start", "/v1/google/poll"):
+            try:
+                result = self.server.drive.start() if self.path.endswith("/start") else self.server.drive.poll()
+                return self.response(200, result)
+            except (ValueError, OSError, KeyError):
+                return self.response(400, {"error": "google_authorization_failed"})
         if self.path != "/v1/backups":
             self.close_connection = True
             return self.response(404, {"error": "not found"})
@@ -123,11 +138,24 @@ class Handler(BaseHTTPRequestHandler):
                     os.fsync(out.fileno())
                 if not hmac.compare_digest(sha.hexdigest(), digest):
                     raise ValueError("checksum mismatch")
-                valid_archive(name)
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-                filename = f"backup-{stamp}-{secrets.token_hex(4)}.zip"
+                manifest = valid_archive(name)
+                filename = "backup-current.zip"
                 with LOCK:
+                    previous = list(DATA.glob("backup-*.zip"))
+                    # لا نستبدل نسخة سليمة ببيانات ينقصها شهر أو قسم كامل.
+                    for old in previous:
+                        ensure_no_missing_data(manifest, valid_archive(old))
                     os.replace(name, DATA / filename)
+                    directory = os.open(DATA, os.O_RDONLY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                    # النسخ القديمة تُحذف بعد تأكيد استبدال النسخة الحالية فقط.
+                    for old in previous:
+                        if old.name != filename:
+                            old.unlink()
+                self.server.drive.event.set()
                 return self.response(201, {"id": filename, "size": length, "sha256": digest})
             finally:
                 if os.path.exists(name):
@@ -144,6 +172,7 @@ def main():
         raise SystemExit("Set a unique token of at least 32 ASCII characters in add-on configuration")
     httpd = ThreadingHTTPServer(("0.0.0.0", 8765), Handler)
     httpd.token = token
+    httpd.drive = DriveSync(json.load(open("/data/options.json", encoding="utf-8")), "/data/google-drive.json", DATA)
     httpd.serve_forever()
 
 if __name__ == "__main__":

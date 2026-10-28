@@ -29,6 +29,7 @@ enum BackupBackground {
 
     static func schedule() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+        guard !BackupManager.manualOnly else { return }
         let raw = UserDefaults.standard.string(forKey: scheduleKey) ?? ""
         guard let interval = BackupSchedule(rawValue: raw)?.interval,
               (BackupServerConfig.ready || UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil) else { return }
