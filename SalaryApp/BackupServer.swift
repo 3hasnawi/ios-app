@@ -79,7 +79,7 @@ struct BackupServerSettings: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(tr("السيرفر المحلي", "Local server")) {
+                Section {
                     TextField("http://192.168.1.10:8765", text: $address)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .environment(\.layoutDirection, .leftToRight)
@@ -87,6 +87,8 @@ struct BackupServerSettings: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .environment(\.layoutDirection, .leftToRight)
                     Toggle(tr("تفعيل النسخ إلى السيرفر", "Back up to server"), isOn: $enabled)
+                } header: {
+                    Text(tr("السيرفر المحلي", "Local server"))
                 } footer: {
                     Text(tr("الاتصال المحلي HTTP غير مشفّر. استخدمه على شبكة موثوقة فقط؛ اختر نسخاً دورياً أو بعد الاستيراد من صفحة النسخ.", "Local HTTP is unencrypted. Use only on a trusted network; choose a schedule or after-import backup on the backup page."))
                 }
