@@ -12,3 +12,8 @@ build/
 Payload/
 *.ipa
 .DS_Store
+
+# بناء نسخة ويندوز
+WindowsApp/bin/
+WindowsApp/obj/
+WindowsApp/.vs/
