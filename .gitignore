@@ -7,6 +7,7 @@
 # ملفات يولدها البناء
 *.xcodeproj/
 SalaryApp/Info.plist
+WidgetExtension/Info.plist
 build/
 Payload/
 *.ipa

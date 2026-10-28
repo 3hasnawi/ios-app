@@ -11,9 +11,14 @@ targets:
   SalaryApp:
     type: application
     platform: iOS
-    sources: [SalaryApp]
+    sources:
+      - path: SalaryApp
+        excludes: ["Info.plist", "SalaryApp.entitlements"]
+      - path: WidgetShared
     dependencies:
       - package: ZIPFoundation
+      - target: SalaryWidget
+        embed: true
     scheme:
       testTargets: [SalaryAppUITests]
     info:
@@ -41,11 +46,37 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryApp
+        CODE_SIGN_ENTITLEMENTS: SalaryApp/SalaryApp.entitlements
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SalaryWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: WidgetExtension
+        excludes: ["Info.plist", "SalaryWidget.entitlements"]
+      - path: WidgetShared
+    info:
+      path: WidgetExtension/Info.plist
+      properties:
+        CFBundleDisplayName: ويدجت الرواتب
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryApp.widget
+        CODE_SIGN_ENTITLEMENTS: WidgetExtension/SalaryWidget.entitlements
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
   SalaryAppUITests:
     type: bundle.ui-testing
     platform: iOS

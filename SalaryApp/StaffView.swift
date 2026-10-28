@@ -96,6 +96,22 @@ struct RootView: View {
     @State private var importCenter = ImportCenter.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var backup = BackupManager.shared
+    @State private var widgetBooks = OfficialBookStore.shared
+    @State private var lastWidgetCloudCheck = Date.distantPast
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var widgetMonths: [PayrollMonth]
+    @AppStorage("bankStatementManualAmounts") private var widgetManualData = Data()
+    @AppStorage("homeAuditCache") private var widgetAuditData = Data()
+    @AppStorage(AppSettings.numeralsKey) private var widgetNumerals = AppNumerals.latin.rawValue
+    @AppStorage(AppSettings.languageKey) private var widgetLanguage = AppLanguage.arabic.rawValue
+    @AppStorage("widgetRefreshRevision") private var widgetRefreshRevision = 0
+    @AppStorage(BackupServerConfig.enabledKey) private var widgetServerEnabled = false
+    @AppStorage(BackupServerConfig.addressKey) private var widgetServerAddress = ""
+
+    private var widgetKey: String {
+        let months = widgetMonths.map { "\($0.name)|\($0.importedAt.timeIntervalSince1970)|\($0.employeeCount)|\($0.deductionCount)" }.joined(separator: ";")
+        return "\(months)|\(widgetManualData.hashValue)|\(widgetAuditData.hashValue)|\(widgetNumerals)|\(widgetLanguage)|\(widgetRefreshRevision)|\(widgetServerEnabled)|\(widgetServerAddress)|\(widgetBooks.revision)|\(importCenter.isBusy)"
+    }
 
     private var selection: Binding<AppRouter.Tab> {
         Binding(
@@ -133,11 +149,21 @@ struct RootView: View {
             #if targetEnvironment(simulator)
             await SmartShortcutSelfTest.runIfRequested()
             await StaffReportSelfTest.runIfRequested()
+            await WidgetSnapshotSelfTest.runIfRequested()
             #endif
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
             await BackupManager.shared.autoBackupIfNeeded()
             await AutoPilot.shared.run()
+        }
+        .task(id: widgetKey) {
+            guard !importCenter.isBusy else { return }
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled else { return }
+            await WidgetSnapshotPublisher.refresh(months: widgetMonths, manualData: widgetManualData, auditData: widgetAuditData)
+        }
+        .onChange(of: backup.version) {
+            WidgetSnapshotPublisher.updateBackupStatus(backup.statusLine)
         }
         // نسخة فاتت (أُغلق التطبيق أثناء النسخ أو تعذّر الوصول للمجلد): تُكمل عند فتح التطبيق أو الخروج منه.
         .onChange(of: scenePhase) { _, phase in
@@ -145,12 +171,22 @@ struct RootView: View {
             Task {
                 if phase == .active { try? await Task.sleep(for: .seconds(3)) }
                 await BackupManager.shared.autoBackupIfNeeded()
+                if phase == .active, Date().timeIntervalSince(lastWidgetCloudCheck) >= 300 {
+                    lastWidgetCloudCheck = .now
+                    await WidgetSnapshotPublisher.updateGoogleStatus()
+                }
             }
         }
         // أثناء بقاء التطبيق مفتوحاً تُراجع ساعة النسخ دون انتظار استيراد جديد.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             guard scenePhase == .active else { return }
-            Task { await BackupManager.shared.autoBackupIfNeeded() }
+            Task {
+                await BackupManager.shared.autoBackupIfNeeded()
+                if Date().timeIntervalSince(lastWidgetCloudCheck) >= 300 {
+                    lastWidgetCloudCheck = .now
+                    await WidgetSnapshotPublisher.updateGoogleStatus()
+                }
+            }
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.
         .overlay(alignment: .bottom) {

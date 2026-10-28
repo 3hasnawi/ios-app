@@ -55,6 +55,7 @@
 تُمرَّر في `simulator.yml` مثل `-tab reports -openReport YES`:
 `-importFile <مسارات|>`، `-importReview YES`، `-tab search|reports|bank|settings`، `-openBankSettings YES`، `-search <نص>`، `-openFirst YES`، `-openPerson YES`، `-personPart months`، `-share YES`، `-shareMode image`، `-openSettings YES`، `-openBackup YES`، `-reportKind payroll`، `-reportByEntity YES|NO`، `-openReport YES`، `-openReportTitle <جزء من الاسم>`، `-exportReport YES`، `-previewReport YES`، `-reportsEntities YES`، `-reportsAudit YES`، `-auditTest YES`، `-compareDeductions YES`، `-deductionKind stopped|started|changed`، `-salaryAudit YES`، `-salaryAuditKind added|removed|net|rank|workplace|bank`، `-auditExportSheet YES`، `-openNotifications YES`، `-homeScroll YES`، `-deductionAuditTest YES` (حالات محاسبية وهمية وتصدير، للمحاكي فقط)، `-exportSheet single|group`، `-exportSearch <نص>`، `-bulkExport directorates|banks|others|all`، `-backupTest YES`، `-autoBackupTest YES`، `-fakeStaff <عدد>`، `-autopilot YES`، `-perfLog YES`، `-appLanguage en`، `-appNumerals arabicIndic`، `-appTextSize 0..6`، `-faceIDLock YES -lockPreview YES|-skipLock YES`.
 نتائج الاختبارات الآلية تُكتب في `Documents/import-report.txt` عبر `LaunchOptions.writeReport`.
+`-widgetDataTest YES` يقارن بيانات الويدجت الوهمية بكشف البنك والجهات، ويذكر توفر App Group في المحاكي.
 `-staffReportTest YES` يتحقق من حقول تقرير الملاك وحجم A4 وحماية النص الطويل في المحاكي.
 `-smartShortcutTest YES` يتحقق من بحث الاختصار وملفات الشخص والجهة والكتاب ببيانات وهمية في المحاكي.
 `-tab settings -openAbout YES` يفتح صفحة «حول»، و`-tab settings -openBooks YES` يفتح أرشيف الكتب لالتقاطهما في المحاكي عند طلبه صراحة.
@@ -69,6 +70,7 @@
 | `ContentView.swift` | الرئيسية + `LaunchOptions` |
 | `AboutView.swift` | صفحة «حول»: معلومات البرنامج ورقم الإصدار الفعلي وصورة المطوّر الدائرية |
 | `OfficialBooks.swift`, `OfficialBooksView.swift` | ماسح الكتب والإشعارات (١–٣ صفحات)، حفظ PDF بحسب الشهر، الاسم والجهة، البحث والمعاينة والمشاركة، وملفاتها داخل النسخة الاحتياطية |
+| `WidgetExtension/SalaryWidget.swift`, `WidgetShared/WidgetModels.swift`, `WidgetSnapshotPublisher.swift` | ويدجت موحد قابل للتخصيص لملخصات الأشهر؛ يتطلب إضافة WidgetKit وApp Group، راجع `docs/widget-setup.md` ومخاطر توقيع AppStar |
 | `HomeDashboard.swift`, `HomeAccounting.swift` | الرئيسية المحاسبية: صافي الرواتب مع أعداد الضباط والموظفين والمراتب والعقود، بطاقتا التقارير والتدقيق قابلتان للتخصيص بالضغط المطوّل، وشريط دوّار لحالات الفحوص والمتغيرات يفتح نتائجها مباشرة؛ مصدرها الرواتب والاستقطاعات فقط |
 | `SmartShortcut.swift` | اختصار بحث ذكي للأشخاص وجهات التنفيذ والكتب، يعيد صورة القسيمة أو PDF/Excel أو كتاب PDF؛ إجراءات النسخ والمعاينة والمشاركة تُضاف في تطبيق الاختصارات |
 | `UnifiedSearch.swift` | البحث الموحّد (رواتب + ملاك)، صفحة الشخص بأزرار الأشهر، `RecentSearches`، `copyToClipboard` |
