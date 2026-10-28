@@ -7,12 +7,13 @@ using System.Text;
 
 namespace SalaryWindows;
 
-internal sealed record Manifest(int Version, string[] Months, int Employees, int Deductions, int Staff, int? Accounts, int? Books);
-internal sealed record Employee(string Month, string Name, string Rank, string Workplace, double? Net);
-internal sealed record Deduction(string Month, string Name, string Title, double? Amount);
-internal sealed record Staff(string Name, string Mother, string Stat, string Unified);
-internal sealed record Book(string Title, string Month, string? Entity);
-internal sealed record BackupData(Manifest Manifest, List<Employee> Employees, List<Deduction> Deductions, List<Staff> Staff, List<Book> Books);
+internal sealed record Manifest(int Version, string[] Months, int Employees, int Deductions, int Staff, int? Accounts, int? Books, double CreatedAt = 0);
+internal sealed record Employee(string Month, string Name, string Rank, string Workplace, double? Net, string? Items, string? Details);
+internal sealed record Deduction(string Month, string Name, string Title, double? Amount, string? Note, string? Rank);
+internal sealed record Staff(string Name, string Mother, string Stat, string Unified, string Rank, string Status, string Workplace, string? Details);
+internal sealed record Account(string Entity, string Iban, string Branch, string Swift);
+internal sealed record Book(Guid Id, string Title, string Month, string? Entity, int Pages);
+internal sealed record BackupData(Manifest Manifest, List<Employee> Employees, List<Deduction> Deductions, List<Staff> Staff, List<Account> Accounts, List<Book> Books, Dictionary<string, string> Settings, string ArchivePath);
 
 internal static class BackupReader
 {
@@ -27,11 +28,13 @@ internal static class BackupReader
         using var manifestStream = Entry(zip, "manifest.json", 1_000_000).Open();
         var manifest = JsonSerializer.Deserialize<Manifest>(manifestStream, Options) ?? throw new InvalidDataException("بيانات النسخة غير صالحة.");
         if (manifest.Version < 1 || manifest.Version > 4 || manifest.Months == null) throw new InvalidDataException("إصدار النسخة غير مدعوم.");
+        using var settingsStream = Entry(zip, "settings.json", 20_000_000).Open();
+        var settings = JsonSerializer.Deserialize<Dictionary<string, string>>(settingsStream, Options) ?? throw new InvalidDataException("إعدادات النسخة غير صالحة.");
         var months = Lines<JsonElement>(zip, "months.jsonl");
         var employees = Lines<Employee>(zip, "employees.jsonl");
         var deductions = Lines<Deduction>(zip, "deductions.jsonl");
         var staff = Lines<Staff>(zip, "staff.jsonl");
-        var accounts = manifest.Version >= 2 ? Lines<JsonElement>(zip, "accounts.jsonl").Count : 0;
+        var accounts = manifest.Version >= 2 ? Lines<Account>(zip, "accounts.jsonl") : [];
         var books = new List<Book>();
         if (manifest.Version >= 3)
         {
@@ -39,12 +42,16 @@ internal static class BackupReader
             books = JsonSerializer.Deserialize<List<Book>>(stream, Options) ?? throw new InvalidDataException("فهرس الكتب غير صالح.");
         }
         if (employees.Count != manifest.Employees || deductions.Count != manifest.Deductions || staff.Count != manifest.Staff ||
-            (manifest.Version >= 2 && accounts != manifest.Accounts) || (manifest.Version >= 3 && books.Count != manifest.Books) ||
+            (manifest.Version >= 2 && accounts.Count != manifest.Accounts) || (manifest.Version >= 3 && books.Count != manifest.Books) ||
             months.Count != manifest.Months.Length)
             throw new InvalidDataException("أعداد البيانات لا تطابق فهرس النسخة؛ لم تُفتح.");
-        if (employees.Count + deductions.Count + staff.Count + accounts + books.Count == 0 && months.Count == 0)
+        if (employees.Count + deductions.Count + staff.Count + accounts.Count + books.Count == 0 && months.Count == 0)
             throw new InvalidDataException("النسخة لا تحتوي بيانات.");
-        return new(manifest, employees, deductions, staff, books);
+        if (employees.Any(x => x.Name == null || x.Month == null) || deductions.Any(x => x.Name == null || x.Month == null || x.Title == null) ||
+            staff.Any(x => x.Name == null) || books.Any(x => x.Id == Guid.Empty || x.Title == null || x.Month == null))
+            throw new InvalidDataException("تحتوي النسخة سجلات غير مكتملة.");
+        foreach (var book in books) _ = Entry(zip, $"books/{book.Id.ToString().ToUpperInvariant()}.pdf");
+        return new(manifest, employees, deductions, staff, accounts, books, settings, path);
     }
     private static ZipArchiveEntry Entry(ZipArchive zip, string name, long max = MaxEntry)
     {

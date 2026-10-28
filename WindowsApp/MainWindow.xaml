@@ -6,8 +6,13 @@
       <TextBlock Text="نسخة ويندوز · قراءة فقط" Foreground="#64736C"/>
       <Button Content="⌂   الرئيسية" HorizontalAlignment="Stretch" Click="Home_Click"/>
       <Button Content="⌕   البحث" HorizontalAlignment="Stretch" Click="SearchPage_Click"/>
+      <Button Content="▤   التقارير" HorizontalAlignment="Stretch" Click="Reports_Click"/>
+      <Button Content="▥   كشف البنك" HorizontalAlignment="Stretch" Click="Bank_Click"/>
+      <Button Content="✓   التدقيق" HorizontalAlignment="Stretch" Click="Audit_Click"/>
+      <Button Content="☷   الملاك" HorizontalAlignment="Stretch" Click="Staff_Click"/>
+      <Button Content="▣   الكتب الرسمية" HorizontalAlignment="Stretch" Click="Books_Click"/>
       <Button Content="☁   فتح نسخة احتياطية" HorizontalAlignment="Stretch" Click="Connect_Click"/>
-      <TextBlock Text="التقارير وكشف البنك والتدقيق والكتب ستُضاف في المراحل القادمة." TextWrapping="Wrap" Foreground="#64736C" Margin="0,24,0,0"/>
+
     </StackPanel></Border>
     <ScrollViewer Grid.Column="1" Padding="32"><StackPanel Spacing="20">
       <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -22,15 +27,20 @@
           <TextBlock x:Name="CategoriesText" Text="ضباط —   ·   موظفون —   ·   مراتب —   ·   عقود —" Foreground="#DBE9E2" TextWrapping="Wrap"/>
         </StackPanel></Border>
         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-          <Border Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="التقارير" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="كشوف الرواتب والاستقطاعات — قريباً" TextWrapping="Wrap"/></StackPanel></Border>
-          <Border Grid.Column="1" Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="تدقيق الرواتب" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="الفحوص والمقارنات — قريباً" TextWrapping="Wrap"/></StackPanel></Border>
+          <Border Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="التقارير" FontSize="20" FontWeight="SemiBold"/><Button Content="عرض الجهات" Click="Reports_Click"/></StackPanel></Border>
+          <Border Grid.Column="1" Background="White" CornerRadius="12" Padding="24"><StackPanel Spacing="10"><TextBlock Text="تدقيق الرواتب" FontSize="20" FontWeight="SemiBold"/><Button Content="عرض الفحوص" Click="Audit_Click"/></StackPanel></Border>
         </Grid>
         <Border Background="#E8EFEA" CornerRadius="12" Padding="20"><TextBlock Text="حالات المراجعة ستتوفر بعد إضافة التدقيق." TextWrapping="Wrap"/></Border>
       </StackPanel>
       <StackPanel x:Name="SearchPanel" Visibility="Collapsed" Spacing="14">
         <TextBox x:Name="SearchBox" PlaceholderText="ابحث عن اسم موظف أو جهة تنفيذ" TextChanged="SearchChanged"/>
         <TextBlock x:Name="SearchStatus" Foreground="#61726A" Text="النتائج من الشهر المحدد."/>
-        <ListView x:Name="SearchResults" MaxHeight="500" SelectionMode="None"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Padding="10"/></DataTemplate></ListView.ItemTemplate></ListView>
+        <ListView x:Name="SearchResults" MaxHeight="500" SelectionMode="Single" ItemClick="Item_Click" IsItemClickEnabled="True"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding Display}" TextWrapping="Wrap" Padding="10"/></DataTemplate></ListView.ItemTemplate></ListView>
+      </StackPanel>
+      <StackPanel x:Name="DataPanel" Visibility="Collapsed" Spacing="14">
+        <TextBox x:Name="DataFilter" PlaceholderText="بحث في القائمة" TextChanged="DataFilterChanged"/>
+        <TextBlock x:Name="DataCaption" Foreground="#61726A" TextWrapping="Wrap"/>
+        <ListView x:Name="DataResults" MaxHeight="550" SelectionMode="Single" IsItemClickEnabled="True" ItemClick="Item_Click"><ListView.ItemTemplate><DataTemplate><TextBlock Text="{Binding Display}" TextWrapping="Wrap" Padding="10"/></DataTemplate></ListView.ItemTemplate></ListView>
       </StackPanel>
     </StackPanel></ScrollViewer>
   </Grid>

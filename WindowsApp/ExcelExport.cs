@@ -1,0 +1,53 @@
+using System.IO.Compression;
+using System.Globalization;
+using System.Xml;
+namespace SalaryWindows;
+internal static class ExcelExport
+{
+    // يُنشأ الملف كاملاً في مكان مؤقت قبل استبدال الملف الذي اختاره المستخدم.
+    public static void Entity(string path, BackupData data, string month, string title)
+    {
+        var rows = data.Deductions.Where(d => d.Month == month && d.Title == title).ToList();
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var zip = ZipFile.Open(temp, ZipArchiveMode.Create))
+            {
+                Write(zip, "[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/></Types>");
+                Write(zip, "_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+                Write(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>");
+                Write(zip, "xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"كشف الجهة\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                Write(zip, "xl/styles.xml", "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Arial\"/></font></fonts><fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill></fills><borders count=\"1\"><border/></borders><cellStyleXfs count=\"1\"><xf/></cellStyleXfs><cellXfs count=\"1\"><xf fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/></cellXfs></styleSheet>");
+                var entry = zip.CreateEntry("xl/worksheets/sheet1.xml", CompressionLevel.Fastest);
+                using var stream = entry.Open(); using var xml = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new System.Text.UTF8Encoding(false) });
+                const string ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+                xml.WriteStartElement("worksheet", ns); xml.WriteStartElement("sheetViews", ns); xml.WriteStartElement("sheetView", ns); xml.WriteAttributeString("workbookViewId", "0"); xml.WriteAttributeString("rightToLeft", "1"); xml.WriteEndElement(); xml.WriteEndElement();
+                xml.WriteStartElement("cols", ns); xml.WriteStartElement("col", ns); xml.WriteAttributeString("min", "1"); xml.WriteAttributeString("max", "4"); xml.WriteAttributeString("width", "28"); xml.WriteAttributeString("customWidth", "1"); xml.WriteEndElement(); xml.WriteEndElement();
+                xml.WriteStartElement("sheetData", ns);
+                void Row(params (string Value, bool Number)[] cells)
+                {
+                    xml.WriteStartElement("row", ns);
+                    foreach (var cell in cells)
+                    {
+                        xml.WriteStartElement("c", ns);
+                        if (cell.Number) { xml.WriteStartElement("v", ns); xml.WriteString(cell.Value); xml.WriteEndElement(); }
+                        else { xml.WriteAttributeString("t", "inlineStr"); xml.WriteStartElement("is", ns); xml.WriteStartElement("t", ns); xml.WriteString(cell.Value); xml.WriteEndElement(); xml.WriteEndElement(); }
+                        xml.WriteEndElement();
+                    }
+                    xml.WriteEndElement();
+                }
+                Row(("جهة التنفيذ", false), (title, false), ("الشهر", false), (month, false));
+                Row(("الاسم", false), ("الرتبة", false), ("المبلغ", false), ("ملاحظات", false));
+                foreach (var d in rows) Row((d.Name ?? "", false), (d.Rank ?? "", false), (d.Amount?.ToString("R", CultureInfo.InvariantCulture) ?? "", d.Amount.HasValue), (d.Note ?? "", false));
+                Row(("المجموع", false), ("", false), (rows.Sum(x => x.Amount ?? 0).ToString("R", CultureInfo.InvariantCulture), true));
+                xml.WriteEndElement(); xml.WriteEndElement();
+            }
+            File.Move(temp, path, true);
+        }
+        finally { try { File.Delete(temp); } catch { } }
+    }
+    private static void Write(ZipArchive zip, string name, string content)
+    {
+        using var stream = new StreamWriter(zip.CreateEntry(name).Open(), new System.Text.UTF8Encoding(false)); stream.Write(content);
+    }
+}
