@@ -3,6 +3,11 @@
   <ItemGroup>
     <Compile Include="../WindowsApp/BackupReader.cs" Link="BackupReader.cs" />
     <Compile Include="../WindowsApp/PayrollMath.cs" Link="PayrollMath.cs" />
+    <Compile Include="../WindowsApp/StaffReportPdf.cs" Link="StaffReportPdf.cs" />
+    <Compile Include="../WindowsApp/StaffReportData.cs" Link="StaffReportData.cs" />
+    <Compile Include="../WindowsApp/StaffMatching.cs" Link="StaffMatching.cs" />
+    <Compile Include="../WindowsApp/SalaryChecks.cs" Link="SalaryChecks.cs" />
+    <Compile Include="../WindowsApp/SalaryComparison.cs" Link="SalaryComparison.cs" />
     <Compile Include="../WindowsApp/DeductionComparison.cs" Link="DeductionComparison.cs" />
     <Compile Include="../WindowsApp/PdfExport.cs" Link="PdfExport.cs" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.9" />

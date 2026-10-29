@@ -89,3 +89,52 @@ try {
     if (File.ReadAllText(protectedFile) != "existing") throw new Exception("existing export was damaged");
 } finally { File.Delete(protectedFile); }
 Console.WriteLine("PDF failure fixture passed: oversized row rejected without replacing existing file.");
+var salaryOld = new Employee(older, "أحمد وهمي", "ملازم اول", "قسم أ", 1000, Enc(new Dictionary<string,double>{{"الاسمي",800}}), Enc(new Dictionary<string,string>{{"IBAN","IQ123456789012345678901"}}));
+var salaryNew = new Employee(newer, "احمد وهمي", "ملازم 1", "قسم ب", 1100, Enc(new Dictionary<string,double>{{"الاسمي",900}}), Enc(new Dictionary<string,string>{{"IBAN","IQ123456789012345678999"}}));
+var salaryData = changesData with { Employees = [salaryOld, salaryNew, new(older,"خارج وهمي","","",5,null,null), new(newer,"جديد وهمي","","",5,null,null)] };
+var sc = SalaryComparison.Compare(salaryData, older, newer);
+if (sc.Changes.Count(x => x.Kind == "جدد") != 1 || sc.Changes.Count(x => x.Kind == "خارجون") != 1 || sc.Changes.Count(x => x.Kind == "تغير الصافي") != 1 || sc.Changes.Count(x => x.Kind == "تغير الرتبة") != 0 || sc.Changes.Count(x => x.Kind == "تغير محل العمل") != 1 || sc.Changes.Count(x => x.Kind == "تغير الحساب المصرفي") != 1) throw new Exception("salary comparison failed");
+var ambiguous = salaryData with { Employees = salaryData.Employees.Append(salaryOld).ToList() };
+if (SalaryComparison.Compare(ambiguous, older, newer).Changes.Any(x => x.Name == "احمد وهمي")) throw new Exception("ambiguous name compared");
+Console.WriteLine("Salary comparison fixture passed: changes, equivalent ranks and duplicate-name protection.");
+var staffSections = new List<StaffSection> {
+    new("المعلومات الشخصية", [new("اسم الام الكامل","أم تجريبية"),new("الحالة الزوجية","متزوج"),new("اسم الزوجة/ الزوج","زوجة تجريبية")]),
+    new("التعيين والمباشرة", [new("رقم الامر","123"),new("تاريخ الامر","2020"),new("تاريخ مباشرة بالخدمة لاول مرة","2021")]),
+    new("الترقية", [new("رقم امر الترقية","44"),new("تاريخ الترقية","2024")]),
+    new("التحصيل الدراسي", [new("التحصيل الدراسي","بكالوريوس")]), new("الملاحظات", [new("الملاحظات","ملاحظة وهمية")]),
+    new("السجل", [new("تاريخ التحديث","2026")])
+};
+var staffReport = StaffReportData.From(new Staff("اسم وهمي","ام تجريبية","1","2","رتبة","مستمر","قسم",Enc(staffSections)));
+var fields = staffReport.Sections.SelectMany(x => x.Fields).ToDictionary(x => x.Label, x => x.Value);
+foreach (var name in new[] { "اسم الأم", "الحالة الزوجية", "اسم الزوجة / الزوج", "التحصيل الدراسي", "رقم أمر التعيين", "تاريخ أمر التعيين", "أول مباشرة بالخدمة", "رقم أمر الترقية", "تاريخ الترقية", "تاريخ تحديث السجل", "الملاحظات" })
+    if (!fields.ContainsKey(name)) throw new Exception("missing staff field: " + name);
+if (fields.ContainsKey("المنصب")) throw new Exception("missing field was fabricated");
+Console.WriteLine("Staff report fixture passed: requested fields retained and absent position omitted.");
+var staffPdf = Environment.GetEnvironmentVariable("SALARY_STAFF_TEST_PATH") ?? Path.Combine(Path.GetTempPath(), "salary-staff-" + Guid.NewGuid().ToString("N") + ".pdf");
+try {
+    var font = OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf") : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    StaffReportPdf.Write(staffPdf, staffReport, font, "WindowsApp/Resources/HomeLogo.png");
+    if (!File.Exists(staffPdf) || new FileInfo(staffPdf).Length < 2000) throw new Exception("invalid staff pdf");
+    var original = File.ReadAllBytes(staffPdf);
+    var huge = staffReport with { Sections = [new StaffSection("السجل والملاحظات", [new("الملاحظات", string.Join(" ", Enumerable.Repeat("بيانات طويلة", 5000)))])] };
+    try { StaffReportPdf.Write(staffPdf, huge, font); throw new Exception("long staff report accepted"); } catch (InvalidDataException) { }
+    if (!File.ReadAllBytes(staffPdf).SequenceEqual(original)) throw new Exception("previous staff PDF overwritten on failure");
+} finally { if (Environment.GetEnvironmentVariable("SALARY_STAFF_TEST_PATH") == null) File.Delete(staffPdf); }
+Console.WriteLine("Staff PDF fixture passed: one report and overflow rejection without replacement.");
+var checkPeople = new List<Employee> {
+    new(newer,"شخص وهمي أ","عقود","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",3600}}),Enc(new Dictionary<string,string>{{"IBAN","IQ1"},{"الرقم الوظيفي","00123"}})),
+    new(newer,"شخص وهمي ب","موظف","قسم",200,Enc(new Dictionary<string,double>{{"الرعاية الصحية",3500}}),Enc(new Dictionary<string,string>{{"IBAN","IQ1"},{"الرقم الوظيفي","123"}}))
+};
+var checks = SalaryChecks.Run(data with { Employees = checkPeople }, newer);
+if (checks.Single(x => x.Title == "فحص IBAN").Lines.Count != 4 || checks.Single(x => x.Title == "تكرار الرقم الوظيفي").Lines.Count != 1 || checks.Single(x => x.Title == "فحص الرعاية الصحية").Lines.Count != 1) throw new Exception("salary checks failed");
+if (!checks.Single(x => x.Title == "فحص الحساب").Explanation.Contains("غير متاح")) throw new Exception("missing calculation was reported as checked");
+Console.WriteLine("Salary checks fixture passed: invalid/shared IBAN, IDs, health and unavailable calculation.");
+var staffMatchingData = data with {
+  Employees = [new(newer,"راتب فقط","عقود","قسم",1,null,Enc(new Dictionary<string,string>())), new(newer,"موظف مشترك","ملازم 1","قسم",1,null,Enc(new Dictionary<string,string>{{"الرقم الموحد","123"}}))],
+  Staff = [new("موظف مشترك","","","00123","ملازم اول","مستمر","قسم",null), new("ملاك فقط","","","","موظف","مستمر","قسم",null), new("متقاعد وهمي","","","","موظف","متقاعد","قسم",null)]
+};
+var matching = StaffMatching.Run(staffMatchingData, newer);
+if (matching.Single(x => x.Title == "لهم راتب وليسوا في الملاك").Lines.Count != 1 || matching.Single(x => x.Title == "في الملاك بلا راتب").Lines.Count != 1 || matching.Single(x => x.Title == "الرتبة مختلفة عن الملاك").Lines.Count != 0) throw new Exception("staff matching failed");
+var ambiguousMatch = staffMatchingData with { Staff = staffMatchingData.Staff.Append(staffMatchingData.Staff[0]).ToList() };
+if (StaffMatching.Run(ambiguousMatch, newer).Single(x => x.Title == "مطابقة ملاك غير حاسمة").Lines.Count != 1) throw new Exception("ambiguous staff match accepted");
+Console.WriteLine("Staff matching fixture passed: unified number, inactive status and ambiguous matches.");

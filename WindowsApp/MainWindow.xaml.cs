@@ -172,6 +172,10 @@ public sealed partial class MainWindow : Window
                     rows.Add(new($"أسماء رواتب مكررة: {duplicates:N0} اسم", ""));
                     rows.Add(new($"استقطاعات بلا اسم مطابق في الرواتب: {withoutSalary:N0} سجل", ""));
                     rows.Add(new($"رواتب بلا صافي: {current.Count(x => x.Net == null):N0}", ""));
+                    foreach (var check in SalaryChecks.Run(snapshot, month))
+                        rows.Add(new($"{check.Title}: {check.Lines.Count:N0} · {check.Explanation}", new AuditSelection(check.Title, check.Lines)));
+                    foreach (var check in StaffMatching.Run(snapshot, month))
+                        rows.Add(new($"{check.Title}: {check.Lines.Count:N0} · {check.Explanation}", new AuditSelection(check.Title, check.Lines)));
                     var duplicatesDeduction = DeductionComparison.Duplicates(snapshot, month);
                     var duplicateLines = duplicatesDeduction.Select(g => $"{g[0].Name} · {g[0].Title} · {g[0].Note} · {g[0].Amount:N0} · {g.Count} مرات").ToList();
                     rows.Add(new($"تكرار محتمل في الاستقطاعات: {duplicateLines.Count:N0} حالة", new AuditSelection("التكرار المحتمل", duplicateLines)));
@@ -192,12 +196,20 @@ public sealed partial class MainWindow : Window
                     }
                     if (!string.IsNullOrEmpty(comparisonMonth) && comparisonMonth != month)
                     {
-                        var previousMonth = comparisonMonth;
-                        var previous = snapshot.Employees.Where(x => x.Month == previousMonth).GroupBy(x => PayrollMath.Key(x.Name)).ToDictionary(g => g.Key, g => g.ToList());
-                        var changed = groups.Count(x => x.Value.Count == 1 && previous.TryGetValue(x.Key, out var old) && old.Count == 1 && x.Value[0].Net.HasValue && old[0].Net.HasValue && x.Value[0].Net != old[0].Net);
-                        rows.Add(new($"تغير صافي الراتب: {changed:N0} · مقارنة بـ {previousMonth}", ""));
+                        try
+                        {
+                            var salary = SalaryComparison.Compare(snapshot, comparisonMonth, month);
+                            foreach (var kind in new[] { "جدد", "خارجون", "تغير الصافي", "تغير الرتبة", "تغير محل العمل", "تغير الحساب المصرفي" })
+                            {
+                                var lines = salary.Changes.Where(x => x.Kind == kind).Select(x => $"{x.Name} · {x.Detail}").ToList();
+                                rows.Add(new($"{kind}: {lines.Count:N0} موظف", new AuditSelection(kind, lines)));
+                            }
+                            if (salary.AmbiguousOld + salary.AmbiguousNew > 0)
+                                rows.Add(new($"أسماء متكررة استُبعدت من مقارنة الرواتب: {salary.AmbiguousOld + salary.AmbiguousNew:N0} مجموعة", ""));
+                        }
+                        catch (InvalidDataException ex) { rows.Add(new(ex.Message, "")); }
                     }
-                    caption = "المقارنة بالاسم والجهة والإضبارة؛ تراجع حالات التكرار دون حذف. فحوص الرواتب لا تزال أولية وليست بديلاً عن تدقيق الآيفون.";
+                    caption = "المقارنة بالاسم والجهة والإضبارة؛ الأسماء المكررة مستبعدة من مقارنة الرواتب. فحوص الرواتب لا تزال غير مكتملة.";
                 }
                 else
                 {
@@ -286,6 +298,7 @@ public sealed partial class MainWindow : Window
             var textBox = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
             var dialog = new ContentDialog { Title = title, Content = textBox, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
             if (item.Value is EntitySelection or PayrollSelection) dialog.PrimaryButtonText = "تصدير Excel";
+            if (item.Value is Staff) dialog.PrimaryButtonText = "تصدير تقرير الملاك PDF";
             var action = await dialog.ShowAsync();
             if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
             {
@@ -302,6 +315,14 @@ public sealed partial class MainWindow : Window
                 InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
                 var file = await picker.PickSaveFileAsync();
                 if (file != null) { var snapshot = data; await Task.Run(() => ExcelExport.Payroll(file.Path, snapshot, selectedPayroll.Month, selectedPayroll.Title)); }
+            }
+            else if (action == ContentDialogResult.Primary && item.Value is Staff staff)
+            {
+                var picker = new FileSavePicker { SuggestedFileName = "بيان معلومات المنتسب" };
+                picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
+                InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                var file = await picker.PickSaveFileAsync();
+                if (file != null) await Task.Run(() => StaffReportPdf.Write(file.Path, StaffReportData.From(staff)));
             }
         }
         catch (Exception ex) { await Error(ex.Message); }
