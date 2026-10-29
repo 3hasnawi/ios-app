@@ -62,6 +62,18 @@ enum BackupError: LocalizedError {
 /// القراءة والكتابة في الخلفية.
 @ModelActor
 actor BackupActor {
+    /// فهرس صغير يُقرأ من قاعدة البيانات دون نسخ السجلات أو الملفات.
+    func safetyManifest() throws -> BackupFormat.Manifest {
+        let months = try modelContext.fetch(FetchDescriptor<PayrollMonth>()).map(\.name)
+        let employees = try modelContext.fetchCount(FetchDescriptor<Employee>())
+        let deductions = try modelContext.fetchCount(FetchDescriptor<Deduction>())
+        let staff = try modelContext.fetchCount(FetchDescriptor<StaffMember>())
+        return BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now, months: months,
+                                     employees: employees, deductions: deductions, staff: staff,
+                                     accounts: try ExecutionAccountStore.load().count,
+                                     books: try OfficialBookFiles.read().count)
+    }
+
     /// يكتب ملف النسخة (zip) ويعيد رابطه ووصفه.
     func export(settings: [String: Data], progress: ProgressSink?) throws -> (URL, BackupFormat.Manifest) {
         let fm = FileManager.default
@@ -258,6 +270,8 @@ final class BackupManager {
     private static let errorAtKey = "autoBackupLastErrorAt"
     /// آخر تغيير في البيانات (استيراد أو حذف): إذا كان بعد آخر نسخة ناجحة تُعاد المحاولة تلقائياً.
     private static let changedKey = "backupDataChangedAt"
+    /// فهرس آخر نسخة ناجحة أو مسترجعة؛ لا يحتوي أسماء أشخاص أو مبالغ.
+    private static let safetyManifestKey = "backupSafetyManifestV1"
     /// اختبار المحاكي: مسار ملف بدل iCloud.
     private static let testFileKey = "backupTestFile"
 
@@ -445,6 +459,10 @@ final class BackupManager {
         if let error = coordinationError ?? readError { throw error }
         guard let previous else { throw BackupError.folderUnavailable }
         guard previous.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        try checkMissingData(current, previous: previous)
+    }
+
+    nonisolated static func checkMissingData(_ current: BackupFormat.Manifest, previous: BackupFormat.Manifest) throws {
         let lostMonth = !Set(previous.months).isSubset(of: Set(current.months))
         let lostRows = previous.employees > 0 && current.employees == 0 ||
             previous.deductions > 0 && current.deductions == 0 ||
@@ -452,6 +470,34 @@ final class BackupManager {
             (previous.accounts ?? 0) > 0 && (current.accounts ?? 0) == 0 ||
             (previous.books ?? 0) > 0 && (current.books ?? 0) == 0
         guard !lostMonth && !lostRows else { throw BackupError.dataLossRisk }
+    }
+
+    /// يسجل خط الأساس لأول مرة فقط بعد التأكد من وجود بيانات في القاعدة.
+    func establishSafetyBaseline() async {
+        guard UserDefaults.standard.data(forKey: Self.safetyManifestKey) == nil else { return }
+        let container = SharedModel.container
+        do {
+            let manifest = try await Task.detached(priority: .utility) {
+                try await BackupActor(modelContainer: container).safetyManifest()
+            }.value
+            guard UserDefaults.standard.data(forKey: Self.safetyManifestKey) == nil,
+                  !manifest.months.isEmpty || manifest.employees > 0 || manifest.staff > 0 else { return }
+            Self.rememberSafetyManifest(manifest)
+        } catch { /* لا ننشئ خط أساس من قراءة ناقصة. */ }
+    }
+
+    /// حماية مستقلة عن مزود التخزين، حتى لو فُقد الوصول للنسخة السابقة أو تغير السيرفر.
+    private static func checkSafetyManifest(_ current: BackupFormat.Manifest) throws {
+        guard let data = UserDefaults.standard.data(forKey: safetyManifestKey) else { return }
+        let previous: BackupFormat.Manifest
+        do { previous = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data) }
+        catch { throw BackupError.dataLossRisk }
+        try checkMissingData(current, previous: previous)
+    }
+
+    private static func rememberSafetyManifest(_ manifest: BackupFormat.Manifest) {
+        guard let data = try? JSONEncoder().encode(manifest) else { return }
+        UserDefaults.standard.set(data, forKey: safetyManifestKey)
     }
 
     /// نسخة يدوية: نافذة المشاركة (Google Drive، OneDrive، واتساب، حفظ في الملفات).
@@ -520,6 +566,7 @@ final class BackupManager {
         do {
             let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي", "Backing up"))
             defer { try? FileManager.default.removeItem(at: url) }
+            try Self.checkSafetyManifest(manifest)
             let preparedSize = try Self.archiveSize(url)
             let scope = resolveBookmark(Self.folderKey) ?? file
             let (size, refreshedBookmark) = try await Task.detached(priority: .utility) { () throws -> (Int64, Data?) in
@@ -558,6 +605,7 @@ final class BackupManager {
             defaults.set(Date(), forKey: Self.lastKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(place, forKey: Self.lastPlaceKey)
+            Self.rememberSafetyManifest(manifest)
             defaults.removeObject(forKey: Self.errorKey)
             defaults.removeObject(forKey: Self.errorAtKey)
             Self.removeDeviceCopies()
@@ -581,8 +629,9 @@ final class BackupManager {
         let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         do {
-            let (file, _) = try await makeBackup(title: tr("نسخ إلى السيرفر", "Backing up to server"))
+            let (file, manifest) = try await makeBackup(title: tr("نسخ إلى السيرفر", "Backing up to server"))
             defer { try? FileManager.default.removeItem(at: file) }
+            try Self.checkSafetyManifest(manifest)
             let expected = try Self.archiveSize(file)
             let size = try await BackupServerUpload.upload(file: file, base: base, token: BackupServerConfig.token)
             guard size == expected else { throw BackupError.emptyArchive }
@@ -590,6 +639,7 @@ final class BackupManager {
             defaults.set(Date(), forKey: Self.lastKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(tr("السيرفر المحلي", "Local server"), forKey: Self.lastPlaceKey)
+            Self.rememberSafetyManifest(manifest)
             defaults.removeObject(forKey: BackupServerConfig.pendingKey)
             defaults.removeObject(forKey: Self.errorKey)
             defaults.removeObject(forKey: Self.errorAtKey)
@@ -735,6 +785,7 @@ final class BackupManager {
                     }
                 }
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
+                Self.rememberSafetyManifest(pending.manifest)
                 await StaffImportState.shared.refreshStoredCount()
                 await SearchIndex.shared.invalidate()
                 await SmartGroupCatalog.shared.invalidate()
@@ -765,6 +816,16 @@ final class BackupManager {
         }
         let before = counts()
         do {
+            let previous = BackupFormat.Manifest(version: 4, createdAt: .now, months: ["شهر تجريبي"], employees: 2, deductions: 1, staff: 2, accounts: 1, books: 1)
+            var missing = previous
+            missing.months = []
+            missing.employees = 0
+            missing.staff = 0
+            guard (try? Self.checkMissingData(missing, previous: previous)) == nil,
+                  (try? Self.checkMissingData(previous, previous: previous)) != nil else {
+                LaunchOptions.writeReport("backup=failed missingDataGuard=failed")
+                return
+            }
             let start = Date()
             let (url, _) = try await makeBackup(title: "test")
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0

@@ -144,6 +144,7 @@ struct RootView: View {
         .task {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await staffImport.refreshStoredCount()
+            await BackupManager.shared.establishSafetyBaseline()
             await TestData.prepareIfRequested()
             TestData.checkRawPayrollIfRequested()
             #if targetEnvironment(simulator)
