@@ -48,6 +48,10 @@ final class StaffImportState {
 
     func importDatabase(_ url: URL) {
         guard !isImporting else { return }
+        guard !BackupManager.shared.isWorking else {
+            message = tr("انتظر انتهاء النسخ أو الاسترجاع قبل استيراد الملاك.", "Wait for backup or restore to finish before importing staff.")
+            return
+        }
         isImporting = true
         let progress = ImportProgress.shared
         progress.begin(tr("استيراد الملاك", "Importing staff"))
@@ -67,6 +71,7 @@ final class StaffImportState {
             isImporting = false
             progress.end()
             version += 1
+            await BackupManager.shared.refreshIntegrityWarning()
         }
     }
 
@@ -128,6 +133,7 @@ struct RootView: View {
             PerfLog.record("firstAppear", since: PerfLog.processStart)
             await staffImport.refreshStoredCount()
             await BackupManager.shared.establishSafetyBaseline()
+            await BackupManager.shared.refreshIntegrityWarning()
             await TestData.prepareIfRequested()
             TestData.checkRawPayrollIfRequested()
             #if targetEnvironment(simulator)
@@ -144,6 +150,7 @@ struct RootView: View {
             guard phase != .inactive else { return }
             Task {
                 if phase == .active { try? await Task.sleep(for: .seconds(3)) }
+                if phase == .active { await BackupManager.shared.refreshIntegrityWarning() }
                 await BackupManager.shared.autoBackupIfNeeded()
             }
         }

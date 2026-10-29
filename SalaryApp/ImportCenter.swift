@@ -336,6 +336,10 @@ final class ImportCenter {
     func run() async {
         LaunchOptions.writeImportStage("run")
         guard !isBusy else { return }
+        guard !BackupManager.shared.isWorking else {
+            message = tr("انتظر انتهاء النسخ أو الاسترجاع قبل الاستيراد.", "Wait for backup or restore to finish before importing.")
+            return
+        }
         let jobs = candidates.filter { $0.kind != .skip }
             // الملف الجامع أولاً حتى لا يمحو ملفاً منفصلاً لنفس الشهر.
             .sorted { Self.order($0.kind) < Self.order($1.kind) }
@@ -437,6 +441,7 @@ final class ImportCenter {
         candidates = []
         progress.end()
         isBusy = false
+        await BackupManager.shared.refreshIntegrityWarning()
         if let newestPayroll { lastPayrollMonth = newestPayroll.name }
 
         var parts: [String] = []

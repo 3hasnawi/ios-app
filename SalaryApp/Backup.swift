@@ -277,6 +277,9 @@ final class BackupManager {
 
     var isWorking = false
     var message: String?
+    /// تحذير محلي يعتمد على فهرس سابق، ولا يغيّر البيانات أو النسخة.
+    var integrityWarning = false
+    private var checkingIntegrity = false
     /// نسخة تنتظر تأكيد الاسترجاع.
     var pendingRestore: (folder: URL, manifest: BackupFormat.Manifest)?
     var version = 0
@@ -309,6 +312,7 @@ final class BackupManager {
     /// سطر الحالة في صفحة الإعدادات.
     var statusLine: String {
         _ = version
+        if integrityWarning { return tr("⚠️ تعذّر التحقق من اكتمال البيانات", "⚠️ Data completeness could not be verified") }
         if Self.manualOnly { return tr("نسخ يدوي للخدمة المختارة", "Manual backup for the selected service") }
         if folderName == nil && !BackupServerConfig.ready { return tr("⚠️ اختر ملف النسخة الاحتياطية أو فعّل السيرفر", "⚠️ Choose a backup file or enable the server") }
         if lastError != nil { return tr("⚠️ فشل آخر نسخ، اضغط للتفاصيل", "⚠️ Last backup failed, tap for details") }
@@ -321,6 +325,7 @@ final class BackupManager {
 
     var statusColor: Color {
         _ = version
+        if integrityWarning { return .orange }
         if (folderName == nil && !BackupServerConfig.ready) || lastError != nil { return .red }
         if hasUnbackedChanges { return .orange }
         return (Self.autoEnabled || Self.schedule != .off) && lastBackup != nil ? .green : .secondary
@@ -345,6 +350,10 @@ final class BackupManager {
     /// تصدير نسخة مستقلة يفتح نافذة «حفظ» التي يختار منها المستخدم المكان.
     func chooseLocation() {
         guard !isWorking else { return }
+        guard !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            message = tr("انتظر انتهاء الاستيراد قبل إنشاء نسخة احتياطية.", "Wait for the import to finish before creating a backup.")
+            return
+        }
         isWorking = true
         Task {
             defer { isWorking = false; version += 1 }
@@ -394,12 +403,6 @@ final class BackupManager {
         if let test = UserDefaults.standard.string(forKey: Self.testFileKey) { return URL(fileURLWithPath: test) }
         if let folder = resolveBookmark(Self.folderKey) { return folder.appendingPathComponent(BackupFormat.fileName()) }
         return resolveBookmark(Self.fileKey)
-    }
-
-    /// النسخ القديمة على الجهاز (من إصدار سابق) لم تعد مطلوبة: تُحذف لتوفير المساحة.
-    nonisolated static func removeDeviceCopies() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.removeItem(at: docs.appendingPathComponent("نسخ احتياطية", isDirectory: true))
     }
 
     // MARK: - إنشاء نسخة
@@ -483,7 +486,37 @@ final class BackupManager {
             guard UserDefaults.standard.data(forKey: Self.safetyManifestKey) == nil,
                   !manifest.months.isEmpty || manifest.employees > 0 || manifest.staff > 0 else { return }
             Self.rememberSafetyManifest(manifest)
+            integrityWarning = false
         } catch { /* لا ننشئ خط أساس من قراءة ناقصة. */ }
+    }
+
+    /// فحص القراءة فقط عند فتح التطبيق؛ لا نعتمد نتيجة تزامنت مع استيراد أو استرجاع.
+    func refreshIntegrityWarning() async {
+        guard !checkingIntegrity, !isWorking, pendingRestore == nil,
+              !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting,
+              let data = UserDefaults.standard.data(forKey: Self.safetyManifestKey) else { return }
+        guard let previous = try? JSONDecoder().decode(BackupFormat.Manifest.self, from: data) else {
+            integrityWarning = true
+            return
+        }
+        checkingIntegrity = true
+        defer { checkingIntegrity = false }
+        let originalVersion = version
+        let staffVersion = StaffImportState.shared.version
+        let container = SharedModel.container
+        do {
+            let current = try await Task.detached(priority: .utility) {
+                try await BackupActor(modelContainer: container).safetyManifest()
+            }.value
+            guard !isWorking, pendingRestore == nil, !ImportCenter.shared.isBusy,
+                  !StaffImportState.shared.isImporting, version == originalVersion,
+                  StaffImportState.shared.version == staffVersion,
+                  UserDefaults.standard.data(forKey: Self.safetyManifestKey) == data else { return }
+            integrityWarning = (try? Self.checkMissingData(current, previous: previous)) == nil
+        } catch {
+            // لا نعتبر فشل القراءة دليلاً على سلامة البيانات.
+            integrityWarning = true
+        }
     }
 
     /// حماية مستقلة عن مزود التخزين، حتى لو فُقد الوصول للنسخة السابقة أو تغير السيرفر.
@@ -503,6 +536,10 @@ final class BackupManager {
     /// نسخة يدوية: نافذة المشاركة (Google Drive، OneDrive، واتساب، حفظ في الملفات).
     func shareNow() {
         guard !isWorking else { return }
+        guard !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            message = tr("انتظر انتهاء الاستيراد قبل إنشاء نسخة احتياطية.", "Wait for the import to finish before creating a backup.")
+            return
+        }
         isWorking = true
         Task {
             defer { isWorking = false }
@@ -552,6 +589,9 @@ final class BackupManager {
     @discardableResult
     func backupToDestination() async -> String? {
         guard !isWorking else { return nil }
+        guard !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            return tr("⚠️ انتظر انتهاء الاستيراد قبل النسخ.", "⚠️ Wait for the import to finish before backing up.")
+        }
         if Self.manualOnly { return tr("استخدم حفظ نسخة للخدمة المختارة.", "Use Save backup for the selected service.") }
         if BackupServerConfig.enabled { return await backupToServer() }
         guard let file = resolveFile() else {
@@ -606,9 +646,9 @@ final class BackupManager {
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(place, forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
+            integrityWarning = false
             defaults.removeObject(forKey: Self.errorKey)
             defaults.removeObject(forKey: Self.errorAtKey)
-            Self.removeDeviceCopies()
             BackupBackground.schedule()
             return tr("☁️ حُفظت نسخة احتياطية: \(place).", "☁️ Backup saved: \(place).")
         } catch {
@@ -640,6 +680,7 @@ final class BackupManager {
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(tr("السيرفر المحلي", "Local server"), forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
+            integrityWarning = false
             defaults.removeObject(forKey: BackupServerConfig.pendingKey)
             defaults.removeObject(forKey: Self.errorKey)
             defaults.removeObject(forKey: Self.errorAtKey)
@@ -767,6 +808,11 @@ final class BackupManager {
 
     func confirmRestore() {
         guard let pending = pendingRestore else { return }
+        guard !isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            cancelRestore()
+            message = tr("انتظر انتهاء العملية الحالية، ثم اختر النسخة مجدداً للاسترجاع.", "Wait for the current operation to finish, then select the backup again to restore.")
+            return
+        }
         pendingRestore = nil
         isWorking = true
         Task {
@@ -786,6 +832,7 @@ final class BackupManager {
                 }
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 Self.rememberSafetyManifest(pending.manifest)
+                integrityWarning = false
                 await StaffImportState.shared.refreshStoredCount()
                 await SearchIndex.shared.invalidate()
                 await SmartGroupCatalog.shared.invalidate()
@@ -816,11 +863,14 @@ final class BackupManager {
         let before = counts()
         do {
             let previous = BackupFormat.Manifest(version: 4, createdAt: .now, months: ["شهر تجريبي"], employees: 2, deductions: 1, staff: 2, accounts: 1, books: 1)
-            var missing = previous
-            missing.months = []
-            missing.employees = 0
-            missing.staff = 0
-            guard (try? Self.checkMissingData(missing, previous: previous)) == nil,
+            var lostMonth = previous; lostMonth.months = []
+            var lostEmployees = previous; lostEmployees.employees = 0
+            var lostDeductions = previous; lostDeductions.deductions = 0
+            var lostStaff = previous; lostStaff.staff = 0
+            var lostAccounts = previous; lostAccounts.accounts = 0
+            var lostBooks = previous; lostBooks.books = 0
+            let missingCases = [lostMonth, lostEmployees, lostDeductions, lostStaff, lostAccounts, lostBooks]
+            guard missingCases.allSatisfy({ (try? Self.checkMissingData($0, previous: previous)) == nil }),
                   (try? Self.checkMissingData(previous, previous: previous)) != nil else {
                 LaunchOptions.writeReport("backup=failed missingDataGuard=failed")
                 return
@@ -1039,7 +1089,7 @@ struct BackupView: View {
     private var statusCard: some View {
         let _ = manager.version
         let failed = manager.lastError != nil && !BackupManager.manualOnly
-        let pending = manager.hasUnbackedChanges || BackupManager.manualOnly || (manager.folderName == nil && !BackupServerConfig.ready)
+        let pending = manager.integrityWarning || manager.hasUnbackedChanges || BackupManager.manualOnly || (manager.folderName == nil && !BackupServerConfig.ready)
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: manager.isWorking ? "arrow.triangle.2.circlepath" : failed || pending ? "exclamationmark.triangle.fill" : manager.lastBackup == nil ? "clock" : "checkmark")
                 .font(.title3.weight(.bold))
@@ -1060,7 +1110,10 @@ struct BackupView: View {
                     } else {
                         Text(tr("لم تُؤخذ نسخة بعد", "No backup yet")).font(.headline)
                     }
-                    if let error = manager.lastError, !BackupManager.manualOnly {
+                    if manager.integrityWarning {
+                        Text(tr("تعذّر التأكد من اكتمال البيانات مقارنة بالفهرس السابق. افحص البيانات والنسخة المحفوظة قبل الاسترجاع أو الاستيراد.", "Data could not be confirmed complete against the previous index. Check your data and saved backup before restoring or importing."))
+                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                    } else if let error = manager.lastError, !BackupManager.manualOnly {
                         Text(tr("فشلت آخر محاولة\(manager.lastErrorAt.map { " (" + Self.stamp($0) + ")" } ?? ""): \(error)",
                                 "Last attempt failed: \(error)"))
                             .font(.caption.weight(.semibold))
