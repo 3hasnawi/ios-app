@@ -64,9 +64,19 @@ nonisolated enum DeductionCalendar {
     }
 }
 
+/// إلغاء المهمة عند تغيير الاختيار يمنع استمرار الاستعلام القديم في الخلفية.
+private nonisolated func awaitDeductionWork<T: Sendable>(_ work: Task<T, Error>) async throws -> T {
+    try await withTaskCancellationHandler {
+        try await work.value
+    } onCancel: {
+        work.cancel()
+    }
+}
+
 @ModelActor
 actor EmployeeDeductionEngine {
     func search(_ query: String) throws -> [DeductionPerson] {
+        try Task.checkCancellation()
         let tokens = ArabicText.normalize(ArabicText.cleanQuery(query)).split(separator: " ").map(String.init)
         guard let first = tokens.first, tokens.joined().count >= 2 else { return [] }
         let second = tokens.count > 1 ? tokens[1] : first
@@ -79,31 +89,38 @@ actor EmployeeDeductionEngine {
         records.propertiesToFetch = [\.employeeName, \.matchKey, \.rank]
         var found: [String: DeductionPerson] = [:]
         for employee in try modelContext.fetch(employees).filter({ e in tokens.allSatisfy { e.matchKey.contains($0) } }).sorted(by: { MonthName.sortKey($0.month) > MonthName.sortKey($1.month) }) {
+            try Task.checkCancellation()
             if found[employee.matchKey] == nil {
                 found[employee.matchKey] = DeductionPerson(key: employee.matchKey, name: employee.name, detail: [employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
             }
         }
         for row in try modelContext.fetch(records) where tokens.allSatisfy({ row.matchKey.contains($0) }) && found[row.matchKey] == nil {
+            try Task.checkCancellation()
             found[row.matchKey] = DeductionPerson(key: row.matchKey, name: row.employeeName, detail: row.rank)
         }
         return found.values.sorted { $0.name < $1.name }.prefix(100).map { $0 }
     }
 
     func entities(person: DeductionPerson) throws -> [String] {
+        try Task.checkCancellation()
         let key = person.key
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key })
         d.propertiesToFetch = [\.title]
-        return Set(try modelContext.fetch(d).map(\.title).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).sorted()
+        let records = try modelContext.fetch(d)
+        try Task.checkCancellation()
+        return Set(records.map(\.title).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).sorted()
     }
 
     /// نطاق الاختيار من قيود الشخص والجهة فقط، بما فيها الحالات النصية.
     func availableMonths(person: DeductionPerson, entity: String) throws -> DeductionAvailableMonths {
+        try Task.checkCancellation()
         let key = person.key, title = entity
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key && $0.title == title })
         d.propertiesToFetch = [\.month]
         var keys = Set<Int>()
         var unrecognized = Set<String>()
         for record in try modelContext.fetch(d) {
+            try Task.checkCancellation()
             let month = MonthName.sortKey(record.month)
             if month >= 190001 && month <= 220012 && (1...12).contains(month % 100) { keys.insert(month) }
             else { unrecognized.insert(record.month) }
@@ -112,6 +129,7 @@ actor EmployeeDeductionEngine {
     }
 
     func statement(person: DeductionPerson, entity: String, from: Int, to: Int) throws -> EmployeeDeductionStatement {
+        try Task.checkCancellation()
         let span = try DeductionCalendar.span(from: from, to: to)
         let key = person.key
         var ed = FetchDescriptor<Employee>(predicate: #Predicate { $0.matchKey == key })
@@ -138,6 +156,7 @@ actor EmployeeDeductionEngine {
         var statuses: [String: Set<String>] = [:]
         var hasUnrecognizedMonths = false
         for d in try modelContext.fetch(dd) {
+            try Task.checkCancellation()
             let date = MonthName.sortKey(d.month)
             if date == 0 { hasUnrecognizedMonths = true; continue }
             guard date >= from && date <= to else { continue }
@@ -151,6 +170,7 @@ actor EmployeeDeductionEngine {
         }
         var rows: [DeductionPeriodRow] = []
         for (year, month) in span {
+            try Task.checkCancellation()
             let key = year * 100 + month
             guard let source = monthMap[key], source.deductionCount > 0 else {
                 rows.append(DeductionPeriodRow(year: year, month: month, state: .unavailable))
@@ -270,7 +290,8 @@ struct EmployeeDeductionsView: View {
             guard let person else { return }
             do {
                 let container = SharedModel.container
-                let names = try await Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).entities(person: person) }.value
+                let work = Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).entities(person: person) }
+                let names = try await awaitDeductionWork(work)
                 guard !Task.isCancelled else { return }
                 entities = names
                 if names.contains(previous) { entity = previous }
@@ -284,9 +305,10 @@ struct EmployeeDeductionsView: View {
             loadingPeriods = true
             let requested = periodKey, title = entity, container = SharedModel.container
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
+                let work = Task.detached(priority: .userInitiated) {
                     try await EmployeeDeductionEngine(modelContainer: container).availableMonths(person: person, entity: title)
-                }.value
+                }
+                let result = try await awaitDeductionWork(work)
                 guard !Task.isCancelled, requested == periodKey else { return }
                 availableMonths = result.keys
                 unrecognizedMonths = result.unrecognizedCount
@@ -307,7 +329,8 @@ struct EmployeeDeductionsView: View {
             let title = entity, from = fromMonth, to = toMonth
             do {
                 let container = SharedModel.container
-                let result = try await Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).statement(person: person, entity: title, from: from, to: to) }.value
+                let work = Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).statement(person: person, entity: title, from: from, to: to) }
+                let result = try await awaitDeductionWork(work)
                 guard !Task.isCancelled else { return }
                 report = result
             } catch {
@@ -397,7 +420,8 @@ struct DeductionPersonPicker: View {
                 do {
                     try await Task.sleep(for: .milliseconds(250))
                     let text = query, container = SharedModel.container
-                    let result = try await Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).search(text) }.value
+                    let work = Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).search(text) }
+                    let result = try await awaitDeductionWork(work)
                     guard !Task.isCancelled else { return }; people = result
                 } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
             }

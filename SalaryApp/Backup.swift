@@ -669,6 +669,7 @@ final class BackupManager {
         let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         do {
+            try await BackupServerUpload.checkReachability(base: base)
             let (file, manifest) = try await makeBackup(title: tr("نسخ إلى السيرفر", "Backing up to server"))
             defer { try? FileManager.default.removeItem(at: file) }
             try Self.checkSafetyManifest(manifest)

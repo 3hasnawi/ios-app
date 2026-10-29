@@ -33,6 +33,9 @@ with tempfile.TemporaryDirectory() as directory:
         archive.writestr("manifest.json", json.dumps({"version": 4, "months": ["test"], "employees": 1}))
     data = sample.getvalue()
     headers = {"Authorization": "Bearer " + server.token, "X-Content-SHA256": hashlib.sha256(data).hexdigest()}
+    # فحص الاتصال لا يرفع ملفاً؛ حتى رد عدم دعم HEAD يعني أن السيرفر وصل.
+    assert request("HEAD", "/")[0] in (200, 405, 501)
+    assert not list(server_module.DATA.glob("*.zip"))
     assert request("GET", "/")[0] == 200
     assert request("GET", "/v1/status")[0] == 401
     assert request("POST", "/v1/backups", data, {**headers, "Authorization": "Bearer wrong"})[0] == 401

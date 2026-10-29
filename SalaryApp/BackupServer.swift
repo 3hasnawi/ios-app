@@ -45,6 +45,22 @@ nonisolated enum BackupServerConfig {
 }
 
 nonisolated enum BackupServerUpload {
+    /// لا نضغط مئات الميغابايتات إذا لم يكن السيرفر قابلاً للوصول؛ أي رد HTTP يكفي.
+    static func checkReachability(base: URL) async throws {
+        var request = URLRequest(url: base)
+        request.httpMethod = "HEAD"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 8
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard response is HTTPURLResponse else { throw URLError(.badServerResponse) }
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            throw NSError(domain: "BackupServer", code: 2, userInfo: [NSLocalizedDescriptionKey:
+                tr("السيرفر غير متاح حالياً؛ ستُعاد محاولة النسخ تلقائياً عند توفر الاتصال.", "The server is currently unreachable; backup will be retried automatically when connectivity is available.")])
+        }
+    }
+
     static func sha256(_ file: URL) throws -> String {
         let input = try FileHandle(forReadingFrom: file)
         defer { try? input.close() }
