@@ -124,7 +124,24 @@ internal static class ManualAmounts
         catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException or IndexOutOfRangeException or OverflowException or InvalidOperationException)
         { throw new InvalidDataException("تعذّرت قراءة المبالغ اليدوية من النسخة؛ لا يمكن عرض إجمالي كشف البنك.", ex); }
     }
-    private static byte[] PlistData(byte[] b)
+    private static byte[] PlistData(byte[] b) => BackupSettings.PlistScalar(b, 4);
+}
+
+internal static class BackupSettings
+{
+    public static string ReportHeader(BackupData data)
+    {
+        if (!data.Settings.TryGetValue("reportHeader", out var encoded)) return "قيادة شرطة محافظة الانبار";
+        try
+        {
+            var bytes = Convert.FromBase64String(encoded);
+            try { return Encoding.BigEndianUnicode.GetString(PlistScalar(bytes, 6)); }
+            catch (FormatException) { return Encoding.ASCII.GetString(PlistScalar(bytes, 5)); }
+        }
+        catch (Exception e) when (e is FormatException or ArgumentException or OverflowException or IndexOutOfRangeException)
+        { throw new InvalidDataException("تعذرت قراءة ترويسة الكشوف من النسخة.", e); }
+    }
+    internal static byte[] PlistScalar(byte[] b, int type)
     {
         if (b.Length < 40 || Encoding.ASCII.GetString(b, 0, 8) != "bplist00") throw new FormatException();
         var trailer = b.Length - 32; int offsetSize = b[trailer + 6];
@@ -138,13 +155,14 @@ internal static class ManualAmounts
         var count = ReadBig(trailer + 8, 8); var root = ReadBig(trailer + 16, 8); var table = ReadBig(trailer + 24, 8);
         if (root >= count || table < 8 || table > trailer || root > (trailer - table) / offsetSize) throw new FormatException();
         int pos = checked((int)ReadBig(checked((int)(table + root * offsetSize)), offsetSize));
-        if (pos < 8 || pos >= table || (b[pos] >> 4) != 4) throw new FormatException();
+        if (pos < 8 || pos >= table || (b[pos] >> 4) != type) throw new FormatException();
         int marker = b[pos++]; long length = marker & 15;
         if (length == 15)
         {
             if (pos >= table || (b[pos] >> 4) != 1 || (b[pos] & 15) > 3) throw new FormatException();
             int size = 1 << (b[pos++] & 15); length = ReadBig(pos, size); pos += size;
         }
+        if (type == 6) length = checked(length * 2);
         if (length < 0 || length > table - pos) throw new FormatException();
         return b.AsSpan(pos, checked((int)length)).ToArray();
     }

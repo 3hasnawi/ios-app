@@ -14,7 +14,9 @@
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.9" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.9" />
     <PackageReference Include="HarfBuzzSharp.NativeAssets.Linux" Version="7.3.0.3" />
+    <Compile Include="../WindowsApp/OfficialExcel.cs" Link="OfficialExcel.cs" />
     <Compile Include="../WindowsApp/ExcelExport.cs" Link="ExcelExport.cs" />
     <None Include="plist.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../WindowsApp/Resources/WatermarkLogo.png" Link="Resources/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

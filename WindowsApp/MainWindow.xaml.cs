@@ -102,7 +102,7 @@ public sealed partial class MainWindow : Window
                 var staff = snapshot.Staff.Where(x => Match(x.Name) || Match(x.Mother) || Match(x.Stat) || Match(x.Unified)).Take(100)
                     .Select(x => new DisplayItem($"ملاك · {x.Name}   ·   {x.Rank}   ·   {x.Workplace}", x));
                 var entities = snapshot.Deductions.Where(x => x.Month == month && Match(x.Title)).GroupBy(x => x.Title).Take(100)
-                    .Select(g => new DisplayItem($"جهة · {g.Key}   ·   المجموع: {g.Sum(x => x.Amount ?? 0):N0}", new EntitySelection(month, g.Key)));
+                    .Select(g => new DisplayItem($"جهة · {g.Key}   ·   المجموع: {(g.Any(x => !x.Amount.HasValue) ? "غير متاح لوجود مبلغ فارغ" : g.Sum(x => x.Amount!.Value).ToString("#,##0.##"))}", new EntitySelection(month, g.Key)));
                 var books = snapshot.Books.Where(x => Match(x.Title) || Match(x.Entity) || Match(x.Month)).Take(100)
                     .Select(x => new DisplayItem($"كتاب · {x.Title}   ·   {x.Month}   ·   {x.Entity}", x));
                 return people.Concat(staff).Concat(entities).Concat(books).ToList();
@@ -114,6 +114,7 @@ public sealed partial class MainWindow : Window
     }
     private sealed record EntitySelection(string Month, string Title);
     private sealed record PayrollSelection(string Month, string Title);
+    private sealed record SpecialSelection(string Month, string Title);
     private sealed record BankAmount(string Label, double Value);
     private sealed record AuditSelection(string Title, List<string> Lines);
     private void CompareChanged(object sender, SelectionChangedEventArgs e) => RefreshData();
@@ -134,7 +135,8 @@ public sealed partial class MainWindow : Window
                     foreach (var g in groups.Take(500))
                     {
                         var unique = g.Select(x => PayrollMath.Key(x.Name)).Distinct().Count();
-                        rows.Add(new($"{g.Key}   ·   الموظفون: {g.Count():N0}   ·   المكرر: {g.Count() - unique:N0}   ·   المبلغ: {g.Sum(x => x.Amount ?? 0):N0}", new EntitySelection(month, g.Key)));
+                        var amountText = g.Any(x => !x.Amount.HasValue) ? "غير متاح لوجود مبلغ فارغ" : g.Sum(x => x.Amount!.Value).ToString("#,##0.##");
+                        rows.Add(new($"{g.Key}   ·   الموظفون: {g.Count():N0}   ·   المكرر: {g.Count() - unique:N0}   ·   المبلغ: {amountText}", new EntitySelection(month, g.Key)));
                     }
                     caption = $"{groups.Count:N0} جهة · اضغط جهة لمعاينة تفاصيلها · تظهر أول 500";
                 }
@@ -148,7 +150,11 @@ public sealed partial class MainWindow : Window
                             sums[item.Key] = (previous.Count + 1, previous.Total + item.Value);
                         }
                     var matching = sums.Where(x => Match(x.Key)).OrderByDescending(x => x.Value.Total).ToList();
-                    rows.AddRange(matching.Select(x => new DisplayItem($"{x.Key}   ·   الموظفون: {x.Value.Count:N0}   ·   المبلغ: {x.Value.Total:N0}", new PayrollSelection(month, x.Key))));
+                    foreach (var x in matching)
+                    {
+                        rows.Add(new DisplayItem($"{x.Key}   ·   الموظفون: {x.Value.Count:N0}   ·   المبلغ: {x.Value.Total:N0}", new PayrollSelection(month, x.Key)));
+                        if (SpecialReports.Supports(x.Key)) rows.Add(new DisplayItem($"↳ تفاصيل الكشف الخاص · {x.Key}", new SpecialSelection(month, x.Key)));
+                    }
                     caption = $"{matching.Count:N0} بند · اضغط بنداً لعرض التفاصيل وتصدير Excel";
                 }
                 else if (page == "staff")
@@ -235,6 +241,21 @@ public sealed partial class MainWindow : Window
         try
         {
             if (item.Value is Book book) { await SaveBook(book); return; }
+            if (item.Value is SpecialSelection selectedSpecial)
+            {
+                var snapshot = data;
+                var report = await Task.Run(() => SpecialReports.Build(snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                if (report != null)
+                {
+                    var shown = string.Join("\n", report.Lines.Take(500));
+                    if (report.Lines.Count > 500) shown += "\n... تظهر أول 500 نتيجة.";
+                    var body = new StackPanel { Spacing = 10 };
+                    body.Children.Add(new TextBlock { Text = report.Explanation, TextWrapping = TextWrapping.Wrap });
+                    body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
+                    await new ContentDialog { Title = report.Title, Content = body, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                }
+                return;
+            }
             if (item.Value is AuditSelection audit)
             {
                 var preview = string.Join("\n", audit.Lines.Take(500));
@@ -291,7 +312,8 @@ public sealed partial class MainWindow : Window
             {
                 title = entity.Title; var entries = data.Deductions.Where(x => x.Month == entity.Month && x.Title == entity.Title).ToList();
                 var account = data.Accounts.FirstOrDefault(x => PayrollMath.Normalize(x.Entity) == PayrollMath.Normalize(entity.Title));
-                text = $"الشهر: {entity.Month}\nالمجموع: {entries.Sum(x => x.Amount ?? 0):N0}\nعدد الموظفين: {entries.Count:N0}\nالمكرر: {entries.Count - entries.Select(x => PayrollMath.Key(x.Name)).Distinct().Count():N0}\n" +
+                var sumText = entries.Any(x => !x.Amount.HasValue) ? "غير متاح لوجود مبلغ فارغ" : entries.Sum(x => x.Amount!.Value).ToString("#,##0.##");
+                text = $"الشهر: {entity.Month}\nالمجموع: {sumText}\nعدد الموظفين: {entries.Count:N0}\nالمكرر: {entries.Count - entries.Select(x => PayrollMath.Key(x.Name)).Distinct().Count():N0}\n" +
                     (account == null ? "" : $"IBAN: {account.Iban}\nالفرع: {account.Branch}\n") + "\n" + string.Join("\n", entries.Select(x => $"{x.Name} · {x.Amount:N0} · {x.Note}"));
             }
             else if (item.Value is PayrollSelection payroll)
@@ -309,8 +331,8 @@ public sealed partial class MainWindow : Window
             else return;
             var textBox = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
             var dialog = new ContentDialog { Title = title, Content = textBox, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
-            if (item.Value is EntitySelection or PayrollSelection) dialog.PrimaryButtonText = "تصدير Excel";
-            if (item.Value is PayrollSelection special && SpecialReports.Supports(special.Title)) dialog.SecondaryButtonText = "تفاصيل الكشف الخاص";
+            if (item.Value is EntitySelection or PayrollSelection) { dialog.PrimaryButtonText = "تصدير Excel"; dialog.SecondaryButtonText = "تصدير PDF"; }
+            // الكشف الخاص يبقى متاحاً من قائمة مستقلة حتى لا يحلّ محل خيارات التصدير.
             if (item.Value is Staff) dialog.PrimaryButtonText = "تصدير تقرير الملاك PDF";
             var action = await dialog.ShowAsync();
             if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
@@ -337,18 +359,17 @@ public sealed partial class MainWindow : Window
                 var file = await picker.PickSaveFileAsync();
                 if (file != null) await Task.Run(() => StaffReportPdf.Write(file.Path, StaffReportData.From(staff)));
             }
-            else if (action == ContentDialogResult.Secondary && item.Value is PayrollSelection selectedSpecial && data != null)
+            else if (action == ContentDialogResult.Secondary && (item.Value is EntitySelection or PayrollSelection) && data != null)
             {
-                var snapshot = data;
-                var report = await Task.Run(() => SpecialReports.Build(snapshot, selectedSpecial.Month, selectedSpecial.Title));
-                if (report != null)
+                var picker = new FileSavePicker { SuggestedFileName = "كشف الرواتب" };
+                picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
+                InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                var file = await picker.PickSaveFileAsync();
+                if (file != null)
                 {
-                    var shown = string.Join("\n", report.Lines.Take(500));
-                    if (report.Lines.Count > 500) shown += "\n... تظهر أول 500 نتيجة.";
-                    var body = new StackPanel { Spacing = 10 };
-                    body.Children.Add(new TextBlock { Text = report.Explanation, TextWrapping = TextWrapping.Wrap });
-                    body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
-                    await new ContentDialog { Title = report.Title, Content = body, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                    var snapshot = data;
+                    if (item.Value is EntitySelection selectedEntity) await Task.Run(() => PdfExport.Entity(file.Path, snapshot, selectedEntity.Month, selectedEntity.Title));
+                    else if (item.Value is PayrollSelection selectedPayrollPdf) await Task.Run(() => PdfExport.Payroll(file.Path, snapshot, selectedPayrollPdf.Month, selectedPayrollPdf.Title));
                 }
             }
         }

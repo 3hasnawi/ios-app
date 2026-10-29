@@ -70,7 +70,7 @@ internal static class StaffReportPdf
                 void Text(string text, float x, float y)
                 {
                     text = string.Concat(text.Select(c => c >= '٠' && c <= '٩' ? (char)('0' + c - '٠') : c >= '۰' && c <= '۹' ? (char)('0' + c - '۰') : c));
-                    foreach (Match match in Regex.Matches(text, @"[A-Za-z0-9][A-Za-z0-9.,/%+\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9.,/%+\-]*)*|[^A-Za-z0-9]+"))
+                    foreach (Match match in Regex.Matches(text, @"[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*)*|[^A-Za-z0-9]+"))
                     { canvas.DrawShapedText(shaper, match.Value, x, y, paint); x -= shaper.Shape(match.Value, paint).Width; }
                 }
                 logoPath ??= Path.Combine(AppContext.BaseDirectory, "Resources", "HomeLogo.png");

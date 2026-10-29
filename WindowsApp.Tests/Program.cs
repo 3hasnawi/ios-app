@@ -22,7 +22,7 @@ try {
 } finally { File.Delete(outFile); }
 static void XNamespaceCheck(System.Xml.Linq.XDocument xml) {
     System.Xml.Linq.XNamespace n = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-    if (xml.Descendants(n + "sheetView").First().Attribute("rightToLeft")?.Value != "1" || xml.Descendants(n + "row").Count() != 4) throw new Exception("invalid sheet");
+    if (xml.Descendants(n + "sheetView").First().Attribute("rightToLeft")?.Value != "1" || xml.Descendants(n + "row").Count() != 5) throw new Exception("invalid sheet");
 }
 Console.WriteLine("Excel fixture passed: right-to-left sheet and data rows.");
 var archive = Path.Combine(Path.GetTempPath(), "salary-fixture-" + Guid.NewGuid().ToString("N") + ".zip");
@@ -67,14 +67,14 @@ try {
     using var sheet = zip.GetEntry("xl/worksheets/sheet1.xml")!.Open();
     var xml = System.Xml.Linq.XDocument.Load(sheet);
     System.Xml.Linq.XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-    if (xml.Descendants(ns + "row").Count() != 5 || !xml.Descendants(ns + "v").Any(v => v.Value == "1101")) throw new Exception("payroll report totals failed");
+    if (xml.Descendants(ns + "row").Count() != 6 || !xml.Descendants(ns + "v").Any(v => v.Value == "1101")) throw new Exception("payroll report totals failed");
 } finally { File.Delete(payrollFile); }
 Console.WriteLine("Payroll export fixture passed: rows and totals.");
 var pdfOutput = Environment.GetEnvironmentVariable("SALARY_PDF_TEST_PATH") ?? Path.Combine(Path.GetTempPath(), "salary-pdf-" + Guid.NewGuid().ToString("N") + ".pdf");
 try {
     var lines = Enumerable.Range(1, 120).Select(i => new PdfExport.Line($"موظف تجريبي رقم {i}", "موظف", i.ToString(), "قسم الحسابات")).ToList();
     var font = OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf") : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-    PdfExport.Write(pdfOutput, "تشرين الأول 2026", "كشف تجريبي", lines, font);
+    PdfExport.Write(pdfOutput, "تشرين الأول 2026", "كشف تجريبي", lines, font, total: 7260);
     var bytes = File.ReadAllBytes(pdfOutput);
     if (bytes.Length < 2000 || System.Text.Encoding.ASCII.GetString(bytes, 0, 5) != "%PDF-") throw new Exception("invalid PDF");
 } finally { if (Environment.GetEnvironmentVariable("SALARY_PDF_TEST_PATH") == null) File.Delete(pdfOutput); }
@@ -177,3 +177,19 @@ try {
 Console.WriteLine("Missing amount fixture passed: no misleading total.");
 var inspectExcel = Environment.GetEnvironmentVariable("SALARY_EXCEL_TEST_PATH");
 if (!string.IsNullOrEmpty(inspectExcel)) ExcelExport.Audit(inspectExcel, "الشهر السابق / الشهر الحالي", "نتائج وهمية", Enumerable.Range(1, 650).Select(i => "حالة وهمية " + i).ToList());
+var customHeader = data with { Settings = new() { ["reportHeader"] = "YnBsaXN0MDBtBkIGSgYnBi8GKQAgBioGLAYxBkoGKAZKBikIAAAAAAAAAQEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAACM=" } };
+if (BackupSettings.ReportHeader(customHeader) != "قيادة تجريبية") throw new Exception("unicode report header failed");
+var asciiHeader = data with { Settings = new() { ["reportHeader"] = "YnBsaXN0MDBeRXhhbXBsZSBoZWFkZXIIAAAAAAAAAQEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAABc=" } };
+if (BackupSettings.ReportHeader(asciiHeader) != "Example header") throw new Exception("ASCII report header failed");
+var officialPath = Environment.GetEnvironmentVariable("SALARY_OFFICIAL_EXCEL_PATH");
+if (!string.IsNullOrEmpty(officialPath)) ExcelExport.Entity(officialPath, customHeader, month, "جهة وهمية");
+Console.WriteLine("Report header fixture passed for Arabic and ASCII.");
+var largePath = Path.Combine(Path.GetTempPath(), "salary-large-" + Guid.NewGuid().ToString("N") + ".xlsx");
+try {
+    var many = data with { Deductions = Enumerable.Range(1, 2000).Select(i => new Deduction(month, "اسم وهمي " + i, "جهة وهمية", 1.25, "مرجع " + i, "موظف")).ToList() };
+    ExcelExport.Entity(largePath, many, month, "جهة وهمية");
+    using var zip = System.IO.Compression.ZipFile.OpenRead(largePath); using var stream = zip.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+    var doc = System.Xml.Linq.XDocument.Load(stream); System.Xml.Linq.XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    if (doc.Descendants(ns + "row").Count() != 2004 || !doc.Descendants(ns + "f").Any(x => x.Value == "SUM(D4:D2003)") || !doc.Descendants(ns + "v").Any(x => x.Value == "2500")) throw new Exception("large official Excel failed");
+} finally { File.Delete(largePath); }
+Console.WriteLine("Official Excel fixture passed: all 2000 rows and decimal total.");

@@ -7,15 +7,11 @@ internal static class ExcelExport
     // يُنشأ الملف كاملاً في مكان مؤقت قبل استبدال الملف الذي اختاره المستخدم.
     public static void Entity(string path, BackupData data, string month, string title)
     {
-        var rows = data.Deductions.Where(d => d.Month == month && d.Title == title)
-            .Select(d => new ReportLine(d.Name, d.Rank ?? "", d.Amount, d.Note ?? "")).ToList();
-        WriteReport(path, month, title, rows);
+        OfficialExcel.Entity(path, data, month, title);
     }
     public static void Payroll(string path, BackupData data, string month, string title)
     {
-        var rows = data.Employees.Where(x => x.Month == month).Select(x => (Employee: x, Items: PayrollMath.Decode<double>(x.Items)))
-            .Where(x => x.Items.ContainsKey(title)).Select(x => new ReportLine(x.Employee.Name, x.Employee.Rank, x.Items[title], x.Employee.Workplace)).ToList();
-        WriteReport(path, month, title, rows);
+        OfficialExcel.Payroll(path, data, month, title);
     }
     public static void Audit(string path, string months, string title, IReadOnlyList<string> lines)
     {
