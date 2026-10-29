@@ -27,6 +27,7 @@ jobs:
         run: |
           $exe = "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe"
           $env:SALARY_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP\salary-startup.log"
+          $env:SALARY_XAML_DIAG_PATH = "$env:GITHUB_WORKSPACE\WindowsApp\MainWindow.xaml"
           $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
           Start-Sleep -Seconds 10
           $process.Refresh()
@@ -35,6 +36,7 @@ jobs:
             Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-3)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'SalaryWindows' } | Select-Object -First 5 | Format-List TimeCreated,ProviderName,Message
             throw "Application exited during startup (code $($process.ExitCode))."
           }
+          if (!(Test-Path $env:SALARY_STARTUP_DIAGNOSTIC) -or !((Get-Content $env:SALARY_STARTUP_DIAGNOSTIC -Raw) -match 'Window activated')) { Stop-Process -Id $process.Id -Force; throw 'Application window did not finish activating.' }
           Stop-Process -Id $process.Id -Force
       - name: Package and release
         shell: pwsh

@@ -19,7 +19,7 @@ public partial class App : Application
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        try { Diagnostic("Before window initialization"); window = new MainWindow(); Diagnostic("Before window activation"); window.Activate(); Diagnostic("Window activated"); }
+        try { var source = Environment.GetEnvironmentVariable("SALARY_XAML_DIAG_PATH"); if (!string.IsNullOrEmpty(source)) XamlDiagnostic.Run(source, Diagnostic); Diagnostic("Before window initialization"); window = new MainWindow(); Diagnostic("Before window activation"); window.Activate(); Diagnostic("Window activated"); }
         catch (Exception e) { Diagnostic("Launch error: " + e); throw; }
     }
 }
