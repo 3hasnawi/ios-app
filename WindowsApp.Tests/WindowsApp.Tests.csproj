@@ -5,6 +5,10 @@
     <Compile Include="../WindowsApp/PayrollMath.cs" Link="PayrollMath.cs" />
     <Compile Include="../WindowsApp/StaffReportPdf.cs" Link="StaffReportPdf.cs" />
     <Compile Include="../WindowsApp/StaffReportData.cs" Link="StaffReportData.cs" />
+    <Compile Include="../WindowsApp/BookArchive.cs" Link="BookArchive.cs" />
+    <Compile Include="../WindowsApp/SalaryReportPdf.cs" Link="SalaryReportPdf.cs" />
+    <Compile Include="../WindowsApp/SalaryReportData.cs" Link="SalaryReportData.cs" />
+    <Compile Include="../WindowsApp/PayslipImage.cs" Link="PayslipImage.cs" />
     <Compile Include="../WindowsApp/SpecialPdf.cs" Link="SpecialPdf.cs" />
     <Compile Include="../WindowsApp/SpecialExcel.cs" Link="SpecialExcel.cs" />
     <Compile Include="../WindowsApp/SpecialReports.cs" Link="SpecialReports.cs" />
@@ -20,5 +24,6 @@
     <Compile Include="../WindowsApp/ExcelExport.cs" Link="ExcelExport.cs" />
     <None Include="plist.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../WindowsApp/Resources/WatermarkLogo.png" Link="Resources/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../WindowsApp/Resources/HomeLogo.png" Link="Resources/HomeLogo.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

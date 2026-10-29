@@ -1,6 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using System.IO.Compression;
 using System.Text.Json;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -11,8 +10,9 @@ public sealed partial class MainWindow : Window
 {
     private BackupData? data;
     private CancellationTokenSource? searchCancellation;
+    private readonly HashSet<string> temporaryPreviews = [];
     private string section = "home";
-    public MainWindow() { InitializeComponent(); Closed += (_, _) => DeleteArchive(data?.ArchivePath); }
+    public MainWindow() { InitializeComponent(); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
     private void ShowSection(string page, string title)
     {
@@ -240,7 +240,7 @@ public sealed partial class MainWindow : Window
         if (e.ClickedItem is not DisplayItem item || data == null) return;
         try
         {
-            if (item.Value is Book book) { await SaveBook(book); return; }
+            if (item.Value is Book book) { await OpenBook(book); return; }
             if (item.Value is SpecialSelection selectedSpecial)
             {
                 var snapshot = data;
@@ -253,8 +253,13 @@ public sealed partial class MainWindow : Window
                     body.Children.Add(new TextBlock { Text = report.Explanation, TextWrapping = TextWrapping.Wrap });
                     body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
                     var specialDialog = new ContentDialog { Title = report.Title, Content = body, PrimaryButtonText = "تصدير Excel", SecondaryButtonText = "تصدير PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+                    var specialPreview = false;
+                    var specialPreviewButton = new Button { Content = "معاينة PDF" };
+                    specialPreviewButton.Click += (_, _) => { specialPreview = true; specialDialog.Hide(); };
+                    body.Children.Add(specialPreviewButton);
                     var specialAction = await specialDialog.ShowAsync();
-                    if (specialAction == ContentDialogResult.Primary || specialAction == ContentDialogResult.Secondary)
+                    if (specialPreview) await OpenPreview(".pdf", output => SpecialPdf.Write(output, snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                    else if (specialAction == ContentDialogResult.Primary || specialAction == ContentDialogResult.Secondary)
                     {
                         var picker = new FileSavePicker { SuggestedFileName = "الكشف الخاص" };
                         if (specialAction == ContentDialogResult.Primary) picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
@@ -303,10 +308,12 @@ public sealed partial class MainWindow : Window
             if (item.Value is Employee emp)
             {
                 title = emp.Name;
-                var deductions = data.Deductions.Where(x => x.Month == emp.Month && PayrollMath.Key(x.Name) == PayrollMath.Key(emp.Name)).ToList();
+                var ambiguous = data.Employees.Count(x => x.Month == emp.Month && PayrollMath.Key(x.Name) == PayrollMath.Key(emp.Name)) != 1;
+                List<Deduction> deductions = ambiguous ? [] : data.Deductions.Where(x => x.Month == emp.Month && PayrollMath.Key(x.Name) == PayrollMath.Key(emp.Name)).ToList();
                 var details = PayrollMath.Decode<string>(emp.Details); var items = PayrollMath.Decode<double>(emp.Items);
-                text = $"الشهر: {emp.Month}\nالرتبة: {emp.Rank}\nمحل العمل: {emp.Workplace}\nصافي الراتب: {emp.Net:N0}\n\nبنود الراتب:\n" +
-                    string.Join("\n", items.Select(x => $"{x.Key}: {x.Value:N0}")) + "\n\nالاستقطاعات:\n" + string.Join("\n", deductions.Select(x => $"{x.Title}: {x.Amount:N0}  {x.Note}")) +
+                var netText = emp.Net?.ToString("#,##0.##") ?? "غير متوفر";
+                text = $"الشهر: {emp.Month}\nالرتبة: {emp.Rank}\nمحل العمل: {emp.Workplace}\nصافي الراتب: {netText}\n\nبنود الراتب:\n" +
+                    string.Join("\n", items.Select(x => $"{x.Key}: {x.Value:#,##0.##}")) + "\n\nالاستقطاعات:\n" + (ambiguous ? "الاسم متكرر؛ تعذّر ربط الاستقطاعات بأمان." : string.Join("\n", deductions.Select(x => $"{x.Title}: {x.Amount?.ToString("#,##0.##") ?? "غير متوفر"}  {x.Note}"))) +
                     "\n\nالبيانات الأخرى:\n" + string.Join("\n", details.Select(x => $"{x.Key}: {x.Value}"));
             }
             else if (item.Value is Staff member)
@@ -344,12 +351,57 @@ public sealed partial class MainWindow : Window
             }
             else return;
             var textBox = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
-            var dialog = new ContentDialog { Title = title, Content = textBox, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+            var contentPanel = new StackPanel { Spacing = 10 }; contentPanel.Children.Add(textBox);
+            var dialog = new ContentDialog { Title = title, Content = contentPanel, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+            var previewRequested = false;
+            var salaryReportRequested = false;
+            if (item.Value is Employee or EntitySelection or PayrollSelection or Staff)
+            {
+                var previewButton = new Button { Content = item.Value is Employee ? "معاينة قسيمة الراتب" : "معاينة PDF" };
+                previewButton.Click += (_, _) => { previewRequested = true; dialog.Hide(); };
+                contentPanel.Children.Add(previewButton);
+            }
+            if (item.Value is Employee)
+            {
+                var salaryReportButton = new Button { Content = "تقرير الراتب PDF" };
+                salaryReportButton.Click += (_, _) => { salaryReportRequested = true; dialog.Hide(); };
+                contentPanel.Children.Add(salaryReportButton);
+            }
             if (item.Value is EntitySelection or PayrollSelection) { dialog.PrimaryButtonText = "تصدير Excel"; dialog.SecondaryButtonText = "تصدير PDF"; }
             // الكشف الخاص يبقى متاحاً من قائمة مستقلة حتى لا يحلّ محل خيارات التصدير.
             if (item.Value is Staff) dialog.PrimaryButtonText = "تصدير تقرير الملاك PDF";
+            if (item.Value is Employee) { dialog.PrimaryButtonText = "حفظ القسيمة صورة"; dialog.SecondaryButtonText = "نسخ الصورة"; }
             var action = await dialog.ShowAsync();
-            if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
+            if (salaryReportRequested && item.Value is Employee salaryEmployee && data != null)
+                await SalaryReportOptions(data, salaryEmployee);
+            else if (previewRequested && data != null)
+            {
+                var snapshot = data;
+                if (item.Value is Employee person) await OpenPreview(".png", path => PayslipImage.Write(path, SlipData.From(snapshot, person)));
+                else if (item.Value is EntitySelection group) await OpenPreview(".pdf", path => PdfExport.Entity(path, snapshot, group.Month, group.Title));
+                else if (item.Value is PayrollSelection payrollGroup) await OpenPreview(".pdf", path => PdfExport.Payroll(path, snapshot, payrollGroup.Month, payrollGroup.Title));
+                else if (item.Value is Staff staffMember) await OpenPreview(".pdf", path => StaffReportPdf.Write(path, StaffReportData.From(staffMember)));
+            }
+            else if (action == ContentDialogResult.Primary && item.Value is Employee selectedEmployee && data != null)
+            {
+                var snapshot = data;
+                var picker = new FileSavePicker { SuggestedFileName = "قسيمة الراتب" };
+                picker.FileTypeChoices.Add("PNG", new List<string> { ".png" });
+                InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                var file = await picker.PickSaveFileAsync();
+                if (file != null) await Task.Run(() => PayslipImage.Write(file.Path, SlipData.From(snapshot, selectedEmployee)));
+            }
+            else if (action == ContentDialogResult.Secondary && item.Value is Employee copyEmployee && data != null)
+            {
+                var snapshot = data;
+                var path = await CreateTemporaryPreview(".png", output => PayslipImage.Write(output, SlipData.From(snapshot, copyEmployee)));
+                var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetBitmap(Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(file));
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                Windows.ApplicationModel.DataTransfer.Clipboard.Flush();
+            }
+            else if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
             {
                 var picker = new FileSavePicker { SuggestedFileName = "كشف جهة التنفيذ" };
                 picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
@@ -389,16 +441,59 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { await Error(ex.Message); }
     }
-    private async Task SaveBook(Book book)
+    private async Task<string> CreateTemporaryPreview(string extension, Action<string> create)
     {
-        var picker = new FileSavePicker { SuggestedFileName = "كتاب رسمي" }; picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-        var file = await picker.PickSaveFileAsync(); if (file == null || data == null) return;
-        using (var zip = ZipFile.OpenRead(data.ArchivePath))
+        var path = Path.Combine(Path.GetTempPath(), "salary-preview-" + Guid.NewGuid().ToString("N") + extension);
+        try
         {
-            var entry = zip.GetEntry($"books/{book.Id.ToString().ToUpperInvariant()}.pdf") ?? throw new InvalidDataException("ملف الكتاب غير موجود داخل النسخة.");
-            using var source = entry.Open(); using var destination = File.Create(file.Path); await source.CopyToAsync(destination);
+            await Task.Run(() => create(path));
+            temporaryPreviews.Add(path);
+            return path;
         }
-        await Windows.System.Launcher.LaunchFileAsync(file);
+        catch { DeleteArchive(path); throw; }
+    }
+    private async Task OpenPreview(string extension, Action<string> create)
+    {
+        var path = await CreateTemporaryPreview(extension, create);
+        var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+        if (!await Windows.System.Launcher.LaunchFileAsync(file)) throw new InvalidOperationException("لم يتمكن ويندوز من فتح المعاينة. تحقق من وجود برنامج لعرض الملف.");
+    }
+    private async Task SalaryReportOptions(BackupData snapshot, Employee employee)
+    {
+        var sample = await Task.Run(() => SalaryReportData.From(snapshot, employee, true, true));
+        var body = new StackPanel { Spacing = 12 };
+        if (sample.MissingDetails) body.Children.Add(new TextBlock { Text = "تفاصيل الرواتب غير متوفرة في هذه النسخة؛ أعد استيراد ملف الشهر على الآيفون لإظهار المخصصات.", TextWrapping = TextWrapping.Wrap });
+        foreach (var warning in sample.Mismatches) body.Children.Add(new TextBlock { Text = warning, TextWrapping = TextWrapping.Wrap });
+        var hideZeros = new CheckBox { Content = "إخفاء البنود الصفرية", IsChecked = true };
+        var hidePersonal = new CheckBox { Content = "إخفاء IBAN والأرقام الشخصية", IsChecked = true };
+        body.Children.Add(hideZeros); body.Children.Add(hidePersonal);
+        var dialog = new ContentDialog { Title = "تقرير راتب · " + employee.Month, Content = body, PrimaryButtonText = "حفظ PDF", SecondaryButtonText = "معاينة PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+        var action = await dialog.ShowAsync();
+        if (action == ContentDialogResult.None) return;
+        var removeZeros = hideZeros.IsChecked == true; var maskPersonal = hidePersonal.IsChecked == true;
+        var report = await Task.Run(() => SalaryReportData.From(snapshot, employee, removeZeros, maskPersonal));
+        if (action == ContentDialogResult.Secondary) await OpenPreview(".pdf", output => SalaryReportPdf.Write(output, report));
+        else
+        {
+            var picker = new FileSavePicker { SuggestedFileName = "تقرير الراتب" }; picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file != null) await Task.Run(() => SalaryReportPdf.Write(file.Path, report));
+        }
+    }
+    private async Task OpenBook(Book book)
+    {
+        if (data == null) return;
+        var archive = data.ArchivePath;
+        var dialog = new ContentDialog { Title = book.Title, Content = $"{book.Month} · {book.Pages} صفحة", PrimaryButtonText = "معاينة", SecondaryButtonText = "حفظ PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+        var action = await dialog.ShowAsync();
+        if (action == ContentDialogResult.Primary) await OpenPreview(".pdf", output => BookArchive.Export(archive, book, output));
+        else if (action == ContentDialogResult.Secondary)
+        {
+            var picker = new FileSavePicker { SuggestedFileName = "كتاب رسمي" }; picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file != null) await Task.Run(() => BookArchive.Export(archive, book, file.Path));
+        }
     }
 }

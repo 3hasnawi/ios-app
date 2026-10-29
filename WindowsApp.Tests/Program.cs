@@ -236,3 +236,59 @@ try {
     if(File.ReadAllText(savedSpecial)!="old-file") throw new Exception("Excel overwritten after failure");
 } finally { File.Delete(savedSpecial); }
 Console.WriteLine("Special export fixture passed: oversized data rejected without overwriting existing file.");
+var slipPath = Environment.GetEnvironmentVariable("SALARY_SLIP_TEST_PATH") ?? Path.Combine(Path.GetTempPath(), "salary-slip-" + Guid.NewGuid().ToString("N") + ".png");
+try {
+    var employee = new Employee(newer,"محمد وهمي عبدالله","موظف","قسم الحسابات",1234567.5,null,null);
+    var slipSource = data with { Employees = [employee], Deductions = [new(newer,employee.Name,"شركة وهمية",10000,"إضبارة 123",null),new(newer,employee.Name,"رعاية تجريبية",3500,"",null)] };
+    var slip = SlipData.From(slipSource,employee);
+    if(slip.Lines.Count != 2 || slip.Net != 1234567.5) throw new Exception("slip data missing");
+    var font=OperatingSystem.IsWindows()?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"arial.ttf"):"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    PayslipImage.Write(slipPath,slip,font);
+    using var image=SkiaSharp.SKBitmap.Decode(slipPath);
+    if(image==null || image.Width!=780 || image.Height<300) throw new Exception("invalid payslip PNG");
+    var old=File.ReadAllBytes(slipPath);
+    var huge=slip with { Lines=Enumerable.Range(0,1000).Select(_=>new SlipLine("سطر تجريبي طويل", "",1)).ToList() };
+    try { PayslipImage.Write(slipPath,huge,font); throw new Exception("oversized slip accepted"); } catch(InvalidDataException) { }
+    if(!File.ReadAllBytes(slipPath).SequenceEqual(old)) throw new Exception("existing image replaced on failure");
+    var ambiguousSlip=slipSource with { Employees=[employee,employee] };
+    try { SlipData.From(ambiguousSlip,employee); throw new Exception("ambiguous employee accepted"); } catch(InvalidDataException) { }
+} finally { if(Environment.GetEnvironmentVariable("SALARY_SLIP_TEST_PATH")==null) File.Delete(slipPath); }
+Console.WriteLine("Payslip fixture passed: two deductions, PNG, duplicate-name and overflow protection.");
+var bookZip=Path.Combine(Path.GetTempPath(),"salary-book-"+Guid.NewGuid().ToString("N")+".zip");
+var bookOut=Path.Combine(Path.GetTempPath(),"salary-book-"+Guid.NewGuid().ToString("N")+".pdf");
+try {
+    var id=Guid.NewGuid(); var book=new Book(id,"كتاب وهمي",newer,null,1);
+    using(var z=System.IO.Compression.ZipFile.Open(bookZip,System.IO.Compression.ZipArchiveMode.Create)) {
+        using var w=new StreamWriter(z.CreateEntry($"books/{id.ToString().ToUpperInvariant()}.pdf").Open());w.Write("%PDF-1.7\n%fictional");
+    }
+    BookArchive.Export(bookZip,book,bookOut);
+    if(!File.ReadAllText(bookOut).StartsWith("%PDF-")) throw new Exception("book was not exported");
+    var previous=File.ReadAllBytes(bookOut);
+    using(var z=System.IO.Compression.ZipFile.Open(bookZip,System.IO.Compression.ZipArchiveMode.Update)) {
+        z.GetEntry($"books/{id.ToString().ToUpperInvariant()}.pdf")!.Delete();
+        using var w=new StreamWriter(z.CreateEntry($"books/{id.ToString().ToUpperInvariant()}.pdf").Open());w.Write("invalid file");
+    }
+    try { BookArchive.Export(bookZip,book,bookOut); throw new Exception("invalid book accepted"); } catch(InvalidDataException) {}
+    if(!File.ReadAllBytes(bookOut).SequenceEqual(previous)) throw new Exception("previous book overwritten after failure");
+} finally { File.Delete(bookZip);File.Delete(bookOut); }
+Console.WriteLine("Book fixture passed: PDF header checked and previous file preserved on failure.");
+var salaryReportPath=Environment.GetEnvironmentVariable("SALARY_REPORT_TEST_PATH") ?? Path.Combine(Path.GetTempPath(),"salary-report-"+Guid.NewGuid().ToString("N")+".pdf");
+try {
+    var e=new Employee(newer,"محمد وهمي عبدالله","موظف","قسم الحسابات",950000,
+        Enc(new Dictionary<string,double>{{"الاسمي",1000000},{"الضريبة",50000},{"مجموع الاستقطاعات",50000}}),
+        Enc(new Dictionary<string,string>{{"الاسمي","1000000"},{"الاستحقاق","1000000"},{"مجموع الاستقطاعات","50000"},{"الضريبة","50000"},{"IBAN","IQ123456789012345678901"},{"الرقم الموحد","12345678"},{"اسم الوكالة","وكالة وهمية"},{"اسم المديرية","مديرية وهمية"},{"ملاحظات","ملاحظة تجريبية"}}));
+    var fixture=data with { Employees=[e], Deductions=[new(newer,e.Name,"مصرف وهمي / فرع وهمي",25000,"",null)] };
+    var report=SalaryReportData.From(fixture,e,true,true);
+    if(report.Net!=950000 || report.EntitlementTotal!=1000000 || report.DeductionTotal!=50000 || report.Entitlements.Count!=1 || report.Deductions.Count!=1 || report.Mismatches.Count!=0 || !report.Info.Single(x=>x.Label=="IBAN").Value.EndsWith("8901") || report.Info.Single(x=>x.Label=="IBAN").Value.Contains("IQ")) throw new Exception("salary report fields failed");
+    if(report.Banks.Count!=1 || report.Banks[0].Branch!="فرع وهمي") throw new Exception("salary bank report failed");
+    var font=OperatingSystem.IsWindows()?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"arial.ttf"):"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    SalaryReportPdf.Write(salaryReportPath,report,font);
+    if(new FileInfo(salaryReportPath).Length<2000) throw new Exception("invalid salary report PDF");
+    var original=File.ReadAllBytes(salaryReportPath);
+    var huge=report with { Notes=string.Join(" ",Enumerable.Repeat("بيانات طويلة",200)) };
+    try { SalaryReportPdf.Write(salaryReportPath,huge,font); throw new Exception("long salary report accepted"); } catch(InvalidDataException) { }
+    if(!File.ReadAllBytes(salaryReportPath).SequenceEqual(original)) throw new Exception("salary PDF overwritten on failure");
+    var oldEmployee=e with { Details=null };var oldData=fixture with { Employees=[oldEmployee] };
+    if(!SalaryReportData.From(oldData,oldEmployee,false,true).MissingDetails) throw new Exception("old salary missing details not reported");
+} finally { if(Environment.GetEnvironmentVariable("SALARY_REPORT_TEST_PATH")==null) File.Delete(salaryReportPath); }
+Console.WriteLine("Salary report fixture passed: line mapping, masking, totals, A4 output and overflow protection.");
