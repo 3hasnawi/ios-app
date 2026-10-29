@@ -3,6 +3,7 @@
   <ItemGroup>
     <Compile Include="../WindowsApp/WindowsSettings.cs" Link="WindowsSettings.cs" />
     <Compile Include="../WindowsApp/BackupAccountEditor.cs" Link="BackupAccountEditor.cs" />
+    <Compile Include="../WindowsApp/PreviewGeometry.cs" Link="PreviewGeometry.cs" />
     <Compile Include="../WindowsApp/BackupReader.cs" Link="BackupReader.cs" />
     <Compile Include="../WindowsApp/PayrollMath.cs" Link="PayrollMath.cs" />
     <Compile Include="../WindowsApp/StaffReportPdf.cs" Link="StaffReportPdf.cs" />

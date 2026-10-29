@@ -351,3 +351,10 @@ try {
     try { BackupAccountEditor.SaveCopy(original, original, new Account("جهة", "IQ19TEST000000000000000", "", ""), null); throw new Exception("source overwrite accepted"); } catch (InvalidDataException) { }
 } finally { Directory.Delete(editDir, true); }
 Console.WriteLine("Backup account edit fixture passed: new account, IBAN checks, unknown fields and source protection.");
+
+var portraitPreview = PreviewGeometry.Fit(595, 842);
+var tallPreview = PreviewGeometry.Fit(1, 100000);
+if (portraitPreview.Width > 1400 || portraitPreview.Height > 2000 || portraitPreview.Width < 1 || tallPreview.Width != 1 || tallPreview.Height != 2000) throw new Exception("preview size bounds failed");
+foreach (var invalidSize in new[] { (0d, 100d), (double.NaN, 200d), (100d, double.PositiveInfinity) })
+    try { PreviewGeometry.Fit(invalidSize.Item1, invalidSize.Item2); throw new Exception("invalid preview size accepted"); } catch (InvalidDataException) { }
+Console.WriteLine("Preview geometry fixture passed: page aspect and invalid dimensions.");

@@ -24,8 +24,12 @@ public sealed partial class MainWindow : Window
     private bool viewReady;
     private string section = "home";
     private WindowsSettings settings = new();
-    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; MarkActiveNavigation("home"); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
+    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; MarkActiveNavigation("home"); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeletePreview(path); }; }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
+    private static void DeletePreview(string path)
+    {
+        try { File.Delete(path); var folder = Path.GetDirectoryName(path); if (folder != null && Path.GetFileName(folder).StartsWith("salary-preview-", StringComparison.Ordinal)) Directory.Delete(folder, false); } catch { }
+    }
     private void ShowSection(string page, string title)
     {
         section = page; PageTitle.Text = title; MarkActiveNavigation(page);
@@ -352,11 +356,16 @@ public sealed partial class MainWindow : Window
                     body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
                     var specialDialog = new ContentDialog { Title = report.Title, Content = body, PrimaryButtonText = "تصدير Excel", SecondaryButtonText = "تصدير PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
                     var specialPreview = false;
+                    var shareSpecialExcel = false;
+                    var specialShareButton = new Button { Content = "مشاركة Excel" };
+                    specialShareButton.Click += (_, _) => { shareSpecialExcel = true; specialDialog.Hide(); };
+                    body.Children.Add(specialShareButton);
                     var specialPreviewButton = new Button { Content = "معاينة PDF" };
                     specialPreviewButton.Click += (_, _) => { specialPreview = true; specialDialog.Hide(); };
                     body.Children.Add(specialPreviewButton);
                     var specialAction = await specialDialog.ShowAsync();
-                    if (specialPreview) await OpenPreview(".pdf", output => SpecialPdf.Write(output, snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                    if (shareSpecialExcel) await ShareGeneratedFile(".xlsx", "الكشف الخاص", output => SpecialExcel.Write(output, snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                    else if (specialPreview) await OpenPreview(".pdf", output => SpecialPdf.Write(output, snapshot, selectedSpecial.Month, selectedSpecial.Title), report.Title);
                     else if (specialAction == ContentDialogResult.Primary || specialAction == ContentDialogResult.Secondary)
                     {
                         var picker = new FileSavePicker { SuggestedFileName = "الكشف الخاص" };
@@ -378,11 +387,16 @@ public sealed partial class MainWindow : Window
                 var preview = string.Join("\n", audit.Lines.Take(500));
                 if (audit.Lines.Count > 500) preview += "\n... تظهر أول 500 حالة؛ التصدير يشمل جميع النتائج.";
                 var contents = new TextBox { Text = preview, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
-                var auditDialog = new ContentDialog { Title = audit.Title, Content = contents, PrimaryButtonText = "تصدير Excel", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
-                if (await auditDialog.ShowAsync() == ContentDialogResult.Primary)
+                var auditBody = new StackPanel { Spacing = 10 }; auditBody.Children.Add(contents);
+                var auditDialog = new ContentDialog { Title = audit.Title, Content = auditBody, PrimaryButtonText = "تصدير Excel", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+                var shareAudit = false; var shareAuditButton = new Button { Content = "مشاركة Excel" };
+                shareAuditButton.Click += (_, _) => { shareAudit = true; auditDialog.Hide(); }; auditBody.Children.Add(shareAuditButton);
+                var auditAction = await auditDialog.ShowAsync();
+                var monthLabel = MonthPicker.SelectedItem as string ?? "";
+                if (ComparePicker.SelectedItem is string previous && previous != monthLabel) monthLabel += " / " + previous;
+                if (shareAudit) await ShareGeneratedFile(".xlsx", "نتائج التدقيق", output => ExcelExport.Audit(output, monthLabel, audit.Title, audit.Lines));
+                else if (auditAction == ContentDialogResult.Primary)
                 {
-                    var monthLabel = MonthPicker.SelectedItem as string ?? "";
-                    if (ComparePicker.SelectedItem is string previous && previous != monthLabel) monthLabel += " / " + previous;
                     var picker = new FileSavePicker { SuggestedFileName = "نتائج التدقيق" };
                     picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
                     InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
@@ -453,6 +467,13 @@ public sealed partial class MainWindow : Window
             var dialog = new ContentDialog { Title = title, Content = contentPanel, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
             var previewRequested = false;
             var salaryReportRequested = false;
+            var excelShareRequested = false;
+            if (item.Value is EntitySelection or PayrollSelection)
+            {
+                var shareExcelButton = new Button { Content = "مشاركة Excel" };
+                shareExcelButton.Click += (_, _) => { excelShareRequested = true; dialog.Hide(); };
+                contentPanel.Children.Add(shareExcelButton);
+            }
             if (item.Value is Employee or EntitySelection or PayrollSelection or Staff)
             {
                 var previewButton = new Button { Content = item.Value is Employee ? "معاينة قسيمة الراتب" : "معاينة PDF" };
@@ -470,15 +491,21 @@ public sealed partial class MainWindow : Window
             if (item.Value is Staff) dialog.PrimaryButtonText = "تصدير تقرير الملاك PDF";
             if (item.Value is Employee) { dialog.PrimaryButtonText = "حفظ القسيمة صورة"; dialog.SecondaryButtonText = "نسخ الصورة"; }
             var action = await dialog.ShowAsync();
-            if (salaryReportRequested && item.Value is Employee salaryEmployee && data != null)
+            if (excelShareRequested && data != null)
+            {
+                var snapshot = data;
+                if (item.Value is EntitySelection group) await ShareGeneratedFile(".xlsx", "كشف جهة التنفيذ", output => ExcelExport.Entity(output, snapshot, group.Month, group.Title));
+                else if (item.Value is PayrollSelection payrollGroup) await ShareGeneratedFile(".xlsx", "كشف بند الرواتب", output => ExcelExport.Payroll(output, snapshot, payrollGroup.Month, payrollGroup.Title));
+            }
+            else if (salaryReportRequested && item.Value is Employee salaryEmployee && data != null)
                 await SalaryReportOptions(data, salaryEmployee);
             else if (previewRequested && data != null)
             {
                 var snapshot = data;
-                if (item.Value is Employee person) await OpenPreview(".png", path => PayslipImage.Write(path, SlipData.From(snapshot, person)));
-                else if (item.Value is EntitySelection group) await OpenPreview(".pdf", path => PdfExport.Entity(path, snapshot, group.Month, group.Title));
-                else if (item.Value is PayrollSelection payrollGroup) await OpenPreview(".pdf", path => PdfExport.Payroll(path, snapshot, payrollGroup.Month, payrollGroup.Title));
-                else if (item.Value is Staff staffMember) await OpenPreview(".pdf", path => StaffReportPdf.Write(path, StaffReportData.From(staffMember)));
+                if (item.Value is Employee person) await OpenPreview(".png", path => PayslipImage.Write(path, SlipData.From(snapshot, person)), "قسيمة الراتب");
+                else if (item.Value is EntitySelection group) await OpenPreview(".pdf", path => PdfExport.Entity(path, snapshot, group.Month, group.Title), group.Title);
+                else if (item.Value is PayrollSelection payrollGroup) await OpenPreview(".pdf", path => PdfExport.Payroll(path, snapshot, payrollGroup.Month, payrollGroup.Title), payrollGroup.Title);
+                else if (item.Value is Staff staffMember) await OpenPreview(".pdf", path => StaffReportPdf.Write(path, StaffReportData.From(staffMember)), "تقرير الملاك");
             }
             else if (action == ContentDialogResult.Primary && item.Value is Employee selectedEmployee && data != null)
             {
@@ -541,20 +568,28 @@ public sealed partial class MainWindow : Window
     }
     private async Task<string> CreateTemporaryPreview(string extension, Action<string> create)
     {
-        var path = Path.Combine(Path.GetTempPath(), "salary-preview-" + Guid.NewGuid().ToString("N") + extension);
+        var folder = Path.Combine(Path.GetTempPath(), "salary-preview-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        var filename = extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ? "قسيمة الراتب.png" : extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ? "كشف الرواتب.xlsx" : "مستند الرواتب.pdf";
+        var path = Path.Combine(folder, filename);
         try
         {
             await Task.Run(() => create(path));
             temporaryPreviews.Add(path);
             return path;
         }
-        catch { DeleteArchive(path); throw; }
+        catch { DeletePreview(path); throw; }
     }
-    private async Task OpenPreview(string extension, Action<string> create)
+    private async Task ShareGeneratedFile(string extension, string title, Action<string> create)
     {
         var path = await CreateTemporaryPreview(extension, create);
         var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
-        if (!await Windows.System.Launcher.LaunchFileAsync(file)) throw new InvalidOperationException("لم يتمكن ويندوز من فتح المعاينة. تحقق من وجود برنامج لعرض الملف.");
+        SharePreparedFile(file, title);
+    }
+    private async Task OpenPreview(string extension, Action<string> create, string title = "معاينة المستند")
+    {
+        var path = await CreateTemporaryPreview(extension, create);
+        await ShowDocumentPreview(path, title);
     }
     private async Task SalaryReportOptions(BackupData snapshot, Employee employee)
     {
@@ -570,7 +605,7 @@ public sealed partial class MainWindow : Window
         if (action == ContentDialogResult.None) return;
         var removeZeros = hideZeros.IsChecked == true; var maskPersonal = hidePersonal.IsChecked == true;
         var report = await Task.Run(() => SalaryReportData.From(snapshot, employee, removeZeros, maskPersonal));
-        if (action == ContentDialogResult.Secondary) await OpenPreview(".pdf", output => SalaryReportPdf.Write(output, report));
+        if (action == ContentDialogResult.Secondary) await OpenPreview(".pdf", output => SalaryReportPdf.Write(output, report), "تقرير الراتب");
         else
         {
             var picker = new FileSavePicker { SuggestedFileName = "تقرير الراتب" }; picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
@@ -585,7 +620,7 @@ public sealed partial class MainWindow : Window
         var archive = data.ArchivePath;
         var dialog = new ContentDialog { Title = book.Title, Content = $"{book.Month} · {book.Pages} صفحة", PrimaryButtonText = "معاينة", SecondaryButtonText = "حفظ PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
         var action = await dialog.ShowAsync();
-        if (action == ContentDialogResult.Primary) await OpenPreview(".pdf", output => BookArchive.Export(archive, book, output));
+        if (action == ContentDialogResult.Primary) await OpenPreview(".pdf", output => BookArchive.Export(archive, book, output), book.Title);
         else if (action == ContentDialogResult.Secondary)
         {
             var picker = new FileSavePicker { SuggestedFileName = "كتاب رسمي" }; picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
