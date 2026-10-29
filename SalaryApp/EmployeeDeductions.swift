@@ -18,18 +18,24 @@ nonisolated struct DeductionPeriodRow: Identifiable, Sendable {
     var id: Int { year * 100 + month }
 }
 
+nonisolated struct DeductionAvailableMonths: Sendable {
+    let keys: [Int]
+    let unrecognizedCount: Int
+}
+
 nonisolated struct EmployeeDeductionStatement: Sendable {
     let person: DeductionPerson
     let rank: String
     let workplace: String
     let entity: String
     let rows: [DeductionPeriodRow]
+    var hasUnrecognizedMonths = false
     var total: Double { rows.reduce(0) { result, row in
         if case .amount(let value) = row.state { return result + value }
         if case .status(let amount, _) = row.state { return result + (amount ?? 0) }
         return result
     } }
-    var incomplete: Bool { rows.contains { if case .unavailable = $0.state { return true }; return false } }
+    var incomplete: Bool { hasUnrecognizedMonths || rows.contains { if case .unavailable = $0.state { return true }; return false } }
 }
 
 nonisolated enum EmployeeDeductionError: LocalizedError {
@@ -90,6 +96,21 @@ actor EmployeeDeductionEngine {
         return Set(try modelContext.fetch(d).map(\.title).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).sorted()
     }
 
+    /// نطاق الاختيار من قيود الشخص والجهة فقط، بما فيها الحالات النصية.
+    func availableMonths(person: DeductionPerson, entity: String) throws -> DeductionAvailableMonths {
+        let key = person.key, title = entity
+        var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key && $0.title == title })
+        d.propertiesToFetch = [\.month]
+        var keys = Set<Int>()
+        var unrecognized = Set<String>()
+        for record in try modelContext.fetch(d) {
+            let month = MonthName.sortKey(record.month)
+            if month >= 190001 && month <= 220012 && (1...12).contains(month % 100) { keys.insert(month) }
+            else { unrecognized.insert(record.month) }
+        }
+        return DeductionAvailableMonths(keys: keys.sorted(), unrecognizedCount: unrecognized.count)
+    }
+
     func statement(person: DeductionPerson, entity: String, from: Int, to: Int) throws -> EmployeeDeductionStatement {
         let span = try DeductionCalendar.span(from: from, to: to)
         let key = person.key
@@ -115,8 +136,10 @@ actor EmployeeDeductionEngine {
         dd.propertiesToFetch = [\.month, \.amount, \.note]
         var totals: [String: Double] = [:]
         var statuses: [String: Set<String>] = [:]
+        var hasUnrecognizedMonths = false
         for d in try modelContext.fetch(dd) {
             let date = MonthName.sortKey(d.month)
+            if date == 0 { hasUnrecognizedMonths = true; continue }
             guard date >= from && date <= to else { continue }
             if let status = DeductionStatus.read(d.note, amount: d.amount) {
                 statuses[d.month, default: []].insert(status)
@@ -142,7 +165,7 @@ actor EmployeeDeductionEngine {
             else if let total = totals[name] { rows.append(DeductionPeriodRow(year: year, month: month, state: .amount(total))) }
             else { rows.append(DeductionPeriodRow(year: year, month: month, state: .none)) }
         }
-        let statement = EmployeeDeductionStatement(person: person, rank: latest?.rank ?? "", workplace: latest?.workplace ?? "", entity: entity, rows: rows)
+        let statement = EmployeeDeductionStatement(person: person, rank: latest?.rank ?? "", workplace: latest?.workplace ?? "", entity: entity, rows: rows, hasUnrecognizedMonths: hasUnrecognizedMonths)
         guard statement.total.isFinite else { throw EmployeeDeductionError.invalidAmount }
         return statement
     }
@@ -153,18 +176,23 @@ struct EmployeeDeductionsView: View {
     @State private var person: DeductionPerson?
     @State private var entities: [String] = []
     @State private var entity = ""
-    @State private var fromYear = Calendar.current.component(.year, from: .now)
-    @State private var fromMonth = 1
-    @State private var toYear = Calendar.current.component(.year, from: .now)
-    @State private var toMonth = Calendar.current.component(.month, from: .now)
-    @State private var initialized = false
+    @State private var availableMonths: [Int] = []
+    @State private var unrecognizedMonths = 0
+    @State private var fromMonth = 0
+    @State private var toMonth = 0
+    @State private var loadedPeriodKey = ""
+    @State private var periodError: String?
+    @State private var entityError: String?
+    @State private var loadingPeriods = false
     @State private var showingSearch = false
     @State private var report: EmployeeDeductionStatement?
     @State private var error: String?
     @State private var loading = false
     @State private var pdf: StatementPDF?
     @State private var generating = false
-    private var selectionKey: String { "\(person?.key ?? "")|\(entity)|\(fromYear)|\(fromMonth)|\(toYear)|\(toMonth)|\(months.map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ","))" }
+    private var dataVersion: String { months.map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",") }
+    private var periodKey: String { "\(person?.key ?? "")|\(entity)|\(dataVersion)" }
+    private var selectionKey: String { "\(periodKey)|\(loadedPeriodKey)|\(fromMonth)|\(toMonth)" }
 
     var body: some View {
         ScrollView {
@@ -180,10 +208,23 @@ struct EmployeeDeductionsView: View {
                     } label: { selectionRow(tr("جهة الاستقطاع", "Deduction entity"), entity.isEmpty ? tr("اختر الجهة", "Choose an entity") : entity) }
                     .disabled(entities.isEmpty)
                 }.background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+                if let entityError { Label(entityError, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                else if person != nil && entities.isEmpty {
+                    Text(tr("لا توجد جهات استقطاع لهذا الموظف أو ما زال البحث جارياً.", "No deduction entities found for this employee, or search is still in progress.")).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(tr("الفترة المطلوبة", "Date range")).font(.headline).foregroundStyle(.secondary)
                 HStack(spacing: 12) {
-                    periodPicker(tr("من شهر", "From"), year: $fromYear, month: $fromMonth)
-                    periodPicker(tr("إلى شهر", "To"), year: $toYear, month: $toMonth)
+                    periodPicker(tr("من شهر", "From"), isStart: true)
+                    periodPicker(tr("إلى شهر", "To"), isStart: false)
+                }
+                if loadingPeriods { ProgressView(tr("جارٍ تحديد الأشهر المتوفرة…", "Finding available months…")).font(.caption) }
+                else if let periodError { Label(periodError, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+                else if !entity.isEmpty && loadedPeriodKey == periodKey && availableMonths.isEmpty {
+                    Text(tr("لا توجد أشهر مفهومة لهذه الجهة.", "No recognizable months for this entity.")).font(.caption).foregroundStyle(.secondary)
+                }
+                if unrecognizedMonths > 0 && loadedPeriodKey == periodKey {
+                    Label(tr("توجد أشهر بأسماء غير مفهومة لا تظهر في الاختيار؛ راجع أسماء الأشهر المستوردة.", "Some month names could not be recognized and are not selectable; check the imported months."), systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 if loading { ProgressView(tr("جارٍ إعداد الكشف…", "Preparing statement…")).frame(maxWidth: .infinity).padding() }
                 if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.subheadline) }
@@ -197,7 +238,7 @@ struct EmployeeDeductionsView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(18).foregroundStyle(.white)
                         .background(Theme.salaryGradient, in: RoundedRectangle(cornerRadius: 18))
                     if report.incomplete {
-                        Label(tr("بعض الأشهر غير مستوردة أو لا يمكن التأكد من ملف استقطاعاتها؛ المجموع للقيود المتوفرة فقط.", "Some months are missing or their deduction file cannot be verified; the total covers available entries only."), systemImage: "exclamationmark.triangle.fill")
+                        Label(tr("بعض الأشهر غير مستوردة أو غير متحققة أو أسماؤها غير مفهومة؛ المجموع للقيود المتوفرة فقط.", "Some months are missing, unverified, or have unrecognized names; the total covers available entries only."), systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline).foregroundStyle(.orange)
                     }
                     VStack(alignment: .leading, spacing: 0) {
@@ -223,28 +264,47 @@ struct EmployeeDeductionsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingSearch) { DeductionPersonPicker { person = $0; entity = "" } }
         .sheet(item: $pdf) { StatementPreview(file: $0) }
-        .task {
-            guard !initialized else { return }; initialized = true
-            if let key = months.first(where: { $0.sortKey > 0 })?.sortKey {
-                fromYear = key / 100; toYear = key / 100; toMonth = key % 100
-            }
-        }
-        .task(id: person?.key) {
-            entities = []; entity = ""
+        .task(id: "\(person?.key ?? "")|\(dataVersion)") {
+            let previous = entity
+            entities = []; entityError = nil
             guard let person else { return }
             do {
                 let container = SharedModel.container
                 let names = try await Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).entities(person: person) }.value
                 guard !Task.isCancelled else { return }
                 entities = names
-                if names.count == 1 { entity = names[0] }
-            } catch { self.error = error.localizedDescription }
+                if names.contains(previous) { entity = previous }
+                else { entity = names.count == 1 ? names[0] : "" }
+            } catch { if !Task.isCancelled { entityError = error.localizedDescription } }
+        }
+        .task(id: periodKey) {
+            availableMonths = []; unrecognizedMonths = 0; fromMonth = 0; toMonth = 0
+            loadedPeriodKey = ""; periodError = nil; loadingPeriods = false
+            guard let person, !entity.isEmpty else { return }
+            loadingPeriods = true
+            let requested = periodKey, title = entity, container = SharedModel.container
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try await EmployeeDeductionEngine(modelContainer: container).availableMonths(person: person, entity: title)
+                }.value
+                guard !Task.isCancelled, requested == periodKey else { return }
+                availableMonths = result.keys
+                unrecognizedMonths = result.unrecognizedCount
+                fromMonth = result.keys.first ?? 0
+                toMonth = result.keys.last ?? 0
+                loadedPeriodKey = requested
+            } catch {
+                guard !Task.isCancelled, requested == periodKey else { return }
+                periodError = error.localizedDescription
+            }
+            loadingPeriods = false
         }
         .task(id: selectionKey) {
             report = nil; error = nil; loading = false
-            guard let person, !entity.isEmpty else { return }
+            guard let person, !entity.isEmpty, loadedPeriodKey == periodKey,
+                  availableMonths.contains(fromMonth), availableMonths.contains(toMonth) else { return }
             loading = true
-            let title = entity, from = fromYear * 100 + fromMonth, to = toYear * 100 + toMonth
+            let title = entity, from = fromMonth, to = toMonth
             do {
                 let container = SharedModel.container
                 let result = try await Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).statement(person: person, entity: title, from: from, to: to) }.value
@@ -261,13 +321,31 @@ struct EmployeeDeductionsView: View {
     private func selectionRow(_ label: String, _ value: String) -> some View {
         HStack { VStack(alignment: .leading, spacing: 4) { Text(label).font(.caption).foregroundStyle(.secondary); Text(value).foregroundStyle(.primary) }; Spacer(); Image(systemName: "chevron.forward").foregroundStyle(.tertiary) }.padding(16).contentShape(Rectangle())
     }
-    private func periodPicker(_ title: String, year: Binding<Int>, month: Binding<Int>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func periodPicker(_ title: String, isStart: Bool) -> some View {
+        let selected = isStart ? fromMonth : toMonth
+        let years = Array(Set(availableMonths.map { $0 / 100 })).sorted()
+        return VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Menu {
-                Picker(tr("الشهر", "Month"), selection: month) { ForEach(1...12, id: \.self) { Text(DeductionCalendar.months[$0 - 1]).tag($0) } }
-                Picker(tr("السنة", "Year"), selection: year) { ForEach(1900...2200, id: \.self) { Text(Num.digits(String($0))).tag($0) } }
-            } label: { HStack { Text(DeductionCalendar.label(year.wrappedValue, month.wrappedValue)).lineLimit(1).minimumScaleFactor(0.65); Image(systemName: "chevron.down") }.foregroundStyle(.primary) }
+                ForEach(years, id: \.self) { year in
+                    Section {
+                        ForEach(availableMonths.filter { $0 / 100 == year }, id: \.self) { key in
+                            Button {
+                                if isStart { fromMonth = key; if toMonth < key { toMonth = key } }
+                                else { toMonth = key; if fromMonth > key { fromMonth = key } }
+                            } label: {
+                                if key == selected { Label(DeductionCalendar.label(key / 100, key % 100), systemImage: "checkmark") }
+                                else { Text(DeductionCalendar.label(key / 100, key % 100)) }
+                            }
+                        }
+                    } header: { Text(Num.digits(String(year))) }
+                }
+            } label: {
+                HStack {
+                    Text(selected == 0 ? tr("اختر الجهة أولاً", "Choose an entity first") : DeductionCalendar.label(selected / 100, selected % 100)).lineLimit(1).minimumScaleFactor(0.65)
+                    Image(systemName: "chevron.down")
+                }.foregroundStyle(.primary)
+            }.disabled(availableMonths.isEmpty || loadedPeriodKey != periodKey)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(12).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
     }
     private func isUnavailable(_ state: DeductionPeriodRow.State) -> Bool { if case .unavailable = state { return true }; return false }
@@ -497,7 +575,7 @@ nonisolated enum EmployeeDeductionPDF {
                     let amountSize = (try? fitSize(number(statement.total), width: width * 0.45, sizes: [13, 11, 9, 7])) ?? 7
                     text(number(statement.total), CGRect(x: margin, y: totalRect.minY, width: width * 0.45, height: 30), size: amountSize, bold: true, color: .white, align: .left)
                     if statement.incomplete {
-                        text("غير متحقق: الشهر غير مستورد أو ملف الاستقطاعات غير مؤكد؛ المجموع للقيود المتوفرة فقط.", CGRect(x: margin, y: totalRect.maxY + 4, width: width, height: 24), size: 8, color: .darkGray)
+                        text("توجد أشهر غير متحققة أو بأسماء غير مفهومة؛ المجموع للقيود المتوفرة فقط.", CGRect(x: margin, y: totalRect.maxY + 4, width: width, height: 24), size: 8, color: .darkGray)
                     }
                     text("التدقيق: ................................", CGRect(x: page.width - margin - 200, y: totalRect.maxY + 34, width: 200, height: 20), size: 9)
                 }
