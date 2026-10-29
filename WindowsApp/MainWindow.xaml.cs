@@ -5,7 +5,13 @@ using Windows.Storage.Pickers;
 using WinRT.Interop;
 
 namespace SalaryWindows;
-internal sealed record DisplayItem(string Display, object Value);
+public sealed record DisplayItem(string Display, object Value)
+{
+    private int Divider => Display.IndexOf(" · ", StringComparison.Ordinal);
+    public string Title => Divider < 0 ? Display : Display[..Divider].Trim();
+    public string Details => Divider < 0 ? "" : Display[(Divider + 3)..].Trim();
+}
+public sealed record BankRow(string Label, string Amount, double Value);
 public sealed partial class MainWindow : Window
 {
     private BackupData? data;
@@ -13,16 +19,21 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<string> temporaryPreviews = [];
     private bool viewReady;
     private string section = "home";
-    public MainWindow() { InitializeComponent(); viewReady = true; Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
+    private WindowsSettings settings = new();
+    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
     private void ShowSection(string page, string title)
     {
         section = page; PageTitle.Text = title;
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         SearchPanel.Visibility = page == "search" ? Visibility.Visible : Visibility.Collapsed;
-        DataPanel.Visibility = page is "reports" or "payroll" or "bank" or "audit" or "staff" or "books" ? Visibility.Visible : Visibility.Collapsed;
+        DataPanel.Visibility = page is "reports" or "payroll" or "audit" or "staff" or "books" ? Visibility.Visible : Visibility.Collapsed;
+        BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        MonthPicker.Visibility = page == "settings" ? Visibility.Collapsed : Visibility.Visible;
         ComparePicker.Visibility = page == "audit" ? Visibility.Visible : Visibility.Collapsed;
         if (DataPanel.Visibility == Visibility.Visible) RefreshData();
+        if (page == "bank") RefreshBank();
     }
     private void Home_Click(object sender, RoutedEventArgs e) => ShowSection("home", "الرئيسية");
     private void SearchPage_Click(object sender, RoutedEventArgs e) => ShowSection("search", "البحث الشامل");
@@ -32,9 +43,49 @@ public sealed partial class MainWindow : Window
     private void Audit_Click(object sender, RoutedEventArgs e) => ShowSection("audit", "التدقيق");
     private void Staff_Click(object sender, RoutedEventArgs e) => ShowSection("staff", "الملاك");
     private void Books_Click(object sender, RoutedEventArgs e) => ShowSection("books", "الكتب الرسمية");
+    private void Settings_Click(object sender, RoutedEventArgs e) => ShowSection("settings", "الإعدادات");
+    private void SaveSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var address = ServerAddress.Text.Trim();
+        if (address.Length > 0 && (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || !BackupReader.ValidServerAddress(uri)))
+        { SettingsMessage.Text = "أدخل عنوان السيرفر المحلي بصيغة http:// وعنوان IP فقط."; return; }
+        var next = new WindowsSettings(address, HideZeroRows.IsChecked == true);
+        try { WindowsSettingsStore.Save(next); settings = next; SettingsMessage.Text = "حُفظت الإعدادات على هذا الجهاز."; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { SettingsMessage.Text = "تعذّر حفظ الإعدادات على الجهاز."; }
+    }
+    private async void BankItem_Click(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is not BankRow row) return;
+        try {
+            var choice = await new ContentDialog { Title = row.Label, Content = row.Amount, PrimaryButtonText = "نسخ الرقم", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+            if (choice == ContentDialogResult.Primary) { var package = new Windows.ApplicationModel.DataTransfer.DataPackage(); package.SetText(row.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)); Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package); Windows.ApplicationModel.DataTransfer.Clipboard.Flush(); }
+        } catch (Exception ex) { await Error(ex.Message); }
+    }
+    private async void RefreshBank()
+    {
+        if (!viewReady || section != "bank") return;
+        var snapshot = data; var month = MonthPicker.SelectedItem as string ?? ""; var hideZero = settings.HideZeroBankRows;
+        if (snapshot == null || month.Length == 0) { BankTotal.Text = "—"; BankMonth.Text = ""; BankStatus.Text = "افتح نسخة احتياطية أولاً."; BankSalaryRows.ItemsSource = null; BankManualRows.ItemsSource = null; BankDeductionRows.ItemsSource = null; return; }
+        BankMonth.Text = month; BankTotal.Text = "—"; BankSalaryRows.ItemsSource = null; BankManualRows.ItemsSource = null; BankDeductionRows.ItemsSource = null;
+        BankStatus.Text = "جارٍ احتساب الكشف…";
+        try {
+            var result = await Task.Run(() => {
+                var b = BankCalculator.Calculate(snapshot, month); var manual = ManualAmounts.ForMonth(snapshot, month);
+                BankRow Row(string label, double value) => new(label, value.ToString("N0"), value);
+                var salary = new[] { Row("صافي الرواتب كاش", b.Cash), Row("صافي الرواتب بطاقة", b.Card), Row("صافي غير مصنف", b.Unclassified) };
+                var extra = new[] { Row("الإجازات المتراكمة", manual.Leave), Row("مكافآت المنتسبين", manual.Rewards), Row("قائمة مفردة", manual.Single) };
+                var deductions = b.Breakdown.Select(x => Row(x.Key, x.Value)).Concat(new[] { Row("مجموع استقطاعات المصارف", b.BankDeductions), Row("التقاعد والضمان الاجتماعي", b.Contract) }).ToArray();
+                return (b, manual, salary, extra, deductions);
+            });
+            if (!ReferenceEquals(data, snapshot) || section != "bank" || (MonthPicker.SelectedItem as string ?? "") != month || settings.HideZeroBankRows != hideZero) return;
+            var b = result.b; BankMonth.Text = month; BankTotal.Text = (b.Subtotal + result.manual.Leave + result.manual.Rewards + result.manual.Single).ToString("N0") + " د.ع";
+            BankStatus.Text = $"مطابقة المصارف والتنفيذ: {(b.Matched ? "متطابقة" : "تحتاج مراجعة")} · الفرق {b.BankDeductions - b.ExecutionDeductions:N0} · رواتب بلا صافي {b.MissingNet:N0} · عقود بلا اسمي {b.MissingNominal:N0}. راجع الحساب قبل الاعتماد.";
+            BankSalaryRows.ItemsSource = result.salary.Where(x => !hideZero || x.Value != 0).ToList(); BankManualRows.ItemsSource = result.extra.Where(x => !hideZero || x.Value != 0).ToList(); BankDeductionRows.ItemsSource = result.deductions.Where(x => !hideZero || x.Value != 0).ToList();
+        } catch (Exception ex) { if (section == "bank" && ReferenceEquals(data, snapshot)) { BankTotal.Text = "—"; BankStatus.Text = ex.Message; BankSalaryRows.ItemsSource = null; BankManualRows.ItemsSource = null; BankDeductionRows.ItemsSource = null; } }
+    }
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
-        var url = new TextBox { Header = "عنوان السيرفر المحلي", PlaceholderText = "http://192.168.1.10:8765", FlowDirection = FlowDirection.LeftToRight };
+        var url = new TextBox { Header = "عنوان السيرفر المحلي", PlaceholderText = "http://192.168.1.10:8765", Text = settings.ServerAddress, FlowDirection = FlowDirection.LeftToRight };
         var token = new PasswordBox { Header = "رمز الوصول", FlowDirection = FlowDirection.LeftToRight };
         var content = new StackPanel { Spacing = 12, FlowDirection = FlowDirection.RightToLeft };
         content.Children.Add(new TextBlock { Text = "اقرأ آخر نسخة من السيرفر، أو اختر ملف نسخة محفوظاً. القراءة فقط، ولا تُرفع تغييرات.", TextWrapping = TextWrapping.Wrap });
@@ -66,7 +117,7 @@ public sealed partial class MainWindow : Window
             var timestamp = loaded.Manifest.CreatedAt;
             var date = timestamp > 0 && timestamp < 252423993599 ? reference.AddSeconds(timestamp).ToLocalTime().ToString("g") : "غير معروف";
             StatusText.Text = $"النسخة للقراءة فقط · تاريخ إنشائها: {date} · أعد فتحها لتحديث البيانات";
-            DeleteArchive(previous); UpdateHome(); SearchChanged(null!, null!); RefreshData();
+            DeleteArchive(previous); UpdateHome(); SearchChanged(null!, null!); RefreshData(); RefreshBank();
         }
         catch (Exception ex)
         {
@@ -76,7 +127,7 @@ public sealed partial class MainWindow : Window
         finally { token.Password = ""; if (!retained) DeleteArchive(path); }
     }
     private async Task Error(string message) => await new ContentDialog { Title = "تنبيه", Content = message, CloseButtonText = "حسناً", XamlRoot = Content.XamlRoot }.ShowAsync();
-    private void MonthChanged(object sender, SelectionChangedEventArgs e) { if (!viewReady) return; UpdateHome(); SearchChanged(null!, null!); RefreshData(); }
+    private void MonthChanged(object sender, SelectionChangedEventArgs e) { if (!viewReady) return; UpdateHome(); SearchChanged(null!, null!); RefreshData(); RefreshBank(); }
     private void UpdateHome()
     {
         if (data == null || MonthPicker.SelectedItem is not string month) return;
@@ -219,17 +270,7 @@ public sealed partial class MainWindow : Window
                     }
                     caption = "المقارنة بالاسم والجهة والإضبارة؛ الأسماء المكررة مستبعدة من مقارنة الرواتب. فحوص الرواتب لا تزال غير مكتملة.";
                 }
-                else
-                {
-                    var b = BankCalculator.Calculate(snapshot, month); var manual = ManualAmounts.ForMonth(snapshot, month);
-                    void Add(string label, double amount) => rows.Add(new($"{label}   ·   {amount:N0}", new BankAmount(label, amount)));
-                    Add("صافي الرواتب كاش", b.Cash); Add("صافي الرواتب بطاقة", b.Card); Add("صافي غير مصنف", b.Unclassified);
-                    Add("الإجازات المتراكمة", manual.Leave); Add("مكافآت المنتسبين", manual.Rewards); Add("قائمة مفردة", manual.Single);
-                    foreach (var item in b.Breakdown) Add(item.Key, item.Value);
-                    Add("مجموع استقطاعات المصارف", b.BankDeductions); Add("التقاعد والضمان الاجتماعي", b.Contract);
-                    Add("المجموع", b.Subtotal + manual.Leave + manual.Rewards + manual.Single);
-                    caption = $"مطابقة المصارف والتنفيذ: {(b.Matched ? "متطابقة" : "تحتاج مراجعة")} · الفرق {b.BankDeductions - b.ExecutionDeductions:N0} · رواتب بلا صافي {b.MissingNet:N0} · عقود بلا اسمي {b.MissingNominal:N0}. الحساب يحتاج التحقق على جهاز ويندوز قبل الاعتماد.";
-                }
+                else { caption = "القسم غير متاح."; }
                 return (rows, caption);
             });
             if (!ReferenceEquals(data, snapshot) || section != page || (MonthPicker.SelectedItem as string ?? "") != month || (ComparePicker.SelectedItem as string ?? "") != comparisonMonth || PayrollMath.Normalize(DataFilter.Text) != q) return;

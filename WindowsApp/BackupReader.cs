@@ -74,8 +74,7 @@ internal static class BackupReader
     }
     public static async Task<string> Download(Uri baseUri, string token)
     {
-        if (baseUri.Scheme != "http" || !IPAddress.TryParse(baseUri.Host, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
-            !IsPrivate(ip) || !string.IsNullOrEmpty(baseUri.UserInfo) || baseUri.AbsolutePath != "/" || !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment))
+        if (!ValidServerAddress(baseUri))
             throw new InvalidOperationException("أدخل عنوان HTTP محلياً، مثل http://192.168.1.10:8765");
         if (token.Length < 32 || token.Any(c => c > 127 || char.IsWhiteSpace(c) || char.IsControl(c))) throw new InvalidOperationException("رمز الوصول غير صالح.");
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(10) };
@@ -95,6 +94,10 @@ internal static class BackupReader
         }
         catch { try { File.Delete(temp); } catch { } throw; }
     }
+    public static bool ValidServerAddress(Uri uri) =>
+        uri.IsAbsoluteUri && uri.Scheme == "http" && IPAddress.TryParse(uri.Host, out var ip) &&
+        ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && IsPrivate(ip) &&
+        string.IsNullOrEmpty(uri.UserInfo) && uri.AbsolutePath == "/" && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment);
     private static bool IsPrivate(IPAddress ip)
     {
         var b = ip.GetAddressBytes();

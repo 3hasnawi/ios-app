@@ -292,3 +292,22 @@ try {
     if(!SalaryReportData.From(oldData,oldEmployee,false,true).MissingDetails) throw new Exception("old salary missing details not reported");
 } finally { if(Environment.GetEnvironmentVariable("SALARY_REPORT_TEST_PATH")==null) File.Delete(salaryReportPath); }
 Console.WriteLine("Salary report fixture passed: line mapping, masking, totals, A4 output and overflow protection.");
+
+var settingsDir = Path.Combine(Path.GetTempPath(), "salary-settings-test-" + Guid.NewGuid().ToString("N"));
+try {
+    var settingsPath = Path.Combine(settingsDir, "settings.json");
+    var originalSettings = new WindowsSettings("http://192.168.1.10:8765", true);
+    WindowsSettingsStore.Save(originalSettings, settingsPath);
+    if (WindowsSettingsStore.Load(settingsPath) != originalSettings) throw new Exception("settings did not persist");
+    WindowsSettingsStore.Save(new WindowsSettings("", false), settingsPath);
+    if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings("", false)) throw new Exception("settings did not update");
+    File.WriteAllText(settingsPath, "invalid json");
+    if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings()) throw new Exception("invalid settings not handled");
+} finally { if (Directory.Exists(settingsDir)) Directory.Delete(settingsDir, true); }
+Console.WriteLine("Windows settings fixture passed: save, update and invalid settings recovery.");
+
+foreach (var valid in new[] { "http://192.168.1.10:8765", "http://10.3.4.5:8765", "http://172.16.0.1:8765" })
+    if (!BackupReader.ValidServerAddress(new Uri(valid))) throw new Exception("private server rejected");
+foreach (var invalidServer in new[] { "http://8.8.8.8", "http://192.168.1.2/path", "https://192.168.1.2", "http://user@192.168.1.2", "http://example.com" })
+    if (BackupReader.ValidServerAddress(new Uri(invalidServer))) throw new Exception("unsupported server accepted");
+Console.WriteLine("Server settings fixture passed: private addresses only, no paths or credentials.");
