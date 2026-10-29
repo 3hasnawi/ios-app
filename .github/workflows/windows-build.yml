@@ -1,0 +1,38 @@
+name: Build Windows app
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test core with fictional data
+        shell: pwsh
+        run: dotnet run --project WindowsApp.Tests/WindowsApp.Tests.csproj --configuration Release
+      - name: Publish unpackaged x64 app
+        shell: pwsh
+        run: |
+          dotnet publish WindowsApp/SalaryWindows.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None --output "$env:RUNNER_TEMP\SalaryWindows"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe")) { throw 'Windows executable was not produced.' }
+      - name: Package and release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @'
+          تطبيق الرواتب لويندوز 11 - نسخة تجريبية للقراءة فقط
+          فك الضغط عن كامل الملف، ثم افتح SalaryWindows.exe.
+          في التطبيق اختر نسخة ZIP أو السيرفر المحلي لعرض البيانات.
+          لا توجد مزامنة أو تعديل للبيانات من نسخة ويندوز حالياً.
+          احتفظ بنسخة احتياطية مستقلة، وراجع النتائج مع تطبيق الآيفون قبل اعتمادها.
+          اتصال السيرفر المحلي HTTP غير مشفّر؛ استخدم شبكة موثوقة فقط.
+          '@ | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\SalaryWindows\اقرأني.txt"
+          Compress-Archive -Path "$env:RUNNER_TEMP\SalaryWindows\*" -DestinationPath WindowsSalaryApp-win-x64.zip
+          gh release create "windows-build-${{ github.run_number }}" WindowsSalaryApp-win-x64.zip --title "الرواتب لويندوز - نسخة تجريبية ${{ github.run_number }}" --notes "Windows 11 x64؛ نسخة تجريبية للقراءة فقط من النسخة الاحتياطية. لم يتم اختبار الواجهة على جهاز المستخدم." --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
