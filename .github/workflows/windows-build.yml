@@ -22,6 +22,15 @@ jobs:
           msbuild SalaryWindows.csproj -restore -t:Publish -p:Configuration=Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None "-p:PublishDir=$env:RUNNER_TEMP\SalaryWindows/"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe")) { throw 'Windows executable was not produced.' }
+      - name: Check app launches
+        shell: pwsh
+        run: |
+          $exe = "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe"
+          $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
+          Start-Sleep -Seconds 10
+          $process.Refresh()
+          if ($process.HasExited) { throw "Application exited during startup (code $($process.ExitCode))." }
+          Stop-Process -Id $process.Id -Force
       - name: Package and release
         shell: pwsh
         env:
