@@ -11,8 +11,9 @@ public sealed partial class MainWindow : Window
     private BackupData? data;
     private CancellationTokenSource? searchCancellation;
     private readonly HashSet<string> temporaryPreviews = [];
+    private bool viewReady;
     private string section = "home";
-    public MainWindow() { InitializeComponent(); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
+    public MainWindow() { InitializeComponent(); viewReady = true; Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
     private void ShowSection(string page, string title)
     {
@@ -75,7 +76,7 @@ public sealed partial class MainWindow : Window
         finally { token.Password = ""; if (!retained) DeleteArchive(path); }
     }
     private async Task Error(string message) => await new ContentDialog { Title = "تنبيه", Content = message, CloseButtonText = "حسناً", XamlRoot = Content.XamlRoot }.ShowAsync();
-    private void MonthChanged(object sender, SelectionChangedEventArgs e) { UpdateHome(); SearchChanged(null!, null!); RefreshData(); }
+    private void MonthChanged(object sender, SelectionChangedEventArgs e) { if (!viewReady) return; UpdateHome(); SearchChanged(null!, null!); RefreshData(); }
     private void UpdateHome()
     {
         if (data == null || MonthPicker.SelectedItem is not string month) return;
@@ -87,6 +88,7 @@ public sealed partial class MainWindow : Window
     }
     private async void SearchChanged(object sender, TextChangedEventArgs e)
     {
+        if (!viewReady) return;
         searchCancellation?.Cancel();
         if (SearchBox == null || SearchResults == null) return;
         if (data == null || MonthPicker.SelectedItem is not string month || string.IsNullOrWhiteSpace(SearchBox.Text)) { SearchResults.ItemsSource = null; return; }
@@ -117,8 +119,8 @@ public sealed partial class MainWindow : Window
     private sealed record SpecialSelection(string Month, string Title);
     private sealed record BankAmount(string Label, double Value);
     private sealed record AuditSelection(string Title, List<string> Lines);
-    private void CompareChanged(object sender, SelectionChangedEventArgs e) => RefreshData();
-    private void DataFilterChanged(object sender, TextChangedEventArgs e) => RefreshData();
+    private void CompareChanged(object sender, SelectionChangedEventArgs e) { if (viewReady) RefreshData(); }
+    private void DataFilterChanged(object sender, TextChangedEventArgs e) { if (viewReady) RefreshData(); }
     private async void RefreshData()
     {
         if (DataPanel == null || DataPanel.Visibility != Visibility.Visible) return;
