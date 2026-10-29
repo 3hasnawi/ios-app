@@ -311,3 +311,43 @@ foreach (var valid in new[] { "http://192.168.1.10:8765", "http://10.3.4.5:8765"
 foreach (var invalidServer in new[] { "http://8.8.8.8", "http://192.168.1.2/path", "https://192.168.1.2", "http://user@192.168.1.2", "http://example.com" })
     if (BackupReader.ValidServerAddress(new Uri(invalidServer))) throw new Exception("unsupported server accepted");
 Console.WriteLine("Server settings fixture passed: private addresses only, no paths or credentials.");
+var editDir = Path.Combine(Path.GetTempPath(), "salary-account-edit-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(editDir);
+try {
+    var original = Path.Combine(editDir, "original.zip"); var changed = Path.Combine(editDir, "changed.zip");
+    using (var zip = System.IO.Compression.ZipFile.Open(original, System.IO.Compression.ZipArchiveMode.Create)) {
+        void Write(string name, string value) { using var w = new StreamWriter(zip.CreateEntry(name).Open()); w.Write(value); }
+        Write("manifest.json", "{\"version\":4,\"months\":[\"2026-10\"],\"employees\":1,\"deductions\":0,\"staff\":0,\"accounts\":0,\"books\":0,\"futureField\":\"preserve\"}");
+        Write("settings.json", "{}"); Write("months.jsonl", "{\"name\":\"2026-10\"}\n");
+        Write("employees.jsonl", "{\"month\":\"2026-10\",\"name\":\"شخص تجريبي\",\"rank\":\"عقود\",\"workplace\":\"قسم\",\"net\":100,\"futureField\":\"untouched\"}\n");
+        Write("deductions.jsonl", ""); Write("staff.jsonl", ""); Write("accounts.jsonl", ""); Write("books/index.json", "[]");
+        Write("future-file.bin", "future information");
+    }
+    var before = File.ReadAllBytes(original);
+    BackupAccountEditor.SaveCopy(original, changed, new Account("جهة وهمية", "IQ19TEST000000000000000", "فرع", "ABCD"), null);
+    var result = BackupReader.Read(changed);
+    if (result.Accounts.Count != 1 || result.Accounts[0].Iban != "IQ19TEST000000000000000" || !File.ReadAllBytes(original).SequenceEqual(before)) throw new Exception("account edit failed or source changed");
+    using (var zip = System.IO.Compression.ZipFile.Open(changed, System.IO.Compression.ZipArchiveMode.Update)) {
+        var entry = zip.GetEntry("accounts.jsonl")!;
+        string text; using (var reader = new StreamReader(entry.Open())) text = reader.ReadToEnd();
+        var accountNode = System.Text.Json.Nodes.JsonNode.Parse(text)!.AsObject(); accountNode["futureAccountField"] = "preserve";
+        entry.Delete(); using var writer = new StreamWriter(zip.CreateEntry("accounts.jsonl").Open()); writer.WriteLine(accountNode.ToJsonString());
+    }
+    var updated = Path.Combine(editDir, "updated.zip");
+    BackupAccountEditor.SaveCopy(changed, updated, new Account("جهة وهمية", "IQ19TEST000000000000000", "فرع جديد", "EFGH"), "جهة وهمية");
+    var afterUpdate = BackupReader.Read(updated);
+    if (afterUpdate.Accounts.Count != 1 || afterUpdate.Accounts[0].Branch != "فرع جديد") throw new Exception("account update failed");
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(updated)) { using var reader = new StreamReader(zip.GetEntry("accounts.jsonl")!.Open()); if (!reader.ReadToEnd().Contains("futureAccountField")) throw new Exception("unknown account field lost"); }
+    try { BackupAccountEditor.SaveCopy(changed, updated, new Account("جهة وهمية", "IQ19TEST000000000000000", "", ""), null); throw new Exception("duplicate account accepted"); } catch (InvalidDataException) { }
+    if (BackupReader.Read(updated).Accounts[0].Branch != "فرع جديد") throw new Exception("duplicate account changed previous output");
+    using (var zip = System.IO.Compression.ZipFile.OpenRead(changed)) {
+        using var reader = new StreamReader(zip.GetEntry("employees.jsonl")!.Open());
+        if (!reader.ReadToEnd().Contains("futureField") || zip.GetEntry("future-file.bin") == null) throw new Exception("unknown data lost");
+        using var manifest = new StreamReader(zip.GetEntry("manifest.json")!.Open());
+        if (!manifest.ReadToEnd().Contains("futureField")) throw new Exception("unknown manifest field lost");
+    }
+    try { BackupAccountEditor.SaveCopy(original, changed, new Account("جهة", "IQ00BAD", "", ""), null); throw new Exception("invalid IBAN accepted"); } catch (InvalidDataException) { }
+    if (BackupReader.Read(changed).Accounts.Count != 1) throw new Exception("invalid IBAN replaced prior output");
+    try { BackupAccountEditor.SaveCopy(original, original, new Account("جهة", "IQ19TEST000000000000000", "", ""), null); throw new Exception("source overwrite accepted"); } catch (InvalidDataException) { }
+} finally { Directory.Delete(editDir, true); }
+Console.WriteLine("Backup account edit fixture passed: new account, IBAN checks, unknown fields and source protection.");

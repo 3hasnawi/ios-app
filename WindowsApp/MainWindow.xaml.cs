@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 using System.Text.Json;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -10,30 +12,45 @@ public sealed record DisplayItem(string Display, object Value)
     private int Divider => Display.IndexOf(" · ", StringComparison.Ordinal);
     public string Title => Divider < 0 ? Display : Display[..Divider].Trim();
     public string Details => Divider < 0 ? "" : Display[(Divider + 3)..].Trim();
+    public string Glyph => Value switch { Employee => "\uE77B", Staff => "\uE716", Account => "\uE8C7", Book => "\uE8F1", _ => "\uE8A5" };
 }
 public sealed record BankRow(string Label, string Amount, double Value);
 public sealed partial class MainWindow : Window
 {
     private BackupData? data;
+    private string? originalSourcePath;
     private CancellationTokenSource? searchCancellation;
     private readonly HashSet<string> temporaryPreviews = [];
     private bool viewReady;
     private string section = "home";
     private WindowsSettings settings = new();
-    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
+    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; MarkActiveNavigation("home"); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeleteArchive(path); }; }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
     private void ShowSection(string page, string title)
     {
-        section = page; PageTitle.Text = title;
+        section = page; PageTitle.Text = title; MarkActiveNavigation(page);
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         SearchPanel.Visibility = page == "search" ? Visibility.Visible : Visibility.Collapsed;
-        DataPanel.Visibility = page is "reports" or "payroll" or "audit" or "staff" or "books" ? Visibility.Visible : Visibility.Collapsed;
+        DataPanel.Visibility = page is "reports" or "payroll" or "audit" or "staff" or "books" or "accounts" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         MonthPicker.Visibility = page == "settings" ? Visibility.Collapsed : Visibility.Visible;
         ComparePicker.Visibility = page == "audit" ? Visibility.Visible : Visibility.Collapsed;
+        AddAccountButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         if (DataPanel.Visibility == Visibility.Visible) RefreshData();
         if (page == "bank") RefreshBank();
+    }
+    private void MarkActiveNavigation(string page)
+    {
+        var items = new Dictionary<string, Button> { ["home"] = HomeNav, ["search"] = SearchNav, ["reports"] = ReportsNav,
+            ["payroll"] = PayrollNav, ["bank"] = BankNav, ["audit"] = AuditNav, ["staff"] = StaffNav,
+            ["books"] = BooksNav, ["accounts"] = AccountsNav, ["settings"] = SettingsNav };
+        foreach (var (key, button) in items)
+        {
+            var selected = key == page;
+            button.Background = new SolidColorBrush(selected ? Color.FromArgb(255, 225, 242, 232) : Color.FromArgb(0, 255, 255, 255));
+            button.Foreground = new SolidColorBrush(selected ? Color.FromArgb(255, 18, 110, 79) : Color.FromArgb(255, 36, 68, 59));
+        }
     }
     private void Home_Click(object sender, RoutedEventArgs e) => ShowSection("home", "الرئيسية");
     private void SearchPage_Click(object sender, RoutedEventArgs e) => ShowSection("search", "البحث الشامل");
@@ -43,6 +60,36 @@ public sealed partial class MainWindow : Window
     private void Audit_Click(object sender, RoutedEventArgs e) => ShowSection("audit", "التدقيق");
     private void Staff_Click(object sender, RoutedEventArgs e) => ShowSection("staff", "الملاك");
     private void Books_Click(object sender, RoutedEventArgs e) => ShowSection("books", "الكتب الرسمية");
+    private void Accounts_Click(object sender, RoutedEventArgs e) => ShowSection("accounts", "حسابات جهات التنفيذ");
+    private async void AddAccount_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (data == null) { await Error("افتح نسخة احتياطية أولاً."); return; } await EditAccount(null); }
+        catch (Exception ex) { await Error(ex.Message); }
+    }
+    private async Task EditAccount(Account? original)
+    {
+        if (data == null) return;
+        var snapshot = data;
+        var entity = new TextBox { Header = "جهة التنفيذ", Text = original?.Entity ?? "" };
+        var iban = new TextBox { Header = "IBAN", Text = original?.Iban ?? "", FlowDirection = FlowDirection.LeftToRight };
+        var branch = new TextBox { Header = "الفرع", Text = original?.Branch ?? "" };
+        var swift = new TextBox { Header = "SWIFT", Text = original?.Swift ?? "", FlowDirection = FlowDirection.LeftToRight };
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(new TextBlock { Text = "يُحفظ التعديل في ملف نسخة مستقل. لا يُرفع إلى السيرفر حالياً.", TextWrapping = TextWrapping.Wrap });
+        body.Children.Add(entity); body.Children.Add(iban); body.Children.Add(branch); body.Children.Add(swift);
+        var dialog = new ContentDialog { Title = original == null ? "إضافة حساب جهة" : "تعديل حساب جهة", Content = body, PrimaryButtonText = "حفظ نسخة معدلة", CloseButtonText = "إلغاء", XamlRoot = Content.XamlRoot };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (string.IsNullOrWhiteSpace(entity.Text)) { await Error("أدخل اسم الجهة."); return; }
+        var clean = BackupAccountEditor.NormalizeIban(iban.Text);
+        var picker = new FileSavePicker { SuggestedFileName = "نسخة الرواتب المعدلة" }; picker.FileTypeChoices.Add("ZIP", new List<string> { ".zip" });
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this)); var file = await picker.PickSaveFileAsync();
+        if (file == null) return;
+        if (originalSourcePath != null && string.Equals(Path.GetFullPath(file.Path), Path.GetFullPath(originalSourcePath), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("اختر ملفاً آخر للحفاظ على النسخة الأصلية.");
+        var replacement = new Account(entity.Text, clean, branch.Text, swift.Text);
+        await Task.Run(() => BackupAccountEditor.SaveCopy(snapshot.ArchivePath, file.Path, replacement, original?.Entity));
+        StatusText.Text = "حُفظت نسخة معدلة مستقلة. افتحها لعرض التغيير؛ لم تُرفع إلى السيرفر.";
+    }
     private void Settings_Click(object sender, RoutedEventArgs e) => ShowSection("settings", "الإعدادات");
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
     {
@@ -92,7 +139,7 @@ public sealed partial class MainWindow : Window
         content.Children.Add(url); content.Children.Add(token);
         var dialog = new ContentDialog { Title = "فتح نسخة احتياطية", Content = content, PrimaryButtonText = "تنزيل من السيرفر", SecondaryButtonText = "اختيار ملف", CloseButtonText = "إلغاء", XamlRoot = Content.XamlRoot };
         var choice = await dialog.ShowAsync(); if (choice == ContentDialogResult.None) return;
-        string? path = null; bool retained = false;
+        string? path = null; string? selectedOriginal = null; bool retained = false;
         try
         {
             StatusText.Text = "جارٍ قراءة النسخة…";
@@ -106,11 +153,12 @@ public sealed partial class MainWindow : Window
                 var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".zip"); InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
                 var file = await picker.PickSingleFileAsync();
                 if (file == null) { StatusText.Text = "لم تُختر نسخة."; return; }
+                selectedOriginal = file.Path;
                 path = Path.Combine(Path.GetTempPath(), "salary-" + Guid.NewGuid().ToString("N") + ".zip");
                 await Task.Run(() => File.Copy(file.Path, path));
             }
             var loaded = await Task.Run(() => BackupReader.Read(path));
-            var previous = data?.ArchivePath; data = loaded; retained = true;
+            var previous = data?.ArchivePath; data = loaded; originalSourcePath = selectedOriginal; retained = true;
             MonthPicker.ItemsSource = loaded.Manifest.Months; MonthPicker.SelectedIndex = loaded.Manifest.Months.Length > 0 ? 0 : -1;
             ComparePicker.ItemsSource = loaded.Manifest.Months; ComparePicker.SelectedIndex = loaded.Manifest.Months.Length > 1 ? 1 : -1;
             var reference = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -216,6 +264,12 @@ public sealed partial class MainWindow : Window
                     rows.AddRange(matches.Select(x => new DisplayItem($"{x.Name}   ·   {x.Rank}   ·   {x.Status}   ·   {x.Workplace}", x)));
                     caption = $"عدد سجلات الملاك: {snapshot.Staff.Count:N0} · تظهر أول 500 · ابحث بالاسم أو اسم الأم أو الأرقام";
                 }
+                else if (page == "accounts")
+                {
+                    var matches = snapshot.Accounts.Where(x => Match(x.Entity) || Match(x.Iban) || Match(x.Branch)).OrderBy(x => x.Entity).Take(500).ToList();
+                    rows.AddRange(matches.Select(x => new DisplayItem($"{x.Entity}   ·   {x.Branch}   ·   {x.Iban}", x)));
+                    caption = $"عدد حسابات الجهات: {snapshot.Accounts.Count:N0} · اضغط حساباً لتعديله في نسخة مستقلة";
+                }
                 else if (page == "books")
                 {
                     var matches = snapshot.Books.Where(x => x.Month == month && (Match(x.Title) || Match(x.Entity))).ToList();
@@ -284,6 +338,7 @@ public sealed partial class MainWindow : Window
         try
         {
             if (item.Value is Book book) { await OpenBook(book); return; }
+            if (item.Value is Account accountItem) { await EditAccount(accountItem); return; }
             if (item.Value is SpecialSelection selectedSpecial)
             {
                 var snapshot = data;

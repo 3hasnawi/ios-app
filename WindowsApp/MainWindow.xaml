@@ -1,25 +1,26 @@
 <Window x:Class="SalaryWindows.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="الرواتب">
-  <Grid RequestedTheme="Light" FlowDirection="RightToLeft" Background="#F3F6F4">
+  <Grid RequestedTheme="Light" FlowDirection="RightToLeft" Background="#F3F6F4" TextElement.FontFamily="ms-appx:///Resources/Cairo.ttf#Cairo">
     <Grid.Resources>
       <Style x:Key="NavButton" TargetType="Button"><Setter Property="HorizontalAlignment" Value="Stretch"/><Setter Property="HorizontalContentAlignment" Value="Right"/><Setter Property="Padding" Value="14,11"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#24443B"/><Setter Property="BorderThickness" Value="0"/><Setter Property="CornerRadius" Value="10"/></Style>
       <Style x:Key="ResultItemStyle" TargetType="ListViewItem"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="BorderThickness" Value="0"/></Style>
-      <DataTemplate x:Key="ResultCardTemplate"><Border Background="White" BorderBrush="#E4ECE7" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,8"><StackPanel Spacing="6"><TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="#1A3D32" TextWrapping="Wrap"/><TextBlock Text="{Binding Details}" FontSize="14" Foreground="#65796E" TextWrapping="Wrap"/></StackPanel></Border></DataTemplate>
+      <DataTemplate x:Key="ResultCardTemplate"><Border Background="White" BorderBrush="#E4ECE7" BorderThickness="1" CornerRadius="14" Padding="18" Margin="0,0,0,8"><Grid ColumnSpacing="14"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border Background="#E8F4EC" CornerRadius="12" Width="44" Height="44"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="{Binding Glyph}" FontSize="18" Foreground="#16805D"/></Border><StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center"><TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="#1A3D32" TextWrapping="Wrap"/><TextBlock Text="{Binding Details}" FontSize="14" Foreground="#65796E" TextWrapping="Wrap"/></StackPanel><FontIcon Grid.Column="2" FontFamily="Segoe Fluent Icons" Glyph="&#xE76B;" FontSize="14" Foreground="#99ADA1" VerticalAlignment="Center"/></Grid></Border></DataTemplate>
       <DataTemplate x:Key="BankRowTemplate"><Grid Padding="8,11" ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Label}" FontSize="15" Foreground="#263E36" TextWrapping="Wrap"/><TextBlock Grid.Column="1" Text="{Binding Amount}" FontWeight="SemiBold" FontSize="15" Foreground="#173D32" FlowDirection="LeftToRight"/></Grid></DataTemplate>
     </Grid.Resources>
     <Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="White" BorderBrush="#E4ECE7" BorderThickness="0,0,1,0" Padding="18,24"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Spacing="5">
-      <TextBlock Text="الرواتب" FontSize="28" FontWeight="Bold" Foreground="#143F33" Margin="10,0,0,0"/>
-      <TextBlock Text="نسخة ويندوز · قراءة فقط" Foreground="#64736C" Margin="10,0,0,18"/>
-      <Button Style="{StaticResource NavButton}" Content="⌂   الرئيسية" Click="Home_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="⌕   البحث الشامل" Click="SearchPage_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="▤   التقارير والجهات" Click="Reports_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="▤   بنود الرواتب" Click="PayrollReports_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="▥   كشف البنك" Click="Bank_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="✓   التدقيق" Click="Audit_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="☷   الملاك" Click="Staff_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="▣   الكتب الرسمية" Click="Books_Click"/>
-      <Button Style="{StaticResource NavButton}" Content="⚙   الإعدادات" Click="Settings_Click"/>
-      <Button Content="فتح نسخة احتياطية" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,20,0,0" Background="#155D49" Foreground="White" Click="Connect_Click"/>
+      <StackPanel Orientation="Horizontal" Spacing="10" Margin="10,0,0,0"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;" FontSize="25" Foreground="#16795D"/><TextBlock Text="الرواتب" FontSize="28" FontWeight="Bold" Foreground="#143F33"/></StackPanel>
+      <TextBlock Text="نسخة ويندوز · إدارة البيانات" Foreground="#64736C" Margin="10,0,0,18"/>
+      <Button x:Name="HomeNav" Style="{StaticResource NavButton}" Click="Home_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE80F;" FontSize="17"/><TextBlock Text="الرئيسية"/></StackPanel></Button>
+      <Button x:Name="SearchNav" Style="{StaticResource NavButton}" Click="SearchPage_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE721;" FontSize="17"/><TextBlock Text="البحث الشامل"/></StackPanel></Button>
+      <Button x:Name="ReportsNav" Style="{StaticResource NavButton}" Click="Reports_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;" FontSize="17"/><TextBlock Text="التقارير والجهات"/></StackPanel></Button>
+      <Button x:Name="PayrollNav" Style="{StaticResource NavButton}" Click="PayrollReports_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE9D9;" FontSize="17"/><TextBlock Text="بنود الرواتب"/></StackPanel></Button>
+      <Button x:Name="BankNav" Style="{StaticResource NavButton}" Click="Bank_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C7;" FontSize="17"/><TextBlock Text="كشف البنك"/></StackPanel></Button>
+      <Button x:Name="AuditNav" Style="{StaticResource NavButton}" Click="Audit_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE73E;" FontSize="17"/><TextBlock Text="التدقيق"/></StackPanel></Button>
+      <Button x:Name="StaffNav" Style="{StaticResource NavButton}" Click="Staff_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE716;" FontSize="17"/><TextBlock Text="الملاك"/></StackPanel></Button>
+      <Button x:Name="AccountsNav" Style="{StaticResource NavButton}" Click="Accounts_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C7;" FontSize="17"/><TextBlock Text="حسابات الجهات"/></StackPanel></Button>
+      <Button x:Name="BooksNav" Style="{StaticResource NavButton}" Click="Books_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8F1;" FontSize="17"/><TextBlock Text="الكتب الرسمية"/></StackPanel></Button>
+      <Button x:Name="SettingsNav" Style="{StaticResource NavButton}" Click="Settings_Click"><StackPanel Orientation="Horizontal" Spacing="12"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE713;" FontSize="17"/><TextBlock Text="الإعدادات"/></StackPanel></Button>
+      <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="14,12" Margin="0,20,0,0" Background="#155D49" Foreground="White" Click="Connect_Click"><StackPanel Orientation="Horizontal" Spacing="10"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8E5;" FontSize="17"/><TextBlock Text="فتح نسخة احتياطية"/></StackPanel></Button>
     </StackPanel></ScrollViewer></Border>
     <ScrollViewer Grid.Column="1" Padding="32" VerticalScrollBarVisibility="Auto"><StackPanel Spacing="20" MaxWidth="1100" HorizontalAlignment="Stretch">
       <Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -32,8 +33,8 @@
           <TextBlock x:Name="CountText" Text="عدد الموظفين: —" Foreground="#DBE9E2"/><TextBlock x:Name="CategoriesText" Text="ضباط —   ·   موظفون —   ·   مراتب —   ·   عقود —" Foreground="#DBE9E2" TextWrapping="Wrap"/>
         </StackPanel></Border>
         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-          <Border Background="White" CornerRadius="14" Padding="24"><StackPanel Spacing="10"><TextBlock Text="التقارير" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="كشوف الرواتب وجهات التنفيذ" Foreground="#64736C"/><Button Content="عرض الجهات" Click="Reports_Click"/></StackPanel></Border>
-          <Border Grid.Column="1" Background="White" CornerRadius="14" Padding="24"><StackPanel Spacing="10"><TextBlock Text="تدقيق الرواتب" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="فحوص ومقارنة البيانات" Foreground="#64736C"/><Button Content="عرض الفحوص" Click="Audit_Click"/></StackPanel></Border>
+          <Border Background="White" CornerRadius="14" Padding="24"><StackPanel Spacing="10"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;" FontSize="26" Foreground="#16805D" HorizontalAlignment="Right"/><TextBlock Text="التقارير" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="كشوف الرواتب وجهات التنفيذ" Foreground="#64736C"/><Button Content="عرض الجهات" Click="Reports_Click"/></StackPanel></Border>
+          <Border Grid.Column="1" Background="White" CornerRadius="14" Padding="24"><StackPanel Spacing="10"><FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE73E;" FontSize="26" Foreground="#16805D" HorizontalAlignment="Right"/><TextBlock Text="تدقيق الرواتب" FontSize="20" FontWeight="SemiBold"/><TextBlock Text="فحوص ومقارنة البيانات" Foreground="#64736C"/><Button Content="عرض الفحوص" Click="Audit_Click"/></StackPanel></Border>
         </Grid>
       </StackPanel>
       <StackPanel x:Name="SearchPanel" Visibility="Collapsed" Spacing="14">
@@ -41,6 +42,7 @@
         <ListView x:Name="SearchResults" MaxHeight="600" SelectionMode="None" ItemClick="Item_Click" IsItemClickEnabled="True" ItemTemplate="{StaticResource ResultCardTemplate}" ItemContainerStyle="{StaticResource ResultItemStyle}"/>
       </StackPanel>
       <StackPanel x:Name="DataPanel" Visibility="Collapsed" Spacing="14">
+        <Button x:Name="AddAccountButton" Content="إضافة حساب جهة" HorizontalAlignment="Right" Visibility="Collapsed" Click="AddAccount_Click"/>
         <ComboBox x:Name="ComparePicker" Visibility="Collapsed" Header="مقارنة بالشهر" MinWidth="200" HorizontalAlignment="Right" SelectionChanged="CompareChanged"/><TextBox x:Name="DataFilter" PlaceholderText="بحث في القائمة" TextChanged="DataFilterChanged"/><TextBlock x:Name="DataCaption" Foreground="#61726A" TextWrapping="Wrap"/>
         <ListView x:Name="DataResults" MaxHeight="600" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Item_Click" ItemTemplate="{StaticResource ResultCardTemplate}" ItemContainerStyle="{StaticResource ResultItemStyle}"/>
       </StackPanel>

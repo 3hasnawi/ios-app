@@ -33,6 +33,29 @@ def valid_archive(path):
         return manifest
 
 
+def sha256_file(file):
+    digest = hashlib.sha256()
+    while chunk := file.read(1024 * 1024):
+        digest.update(chunk)
+    file.seek(0)
+    return digest.hexdigest()
+
+
+def activate_write_guard():
+    # الحاجز يسبق استبدال الملف كي لا يقبل السيرفر رفعاً من تطبيق قديم بعد التعديل.
+    path = DATA / ".revision-write-guard"
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    directory = os.open(DATA, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def ensure_no_missing_data(current, previous):
     if not set(previous.get("months", [])).issubset(set(current.get("months", []))):
         raise ValueError("previous backup contains missing months")
@@ -90,6 +113,29 @@ class Handler(BaseHTTPRequestHandler):
                     "backups": backups[:200], "google_drive": self.server.drive.info()})
             except OSError:
                 return self.response(503, {"error": "storage unavailable"})
+        if self.path == "/v2/backups/latest":
+            with LOCK:
+                current = DATA / "backup-current.zip"
+                source = None
+                try:
+                    source = current.open("rb")
+                    revision = sha256_file(source)
+                except FileNotFoundError:
+                    return self.response(404, {"error": "no backups"})
+                except OSError:
+                    if source is not None:
+                        source.close()
+                    return self.response(503, {"error": "storage unavailable"})
+            with source:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Revision-SHA256", revision)
+                self.send_header("Content-Length", str(os.fstat(source.fileno()).st_size))
+                self.end_headers()
+                while chunk := source.read(1024 * 1024):
+                    self.wfile.write(chunk)
+            return
         if self.path != "/v1/backups/latest":
             return self.response(404, {"error": "not found"})
         files = sorted(DATA.glob("backup-*.zip"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
@@ -112,9 +158,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.response(200, result)
             except (ValueError, OSError, KeyError):
                 return self.response(400, {"error": "google_authorization_failed"})
-        if self.path != "/v1/backups":
+        if self.path not in ("/v1/backups", "/v2/backups"):
             self.close_connection = True
             return self.response(404, {"error": "not found"})
+        conditional = self.path == "/v2/backups"
+        base_revision = self.headers.get("X-Base-SHA256", "")
+        if conditional and not getattr(self.server, "edit_sync_enabled", False):
+            self.close_connection = True
+            return self.response(403, {"error": "edit_sync_disabled"})
+        if conditional and not re.fullmatch(r"[0-9a-f]{64}", base_revision):
+            self.close_connection = True
+            return self.response(400, {"error": "invalid_base_revision"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
             digest = self.headers.get("X-Content-SHA256", "")
@@ -142,9 +196,22 @@ class Handler(BaseHTTPRequestHandler):
                 filename = "backup-current.zip"
                 with LOCK:
                     previous = list(DATA.glob("backup-*.zip"))
+                    guard = DATA / ".revision-write-guard"
+                    if not conditional and guard.exists():
+                        return self.response(409, {"error": "revision_required"})
+                    if conditional:
+                        current = DATA / "backup-current.zip"
+                        if not current.exists():
+                            return self.response(409, {"error": "base_revision_missing"})
+                        with current.open("rb") as source:
+                            current_revision = sha256_file(source)
+                        if not hmac.compare_digest(current_revision, base_revision):
+                            return self.response(409, {"error": "revision_conflict"})
                     # لا نستبدل نسخة سليمة ببيانات ينقصها شهر أو قسم كامل.
                     for old in previous:
                         ensure_no_missing_data(manifest, valid_archive(old))
+                    if conditional:
+                        activate_write_guard()
                     os.replace(name, DATA / filename)
                     directory = os.open(DATA, os.O_RDONLY)
                     try:
@@ -172,7 +239,9 @@ def main():
         raise SystemExit("Set a unique token of at least 32 ASCII characters in add-on configuration")
     httpd = ThreadingHTTPServer(("0.0.0.0", 8765), Handler)
     httpd.token = token
-    httpd.drive = DriveSync(json.load(open("/data/options.json", encoding="utf-8")), "/data/google-drive.json", DATA)
+    options = json.load(open("/data/options.json", encoding="utf-8"))
+    httpd.edit_sync_enabled = options.get("edit_sync_enabled", False) is True
+    httpd.drive = DriveSync(options, "/data/google-drive.json", DATA)
     httpd.serve_forever()
 
 if __name__ == "__main__":

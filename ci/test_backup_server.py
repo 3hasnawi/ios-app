@@ -59,5 +59,44 @@ with tempfile.TemporaryDirectory() as directory:
     assert len(details["backups"]) == 1 and details["disk_total"] >= details["disk_free"] > 0
     assert request("GET", "/v1/backups/latest", headers={"Authorization": "Bearer " + server.token}) == (200, data)
     assert request("GET", "/v1/backups/latest")[0] == 401
+    # لا يُفعّل استقبال التعديلات بالمراجعات افتراضياً، ولا يغيّر سلوك الآيفون الحالي.
+    base = hashlib.sha256(data).hexdigest()
+    conditional = {**headers, "X-Base-SHA256": base}
+    assert request("POST", "/v2/backups", data, conditional)[0] == 403
+    server.edit_sync_enabled = True
+    assert request("POST", "/v2/backups", data, {**conditional, "X-Base-SHA256": "0" * 64})[0] == 409
+    changed = io.BytesIO()
+    with zipfile.ZipFile(changed, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 4, "months": ["test"], "employees": 1}))
+        archive.writestr("employees.jsonl", "{\"name\":\"test only\"}\n")
+    changed_data = changed.getvalue()
+    changed_headers = {**conditional, "X-Content-SHA256": hashlib.sha256(changed_data).hexdigest()}
+    assert request("POST", "/v2/backups", changed_data, changed_headers)[0] == 201
+    assert request("POST", "/v2/backups", data, conditional)[0] == 409  # جهاز لديه نسخة قديمة
+    assert request("POST", "/v1/backups", data, headers)[0] == 409  # لا يسمح لتطبيق قديم بمحو التعديل
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+    conn.request("GET", "/v2/backups/latest", headers={"Authorization": "Bearer " + server.token})
+    response = conn.getresponse()
+    assert response.status == 200 and response.getheader("X-Revision-SHA256") == hashlib.sha256(changed_data).hexdigest()
+    assert response.read() == changed_data
+    conn.close()
+    assert (server_module.DATA / "backup-current.zip").read_bytes() == changed_data
+    # يحمي القفل طلبين متزامنين لهما المراجعة نفسها: واحد فقط ينجح.
+    other = io.BytesIO()
+    with zipfile.ZipFile(other, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 4, "months": ["test"], "employees": 1}))
+        archive.writestr("employees.jsonl", "{\"name\":\"different fictional record\"}\n")
+    other_data = other.getvalue()
+    revision = hashlib.sha256(changed_data).hexdigest()
+    outcomes = []
+    def concurrent_upload(payload):
+        h = {"Authorization": "Bearer " + server.token, "X-Content-SHA256": hashlib.sha256(payload).hexdigest(), "X-Base-SHA256": revision}
+        outcomes.append(request("POST", "/v2/backups", payload, h)[0])
+    threads = [threading.Thread(target=concurrent_upload, args=(payload,)) for payload in (data, other_data)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert sorted(outcomes) == [201, 409]
+    server.edit_sync_enabled = False
+    assert request("POST", "/v1/backups", data, headers)[0] == 409
     server.shutdown()
     print("Backup server test passed")

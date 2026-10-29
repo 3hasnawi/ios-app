@@ -25,6 +25,7 @@ jobs:
           $pri = 'bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\SalaryWindows.pri'
           if (!(Test-Path $pri)) { throw 'The application resource index was not produced.' }
           Copy-Item $pri "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.pri" -Force
+          if (!(Test-Path "$env:RUNNER_TEMP\SalaryWindows\Resources\Cairo.ttf")) { throw 'Cairo font was not included.' }
       - name: Create single Windows executable
         shell: pwsh
         working-directory: WindowsApp

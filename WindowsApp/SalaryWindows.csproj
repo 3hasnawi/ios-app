@@ -14,6 +14,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Launcher/**/*.cs" />
+    <Content Include="Resources/Cairo.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Resources/Cairo-OFL.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources/HomeLogo.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.9" />
