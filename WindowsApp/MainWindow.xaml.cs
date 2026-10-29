@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Documents;
+using System.Runtime.CompilerServices;
 using Windows.UI;
 using System.Text.Json;
 using Windows.Storage.Pickers;
@@ -27,6 +27,8 @@ public sealed partial class MainWindow : Window
     private WindowsSettings settings = new();
     private bool changingLock;
     private bool unlocking;
+    private sealed class OriginalFontSize(double value) { public double Value { get; } = value; }
+    private readonly ConditionalWeakTable<FrameworkElement, OriginalFontSize> originalFontSizes = new();
     public MainWindow()
     {
         InitializeComponent();
@@ -41,6 +43,7 @@ public sealed partial class MainWindow : Window
         VersionText.Text = "الإصدار " + (version?.ToString(3) ?? "غير معروف") + " · تجريبي";
         viewReady = true;
         RootGrid.ActualThemeChanged += (_, _) => MarkActiveNavigation(section);
+        RootGrid.Loaded += (_, _) => ApplyVisibleFontSizes();
         ApplyAppearance();
         SetLocked(settings.LockEnabled);
         Closed += (_, _) => { ServerToken.Password = ""; DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeletePreview(path); };
@@ -80,8 +83,42 @@ public sealed partial class MainWindow : Window
     private void ApplyAppearance()
     {
         RootGrid.RequestedTheme = settings.Theme == "dark" ? ElementTheme.Dark : settings.Theme == "system" ? ElementTheme.Default : ElementTheme.Light;
-        RootGrid.SetValue(TextElement.FontSizeProperty, (double)settings.FontSize);
+        ApplyVisibleFontSizes();
         MarkActiveNavigation(section);
+    }
+    private void ApplyTextSize(FrameworkElement element)
+    {
+        if (element is TextBlock text)
+        {
+            var original = originalFontSizes.GetValue(text, _ => new OriginalFontSize(text.FontSize));
+            text.FontSize = original.Value * settings.FontSize / 16.0;
+            text.FontFamily = new FontFamily("ms-appx:///Resources/Cairo.ttf#Cairo");
+        }
+        else if (element is TextBox textBox)
+        {
+            var original = originalFontSizes.GetValue(textBox, _ => new OriginalFontSize(textBox.FontSize));
+            textBox.FontSize = original.Value * settings.FontSize / 16.0;
+        }
+        else if (element is PasswordBox password)
+        {
+            var original = originalFontSizes.GetValue(password, _ => new OriginalFontSize(password.FontSize));
+            password.FontSize = original.Value * settings.FontSize / 16.0;
+        }
+    }
+    private void ApplyVisibleFontSizes()
+    {
+        void Walk(DependencyObject node)
+        {
+            if (node is FrameworkElement element) ApplyTextSize(element);
+            if (node is TextBox or PasswordBox) return;
+            var count = VisualTreeHelper.GetChildrenCount(node);
+            for (var i = 0; i < count; i++) Walk(VisualTreeHelper.GetChild(node, i));
+        }
+        Walk(RootGrid);
+    }
+    private void ResultText_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement element) ApplyTextSize(element);
     }
     private void AppearanceChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -112,6 +149,7 @@ public sealed partial class MainWindow : Window
         if (DataPanel.Visibility == Visibility.Visible) RefreshData();
         if (page == "bank") RefreshBank();
         if (page == "savedData") RefreshStoredData();
+        ApplyVisibleFontSizes();
     }
     private void MarkActiveNavigation(string page)
     {
