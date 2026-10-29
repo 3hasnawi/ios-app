@@ -65,6 +65,7 @@ extension ReportEngine {
         d.propertiesToFetch = [\.title, \.amount, \.matchKey, \.employeeName, \.note, \.rank]
         var result: [String: [ReportRow]] = [:]
         for (i, item) in try modelContext.fetch(d).enumerated() {
+            if DeductionStatus.read(item.note, amount: item.amount) != nil { continue }
             let key = byEntity ? Self.entity(of: item.title) : item.title
             let (payrollRank, workplace) = info[item.matchKey] ?? ("", "")
             let rank = item.rank.isEmpty ? payrollRank : item.rank

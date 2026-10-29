@@ -48,9 +48,10 @@ actor ReportEngine {
 
     func deductionGroups(month: String, byEntity: Bool) throws -> [ReportGroup] {
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
-        d.propertiesToFetch = [\.title, \.amount, \.matchKey]
+        d.propertiesToFetch = [\.title, \.amount, \.matchKey, \.note]
         var totals: [String: (people: Set<String>, total: Double)] = [:]
         for item in try modelContext.fetch(d) {
+            if DeductionStatus.read(item.note, amount: item.amount) != nil { continue }
             let key = byEntity ? Self.entity(of: item.title) : item.title
             totals[key, default: ([], 0)].people.insert(item.matchKey)
             totals[key]!.total += item.amount ?? 0
@@ -72,7 +73,7 @@ actor ReportEngine {
             var d = FetchDescriptor<Deduction>(predicate: predicate)
             d.propertiesToFetch = [\.title, \.amount, \.matchKey, \.employeeName, \.note, \.rank]
             let deductions = try modelContext.fetch(d).filter {
-                (group.byEntity ? Self.entity(of: $0.title) : $0.title) == group.title
+                DeductionStatus.read($0.note, amount: $0.amount) == nil && (group.byEntity ? Self.entity(of: $0.title) : $0.title) == group.title
             }
             // نقرأ رواتب أصحاب الكشف فقط بدل كل رواتب الشهر.
             let keys = Array(Set(deductions.map(\.matchKey)))

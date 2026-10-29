@@ -91,9 +91,10 @@ actor BankStatementEngine {
             }
         }
         var deductions = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
-        deductions.propertiesToFetch = [\.amount]
+        deductions.propertiesToFetch = [\.amount, \.note]
         for (index, item) in try modelContext.fetch(deductions).enumerated() {
             if index.isMultiple(of: 512) { try Task.checkCancellation() }
+            if DeductionStatus.read(item.note, amount: item.amount) != nil { continue }
             if let value = item.amount { result.executionDeductions += value }
             else { result.missingExecutionAmount += 1 }
             result.executionCount += 1

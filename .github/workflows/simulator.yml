@@ -82,6 +82,7 @@ jobs:
           .venv/bin/python ci/make_test_xlsx.py "test-files/تشرين الاول 2026.xlsx" oct.txt 26000
           .venv/bin/python ci/make_test_xlsx.py "test-files/أيلول 2026.xlsx" sep.txt 3000 previous
           .venv/bin/python ci/make_test_iban.py
+          .venv/bin/python ci/make_test_annual_deductions.py
           # المجموع المتوقع للملفين معاً
           cat oct.txt sep.txt | python3 -c '
           import sys, re
@@ -121,6 +122,22 @@ jobs:
           mkdir -p "$DATA/Documents"
           cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
+
+      - name: Verify annual deduction workbook
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -annualDeductionImportTest YES
+          for i in $(seq 1 90); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/annual-deduction-report.txt
+          if ! grep -q '^annualDeduction=ok ' ci-output/annual-deduction-report.txt; then
+            echo "::error::Annual deduction workbook test failed"
+            exit 1
+          fi
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
 
       - name: Verify employee deduction statement
         run: |

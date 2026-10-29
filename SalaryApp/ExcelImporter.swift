@@ -23,6 +23,34 @@ nonisolated struct ImportedDeduction: Sendable {
     var rank: String = ""
 }
 
+/// تحفظ الحالة ضمن الملاحظة حتى تدخل النسخ الاحتياطية القديمة دون تغيير مخطط القاعدة.
+nonisolated enum DeductionStatus {
+    static let prefix = "⟦حالة الاستقطاع:"
+    private static let values = Dictionary(["موقوف", "هارب", "محكوم"].map { (ArabicText.normalize($0), $0) }, uniquingKeysWith: { first, _ in first })
+    static func recognized(_ value: String) -> String? {
+        values[ArabicText.normalize(value)]
+    }
+    static func encode(_ status: String, note: String) -> String {
+        "\(prefix)\(status)⟧" + (note.isEmpty ? "" : "\n" + note)
+    }
+    static func read(_ note: String, amount: Double?) -> String? {
+        guard amount == nil, note.hasPrefix(prefix), let end = note.range(of: "⟧") else { return nil }
+        return recognized(String(note[note.index(note.startIndex, offsetBy: prefix.count)..<end.lowerBound]))
+    }
+}
+
+nonisolated enum AnnualDeductionAmount {
+    /// لا نحول نصاً يحتوي أرقاماً إلى مبلغ بالتخمين.
+    static func parse(_ input: String) -> Double? {
+        let text = ArabicText.latinDigits(input).replacingOccurrences(of: "٬", with: "")
+            .replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "٫", with: ".")
+            .filter { !$0.isWhitespace }
+        guard !text.isEmpty, text.allSatisfy({ "0123456789.+-eE".contains($0) }),
+              let amount = Double(text), amount.isFinite, amount >= 0 else { return nil }
+        return amount
+    }
+}
+
 nonisolated struct ImportedExecutionAccount: Sendable {
     var entity: String
     var iban: String
@@ -68,6 +96,8 @@ nonisolated struct InvalidExecutionAccount: Sendable, Identifiable {
 nonisolated struct ImportResult: Sendable {
     var employees: [ImportedEmployee] = []
     var deductions: [ImportedDeduction] = []
+    var annualDeductions: [Int: [ImportedDeduction]] = [:]
+    var annualErrors: [String] = []
     var accounts: [ImportedExecutionAccount] = []
     var invalidAccountDetails: [InvalidExecutionAccount] = []
     var invalidAccounts: Int { invalidAccountDetails.count }
@@ -77,6 +107,12 @@ nonisolated struct ImportResult: Sendable {
     mutating func merge(_ other: ImportResult) {
         employees += other.employees
         deductions += other.deductions
+        for (month, records) in other.annualDeductions {
+            if annualDeductions[month] != nil {
+                annualErrors.append(tr("يتكرر الشهر نفسه في أكثر من ورقة؛ افصل البيانات أو راجعها قبل الاستيراد.", "The same month appears in multiple sheets; separate or review the data before importing."))
+            } else { annualDeductions[month] = records }
+        }
+        annualErrors += other.annualErrors
         accounts += other.accounts
         invalidAccountDetails += other.invalidAccountDetails
         problems += other.problems
@@ -125,7 +161,13 @@ nonisolated enum ExcelImporter {
         default:
             try readXLSX(url, into: &result, progress: progress)
         }
-        if result.employees.isEmpty && result.deductions.isEmpty && result.accounts.isEmpty && result.invalidAccountDetails.isEmpty {
+        if !result.annualErrors.isEmpty {
+            throw ImportError.unrecognized(url.lastPathComponent, Array(result.annualErrors.prefix(20)))
+        }
+        if !result.annualDeductions.isEmpty && (!result.employees.isEmpty || !result.deductions.isEmpty || !result.accounts.isEmpty || !result.invalidAccountDetails.isEmpty || !result.problems.isEmpty) {
+            throw ImportError.unrecognized(url.lastPathComponent, [tr("الملف يجمع استقطاعات سنوية وبيانات أخرى؛ افصلها في ملفات مستقلة قبل الاستيراد.", "This file combines annual deductions with other data; separate the files before importing.")])
+        }
+        if result.employees.isEmpty && result.deductions.isEmpty && result.annualDeductions.isEmpty && result.accounts.isEmpty && result.invalidAccountDetails.isEmpty {
             throw ImportError.unrecognized(url.lastPathComponent, result.problems.isEmpty
                 ? [tr("لا توجد صفوف بيانات في الملف.", "The file has no data rows.")] : result.problems)
         }
@@ -167,9 +209,13 @@ nonisolated enum ExcelImporter {
             progress?(done / total)
         }
 
+        let sheetNames = (try? WorkbookSheetNames.read(archive: archive, directory: tempDir)) ?? [:]
+        let fileYears = WorkbookSheetNames.years(in: url.deletingPathExtension().lastPathComponent)
         for (sheetIndex, entry) in sheets.enumerated() {
             let sheet = SheetParser()
-            sheet.sheetName = sheets.count > 1 ? tr("الورقة \(sheetIndex + 1)", "Sheet \(sheetIndex + 1)") : tr("الورقة", "Sheet")
+            sheet.sheetName = sheetNames[entry.path] ?? (sheets.count > 1 ? tr("الورقة \(sheetIndex + 1)", "Sheet \(sheetIndex + 1)") : tr("الورقة", "Sheet"))
+            let years = fileYears.union(WorkbookSheetNames.years(in: sheetNames[entry.path] ?? ""))
+            sheet.annualYear = years.count == 1 ? years.first : nil
             let size = Double(entry.uncompressedSize)
             let file = try extract(entry, from: archive, to: tempDir)
             progress?((done + size * 0.15) / total)
@@ -302,6 +348,7 @@ nonisolated final class SheetParser {
         var title: Int?
         var note: Int?
         var rank: Int?
+        var month: Int?
     }
 
     private struct AccountColumns {
@@ -323,6 +370,8 @@ nonisolated final class SheetParser {
     private var mode = Mode.findingHeader(rowsSeen: 0)
     /// اسم الورقة في رسائل الخطأ.
     var sheetName = ""
+    var annualYear: Int?
+    private var annualMonthKeys: [String: Int] = [:]
     /// أول عناوين رآها مع عمود الاسم، لشرح سبب الرفض.
     private var nameRowHeaders: [String]?
     private var accountHeaderFound = false
@@ -396,7 +445,8 @@ nonisolated final class SheetParser {
             let title = Self.column(Synonyms.title, in: headers, used: &used)
             let note = Self.column(Synonyms.note, in: headers, used: &used)
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
-            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note, rank: rank))
+            let month = Self.column(["شهر", "الشهر", "month"], in: headers, used: &used, exactOnly: true)
+            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note, rank: rank, month: month))
         }
         return .skip
     }
@@ -434,10 +484,45 @@ nonisolated final class SheetParser {
 
     private func readDeduction(_ row: [String], _ columns: DeductionColumns) {
         let name = cell(row, columns.name)
-        guard !name.isEmpty, !nameHeaders.contains(ArabicText.normalize(name)) else { return }
+        if name.isEmpty {
+            if columns.month != nil && !row.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }), result.annualErrors.count < 20 {
+                result.annualErrors.append(tr("\(sheetName)، السطر \(rowsRead): اسم الموظف فارغ.", "\(sheetName), row \(rowsRead): employee name is empty."))
+            }
+            return
+        }
+        guard !nameHeaders.contains(ArabicText.normalize(name)) else { return }
 
-        let amount = ArabicText.number(from: cell(row, columns.amount))
+        let amountText = cell(row, columns.amount)
+        let amount = columns.month == nil ? ArabicText.number(from: amountText) : AnnualDeductionAmount.parse(amountText)
         let title = cell(row, columns.title)
+        if let monthColumn = columns.month {
+            guard let year = annualYear else {
+                if result.annualErrors.isEmpty { result.annualErrors.append(tr("\(sheetName): تعذّر تحديد سنة واحدة من اسم الملف والورقة.", "\(sheetName): could not determine a single year from the file and sheet names.")) }
+                return
+            }
+            let monthText = cell(row, monthColumn)
+            let monthKey: Int
+            if let cached = annualMonthKeys[monthText] { monthKey = cached }
+            else {
+                let years = WorkbookSheetNames.years(in: monthText)
+                let parsed = MonthName.sortKey("\(monthText) \(year)")
+                monthKey = (years.isEmpty || years == Set([year])) ? parsed : 0
+                annualMonthKeys[monthText] = monthKey
+            }
+            guard monthKey / 100 == year, (1...12).contains(monthKey % 100), !title.isEmpty else {
+                if result.annualErrors.count < 20 { result.annualErrors.append(tr("\(sheetName)، السطر \(rowsRead): شهر أو جهة غير صالحين.", "\(sheetName), row \(rowsRead): invalid month or entity.")) }
+                return
+            }
+            let status = amount == nil ? DeductionStatus.recognized(amountText) : nil
+            guard (amount?.isFinite == true && (amount ?? -1) >= 0) || status != nil else {
+                if result.annualErrors.count < 20 { result.annualErrors.append(tr("\(sheetName)، السطر \(rowsRead): مبلغ غير صالح أو حالة غير معروفة.", "\(sheetName), row \(rowsRead): invalid amount or unknown status.")) }
+                return
+            }
+            let note = cell(row, columns.note)
+            result.annualDeductions[monthKey, default: []].append(ImportedDeduction(employeeName: name, title: title, amount: amount,
+                note: status.map { DeductionStatus.encode($0, note: note) } ?? note, rank: cell(row, columns.rank)))
+            return
+        }
         guard amount != nil || !title.isEmpty else { return }
         result.deductions.append(ImportedDeduction(
             employeeName: name,
@@ -494,7 +579,7 @@ nonisolated final class SheetParser {
                 }
             }
         }
-        guard result.employees.isEmpty, result.deductions.isEmpty, result.accounts.isEmpty else { return }
+        guard result.employees.isEmpty, result.deductions.isEmpty, result.annualDeductions.isEmpty, result.accounts.isEmpty else { return }
         let sheet = sheetName.isEmpty ? tr("الورقة", "Sheet") : sheetName
         if rowsRead == 0 {
             return  // ورقة فارغة: لا داعي لذكرها
@@ -541,6 +626,49 @@ nonisolated final class SheetParser {
 }
 
 // MARK: - قراءة XML
+
+/// يربط اسم الورقة بمسارها الفعلي عبر علاقات المصنف، وليس بترتيب ملفات ZIP.
+nonisolated final class WorkbookSheetNames: NSObject, XMLParserDelegate {
+    private var sheetIDs: [String: String] = [:]
+    private var paths: [String: String] = [:]
+    private var readingRelationships = false
+    private static let yearRegex = try? NSRegularExpression(pattern: "(?<![0-9])(?:19|20|21|22)[0-9]{2}(?![0-9])")
+
+    static func years(in text: String) -> Set<Int> {
+        let value = ArabicText.latinDigits(text)
+        guard let re = yearRegex else { return [] }
+        let range = NSRange(value.startIndex..., in: value)
+        return Set(re.matches(in: value, range: range).compactMap { Range($0.range, in: value).flatMap { Int(value[$0]) } }.filter { (1900...2200).contains($0) })
+    }
+
+    static func read(archive: Archive, directory: URL) throws -> [String: String] {
+        guard let workbook = archive["xl/workbook.xml"], let relations = archive["xl/_rels/workbook.xml.rels"],
+              workbook.uncompressedSize < 2_000_000, relations.uncompressedSize < 2_000_000 else { return [:] }
+        let reader = WorkbookSheetNames()
+        for (entry, isRelations) in [(workbook, false), (relations, true)] {
+            let file = directory.appendingPathComponent(UUID().uuidString + ".xml")
+            _ = try archive.extract(entry, to: file, skipCRC32: true)
+            defer { try? FileManager.default.removeItem(at: file) }
+            guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("workbook.xml") }
+            let parser = XMLParser(stream: stream)
+            reader.readingRelationships = isRelations
+            parser.delegate = reader
+            guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("workbook.xml") }
+        }
+        var result: [String: String] = [:]
+        for (id, name) in reader.sheetIDs { if let path = reader.paths[id] { result[path] = name } }
+        return result
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String] = [:]) {
+        if !readingRelationships, localName(elementName) == "sheet", let id = attributes["r:id"], let name = attributes["name"] { sheetIDs[id] = name }
+        if readingRelationships, localName(elementName) == "Relationship", let id = attributes["Id"], let target = attributes["Target"] {
+            let path = target.hasPrefix("/") ? String(target.dropFirst()) : "xl/" + target
+            let normalized = (path as NSString).standardizingPath
+            if normalized.hasPrefix("xl/worksheets/") { paths[id] = normalized }
+        }
+    }
+}
 
 private nonisolated func localName(_ qualified: String) -> Substring {
     qualified.split(separator: ":").last ?? Substring(qualified)

@@ -109,6 +109,10 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .task {
                 #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "annualDeductionImportTest") {
+                    do { LaunchOptions.writeReport(try AnnualDeductionImportSelfTest.run()) }
+                    catch { LaunchOptions.writeReport("annualDeduction=failed \(error.localizedDescription)") }
+                }
                 if UserDefaults.standard.bool(forKey: "employeeDeductionTest") {
                     do { LaunchOptions.writeReport(try await EmployeeDeductionSelfTest.run()) }
                     catch { LaunchOptions.writeReport("employeeDeduction=failed \(error.localizedDescription)") }

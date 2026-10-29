@@ -57,11 +57,17 @@ struct ImportCandidate: Identifiable {
     let error: String?
     /// الشهر مفهوم من اسم الملف.
     let monthDetected: Bool
+    /// كل صف يمثل شهراً مستخرجاً من ملف سنوي، ولا يمكن إعادة تعيينه لشهر آخر.
+    var annualSource = false
+    var existingAnnualDeductions = false
+    var annualExpectedCount: Int? = nil
+    var annualExpectedImportDate: Date? = nil
 
     var summary: String {
         if let error { return error }
         if let staffCount { return tr("\(Num.format(staffCount)) موظف في الملاك", "\(Num.format(staffCount)) staff records") }
         guard let result else { return "" }
+        if annualSource { return tr("\(Num.format(result.deductions.count)) سجل", "\(result.deductions.count) entries") }
         if kind == .executionAccounts || (result.invalidAccounts > 0 && result.employees.isEmpty && result.deductions.isEmpty) {
             let valid = tr("\(Num.format(result.accounts.count)) حساب صالح", "\(result.accounts.count) valid accounts")
             let invalid = result.invalidAccounts > 0
@@ -193,6 +199,31 @@ final class ImportCenter {
                     return try ExcelImporter.load(url: url, progress: sink)
                 }.value
                 LaunchOptions.writeImportStage("read-complete")
+                if !result.annualDeductions.isEmpty {
+                    let grouped = Dictionary(grouping: existing.filter { $0.sortKey > 0 }, by: \.sortKey)
+                    guard result.annualDeductions.keys.allSatisfy({ (grouped[$0]?.count ?? 0) <= 1 }) else {
+                        found.append(Self.failed(url, name, tr("يوجد شهر محفوظ بأكثر من اسم لنفس التاريخ؛ راجع الأشهر قبل الاستيراد.", "A saved month has multiple names for the same date; review the months before importing.")))
+                        continue
+                    }
+                    var annualCandidates: [ImportCandidate] = []
+                    for key in result.annualDeductions.keys.sorted() {
+                        let saved = grouped[key]?.first
+                        let month = saved?.name ?? DeductionCalendar.label(key / 100, key % 100)
+                        var part = ImportResult()
+                        part.deductions = result.annualDeductions[key] ?? []
+                        let existingCount = try SharedModel.container.mainContext.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month }))
+                        let alreadySaved = existingCount > 0 || (saved?.deductionCount ?? 0) > 0
+                        var candidate = ImportCandidate(url: url, fileName: "\(name) · \(month)", kind: alreadySaved ? .skip : .deductions,
+                            month: month, allowedKinds: [.deductions, .skip], result: part, staffCount: nil, error: nil, monthDetected: true)
+                        candidate.annualSource = true
+                        candidate.existingAnnualDeductions = alreadySaved
+                        candidate.annualExpectedCount = existingCount
+                        candidate.annualExpectedImportDate = saved?.importedAt
+                        annualCandidates.append(candidate)
+                    }
+                    found += annualCandidates
+                    continue
+                }
                 let hasPay = !result.employees.isEmpty
                 let hasDed = !result.deductions.isEmpty
                 let hasAccounts = !result.accounts.isEmpty
@@ -318,6 +349,7 @@ final class ImportCenter {
     var importableCount: Int { candidates.filter { $0.kind != .skip }.count }
 
     var reviewActionTitle: String {
+        if candidates.contains(where: \.annualSource) { return tr("استيراد المختار", "Import selected") }
         if importableCount == 1, let candidate = candidates.first(where: { $0.kind == .executionAccounts }),
            let result = candidate.result, result.invalidAccounts > 0 {
             return tr("استيراد \(Num.format(result.accounts.count)) حساباً صالحاً", "Import \(result.accounts.count) valid accounts")
@@ -343,6 +375,13 @@ final class ImportCenter {
         let jobs = candidates.filter { $0.kind != .skip }
             // الملف الجامع أولاً حتى لا يمحو ملفاً منفصلاً لنفس الشهر.
             .sorted { Self.order($0.kind) < Self.order($1.kind) }
+        let annualMonths = Set(jobs.filter(\.annualSource).map(\.month))
+        if jobs.contains(where: { job in
+            annualMonths.contains(job.month) && job.kind != .payroll && jobs.filter { $0.month == job.month && $0.kind != .payroll }.count > 1
+        }) {
+            message = tr("اختير أكثر من ملف استقطاعات للشهر نفسه. اترك ملفاً واحداً لكل شهر قبل الاستيراد.", "More than one deduction file is selected for the same month. Keep one per month before importing.")
+            return
+        }
         showReview = false
         guard !jobs.isEmpty else { cancel(); return }
         let fromTest = autoRun
@@ -393,11 +432,18 @@ final class ImportCenter {
                     guard let result = job.result else { continue }
                     let month = job.month
                     let kind = job.kind
+                    let expectedCount = job.annualExpectedCount
+                    let expectedDate = job.annualExpectedImportDate
                     try await Task.detached(priority: .userInitiated) {
                         let importer = DataImporter(modelContainer: container)
                         switch kind {
                         case .payroll: try await importer.replacePayroll(month: month, with: result.employees, progress: sink)
-                        case .deductions: try await importer.replaceDeductions(month: month, with: result.deductions, progress: sink)
+                        case .deductions:
+                            if let expectedCount {
+                                try await importer.replaceAnnualDeductions(month: month, with: result.deductions, expectedCount: expectedCount, expectedDate: expectedDate, progress: sink)
+                            } else {
+                                try await importer.replaceDeductions(month: month, with: result.deductions, progress: sink)
+                            }
                         default: try await importer.replace(month: month, with: result, progress: sink)
                         }
                     }.value
@@ -508,7 +554,8 @@ struct ImportReviewSheet: View {
                     }
                 } header: {
                     VStack(spacing: 4) {
-                        Text(center.candidates.count == 1 ? tr("تم التعرّف على الملف", "File recognised")
+                        Text(center.candidates.contains(where: \.annualSource) ? tr("مراجعة أشهر الاستقطاعات", "Review deduction months")
+                             : center.candidates.count == 1 ? tr("تم التعرّف على الملف", "File recognised")
                              : center.candidates.count == 2 ? tr("تم التعرّف على ملفين", "2 files recognised")
                              : tr("تم التعرّف على \(Num.format(center.candidates.count)) ملفات", "\(center.candidates.count) files recognised"))
                             .font(.title3.bold())
@@ -591,16 +638,29 @@ private struct CandidateRow: View {
                 Text(item.summary)
                     .font(.caption)
                     .foregroundStyle(item.error == nil ? Color.secondary : Color.red)
+                if item.annualSource {
+                    let statuses = item.result?.deductions.filter { DeductionStatus.read($0.note, amount: $0.amount) != nil }.count ?? 0
+                    Text(item.existingAnnualDeductions
+                         ? tr("استقطاعات محفوظة مسبقاً؛ اختر استبدالها أو تخطي الشهر.", "Existing deductions: choose replace or skip this month.")
+                         : tr("شهر من ملف استقطاعات سنوي.", "Month from an annual deduction file."))
+                        .font(.caption).foregroundStyle(item.existingAnnualDeductions ? Color.orange : Color.secondary)
+                    if statuses > 0 {
+                        Text(tr("\(Num.format(statuses)) حالة نصية لا تدخل في المجموع", "\(statuses) text statuses excluded from totals"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if item.error == nil {
                     HStack(spacing: 6) {
                         Menu {
                             Picker(tr("النوع", "Type"), selection: $item.kind) {
-                                ForEach(item.allowedKinds) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+                                ForEach(item.allowedKinds) { kind in
+                                    Label(item.annualSource && item.existingAnnualDeductions && kind == .deductions ? tr("استبدال الاستقطاعات", "Replace deductions") : kind.title, systemImage: kind.systemImage).tag(kind)
+                                }
                             }
                         } label: {
-                            chip(item.kind.title, color: item.kind.color)
+                            chip(item.annualSource && item.existingAnnualDeductions && item.kind == .deductions ? tr("استبدال", "Replace") : item.kind.title, color: item.kind.color)
                         }
-                        if item.kind.needsMonth {
+                        if item.kind.needsMonth && !item.annualSource {
                             Menu {
                                 Picker(tr("الشهر", "Month"), selection: $item.month) {
                                     ForEach(months, id: \.self) { Text($0).tag($0) }

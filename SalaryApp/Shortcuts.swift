@@ -347,7 +347,7 @@ enum EmployeeLookup {
         return try SharedModel.container.mainContext.fetch(FetchDescriptor<Deduction>(
             predicate: #Predicate { $0.month == month && $0.matchKey == key },
             sortBy: [SortDescriptor(\.title)]
-        ))
+        )).filter { DeductionStatus.read($0.note, amount: $0.amount) == nil }
     }
 }
 

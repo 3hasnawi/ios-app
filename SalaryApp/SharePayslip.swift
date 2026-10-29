@@ -62,7 +62,7 @@ struct ShareOptionsSheet: View {
         .task(id: mode) {
             guard mode == .image, files == nil else { return }
             do {
-                files = try PayslipExporter.export(employee: employee, deductions: deductions)
+                files = try PayslipExporter.export(employee: employee, deductions: deductions.filter { DeductionStatus.read($0.note, amount: $0.amount) == nil })
             } catch {
                 errorText = tr("تعذّر تجهيز الصورة: \(error.localizedDescription)", "Couldn't prepare the image: \(error.localizedDescription)")
             }
@@ -164,7 +164,7 @@ struct ShareOptionsSheet: View {
             month: employee.month, name: employee.name, rank: employee.rank,
             workplace: employee.workplace, net: employee.netSalary,
             items: employee.items, details: employee.details,
-            bankDeductions: deductions.map { ($0.title, $0.amount ?? 0) }
+            bankDeductions: deductions.filter { DeductionStatus.read($0.note, amount: $0.amount) == nil }.map { ($0.title, $0.amount ?? 0) }
         )]
         let name = employee.name
         do {

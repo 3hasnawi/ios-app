@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+nonisolated enum AnnualDeductionImportError: LocalizedError {
+    case changedMonth
+    var errorDescription: String? {
+        tr("تغيّرت بيانات الشهر بعد المراجعة؛ أعد اختيار الملف ومراجعة الاستبدال.", "The month's data changed after review; select the file again and review the replacement.")
+    }
+}
+
 /// شهر رواتب واحد = ملف Excel واحد، واسمه هو اسم الملف (مثل "تشرين الاول 2026").
 @Model
 final class PayrollMonth {
@@ -201,6 +208,17 @@ actor DataImporter {
     }
 
     /// ملف استقطاعات فقط: يستبدل استقطاعات الشهر وتبقى رواتبه.
+    func replaceAnnualDeductions(month: String, with deductions: [ImportedDeduction], expectedCount: Int, expectedDate: Date?, progress: ProgressSink? = nil) throws {
+        let count = try modelContext.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month }))
+        var descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
+        descriptor.fetchLimit = 1
+        let date = try modelContext.fetch(descriptor).first?.importedAt
+        guard count == expectedCount, date == expectedDate else {
+            throw AnnualDeductionImportError.changedMonth
+        }
+        try replaceDeductions(month: month, with: deductions, progress: progress)
+    }
+
     func replaceDeductions(month: String, with deductions: [ImportedDeduction], progress: ProgressSink? = nil) throws {
         // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
         modelContext.autosaveEnabled = false

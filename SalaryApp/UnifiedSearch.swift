@@ -878,7 +878,7 @@ private struct PersonPayslip: View {
     }
 
     var body: some View {
-        PayslipDocument(style: .screen, employee: employee, staff: staff, deductions: deductions)
+        PayslipDocument(style: .screen, employee: employee, staff: staff, deductions: deductions.filter { DeductionStatus.read($0.note, amount: $0.amount) == nil })
             .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
@@ -903,11 +903,11 @@ struct PersonDeductionsSection: View {
             } else {
                 ForEach(deductions) { d in
                     LabeledContent {
-                        Text(Money.format(d.amount)).monospacedDigit().foregroundStyle(.red)
+                        Text(DeductionStatus.read(d.note, amount: d.amount) ?? Money.format(d.amount)).monospacedDigit().foregroundStyle(.red)
                     } label: {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(d.title.orDash)
-                            if !d.note.isEmpty { Text(d.note).font(.caption).foregroundStyle(.secondary) }
+                            if !d.note.isEmpty && DeductionStatus.read(d.note, amount: d.amount) == nil { Text(d.note).font(.caption).foregroundStyle(.secondary) }
                         }
                     }
                 }

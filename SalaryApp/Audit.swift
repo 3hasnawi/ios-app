@@ -31,7 +31,7 @@ extension ReportEngine {
         let employees = try modelContext.fetch(e)
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
         d.propertiesToFetch = [\.employeeName, \.matchKey, \.title, \.amount, \.note]
-        let deductions = try modelContext.fetch(d)
+        let deductions = try modelContext.fetch(d).filter { DeductionStatus.read($0.note, amount: $0.amount) == nil }
         try Task.checkCancellation()
         func money(_ v: Double) -> String { Money.format(v) }
         var checks: [AuditCheck] = []

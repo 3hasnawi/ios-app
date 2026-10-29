@@ -183,7 +183,7 @@ extension ReportEngine {
         func load(_ month: String) throws -> [DeductionSnapshot] {
             var descriptor = FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month })
             descriptor.propertiesToFetch = [\.employeeName, \.title, \.note, \.amount]
-            return try modelContext.fetch(descriptor).map {
+            return try modelContext.fetch(descriptor).filter { DeductionStatus.read($0.note, amount: $0.amount) == nil }.map {
                 DeductionSnapshot(name: $0.employeeName, entity: $0.title, note: $0.note, amount: $0.amount)
             }
         }

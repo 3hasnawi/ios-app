@@ -11,7 +11,7 @@ nonisolated struct DeductionPerson: Identifiable, Hashable, Sendable {
 }
 
 nonisolated struct DeductionPeriodRow: Identifiable, Sendable {
-    enum State: Sendable { case amount(Double), none, unavailable }
+    enum State: Sendable { case amount(Double), status(Double?, [String]), none, unavailable }
     let year: Int
     let month: Int
     let state: State
@@ -26,6 +26,7 @@ nonisolated struct EmployeeDeductionStatement: Sendable {
     let rows: [DeductionPeriodRow]
     var total: Double { rows.reduce(0) { result, row in
         if case .amount(let value) = row.state { return result + value }
+        if case .status(let amount, _) = row.state { return result + (amount ?? 0) }
         return result
     } }
     var incomplete: Bool { rows.contains { if case .unavailable = $0.state { return true }; return false } }
@@ -111,11 +112,16 @@ actor EmployeeDeductionEngine {
         }
         let title = entity
         var dd = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key && $0.title == title })
-        dd.propertiesToFetch = [\.month, \.amount]
+        dd.propertiesToFetch = [\.month, \.amount, \.note]
         var totals: [String: Double] = [:]
+        var statuses: [String: Set<String>] = [:]
         for d in try modelContext.fetch(dd) {
             let date = MonthName.sortKey(d.month)
             guard date >= from && date <= to else { continue }
+            if let status = DeductionStatus.read(d.note, amount: d.amount) {
+                statuses[d.month, default: []].insert(status)
+                continue
+            }
             guard let amount = d.amount, amount.isFinite, amount >= 0 else { throw EmployeeDeductionError.invalidAmount }
             totals[d.month, default: 0] += amount
             guard totals[d.month]!.isFinite else { throw EmployeeDeductionError.invalidAmount }
@@ -130,6 +136,9 @@ actor EmployeeDeductionEngine {
             let name = source.name
             let count = try modelContext.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == name }))
             if count != source.deductionCount { rows.append(DeductionPeriodRow(year: year, month: month, state: .unavailable)) }
+            else if let names = statuses[name], !names.isEmpty {
+                rows.append(DeductionPeriodRow(year: year, month: month, state: .status(totals[name], names.sorted())))
+            }
             else if let total = totals[name] { rows.append(DeductionPeriodRow(year: year, month: month, state: .amount(total))) }
             else { rows.append(DeductionPeriodRow(year: year, month: month, state: .none)) }
         }
@@ -263,7 +272,12 @@ struct EmployeeDeductionsView: View {
     }
     private func isUnavailable(_ state: DeductionPeriodRow.State) -> Bool { if case .unavailable = state { return true }; return false }
     private func value(_ state: DeductionPeriodRow.State) -> String {
-        switch state { case .amount(let amount): return Money.format(amount); case .none: return tr("لا يوجد", "None"); case .unavailable: return tr("غير متحقق", "Unverified") }
+        switch state {
+        case .amount(let amount): return Money.format(amount)
+        case .status(let amount, let names): return ([amount.map { Money.format($0) }].compactMap { $0 } + names).joined(separator: " · ")
+        case .none: return tr("لا يوجد", "None")
+        case .unavailable: return tr("غير متحقق", "Unverified")
+        }
     }
     private func preparePDF(_ report: EmployeeDeductionStatement) async {
         generating = true; defer { generating = false }
@@ -379,10 +393,16 @@ nonisolated enum EmployeeDeductionPDF {
         let valueWidth = colWidth * 0.47
         for row in statement.rows {
             if case .amount(let amount) = row.state { _ = try fitSize(number(amount), width: valueWidth, sizes: [9, 8, 7]) }
+            if case .status(let amount, let names) = row.state {
+                if let amount { _ = try fitSize(number(amount), width: valueWidth, sizes: [8, 7, 6]) }
+                _ = try fitSize(names.joined(separator: "، "), width: valueWidth, sizes: [7, 6, 5])
+            }
         }
         for year in years {
             let sum = yearGroups[year, default: []].reduce(0.0) { result, row in
-                if case .amount(let amount) = row.state { return result + amount }; return result
+                if case .amount(let amount) = row.state { return result + amount }
+                if case .status(let amount, _) = row.state { return result + (amount ?? 0) }
+                return result
             }
             _ = try fitSize(number(sum), width: valueWidth, sizes: [9, 8, 7])
         }
@@ -440,6 +460,16 @@ nonisolated enum EmployeeDeductionPDF {
                         case .amount(let amount):
                             let s = (try? fitSize(number(amount), width: valueWidth, sizes: [9, 8, 7])) ?? 7
                             text(number(amount), vr, size: s, align: .center)
+                        case .status(let amount, let names):
+                            let status = names.joined(separator: "، ")
+                            let size = (try? fitSize(status, width: valueWidth, sizes: [7, 6, 5])) ?? 5
+                            if let amount {
+                                let upper = CGRect(x: vr.minX, y: vr.minY, width: vr.width, height: vr.height / 2)
+                                let lower = CGRect(x: vr.minX, y: vr.midY, width: vr.width, height: vr.height / 2)
+                                let amountSize = (try? fitSize(number(amount), width: valueWidth, sizes: [8, 7, 6])) ?? 6
+                                text(number(amount), upper, size: amountSize, align: .center)
+                                text(status, lower, size: size, align: .center)
+                            } else { text(status, vr, size: size, align: .center) }
                         case .none: text("لا يوجد", vr, size: 8, align: .center)
                         case .unavailable: text("غير متحقق", vr, size: 7.5, color: .systemOrange, align: .center)
                         }
@@ -451,7 +481,11 @@ nonisolated enum EmployeeDeductionPDF {
                     let incomplete = rows.contains { if case .unavailable = $0.state { return true }; return false }
                     let subtotalTitle = incomplete ? "مجموع المتوفر" : (rows.count == 12 ? "مجموع السنة" : "مجموع الفترة")
                     text(subtotalTitle, right, size: 8, bold: true, align: .center)
-                    let subtotal = rows.reduce(0.0) { value, row in if case .amount(let amount) = row.state { return value + amount }; return value }
+                    let subtotal = rows.reduce(0.0) { value, row in
+                        if case .amount(let amount) = row.state { return value + amount }
+                        if case .status(let amount, _) = row.state { return value + (amount ?? 0) }
+                        return value
+                    }
                     let size = (try? fitSize(number(subtotal), width: valueWidth, sizes: [9, 8, 7])) ?? 7
                     text(number(subtotal), left, size: size, bold: true, align: .center)
                 }
