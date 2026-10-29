@@ -17,8 +17,13 @@ internal static class ExcelExport
             .Where(x => x.Items.ContainsKey(title)).Select(x => new ReportLine(x.Employee.Name, x.Employee.Rank, x.Items[title], x.Employee.Workplace)).ToList();
         WriteReport(path, month, title, rows);
     }
+    public static void Audit(string path, string months, string title, IReadOnlyList<string> lines)
+    {
+        var rows = lines.Select(x => new ReportLine(x, "", null, "")).ToList();
+        WriteReport(path, months, title, rows, audit: true);
+    }
     private sealed record ReportLine(string Name, string Rank, double? Amount, string Note);
-    private static void WriteReport(string path, string month, string title, List<ReportLine> rows)
+    private static void WriteReport(string path, string month, string title, List<ReportLine> rows, bool audit = false)
     {
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -28,8 +33,8 @@ internal static class ExcelExport
                 Write(zip, "[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/></Types>");
                 Write(zip, "_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
                 Write(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>");
-                Write(zip, "xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"كشف الجهة\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
-                Write(zip, "xl/styles.xml", "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Arial\"/></font></fonts><fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill></fills><borders count=\"1\"><border/></borders><cellStyleXfs count=\"1\"><xf/></cellStyleXfs><cellXfs count=\"1\"><xf fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/></cellXfs></styleSheet>");
+                Write(zip, "xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><bookViews><workbookView/></bookViews><sheets><sheet name=\"كشف الجهة\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                Write(zip, "xl/styles.xml", "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><fonts count=\"1\"><font><sz val=\"11\"/><name val=\"Arial\"/></font></fonts><fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill></fills><borders count=\"1\"><border/></borders><cellStyleXfs count=\"1\"><xf/></cellStyleXfs><cellXfs count=\"1\"><xf fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/></cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>");
                 var entry = zip.CreateEntry("xl/worksheets/sheet1.xml", CompressionLevel.Fastest);
                 using var stream = entry.Open(); using var xml = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new System.Text.UTF8Encoding(false) });
                 const string ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -49,9 +54,20 @@ internal static class ExcelExport
                     xml.WriteEndElement();
                 }
                 Row(("الكشف", false), (title, false), ("الشهر", false), (month, false));
-                Row(("الاسم", false), ("الرتبة", false), ("المبلغ", false), ("ملاحظات", false));
-                foreach (var d in rows) Row((d.Name ?? "", false), (d.Rank ?? "", false), (d.Amount?.ToString("R", CultureInfo.InvariantCulture) ?? "", d.Amount.HasValue), (d.Note ?? "", false));
-                Row(("المجموع", false), ("", false), (rows.Sum(x => x.Amount ?? 0).ToString("R", CultureInfo.InvariantCulture), true));
+                if (audit)
+                {
+                    Row(("ت", false), ("تفاصيل الحالة", false));
+                    for (var i = 0; i < rows.Count; i++) Row(((i + 1).ToString(CultureInfo.InvariantCulture), true), (rows[i].Name ?? "", false));
+                    Row(("عدد الحالات", false), (rows.Count.ToString(CultureInfo.InvariantCulture), true));
+                }
+                else
+                {
+                    Row(("الاسم", false), ("الرتبة", false), ("المبلغ", false), ("ملاحظات", false));
+                    foreach (var d in rows) Row((d.Name ?? "", false), (d.Rank ?? "", false), (d.Amount?.ToString("R", CultureInfo.InvariantCulture) ?? "", d.Amount.HasValue), (d.Note ?? "", false));
+                    // لا يُعرض مجموع مضلل عندما يكون أحد المبالغ غير متاح.
+                    if (rows.All(x => x.Amount.HasValue)) Row(("المجموع", false), ("", false), (rows.Sum(x => x.Amount!.Value).ToString("R", CultureInfo.InvariantCulture), true));
+                    else Row(("المجموع غير متاح لوجود مبالغ فارغة", false));
+                }
                 xml.WriteEndElement(); xml.WriteEndElement();
             }
             File.Move(temp, path, true);

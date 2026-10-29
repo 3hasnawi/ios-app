@@ -138,3 +138,42 @@ if (matching.Single(x => x.Title == "لهم راتب وليسوا في المل�
 var ambiguousMatch = staffMatchingData with { Staff = staffMatchingData.Staff.Append(staffMatchingData.Staff[0]).ToList() };
 if (StaffMatching.Run(ambiguousMatch, newer).Single(x => x.Title == "مطابقة ملاك غير حاسمة").Lines.Count != 1) throw new Exception("ambiguous staff match accepted");
 Console.WriteLine("Staff matching fixture passed: unified number, inactive status and ambiguous matches.");
+var auditPath = Path.Combine(Path.GetTempPath(), "salary-audit-" + Guid.NewGuid().ToString("N") + ".xlsx");
+try {
+    var auditLines = Enumerable.Range(1, 650).Select(i => "حالة وهمية " + i).ToList();
+    auditLines[20] = "=SUM(1,1)";
+    ExcelExport.Audit(auditPath, "الشهر الجديد / الشهر السابق", "حالات التدقيق", auditLines);
+    using var zip = System.IO.Compression.ZipFile.OpenRead(auditPath);
+    using var stream = zip.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+    var document = System.Xml.Linq.XDocument.Load(stream);
+    System.Xml.Linq.XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    if (document.Descendants(ns + "row").Count() != 653 || !document.Descendants(ns + "t").Any(x => x.Value == "حالة وهمية 650") || document.Descendants(ns + "f").Any()) throw new Exception("audit export lost rows or treated text as formulas");
+} finally { File.Delete(auditPath); }
+Console.WriteLine("Audit Excel fixture passed: all 650 results exported as text.");
+var specialEmployees = new List<Employee> {
+    new(newer,"مشترك وهمي","موظف","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",7000},{"صندوق الشهداء",4000},{"شركة عراق الجوال",10000}}),null),
+    new(newer,"غير مشترك وهمي","شرطي","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",0},{"شركة عراق الجوال",20000}}),null),
+    new(newer,"عقد مستبعد وهمي","عقود","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",0},{"صندوق الشهداء",2000}}),null),
+    new(newer,"مبلغ يحتاج مراجعة","موظف","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",3600}}),null)
+};
+var specialData = data with { Employees = specialEmployees };
+var health = SpecialReports.Build(specialData, newer, "الرعاية الصحية")!;
+if (!health.Lines.Contains("المشتركون: 2") || !health.Lines.Contains("غير المشتركين: 1") || !health.Lines.Any(x => x.Contains("يحتاج مراجعة")) || health.Lines.Any(x => x.StartsWith("غير مشترك") && x.Contains("عقد مستبعد"))) throw new Exception("health report failed");
+var fundReport = SpecialReports.Build(specialData, newer, "صندوق الشهداء")!;
+if (!fundReport.Lines.Any(x => x.Contains("موظفون") && x.Contains("4,000")) || !fundReport.Lines.Any(x => x.Contains("عقود") && x.Contains("2,000"))) throw new Exception("martyrs report failed");
+var foodReport = SpecialReports.Build(specialData, newer, "شركة عراق الجوال")!;
+if (!foodReport.Lines.Any(x => x.Contains("900")) || !foodReport.Lines.Any(x => x.Contains("524")) || !foodReport.Lines.Any(x => x.Contains("28,576"))) throw new Exception("food contract split failed");
+Console.WriteLine("Special reports fixture passed: health exclusions, fund categories and food split rounding.");
+var missingPath = Path.Combine(Path.GetTempPath(), "salary-missing-" + Guid.NewGuid().ToString("N") + ".xlsx");
+try {
+    var missing = data with { Deductions = [new(month,"اسم وهمي","جهة وهمية",null,null,null)] };
+    ExcelExport.Entity(missingPath, missing, month, "جهة وهمية");
+    using var zip = System.IO.Compression.ZipFile.OpenRead(missingPath);
+    using var sheet = zip.GetEntry("xl/worksheets/sheet1.xml")!.Open();
+    var doc = System.Xml.Linq.XDocument.Load(sheet);
+    System.Xml.Linq.XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+    if (!doc.Descendants(ns + "t").Any(x => x.Value.Contains("المجموع غير متاح"))) throw new Exception("empty amount shown as valid total");
+} finally { File.Delete(missingPath); }
+Console.WriteLine("Missing amount fixture passed: no misleading total.");
+var inspectExcel = Environment.GetEnvironmentVariable("SALARY_EXCEL_TEST_PATH");
+if (!string.IsNullOrEmpty(inspectExcel)) ExcelExport.Audit(inspectExcel, "الشهر السابق / الشهر الحالي", "نتائج وهمية", Enumerable.Range(1, 650).Select(i => "حالة وهمية " + i).ToList());

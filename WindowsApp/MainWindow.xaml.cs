@@ -224,7 +224,7 @@ public sealed partial class MainWindow : Window
                 }
                 return (rows, caption);
             });
-            if (section != page || (MonthPicker.SelectedItem as string ?? "") != month || (ComparePicker.SelectedItem as string ?? "") != comparisonMonth || PayrollMath.Normalize(DataFilter.Text) != q) return;
+            if (!ReferenceEquals(data, snapshot) || section != page || (MonthPicker.SelectedItem as string ?? "") != month || (ComparePicker.SelectedItem as string ?? "") != comparisonMonth || PayrollMath.Normalize(DataFilter.Text) != q) return;
             DataResults.ItemsSource = result.rows; DataCaption.Text = result.caption;
         }
         catch (Exception ex) { if (section == page) { DataResults.ItemsSource = null; DataCaption.Text = ex.Message; } }
@@ -237,8 +237,20 @@ public sealed partial class MainWindow : Window
             if (item.Value is Book book) { await SaveBook(book); return; }
             if (item.Value is AuditSelection audit)
             {
-                var contents = new TextBox { Text = string.Join("\n", audit.Lines), IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
-                await new ContentDialog { Title = audit.Title, Content = contents, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                var preview = string.Join("\n", audit.Lines.Take(500));
+                if (audit.Lines.Count > 500) preview += "\n... تظهر أول 500 حالة؛ التصدير يشمل جميع النتائج.";
+                var contents = new TextBox { Text = preview, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
+                var auditDialog = new ContentDialog { Title = audit.Title, Content = contents, PrimaryButtonText = "تصدير Excel", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+                if (await auditDialog.ShowAsync() == ContentDialogResult.Primary)
+                {
+                    var monthLabel = MonthPicker.SelectedItem as string ?? "";
+                    if (ComparePicker.SelectedItem is string previous && previous != monthLabel) monthLabel += " / " + previous;
+                    var picker = new FileSavePicker { SuggestedFileName = "نتائج التدقيق" };
+                    picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
+                    InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                    var file = await picker.PickSaveFileAsync();
+                    if (file != null) await Task.Run(() => ExcelExport.Audit(file.Path, monthLabel, audit.Title, audit.Lines));
+                }
                 return;
             }
             if (item.Value is BankAmount amount)
@@ -298,6 +310,7 @@ public sealed partial class MainWindow : Window
             var textBox = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 500 };
             var dialog = new ContentDialog { Title = title, Content = textBox, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
             if (item.Value is EntitySelection or PayrollSelection) dialog.PrimaryButtonText = "تصدير Excel";
+            if (item.Value is PayrollSelection special && SpecialReports.Supports(special.Title)) dialog.SecondaryButtonText = "تفاصيل الكشف الخاص";
             if (item.Value is Staff) dialog.PrimaryButtonText = "تصدير تقرير الملاك PDF";
             var action = await dialog.ShowAsync();
             if (action == ContentDialogResult.Primary && item.Value is EntitySelection selected && data != null)
@@ -323,6 +336,20 @@ public sealed partial class MainWindow : Window
                 InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
                 var file = await picker.PickSaveFileAsync();
                 if (file != null) await Task.Run(() => StaffReportPdf.Write(file.Path, StaffReportData.From(staff)));
+            }
+            else if (action == ContentDialogResult.Secondary && item.Value is PayrollSelection selectedSpecial && data != null)
+            {
+                var snapshot = data;
+                var report = await Task.Run(() => SpecialReports.Build(snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                if (report != null)
+                {
+                    var shown = string.Join("\n", report.Lines.Take(500));
+                    if (report.Lines.Count > 500) shown += "\n... تظهر أول 500 نتيجة.";
+                    var body = new StackPanel { Spacing = 10 };
+                    body.Children.Add(new TextBlock { Text = report.Explanation, TextWrapping = TextWrapping.Wrap });
+                    body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
+                    await new ContentDialog { Title = report.Title, Content = body, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                }
             }
         }
         catch (Exception ex) { await Error(ex.Message); }
