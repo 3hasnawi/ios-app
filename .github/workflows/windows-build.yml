@@ -19,7 +19,7 @@ jobs:
         shell: pwsh
         working-directory: WindowsApp
         run: |
-          msbuild SalaryWindows.csproj -restore -t:Publish -p:Configuration=Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None "-p:PublishDir=$env:RUNNER_TEMP\SalaryWindows/"
+          msbuild SalaryWindows.csproj -restore -t:Publish -p:Configuration=Release -p:Version=1.0.${{ github.run_number }} -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None "-p:PublishDir=$env:RUNNER_TEMP\SalaryWindows/"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe")) { throw 'Windows executable was not produced.' }
           $pri = 'bin\x64\Release\net8.0-windows10.0.19041.0\win-x64\SalaryWindows.pri'

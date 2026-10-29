@@ -15,6 +15,8 @@ internal sealed record Account(string Entity, string Iban, string Branch, string
 internal sealed record Book(Guid Id, string Title, string Month, string? Entity, int Pages);
 internal sealed record BackupData(Manifest Manifest, List<Employee> Employees, List<Deduction> Deductions, List<Staff> Staff, List<Account> Accounts, List<Book> Books, Dictionary<string, string> Settings, string ArchivePath);
 
+internal sealed record ServerInfo(int BackupCount, long BackupBytes);
+
 internal static class BackupReader
 {
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
@@ -72,11 +74,36 @@ internal static class BackupReader
         }
         return list;
     }
+    private static void ValidateConnection(Uri baseUri, string token)
+    {
+        if (!ValidServerAddress(baseUri)) throw new InvalidOperationException("أدخل عنوان HTTP محلياً، مثل http://192.168.1.10:8765");
+        if (token.Length < 32 || token.Any(c => c > 127 || char.IsWhiteSpace(c) || char.IsControl(c))) throw new InvalidOperationException("رمز الوصول غير صالح.");
+    }
+    public static async Task<ServerInfo> Probe(Uri baseUri, string token, HttpMessageHandler? transport = null)
+    {
+        ValidateConnection(baseUri, token);
+        using var client = new HttpClient(transport ?? new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, "/v1/status"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("رمز الوصول غير صحيح.");
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength is > 1000000) throw new InvalidDataException("رد السيرفر غير صالح.");
+        using var stream = await response.Content.ReadAsStreamAsync();
+        var buffer = new byte[1_000_001]; var total = 0;
+        while (total < buffer.Length) { var readCount = await stream.ReadAsync(buffer.AsMemory(total)); if (readCount == 0) break; total += readCount; }
+        if (total > 1_000_000) throw new InvalidDataException("رد السيرفر غير صالح.");
+        using var document = JsonDocument.Parse(buffer.AsMemory(0, total));
+        var root = document.RootElement;
+        if (!root.TryGetProperty("service", out var service) || service.GetString() != "salary-backup" ||
+            !root.TryGetProperty("backup_count", out var count) || !count.TryGetInt32(out var n) || n < 0 ||
+            !root.TryGetProperty("backup_bytes", out var bytes) || !bytes.TryGetInt64(out var size) || size < 0)
+            throw new InvalidDataException("رد السيرفر غير صالح.");
+        return new(n, size);
+    }
     public static async Task<string> Download(Uri baseUri, string token)
     {
-        if (!ValidServerAddress(baseUri))
-            throw new InvalidOperationException("أدخل عنوان HTTP محلياً، مثل http://192.168.1.10:8765");
-        if (token.Length < 32 || token.Any(c => c > 127 || char.IsWhiteSpace(c) || char.IsControl(c))) throw new InvalidOperationException("رمز الوصول غير صالح.");
+        ValidateConnection(baseUri, token);
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromMinutes(10) };
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(baseUri, "/v1/backups/latest"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

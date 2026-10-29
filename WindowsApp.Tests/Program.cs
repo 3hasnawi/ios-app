@@ -301,6 +301,20 @@ try {
     if (WindowsSettingsStore.Load(settingsPath) != originalSettings) throw new Exception("settings did not persist");
     WindowsSettingsStore.Save(new WindowsSettings("", false), settingsPath);
     if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings("", false)) throw new Exception("settings did not update");
+    var displaySettings = new WindowsSettings("http://192.168.1.10:8765", true, "dark", 19);
+    WindowsSettingsStore.Save(displaySettings, settingsPath);
+    if (WindowsSettingsStore.Load(settingsPath) != displaySettings) throw new Exception("appearance did not persist");
+    var lockedSettings = displaySettings with { LockEnabled = true };
+    WindowsSettingsStore.Save(lockedSettings, settingsPath);
+    if (!WindowsSettingsStore.Load(settingsPath).LockEnabled) throw new Exception("lock setting did not persist");
+    File.WriteAllText(settingsPath, "broken settings");
+    if (!WindowsSettingsStore.Load(settingsPath).LockEnabled) throw new Exception("corrupt settings bypassed lock");
+    WindowsSettingsStore.Save(new WindowsSettings(), settingsPath);
+    if (WindowsSettingsStore.Load(settingsPath).LockEnabled) throw new Exception("verified disabled lock persisted");
+    File.WriteAllText(settingsPath, "{\"ServerAddress\":\"http://192.168.1.10:8765\",\"HideZeroBankRows\":true}");
+    if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings("http://192.168.1.10:8765", true)) throw new Exception("old settings did not retain defaults");
+    WindowsSettingsStore.Save(new WindowsSettings("", false, "invalid", 1000), settingsPath);
+    if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings()) throw new Exception("invalid appearance was not normalized");
     File.WriteAllText(settingsPath, "invalid json");
     if (WindowsSettingsStore.Load(settingsPath) != new WindowsSettings()) throw new Exception("invalid settings not handled");
 } finally { if (Directory.Exists(settingsDir)) Directory.Delete(settingsDir, true); }
@@ -358,3 +372,31 @@ if (portraitPreview.Width > 1400 || portraitPreview.Height > 2000 || portraitPre
 foreach (var invalidSize in new[] { (0d, 100d), (double.NaN, 200d), (100d, double.PositiveInfinity) })
     try { PreviewGeometry.Fit(invalidSize.Item1, invalidSize.Item2); throw new Exception("invalid preview size accepted"); } catch (InvalidDataException) { }
 Console.WriteLine("Preview geometry fixture passed: page aspect and invalid dimensions.");
+
+var probeToken = new string('a', 32);
+var probe = await BackupReader.Probe(new Uri("http://192.168.1.10:8765"), probeToken, new FakeProbeHandler(request => {
+    if (request.RequestUri?.AbsolutePath != "/v1/status" || request.Headers.Authorization?.Parameter != probeToken) throw new Exception("incorrect probe request");
+    return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent("{\"service\":\"salary-backup\",\"backup_count\":1,\"backup_bytes\":1024}") };
+}));
+if (probe.BackupCount != 1 || probe.BackupBytes != 1024) throw new Exception("probe response invalid");
+try { await BackupReader.Probe(new Uri("http://192.168.1.10:8765"), probeToken, new FakeProbeHandler(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Unauthorized))); throw new Exception("unauthorized probe accepted"); } catch (UnauthorizedAccessException) { }
+try { await BackupReader.Probe(new Uri("http://192.168.1.10:8765"), probeToken, new FakeProbeHandler(_ => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent("{\"service\":\"other\",\"backup_count\":1,\"backup_bytes\":1}") })); throw new Exception("wrong service accepted"); } catch (InvalidDataException) { }
+Console.WriteLine("Server probe fixture passed: auth, service identification and response.");
+
+var inventoryPath = Path.Combine(Path.GetTempPath(), "salary-inventory-" + Guid.NewGuid().ToString("N") + ".zip");
+try {
+    using (var zip = System.IO.Compression.ZipFile.Open(inventoryPath, System.IO.Compression.ZipArchiveMode.Create)) {
+        foreach (var name in new[] { "manifest.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl", "settings.json", "books/index.json", "books/test.pdf", "future.data" }) {
+            using var writer = new StreamWriter(zip.CreateEntry(name, System.IO.Compression.CompressionLevel.NoCompression).Open()); writer.Write("fake-content-" + name);
+        }
+    }
+    var inventory = StorageInventory.Read(inventoryPath);
+    if (inventory.ArchiveBytes != new FileInfo(inventoryPath).Length || inventory.CompressedBytes["books"] <= inventory.CompressedBytes["settings"] / 2 || inventory.CompressedBytes["payroll"] <= 0 || inventory.CompressedBytes["other"] <= 0) throw new Exception("storage inventory invalid");
+    if (!StorageInventory.FormatBytes(2_097_152).Contains("ميغابايت")) throw new Exception("storage unit invalid");
+} finally { File.Delete(inventoryPath); }
+Console.WriteLine("Storage inventory fixture passed: compressed categories, total and units.");
+
+sealed class FakeProbeHandler(Func<HttpRequestMessage, HttpResponseMessage> response) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(response(request));
+}

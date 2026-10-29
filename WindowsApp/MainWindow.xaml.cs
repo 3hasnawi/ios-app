@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Documents;
 using Windows.UI;
 using System.Text.Json;
 using Windows.Storage.Pickers;
@@ -24,7 +25,73 @@ public sealed partial class MainWindow : Window
     private bool viewReady;
     private string section = "home";
     private WindowsSettings settings = new();
-    public MainWindow() { InitializeComponent(); settings = WindowsSettingsStore.Load(); ServerAddress.Text = settings.ServerAddress; HideZeroRows.IsChecked = settings.HideZeroBankRows; viewReady = true; MarkActiveNavigation("home"); Closed += (_, _) => { DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeletePreview(path); }; }
+    private bool changingLock;
+    private bool unlocking;
+    public MainWindow()
+    {
+        InitializeComponent();
+        settings = WindowsSettingsStore.Load();
+        ServerAddress.Text = settings.ServerAddress;
+        HideZeroRows.IsChecked = settings.HideZeroBankRows;
+        LockToggle.IsOn = settings.LockEnabled;
+        LockNowButton.IsEnabled = settings.LockEnabled;
+        AppearancePicker.SelectedIndex = settings.Theme == "dark" ? 1 : settings.Theme == "system" ? 2 : 0;
+        FontSizePicker.SelectedIndex = settings.FontSize == 14 ? 0 : settings.FontSize == 19 ? 2 : 1;
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        VersionText.Text = "الإصدار " + (version?.ToString(3) ?? "غير معروف") + " · تجريبي";
+        viewReady = true;
+        RootGrid.ActualThemeChanged += (_, _) => MarkActiveNavigation(section);
+        ApplyAppearance();
+        SetLocked(settings.LockEnabled);
+        Closed += (_, _) => { ServerToken.Password = ""; DeleteArchive(data?.ArchivePath); foreach (var path in temporaryPreviews) DeletePreview(path); };
+    }
+    private void SetLocked(bool locked)
+    {
+        AppContent.Visibility = locked ? Visibility.Collapsed : Visibility.Visible;
+        LockPanel.Visibility = locked ? Visibility.Visible : Visibility.Collapsed;
+        LockMessage.Text = "";
+    }
+    private void LockNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (settings.LockEnabled) SetLocked(true);
+    }
+    private async void Unlock_Click(object sender, RoutedEventArgs e)
+    {
+        if (unlocking) return;
+        unlocking = true; UnlockButton.IsEnabled = false; LockMessage.Text = "جارٍ التحقق…";
+        try {
+            var result = await WindowsHelloGate.Verify(WindowNative.GetWindowHandle(this));
+            if (result.Success) SetLocked(false); else LockMessage.Text = result.Message;
+        } finally { unlocking = false; UnlockButton.IsEnabled = true; }
+    }
+    private async void LockToggled(object sender, RoutedEventArgs e)
+    {
+        if (!viewReady || changingLock || LockToggle.IsOn == settings.LockEnabled) return;
+        changingLock = true; LockToggle.IsEnabled = false;
+        try {
+            var requested = LockToggle.IsOn;
+            var result = await WindowsHelloGate.Verify(WindowNative.GetWindowHandle(this));
+            if (!result.Success) { LockToggle.IsOn = settings.LockEnabled; SecurityMessage.Text = result.Message; return; }
+            var next = settings with { LockEnabled = requested };
+            try { WindowsSettingsStore.Save(next); settings = next; LockNowButton.IsEnabled = requested; SecurityMessage.Text = requested ? "تم تفعيل القفل." : "تم إيقاف القفل."; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { LockToggle.IsOn = settings.LockEnabled; SecurityMessage.Text = "تعذّر حفظ إعداد القفل."; }
+        } finally { changingLock = false; LockToggle.IsEnabled = true; }
+    }
+    private void ApplyAppearance()
+    {
+        RootGrid.RequestedTheme = settings.Theme == "dark" ? ElementTheme.Dark : settings.Theme == "system" ? ElementTheme.Default : ElementTheme.Light;
+        RootGrid.SetValue(TextElement.FontSizeProperty, (double)settings.FontSize);
+        MarkActiveNavigation(section);
+    }
+    private void AppearanceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!viewReady) return;
+        var theme = (AppearancePicker.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "light";
+        var size = int.TryParse((FontSizePicker.SelectedItem as ComboBoxItem)?.Tag?.ToString(), out var value) ? value : 16;
+        var next = (settings with { Theme = theme, FontSize = size }).Normalized();
+        try { WindowsSettingsStore.Save(next); settings = next; ApplyAppearance(); SettingsMessage.Text = "حُفظت إعدادات المظهر."; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { SettingsMessage.Text = "تعذّر حفظ إعدادات المظهر."; }
+    }
     private static void DeleteArchive(string? path) { if (path != null) try { File.Delete(path); } catch { } }
     private static void DeletePreview(string path)
     {
@@ -38,22 +105,26 @@ public sealed partial class MainWindow : Window
         DataPanel.Visibility = page is "reports" or "payroll" or "audit" or "staff" or "books" or "accounts" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
-        MonthPicker.Visibility = page == "settings" ? Visibility.Collapsed : Visibility.Visible;
+        SavedDataPanel.Visibility = page == "savedData" ? Visibility.Visible : Visibility.Collapsed;
+        MonthPicker.Visibility = page is "settings" or "savedData" ? Visibility.Collapsed : Visibility.Visible;
         ComparePicker.Visibility = page == "audit" ? Visibility.Visible : Visibility.Collapsed;
         AddAccountButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         if (DataPanel.Visibility == Visibility.Visible) RefreshData();
         if (page == "bank") RefreshBank();
+        if (page == "savedData") RefreshStoredData();
     }
     private void MarkActiveNavigation(string page)
     {
+        if (page == "savedData") page = "settings";
         var items = new Dictionary<string, Button> { ["home"] = HomeNav, ["search"] = SearchNav, ["reports"] = ReportsNav,
             ["payroll"] = PayrollNav, ["bank"] = BankNav, ["audit"] = AuditNav, ["staff"] = StaffNav,
             ["books"] = BooksNav, ["accounts"] = AccountsNav, ["settings"] = SettingsNav };
         foreach (var (key, button) in items)
         {
             var selected = key == page;
-            button.Background = new SolidColorBrush(selected ? Color.FromArgb(255, 225, 242, 232) : Color.FromArgb(0, 255, 255, 255));
-            button.Foreground = new SolidColorBrush(selected ? Color.FromArgb(255, 18, 110, 79) : Color.FromArgb(255, 36, 68, 59));
+            var dark = RootGrid.ActualTheme == ElementTheme.Dark;
+            button.Background = new SolidColorBrush(selected ? (dark ? Color.FromArgb(255, 38, 75, 57) : Color.FromArgb(255, 225, 242, 232)) : Color.FromArgb(0, 255, 255, 255));
+            button.Foreground = new SolidColorBrush(selected ? (dark ? Color.FromArgb(255, 169, 231, 193) : Color.FromArgb(255, 18, 110, 79)) : (dark ? Color.FromArgb(255, 235, 245, 239) : Color.FromArgb(255, 36, 68, 59)));
         }
     }
     private void Home_Click(object sender, RoutedEventArgs e) => ShowSection("home", "الرئيسية");
@@ -95,14 +166,86 @@ public sealed partial class MainWindow : Window
         StatusText.Text = "حُفظت نسخة معدلة مستقلة. افتحها لعرض التغيير؛ لم تُرفع إلى السيرفر.";
     }
     private void Settings_Click(object sender, RoutedEventArgs e) => ShowSection("settings", "الإعدادات");
+    private void SavedData_Click(object sender, RoutedEventArgs e) => ShowSection("savedData", "البيانات المحفوظة");
+    private async void RefreshStoredData()
+    {
+        if (!viewReady || section != "savedData") return;
+        var snapshot = data;
+        if (snapshot == null) { SavedTotal.Text = "—"; SavedStatus.Text = "افتح نسخة احتياطية أولاً."; SavedRows.ItemsSource = null; return; }
+        SavedTotal.Text = "—"; SavedRows.ItemsSource = null; SavedStatus.Text = "جارٍ حساب الأحجام…";
+        try {
+            var inventory = await Task.Run(() => StorageInventory.Read(snapshot.ArchivePath));
+            if (section != "savedData" || !ReferenceEquals(data, snapshot)) return;
+            BankRow Row(string label, string key, int? count = null) => new(label, (count.HasValue ? $"{count:N0} · " : "") + StorageInventory.FormatBytes(inventory.CompressedBytes[key]), inventory.CompressedBytes[key]);
+            SavedTotal.Text = StorageInventory.FormatBytes(inventory.ArchiveBytes);
+            SavedRows.ItemsSource = new[] {
+                Row("الأشهر", "months", snapshot.Manifest.Months.Length), Row("سجلات الرواتب", "payroll", snapshot.Employees.Count),
+                Row("الاستقطاعات", "deductions", snapshot.Deductions.Count), Row("سجلات الملاك", "staff", snapshot.Staff.Count),
+                Row("حسابات الجهات", "accounts", snapshot.Accounts.Count), Row("الكتب الرسمية", "books", snapshot.Books.Count),
+                Row("الفهرس والإعدادات", "settings"), Row("ملفات أخرى", "other") };
+            SavedStatus.Text = "الأحجام تخص محتوى النسخة المضغوط؛ حجم الملف الكلي يشمل فهارس ZIP أيضاً.";
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        { if (section == "savedData" && ReferenceEquals(data, snapshot)) { SavedRows.ItemsSource = null; SavedStatus.Text = "تعذّر قراءة أحجام النسخة."; } }
+    }
+
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
     {
         var address = ServerAddress.Text.Trim();
         if (address.Length > 0 && (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || !BackupReader.ValidServerAddress(uri)))
         { SettingsMessage.Text = "أدخل عنوان السيرفر المحلي بصيغة http:// وعنوان IP فقط."; return; }
-        var next = new WindowsSettings(address, HideZeroRows.IsChecked == true);
+        var next = settings with { ServerAddress = address, HideZeroBankRows = HideZeroRows.IsChecked == true };
         try { WindowsSettingsStore.Save(next); settings = next; SettingsMessage.Text = "حُفظت الإعدادات على هذا الجهاز."; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { SettingsMessage.Text = "تعذّر حفظ الإعدادات على الجهاز."; }
+    }
+    private void SaveDisplaySettings_Click(object sender, RoutedEventArgs e)
+    {
+        var next = settings with { HideZeroBankRows = HideZeroRows.IsChecked == true };
+        try { WindowsSettingsStore.Save(next); settings = next; SettingsMessage.Text = "حُفظ إعداد عرض كشف البنك."; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { HideZeroRows.IsChecked = settings.HideZeroBankRows; SettingsMessage.Text = "تعذّر حفظ إعداد العرض."; }
+    }
+    private (Uri Address, string Token) CurrentServerSettings()
+    {
+        if (!Uri.TryCreate(ServerAddress.Text.Trim(), UriKind.Absolute, out var uri) || !BackupReader.ValidServerAddress(uri))
+            throw new InvalidOperationException("أدخل عنوان السيرفر المحلي الصحيح.");
+        return (uri, ServerToken.Password);
+    }
+    private async void TestServer_Click(object sender, RoutedEventArgs e)
+    {
+        try {
+            var (address, token) = CurrentServerSettings(); ServerStatus.Text = "جارٍ اختبار الاتصال…";
+            var info = await BackupReader.Probe(address, token);
+            ServerStatus.Text = info.BackupCount == 0 ? "اتصل بالسيرفر؛ لا توجد نسخة محفوظة بعد." : $"اتصل بالسيرفر · {info.BackupCount:N0} نسخة · الحجم {info.BackupBytes / (1024.0 * 1024.0):N1} ميغابايت.";
+        } catch (UnauthorizedAccessException) { ServerStatus.Text = "رمز الوصول غير صحيح."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or InvalidOperationException)
+        { ServerStatus.Text = "تعذّر الاتصال بالسيرفر. تحقق من العنوان والشبكة والرمز."; }
+    }
+    private async void OpenLocalBackup_Click(object sender, RoutedEventArgs e)
+    {
+        string? temporary = null;
+        try {
+            var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".zip"); InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSingleFileAsync(); if (file == null) return;
+            ServerStatus.Text = "جارٍ فتح النسخة…";
+            temporary = Path.Combine(Path.GetTempPath(), "salary-" + Guid.NewGuid().ToString("N") + ".zip");
+            await Task.Run(() => File.Copy(file.Path, temporary));
+            await OpenPreparedBackup(temporary, file.Path);
+            temporary = null; ServerStatus.Text = "فُتحت النسخة من الملف.";
+        } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
+        { ServerStatus.Text = "تعذّر فتح الملف. تحقق من سلامة النسخة."; }
+        finally { DeleteArchive(temporary); }
+    }
+    private async void LoadServer_Click(object sender, RoutedEventArgs e)
+    {
+        string? temporary = null;
+        try {
+            var (address, token) = CurrentServerSettings(); ServerStatus.Text = "جارٍ تنزيل النسخة…";
+            temporary = await BackupReader.Download(address, token);
+            await OpenPreparedBackup(temporary, null);
+            temporary = null;
+            ServerStatus.Text = "فُتحت أحدث نسخة من السيرفر.";
+        } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException or InvalidOperationException)
+        { ServerStatus.Text = "تعذّر فتح النسخة. تحقق من الاتصال والرمز وسلامة النسخة."; }
+        finally { DeleteArchive(temporary); }
     }
     private async void BankItem_Click(object sender, ItemClickEventArgs e)
     {
@@ -137,7 +280,7 @@ public sealed partial class MainWindow : Window
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
         var url = new TextBox { Header = "عنوان السيرفر المحلي", PlaceholderText = "http://192.168.1.10:8765", Text = settings.ServerAddress, FlowDirection = FlowDirection.LeftToRight };
-        var token = new PasswordBox { Header = "رمز الوصول", FlowDirection = FlowDirection.LeftToRight };
+        var token = new PasswordBox { Header = "رمز الوصول", Password = ServerToken.Password, FlowDirection = FlowDirection.LeftToRight };
         var content = new StackPanel { Spacing = 12, FlowDirection = FlowDirection.RightToLeft };
         content.Children.Add(new TextBlock { Text = "اقرأ آخر نسخة من السيرفر، أو اختر ملف نسخة محفوظاً. القراءة فقط، ولا تُرفع تغييرات.", TextWrapping = TextWrapping.Wrap });
         content.Children.Add(url); content.Children.Add(token);
@@ -161,15 +304,9 @@ public sealed partial class MainWindow : Window
                 path = Path.Combine(Path.GetTempPath(), "salary-" + Guid.NewGuid().ToString("N") + ".zip");
                 await Task.Run(() => File.Copy(file.Path, path));
             }
-            var loaded = await Task.Run(() => BackupReader.Read(path));
-            var previous = data?.ArchivePath; data = loaded; originalSourcePath = selectedOriginal; retained = true;
-            MonthPicker.ItemsSource = loaded.Manifest.Months; MonthPicker.SelectedIndex = loaded.Manifest.Months.Length > 0 ? 0 : -1;
-            ComparePicker.ItemsSource = loaded.Manifest.Months; ComparePicker.SelectedIndex = loaded.Manifest.Months.Length > 1 ? 1 : -1;
-            var reference = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
-            var timestamp = loaded.Manifest.CreatedAt;
-            var date = timestamp > 0 && timestamp < 252423993599 ? reference.AddSeconds(timestamp).ToLocalTime().ToString("g") : "غير معروف";
-            StatusText.Text = $"النسخة للقراءة فقط · تاريخ إنشائها: {date} · أعد فتحها لتحديث البيانات";
-            DeleteArchive(previous); UpdateHome(); SearchChanged(null!, null!); RefreshData(); RefreshBank();
+            await OpenPreparedBackup(path, selectedOriginal);
+            retained = true;
+            if (choice == ContentDialogResult.Primary) ServerToken.Password = token.Password;
         }
         catch (Exception ex)
         {
@@ -177,6 +314,18 @@ public sealed partial class MainWindow : Window
             await Error(ex is HttpRequestException ? "تعذّر الاتصال بالسيرفر أو لم يقبل رمز الوصول." : ex.Message);
         }
         finally { token.Password = ""; if (!retained) DeleteArchive(path); }
+    }
+    private async Task OpenPreparedBackup(string path, string? selectedOriginal)
+    {
+        var loaded = await Task.Run(() => BackupReader.Read(path));
+        var previous = data?.ArchivePath; data = loaded; originalSourcePath = selectedOriginal;
+        MonthPicker.ItemsSource = loaded.Manifest.Months; MonthPicker.SelectedIndex = loaded.Manifest.Months.Length > 0 ? 0 : -1;
+        ComparePicker.ItemsSource = loaded.Manifest.Months; ComparePicker.SelectedIndex = loaded.Manifest.Months.Length > 1 ? 1 : -1;
+        var reference = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var timestamp = loaded.Manifest.CreatedAt;
+        var date = timestamp > 0 && timestamp < 252423993599 ? reference.AddSeconds(timestamp).ToLocalTime().ToString("g") : "غير معروف";
+        StatusText.Text = $"النسخة للقراءة فقط · تاريخ إنشائها: {date} · أعد فتحها لتحديث البيانات";
+        DeleteArchive(previous); UpdateHome(); SearchChanged(null!, null!); RefreshData(); RefreshBank(); RefreshStoredData();
     }
     private async Task Error(string message) => await new ContentDialog { Title = "تنبيه", Content = message, CloseButtonText = "حسناً", XamlRoot = Content.XamlRoot }.ShowAsync();
     private void MonthChanged(object sender, SelectionChangedEventArgs e) { if (!viewReady) return; UpdateHome(); SearchChanged(null!, null!); RefreshData(); RefreshBank(); }
