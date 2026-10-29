@@ -259,6 +259,20 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 8))
         app.terminate()
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
+                                               "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
+        app.launch()
+        let result = element("resultCard")
+        XCTAssertTrue(result.waitForExistence(timeout: 20))
+        result.press(forDuration: 1.0)
+        let deductionAction = app.buttons["كشف الاستقطاعات"]
+        XCTAssertTrue(deductionAction.waitForExistence(timeout: 5))
+        deductionAction.tap()
+        let selectedPerson = element("deductionSelectedPerson")
+        XCTAssertTrue(selectedPerson.waitForExistence(timeout: 10))
+        XCTAssertTrue(selectedPerson.label.contains("أحمد علي حسين الدليمي"))
+        app.buttons["إغلاق"].tap()
+        app.terminate()
+        app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
                                                "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO",
                                                "-openPerson", "YES", "-share", "NO"]
         app.launch()

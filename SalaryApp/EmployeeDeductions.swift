@@ -210,6 +210,10 @@ struct EmployeeDeductionsView: View {
     @State private var loading = false
     @State private var pdf: StatementPDF?
     @State private var generating = false
+
+    init(initialPerson: DeductionPerson? = nil) {
+        _person = State(initialValue: initialPerson)
+    }
     private var dataVersion: String { months.map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",") }
     private var periodKey: String { "\(person?.key ?? "")|\(entity)|\(dataVersion)" }
     private var selectionKey: String { "\(periodKey)|\(loadedPeriodKey)|\(fromMonth)|\(toMonth)" }
@@ -222,6 +226,7 @@ struct EmployeeDeductionsView: View {
                     Button { showingSearch = true } label: {
                         selectionRow(tr("الموظف", "Employee"), person?.name ?? tr("اختر موظفاً", "Choose an employee"))
                     }
+                    .accessibilityIdentifier("deductionSelectedPerson")
                     Divider()
                     Menu {
                         ForEach(entities, id: \.self) { name in Button(name) { entity = name } }

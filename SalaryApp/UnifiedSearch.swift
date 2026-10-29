@@ -92,6 +92,7 @@ struct UnifiedSearchView: View {
     @State private var path: [UnifiedPerson] = []
     /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
     @State private var shareTarget: Employee?
+    @State private var deductionTarget: DeductionPerson?
     @State private var preparingStaffReport = false
     @State private var staffReportError: String?
     @State private var people: [UnifiedPerson] = []
@@ -169,6 +170,10 @@ struct UnifiedSearchView: View {
                                         }
                                         .disabled(preparingStaffReport)
                                     }
+                                    Button(tr("كشف الاستقطاعات", "Deduction statement"), systemImage: "list.bullet.rectangle") {
+                                        deductionTarget = DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle)
+                                    }
+                                    .accessibilityIdentifier("employeeDeductionAction")
                                     Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
                                 }
                             }
@@ -306,6 +311,19 @@ struct UnifiedSearchView: View {
             }
             .overlay { modePicker }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
+            .sheet(item: $deductionTarget) { target in
+                NavigationStack {
+                    EmployeeDeductionsView(initialPerson: target)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button(tr("إغلاق", "Close")) { deductionTarget = nil }
+                            }
+                        }
+                }
+                .environment(\.layoutDirection, AppSettings.isEnglish ? .leftToRight : .rightToLeft)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
             .alert(tr("تقرير الملاك", "Staff report"), isPresented: Binding(
                 get: { staffReportError != nil }, set: { if !$0 { staffReportError = nil } })) {
                 Button(tr("حسناً", "OK"), role: .cancel) {}
