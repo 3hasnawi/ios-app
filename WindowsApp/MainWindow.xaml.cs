@@ -252,7 +252,21 @@ public sealed partial class MainWindow : Window
                     var body = new StackPanel { Spacing = 10 };
                     body.Children.Add(new TextBlock { Text = report.Explanation, TextWrapping = TextWrapping.Wrap });
                     body.Children.Add(new TextBox { Text = shown, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 450 });
-                    await new ContentDialog { Title = report.Title, Content = body, CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                    var specialDialog = new ContentDialog { Title = report.Title, Content = body, PrimaryButtonText = "تصدير Excel", SecondaryButtonText = "تصدير PDF", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot };
+                    var specialAction = await specialDialog.ShowAsync();
+                    if (specialAction == ContentDialogResult.Primary || specialAction == ContentDialogResult.Secondary)
+                    {
+                        var picker = new FileSavePicker { SuggestedFileName = "الكشف الخاص" };
+                        if (specialAction == ContentDialogResult.Primary) picker.FileTypeChoices.Add("Excel", new List<string> { ".xlsx" });
+                        else picker.FileTypeChoices.Add("PDF", new List<string> { ".pdf" });
+                        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+                        var file = await picker.PickSaveFileAsync();
+                        if (file != null)
+                        {
+                            if (specialAction == ContentDialogResult.Primary) await Task.Run(() => SpecialExcel.Write(file.Path, snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                            else await Task.Run(() => SpecialPdf.Write(file.Path, snapshot, selectedSpecial.Month, selectedSpecial.Title));
+                        }
+                    }
                 }
                 return;
             }
@@ -276,8 +290,8 @@ public sealed partial class MainWindow : Window
             }
             if (item.Value is BankAmount amount)
             {
-                var action = await new ContentDialog { Title = amount.Label, Content = amount.Value.ToString("N0"), PrimaryButtonText = "نسخ الرقم", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
-                if (action == ContentDialogResult.Primary)
+                var copyAction = await new ContentDialog { Title = amount.Label, Content = amount.Value.ToString("N0"), PrimaryButtonText = "نسخ الرقم", CloseButtonText = "إغلاق", XamlRoot = Content.XamlRoot }.ShowAsync();
+                if (copyAction == ContentDialogResult.Primary)
                 {
                     var clipboard = new Windows.ApplicationModel.DataTransfer.DataPackage();
                     clipboard.SetText(amount.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));

@@ -63,7 +63,7 @@ internal static class PdfExport
                 void Text(string text, float x, float baseline)
                 {
                     // HarfBuzz يشكّل العربية لكنه لا يطبق خوارزمية اتجاه النص؛ تُرسم الأرقام والنصوص اللاتينية كمقاطع مستقلة.
-                    text = string.Concat(text.Select(c => c >= '٠' && c <= '٩' ? (char)('0' + c - '٠') : c >= '۰' && c <= '۹' ? (char)('0' + c - '۰') : c));
+                    text = string.Concat(text.Select(c => c >= '٠' && c <= '٩' ? (char)('0' + c - '٠') : c >= '۰' && c <= '۹' ? (char)('0' + c - '۰') : c == '٫' ? '.' : c == '٬' ? ',' : c == '٪' ? '%' : c));
                     var runs = System.Text.RegularExpressions.Regex.Matches(text, @"[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*)*|[^A-Za-z0-9]+")
                         .Select(m => m.Value).ToList();
                     foreach (var run in runs)

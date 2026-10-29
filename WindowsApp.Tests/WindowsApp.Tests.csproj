@@ -5,6 +5,8 @@
     <Compile Include="../WindowsApp/PayrollMath.cs" Link="PayrollMath.cs" />
     <Compile Include="../WindowsApp/StaffReportPdf.cs" Link="StaffReportPdf.cs" />
     <Compile Include="../WindowsApp/StaffReportData.cs" Link="StaffReportData.cs" />
+    <Compile Include="../WindowsApp/SpecialPdf.cs" Link="SpecialPdf.cs" />
+    <Compile Include="../WindowsApp/SpecialExcel.cs" Link="SpecialExcel.cs" />
     <Compile Include="../WindowsApp/SpecialReports.cs" Link="SpecialReports.cs" />
     <Compile Include="../WindowsApp/StaffMatching.cs" Link="StaffMatching.cs" />
     <Compile Include="../WindowsApp/SalaryChecks.cs" Link="SalaryChecks.cs" />

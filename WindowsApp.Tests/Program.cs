@@ -193,3 +193,46 @@ try {
     if (doc.Descendants(ns + "row").Count() != 2004 || !doc.Descendants(ns + "f").Any(x => x.Value == "SUM(D4:D2003)") || !doc.Descendants(ns + "v").Any(x => x.Value == "2500")) throw new Exception("large official Excel failed");
 } finally { File.Delete(largePath); }
 Console.WriteLine("Official Excel fixture passed: all 2000 rows and decimal total.");
+var specialDir = Environment.GetEnvironmentVariable("SALARY_SPECIAL_TEST_DIR") ?? Path.Combine(Path.GetTempPath(), "salary-special-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(specialDir);
+try {
+    foreach (var (file,title) in new[] { ("health.xlsx","الرعاية الصحية"), ("fund.xlsx","صندوق الشهداء"), ("food.xlsx","شركة عراق الجوال") })
+    {
+        var outpath = Path.Combine(specialDir,file); SpecialExcel.Write(outpath,specialData,newer,title);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(outpath);
+        if (zip.GetEntry("xl/worksheets/sheet1.xml") == null || (file == "health.xlsx" && zip.GetEntry("xl/worksheets/sheet2.xml") == null)) throw new Exception("missing special sheet");
+    }
+} finally { if (Environment.GetEnvironmentVariable("SALARY_SPECIAL_TEST_DIR") == null) Directory.Delete(specialDir,true); }
+Console.WriteLine("Special Excel fixture passed: health, fund and food packages generated.");
+var specialPdfDir = Environment.GetEnvironmentVariable("SALARY_SPECIAL_PDF_TEST_DIR") ?? Path.Combine(Path.GetTempPath(), "salary-special-pdf-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(specialPdfDir);
+try {
+    var font=OperatingSystem.IsWindows()?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"arial.ttf"):"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    foreach (var (file,title) in new[] { ("health.pdf","الرعاية الصحية"), ("fund.pdf","صندوق الشهداء"), ("food.pdf","شركة عراق الجوال") })
+    {
+        var output=Path.Combine(specialPdfDir,file); SpecialPdf.Write(output,specialData,newer,title,font);
+        var bytes=File.ReadAllBytes(output); if(bytes.Length<2000 || System.Text.Encoding.ASCII.GetString(bytes,0,5)!="%PDF-") throw new Exception("invalid special PDF");
+    }
+} finally { if(Environment.GetEnvironmentVariable("SALARY_SPECIAL_PDF_TEST_DIR")==null) Directory.Delete(specialPdfDir,true); }
+Console.WriteLine("Special PDF fixture passed for health, fund and food.");
+var largeSpecialPath = Environment.GetEnvironmentVariable("SALARY_LARGE_HEALTH_PDF") ?? Path.Combine(Path.GetTempPath(), "salary-health-" + Guid.NewGuid().ToString("N") + ".pdf");
+try {
+    var employees = Enumerable.Range(1,150).Select(i => new Employee(newer,"مشترك وهمي رقم "+i,"موظف","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",3500}}),null)).ToList();
+    employees.Add(new(newer,"غير مشترك وحيد","شرطي","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",0}}),null));
+    var fixture = specialData with { Employees = employees };
+    var font=OperatingSystem.IsWindows()?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"arial.ttf"):"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    SpecialPdf.Write(largeSpecialPath,fixture,newer,"الرعاية الصحية",font);
+    if(new FileInfo(largeSpecialPath).Length<5000) throw new Exception("large health PDF missing");
+} finally { if(Environment.GetEnvironmentVariable("SALARY_LARGE_HEALTH_PDF")==null) File.Delete(largeSpecialPath); }
+Console.WriteLine("Large health PDF fixture passed: 150 subscribers and an unsubscribed employee.");
+var savedSpecial = Path.Combine(Path.GetTempPath(), "special-preserve-" + Guid.NewGuid().ToString("N"));
+try {
+    File.WriteAllText(savedSpecial,"old-file");
+    var huge = specialData with { Employees = [new(newer,string.Join(" ",Enumerable.Repeat("اسم طويل",5000)),"موظف","قسم",100,Enc(new Dictionary<string,double>{{"الرعاية الصحية",3500}}),null)] };
+    var font=OperatingSystem.IsWindows()?Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"arial.ttf"):"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+    try { SpecialPdf.Write(savedSpecial,huge,newer,"الرعاية الصحية",font); throw new Exception("oversized PDF row accepted"); } catch(InvalidDataException) { }
+    if(File.ReadAllText(savedSpecial)!="old-file") throw new Exception("PDF overwritten after failure");
+    try { SpecialExcel.Write(savedSpecial,huge,newer,"الرعاية الصحية"); throw new Exception("oversized Excel cell accepted"); } catch(InvalidDataException) { }
+    if(File.ReadAllText(savedSpecial)!="old-file") throw new Exception("Excel overwritten after failure");
+} finally { File.Delete(savedSpecial); }
+Console.WriteLine("Special export fixture passed: oversized data rejected without overwriting existing file.");

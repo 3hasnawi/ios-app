@@ -69,7 +69,7 @@ internal static class StaffReportPdf
                 var canvas = doc.BeginPage(595, 842);
                 void Text(string text, float x, float y)
                 {
-                    text = string.Concat(text.Select(c => c >= '٠' && c <= '٩' ? (char)('0' + c - '٠') : c >= '۰' && c <= '۹' ? (char)('0' + c - '۰') : c));
+                    text = string.Concat(text.Select(c => c >= '٠' && c <= '٩' ? (char)('0' + c - '٠') : c >= '۰' && c <= '۹' ? (char)('0' + c - '۰') : c == '٫' ? '.' : c == '٬' ? ',' : c == '٪' ? '%' : c));
                     foreach (Match match in Regex.Matches(text, @"[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*(?:\s+[A-Za-z0-9][A-Za-z0-9.,:/%+\-]*)*|[^A-Za-z0-9]+"))
                     { canvas.DrawShapedText(shaper, match.Value, x, y, paint); x -= shaper.Shape(match.Value, paint).Width; }
                 }
