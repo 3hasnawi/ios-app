@@ -26,10 +26,15 @@ jobs:
         shell: pwsh
         run: |
           $exe = "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe"
+          $env:SALARY_STARTUP_DIAGNOSTIC = "$env:RUNNER_TEMP\salary-startup.log"
           $process = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru
           Start-Sleep -Seconds 10
           $process.Refresh()
-          if ($process.HasExited) { throw "Application exited during startup (code $($process.ExitCode))." }
+          if (Test-Path $env:SALARY_STARTUP_DIAGNOSTIC) { Get-Content $env:SALARY_STARTUP_DIAGNOSTIC }
+          if ($process.HasExited) {
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-3)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'SalaryWindows' } | Select-Object -First 5 | Format-List TimeCreated,ProviderName,Message
+            throw "Application exited during startup (code $($process.ExitCode))."
+          }
           Stop-Process -Id $process.Id -Force
       - name: Package and release
         shell: pwsh
