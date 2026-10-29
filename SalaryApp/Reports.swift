@@ -24,6 +24,13 @@ nonisolated struct ReportGroup: Hashable, Sendable, Identifiable {
     let total: Double
     /// تقرير الاستقطاعات مجمّعاً حسب الجهة الرئيسية (ما قبل "/") بدل الفرع.
     let byEntity: Bool
+
+    /// ملخص الجهة للشهر المعروض يعتمد على الصفوف نفسها التي ستُصدَّر.
+    func forMonth(_ month: String, rows: [ReportRow]) -> ReportGroup {
+        ReportGroup(kind: kind, month: month, title: title,
+                    count: Set(rows.map { ArabicText.matchKey($0.name) }).count,
+                    total: rows.reduce(0) { $0 + $1.amount }, byEntity: byEntity)
+    }
 }
 
 nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
@@ -110,7 +117,11 @@ actor ReportEngine {
 
 struct ReportDetailView: View {
     let group: ReportGroup
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
+    private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
+    @State private var selectedMonth: String
+    @State private var activeGroup: ReportGroup?
     @State private var rows: [ReportRow]?
     @State private var loadError: String?
     @State private var showExport = false
@@ -120,6 +131,15 @@ struct ReportDetailView: View {
     /// لبند الرعاية الصحية: المشتركون وغير المشتركين.
     @State private var healthLists: HealthCareReport.Lists?
     @State private var healthWarning = false
+    private var loadKey: String {
+        let revision = months.first { $0.name == selectedMonth }?.importedAt.timeIntervalSince1970 ?? 0
+        return "\(selectedMonth)|\(revision)"
+    }
+    init(group: ReportGroup) {
+        self.group = group
+        _selectedMonth = State(initialValue: group.month)
+        _activeGroup = State(initialValue: group)
+    }
     /// لبند شركة عراق الجوال: كشف عقد الإطعام.
     private var foodRows: [FoodContractReport.Row]? {
         guard group.kind == .payroll, FoodContractReport.applies(to: group.title), let rows else { return nil }
@@ -138,24 +158,30 @@ struct ReportDetailView: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(group.month).font(.caption).foregroundStyle(.secondary)
+                    Text(selectedMonth).font(.caption).foregroundStyle(.secondary)
                     HStack(alignment: .bottom) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(tr("المجموع", "Total")).font(.caption).foregroundStyle(.secondary)
-                            Text(Money.format(group.total))
-                                .font(.system(size: 26, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(group.kind == .deductions ? Color.red : Color.primary)
+                            if let activeGroup {
+                                Text(Money.format(activeGroup.total))
+                                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                    .lineLimit(1).minimumScaleFactor(0.6)
+                                    .foregroundStyle(group.kind == .deductions ? Color.red : Color.primary)
+                            } else if loadError != nil { Text("—").font(.title2.bold()) }
+                            else { ProgressView().frame(height: 31) }
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
                             Text(group.kind == .deductions ? tr("عدد الموظفين", "Employee count") : tr("الموظفون", "Employees"))
                                 .font(.caption).foregroundStyle(.secondary)
                             if group.kind == .deductions {
-                                if let rows {
+                                if loadError != nil {
+                                    Text("—").font(.title2.bold())
+                                } else if let rows {
                                     Text(Num.format(rows.count)).font(.title2.bold())
-                                    Text(tr("المكرر: \(Num.format(max(0, rows.count - group.count))) سطر",
-                                            "Repeated names: \(Num.format(max(0, rows.count - group.count))) rows"))
+                                    Text(tr("المكرر: \(Num.format(max(0, rows.count - (activeGroup?.count ?? 0)))) سطر",
+                                            "Repeated names: \(Num.format(max(0, rows.count - (activeGroup?.count ?? 0)))) rows"))
                                         .font(.caption2).foregroundStyle(.secondary)
                                 } else {
                                     ProgressView().frame(height: 28)
@@ -185,6 +211,8 @@ struct ReportDetailView: View {
             if let healthLists { HealthCareSection(lists: healthLists) }
             if let loadError {
                 Section { Text(loadError).foregroundStyle(.red) }
+            } else if group.kind == .deductions, let rows, rows.isEmpty {
+                Section { Text(tr("لا توجد استقطاعات لهذه الجهة في الشهر المختار.", "No deductions for this entity in the selected month.")).foregroundStyle(.secondary) }
             }
 
             // بدل قائمة الأسماء: معاينة الجدول كما سيُصدَّر، وزر التصدير.
@@ -195,13 +223,13 @@ struct ReportDetailView: View {
                     actionButton(tr("تصدير", "Export"), systemImage: "square.and.arrow.up", filled: true) { showExport = true }
                         .accessibilityIdentifier("exportReport")
                 }
-                .disabled(rows?.isEmpty == true)
-                .overlay { if rows == nil { ProgressView().allowsHitTesting(false) } }
+                .disabled(rows?.isEmpty != false || loadError != nil || activeGroup == nil)
+                .overlay { if rows == nil && loadError == nil { ProgressView().allowsHitTesting(false) } }
                 .frame(maxWidth: .infinity)
                 .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
             } footer: {
-                if let rows {
+                if let rows, loadError == nil {
                     Text(tr("\(Num.format(rows.count)) سطر في الجدول، بالشكل المعتمد (A4).", "\(rows.count) rows, in the approved A4 layout."))
                 }
             }
@@ -210,6 +238,30 @@ struct ReportDetailView: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .navigationTitle(group.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if group.kind == .deductions {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        ForEach(months.filter { $0.deductionCount > 0 || $0.name == group.month }) { month in
+                            Button {
+                                guard month.name != selectedMonth else { return }
+                                rows = nil; activeGroup = nil; loadError = nil
+                                selectedMonth = month.name
+                            } label: {
+                                if month.name == selectedMonth { Label(month.name, systemImage: "checkmark") }
+                                else { Text(month.name) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "calendar")
+                            .accessibilityLabel(tr("اختيار الشهر: \(selectedMonth)", "Choose month: \(selectedMonth)"))
+                    }
+                    .glassButtonStyle()
+                    .buttonBorderShape(.circle)
+                    .accessibilityIdentifier("entityMonthMenu")
+                }
+            }
+        }
         .alert(tr("تنبيه: الرعاية الصحية", "Health care warning"), isPresented: $healthWarning) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: {
@@ -218,17 +270,20 @@ struct ReportDetailView: View {
         }
         .sheet(isPresented: $showExport) {
             if loadError != nil { loadingState }
-            else if let rows { ReportExportSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
+            else if let rows, let activeGroup { ReportExportSheet(group: activeGroup, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
             else { loadingState }
         }
         .sheet(isPresented: $showPreview) {
             if loadError != nil { loadingState }
-            else if let rows { ReportPreviewSheet(group: group, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
+            else if let rows, let activeGroup { ReportPreviewSheet(group: activeGroup, rows: rows, fundRows: fundRows, foodRows: foodRows, healthLists: healthLists) }
             else { loadingState }
         }
-        .task {
+        .task(id: loadKey) {
             let container = SharedModel.container
-            let group = group
+            let requestedMonth = selectedMonth
+            let requestedKey = loadKey
+            if group.kind == .deductions { rows = nil; activeGroup = nil; loadError = nil }
+            let group = ReportGroup(kind: group.kind, month: requestedMonth, title: group.title, count: group.count, total: group.total, byEntity: group.byEntity)
             do {
                 let loaded = try await Task.detached(priority: .userInitiated) {
                     try await ReportEngine(modelContainer: container).rows(for: group)
@@ -244,7 +299,8 @@ struct ReportDetailView: View {
                         try await ReportEngine(modelContainer: container).fundSummary(month: group.month, title: group.title)
                     }.value
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, selectedMonth == requestedMonth, loadKey == requestedKey else { return }
+                activeGroup = group.kind == .deductions ? group.forMonth(requestedMonth, rows: loaded) : group
                 rows = loaded
                 // "تصدير" من الضغط المطوّل على بطاقة في الرئيسية: يفتح نافذة التصدير مباشرة.
                 if UserDefaults.standard.bool(forKey: "homeExportReport") {
@@ -253,7 +309,8 @@ struct ReportDetailView: View {
                 }
                 // اختبار المحاكي: -exportReport YES يكتب ملفي Excel و PDF ويفتح نافذة التصدير.
                 if UserDefaults.standard.bool(forKey: "exportReport") {
-                    var ok = (try? await ReportFiles.make(group: group, rows: loaded)) != nil
+                    let actual = activeGroup ?? group
+                    var ok = (try? await ReportFiles.make(group: actual, rows: loaded)) != nil
                     // الكشوف الخاصة بشكلها المعتمد.
                     if let fundRows, (try? await FundReport.files(fundRows, month: group.month)) == nil { ok = false }
                     if let foodRows, (try? await FoodContractReport.files(foodRows, month: group.month)) == nil { ok = false }
@@ -262,7 +319,7 @@ struct ReportDetailView: View {
                     showExport = true
                 }
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, selectedMonth == requestedMonth, loadKey == requestedKey else { return }
                 loadError = error.localizedDescription
                 rows = []
             }

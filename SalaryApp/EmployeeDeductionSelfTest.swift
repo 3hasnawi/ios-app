@@ -34,6 +34,13 @@ enum EmployeeDeductionSelfTest {
         let otherEntity = try await engine.availableMonths(person: person, entity: "جهة أخرى")
         try require(otherEntity.keys == [202306] && otherEntity.unrecognizedCount == 0, "Entity selection mixed unrelated months")
         let statement = try await engine.statement(person: person, entity: "جهة وهمية", from: 202401, to: 202404)
+        let engineReport = ReportEngine(modelContainer: container)
+        let group = ReportGroup(kind: .deductions, month: jan, title: "جهة وهمية", count: 1, total: 100, byEntity: false)
+        let febRows = try await engineReport.rows(for: ReportGroup(kind: .deductions, month: feb, title: group.title, count: 0, total: 0, byEntity: false))
+        let febGroup = group.forMonth(feb, rows: febRows)
+        try require(febGroup.month == feb && febGroup.total == 12 && febGroup.count == 1, "Changing month used stale totals or rows")
+        let emptyRows = try await engineReport.rows(for: ReportGroup(kind: .deductions, month: april, title: group.title, count: 0, total: 0, byEntity: false))
+        try require(emptyRows.isEmpty && group.forMonth(april, rows: emptyRows).total == 0, "Empty entity month misclassified")
         try require(statement.rows.count == 4 && statement.total == 100 && statement.incomplete && statement.hasUnrecognizedMonths, "Incorrect monthly totals or completeness")
         if case .status(let value, let statuses) = statement.rows[0].state {
             try require(value == 100 && statuses == ["موقوف"], "Amount/status not preserved")
