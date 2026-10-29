@@ -1,5 +1,5 @@
 <Window x:Class="SalaryWindows.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="الرواتب">
-  <Grid FlowDirection="RightToLeft" Background="#F4F5F2" ColumnSpacing="0">
+  <Grid RequestedTheme="Light" FlowDirection="RightToLeft" Background="#F4F5F2" ColumnSpacing="0">
     <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <Border Background="White" Padding="22"><StackPanel Spacing="18">
       <TextBlock Text="الرواتب" FontSize="28" FontWeight="Bold" Foreground="#143F33"/>

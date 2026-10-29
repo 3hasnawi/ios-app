@@ -39,6 +39,7 @@ jobs:
             throw "Application exited during startup (code $($process.ExitCode))."
           }
           if (!(Test-Path $env:SALARY_STARTUP_DIAGNOSTIC) -or !((Get-Content $env:SALARY_STARTUP_DIAGNOSTIC -Raw) -match 'Window activated')) { Stop-Process -Id $process.Id -Force; throw 'Application window did not finish activating.' }
+          if (!((Get-Content $env:SALARY_STARTUP_DIAGNOSTIC -Raw) -match 'Root theme: Light')) { Stop-Process -Id $process.Id -Force; throw 'The app did not apply the readable light theme.' }
           Stop-Process -Id $process.Id -Force
       - name: Package and release
         shell: pwsh
