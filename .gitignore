@@ -19,3 +19,6 @@ WindowsApp/obj/
 WindowsApp/.vs/
 WindowsApp.Tests/bin/
 WindowsApp.Tests/obj/
+
+WindowsApp/Launcher/bin/
+WindowsApp/Launcher/obj/

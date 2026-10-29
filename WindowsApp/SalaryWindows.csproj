@@ -13,6 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Launcher/**/*.cs" />
     <Content Include="Resources/HomeLogo.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="2.88.9" />
