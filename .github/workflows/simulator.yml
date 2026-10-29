@@ -122,6 +122,22 @@ jobs:
           cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
+      - name: Verify employee deduction statement
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -employeeDeductionTest YES
+          for i in $(seq 1 90); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/employee-deduction-report.txt
+          if ! grep -q '^employeeDeduction=ok ' ci-output/employee-deduction-report.txt; then
+            echo "::error::Employee deduction statement regression test failed"
+            exit 1
+          fi
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
+
       - name: Verify deduction comparison and duplicate accounting
         run: |
           rm -f "$DATA/Documents/import-report.txt"

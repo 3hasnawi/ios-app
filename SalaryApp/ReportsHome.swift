@@ -10,6 +10,7 @@ enum ReportsRoute: Hashable {
     /// التدقيق: فحوص الشهر ومقارنة الأشهر.
     case audit
     case deductionComparison
+    case employeeDeductions
     case salaryAudit
     case group(ReportGroup)
 }
@@ -58,6 +59,7 @@ struct ReportsView: View {
                     VStack(spacing: 12) {
                         summaryCard
                         auditCard
+                        employeeDeductionsCard
                         entitiesCard
                         specialCards
                     }
@@ -85,6 +87,7 @@ struct ReportsView: View {
                 switch route {
                 case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
                 case .deductionComparison: DeductionAuditView(months: months.map(\.name))
+                case .employeeDeductions: EmployeeDeductionsView()
                 case .salaryAudit: SalaryAuditView(months: months.map(\.name))
                 case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
                 case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
@@ -106,6 +109,10 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .task {
                 #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "employeeDeductionTest") {
+                    do { LaunchOptions.writeReport(try await EmployeeDeductionSelfTest.run()) }
+                    catch { LaunchOptions.writeReport("employeeDeduction=failed \(error.localizedDescription)") }
+                }
                 if UserDefaults.standard.bool(forKey: "deductionAuditTest") {
                     do {
                         let report = try await Task.detached(priority: .userInitiated) {
@@ -233,6 +240,27 @@ struct ReportsView: View {
     }
 
     // MARK: جهات التنفيذ
+
+    private var employeeDeductionsCard: some View {
+        Button { path.append(.employeeDeductions) } label: {
+            HStack(spacing: 12) {
+                CardIcon(systemImage: "person.text.rectangle", color: .green)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("كشف استقطاعات موظف", "Employee deduction statement"))
+                        .font(.headline).foregroundStyle(.primary)
+                    Text(tr("حسب الجهة والفترة", "By entity and date range"))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("employeeDeductionsCard")
+    }
 
     /// بطاقة عريضة: عدد الجهات ومجموعها، وزر التصدير؛ الضغط يفتح قائمة الجهات.
     private var entitiesCard: some View {

@@ -9,7 +9,7 @@ nonisolated enum PDFDecor {
     static let watermarkAlpha: CGFloat = 0.10
 
     /// يعيد كتابة الملف: العلامة المائية تحت محتوى كل صفحة، والتذييل فوقه.
-    static func apply(to url: URL, date: Date = .now) throws {
+    static func apply(to url: URL, date: Date = .now, footer: String = footerText) throws {
         guard let source = CGPDFDocument(url as CFURL), source.numberOfPages > 0 else { return }
         let temp = url.deletingLastPathComponent().appendingPathComponent(".decor-\(UUID().uuidString).pdf")
         var mediaBox = CGRect(x: 0, y: 0, width: 595, height: 842)
@@ -26,7 +26,7 @@ nonisolated enum PDFDecor {
             context.saveGState()
             context.drawPDFPage(page)
             context.restoreGState()
-            drawFooter(in: box, page: index, of: pages, stamp: stamp, context: context)
+            drawFooter(in: box, page: index, of: pages, stamp: stamp, footer: footer, context: context)
             context.endPDFPage()
         } }
         context.closePDF()
@@ -66,7 +66,7 @@ nonisolated enum PDFDecor {
         context.restoreGState()
     }
 
-    private static func drawFooter(in box: CGRect, page: Int, of pages: Int, stamp: String, context: CGContext) {
+    private static func drawFooter(in box: CGRect, page: Int, of pages: Int, stamp: String, footer: String, context: CGContext) {
         let margin: CGFloat = 28
         let height: CGFloat = 13
         // إحداثيات PDF من الأسفل: خط فاصل ثم سطر التذييل.
@@ -88,7 +88,7 @@ nonisolated enum PDFDecor {
         let width = (box.width - margin * 2) / 3
         let font = ReportFont.regular(8.5)
         let color = UIColor(white: 0.25, alpha: 1)
-        text(footerText, CGRect(x: box.width - margin - width * 1.4, y: top, width: width * 1.4, height: height), font: ReportFont.bold(8.5), color: color, align: .right)
+        text(footer, CGRect(x: box.width - margin - width * 1.4, y: top, width: width * 1.4, height: height), font: ReportFont.bold(8.5), color: color, align: .right)
         text("صفحة \(arabicDigits(page)) من \(arabicDigits(pages))", CGRect(x: box.midX - width / 2, y: top, width: width, height: height), font: font, color: color, align: .center)
         text(stamp, CGRect(x: margin, y: top, width: width, height: height), font: font, color: color, align: .left)
         context.restoreGState()
