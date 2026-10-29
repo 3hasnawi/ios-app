@@ -11,13 +11,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - uses: microsoft/setup-msbuild@v2
       - name: Test core with fictional data
         shell: pwsh
         run: dotnet run --project WindowsApp.Tests/WindowsApp.Tests.csproj --configuration Release
       - name: Publish unpackaged x64 app
         shell: pwsh
+        working-directory: WindowsApp
         run: |
-          dotnet publish WindowsApp/SalaryWindows.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None --output "$env:RUNNER_TEMP\SalaryWindows"
+          msbuild SalaryWindows.csproj -restore -t:Publish -p:Configuration=Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:WindowsPackageType=None "-p:PublishDir=$env:RUNNER_TEMP\SalaryWindows/"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (!(Test-Path "$env:RUNNER_TEMP\SalaryWindows\SalaryWindows.exe")) { throw 'Windows executable was not produced.' }
       - name: Package and release
