@@ -25,7 +25,8 @@ struct ReportsView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @AppStorage("reportMonth") private var monthName = ""
-    @AppStorage("reportByEntity") private var byEntity = false
+    /// تبقى الجهات والفروع كما وردت في ملف الاستقطاعات.
+    private let byEntity = false
     @State private var deductionGroups: [ReportGroup] = []
     @State private var loadedKey = ""
     @State private var path: [ReportsRoute] = []
@@ -641,7 +642,6 @@ struct EntitiesView: View {
     let groups: [ReportGroup]
     let loaded: Bool
     @Binding var showExport: Bool
-    @AppStorage("reportByEntity") private var byEntity = false
     @State private var search = UserDefaults.standard.string(forKey: "entitySearch") ?? ""
     @State private var exporter = QuickExporter.shared
     @State private var previewGroup: ReportGroup?
@@ -682,26 +682,10 @@ struct EntitiesView: View {
                     }
                 }
             } header: {
-                HStack {
-                    Text(search.isEmpty
-                         ? tr("\(Num.format(groups.count)) جهة · \(Money.format(groups.reduce(0) { $0 + $1.total }))", "\(groups.count) entities")
-                         : tr("\(Num.format(filtered.count)) من \(Num.format(groups.count))", "\(filtered.count) of \(groups.count)"))
-                    Spacer()
-                    Menu {
-                        Picker(tr("التجميع", "Group by"), selection: $byEntity) {
-                            Text(tr("حسب الفرع", "By branch")).tag(false)
-                            Text(tr("حسب الجهة الرئيسية", "By main entity")).tag(true)
-                        }
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text(byEntity ? tr("حسب الجهة", "By entity") : tr("حسب الفرع", "By branch"))
-                            Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-                        }
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                    }
+                Text(search.isEmpty
+                     ? tr("\(Num.format(groups.count)) جهة · \(Money.format(groups.reduce(0) { $0 + $1.total }))", "\(groups.count) entities")
+                     : tr("\(Num.format(filtered.count)) من \(Num.format(groups.count))", "\(filtered.count) of \(groups.count)"))
                     .textCase(nil)
-                }
             }
         }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
