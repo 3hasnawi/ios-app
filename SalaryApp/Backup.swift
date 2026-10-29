@@ -791,7 +791,6 @@ final class BackupManager {
                 await SmartGroupCatalog.shared.invalidate()
                 await AuditResults.shared.invalidate()
                 OfficialBookStore.shared.reload()
-                WidgetSnapshotPublisher.invalidate()
                 StaffImportState.shared.version += 1
                 progress.end()
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
