@@ -17,8 +17,8 @@ nonisolated enum TransferTaxSocialLetter {
     }
     private static let amount = CGRect(x: 358.99, y: 317.344, width: 72.166, height: 15.654)
     private static let wordsMasks = [
-        CGRect(x: 178.106, y: 317.54, width: 161.179, height: 15.543),
-        CGRect(x: 488.528, y: 333.62, width: 72.762, height: 15.543),
+        CGRect(x: 28, y: 317.54, width: 311.285, height: 15.543),
+        CGRect(x: 468.8, y: 333.62, width: 92.490, height: 15.543),
     ]
     private static let wordSlots = wordsMasks
     private static let years = [
@@ -37,11 +37,20 @@ nonisolated enum TransferTaxSocialLetter {
         CGRect(x: 474.82, y: 397.94, width: 76.534, height: 15.543),
         CGRect(x: 143.308, y: 715.0, width: 63.563, height: 17.667),
     ]
-    private static let nameSlots = monthNameMasks
+    private static let nameSlots = [
+        CGRect(x: 470.820, y: 397.94, width: 80.534, height: 15.543),
+        CGRect(x: 139.308, y: 715, width: 67.563, height: 17.667),
+    ]
     private static let tableAmounts = [
         CGRect(x: 309.89, y: 477.01, width: 61.50, height: 13.38),
         CGRect(x: 309.89, y: 491.29, width: 61.50, height: 13.38),
         CGRect(x: 299.57, y: 505.64, width: 71.91, height: 15.66)
+    ]
+    /// المساحة الإضافية فارغة داخل حدود الخلايا، دون مسح حدود الجدول.
+    private static let tableSlots = [
+        CGRect(x: 275.8, y: 477.01, width: 95.59, height: 13.38),
+        CGRect(x: 275.8, y: 491.29, width: 95.59, height: 13.38),
+        CGRect(x: 275.8, y: 505.64, width: 95.68, height: 15.66),
     ]
     private static let yearFonts = ["Arial-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "Arial-BoldMT"]
     private static let yearSizes: [CGFloat] = [15, 14.04, 16, 16, 16]
@@ -107,19 +116,25 @@ nonisolated enum TransferTaxSocialLetter {
         guard let numeric = formatter.string(from: NSNumber(value: amountValue)) else { throw Failure.incomplete }
         let words = try ArabicAmountWords.dinars(Int64(amountValue))
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
-            TransferPDFTextFlow(value: words, slots: wordSlots.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)]),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
+            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true, fieldName: tr("مبلغ رقمي", "Numeric amount")),
+            TransferPDFTextFlow(value: words, slots: wordSlots.enumerated().map { index, rect in
+                TransferPDFTextSlot(rect: rect, fontName: "TimesNewRomanPSMT", fontSize: 14.04, alignment: index == wordSlots.count - 1 ? .left : .right)
+            }, keepLastWordOnLastLine: true, fieldName: tr("المبلغ كتابةً", "Amount in words")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)], fieldName: tr("اسم الشهر في الكتاب", "Month in letter")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("اسم الشهر في التوقيعات", "Month in signatures"))
         ]
         let tableValues = [figures.socialProtection, figures.incomeTax, amountValue]
         for i in tableAmounts.indices {
             guard let value = formatter.string(from: NSNumber(value: tableValues[i])) else { throw Failure.incomplete }
-            flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableAmounts[i], "Arial-BoldMT", i == 2 ? 14.04 : 12)], verifyNumericOutput: true))
+            flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableSlots[i], "Arial-BoldMT", i == 2 ? 14.04 : 12)], verifyNumericOutput: true, fieldName: tr("مبلغ في جدول الضريبة والحماية", "Tax and social protection table amount")))
         }
-        flows.append(contentsOf: customFields.flows)
-        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
-        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
+        flows.append(contentsOf: customFields.flows.map { value in
+            var flow = value
+            flow.fieldName = tr("الترويسة أو أسماء اللجنة أو الهامش", "Header, committee name or footer")
+            return flow
+        })
+        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])], fieldName: tr("السنة", "Year"))) }
+        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("رقم الشهر", "Month number"))) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         return try await TransferPDFOverlay.make(blankReference: blank, flows: flows,

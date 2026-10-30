@@ -18,8 +18,8 @@ nonisolated enum TransferAnbarLetter {
     }
     private static let amount = CGRect(x: 355.75, y: 282.784, width: 64.275, height: 15.654)
     private static let wordsMasks = [
-        CGRect(x: 149.061, y: 282.98, width: 186.971, height: 15.543),
-        CGRect(x: 543.848, y: 299.06, width: 16.216, height: 15.543),
+        CGRect(x: 28, y: 282.98, width: 308.032, height: 15.543),
+        CGRect(x: 529.6, y: 299.06, width: 30.464, height: 15.543),
     ]
     private static let wordSlots = wordsMasks
     private static let years = [
@@ -38,7 +38,10 @@ nonisolated enum TransferAnbarLetter {
         CGRect(x: 146.06, y: 331.43, width: 78.103, height: 17.667),
         CGRect(x: 143.308, y: 730.116, width: 63.563, height: 17.667),
     ]
-    private static let nameSlots = monthNameMasks
+    private static let nameSlots = [
+        CGRect(x: 142.060, y: 331.43, width: 82.103, height: 17.667),
+        CGRect(x: 139.308, y: 730.116, width: 67.563, height: 17.667),
+    ]
     private static let oldTable = CGRect(x: 50.5, y: 416.1, width: 509.0, height: 156.2)
     private static let yearFonts = ["Arial-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "Arial-BoldMT"]
     private static let yearSizes: [CGFloat] = [15, 14.04, 16, 16, 16]
@@ -105,14 +108,20 @@ nonisolated enum TransferAnbarLetter {
         guard let numeric = formatter.string(from: NSNumber(value: amountValue)) else { throw Failure.incomplete }
         let words = try ArabicAmountWords.dinars(Int64(amountValue))
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
-            TransferPDFTextFlow(value: words, slots: wordSlots.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)]),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
+            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true, fieldName: tr("مبلغ رقمي", "Numeric amount")),
+            TransferPDFTextFlow(value: words, slots: wordSlots.enumerated().map { index, rect in
+                TransferPDFTextSlot(rect: rect, fontName: "TimesNewRomanPSMT", fontSize: 14.04, alignment: index == wordSlots.count - 1 ? .left : .right)
+            }, keepLastWordOnLastLine: true, fieldName: tr("المبلغ كتابةً", "Amount in words")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)], fieldName: tr("اسم الشهر في الكتاب", "Month in letter")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("اسم الشهر في التوقيعات", "Month in signatures"))
         ]
-        flows.append(contentsOf: customFields.flows)
-        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
-        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
+        flows.append(contentsOf: customFields.flows.map { value in
+            var flow = value
+            flow.fieldName = tr("الترويسة أو أسماء اللجنة أو الهامش", "Header, committee name or footer")
+            return flow
+        })
+        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])], fieldName: tr("السنة", "Year"))) }
+        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("رقم الشهر", "Month number"))) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         let letter = try await TransferPDFOverlay.make(blankReference: blank, flows: flows,
