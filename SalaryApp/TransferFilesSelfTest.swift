@@ -208,10 +208,20 @@ import CryptoKit
             ("Static heading" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
         }
         let slot = TransferPDFTextSlot(rect: CGRect(x: 45, y: 100, width: 160, height: 28), fontName: ReportFont.regular(12).fontName, fontSize: 12, alignment: .right)
-        let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])])
+        let monthSlot = TransferPDFMonthSlot(rect: CGRect(x: 230, y: 100, width: 35, height: 30), month: 10, glyphs: digitGlyphs)
+        let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])], months: [monthSlot])
         defer { try? FileManager.default.removeItem(at: composed.deletingLastPathComponent()) }
         guard let composedDoc = PDFDocument(url: composed), let composedText = composedDoc.page(at: 0)?.string else { throw Failure(errorDescription: "composed PDF missing") }
         try check(composedDoc.pageCount == 1 && composedText.contains("123456"), "PDF overlay")
+        let occupiedPDF = blankRenderer.pdfData { context in
+            context.beginPage()
+            ("OLD" as NSString).draw(at: CGPoint(x: 55, y: 104), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
+        }
+        do {
+            _ = try await TransferPDFOverlay.make(blankReference: occupiedPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])])
+            throw Failure(errorDescription: "old PDF field was not rejected")
+        } catch is Failure { throw Failure(errorDescription: "old PDF field was not rejected") }
+        catch { }
         do {
             _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: String(repeating: "1234567890", count: 100), slots: [slot])])
             throw Failure(errorDescription: "overflowing PDF field accepted")

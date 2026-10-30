@@ -16,6 +16,12 @@ nonisolated struct TransferPDFTextFlow: Sendable {
     let slots: [TransferPDFTextSlot]
 }
 
+nonisolated struct TransferPDFMonthSlot: Sendable {
+    let rect: CGRect
+    let month: Int
+    let glyphs: [TransferMonthDigitGlyph]
+}
+
 nonisolated enum TransferPDFOverlay {
     enum Failure: LocalizedError {
         case invalidTemplate, missingFont, unsafeSlot, doesNotFit
@@ -42,14 +48,25 @@ nonisolated enum TransferPDFOverlay {
         }
     }()
     /// ترفض القالب غير المفرغ، وخطاً بديلاً، وأي قيمة لا تدخل كاملة في المواضع المحددة.
-    static func make(blankReference: Data, flows: [TransferPDFTextFlow]) async throws -> URL {
+    static func make(blankReference: Data, flows: [TransferPDFTextFlow], months: [TransferPDFMonthSlot] = []) async throws -> URL {
         try await PDFWork.run {
             guard let source = PDFDocument(data: blankReference), !source.isLocked, source.pageCount == 1,
                   let page = source.page(at: 0) else { throw Failure.invalidTemplate }
             let box = page.bounds(for: .mediaBox)
-            guard abs(box.width - 595.3) < 2, abs(box.height - 841.9) < 2, !flows.isEmpty else { throw Failure.invalidTemplate }
+            guard abs(box.width - 595.3) < 2, abs(box.height - 841.9) < 2,
+                  !flows.isEmpty || !months.isEmpty else { throw Failure.invalidTemplate }
             var occupied: [CGRect] = []
             var planned: [Line] = []
+            var plannedMonths: [(rect: CGRect, images: [(UIImage, CGFloat, CGFloat)])] = []
+            func checkSlot(_ rect: CGRect) throws {
+                guard rect.width > 4, rect.height > 4, rect.minX >= 0, rect.minY >= 0,
+                      rect.maxX <= box.width, rect.maxY <= box.height,
+                      !occupied.contains(where: { $0.intersects(rect) }) else { throw Failure.unsafeSlot }
+                occupied.append(rect)
+                let pdfRect = CGRect(x: rect.minX, y: box.height - rect.maxY, width: rect.width, height: rect.height)
+                if let existing = page.selection(for: pdfRect)?.string,
+                   existing.unicodeScalars.contains(where: { !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0) }) { throw Failure.unsafeSlot }
+            }
             for flow in flows {
                 guard !flow.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !flow.slots.isEmpty,
                       !flow.value.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.invalidTemplate }
@@ -57,13 +74,7 @@ nonisolated enum TransferPDFOverlay {
                 var offset = 0
                 for slot in flow.slots {
                     let rect = slot.rect
-                    guard rect.width > 4, rect.height > 4, rect.minX >= 0, rect.minY >= 0,
-                          rect.maxX <= box.width, rect.maxY <= box.height,
-                          !occupied.contains(where: { $0.intersects(rect) }) else { throw Failure.unsafeSlot }
-                    occupied.append(rect)
-                    let pdfRect = CGRect(x: rect.minX, y: box.height - rect.maxY, width: rect.width, height: rect.height)
-                    if let existing = page.selection(for: pdfRect)?.string,
-                       existing.unicodeScalars.contains(where: { CharacterSet.alphanumerics.contains($0) }) { throw Failure.unsafeSlot }
+                    try checkSlot(rect)
                     guard let font = UIFont(name: slot.fontName, size: slot.fontSize) else { throw Failure.missingFont }
                     guard font.lineHeight <= rect.height else { throw Failure.doesNotFit }
                     if offset == value.length { continue }
@@ -84,6 +95,20 @@ nonisolated enum TransferPDFOverlay {
                 }
                 guard offset == value.length else { throw Failure.doesNotFit }
             }
+            for month in months {
+                try checkSlot(month.rect)
+                guard (1...12).contains(month.month), month.glyphs.count == 10 else { throw Failure.invalidTemplate }
+                let indexes = String(month.month).compactMap(\.wholeNumberValue)
+                let glyphs = indexes.map { month.glyphs[$0] }
+                guard glyphs.allSatisfy({ !$0.png.isEmpty && $0.width > 0 && $0.height > 0 && $0.height <= month.rect.height + 1 }),
+                      glyphs.reduce(CGFloat.zero, { $0 + $1.width }) <= month.rect.width + 0.5 else { throw Failure.doesNotFit }
+                var images: [(UIImage, CGFloat, CGFloat)] = []
+                for glyph in glyphs {
+                    guard let image = UIImage(data: glyph.png), image.cgImage != nil else { throw Failure.invalidTemplate }
+                    images.append((image, glyph.width, glyph.height))
+                }
+                plannedMonths.append((month.rect, images))
+            }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("letter-pdf-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let url = folder.appendingPathComponent("كتاب تحويل.pdf")
@@ -100,6 +125,13 @@ nonisolated enum TransferPDFOverlay {
                 cg.restoreGState()
                 for line in planned {
                     PDFText.draw(line.text, in: line.slot.rect, font: line.font, align: line.slot.alignment)
+                }
+                for month in plannedMonths {
+                    var x = month.rect.maxX - month.images.reduce(CGFloat.zero) { $0 + $1.1 }
+                    for (image, width, height) in month.images {
+                        image.draw(in: CGRect(x: x, y: month.rect.minY, width: width, height: height))
+                        x += width
+                    }
                 }
             }
             finished = true
