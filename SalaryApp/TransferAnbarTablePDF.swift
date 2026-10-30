@@ -5,11 +5,14 @@ import PDFKit
 nonisolated enum TransferAnbarTablePDF {
     enum Failure: LocalizedError {
         case invalidSource, missingFont, tableMismatch
+        case tableCellMismatch(row: Int, column: Int, actualCount: Int, expectedCount: Int)
         var errorDescription: String? {
             switch self {
             case .invalidSource: tr("تعذّر التحقق من بيانات جدول فرع الأنبار.", "Could not verify the Anbar branch table data.")
             case .missingFont: tr("خط جدول فرع الأنبار غير متوفر.", "The Anbar branch table font is unavailable.")
             case .tableMismatch: tr("تعذّر مطابقة أسماء جدول فرع الأنبار ورتبهم ومبالغهم مع بيانات الشهر.", "Could not reconcile the rendered Anbar table names, ranks, and amounts with the month's data.")
+            case .tableCellMismatch(let row, let column, let actualCount, let expectedCount):
+                tr("تعذّر تدقيق جدول الأنبار في الصف \(row) والعمود \(column) (طول النص المقروء \(actualCount)، المتوقع \(expectedCount)).", "Anbar table verification failed at row \(row), column \(column) (read length \(actualCount), expected \(expectedCount)).")
             }
         }
     }
@@ -99,9 +102,14 @@ nonisolated enum TransferAnbarTablePDF {
             }
             let top = onSeparatePage ? separateTop : inlineTop
             var y = top + header
-            for (row, height) in zip(rows, layout.rowHeights) {
-                for column in row.indices where identity(text(column, y, height)) != identity(row[column]) {
-                    throw Failure.tableMismatch
+            for (index, pair) in zip(rows, layout.rowHeights).enumerated() {
+                let (row, height) = pair
+                for column in row.indices {
+                    let read = identity(text(column, y, height))
+                    let expected = identity(row[column])
+                    if read != expected {
+                        throw Failure.tableCellMismatch(row: index + 1, column: column + 1, actualCount: read.count, expectedCount: expected.count)
+                    }
                 }
                 y += height
             }
