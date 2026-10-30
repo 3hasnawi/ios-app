@@ -2,6 +2,7 @@
 import Foundation
 import SwiftData
 import ZIPFoundation
+import PDFKit
 
 /// يتحقق من صيغة الملف وقواعد التصنيف باستخدام حسابات وهمية فقط.
 @MainActor enum TransferFilesSelfTest {
@@ -113,6 +114,12 @@ import ZIPFoundation
         let actual = try await engine.figures(month: group.month)
         let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
         try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1, "payroll data integration")
+        let syntheticRows = (1...80).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
+        let syntheticList = TransferCashList(month: group.month, employees: syntheticRows)
+        let cashPDF = try await TransferCashListPDF.make(syntheticList)
+        defer { try? FileManager.default.removeItem(at: cashPDF.deletingLastPathComponent()) }
+        guard let pdf = PDFDocument(url: cashPDF) else { throw Failure(errorDescription: "cash list PDF unreadable") }
+        try check(pdf.pageCount >= 2 && syntheticList.total == 80000, "cash list PDF pagination")
         var broken = values
         broken[0] = "100 خطأ"
         employee.rawColumnsData = PayrollColumnSnapshot.encode(headers: headers, values: broken)

@@ -266,6 +266,13 @@ struct TransferFilesView: View {
                         }
                     } footer: { Text(tr("اختر الحساب المطابق لكل بند لضمه إلى مجموعة مصرفه.", "Select the matching account for each deduction.")) }
                 }
+                Section {
+                    NavigationLink {
+                        TransferCashListView(month: month?.name ?? "", sourceKey: loadKey)
+                    } label: {
+                        Label(tr("قائمة رواتب الكاش", "Cash salary list"), systemImage: "person.text.rectangle")
+                    }
+                } footer: { Text(tr("قائمة تفصيلية برواتب الدفع كاش للشهر المختار.", "A detailed list of cash salaries for the selected month.")) }
             }
         }
         .navigationTitle(tr("ملفات التحويل", "Transfer files"))

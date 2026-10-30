@@ -161,6 +161,7 @@ nonisolated struct TransferCashList: Sendable {
     let month: String
     let employees: [TransferCashEmployee]
     var total: Double { employees.reduce(0) { $0 + $1.amount } }
+    var repeatedNameRows: Int { max(0, employees.count - Set(employees.map { ArabicText.matchKey($0.name) }).count) }
 }
 
 @ModelActor
