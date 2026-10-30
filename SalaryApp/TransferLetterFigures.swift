@@ -15,7 +15,7 @@ nonisolated struct TransferLetterPeriod: Sendable {
         year = key / 100
         month = key % 100
     }
-    /// اليوم والعدد يتركان فارغين للكتابة اليدوية.
+    /// يُترك يوم التوقيع فارغاً؛ العدد الثابت يبقى كما في المرجع.
     var signatureDate: String { " / \(month) / \(year)" }
 }
 

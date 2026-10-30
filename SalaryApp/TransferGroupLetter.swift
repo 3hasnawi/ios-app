@@ -76,8 +76,8 @@ nonisolated enum TransferGroupLetter {
               style.monthNames.allSatisfy({ !selected($0, page, size.height).isEmpty }),
               let oldCount = Int(digits(selected(style.count, page, size.height))), oldCount > 0 else { throw Failure.reference }
         let customFields = try TransferPDFCustomization.prepare(id: style.id, custom: customization, page: page, height: size.height)
-        let numberMask = try TransferPDFNumberField.mask(id: style.id, page: page, height: size.height)
-        let masks = [style.amount, style.count] + style.words + style.years + style.numericMonths + style.monthNames + customFields.masks + [numberMask]
+        let masks = [style.amount, style.count] + style.words + style.years + style.numericMonths + style.monthNames + customFields.masks
+        try TransferPDFNumberField.ensurePreserved(id: style.id, masks: masks)
         let digest = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: raw, sha256: digest, pageIndex: 0, masks: masks)
         let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")

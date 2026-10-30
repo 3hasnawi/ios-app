@@ -88,8 +88,8 @@ nonisolated enum TransferAnbarLetter {
               monthNameMasks.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
         guard !selected(oldTable, page: page, height: pageSize.height).isEmpty else { throw Failure.missingFields }
         let customFields = try TransferPDFCustomization.prepare(id: "rafidain_anbar", custom: customization, page: page, height: pageSize.height)
-        let numberMask = try TransferPDFNumberField.mask(id: "rafidain_anbar", page: page, height: pageSize.height)
-        let masks = [amount, oldTable] + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks + [numberMask]
+        let masks = [amount, oldTable] + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks
+        try TransferPDFNumberField.ensurePreserved(id: "rafidain_anbar", masks: masks)
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()

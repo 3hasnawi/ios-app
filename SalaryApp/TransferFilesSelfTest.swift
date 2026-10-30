@@ -333,18 +333,17 @@ import CryptoKit
             ("food_tax", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2))
         ]
         for (id, rect) in numberCases {
-            let reference = letterRenderer.pdfData { context in
-                context.beginPage(); PDFText.draw("1/22", in: rect, font: ReportFont.bold(12), align: .right)
-            }
-            guard let document = PDFDocument(data: reference), let page = document.page(at: 0) else { throw Failure(errorDescription: "number field PDF unavailable") }
-            try check(try TransferPDFNumberField.mask(id: id, page: page, height: 841.9) == rect, "number field position")
+            try TransferPDFNumberField.ensurePreserved(id: id, masks: [CGRect(x: 300, y: 300, width: 40, height: 20)])
+            do {
+                try TransferPDFNumberField.ensurePreserved(id: id, masks: [rect])
+                throw Failure(errorDescription: "number field removal accepted")
+            } catch is Failure { throw Failure(errorDescription: "number field removal accepted") }
+            catch { }
         }
-        let missingNumber = letterRenderer.pdfData { $0.beginPage() }
-        guard let emptyReference = PDFDocument(data: missingNumber), let emptyPage = emptyReference.page(at: 0) else { throw Failure(errorDescription: "blank number reference unavailable") }
         do {
-            _ = try TransferPDFNumberField.mask(id: "food_company", page: emptyPage, height: 841.9)
-            throw Failure(errorDescription: "missing number field accepted")
-        } catch is Failure { throw Failure(errorDescription: "missing number field accepted") }
+            try TransferPDFNumberField.ensurePreserved(id: "unknown", masks: [])
+            throw Failure(errorDescription: "unknown number field accepted")
+        } catch is Failure { throw Failure(errorDescription: "unknown number field accepted") }
         catch { }
         let fakeLetter = letterRenderer.pdfData { context in
             context.beginPage()

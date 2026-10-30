@@ -1,15 +1,15 @@
 import Foundation
 import PDFKit
 
-/// خانة العدد تُترك فارغة للكتابة اليدوية، مع إبقاء عنوانها الثابت.
+/// تحمي العدد الثابت في المرجع من أي تفريغ عرضي عند إعداد الكتاب.
 nonisolated enum TransferPDFNumberField {
     enum Failure: LocalizedError {
         case invalidReference
         var errorDescription: String? {
-            tr("تعذّر التحقق من موضع العدد القديم في مرجع الكتاب.", "Could not verify the old document number field in the letter reference.")
+            tr("تعذّر الحفاظ على خانة العدد الثابتة في مرجع الكتاب.", "Could not preserve the fixed document number field in the letter reference.")
         }
     }
-    static func mask(id: String, page: PDFPage, height: CGFloat) throws -> CGRect {
+    static func ensurePreserved(id: String, masks: [CGRect]) throws {
         let rect: CGRect
         switch id {
         case "contracts", "ramadi": rect = CGRect(x: 121.2, y: 151.6, width: 51.5, height: 22.2)
@@ -20,10 +20,6 @@ nonisolated enum TransferPDFNumberField {
             rect = CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)
         default: throw Failure.invalidReference
         }
-        let pdfRect = CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)
-        let source = page.selection(for: pdfRect)?.string ?? ""
-        let digits = ArabicText.latinDigits(source).filter { $0.isASCII && $0.isNumber }
-        guard digits.count == 3 else { throw Failure.invalidReference }
-        return rect
+        guard !masks.contains(where: { $0.intersects(rect) }) else { throw Failure.invalidReference }
     }
 }

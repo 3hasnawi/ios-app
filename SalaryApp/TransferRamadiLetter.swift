@@ -88,8 +88,8 @@ nonisolated enum TransferRamadiLetter {
               originalMonths.count == numericMonths.count, originalMonths.allSatisfy({ (1...12).contains($0) }), Set(originalMonths).count == 1,
               monthNameMasks.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
         let customFields = try TransferPDFCustomization.prepare(id: "ramadi", custom: customization, page: page, height: pageSize.height)
-        let numberMask = try TransferPDFNumberField.mask(id: "ramadi", page: page, height: pageSize.height)
-        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks + [numberMask]
+        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks
+        try TransferPDFNumberField.ensurePreserved(id: "ramadi", masks: masks)
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()
