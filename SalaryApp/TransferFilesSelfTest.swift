@@ -220,6 +220,24 @@ import CryptoKit
                   wordGroup.table.rows[2][4] == "3000", "Word group rows and total")
         _ = try TransferGroupCSVCheck.validate(wordGroup.csv, entities: [item, secondItem], category: .rafidain,
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        let groupText = TransferWordGroupDraft.LetterText(header: "ترويسة وهمية", fixedNumber: "رقم وهمي",
+            committee: ["عضو أول", "عضو ثان", "عضو ثالث"], footer: "هامش وهمي")
+        let groupDraft = FileManager.default.temporaryDirectory.appendingPathComponent("group-word-\(UUID().uuidString).docx")
+        defer { try? FileManager.default.removeItem(at: groupDraft) }
+        try TransferWordGroupDraft.write(plan: wordGroup, month: group.month, payerIBAN: iban, text: groupText, destination: groupDraft)
+        let draftArchive = try Archive(url: groupDraft, accessMode: .read)
+        guard let draftBody = draftArchive["word/document.xml"] else { throw Failure(errorDescription: "Word group draft missing") }
+        var draftData = Data()
+        _ = try draftArchive.extract(draftBody) { draftData.append($0) }
+        let draftText = String(decoding: draftData, as: UTF8.self)
+        try check(draftText.contains("جهة وهمية ثانية") && draftText.contains("المجموع") &&
+                  draftText.contains("3000") && draftText.contains("عضو أول"), "Word group draft and source")
+        do {
+            try TransferWordGroupDraft.write(plan: wordGroup, month: "أيلول 2026", payerIBAN: iban, text: groupText,
+                destination: FileManager.default.temporaryDirectory.appendingPathComponent("wrong-group-\(UUID().uuidString).docx"))
+            throw Failure(errorDescription: "Word group wrong month accepted")
+        } catch is Failure { throw Failure(errorDescription: "Word group wrong month accepted") }
+        catch { }
         do {
             let unknown = TransferEntity(group: secondGroup, account: nil, category: .unresolved, missingAmounts: 0)
             _ = try TransferWordGroupPlan(allEntities: [item, unknown], category: .rafidain,

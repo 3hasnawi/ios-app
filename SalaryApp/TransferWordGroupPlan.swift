@@ -11,6 +11,8 @@ nonisolated struct TransferWordGroupPlan: Sendable {
     let total: Double
     let table: TransferWordDocument.Table
     let csv: Data
+    let month: String
+    let payerIBAN: String
 
     init(allEntities: [TransferEntity], category: TransferCategory, month: String,
          payer: String, payerIBAN: String, date: Date = .now) throws {
@@ -33,6 +35,8 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         rows.append(["", "", "", "المجموع", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), sum)])
         self.total = sum
         self.csv = data
+        self.month = month
+        self.payerIBAN = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         self.table = TransferWordDocument.Table(headers: ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows: rows,
                                                 columnWeights: [40, 252, 322, 220, 166])
     }
