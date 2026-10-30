@@ -256,6 +256,9 @@ struct TransferFilesView: View {
                     Label(tr("مراجع الكتب محفوظة", "Letter references saved"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                 }
                 if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
+                NavigationLink { TransferLetterSettingsView() } label: {
+                    Label(tr("تخصيص الكتب", "Customize letters"), systemImage: "slider.horizontal.3")
+                }
             } footer: { Text(tr("تُحفظ المراجع الخاصة داخل النسخة الاحتياطية.", "Your private references are included in the backup.")) }
             if loadedKey != loadKey && month != nil {
                 ProgressView().frame(maxWidth: .infinity)

@@ -6,7 +6,7 @@ import CoreText
 nonisolated enum TransferHeaderFont {
     static let boldSettingsKey = "transferHeaderBoldFont"
     static let regularSettingsKey = "transferHeaderRegularFont"
-    enum Style: Equatable { case regular, bold }
+    enum Style: Equatable, Sendable { case regular, bold }
     enum Failure: LocalizedError {
         case invalidFont, wrongFont, missingCharacters
         var errorDescription: String? {
