@@ -32,6 +32,7 @@ nonisolated enum TransferReferencePack {
         "food_tax": 1, "tax_social": 1, "contracts": 1, "water": 1, "housing": 1,
         "rafidain_anbar": 1, "ramadi": 1
     ]
+    static let digitTemplateID = "month_digits"
     private static func read(_ entry: Entry, from archive: Archive, maxSize: UInt64) throws -> Data {
         guard entry.type == .file, UInt64(entry.uncompressedSize) <= maxSize else { throw Failure.oversized }
         var result = Data()
@@ -53,8 +54,10 @@ nonisolated enum TransferReferencePack {
         let archive = try Archive(url: url, accessMode: .read)
         guard let entry = archive["manifest.json"] else { throw Failure.invalid }
         let manifest = try JSONDecoder().decode(TransferReferenceManifest.self, from: read(entry, from: archive, maxSize: 100_000))
-        guard manifest.version == 1, manifest.templates.count == expected.count,
-              Set(manifest.templates.map(\.id)) == Set(expected.keys) else { throw Failure.invalid }
+        var expectedPages = expected
+        if manifest.version == 2 { expectedPages[digitTemplateID] = 1 }
+        guard (manifest.version == 1 || manifest.version == 2), manifest.templates.count == expectedPages.count,
+              Set(manifest.templates.map(\.id)) == Set(expectedPages.keys) else { throw Failure.invalid }
         let allowed = Set(manifest.templates.map(\.path)).union(["manifest.json"])
         var seen: Set<String> = []
         var bytes: UInt64 = 0
@@ -67,7 +70,7 @@ nonisolated enum TransferReferencePack {
         guard seen == allowed else { throw Failure.invalid }
         for template in manifest.templates {
             try Task.checkCancellation()
-            guard template.path == "templates/\(template.id).pdf", let pages = expected[template.id],
+            guard template.path == "templates/\(template.id).pdf", let pages = expectedPages[template.id],
                   template.pages == pages, let item = archive[template.path] else { throw Failure.invalid }
             let data = try read(item, from: archive, maxSize: 10_000_000)
             guard hex(data) == template.sha256.lowercased(), let document = PDFDocument(data: data),
@@ -75,7 +78,12 @@ nonisolated enum TransferReferencePack {
             for index in 0..<pages {
                 guard let page = document.page(at: index) else { throw Failure.damaged }
                 let box = page.bounds(for: .mediaBox)
-                guard abs(box.width - 595.3) < 2, abs(box.height - 841.9) < 2 else { throw Failure.damaged }
+                let width: CGFloat = template.id == digitTemplateID ? 612 : 595.3
+                let height: CGFloat = template.id == digitTemplateID ? 792 : 841.9
+                guard abs(box.width - width) < 2, abs(box.height - height) < 2 else { throw Failure.damaged }
+                if template.id == digitTemplateID {
+                    guard (page.string ?? "").contains("0123456789") else { throw Failure.damaged }
+                }
             }
         }
         return manifest

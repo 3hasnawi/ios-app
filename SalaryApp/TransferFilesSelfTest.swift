@@ -185,6 +185,21 @@ import CryptoKit
         let serialized = try PropertyListSerialization.data(fromPropertyList: Data(contentsOf: package), format: .binary, options: 0)
         guard let restoredData = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw Failure(errorDescription: "backup reference encoding") }
         try check(try TransferReferencePack.validateData(restoredData).templates.count == 11, "backup reference roundtrip")
+        let digitRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
+        let digitPDF = digitRenderer.pdfData { context in
+            context.beginPage()
+            ("0123456789" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 18)])
+        }
+        let digitPath = "templates/\(TransferReferencePack.digitTemplateID).pdf"
+        try digitPDF.write(to: root.appendingPathComponent(digitPath))
+        let digitDigest = SHA256.hash(data: digitPDF).map { String(format: "%02x", $0) }.joined()
+        let versionTwoRecords = records + [.init(id: TransferReferencePack.digitTemplateID, path: digitPath, sha256: digitDigest, pages: 1)]
+        try JSONEncoder().encode(TransferReferenceManifest(version: 2, templates: versionTwoRecords)).write(to: root.appendingPathComponent("manifest.json"))
+        let secondPackage = root.appendingPathComponent("references-v2.zip")
+        let secondArchive = try Archive(url: secondPackage, accessMode: .create)
+        try secondArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
+        for record in versionTwoRecords { try secondArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
+        try check(try TransferReferencePack.validateData(Data(contentsOf: secondPackage)).templates.count == 12, "digit reference package")
         var badRecords = records
         badRecords[0] = .init(id: records[0].id, path: records[0].path, sha256: String(repeating: "0", count: 64), pages: records[0].pages)
         try JSONEncoder().encode(TransferReferenceManifest(version: 1, templates: badRecords)).write(to: root.appendingPathComponent("manifest.json"))
