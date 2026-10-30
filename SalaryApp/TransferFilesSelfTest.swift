@@ -41,6 +41,19 @@ import CryptoKit
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
         _ = try TransferIndividualPlan(kind: .water, group: group, rows: individualRows, missingAmounts: 0)
+        let blankAnbarURL = FileManager.default.temporaryDirectory.appendingPathComponent("anbar-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: blankAnbarURL) }
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842)).pdfData { $0.beginPage() }.write(to: blankAnbarURL)
+        let inlinePlan = try TransferIndividualPlan(kind: .rafidainAnbar, group: group, rows: individualRows, missingAmounts: 0)
+        let inlinePDF = try await TransferAnbarTablePDF.make(blankLetter: blankAnbarURL, plan: inlinePlan)
+        defer { try? FileManager.default.removeItem(at: inlinePDF.deletingLastPathComponent()) }
+        try check(PDFDocument(url: inlinePDF)?.pageCount == 1, "inline Anbar table")
+        let manyRows = (1...25).map { i in ReportRow(id: i, name: "موظف وهمي \(i)", rank: "موظف", workplace: "قسم وهمي", amount: 100, note: "", entity: group.title) }
+        let manyGroup = ReportGroup(kind: .deductions, month: group.month, title: group.title, count: 25, total: 2500, byEntity: false)
+        let manyPlan = try TransferIndividualPlan(kind: .rafidainAnbar, group: manyGroup, rows: manyRows, missingAmounts: 0)
+        let separatePDF = try await TransferAnbarTablePDF.make(blankLetter: blankAnbarURL, plan: manyPlan)
+        defer { try? FileManager.default.removeItem(at: separatePDF.deletingLastPathComponent()) }
+        try check(PDFDocument(url: separatePDF)?.pageCount == 2, "separate Anbar table")
         let wrongRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1199, note: "", entity: group.title)]
         do {
             _ = try TransferIndividualPlan(kind: .water, group: group, rows: wrongRows, missingAmounts: 0)
