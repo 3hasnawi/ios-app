@@ -141,6 +141,9 @@ import CryptoKit
         try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: []).count == 1, "unlinked individual entity")
         try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: [ArabicText.normalize(group.title)]).isEmpty, "linked individual entity")
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
+        try check(TransferAnbarTablePDF.matchesExtractedCell("موظف وھمي", expected: "موظف وهمي"), "PDF heh extraction")
+        try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وحمي", expected: "موظف وهمي"), "different name must not match")
+        try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وهمي", expected: "موظف وھمي"), "source doachashmee remains distinct")
         _ = try TransferIndividualPlan(kind: .water, group: group, rows: individualRows, missingAmounts: 0)
         let blankAnbarURL = FileManager.default.temporaryDirectory.appendingPathComponent("anbar-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: blankAnbarURL) }

@@ -6,7 +6,6 @@ nonisolated enum TransferAnbarTablePDF {
     enum Failure: LocalizedError {
         case invalidSource, missingFont, tableMismatch
         case tableCellMismatch(row: Int, column: Int, actualCount: Int, expectedCount: Int)
-        case testMismatch(String)
         var errorDescription: String? {
             switch self {
             case .invalidSource: tr("تعذّر التحقق من بيانات جدول فرع الأنبار.", "Could not verify the Anbar branch table data.")
@@ -14,7 +13,6 @@ nonisolated enum TransferAnbarTablePDF {
             case .tableMismatch: tr("تعذّر مطابقة أسماء جدول فرع الأنبار ورتبهم ومبالغهم مع بيانات الشهر.", "Could not reconcile the rendered Anbar table names, ranks, and amounts with the month's data.")
             case .tableCellMismatch(let row, let column, let actualCount, let expectedCount):
                 tr("تعذّر تدقيق جدول الأنبار في الصف \(row) والعمود \(column) (طول النص المقروء \(actualCount)، المتوقع \(expectedCount)).", "Anbar table verification failed at row \(row), column \(column) (read length \(actualCount), expected \(expectedCount)).")
-            case .testMismatch(let diagnostic): diagnostic
             }
         }
     }
@@ -26,6 +24,14 @@ nonisolated enum TransferAnbarTablePDF {
     private static let inlineBottom: CGFloat = 572.3
     private static let separateTop: CGFloat = 55
     private static let separateBottom: CGFloat = 808
+
+    /// قد يعيد PDFKit شكل الهاء من خط Arial بالرمز U+06BE رغم أن المصدر U+0647.
+    /// لا نعمّم ذلك على المصدر إذا كان يحتوي U+06BE حتى لا نغيّر معنى الاسم.
+    static func matchesExtractedCell(_ read: String, expected: String) -> Bool {
+        if read == expected { return true }
+        guard !expected.contains("\u{06BE}") else { return false }
+        return read.replacingOccurrences(of: "\u{06BE}", with: "\u{0647}") == expected
+    }
 
     static func make(blankLetter: URL, plan: TransferIndividualPlan) async throws -> URL {
         guard case .rafidainAnbar = plan.kind, !plan.rows.isEmpty,
@@ -109,11 +115,7 @@ nonisolated enum TransferAnbarTablePDF {
                 for column in row.indices {
                     let read = identity(text(column, y, height))
                     let expected = identity(row[column])
-                    if read != expected {
-                        // بيانات هذا التشخيص وهمية وثابتة داخل اختبار المحاكي فقط.
-                        if ProcessInfo.processInfo.arguments.contains("-transferFilesTest"), row[column] == "موظف وهمي" {
-                            throw Failure.testMismatch("ANBAR_TEST_ACTUAL=" + read.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ",") + " EXPECTED=" + expected.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ","))
-                        }
+                    if !matchesExtractedCell(read, expected: expected) {
                         throw Failure.tableCellMismatch(row: index + 1, column: column + 1, actualCount: read.count, expectedCount: expected.count)
                     }
                 }
