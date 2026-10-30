@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 /// تصنيفات حسابات جهات التنفيذ؛ فرع الأنبار لا يدخل في ملف التحويل.
 nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable {
@@ -156,6 +157,7 @@ struct TransferFilesView: View {
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @AppStorage(TransferRules.settingsKey) private var categoriesData = Data()
     @AppStorage("transferPayrollAccountLinks") private var payrollLinksData = Data()
+    @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
     @AppStorage("bankStatementAccountName") private var payerName = ""
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
     @State private var groups: [ReportGroup] = []
@@ -165,6 +167,8 @@ struct TransferFilesView: View {
     @State private var loadedKey = ""
     @State private var error: String?
     @State private var showSettings = false
+    @State private var importingReferences = false
+    @State private var referenceError: String?
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
@@ -210,10 +214,48 @@ struct TransferFilesView: View {
         saved[recipient.rawValue] = key
         if let data = try? JSONEncoder().encode(saved) { payrollLinksData = data; BackupManager.shared.markChanged() }
     }
+    private func importReferences() {
+        guard !importingReferences, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            referenceError = tr("انتظر انتهاء العملية الحالية ثم حاول مجدداً.", "Wait for the current operation, then try again.")
+            return
+        }
+        FilePicker.present(types: [.zip], multiple: false) { urls in
+            guard let url = urls.first else { return }
+            importingReferences = true
+            referenceError = nil
+            Task {
+                defer { importingReferences = false }
+                do {
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                        guard size > 0, size <= 10_000_000 else { throw TransferReferencePack.Failure.oversized }
+                        _ = try TransferReferencePack.validate(url)
+                        return try Data(contentsOf: url)
+                    }.value
+                    guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+                        referenceError = tr("انتظر انتهاء العملية الحالية ثم أعد اختيار الحزمة.", "Wait for the current operation, then select the package again.")
+                        return
+                    }
+                    referenceData = data
+                    BackupManager.shared.markChanged()
+                } catch { referenceError = error.localizedDescription }
+            }
+        }
+    }
     var body: some View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             if let figuresError { Section { Text(figuresError).foregroundStyle(.orange) } }
+            Section {
+                Button { importReferences() } label: {
+                    if importingReferences { ProgressView() }
+                    else { Label(tr("استيراد مراجع الكتب", "Import letter references"), systemImage: "doc.badge.plus") }
+                }.disabled(importingReferences)
+                if !referenceData.isEmpty {
+                    Label(tr("مراجع الكتب محفوظة", "Letter references saved"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
+            } footer: { Text(tr("تُحفظ المراجع الخاصة داخل النسخة الاحتياطية.", "Your private references are included in the backup.")) }
             if loadedKey != loadKey && month != nil {
                 ProgressView().frame(maxWidth: .infinity)
             } else if month == nil {

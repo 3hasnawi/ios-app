@@ -181,6 +181,10 @@ import CryptoKit
         try archive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
         for record in records { try archive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
         try check(try TransferReferencePack.validate(package).templates.count == 11, "reference package")
+        try check(try TransferReferencePack.validateData(Data(contentsOf: package)).templates.count == 11, "backup reference package")
+        let serialized = try PropertyListSerialization.data(fromPropertyList: Data(contentsOf: package), format: .binary, options: 0)
+        guard let restoredData = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw Failure(errorDescription: "backup reference encoding") }
+        try check(try TransferReferencePack.validateData(restoredData).templates.count == 11, "backup reference roundtrip")
         var badRecords = records
         badRecords[0] = .init(id: records[0].id, path: records[0].path, sha256: String(repeating: "0", count: 64), pages: records[0].pages)
         try JSONEncoder().encode(TransferReferenceManifest(version: 1, templates: badRecords)).write(to: root.appendingPathComponent("manifest.json"))
@@ -189,7 +193,7 @@ import CryptoKit
         try badArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
         for record in records { try badArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
         do {
-            _ = try TransferReferencePack.validate(badPackage)
+            _ = try TransferReferencePack.validateData(Data(contentsOf: badPackage))
             throw Failure(errorDescription: "damaged template package accepted")
         } catch is Failure { throw Failure(errorDescription: "damaged template package accepted") }
         catch { }

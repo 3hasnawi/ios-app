@@ -35,7 +35,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementManualAmounts", TransferRules.settingsKey, "transferPayrollAccountLinks",
+                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementManualAmounts", TransferRules.settingsKey, "transferPayrollAccountLinks", TransferReferencePack.settingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -171,6 +171,10 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        if let serialized = settings[TransferReferencePack.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try TransferReferencePack.validateData(data)
+        }
         let accountData = try ExecutionAccountStore.encode(accounts.map {
             SavedExecutionAccount(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
         })
@@ -903,10 +907,29 @@ final class BackupManager {
                 LaunchOptions.writeReport("backup=failed corruptRestore=failed")
                 return
             }
+            // مرجع كتاب تالف يجب أن يُرفض قبل استبدال أي بيانات رواتب أو كتب.
+            let settingsFile = pending.folder.appendingPathComponent("settings.json")
+            let originalSettings = try Data(contentsOf: settingsFile)
+            var damagedSettings = try JSONDecoder().decode([String: Data].self, from: originalSettings)
+            damagedSettings[TransferReferencePack.settingsKey] = try PropertyListSerialization.data(fromPropertyList: Data("invalid reference".utf8), format: .binary, options: 0)
+            try JSONEncoder().encode(damagedSettings).write(to: settingsFile)
+            var referenceRejected = false
+            do {
+                _ = try await Task.detached {
+                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: nil)
+                }.value
+            } catch { referenceRejected = true }
+            let referencesPreserved = referenceRejected && counts() == before
+            try originalSettings.write(to: settingsFile)
+            guard referencesPreserved else {
+                cancelRestore()
+                LaunchOptions.writeReport("backup=failed corruptReferenceGuard=failed")
+                return
+            }
             confirmRestore()
             while isWorking || pendingRestore != nil { try? await Task.sleep(for: .milliseconds(200)) }
             let after = counts()
-            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
+            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok corruptReferenceGuard=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
         } catch {
             LaunchOptions.writeReport("backup=failed \(error.localizedDescription)")
         }

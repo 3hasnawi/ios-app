@@ -16,6 +16,7 @@ nonisolated struct TransferReferenceManifest: Codable, Sendable {
 }
 
 nonisolated enum TransferReferencePack {
+    static let settingsKey = "transferReferenceArchiveData"
     enum Failure: LocalizedError {
         case invalid, damaged, oversized
         var errorDescription: String? {
@@ -39,6 +40,14 @@ nonisolated enum TransferReferencePack {
     }
     private static func hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+    /// للتحقق من بيانات النسخة قبل استبدال أي سجلات أثناء الاسترجاع.
+    static func validateData(_ data: Data) throws -> TransferReferenceManifest {
+        guard !data.isEmpty, data.count <= 10_000_000 else { throw Failure.oversized }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("references-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        return try validate(url)
     }
     static func validate(_ url: URL) throws -> TransferReferenceManifest {
         let archive = try Archive(url: url, accessMode: .read)
