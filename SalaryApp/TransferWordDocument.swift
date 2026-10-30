@@ -48,8 +48,15 @@ nonisolated enum TransferWordDocument {
         return "<w:p><w:pPr><w:bidi/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
     }
     private static func table(_ t: Table) throws -> String {
-        guard !t.headers.isEmpty, t.headers.count <= 12, t.rows.count <= 2000,
+        guard !t.headers.isEmpty, t.headers.count <= 12, t.rows.count <= 50_000,
               t.rows.allSatisfy({ $0.count == t.headers.count }) else { throw Failure.invalidContent }
+        var textBytes = 0
+        for values in [t.headers] + t.rows {
+            for value in values {
+                textBytes += value.utf8.count
+                guard textBytes <= 10_000_000 else { throw Failure.invalidContent }
+            }
+        }
         let borders = ["top", "left", "bottom", "right", "insideH", "insideV"]
             .map { "<w:\($0) w:val=\"single\" w:sz=\"8\" w:color=\"000000\"/>" }.joined()
         let width = 10206 / t.headers.count

@@ -55,6 +55,23 @@ import CryptoKit
         try check(try TransferWordValues.payrollAmount(bookID: "tax_social", figures: wordFigures) == 24, "Word treasury source")
         try check(try TransferWordValues.payrollAmount(bookID: "contracts", figures: wordFigures) == 36, "Word contract source")
         try check(try TransferWordValues.payrollAmount(bookID: "cash_salary", figures: wordFigures) == 23, "Word cash source")
+        let treasuryRows = try TransferWordTables.treasury(wordFigures).rows
+        try check(treasuryRows.count == 3 && treasuryRows[0][2] == "13" && treasuryRows[1][2] == "11" && treasuryRows[2][2] == "24", "Word tax and social protection table")
+        let contractRows = try TransferWordTables.contracts(wordFigures).rows
+        try check(contractRows.count == 1 && contractRows[0] == ["19", "17", "36"], "Word contract amounts")
+        let cashList = TransferCashList(month: wordFigures.month, employees: [
+            .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)
+        ])
+        let cashRows = try TransferWordTables.cash(cashList, figures: wordFigures).rows
+        try check(cashRows.count == 2 && cashRows[0][3] == "23" && cashRows[1][3] == "23", "Word cash list and total")
+        do {
+            let wrongCash = TransferCashList(month: wordFigures.month, employees: [
+                .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 22)
+            ])
+            _ = try TransferWordTables.cash(wrongCash, figures: wordFigures)
+            throw Failure(errorDescription: "inconsistent Word cash list accepted")
+        } catch is Failure { throw Failure(errorDescription: "inconsistent Word cash list accepted") }
+        catch { }
         var incompleteContracts = wordFigures
         incompleteContracts.missingContractNominal = 1
         do {
@@ -217,6 +234,9 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: blankAnbarURL) }
         try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842)).pdfData { $0.beginPage() }.write(to: blankAnbarURL)
         let inlinePlan = try TransferIndividualPlan(kind: .rafidainAnbar, group: group, rows: individualRows, missingAmounts: 0)
+        let wordAnbarRows = try TransferWordTables.anbar(inlinePlan).rows
+        try check(wordAnbarRows.count == 2 && wordAnbarRows[0][2] == "موظف وهمي" &&
+                  wordAnbarRows[0][3] == "1200" && wordAnbarRows[1][3] == "1200", "Word Anbar employees and total")
         let inlinePDF = try await TransferAnbarTablePDF.make(blankLetter: blankAnbarURL, plan: inlinePlan)
         defer { try? FileManager.default.removeItem(at: inlinePDF.deletingLastPathComponent()) }
         try check(PDFDocument(url: inlinePDF)?.pageCount == 1, "inline Anbar table")
