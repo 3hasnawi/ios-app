@@ -56,15 +56,15 @@ nonisolated enum TransferCashLetter {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
     /// المسار الوحيد المقترح للتصدير: الكتاب والقائمة من لقطة الشهر نفسها.
-    static func makeWithList(figures: TransferLetterFigures, list: TransferCashList, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
+    static func makeWithList(figures: TransferLetterFigures, list: TransferCashList, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         guard figures.month == list.month, let expected = figures.payrollCash,
               expected.isFinite, expected > 0, expected == list.total else { throw Failure.incomplete }
-        let page = try await make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
+        let page = try await make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: monthFontData)
         defer { try? FileManager.default.removeItem(at: page.deletingLastPathComponent()) }
         try Task.checkCancellation()
         return try await TransferCashLetterPackage.make(letter: page, list: list, figures: figures)
     }
-    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
+    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
         guard let amountValue = figures.payrollCash else { throw Failure.incomplete }
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
@@ -115,6 +115,6 @@ nonisolated enum TransferCashLetter {
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         return try await TransferPDFOverlay.make(blankReference: blank, flows: flows,
-            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs)])
+            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs, fontData: monthFontData)])
     }
 }

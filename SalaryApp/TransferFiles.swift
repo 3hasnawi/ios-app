@@ -171,6 +171,8 @@ struct TransferFilesView: View {
     @AppStorage("transferPayrollAccountLinks") private var payrollLinksData = Data()
     @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var customizationData = Data()
+    @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldFontData = Data()
+    @AppStorage(TransferHeaderFont.regularSettingsKey) private var regularFontData = Data()
     @AppStorage("bankStatementAccountName") private var payerName = ""
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
     @State private var groups: [ReportGroup] = []
@@ -193,7 +195,7 @@ struct TransferFilesView: View {
     private var draftRevision: TransferDraftRevision {
         TransferDraftRevision(sourceKey: loadKey, accounts: accountData, categories: categoriesData,
             payrollLinks: payrollLinksData, customization: customizationData, references: referenceData,
-            payerName: payerName, payerIBAN: payerIBAN)
+            payerName: payerName, payerIBAN: payerIBAN, boldFont: boldFontData, regularFont: regularFontData)
     }
     private var unlinkedAnbar: [TransferEntity] {
         guard let selected = month?.name, bookStore.loadError == nil else { return [] }
@@ -319,6 +321,16 @@ struct TransferFilesView: View {
                         }
                     }
                 } header: { Text(month?.name ?? "") }
+                if figures != nil && error == nil {
+                    Section {
+                        NavigationLink {
+                            TransferIssuanceView(month: month?.name ?? "", entities: entities, sourceKey: loadKey,
+                                accounts: accountData, categories: categoriesData, links: payrollLinksData)
+                        } label: {
+                            Label(tr("تدقيق الكتب الصادرة", "Issued letter review"), systemImage: "checklist")
+                        }
+                    } footer: { Text(tr("تأكيد يدوي للكتب الصادرة ومراجعة الجهات والمبالغ المسجلة.", "Manually confirm issued letters and review recorded entities and amounts.")) }
+                }
                 let prepared = draftCoverage.records(for: draftRevision)
                 let coverageEntities = entities.filter { $0.category != .unresolved && $0.group.total.isFinite && $0.group.total > 0 }
                 let missingPreviews = coverageEntities.filter { prepared[$0.id] == nil }
@@ -384,7 +396,8 @@ struct TransferFilesView: View {
                                 TransferLetterDraftView(kind: kind, month: figures.month, figures: figures, entities: entities,
                                     sourceKey: loadKey, sourceAccounts: accountData, sourceCategories: categoriesData,
                                     sourceLinks: payrollLinksData, sourceCustomization: customizationData,
-                                    references: referenceData, payerName: payerName, payerIBAN: payerIBAN)
+                                    references: referenceData, payerName: payerName, payerIBAN: payerIBAN,
+                                    boldFont: boldFontData, regularFont: regularFontData)
                             } label: { Label(kind.title, systemImage: "doc.text.magnifyingglass") }
                         }
                     } footer: { Text(tr("المعاينات للتدقيق فقط، ولا يمكن مشاركتها حتى اكتمال الميزة.", "Previews are for review only and cannot be shared until the feature is complete.")) }

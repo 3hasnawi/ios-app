@@ -25,6 +25,8 @@ nonisolated struct TransferPDFMonthSlot: Sendable {
     let rect: CGRect
     let month: Int
     let glyphs: [TransferMonthDigitGlyph]
+    /// عند توفر الخط الأصلي تُرسم الأرقام منه؛ وإلا تستخدم صور أرقام المرجع.
+    var fontData: Data? = nil
 }
 
 nonisolated enum TransferPDFOverlay {
@@ -66,6 +68,26 @@ nonisolated enum TransferPDFOverlay {
             var occupied: [CGRect] = []
             var planned: [Line] = []
             var plannedMonths: [(rect: CGRect, images: [(UIImage, CGFloat, CGFloat)])] = []
+            var resolvedFlows = flows
+            var imageMonths: [TransferPDFMonthSlot] = []
+            for month in months {
+                guard (1...12).contains(month.month) else { throw Failure.invalidTemplate }
+                if let fontData = month.fontData, !fontData.isEmpty {
+                    let font = try TransferHeaderFont.make(data: fontData, style: .bold, size: 18)
+                    let value = String(month.month)
+                    try TransferHeaderFont.requireSupported(value, font: font)
+                    let line = CTLineCreateWithAttributedString(NSAttributedString(string: value, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+                    // قد تكون مساحة الرقم أضيق من عرض الخط الاسمي؛ أرقام المرجع بديل مطابق.
+                    if CTLineGetTypographicBounds(line, nil, nil, nil) > Double(month.rect.width) {
+                        imageMonths.append(month)
+                        continue
+                    }
+                    var slot = TransferPDFTextSlot(rect: month.rect, fontName: "SakkalMajalla-Bold", fontSize: 18, alignment: .right)
+                    slot.privateFontData = fontData
+                    slot.privateFontStyle = .bold
+                    resolvedFlows.append(TransferPDFTextFlow(value: value, slots: [slot]))
+                } else { imageMonths.append(month) }
+            }
             func checkSlot(_ rect: CGRect) throws {
                 guard rect.width > 4, rect.height > 4, rect.minX >= 0, rect.minY >= 0,
                       rect.maxX <= box.width, rect.maxY <= box.height,
@@ -75,7 +97,7 @@ nonisolated enum TransferPDFOverlay {
                 if let existing = page.selection(for: pdfRect)?.string,
                    existing.unicodeScalars.contains(where: { !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0) }) { throw Failure.unsafeSlot }
             }
-            for flow in flows {
+            for flow in resolvedFlows {
                 guard !flow.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !flow.slots.isEmpty,
                       !flow.value.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.invalidTemplate }
                 let value = flow.value as NSString
@@ -128,7 +150,7 @@ nonisolated enum TransferPDFOverlay {
                 }
                 guard offset == value.length else { throw Failure.doesNotFit }
             }
-            for month in months {
+            for month in imageMonths {
                 try checkSlot(month.rect)
                 guard (1...12).contains(month.month), month.glyphs.count == 10 else { throw Failure.invalidTemplate }
                 let indexes = String(month.month).compactMap(\.wholeNumberValue)

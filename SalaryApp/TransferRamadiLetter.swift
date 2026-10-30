@@ -56,7 +56,7 @@ nonisolated enum TransferRamadiLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
+    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         guard case .ramadi = plan.kind, ArabicText.normalize(account.entity) == ArabicText.normalize(plan.group.title),
               TransferRules.validIBAN(account.iban) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.group.month)
@@ -111,6 +111,6 @@ nonisolated enum TransferRamadiLetter {
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         return try await TransferPDFOverlay.make(blankReference: blank, flows: flows,
-            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs)])
+            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs, fontData: monthFontData)])
     }
 }

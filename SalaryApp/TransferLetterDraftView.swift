@@ -37,6 +37,8 @@ struct TransferLetterDraftView: View {
     let references: Data
     let payerName: String
     let payerIBAN: String
+    let boldFont: Data
+    let regularFont: Data
     @State private var coverage = TransferDraftCoverage.shared
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
@@ -46,6 +48,8 @@ struct TransferLetterDraftView: View {
     @AppStorage(TransferReferencePack.settingsKey) private var currentReferences = Data()
     @AppStorage("bankStatementAccountName") private var currentPayerName = ""
     @AppStorage("bankStatementIBAN") private var currentPayerIBAN = ""
+    @AppStorage(TransferHeaderFont.boldSettingsKey) private var currentBoldFont = Data()
+    @AppStorage(TransferHeaderFont.regularSettingsKey) private var currentRegularFont = Data()
     @State private var selectedID = ""
     @State private var working = false
     @State private var error: String?
@@ -67,14 +71,14 @@ struct TransferLetterDraftView: View {
         let record = months.first { $0.name == month }
         return record != nil && figures.month == month && currentAccounts == sourceAccounts && currentCategories == sourceCategories &&
             currentLinks == sourceLinks && currentCustomization == sourceCustomization && currentReferences == references &&
-            currentPayerName == payerName && currentPayerIBAN == payerIBAN &&
+            currentPayerName == payerName && currentPayerIBAN == payerIBAN && currentBoldFont == boldFont && currentRegularFont == regularFont &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
     private var revision: TransferDraftRevision {
         TransferDraftRevision(sourceKey: sourceKey, accounts: sourceAccounts, categories: sourceCategories,
             payrollLinks: sourceLinks, customization: sourceCustomization, references: references,
-            payerName: payerName, payerIBAN: payerIBAN)
+            payerName: payerName, payerIBAN: payerIBAN, boldFont: boldFont, regularFont: regularFont)
     }
     var body: some View {
         List {
@@ -188,16 +192,16 @@ struct TransferLetterDraftView: View {
                 let url: URL
                 switch kind {
                 case .foodTax:
-                    url = try await TransferFoodTaxLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
+                    url = try await TransferFoodTaxLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                 case .taxSocial:
-                    url = try await TransferTaxSocialLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
+                    url = try await TransferTaxSocialLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                 case .contracts:
-                    url = try await TransferContractsLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
+                    url = try await TransferContractsLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                 case .cash:
                     let container = SharedModel.container
                     let task = Task.detached(priority: .userInitiated) { try await TransferCashListEngine(modelContainer: container).list(month: month) }
                     let list = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
-                    url = try await TransferCashLetter.makeWithList(figures: figures, list: list, payerIBAN: payerIBAN, references: references, customization: customization)
+                    url = try await TransferCashLetter.makeWithList(figures: figures, list: list, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                     cashAuditPassed = true
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
@@ -250,16 +254,16 @@ struct TransferLetterDraftView: View {
                         countNotice = tr("تغيّر عدد المنتسبين: \(Num.format(previousCount)) في الشهر السابق و\(Num.format(entity.group.count)) في الشهر المختار.", "Employee count changed: \(Num.format(previousCount)) in the previous month and \(Num.format(entity.group.count)) in the selected month.")
                     }
                     if kind == .ramadi {
-                        url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization)
+                        url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                     } else if kind == .anbar {
-                        url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization)
+                        url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                         anbarAuditPassed = true
                     } else {
                         guard let local = TransferRules.localAccountDigits(account.iban) else { throw TransferIndividualPlan.Failure.invalidSource }
                         if kind == .housing {
-                            url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization)
+                            url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                         } else {
-                            url = try await TransferWaterLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization)
+                            url = try await TransferWaterLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                         }
                     }
                 }

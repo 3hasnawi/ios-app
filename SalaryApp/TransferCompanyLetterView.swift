@@ -11,6 +11,8 @@ struct TransferCompanyLetterView: View {
     @AppStorage("bankStatementIBAN") private var currentPayer = ""
     @AppStorage(TransferReferencePack.settingsKey) private var currentReferences = Data()
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var currentCustomization = Data()
+    @AppStorage(TransferHeaderFont.boldSettingsKey) private var currentBoldFont = Data()
+    @AppStorage(TransferHeaderFont.regularSettingsKey) private var currentRegularFont = Data()
     @State private var working = false
     @State private var error: String?
     @State private var previewURL: URL?
@@ -65,6 +67,8 @@ struct TransferCompanyLetterView: View {
     private func prepare() {
         guard sourceIsCurrent, !working else { return }
         let snapshot = currentCustomization
+        let fontSnapshot = currentBoldFont
+        let regularFontSnapshot = currentRegularFont
         let customization: TransferLetterCustomization
         do {
             let store = try (snapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: snapshot))
@@ -77,8 +81,9 @@ struct TransferCompanyLetterView: View {
         generation = Task {
             defer { working = false }
             do {
-                let url = try await TransferCompanyLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
-                guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization else {
+                let url = try await TransferCompanyLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: fontSnapshot.isEmpty ? nil : fontSnapshot)
+                guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization,
+                      fontSnapshot == currentBoldFont, regularFontSnapshot == currentRegularFont else {
                     try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
                     return
                 }

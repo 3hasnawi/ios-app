@@ -55,7 +55,7 @@ nonisolated enum TransferFoodTaxLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
+    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
         let amountValue = figures.foodTax
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
@@ -106,6 +106,6 @@ nonisolated enum TransferFoodTaxLetter {
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         return try await TransferPDFOverlay.make(blankReference: blank, flows: flows,
-            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs)])
+            months: [TransferPDFMonthSlot(rect: numericMonths[0], month: period.month, glyphs: glyphs, fontData: monthFontData)])
     }
 }

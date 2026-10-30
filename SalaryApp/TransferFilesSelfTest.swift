@@ -51,6 +51,23 @@ import CryptoKit
         try check(TransferRules.localAccountDigits(iban) == String(iban.suffix(15)) && TransferRules.localAccountDigits("IQ00") == nil, "local account from Iraqi IBAN")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let issuedLine = TransferIssuedLine(item)
+        let issuedRecord = TransferIssuedRecord(id: UUID(), month: group.month, book: "كتاب وهمي", confirmedAt: .now, lines: [issuedLine])
+        let ledgerBytes = try JSONEncoder().encode(TransferIssuance.Ledger(records: [issuedRecord]))
+        let restoredLedger = try TransferIssuance.decode(ledgerBytes)
+        let confirmedAudit = TransferIssuance.audit(current: [issuedLine], records: restoredLedger.records, month: group.month)
+        try check(confirmedAudit.missing.isEmpty && confirmedAudit.changed.isEmpty, "manual issuance survives backup encoding")
+        let noConfirmation = TransferIssuance.audit(current: [issuedLine], records: [], month: group.month)
+        try check(noConfirmation.missing.count == 1, "preview does not confirm issuance")
+        let changedGroup = ReportGroup(kind: .deductions, month: group.month, title: group.title, count: 1, total: 1201, byEntity: false)
+        let changedLine = TransferIssuedLine(TransferEntity(group: changedGroup, account: account, category: .rafidain, missingAmounts: 0))
+        let changedAudit = TransferIssuance.audit(current: [changedLine], records: [issuedRecord, issuedRecord], month: group.month)
+        try check(changedAudit.changed.count == 1 && changedAudit.repeated.count == 1, "changed and duplicate confirmations")
+        try check(TransferIssuance.audit(current: [], records: [issuedRecord], month: group.month).absent.count == 1, "removed confirmed entity")
+        try check(TransferIssuance.audit(current: [issuedLine], records: [issuedRecord], month: "شهر آخر").missing.count == 1, "confirmation month isolation")
+        do { _ = try TransferIssuance.decode(Data("invalid".utf8)); throw Failure(errorDescription: "invalid issuance ledger accepted") }
+        catch is Failure { throw Failure(errorDescription: "invalid issuance ledger accepted") }
+        catch { }
         let coverage = TransferDraftCoverage()
         let revision = TransferDraftRevision(sourceKey: "revision-1", accounts: Data(), categories: Data(), payrollLinks: Data(), customization: Data(), references: Data(), payerName: "دافع وهمي", payerIBAN: iban)
         let otherRevision = TransferDraftRevision(sourceKey: "revision-2", accounts: Data(), categories: Data(), payrollLinks: Data(), customization: Data(), references: Data(), payerName: "دافع وهمي", payerIBAN: iban)

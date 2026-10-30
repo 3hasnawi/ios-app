@@ -11,6 +11,8 @@ nonisolated struct TransferDraftRevision: Equatable, Sendable {
     let references: Data
     let payerName: String
     let payerIBAN: String
+    var boldFont: Data = Data()
+    var regularFont: Data = Data()
 }
 
 @MainActor @Observable
