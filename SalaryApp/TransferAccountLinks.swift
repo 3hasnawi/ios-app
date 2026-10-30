@@ -18,4 +18,8 @@ nonisolated enum TransferAccountLinks {
         guard let links = try? decode(data) else { return false }
         return !ArabicText.normalize(title).isEmpty && selectedKey(title: title, links: links) == account.key
     }
+    static func allowsDirectAnbar(title: String, data: Data) -> Bool {
+        guard TransferRules.isAnbarBankSource(title), let links = try? decode(data) else { return false }
+        return links[sourceKey(title)] == nil
+    }
 }

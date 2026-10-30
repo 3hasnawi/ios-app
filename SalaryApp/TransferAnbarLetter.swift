@@ -57,9 +57,14 @@ nonisolated enum TransferAnbarLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil, accountLinks: Data = Data()) async throws -> URL {
-        guard case .rafidainAnbar = plan.kind, TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
-              TransferRules.validIBAN(account.iban), TransferRules.classify(account) == .anbar else { throw Failure.incomplete }
+    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount?, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil, accountLinks: Data = Data()) async throws -> URL {
+        guard case .rafidainAnbar = plan.kind else { throw Failure.incomplete }
+        if let account {
+            guard TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
+                  TransferRules.validIBAN(account.iban), TransferRules.classify(account) == .anbar else { throw Failure.incomplete }
+        } else {
+            guard TransferAccountLinks.allowsDirectAnbar(title: plan.group.title, data: accountLinks) else { throw Failure.incomplete }
+        }
         let period = try TransferLetterPeriod(plan.group.month)
         let amountValue = plan.group.total
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,

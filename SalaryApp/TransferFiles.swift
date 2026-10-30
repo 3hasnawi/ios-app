@@ -27,6 +27,7 @@ nonisolated struct TransferEntity: Identifiable, Sendable {
     var payrollRecipient: String? = nil
     var duplicateSource = false
     var id: String { "\(group.id)|\(payrollRecipient ?? "execution")" }
+    var isDirectAnbarBank: Bool { payrollRecipient == nil && account == nil && category == .anbar && TransferRules.isAnbarBankSource(group.title) }
 }
 
 /// بنود الرواتب المستقلة عن ملف جهات التنفيذ وتحتاج ربط حساب كل مستفيد.
@@ -61,6 +62,11 @@ nonisolated enum TransferPayrollRecipient: String, CaseIterable, Identifiable {
 
 nonisolated enum TransferRules {
     static let settingsKey = "transferEntityCategories"
+    /// اسم بند الفرع نفسه معتمد لكتابه فقط، لا يُنشئ حساب مستفيد أو ملف تحويل.
+    static func isAnbarBankSource(_ title: String) -> Bool {
+        let text = ArabicText.normalize(title).replacingOccurrences(of: "/", with: " ").replacingOccurrences(of: "-", with: " ")
+        return text.split(whereSeparator: \.isWhitespace).joined(separator: " ") == ArabicText.normalize("مصرف الرافدين فرع الانبار")
+    }
     static func classify(_ account: SavedExecutionAccount?) -> TransferCategory {
         guard let account else { return .unresolved }
         let branch = ArabicText.normalize(account.branch)
@@ -118,11 +124,11 @@ nonisolated enum TransferRules {
     }
     static func issues(_ entity: TransferEntity) -> [String] {
         var result: [String] = []
-        guard let account = entity.account else { return [tr("الحساب غير محفوظ", "Account is missing")] }
+        if entity.account == nil && !entity.isDirectAnbarBank { return [tr("الحساب غير محفوظ", "Account is missing")] }
         if entity.duplicateSource { result.append(tr("البند موجود أيضاً في ملف الجهات؛ راجع مصدره لتجنب التكرار", "This item also exists in execution deductions; review for duplication")) }
-        if entity.category == .anbar {
+        if let account = entity.account, entity.category == .anbar {
             if individualLocalAccount(account) == nil { result.append(tr("حساب الجهة غير صالح أو غير مطابق", "Invalid or inconsistent beneficiary account")) }
-        } else {
+        } else if let account = entity.account {
             if !validIBAN(account.iban) { result.append(tr("IBAN غير صالح", "Invalid IBAN")) }
             if !validBIC(account.swift) { result.append(tr("SWIFT غير صالح أو غير موجود", "Invalid or missing SWIFT")) }
             if account.localAccount != nil && individualLocalAccount(account) == nil {
@@ -232,8 +238,9 @@ struct TransferFilesView: View {
         let deductions = groups.map { group in
             let account = linksValid ? TransferAccountLinks.resolve(title: group.title, accounts: lookup, links: payrollLinks) : nil
             let key = categoryKey(group.title, account)
-            let category = categories[key].flatMap(TransferCategory.init(rawValue:)) ?? TransferRules.classify(account)
             let explicit = payrollLinks[TransferAccountLinks.sourceKey(group.title)] != nil
+            let directAnbar = linksValid && !explicit && account == nil && TransferRules.isAnbarBankSource(group.title)
+            let category = categories[key].flatMap(TransferCategory.init(rawValue:)) ?? (directAnbar ? .anbar : TransferRules.classify(account))
             return TransferEntity(group: group, account: account, category: category, missingAmounts: missing[group.title] ?? 0,
                                   beneficiaryName: explicit ? account?.entity : nil)
         }
@@ -268,10 +275,14 @@ struct TransferFilesView: View {
         saved[recipient.rawValue] = key
         if let data = try? JSONEncoder().encode(saved) { payrollLinksData = data; BackupManager.shared.markChanged() }
     }
-    private func setDeductionAccount(_ entity: TransferEntity, key: String?) -> Bool {
-        guard entity.payrollRecipient == nil, var saved = try? TransferAccountLinks.decode(payrollLinksData),
+    private func setTransferAccount(_ entity: TransferEntity, key: String?) -> Bool {
+        guard var saved = try? TransferAccountLinks.decode(payrollLinksData),
               !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return false }
-        let source = TransferAccountLinks.sourceKey(entity.group.title)
+        let source: String
+        if let recipient = entity.payrollRecipient {
+            guard TransferPayrollRecipient(rawValue: recipient) != nil else { return false }
+            source = recipient
+        } else { source = TransferAccountLinks.sourceKey(entity.group.title) }
         guard source != TransferAccountLinks.prefix else { return false }
         if let key {
             guard accounts.contains(where: { $0.key == key }) else { return false }
@@ -296,7 +307,7 @@ struct TransferFilesView: View {
                     sourceCategories: categoriesData, sourcePayrollLinks: payrollLinksData,
                     payrollComplete: figures != nil, payerName: payerName, payerIBAN: payerIBAN,
                     changeCategory: setCategory, anbarContext: category == .anbar ? bookContext : nil,
-                    accounts: accounts, setDeductionAccount: setDeductionAccount)
+                    accounts: accounts, setTransferAccount: setTransferAccount)
             } label: {
                 categoryLabel(category, items: items)
             }
@@ -570,7 +581,7 @@ private struct TransferCategoryView: View {
     let changeCategory: (TransferCategory, TransferEntity) -> Void
     let anbarContext: TransferAnbarContext?
     let accounts: [SavedExecutionAccount]
-    let setDeductionAccount: (TransferEntity, String?) -> Bool
+    let setTransferAccount: (TransferEntity, String?) -> Bool
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
@@ -646,10 +657,12 @@ private struct TransferCategoryView: View {
                                     Button(option.title) { changeCategory(option, entity) }
                                 }
                             } label: { Label(tr("تحديد مجموعة التحويل", "Set transfer category"), systemImage: "arrow.triangle.branch").font(.caption) }
+                        } else if entity.isDirectAnbarBank {
+                            Text(tr("يُدرج في كتاب الرافدين فرع الأنبار؛ لا يحتاج ملف CSV.", "Included in the Rafidain Anbar letter; no CSV is needed.")).font(.caption).foregroundStyle(.secondary)
                         } else {
                             Text(tr("لم يُعثر على الحساب؛ اربط جهة الاستقطاع بحساب محفوظ أو استورد حسابها.", "No account found; link this deduction entity to a saved account or import it.")).font(.caption).foregroundStyle(.orange)
                         }
-                        if entity.payrollRecipient == nil {
+                        if !entity.isDirectAnbarBank {
                             Button(tr("ربط حساب الجهة", "Link beneficiary account"), systemImage: "link") { linkEntity = entity }
                                 .disabled(!sourceIsCurrent || !linksValidHere)
                         }
@@ -669,8 +682,10 @@ private struct TransferCategoryView: View {
         .sheet(item: $linkEntity) { entity in
             NavigationStack {
                 TransferAccountLinkPicker(entity: entity, accounts: accounts,
-                    selectedKey: (try? TransferAccountLinks.decode(sourcePayrollLinks)).map { TransferAccountLinks.selectedKey(title: entity.group.title, links: $0) },
-                    save: { key in sourceIsCurrent && setDeductionAccount(entity, key) })
+                    selectedKey: (try? TransferAccountLinks.decode(sourcePayrollLinks)).map { links in
+                        entity.payrollRecipient.flatMap { links[$0] } ?? (entity.payrollRecipient == nil ? TransferAccountLinks.selectedKey(title: entity.group.title, links: links) : "")
+                    },
+                    save: { key in sourceIsCurrent && setTransferAccount(entity, key) })
             }
         }
         .alert(tr("تعذّر التصدير", "Export failed"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {

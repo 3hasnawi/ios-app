@@ -60,6 +60,20 @@ import CryptoKit
         try check(try JSONDecoder().decode(BackupFormat.AccountRecord.self, from: JSONEncoder().encode(backupAccount)).localAccount == localOnly.localAccount, "local account backup roundtrip")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let bankTitle = "مصرف الرافدين/فرع الانبار"
+        let bankGroup = ReportGroup(kind: .deductions, month: group.month, title: bankTitle, count: 1, total: 1200, byEntity: false)
+        let directBank = TransferEntity(group: bankGroup, account: nil, category: .anbar, missingAmounts: 0)
+        try check(directBank.isDirectAnbarBank && TransferRules.issues(directBank).isEmpty, "Anbar bank source uses individual letter without beneficiary account")
+        try check(TransferAccountLinks.allowsDirectAnbar(title: bankTitle, data: Data()), "direct Anbar source is permitted")
+        try check(!TransferAccountLinks.allowsDirectAnbar(title: "مصرف الرافدين فرع آخر", data: Data()), "other branches are not direct Anbar")
+        try check(!TransferAccountLinks.allowsDirectAnbar(title: bankTitle, data: Data("invalid".utf8)), "corrupt links do not bypass beneficiary selection")
+        let explicitMissing = try JSONEncoder().encode([TransferAccountLinks.sourceKey(bankTitle): "حساب غير موجود"])
+        try check(!TransferAccountLinks.allowsDirectAnbar(title: bankTitle, data: explicitMissing), "explicit missing link is not bypassed")
+        do {
+            _ = try TransferRules.csv([directBank], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "direct Anbar source accepted in grouped CSV")
+        } catch is Failure { throw Failure(errorDescription: "direct Anbar source accepted in grouped CSV") }
+        catch { }
         let aliasAccount = SavedExecutionAccount(entity: "صندوق وهمي تسليف", iban: iban, branch: "مصرف الرشيد فرع تجريبي", swift: "TESTIQBAAAA")
         let linkedGroup = ReportGroup(kind: .deductions, month: group.month, title: "وزارة وهمية / صندوق وهمي", count: 1, total: 1200, byEntity: false)
         let mapKey = TransferAccountLinks.sourceKey(linkedGroup.title)

@@ -64,7 +64,7 @@ struct TransferLetterDraftView: View {
     @State private var generation: Task<Void, Never>?
 
     private var candidates: [TransferEntity] {
-        entities.filter { $0.payrollRecipient == nil && $0.account != nil &&
+        entities.filter { $0.payrollRecipient == nil && ($0.account != nil || (kind == .anbar && $0.isDirectAnbarBank)) &&
             (kind != .anbar || $0.category == .anbar) }
     }
     private var current: Bool {
@@ -234,7 +234,7 @@ struct TransferLetterDraftView: View {
                     url = result.letter
                     groupAuditPassed = true
                 case .ramadi, .anbar, .housing, .water:
-                    guard let entity, let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
+                    guard let entity, entity.account != nil || (kind == .anbar && entity.isDirectAnbarBank) else { throw TransferIndividualPlan.Failure.invalidSource }
                     let container = SharedModel.container
                     let key = MonthName.sortKey(month)
                     let year = key / 100, number = key % 100
@@ -266,11 +266,13 @@ struct TransferLetterDraftView: View {
                         countNotice = tr("تغيّر عدد المنتسبين: \(Num.format(previousCount)) في الشهر السابق و\(Num.format(entity.group.count)) في الشهر المختار.", "Employee count changed: \(Num.format(previousCount)) in the previous month and \(Num.format(entity.group.count)) in the selected month.")
                     }
                     if kind == .ramadi {
+                        guard let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
                         url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                     } else if kind == .anbar {
-                        url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
+                        url = try await TransferAnbarLetter.make(plan: plan, account: entity.account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                         anbarAuditPassed = true
                     } else {
+                        guard let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
                         guard let local = TransferRules.individualLocalAccount(account) else { throw TransferIndividualPlan.Failure.invalidSource }
                         if kind == .housing {
                             url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)

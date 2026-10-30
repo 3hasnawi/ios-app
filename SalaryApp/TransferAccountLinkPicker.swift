@@ -22,7 +22,7 @@ struct TransferAccountLinkPicker: View {
     var body: some View {
         List {
             Section {
-                LabeledContent(tr("جهة الاستقطاع", "Deduction entity"), value: entity.group.title)
+                LabeledContent(entity.payrollRecipient == nil ? tr("جهة الاستقطاع", "Deduction entity") : tr("بند الرواتب", "Payroll item"), value: entity.group.title)
                 Text(tr("اختر الحساب المطابق من قائمة الحسابات المستوردة، وتحقق من اسم المستفيد والمصرف والرقم.", "Select the matching imported account and verify the beneficiary, bank and account number."))
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -45,7 +45,7 @@ struct TransferAccountLinkPicker: View {
                 }
             } header: { Text(tr("الحسابات المحفوظة", "Saved accounts")) }
             Section {
-                Button(tr("إزالة الربط واستخدام الاسم المطابق", "Remove link and match by name")) { unlink = true }
+                Button(entity.payrollRecipient == nil ? tr("إزالة الربط واستخدام الاسم المطابق", "Remove link and match by name") : tr("إزالة ربط الحساب", "Remove account link")) { unlink = true }
             } footer: { Text(tr("بعد الربط تعود إلى ملفات التحويل لمراجعة التصنيف والمبالغ. لا ينشئ الربط تحويلاً.", "After linking, return to transfer files to review classification and amounts. Linking does not create a transfer.")) }
         }
         .adaptiveSearchable(text: $query, prompt: tr("ابحث عن الجهة أو المصرف أو IBAN", "Search entity, bank or IBAN"))
@@ -60,13 +60,13 @@ struct TransferAccountLinkPicker: View {
             Button(tr("إلغاء", "Cancel"), role: .cancel) { pending = nil }
         } message: {
             if let account = pending {
-                Text(tr("جهة الاستقطاع: \(entity.group.title)\nالحساب: \(account.entity)\nالمصرف: \(account.branch)\nIBAN: \(account.iban.isEmpty ? "—" : account.iban)\nالحساب المحلي: \(account.localAccount ?? "—")", "Deduction entity: \(entity.group.title)\nAccount: \(account.entity)\nBank: \(account.branch)\nIBAN: \(account.iban.isEmpty ? "—" : account.iban)\nLocal account: \(account.localAccount ?? "—")"))
+                Text(tr("المصدر: \(entity.group.title)\nالحساب: \(account.entity)\nالمصرف: \(account.branch)\nIBAN: \(account.iban.isEmpty ? "—" : account.iban)\nالحساب المحلي: \(account.localAccount ?? "—")", "Source: \(entity.group.title)\nAccount: \(account.entity)\nBank: \(account.branch)\nIBAN: \(account.iban.isEmpty ? "—" : account.iban)\nLocal account: \(account.localAccount ?? "—")"))
             }
         }
         .alert(tr("إزالة الربط؟", "Remove link?"), isPresented: $unlink) {
             Button(tr("إزالة الربط", "Remove link"), role: .destructive) { if save(nil) { dismiss() } else { error = true } }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { }
-        } message: { Text(tr("سيبحث التطبيق مجدداً عن حساب مطابق لاسم جهة الاستقطاع.", "The app will again look for an account matching the deduction entity name.")) }
+        } message: { Text(entity.payrollRecipient == nil ? tr("سيبحث التطبيق مجدداً عن حساب مطابق لاسم جهة الاستقطاع.", "The app will again look for an account matching the deduction entity name.") : tr("سيحتاج بند الرواتب إلى اختيار حساب من جديد.", "The payroll item will need an account selected again.")) }
         .alert(tr("تعذّر حفظ الربط", "Could not save link"), isPresented: $error) {
             Button(tr("حسناً", "OK"), role: .cancel) { }
         } message: { Text(tr("تحقق من انتهاء الاستيراد أو النسخ، ثم أعد فتح ملفات التحويل وحاول مجدداً.", "Wait for any import or backup to finish, reopen transfer files, and try again.")) }
