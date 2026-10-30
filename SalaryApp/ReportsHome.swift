@@ -110,6 +110,10 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .task {
                 #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "transferFilesTest") {
+                    do { LaunchOptions.writeReport(try TransferFilesSelfTest.run()) }
+                    catch { LaunchOptions.writeReport("transferFiles=failed \(error.localizedDescription)") }
+                }
                 if UserDefaults.standard.bool(forKey: "annualDeductionImportTest") {
                     do { LaunchOptions.writeReport(try AnnualDeductionImportSelfTest.run()) }
                     catch { LaunchOptions.writeReport("annualDeduction=failed \(error.localizedDescription)") }
@@ -646,6 +650,7 @@ struct EntitiesView: View {
     @State private var exporter = QuickExporter.shared
     @State private var previewGroup: ReportGroup?
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
+    @State private var showTransfers = false
 
     private var accountsByKey: [String: SavedExecutionAccount] {
         ((try? ExecutionAccountStore.decode(accountData)) ?? []).reduce(into: [:]) { result, account in
@@ -697,9 +702,14 @@ struct EntitiesView: View {
         }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
         .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
+        .navigationDestination(isPresented: $showTransfers) { TransferFilesView() }
         .navigationTitle(tr("جهات التنفيذ", "Execution entities"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(tr("ملفات التحويل", "Transfer files"), systemImage: "arrow.left.arrow.right") { showTransfers = true }
+                    .accessibilityIdentifier("transferFilesButton")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showExport = true
