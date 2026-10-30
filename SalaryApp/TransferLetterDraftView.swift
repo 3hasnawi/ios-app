@@ -263,16 +263,16 @@ struct TransferLetterDraftView: View {
                         countNotice = tr("تغيّر عدد المنتسبين: \(Num.format(previousCount)) في الشهر السابق و\(Num.format(entity.group.count)) في الشهر المختار.", "Employee count changed: \(Num.format(previousCount)) in the previous month and \(Num.format(entity.group.count)) in the selected month.")
                     }
                     if kind == .ramadi {
-                        url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
+                        url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                     } else if kind == .anbar {
-                        url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
+                        url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                         anbarAuditPassed = true
                     } else {
                         guard let local = TransferRules.individualLocalAccount(account) else { throw TransferIndividualPlan.Failure.invalidSource }
                         if kind == .housing {
-                            url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
+                            url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                         } else {
-                            url = try await TransferWaterLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
+                            url = try await TransferWaterLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont, accountLinks: sourceLinks)
                         }
                     }
                 }

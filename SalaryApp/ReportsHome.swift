@@ -650,6 +650,7 @@ struct EntitiesView: View {
     @State private var exporter = QuickExporter.shared
     @State private var previewGroup: ReportGroup?
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
+    @AppStorage("transferPayrollAccountLinks") private var accountLinksData = Data()
     @State private var showTransfers = false
 
     private var accountsByKey: [String: SavedExecutionAccount] {
@@ -677,9 +678,10 @@ struct EntitiesView: View {
                     Text(tr("لا توجد جهة بهذا الاسم.", "No entity matches.")).foregroundStyle(.secondary)
                 } else {
                     let accounts = accountsByKey
+                    let links = try? TransferAccountLinks.decode(accountLinksData)
                     ForEach(filtered) { group in
                         NavigationLink(value: ReportsRoute.group(group)) {
-                            ExecutionEntityCard(group: group, account: accounts[ArabicText.normalize(group.title)])
+                            ExecutionEntityCard(group: group, account: links.flatMap { TransferAccountLinks.resolve(title: group.title, accounts: accounts, links: $0) })
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {

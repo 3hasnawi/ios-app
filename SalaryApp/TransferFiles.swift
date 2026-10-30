@@ -208,7 +208,8 @@ struct TransferFilesView: View {
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
     private var categories: [String: String] { (try? JSONDecoder().decode([String: String].self, from: categoriesData)) ?? [:] }
-    private var payrollLinks: [String: String] { (try? JSONDecoder().decode([String: String].self, from: payrollLinksData)) ?? [:] }
+    private var payrollLinks: [String: String] { (try? TransferAccountLinks.decode(payrollLinksData)) ?? [:] }
+    private var linksValid: Bool { (try? TransferAccountLinks.decode(payrollLinksData)) != nil }
     private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountData)) ?? [] }
     private var draftRevision: TransferDraftRevision {
         TransferDraftRevision(sourceKey: loadKey, accounts: accountData, categories: categoriesData,
@@ -227,16 +228,18 @@ struct TransferFilesView: View {
     private var entities: [TransferEntity] {
         let lookup = accounts.reduce(into: [String: SavedExecutionAccount]()) { $0[$1.key] = $1 }
         let deductions = groups.map { group in
-            let account = lookup[ArabicText.normalize(group.title)]
+            let account = linksValid ? TransferAccountLinks.resolve(title: group.title, accounts: lookup, links: payrollLinks) : nil
             let key = categoryKey(group.title, account)
             let category = categories[key].flatMap(TransferCategory.init(rawValue:)) ?? TransferRules.classify(account)
-            return TransferEntity(group: group, account: account, category: category, missingAmounts: missing[group.title] ?? 0)
+            let explicit = payrollLinks[TransferAccountLinks.sourceKey(group.title)] != nil
+            return TransferEntity(group: group, account: account, category: category, missingAmounts: missing[group.title] ?? 0,
+                                  beneficiaryName: explicit ? account?.entity : nil)
         }
         guard let figures else { return deductions }
         let payroll = TransferPayrollRecipient.allCases.compactMap { recipient -> TransferEntity? in
             let amount = recipient.amount(figures)
             guard amount > 0 else { return nil }
-            let account = payrollLinks[recipient.rawValue].flatMap { lookup[$0] }
+            let account = linksValid ? payrollLinks[recipient.rawValue].flatMap { lookup[$0] } : nil
             let group = ReportGroup(kind: .deductions, month: figures.month, title: recipient.arabicTitle, count: 1, total: amount, byEntity: false)
             let category = categories[categoryKey(group.title, account)].flatMap(TransferCategory.init(rawValue:)) ?? TransferRules.classify(account)
             let duplicate = groups.contains { ArabicText.normalize($0.title) == ArabicText.normalize(recipient.arabicTitle) }
@@ -259,9 +262,23 @@ struct TransferFilesView: View {
         }
     }
     private func setPayrollAccount(_ recipient: TransferPayrollRecipient, key: String) {
-        var saved = payrollLinks
+        guard var saved = try? TransferAccountLinks.decode(payrollLinksData) else { referenceError = tr("تعذّرت قراءة روابط الحسابات المحفوظة؛ لم يتغير أي ربط.", "Could not read saved account links; none were changed."); return }
         saved[recipient.rawValue] = key
         if let data = try? JSONEncoder().encode(saved) { payrollLinksData = data; BackupManager.shared.markChanged() }
+    }
+    private func setDeductionAccount(_ entity: TransferEntity, key: String?) -> Bool {
+        guard entity.payrollRecipient == nil, var saved = try? TransferAccountLinks.decode(payrollLinksData),
+              !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return false }
+        let source = TransferAccountLinks.sourceKey(entity.group.title)
+        guard source != TransferAccountLinks.prefix else { return false }
+        if let key {
+            guard accounts.contains(where: { $0.key == key }) else { return false }
+            saved[source] = key
+        } else { saved.removeValue(forKey: source) }
+        guard let data = try? JSONEncoder().encode(saved) else { return false }
+        payrollLinksData = data
+        BackupManager.shared.markChanged()
+        return true
     }
     @ViewBuilder private func categoryRow(_ category: TransferCategory) -> some View {
         let items = entities.filter { $0.category == category }
@@ -276,7 +293,8 @@ struct TransferFilesView: View {
                     month: month?.name ?? "", sourceKey: loadKey, sourceAccounts: accountData,
                     sourceCategories: categoriesData, sourcePayrollLinks: payrollLinksData,
                     payrollComplete: figures != nil, payerName: payerName, payerIBAN: payerIBAN,
-                    changeCategory: setCategory, anbarContext: category == .anbar ? bookContext : nil)
+                    changeCategory: setCategory, anbarContext: category == .anbar ? bookContext : nil,
+                    accounts: accounts, setDeductionAccount: setDeductionAccount)
             } label: {
                 categoryLabel(category, items: items)
             }
@@ -331,6 +349,7 @@ struct TransferFilesView: View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             if let figuresError { Section { Text(figuresError).foregroundStyle(.orange) } }
+            if !linksValid { Section { Text(tr("تعذّرت قراءة روابط الحسابات؛ لا يمكن اعتماد التصنيف أو التصدير حتى استعادة الروابط.", "Account links could not be read; classification and export are unavailable until they are restored.")).foregroundStyle(.red) } }
             Section {
                 Button { importReferences() } label: {
                     if importingReferences { ProgressView() }
@@ -529,6 +548,8 @@ private struct TransferCategoryView: View {
     let payerIBAN: String
     let changeCategory: (TransferCategory, TransferEntity) -> Void
     let anbarContext: TransferAnbarContext?
+    let accounts: [SavedExecutionAccount]
+    let setDeductionAccount: (TransferEntity, String?) -> Bool
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
@@ -536,6 +557,7 @@ private struct TransferCategoryView: View {
     @AppStorage("bankStatementAccountName") private var currentPayerName = ""
     @AppStorage("bankStatementIBAN") private var currentPayerIBAN = ""
     @State private var error: String?
+    @State private var linkEntity: TransferEntity?
     private var allIssues: Int { entities.filter { !TransferRules.issues($0).isEmpty }.count }
     private var sourceIsCurrent: Bool {
         let record = months.first { $0.name == month }
@@ -577,6 +599,9 @@ private struct TransferCategoryView: View {
                     } header: { Text(tr("الكتب المنفردة", "Individual letters")) }
                 }
             }
+            if category == .unresolved && !sourceIsCurrent {
+                Section { Text(tr("تغيّر الربط؛ ارجع إلى ملفات التحويل لعرض التصنيف المحدّث.", "The link changed; return to transfer files to see the updated classification.")).foregroundStyle(.orange) }
+            }
             Section(tr("الجهات", "Entities")) {
                 if entities.isEmpty { Text(tr("لا توجد جهات في هذه المجموعة.", "No entities in this group.")).foregroundStyle(.secondary) }
                 ForEach(entities) { entity in
@@ -588,6 +613,9 @@ private struct TransferCategoryView: View {
                         } else { Text(entity.group.title).font(.headline) }
                         Text(Money.format(entity.group.total)).font(.subheadline.weight(.semibold)).monospacedDigit()
                         if let account = entity.account {
+                            if entity.payrollRecipient == nil && ArabicText.normalize(account.entity) != ArabicText.normalize(entity.group.title) {
+                                Text(tr("الحساب المرتبط: \(account.entity)", "Linked account: \(account.entity)")).font(.caption).foregroundStyle(.secondary)
+                            }
                             Text(account.branch).font(.caption).foregroundStyle(.secondary)
                             if !account.iban.isEmpty { Text(account.iban).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
                             if let local = account.localAccount { Text(tr("حساب محلي: \(local)", "Local account: \(local)")).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
@@ -598,7 +626,11 @@ private struct TransferCategoryView: View {
                                 }
                             } label: { Label(tr("تحديد مجموعة التحويل", "Set transfer category"), systemImage: "arrow.triangle.branch").font(.caption) }
                         } else {
-                            Text(tr("استورد حساب الجهة من الإعدادات لإضافة IBAN وSWIFT.", "Import this entity's account in Settings to add IBAN and SWIFT.")).font(.caption).foregroundStyle(.orange)
+                            Text(tr("لم يُعثر على الحساب؛ اربط جهة الاستقطاع بحساب محفوظ أو استورد حسابها.", "No account found; link this deduction entity to a saved account or import it.")).font(.caption).foregroundStyle(.orange)
+                        }
+                        if entity.payrollRecipient == nil {
+                            Button(tr("ربط حساب الجهة", "Link beneficiary account"), systemImage: "link") { linkEntity = entity }
+                                .disabled(!sourceIsCurrent || !linksValidHere)
                         }
                         ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.caption).foregroundStyle(.orange) }
                     }.padding(.vertical, 6)
@@ -613,10 +645,18 @@ private struct TransferCategoryView: View {
             }
         }
         .navigationTitle(category.title).navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $linkEntity) { entity in
+            NavigationStack {
+                TransferAccountLinkPicker(entity: entity, accounts: accounts,
+                    selectedKey: (try? TransferAccountLinks.decode(sourcePayrollLinks)).map { TransferAccountLinks.selectedKey(title: entity.group.title, links: $0) },
+                    save: { key in sourceIsCurrent && setDeductionAccount(entity, key) })
+            }
+        }
         .alert(tr("تعذّر التصدير", "Export failed"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
     }
+    private var linksValidHere: Bool { (try? TransferAccountLinks.decode(currentPayrollLinks)) != nil }
     @ViewBuilder private func anbarBooks(_ context: TransferAnbarContext) -> some View {
         Section {
             NavigationLink {

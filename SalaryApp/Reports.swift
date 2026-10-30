@@ -120,6 +120,7 @@ struct ReportDetailView: View {
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
+    @AppStorage("transferPayrollAccountLinks") private var accountLinksData = Data()
     @State private var selectedMonth: String
     @State private var activeGroup: ReportGroup?
     @State private var rows: [ReportRow]?
@@ -151,6 +152,10 @@ struct ReportDetailView: View {
         let exact = ArabicText.normalize(group.title)
         let main = ArabicText.normalize(ReportEngine.entity(of: group.title))
         let executionAccounts = (try? ExecutionAccountStore.decode(accountData)) ?? []
+        guard let links = try? TransferAccountLinks.decode(accountLinksData) else { return nil }
+        if let linked = links[TransferAccountLinks.sourceKey(group.title)] {
+            return executionAccounts.first { $0.key == linked }
+        }
         return executionAccounts.first { $0.key == exact } ?? executionAccounts.first { $0.key == main }
     }
 
@@ -197,12 +202,14 @@ struct ReportDetailView: View {
 
             if let account = executionAccount {
                 Section(tr("حساب جهة التنفيذ", "Execution account")) {
-                    LabeledContent("IBAN") { Text(account.iban).monospaced().textSelection(.enabled).privacySensitive() }
+                    if ArabicText.normalize(account.entity) != ArabicText.normalize(group.title) {
+                        LabeledContent(tr("الحساب المرتبط", "Linked account"), value: account.entity)
+                    }
+                    if !account.iban.isEmpty { LabeledContent("IBAN") { Text(account.iban).monospaced().textSelection(.enabled).privacySensitive() } }
+                    if let local = account.localAccount { LabeledContent(tr("الحساب المحلي", "Local account")) { Text(local).monospaced().textSelection(.enabled).privacySensitive() } }
                     if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
                     if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
-                    Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
-                        UIPasteboard.general.string = account.iban
-                    }
+                    if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { UIPasteboard.general.string = account.iban } }
                 }
             }
 

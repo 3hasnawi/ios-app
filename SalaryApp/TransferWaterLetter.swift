@@ -60,8 +60,8 @@ nonisolated enum TransferWaterLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
-        guard case .water = plan.kind, ArabicText.normalize(account.entity) == ArabicText.normalize(plan.group.title),
+    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil, accountLinks: Data = Data()) async throws -> URL {
+        guard case .water = plan.kind, TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
               TransferRules.individualLocalAccount(account) != nil else { throw Failure.incomplete }
         guard let employee = plan.rows.first, !employee.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               plan.rows.allSatisfy({ ArabicText.matchKey($0.name) == ArabicText.matchKey(employee.name) && ArabicText.normalize($0.rank) == ArabicText.normalize(employee.rank) }) else { throw Failure.incomplete }
