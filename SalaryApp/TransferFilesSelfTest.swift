@@ -32,6 +32,9 @@ import CryptoKit
         try check(TransferRules.classify(account) == .rafidain && TransferRules.classify(anbar) == .anbar && TransferRules.classify(other) == .otherBanks, "classification")
         let ambiguous = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين محافظة الانبار فرع آخر", swift: "TESTIQBAAAA")
         try check(TransferRules.classify(ambiguous) == .unresolved, "ambiguous Anbar branch")
+        let newBank = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف تجريبي فرع تجريبي", swift: "TESTIQBAAAA")
+        let incompleteBank = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "فرع تجريبي", swift: "TESTIQBAAAA")
+        try check(TransferRules.classify(newBank) == .otherBanks && TransferRules.classify(incompleteBank) == .unresolved, "other explicit banks and unclear branches")
         let sampleRows = (0..<44).map { i in ["\(i + 1)", "جهة وهمية", "IQ00TEST000000000000000", "فرع تجريبي", "100000"] }
         let widths: [CGFloat] = [30, 145, 150, 105, 90]
         let singlePage = try TransferSinglePageFit.fit(rows: sampleRows, widths: widths, availableHeight: 700, fontName: ReportFont.regular(10).fontName)

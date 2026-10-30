@@ -72,7 +72,10 @@ nonisolated enum TransferRules {
             return branch.contains(ArabicText.normalize("فرع")) ? .rafidain : .unresolved
         }
         let known = ["الرشيد", "العقاري", "الزراعي", "الاسلامي", "التجاري", "الاهلي"]
-        return known.contains(where: { branch.contains(ArabicText.normalize($0)) }) ? .otherBanks : .unresolved
+        if known.contains(where: { branch.contains(ArabicText.normalize($0)) }) { return .otherBanks }
+        // اسم مصرف صريح مع SWIFT صالح يسمح بإضافة المصارف الأخرى دون قائمة أسماء مغلقة.
+        let explicitBank = branch.contains(ArabicText.normalize("مصرف")) || branch.contains(ArabicText.normalize("بنك"))
+        return explicitBank && validBIC(account.swift) ? .otherBanks : .unresolved
     }
     static func validIBAN(_ input: String) -> Bool {
         let s = ArabicText.latinDigits(input).uppercased().filter { !$0.isWhitespace && $0 != "-" }
