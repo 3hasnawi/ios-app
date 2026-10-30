@@ -145,6 +145,24 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: cashPDF.deletingLastPathComponent()) }
         guard let pdf = PDFDocument(url: cashPDF) else { throw Failure(errorDescription: "cash list PDF unreadable") }
         try check(pdf.pageCount >= 2 && syntheticList.total == 80000, "cash list PDF pagination")
+        let incompleteList = TransferCashList(month: group.month, employees: [TransferCashEmployee(id: 1, name: "موظف وهمي", rank: "", workplace: "قسم وهمي", amount: 1000)])
+        do {
+            _ = try await TransferCashListPDF.make(incompleteList)
+            throw Failure(errorDescription: "cash list missing rank accepted")
+        } catch is Failure { throw Failure(errorDescription: "cash list missing rank accepted") }
+        catch { }
+        let fakeLetterURL = FileManager.default.temporaryDirectory.appendingPathComponent("cash-letter-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: fakeLetterURL) }
+        let fakeLetterPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842)).pdfData { $0.beginPage() }
+        try fakeLetterPDF.write(to: fakeLetterURL)
+        let combined = try await TransferCashLetterPackage.make(letter: fakeLetterURL, list: cashList, figures: actual)
+        defer { try? FileManager.default.removeItem(at: combined.deletingLastPathComponent()) }
+        try check(PDFDocument(url: combined)?.pageCount == 2, "cash letter appendix")
+        do {
+            _ = try await TransferCashLetterPackage.make(letter: fakeLetterURL, list: syntheticList, figures: actual)
+            throw Failure(errorDescription: "cash appendix total mismatch accepted")
+        } catch is Failure { throw Failure(errorDescription: "cash appendix total mismatch accepted") }
+        catch { }
         var broken = values
         broken[0] = "100 خطأ"
         employee.rawColumnsData = PayrollColumnSnapshot.encode(headers: headers, values: broken)
