@@ -25,11 +25,12 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         let verified = try TransferGroupCSVCheck.validate(data, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
         let expected = entries.map { TransferReconcileLine(sourceID: $0.id, title: $0.group.title, amount: Int64($0.group.total)) }
         guard TransferReconciliation.check(expected: expected, book: expected, file: verified, target: .grouped).isEmpty else { throw Failure.incomplete }
-        let rows: [[String]] = entries.enumerated().map { index, entry in
+        var rows: [[String]] = entries.enumerated().map { index, entry in
             [String(index + 1), entry.beneficiaryName ?? entry.group.title,
              ArabicText.latinDigits(entry.account?.iban ?? "").uppercased().filter { !$0.isWhitespace && $0 != "-" },
              entry.account?.branch ?? "", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entry.group.total)]
         }
+        rows.append(["", "", "", "المجموع", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), sum)])
         self.total = sum
         self.csv = data
         self.table = TransferWordDocument.Table(headers: ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows: rows)

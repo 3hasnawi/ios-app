@@ -196,8 +196,9 @@ import CryptoKit
         let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
         let wordGroup = try TransferWordGroupPlan(allEntities: [item, secondItem], category: .rafidain,
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
-        try check(wordGroup.total == 3000 && wordGroup.table.rows.count == 2 &&
-                  wordGroup.table.rows[0][1] == group.title && wordGroup.table.rows[1][4] == "1800", "Word group rows and total")
+        try check(wordGroup.total == 3000 && wordGroup.table.rows.count == 3 &&
+                  wordGroup.table.rows[0][1] == group.title && wordGroup.table.rows[1][4] == "1800" &&
+                  wordGroup.table.rows[2][4] == "3000", "Word group rows and total")
         _ = try TransferGroupCSVCheck.validate(wordGroup.csv, entities: [item, secondItem], category: .rafidain,
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         do {
