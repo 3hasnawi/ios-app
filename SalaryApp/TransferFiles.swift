@@ -110,7 +110,8 @@ nonisolated enum TransferRules {
     static func csv(_ entities: [TransferEntity], category: TransferCategory, month: String, payer: String, payerIBAN: String, date: Date = .now) throws -> Data {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               safeField(payer), validIBAN(payerIBAN), safeField(month),
-              entities.allSatisfy({ $0.category == category && issues($0).isEmpty }) else {
+              Set(entities.map(\.id)).count == entities.count,
+              entities.allSatisfy({ $0.category == category && $0.group.month == month && issues($0).isEmpty }) else {
             throw NSError(domain: "TransferFiles", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("تحقق من الحسابات والمبالغ وبيانات الجهة الدافعة.", "Check accounts, amounts and payer details.")])
         }
         let formatter = DateFormatter()
@@ -395,11 +396,14 @@ private struct TransferCategoryView: View {
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
     @AppStorage("transferPayrollAccountLinks") private var currentPayrollLinks = Data()
+    @AppStorage("bankStatementAccountName") private var currentPayerName = ""
+    @AppStorage("bankStatementIBAN") private var currentPayerIBAN = ""
     @State private var error: String?
     private var allIssues: Int { entities.filter { !TransferRules.issues($0).isEmpty }.count }
     private var sourceIsCurrent: Bool {
         let record = months.first { $0.name == month }
         return record != nil && currentAccounts == sourceAccounts && currentCategories == sourceCategories && currentPayrollLinks == sourcePayrollLinks
+            && currentPayerName == payerName && currentPayerIBAN == payerIBAN
             && "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var canExport: Bool { payrollComplete && sourceIsCurrent && !entities.isEmpty && unresolvedCount == 0 && allIssues == 0 && TransferRules.safeField(payerName) && TransferRules.validIBAN(payerIBAN) }

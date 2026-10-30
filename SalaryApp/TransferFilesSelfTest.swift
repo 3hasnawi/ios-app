@@ -39,7 +39,9 @@ import CryptoKit
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
-        let data = try TransferRules.csv([item, item], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1200, byEntity: false)
+        let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
+        let data = try TransferRules.csv([item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let text = String(decoding: data, as: UTF8.self)
         let lines = text.components(separatedBy: "\r\n")
         try check(!data.starts(with: [0xef, 0xbb, 0xbf]) && lines.count == 3 && !text.hasSuffix("\n"), "encoding")
@@ -47,6 +49,16 @@ import CryptoKit
         let second = lines[2].components(separatedBy: "|")
         try check(first.count == 11 && first[0] == first[1] + "300001" && second[0] == second[1] + "300002", "references")
         try check(first[4] == "1200" && first[5] == "IQD" && first[9] == "استقطاعات \(group.month)" && first[10] == "SLEV", "fields")
+        do {
+            _ = try TransferRules.csv([item, item], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "duplicate transfer accepted")
+        } catch is Failure { throw Failure(errorDescription: "duplicate transfer accepted") }
+        catch { }
+        do {
+            _ = try TransferRules.csv([item], category: .rafidain, month: "شهر آخر", payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "wrong transfer month accepted")
+        } catch is Failure { throw Failure(errorDescription: "wrong transfer month accepted") }
+        catch { }
         let otherItem = TransferEntity(group: group, account: other, category: .otherBanks, missingAmounts: 0)
         let otherData = try TransferRules.csv([otherItem], category: .otherBanks, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let otherFields = String(decoding: otherData, as: UTF8.self).components(separatedBy: "\r\n")[1].components(separatedBy: "|")
@@ -95,6 +107,8 @@ import CryptoKit
         try check(TransferReconciliation.check(expected: source, book: source, file: nil, target: .grouped).contains { $0.kind == .missingFile }, "missing group file not flagged")
         try check(TransferReconciliation.check(expected: source, book: source, file: nil, target: .individual).isEmpty, "individual letter incorrectly requires CSV")
         try check(TransferReconciliation.check(expected: source, book: nil, file: nil, target: .individual).contains { $0.kind == .missingBook }, "missing individual letter")
+        let absentGroup = TransferReconciliation.check(expected: source, book: nil, file: nil, target: .grouped)
+        try check(absentGroup.contains { $0.kind == .missingBook } && absentGroup.contains { $0.kind == .missingFile }, "missing group letter and file")
         let employeeRows = [TransferReconcileEmployee(name: "أحمد وهمي", amount: 100), TransferReconcileEmployee(name: "أحمد وهمي", amount: 200)]
         let wrongAmounts = [TransferReconcileEmployee(name: "احمد وهمي", amount: 100), TransferReconcileEmployee(name: "احمد وهمي", amount: 199)]
         let employeeIssues = TransferEmployeeReconciliation.check(expected: employeeRows, book: wrongAmounts, previousCount: 2)

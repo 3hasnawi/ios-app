@@ -47,7 +47,6 @@ nonisolated enum TransferReconciliation {
             if file != nil { issue(.invalidData) }
             return issues
         }
-        guard book != nil || file != nil else { return issues }
         if expected.isEmpty { issue(.invalidData) }
         if case .individual = target, file != nil { issue(.invalidData) }
         if book == nil { issue(.missingBook) }
