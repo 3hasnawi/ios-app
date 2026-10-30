@@ -33,6 +33,7 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         rows.append(["", "", "", "المجموع", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), sum)])
         self.total = sum
         self.csv = data
-        self.table = TransferWordDocument.Table(headers: ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows: rows)
+        self.table = TransferWordDocument.Table(headers: ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows: rows,
+                                                columnWeights: [40, 252, 322, 220, 166])
     }
 }

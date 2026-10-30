@@ -36,7 +36,8 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: generatedWord) }
         try TransferWordDocument.write(blocks: [
             .paragraph(.init(text: "كتاب وهمي\nسطر آخر", halfPoints: 28, bold: true)),
-            .table(.init(headers: ["الجهة", "المبلغ"], rows: [["جهة وهمية", "123,456"]]))
+            .table(.init(headers: ["الجهة", "المبلغ"], rows: [["جهة وهمية", "123,456"]], columnWeights: [3, 1])),
+            .table(.init(headers: [], rows: [["عضو أول", "عضو ثان", "عضو ثالث"]], showBorders: false))
         ], destination: generatedWord)
         let generatedArchive = try Archive(url: generatedWord, accessMode: .read)
         guard let generatedBody = generatedArchive["word/document.xml"], generatedArchive["[Content_Types].xml"] != nil,
@@ -45,7 +46,8 @@ import CryptoKit
         _ = try generatedArchive.extract(generatedBody) { generatedXML.append($0) }
         let generatedText = String(decoding: generatedXML, as: UTF8.self)
         try check(generatedText.contains("جهة وهمية") && generatedText.contains("123,456") &&
-                  generatedText.contains("<w:br/>") && generatedText.contains("<w:tblBorders>"), "generated Word contents and table")
+                  generatedText.contains("<w:br/>") && generatedText.contains("<w:tblBorders>") &&
+                  generatedText.contains("<w:gridCol w:w=\"7654\"/>") && generatedText.contains("w:val=\"nil\""), "generated Word contents and table")
         let wordFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
             foodCompany: 92, healthcare: 20, policeFundDonations: 30, sports: 40,
             incomeTax: 11, socialProtection: 13, contractNominalShare: 17,

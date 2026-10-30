@@ -18,7 +18,7 @@ nonisolated enum TransferWordTables {
             ["1", "الحماية الاجتماعية", number(figures.socialProtection)],
             ["2", "ضريبة الدخل", number(figures.incomeTax)],
             ["", "المجموع", number(figures.treasuryTotal)]
-        ])
+        ], columnWeights: [1, 6, 3])
     }
     static func contracts(_ figures: TransferLetterFigures) throws -> TransferWordDocument.Table {
         guard figures.missingContractNominal == 0, let nominal = figures.contractNominalShare,
@@ -36,7 +36,7 @@ nonisolated enum TransferWordTables {
               valid(list.total), list.total == expected else { throw Failure.incomplete }
         var rows = list.employees.map { [$0.name, $0.rank, $0.workplace, number($0.amount)] }
         rows.append(["", "", "المجموع", number(expected)])
-        return .init(headers: ["الاسم", "الرتبة", "محل العمل", "صافي الراتب"], rows: rows)
+        return .init(headers: ["الاسم", "الرتبة", "محل العمل", "صافي الراتب"], rows: rows, columnWeights: [150, 80, 190, 119])
     }
     static func anbar(_ plan: TransferIndividualPlan) throws -> TransferWordDocument.Table {
         guard case .rafidainAnbar = plan.kind, !plan.rows.isEmpty, plan.rows.count < 50_000,
@@ -45,6 +45,6 @@ nonisolated enum TransferWordTables {
             [String(index + 1), row.rank, row.name, number(row.amount), row.entity]
         }
         rows.append(["", "", "المجموع", number(plan.group.total), ""])
-        return .init(headers: ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ"], rows: rows)
+        return .init(headers: ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ"], rows: rows, columnWeights: [40, 65, 149, 74, 180])
     }
 }

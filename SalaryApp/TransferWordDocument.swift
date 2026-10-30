@@ -15,6 +15,8 @@ nonisolated enum TransferWordDocument {
         var rows: [[String]]
         var font: String = "Arial"
         var halfPoints: Int = 22
+        var columnWeights: [Int]? = nil
+        var showBorders = true
     }
     enum Block: Sendable {
         case paragraph(Paragraph)
@@ -48,8 +50,15 @@ nonisolated enum TransferWordDocument {
         return "<w:p><w:pPr><w:bidi/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
     }
     private static func table(_ t: Table) throws -> String {
-        guard !t.headers.isEmpty, t.headers.count <= 12, t.rows.count <= 50_000,
-              t.rows.allSatisfy({ $0.count == t.headers.count }) else { throw Failure.invalidContent }
+        let columns = t.headers.isEmpty ? (t.rows.first?.count ?? 0) : t.headers.count
+        guard (1...12).contains(columns), t.rows.count <= 50_000,
+              t.rows.allSatisfy({ $0.count == columns }),
+              t.headers.isEmpty || t.headers.count == columns else { throw Failure.invalidContent }
+        let weights = t.columnWeights ?? Array(repeating: 1, count: columns)
+        guard weights.count == columns, weights.allSatisfy({ (1...10_000).contains($0) }) else { throw Failure.invalidContent }
+        let weightSum = weights.reduce(0, +)
+        let widths = weights.map { 10206 * $0 / weightSum }
+        guard widths.allSatisfy({ $0 >= 100 }) else { throw Failure.invalidContent }
         var textBytes = 0
         for values in [t.headers] + t.rows {
             for value in values {
@@ -58,16 +67,18 @@ nonisolated enum TransferWordDocument {
             }
         }
         let borders = ["top", "left", "bottom", "right", "insideH", "insideV"]
-            .map { "<w:\($0) w:val=\"single\" w:sz=\"8\" w:color=\"000000\"/>" }.joined()
-        let width = 10206 / t.headers.count
+            .map { "<w:\($0) w:val=\"\(t.showBorders ? "single" : "nil")\" w:sz=\"8\" w:color=\"000000\"/>" }.joined()
         func row(_ cells: [String], header: Bool) throws -> String {
-            let result = try cells.map { text in
-                "<w:tc><w:tcPr><w:tcW w:w=\"\(width)\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header, centered: true)))</w:tc>"
+            let result = try cells.enumerated().map { index, text in
+                "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header, centered: true)))</w:tc>"
             }.joined()
             return "<w:tr>\(header ? "<w:trPr><w:tblHeader/></w:trPr>" : "")\(result)</w:tr>"
         }
-        let rows = try ([row(t.headers, header: true)] + t.rows.map { try row($0, header: false) }).joined()
-        return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr>\(rows)</w:tbl>"
+        let headers: String
+        if t.headers.isEmpty { headers = "" } else { headers = try row(t.headers, header: true) }
+        let rows = try t.rows.map { try row($0, header: false) }.joined()
+        let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
+        return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"10206\" w:type=\"dxa\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"
     }
     static func write(blocks: [Block], destination: URL) throws {
         guard !blocks.isEmpty, blocks.count <= 1000 else { throw Failure.invalidContent }
