@@ -140,10 +140,16 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "wrong transfer month accepted") }
         catch { }
         let otherItem = TransferEntity(group: group, account: other, category: .otherBanks, missingAmounts: 0)
-        let groupTable = try await TransferGroupTablePDF.make(entities: [item, secondItem], category: .rafidain, month: group.month)
+        let tableProof = try await TransferGroupTablePDF.makeChecked(entities: [item, secondItem], category: .rafidain, month: group.month)
+        let groupTable = tableProof.url
         defer { try? FileManager.default.removeItem(at: groupTable.deletingLastPathComponent()) }
         guard let groupTableDoc = PDFDocument(url: groupTable), let groupTableText = groupTableDoc.page(at: 0)?.string else { throw Failure(errorDescription: "group table PDF unreadable") }
         try check(groupTableDoc.pageCount == 1 && groupTableText.contains("1800") && groupTableText.contains("3000"), "group table rendered values")
+        let fileProof = try TransferGroupCSVCheck.validate(data, entities: [item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        let expectedProof = [TransferReconcileLine(sourceID: item.id, title: item.group.title, amount: 1200),
+                             TransferReconcileLine(sourceID: secondItem.id, title: secondItem.group.title, amount: 1800)]
+        try check(TransferReconciliation.check(expected: expectedProof, book: tableProof.lines, file: fileProof, target: .grouped).isEmpty, "group PDF and CSV reconciliation")
+        try check(!TransferReconciliation.check(expected: expectedProof, book: Array(tableProof.lines.dropLast()), file: fileProof, target: .grouped).isEmpty, "missing book row rejected")
         do {
             _ = try await TransferGroupTablePDF.make(entities: [item, item], category: .rafidain, month: group.month)
             throw Failure(errorDescription: "duplicate group table source accepted")
@@ -226,6 +232,8 @@ import CryptoKit
         try context.save()
         let engine = TransferLetterFigureEngine(modelContainer: container)
         let actual = try await engine.figures(month: group.month)
+        let individualItems = TransferIssuance.payrollLines(actual)
+        try check(Set(individualItems.map(\.id)).count == individualItems.count && individualItems.allSatisfy { $0.amount > 0 }, "individual payroll items are distinct")
         let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
         try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1, "payroll data integration")
         let syntheticRows = (1...80).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
@@ -459,10 +467,22 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "invalid private font accepted by PDF overlay") }
         catch { }
         let monthSlot = TransferPDFMonthSlot(rect: CGRect(x: 230, y: 100, width: 35, height: 30), month: 10, glyphs: digitGlyphs)
-        let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])], months: [monthSlot])
+        let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot], verifyNumericOutput: true)], months: [monthSlot])
         defer { try? FileManager.default.removeItem(at: composed.deletingLastPathComponent()) }
         guard let composedDoc = PDFDocument(url: composed), let composedText = composedDoc.page(at: 0)?.string else { throw Failure(errorDescription: "composed PDF missing") }
         try check(composedDoc.pageCount == 1 && composedText.contains("123456"), "PDF overlay")
+        try TransferPDFPageProof.verify(sources: [composedDoc], result: composed)
+        do {
+            _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123ABC", slots: [slot], verifyNumericOutput: true)])
+            throw Failure(errorDescription: "non-numeric amount accepted")
+        } catch is Failure { throw Failure(errorDescription: "non-numeric amount accepted") }
+        catch { }
+        do {
+            guard let other = PDFDocument(data: blankPDF) else { throw Failure(errorDescription: "blank PDF unreadable") }
+            try TransferPDFPageProof.verify(sources: [other], result: composed)
+            throw Failure(errorDescription: "changed merged page accepted")
+        } catch is Failure { throw Failure(errorDescription: "changed merged page accepted") }
+        catch { }
         let occupiedPDF = blankRenderer.pdfData { context in
             context.beginPage()
             ("OLD" as NSString).draw(at: CGPoint(x: 55, y: 104), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])

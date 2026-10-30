@@ -6,8 +6,8 @@ nonisolated enum TransferGroupCSVCheck {
         case mismatch
         var errorDescription: String? { tr("ملف التحويل لا يطابق جهات المجموعة أو مبالغها؛ أُوقفت العملية.", "The transfer file does not match the group entities or amounts; the operation was stopped.") }
     }
-    static func validate(_ data: Data, entities: [TransferEntity], category: TransferCategory,
-                         month: String, payer: String, payerIBAN: String) throws {
+    @discardableResult static func validate(_ data: Data, entities: [TransferEntity], category: TransferCategory,
+                         month: String, payer: String, payerIBAN: String) throws -> [TransferReconcileLine] {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               Set(entities.map(\.id)).count == entities.count, TransferRules.safeField(payer),
               TransferRules.validIBAN(payerIBAN), TransferRules.safeField(month),
@@ -24,6 +24,7 @@ nonisolated enum TransferGroupCSVCheck {
         dateFormatter.dateFormat = "yyyyMMdd"
         dateFormatter.isLenient = false
         var firstDate: String?
+        var extracted: [TransferReconcileLine] = []
         for (index, entity) in entities.enumerated() {
             guard entity.category == category, entity.group.month == month, TransferRules.issues(entity).isEmpty,
                   let beneficiary = entity.account else { throw Failure.mismatch }
@@ -40,6 +41,9 @@ nonisolated enum TransferGroupCSVCheck {
                   fields[6] == beneficiary.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
                   fields[7] == (entity.beneficiaryName ?? entity.group.title), fields[8] == account(beneficiary.iban),
                   fields[9] == "استقطاعات \(month)", fields[10] == "SLEV" else { throw Failure.mismatch }
+            guard let parsedAmount = Int64(fields[4]) else { throw Failure.mismatch }
+            extracted.append(TransferReconcileLine(sourceID: entity.id, title: entity.group.title, amount: parsedAmount))
         }
+        return extracted
     }
 }

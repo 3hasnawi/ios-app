@@ -321,10 +321,10 @@ struct TransferFilesView: View {
                         }
                     }
                 } header: { Text(month?.name ?? "") }
-                if figures != nil && error == nil {
+                if let figures, error == nil {
                     Section {
                         NavigationLink {
-                            TransferIssuanceView(month: month?.name ?? "", entities: entities, sourceKey: loadKey,
+                            TransferIssuanceView(month: month?.name ?? "", figures: figures, entities: entities, sourceKey: loadKey,
                                 accounts: accountData, categories: categoriesData, links: payrollLinksData)
                         } label: {
                             Label(tr("تدقيق الكتب الصادرة", "Issued letter review"), systemImage: "checklist")

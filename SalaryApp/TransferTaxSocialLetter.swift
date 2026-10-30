@@ -107,7 +107,7 @@ nonisolated enum TransferTaxSocialLetter {
         guard let numeric = formatter.string(from: NSNumber(value: amountValue)) else { throw Failure.incomplete }
         let words = try ArabicAmountWords.dinars(Int64(amountValue))
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)]),
+            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
             TransferPDFTextFlow(value: words, slots: wordSlots.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)]),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
@@ -115,7 +115,7 @@ nonisolated enum TransferTaxSocialLetter {
         let tableValues = [figures.socialProtection, figures.incomeTax, amountValue]
         for i in tableAmounts.indices {
             guard let value = formatter.string(from: NSNumber(value: tableValues[i])) else { throw Failure.incomplete }
-            flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableAmounts[i], "Arial-BoldMT", i == 2 ? 14.04 : 12)]))
+            flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableAmounts[i], "Arial-BoldMT", i == 2 ? 14.04 : 12)], verifyNumericOutput: true))
         }
         flows.append(contentsOf: customFields.flows)
         for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }

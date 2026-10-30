@@ -45,6 +45,8 @@ nonisolated enum TransferCashLetterPackage {
             let destination = directory.appendingPathComponent("كتاب أمانات الرواتب.pdf")
             do { try data.write(to: destination, options: [.atomic, .completeFileProtection]) }
             catch { try? FileManager.default.removeItem(at: directory); throw Failure.saveFailed }
+            do { try TransferPDFPageProof.verify(sources: [first, rest], result: destination) }
+            catch { try? FileManager.default.removeItem(at: directory); throw error }
             return destination
         }
     }

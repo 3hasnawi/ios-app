@@ -110,13 +110,13 @@ nonisolated enum TransferWaterLetter {
         guard let numeric = formatter.string(from: NSNumber(value: amountValue)) else { throw Failure.incomplete }
         let words = try ArabicAmountWords.dinars(Int64(amountValue))
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)]),
+            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
             TransferPDFTextFlow(value: words, slots: wordSlots.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 15)]),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
         ]
-        flows.append(TransferPDFTextFlow(value: employee.rank, slots: [slot(rankBox, "TimesNewRomanPSMT", 14.04)]))
-        flows.append(TransferPDFTextFlow(value: employee.name, slots: personBoxes.map { slot($0, "TimesNewRomanPSMT", 14.04) }))
+        flows.append(TransferPDFTextFlow(value: employee.rank, slots: [slot(rankBox, "TimesNewRomanPSMT", 14.04)], verifyTextOutput: true))
+        flows.append(TransferPDFTextFlow(value: employee.name, slots: personBoxes.map { slot($0, "TimesNewRomanPSMT", 14.04) }, verifyTextOutput: true))
         flows.append(contentsOf: customFields.flows)
         for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
         for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }

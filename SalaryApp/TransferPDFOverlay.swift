@@ -19,6 +19,10 @@ nonisolated struct TransferPDFTextFlow: Sendable {
     let slots: [TransferPDFTextSlot]
     /// يحافظ على كلمة أخيرة بمحاذاة القوس الثابت في السطر الأخير من النموذج.
     var keepLastWordOnLastLine = false
+    /// لإثبات المبالغ، نقرأ الرقم من الملف الناتج ولا نكتفي بقيمة الرسم.
+    var verifyNumericOutput = false
+    /// لحقول الاسم والرتبة في كتاب الموارد المائية.
+    var verifyTextOutput = false
 }
 
 nonisolated struct TransferPDFMonthSlot: Sendable {
@@ -31,13 +35,15 @@ nonisolated struct TransferPDFMonthSlot: Sendable {
 
 nonisolated enum TransferPDFOverlay {
     enum Failure: LocalizedError {
-        case invalidTemplate, missingFont, unsafeSlot, doesNotFit
+        case invalidTemplate, missingFont, unsafeSlot, doesNotFit, numericMismatch, textMismatch
         var errorDescription: String? {
             switch self {
             case .invalidTemplate: tr("مرجع الكتاب غير صالح.", "The letter reference is invalid.")
             case .missingFont: tr("خط الكتاب المطلوب غير متوفر على الجهاز.", "The required letter font is unavailable on this device.")
             case .unsafeSlot: tr("تعذّر التأكد من خلو موضع البيانات القديمة في القالب.", "Could not verify that old data was removed from the template.")
             case .doesNotFit: tr("النص الجديد لا يتسع في موضعه دون تغيير تنسيق الكتاب.", "The new text does not fit without changing the letter layout.")
+            case .numericMismatch: tr("تعذّر مطابقة المبلغ المطبوع مع بيانات الشهر؛ أُوقفت المعاينة.", "The printed amount does not match the month data; preview was stopped.")
+            case .textMismatch: tr("تعذّر مطابقة الاسم أو الرتبة المطبوعة مع بيانات الشهر؛ أُوقفت المعاينة.", "The printed name or rank does not match the month data; preview was stopped.")
             }
         }
     }
@@ -196,6 +202,40 @@ nonisolated enum TransferPDFOverlay {
                         image.draw(in: CGRect(x: x, y: month.rect.minY, width: width, height: height))
                         x += width
                     }
+                }
+            }
+            let numericFlows = flows.filter(\.verifyNumericOutput)
+            let textFlows = flows.filter(\.verifyTextOutput)
+            if !numericFlows.isEmpty || !textFlows.isEmpty {
+                guard let written = PDFDocument(url: url), !written.isLocked, written.pageCount == 1,
+                      let output = written.page(at: 0) else { throw Failure.numericMismatch }
+                func digits(_ text: String) -> String {
+                    ArabicText.latinDigits(text).filter { $0.isASCII && $0.isNumber }
+                }
+                for flow in numericFlows {
+                    guard flow.slots.count == 1, flow.value.unicodeScalars.allSatisfy({
+                        CharacterSet.decimalDigits.contains($0) || $0 == "," || $0 == "٬" || $0 == " "
+                    }) else { throw Failure.numericMismatch }
+                    let rect = flow.slots[0].rect
+                    let selection = CGRect(x: rect.minX, y: box.height - rect.maxY, width: rect.width, height: rect.height)
+                    let expected = digits(flow.value)
+                    guard !expected.isEmpty, digits(output.selection(for: selection)?.string ?? "") == expected else { throw Failure.numericMismatch }
+                }
+                func identity(_ value: String) -> String {
+                    let normalized = ArabicText.normalize(value.precomposedStringWithCompatibilityMapping)
+                    var scalars = String.UnicodeScalarView()
+                    for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format {
+                        scalars.append(scalar)
+                    }
+                    return String(scalars)
+                }
+                for flow in textFlows {
+                    let extracted = flow.slots.map { slot -> String in
+                        let rect = slot.rect
+                        let selection = CGRect(x: rect.minX, y: box.height - rect.maxY, width: rect.width, height: rect.height)
+                        return output.selection(for: selection)?.string ?? ""
+                    }.joined()
+                    guard !identity(flow.value).isEmpty, identity(extracted) == identity(flow.value) else { throw Failure.textMismatch }
                 }
             }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)

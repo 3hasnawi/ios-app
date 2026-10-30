@@ -88,7 +88,7 @@ nonisolated enum TransferGroupLetter {
         let firstName = CGRect(x: 86.1, y: style.monthNames[0].minY,
                                width: style.monthNames[0].maxX - 86.1, height: style.monthNames[0].height)
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(style.amount, "Arial-BoldMT", 14.04)]),
+            TransferPDFTextFlow(value: numeric, slots: [slot(style.amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
             TransferPDFTextFlow(value: words, slots: style.words.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(firstName, "TimesNewRomanPS-BoldMT", 14.04)]),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(style.monthNames[1], "TimesNewRomanPS-BoldMT", 16)]),
@@ -101,7 +101,8 @@ nonisolated enum TransferGroupLetter {
         for i in style.numericMonths.indices { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(style.numericMonths[i], "TimesNewRomanPS-BoldMT", i == 0 ? 18 : 16)])) }
         let letter = try await TransferPDFOverlay.make(blankReference: blank, flows: flows)
         defer { try? FileManager.default.removeItem(at: letter.deletingLastPathComponent()) }
-        let table = try await TransferGroupTablePDF.make(entities: entries, category: category, month: month)
+        let checkedTable = try await TransferGroupTablePDF.makeChecked(entities: entries, category: category, month: month)
+        let table = checkedTable.url
         defer { try? FileManager.default.removeItem(at: table.deletingLastPathComponent()) }
         try Task.checkCancellation()
         return try await PDFWork.run {
@@ -117,10 +118,13 @@ nonisolated enum TransferGroupLetter {
             let pdf = folder.appendingPathComponent("كتاب المجموعة.pdf")
             let csv = folder.appendingPathComponent(category == .rafidain ? "Rafidain.csv" : "OtherBanks.csv")
             try data.write(to: pdf, options: [.atomic, .completeFileProtection])
+            try TransferPDFPageProof.verify(sources: [first, second], result: pdf)
             try csvData.write(to: csv, options: [.atomic, .completeFileProtection])
             let savedCSV = try Data(contentsOf: csv)
             guard savedCSV == csvData else { throw Failure.invalidTable }
-            try TransferGroupCSVCheck.validate(savedCSV, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
+            let verifiedCSV = try TransferGroupCSVCheck.validate(savedCSV, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
+            let expected = entries.map { TransferReconcileLine(sourceID: $0.id, title: $0.group.title, amount: Int64($0.group.total)) }
+            guard TransferReconciliation.check(expected: expected, book: checkedTable.lines, file: verifiedCSV, target: .grouped).isEmpty else { throw Failure.invalidTable }
             complete = true
             return Result(letter: pdf, csv: csv)
         }

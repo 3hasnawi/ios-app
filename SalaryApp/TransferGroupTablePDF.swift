@@ -3,6 +3,7 @@ import PDFKit
 
 /// صفحة جدول المجموعة؛ يبقى التصدير معطلاً حتى التحقق من المرجع على الجهاز.
 nonisolated enum TransferGroupTablePDF {
+    struct Checked: Sendable { let url: URL; let lines: [TransferReconcileLine] }
     enum Failure: LocalizedError {
         case invalidData, invalidTotal, missingFont, tableMismatch
         var errorDescription: String? {
@@ -25,6 +26,9 @@ nonisolated enum TransferGroupTablePDF {
         String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
     static func make(entities: [TransferEntity], category: TransferCategory, month: String) async throws -> URL {
+        try await makeChecked(entities: entities, category: category, month: month).url
+    }
+    static func makeChecked(entities: [TransferEntity], category: TransferCategory, month: String) async throws -> Checked {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               Set(entities.map(\.id)).count == entities.count,
               entities.allSatisfy({ $0.category == category && $0.group.month == month && TransferRules.issues($0).isEmpty }) else { throw Failure.invalidData }
@@ -102,17 +106,21 @@ nonisolated enum TransferGroupTablePDF {
                 return String(scalars)
             }
             var y = top + header
-            for (row, height) in zip(rows, fitting.rowHeights) {
+            var verified: [TransferReconcileLine] = []
+            for (index, pair) in zip(rows, fitting.rowHeights).enumerated() {
+                let (row, height) = pair
                 guard extracted(0, y, height) == row[0], extracted(2, y, height) == row[2],
                       extracted(4, y, height) == row[4],
                       identity(text(1, y, height)) == identity(row[1]),
                       identity(text(3, y, height)) == identity(row[3]) else { throw Failure.tableMismatch }
+                guard let amount = Int64(extracted(4, y, height)) else { throw Failure.tableMismatch }
+                verified.append(TransferReconcileLine(sourceID: entities[index].id, title: entities[index].group.title, amount: amount))
                 y += height
             }
             guard extracted(4, y, totalHeight) == number(total) else { throw Failure.tableMismatch }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             complete = true
-            return url
+            return Checked(url: url, lines: verified)
         }
     }
 }

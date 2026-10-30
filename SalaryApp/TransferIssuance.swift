@@ -22,6 +22,14 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
         swift = entity.account?.swift ?? ""
         category = entity.category.rawValue
     }
+
+    init(payrollID: String, title: String, month: String, amount: Double) {
+        id = "payroll|\(month)|\(payrollID)"
+        self.title = title
+        self.amount = amount
+        count = 0
+        iban = ""; branch = ""; swift = ""; category = "payroll"
+    }
 }
 
 nonisolated struct TransferIssuedRecord: Codable, Identifiable {
@@ -51,6 +59,22 @@ nonisolated enum TransferIssuance {
         let absent: [TransferIssuedLine]
         let repeated: [TransferIssuedLine]
     }
+    /// البنود مستقلة حتى يظهر تغير جزء من جدول حتى لو بقي مجموعه ثابتاً.
+    static func payrollLines(_ figures: TransferLetterFigures) -> [TransferIssuedLine] {
+        let values: [(String, String, Double?)] = [
+            ("foodTax", "ضريبة عقد الإطعام", figures.foodTax),
+            ("foodCompany", "شركة عراق الجوال", figures.foodCompany),
+            ("incomeTax", "الضريبة", figures.incomeTax),
+            ("socialProtection", "الحماية الاجتماعية", figures.socialProtection),
+            ("contractNominal", "حصة اسمي العقود", figures.contractNominalShare),
+            ("contractRetirement", "توقيفات العقود التقاعدية", figures.contractRetirement),
+            ("cashSalary", "رواتب الكاش", figures.payrollCash)
+        ]
+        return values.compactMap { id, title, amount in
+            guard let amount, amount.isFinite, amount > 0 else { return nil }
+            return TransferIssuedLine(payrollID: id, title: title, month: figures.month, amount: amount)
+        }
+    }
     static func audit(current: [TransferIssuedLine], records: [TransferIssuedRecord], month: String) -> Audit {
         let recorded = records.filter { $0.month == month }.flatMap(\.lines)
         let byCurrent = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -66,6 +90,7 @@ nonisolated enum TransferIssuance {
 /// تسجيل كتاب صدر خارج التطبيق، بتأكيد صريح من المستخدم؛ لا تسجّل المعاينة كإصدار.
 struct TransferIssuanceView: View {
     let month: String
+    let figures: TransferLetterFigures
     let entities: [TransferEntity]
     let sourceKey: String
     let accounts: Data
@@ -88,7 +113,7 @@ struct TransferIssuanceView: View {
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var lines: [TransferIssuedLine] {
-        entities.filter { $0.group.total.isFinite && $0.group.total > 0 }.map(TransferIssuedLine.init)
+        entities.filter { $0.group.total.isFinite && $0.group.total > 0 }.map(TransferIssuedLine.init) + TransferIssuance.payrollLines(figures)
     }
     private var ledger: TransferIssuance.Ledger? { try? TransferIssuance.decode(stored) }
     @discardableResult private func save(_ records: [TransferIssuedRecord]) -> Bool {
@@ -108,15 +133,15 @@ struct TransferIssuanceView: View {
             if let error { Text(error).foregroundStyle(.red) }
             if let ledger {
                 let audit = TransferIssuance.audit(current: lines, records: ledger.records, month: month)
-                Section(tr("مراجعة الجهات · \(month)", "Entity review · \(month)")) {
-                    issueGroup(tr("جهات بلا تأكيد إصدار", "Entities without issuance confirmation"), audit.missing, .orange)
+                Section(tr("مراجعة الجهات والبنود · \(month)", "Entity and item review · \(month)")) {
+                    issueGroup(tr("مصادر بلا تأكيد إصدار", "Items without issuance confirmation"), audit.missing, .orange)
                     issueGroup(tr("تغيّر المبلغ أو العدد أو الحساب بعد التأكيد", "Amount, count or account changed after confirmation"), audit.changed, .red)
-                    issueGroup(tr("جهات مؤكدة لم تعد في بيانات الشهر", "Confirmed entities absent from current data"), audit.absent, .orange)
+                    issueGroup(tr("مصادر مؤكدة غير متاحة في بيانات الشهر", "Confirmed items unavailable in current data"), audit.absent, .orange)
                     issueGroup(tr("جهات مؤكدة في أكثر من كتاب", "Entities confirmed in multiple letters"), audit.repeated, .red)
                     if audit.missing.isEmpty && audit.changed.isEmpty && audit.absent.isEmpty && audit.repeated.isEmpty {
                         Text(tr("لا توجد اختلافات في الإقرارات المسجلة.", "No differences in recorded confirmations.")).foregroundStyle(.secondary)
                     }
-                } footer: { Text(tr("التدقيق يقارن بيانات الجهات بالإقرارات اليدوية، ولا يقرأ محتوى الكتب أو يثبت إتمام التحويل. راجع الجهات غير المصنفة والكتب ذات المبالغ المنفردة أيضاً.", "This compares entities with manual confirmations; it does not read the letters or prove bank processing. Review unclassified entities and individual amount letters too.")) }
+                } footer: { Text(tr("يقارن التدقيق الجهات وبنود الكتب بإقراراتك اليدوية. لا يقرأ الكتب الصادرة أو يثبت التحويل. قد يظهر بند الكاش غير متاح إذا تعذر تحديد طريقة الدفع.", "This compares entities and letter items with manual confirmations. It does not read issued letters or prove a transfer. Cash may be unavailable if payment methods cannot be determined.")) }
                 Section(tr("تسجيل كتاب صادر يدوياً", "Manually record an issued letter")) {
                     TextField(tr("اسم الكتاب الصادر", "Issued letter name"), text: $book)
                     ForEach(lines) { line in
@@ -129,14 +154,14 @@ struct TransferIssuanceView: View {
                     }
                     Button(tr("تأكيد تسجيل الإصدار", "Confirm issued letter")) { confirm = true }
                         .disabled(!current || selected.isEmpty || book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                } footer: { Text(tr("استخدم هذا الخيار بعد إصدار الكتاب فعلياً، واختر الجهات التي يتضمنها. المعاينة وحدها لا تُعد إصداراً.", "Use this after issuing the letter, selecting its entities. A preview is not issuance.")) }
+                } footer: { Text(tr("بعد إصدار الكتاب فعلياً، اختر الجهات أو بنود الرواتب التي يتضمنها. المعاينة وحدها لا تُعد إصداراً.", "After issuing the letter, select the entities or payroll items it contains. A preview is not issuance.")) }
                 let records = ledger.records.filter { $0.month == month }.sorted { $0.confirmedAt > $1.confirmedAt }
                 if !records.isEmpty {
                     Section(tr("الإصدارات المؤكدة يدوياً", "Manually confirmed letters")) {
                         ForEach(records) { record in
                             VStack(alignment: .leading) {
                                 Text(record.book).font(.headline)
-                                Text(tr("\(Num.format(record.lines.count)) جهة", "\(record.lines.count) entities"))
+                                Text(tr("\(Num.format(record.lines.count)) مصدر", "\(record.lines.count) items"))
                                     .font(.caption).foregroundStyle(.secondary)
                                 Text(record.confirmedAt, style: .date).font(.caption).foregroundStyle(.secondary)
                                 Button(tr("إلغاء التأكيد", "Retract confirmation"), role: .destructive) { retract = record }
@@ -158,7 +183,7 @@ struct TransferIssuanceView: View {
                 if save(ledger.records + [record]) { selected = []; book = "" }
             }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { }
-        } message: { Text(tr("أؤكد أنني أصدرت الكتاب فعلياً وأن الجهات المختارة وردت فيه بالمبالغ المعروضة. لا يتحقق التطبيق من الكتاب أو المصرف بهذا الإقرار.", "I confirm that I issued this letter and it contains the selected entities and amounts. This confirmation does not verify the document or the bank.")) }
+        } message: { Text(tr("أؤكد أنني أصدرت الكتاب فعلياً وأن الجهات والبنود المختارة وردت فيه بالمبالغ المعروضة. لا يتحقق التطبيق من الكتاب أو المصرف بهذا الإقرار.", "I confirm that I issued this letter and it contains the selected entities and items with their amounts. This confirmation does not verify the document or the bank.")) }
         .alert(tr("إلغاء تأكيد الإصدار؟", "Retract issuance confirmation?"), isPresented: Binding(get: { retract != nil }, set: { if !$0 { retract = nil } })) {
             Button(tr("إلغاء التأكيد", "Retract"), role: .destructive) {
                 if let id = retract?.id, let ledger { save(ledger.records.filter { $0.id != id }) }
