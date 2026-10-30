@@ -1,14 +1,16 @@
 import UIKit
+import PDFKit
 
 /// صفحة جدول المجموعة؛ يبقى التصدير معطلاً حتى التحقق من المرجع على الجهاز.
 nonisolated enum TransferGroupTablePDF {
     enum Failure: LocalizedError {
-        case invalidData, invalidTotal, missingFont
+        case invalidData, invalidTotal, missingFont, tableMismatch
         var errorDescription: String? {
             switch self {
             case .invalidData: tr("بيانات جهات التحويل غير مكتملة أو مكررة.", "Transfer entities are incomplete or duplicated.")
             case .invalidTotal: tr("تعذّر التأكد من مجموع جهات التحويل.", "Could not verify the transfer entity total.")
             case .missingFont: tr("خط جدول التحويل غير متوفر على الجهاز.", "The transfer table font is unavailable.")
+            case .tableMismatch: tr("تعذّر مطابقة الأرقام والحسابات المرسومة في جدول التحويل مع بياناته.", "Could not reconcile the rendered transfer table amounts and accounts with its source.")
             }
         }
     }
@@ -78,6 +80,24 @@ nonisolated enum TransferGroupTablePDF {
                 PDFText.draw("المجموع", in: labelBox.insetBy(dx: 4, dy: 1), font: bold)
                 cell(number(total), 4, y, totalHeight, bold, fill: true)
             }
+            // نقرأ الأرقام والحسابات من ملف PDF الناتج، لا من بيانات الرسم فقط.
+            guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount == 1,
+                  let outputPage = document.page(at: 0) else { throw Failure.tableMismatch }
+            var right = page.width - 25
+            let positions = widths.map { width -> CGFloat in right -= width; return right }
+            func extracted(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
+                let rect = CGRect(x: positions[column] + 0.2, y: page.height - y - height + 0.2,
+                                  width: widths[column] - 0.4, height: height - 0.4)
+                return ArabicText.latinDigits(outputPage.selection(for: rect)?.string ?? "")
+                    .uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+            }
+            var y = top + header
+            for (row, height) in zip(rows, fitting.rowHeights) {
+                guard extracted(0, y, height) == row[0], extracted(2, y, height) == row[2],
+                      extracted(4, y, height) == row[4] else { throw Failure.tableMismatch }
+                y += height
+            }
+            guard extracted(4, y, totalHeight) == number(total) else { throw Failure.tableMismatch }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             complete = true
             return url

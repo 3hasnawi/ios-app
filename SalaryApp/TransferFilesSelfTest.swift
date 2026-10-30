@@ -82,7 +82,7 @@ import CryptoKit
             throw Failure(errorDescription: "multiple water employees accepted")
         } catch is Failure { throw Failure(errorDescription: "multiple water employees accepted") }
         catch { }
-        let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1200, byEntity: false)
+        let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1800, byEntity: false)
         let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
         let data = try TransferRules.csv([item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         try TransferGroupCSVCheck.validate(data, entities: [item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
@@ -115,7 +115,8 @@ import CryptoKit
         let otherItem = TransferEntity(group: group, account: other, category: .otherBanks, missingAmounts: 0)
         let groupTable = try await TransferGroupTablePDF.make(entities: [item, secondItem], category: .rafidain, month: group.month)
         defer { try? FileManager.default.removeItem(at: groupTable.deletingLastPathComponent()) }
-        try check(PDFDocument(url: groupTable)?.pageCount == 1, "group table page count")
+        guard let groupTableDoc = PDFDocument(url: groupTable), let groupTableText = groupTableDoc.page(at: 0)?.string else { throw Failure(errorDescription: "group table PDF unreadable") }
+        try check(groupTableDoc.pageCount == 1 && groupTableText.contains("1800") && groupTableText.contains("3000"), "group table rendered values")
         do {
             _ = try await TransferGroupTablePDF.make(entities: [item, item], category: .rafidain, month: group.month)
             throw Failure(errorDescription: "duplicate group table source accepted")
