@@ -31,11 +31,19 @@ struct TransferWordPreview: UIViewRepresentable {
         }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { report(error) }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { report(error) }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            #if targetEnvironment(simulator)
+            if UserDefaults.standard.bool(forKey: "wordPreviewTest") { LaunchOptions.writeReport("wordPreview=loaded") }
+            #endif
+        }
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             DispatchQueue.main.async { self.loadFailed.wrappedValue = true }
         }
         private func report(_ error: Error) {
             guard (error as NSError).code != NSURLErrorCancelled else { return }
+            #if targetEnvironment(simulator)
+            if UserDefaults.standard.bool(forKey: "wordPreviewTest") { LaunchOptions.writeReport("wordPreview=failed") }
+            #endif
             DispatchQueue.main.async { self.loadFailed.wrappedValue = true }
         }
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,

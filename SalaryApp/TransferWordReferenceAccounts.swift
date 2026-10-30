@@ -13,9 +13,10 @@ nonisolated enum TransferWordReferenceAccounts {
     static func beneficiary(in text: String, payerIBAN: String) throws -> String {
         let payer = normalized(payerIBAN)
         guard TransferRules.validIBAN(payer), text.utf8.count <= 2_000_000 else { throw Failure.mismatch }
-        let regex = try NSRegularExpression(pattern: "(?i)(?<![A-Z0-9])IQ(?:[\\s]*[A-Z0-9]){21}(?![A-Z0-9])")
-        let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        let values = matches.compactMap { Range($0.range, in: text).map { normalized(String(text[$0])) } }
+        let cleaned = String(String.UnicodeScalarView(ArabicText.latinDigits(text).unicodeScalars.filter { $0.properties.generalCategory != .format }))
+        let regex = try NSRegularExpression(pattern: "(?i)(?<![A-Z0-9])IQ(?:[\\s-]*[A-Z0-9]){21}(?![A-Z0-9])")
+        let matches = regex.matches(in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned))
+        let values = matches.compactMap { Range($0.range, in: cleaned).map { normalized(String(cleaned[$0])) } }
         let unique = Set(values)
         guard values.count == 2, unique.count == 2, values.allSatisfy(TransferRules.validIBAN),
               unique.contains(payer), let beneficiary = unique.first(where: { $0 != payer }) else { throw Failure.mismatch }

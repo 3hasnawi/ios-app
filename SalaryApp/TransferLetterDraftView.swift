@@ -104,6 +104,11 @@ struct TransferLetterDraftView: View {
                 }
             }
             Section {
+                NavigationLink {
+                    TransferLetterSettingsView()
+                } label: {
+                    Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
+                }
                 if kind == .contracts && figures.missingContractNominal > 0 {
                     Text(tr("يتعذر حساب هذا الكتاب: يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. راجع السجلات من صفحة ملفات التحويل.", "This letter cannot be calculated: \(figures.missingContractNominal) contracts lack readable nominal pay. Review the records in transfer files.")).font(.footnote).foregroundStyle(.orange)
                 }
@@ -112,6 +117,10 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
+                if boldFont.isEmpty && kind != .rafidain && kind != .otherBanks {
+                    Text(tr("خط ساكال العريض غير مستورد؛ قد يختلف شكل الترويسة في Word. يمكن استيراده من تخصيص الكتب.", "Sakkal bold is not imported; the Word header may look different. Import it in letter settings."))
+                        .font(.footnote).foregroundStyle(.orange)
+                }
                 Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
                 Button(tr("معاينة تجريبية PDF", "Preview draft PDF"), systemImage: "doc.text.magnifyingglass") { prepare() }
@@ -233,6 +242,8 @@ struct TransferLetterDraftView: View {
             do {
                 var individual: TransferIndividualPlan?
                 var cash: TransferCashList?
+                var previousNameSnapshot: String?
+                var previousRevisionSnapshot: Date?
                 if kind.requiresEntity {
                     guard let entity else { throw TransferWordDraftGenerator.Failure.incomplete }
                     let container = SharedModel.container
@@ -240,6 +251,7 @@ struct TransferLetterDraftView: View {
                     let previousKey = number == 1 ? (year - 1) * 100 + 12 : year * 100 + number - 1
                     let prior = months.first { $0.sortKey == previousKey && $0.deductionCount > 0 }
                     let priorName = prior?.name, priorRevision = prior?.importedAt
+                    previousNameSnapshot = priorName; previousRevisionSnapshot = priorRevision
                     let worker = Task.detached(priority: .userInitiated) {
                         let engine = ReportEngine(modelContainer: container)
                         let rows = try await engine.rows(for: entity.group)
@@ -249,7 +261,7 @@ struct TransferLetterDraftView: View {
                     }
                     let (rows, previousCount) = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                     if let priorName, let priorRevision, months.first(where: { $0.name == priorName })?.importedAt != priorRevision {
-                        throw TransferWordDraftGenerator.Failure.changed
+                        throw TransferWordDraftGenerator.Failure.sourceChanged
                     }
                     let planKind: TransferIndividualPlan.Kind = switch kind {
                     case .ramadi: .ramadi
@@ -270,13 +282,20 @@ struct TransferLetterDraftView: View {
                 let plan = individual, list = cash, bookID = kind.rawValue
                 let snapshotFigures = figures, snapshotEntities = entities, snapshotReferences = references
                 let snapshotLinks = sourceLinks, snapshotPayer = payerName, snapshotPayerIBAN = payerIBAN
+                let snapshotBoldFont = boldFont
                 let worker = Task.detached(priority: .userInitiated) {
                     try TransferWordDraftGenerator.make(bookID: bookID, figures: snapshotFigures, entities: snapshotEntities,
                         entity: entity, individualPlan: plan, cashList: list, references: snapshotReferences,
-                        accountLinks: snapshotLinks, payerName: snapshotPayer, payerIBAN: snapshotPayerIBAN, customization: customization)
+                        accountLinks: snapshotLinks, payerName: snapshotPayer, payerIBAN: snapshotPayerIBAN,
+                        customization: customization, sakkalBold: snapshotBoldFont.isEmpty ? nil : snapshotBoldFont)
                 }
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return }
+                if let previousNameSnapshot, let previousRevisionSnapshot,
+                   months.first(where: { $0.name == previousNameSnapshot })?.importedAt != previousRevisionSnapshot {
+                    try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent())
+                    throw TransferWordDraftGenerator.Failure.sourceChanged
+                }
                 switch kind {
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks

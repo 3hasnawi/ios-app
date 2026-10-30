@@ -21,6 +21,7 @@ struct TransferCompanyLetterView: View {
     @State private var showWordPreview = false
     @State private var wordPreviewFailed = false
     @State private var wordCustomizationSnapshot = Data()
+    @State private var wordBoldSnapshot = Data()
     @State private var generation: Task<Void, Never>?
 
     private var sourceIsCurrent: Bool {
@@ -37,6 +38,11 @@ struct TransferCompanyLetterView: View {
                 LabeledContent("IBAN", value: payerIBAN.isEmpty ? "—" : payerIBAN).privacySensitive()
             }
             Section {
+                NavigationLink {
+                    TransferLetterSettingsView()
+                } label: {
+                    Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
+                }
                 Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!sourceIsCurrent || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working)
                 Button(tr("معاينة كتاب PDF", "Preview PDF letter"), systemImage: "doc.text.magnifyingglass") { prepare() }
@@ -44,6 +50,7 @@ struct TransferCompanyLetterView: View {
                 if references.isEmpty { Text(tr("استورد حزمة مراجع الكتب من صفحة ملفات التحويل.", "Import the letter reference package from transfer files.")).font(.footnote).foregroundStyle(.secondary) }
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
+                if currentBoldFont.isEmpty { Text(tr("خط ساكال العريض غير مستورد؛ قد يختلف شكل الترويسة في Word.", "Sakkal bold is not imported; the Word header may look different.")).font(.footnote).foregroundStyle(.orange) }
                 Text(tr("اضبط العدد والترويسة واللجنة والهامش ورقم عقد الإطعام من تخصيص الكتب. المشاركة معطّلة حتى اكتمال التدقيق.", "Set the reference, header, committee, footer and food contract reference in letter settings. Sharing remains disabled until verification is complete.")).font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -78,7 +85,7 @@ struct TransferCompanyLetterView: View {
                     VStack(spacing: 0) {
                         Label(tr("مسودة تجريبية؛ راجع النص والمبلغ والحسابات والتواقيع قبل اعتمادها.", "Experimental draft: review the text, amount, accounts and signatures before approval."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
-                        if !sourceIsCurrent || currentCustomization != wordCustomizationSnapshot { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
+                        if !sourceIsCurrent || currentCustomization != wordCustomizationSnapshot || currentBoldFont != wordBoldSnapshot { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         if wordPreviewFailed {
                             ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "doc.questionmark", description: Text(tr("تعذّر عرض مسودة Word داخل التطبيق على هذا الجهاز.", "This device could not display the Word draft inside the app.")))
                         } else {
@@ -96,6 +103,7 @@ struct TransferCompanyLetterView: View {
     private func prepareWord() {
         guard sourceIsCurrent, !working else { return }
         let snapshot = currentCustomization
+        let boldSnapshot = currentBoldFont
         let customization: TransferLetterCustomization
         do {
             let store = try (snapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: snapshot))
@@ -109,13 +117,15 @@ struct TransferCompanyLetterView: View {
                 let worker = Task.detached(priority: .userInitiated) {
                     try TransferWordDraftGenerator.make(bookID: "food_company", figures: snapshotFigures, entities: [],
                         entity: nil, individualPlan: nil, cashList: nil, references: snapshotReferences,
-                        accountLinks: Data(), payerName: "", payerIBAN: snapshotPayer, customization: customization)
+                        accountLinks: Data(), payerName: "", payerIBAN: snapshotPayer, customization: customization,
+                        sakkalBold: boldSnapshot.isEmpty ? nil : boldSnapshot)
                 }
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization else {
+                guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization, boldSnapshot == currentBoldFont else {
                     try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return
                 }
-                wordCustomizationSnapshot = snapshot; wordResult = result; generation = nil; showWordPreview = true
+                wordCustomizationSnapshot = snapshot; wordBoldSnapshot = boldSnapshot
+                wordResult = result; generation = nil; showWordPreview = true
             } catch is CancellationError { return }
             catch { guard !Task.isCancelled else { return }; self.error = error.localizedDescription }
         }

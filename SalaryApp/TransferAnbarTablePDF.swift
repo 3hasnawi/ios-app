@@ -6,9 +6,6 @@ nonisolated enum TransferAnbarTablePDF {
     enum Failure: LocalizedError {
         case invalidSource, missingFont, tableMismatch
         case tableCellMismatch(row: Int, column: Int, actualCount: Int, expectedCount: Int)
-        #if targetEnvironment(simulator)
-        case syntheticMismatch(String)
-        #endif
         var errorDescription: String? {
             switch self {
             case .invalidSource: tr("تعذّر التحقق من بيانات جدول فرع الأنبار.", "Could not verify the Anbar branch table data.")
@@ -16,9 +13,6 @@ nonisolated enum TransferAnbarTablePDF {
             case .tableMismatch: tr("تعذّر مطابقة أسماء جدول فرع الأنبار ورتبهم ومبالغهم مع بيانات الشهر.", "Could not reconcile the rendered Anbar table names, ranks, and amounts with the month's data.")
             case .tableCellMismatch(let row, let column, let actualCount, let expectedCount):
                 tr("تعذّر تدقيق جدول الأنبار في الصف \(row) والعمود \(column) (طول النص المقروء \(actualCount)، المتوقع \(expectedCount)).", "Anbar table verification failed at row \(row), column \(column) (read length \(actualCount), expected \(expectedCount)).")
-            #if targetEnvironment(simulator)
-            case .syntheticMismatch(let value): value
-            #endif
             }
         }
     }
@@ -31,12 +25,14 @@ nonisolated enum TransferAnbarTablePDF {
     private static let separateTop: CGFloat = 55
     private static let separateBottom: CGFloat = 808
 
-    /// قد يعيد PDFKit شكل الهاء من خط Arial بالرمز U+06BE رغم أن المصدر U+0647.
-    /// لا نعمّم ذلك على المصدر إذا كان يحتوي U+06BE حتى لا نغيّر معنى الاسم.
+    /// قد يعيد PDFKit أشكال الهاء والياء برموز فارسية بديلة رغم أن المصدر عربي.
+    /// لا نحوّل رمزاً إذا كان المصدر يحتويه فعلاً حتى لا نغيّر معنى الاسم.
     static func matchesExtractedCell(_ read: String, expected: String) -> Bool {
         if read == expected { return true }
-        guard !expected.contains("\u{06BE}") else { return false }
-        return read.replacingOccurrences(of: "\u{06BE}", with: "\u{0647}") == expected
+        var adjusted = read
+        if !expected.contains("\u{06BE}") { adjusted = adjusted.replacingOccurrences(of: "\u{06BE}", with: "\u{0647}") }
+        if !expected.contains("\u{06CC}") { adjusted = adjusted.replacingOccurrences(of: "\u{06CC}", with: "\u{064A}") }
+        return adjusted == expected
     }
 
     static func make(blankLetter: URL, plan: TransferIndividualPlan) async throws -> URL {
@@ -122,13 +118,6 @@ nonisolated enum TransferAnbarTablePDF {
                     let read = identity(text(column, y, height))
                     let expected = identity(row[column])
                     if !matchesExtractedCell(read, expected: expected) {
-                        #if targetEnvironment(simulator)
-                        if ProcessInfo.processInfo.arguments.contains("-transferFilesTest"), row[column] == "جهة وهمية" {
-                            let actualCodes = read.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ",")
-                            let expectedCodes = expected.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ",")
-                            throw Failure.syntheticMismatch("ANBAR_SYNTHETIC_ACTUAL=\(actualCodes) EXPECTED=\(expectedCodes)")
-                        }
-                        #endif
                         throw Failure.tableCellMismatch(row: index + 1, column: column + 1, actualCount: read.count, expectedCount: expected.count)
                     }
                 }

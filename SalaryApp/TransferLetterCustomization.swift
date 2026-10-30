@@ -29,7 +29,11 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
     var individual: [String: TransferLetterCustomization] = [:]
 
     func effective(for id: String) -> TransferLetterCustomization {
-        (individual[id] ?? TransferLetterCustomization()).applying(over: common)
+        var result = (individual[id] ?? TransferLetterCustomization()).applying(over: common)
+        // العدد ومرجع عقد الإطعام موحّدان لجميع الكتب.
+        result.fixedNumber = common.fixedNumber
+        result.foodContractReference = common.foodContractReference
+        return result
     }
 
     /// التطبيق على الكل يستبدل التخصيصات السابقة للحقول نفسها فقط.

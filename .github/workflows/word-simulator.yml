@@ -1,0 +1,77 @@
+name: Word transfer simulator test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  word:
+    runs-on: macos-26
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUNDLE: com.example.SalaryApp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Xcode and synthetic font
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          brew install xcodegen
+          xcodegen generate
+          python3 -m venv .venv
+          .venv/bin/pip install -q fonttools
+          mkdir -p ci-output
+          .venv/bin/python ci/make_test_word_font.py ci-output/synthetic-word-font.ttf
+      - name: Pick iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import sys, json, re
+          devices=json.load(sys.stdin)["devices"]
+          runtimes=sorted((k for k in devices if "iOS" in k),key=lambda k:[int(x) for x in re.findall(r"\d+",k.split("iOS")[-1])])
+          phones=[d for d in devices[runtimes[-1]] if d["name"].startswith("iPhone")]
+          pro=[d for d in phones if "Pro" in d["name"] and "Max" not in d["name"]]
+          print((pro or phones)[0]["udid"])')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+      - name: Build app for simulator
+        run: |
+          xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Debug \
+            -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+            build > ci-output/build.log 2>&1 || { grep -E 'error:|warning: .*(isolat|Sendable)' ci-output/build.log | sort -u | head -40 | sed 's/^/::error::/'; exit 1; }
+      - name: Install and test eleven Word drafts
+        run: |
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/SalaryApp.app
+          DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          mkdir -p "$DATA/Documents"
+          cp ci-output/synthetic-word-font.ttf "$DATA/Documents/"
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -wordTransferTest YES
+          for i in $(seq 1 120); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/word-transfer-report.txt
+          grep -q '^wordTransfers=ok drafts=11 synthetic=1' ci-output/word-transfer-report.txt
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          echo "DATA=$DATA" >> "$GITHUB_ENV"
+      - name: Verify preview inside app
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -wordPreviewTest YES
+          for i in $(seq 1 90); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/word-preview-report.txt
+          grep -q '^wordPreview=loaded' ci-output/word-preview-report.txt
+          xcrun simctl io "$UDID" screenshot ci-output/word-preview.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: word-simulator-evidence
+          path: ci-output/

@@ -19,7 +19,7 @@ nonisolated enum TransferWordGroupDraft {
         return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer)
     }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
-                      text: LetterText, destination: URL) throws {
+                      text: LetterText, destination: URL, sakkalBold: Data? = nil) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let normalizedPayer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         guard TransferRules.validIBAN(payerIBAN), normalizedPayer == plan.payerIBAN, month == plan.month,
@@ -45,6 +45,6 @@ nonisolated enum TransferWordGroupDraft {
             .pageBreak,
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(year))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)
-        ], destination: destination)
+        ], destination: destination, sakkalBold: sakkalBold)
     }
 }

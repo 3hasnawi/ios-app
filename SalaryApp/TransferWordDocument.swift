@@ -80,8 +80,9 @@ nonisolated enum TransferWordDocument {
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"10206\" w:type=\"dxa\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"
     }
-    static func write(blocks: [Block], destination: URL) throws {
+    static func write(blocks: [Block], destination: URL, sakkalBold: Data? = nil) throws {
         guard !blocks.isEmpty, blocks.count <= 1000 else { throw Failure.invalidContent }
+        if let sakkalBold { try TransferWordFont.validateBold(sakkalBold) }
         let fm = FileManager.default
         guard !fm.fileExists(atPath: destination.path) else { throw Failure.destinationExists }
         var body = ""
@@ -99,15 +100,23 @@ nonisolated enum TransferWordDocument {
         let root = fm.temporaryDirectory.appendingPathComponent("word-document-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
         defer { try? fm.removeItem(at: root) }
-        let files = [
-            "[Content_Types].xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>",
-            "_rels/.rels": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>",
-            "word/document.xml": xml
+        let fontTypes = sakkalBold == nil ? "" : "<Default Extension=\"ttf\" ContentType=\"application/x-font-ttf\"/><Override PartName=\"/word/fontTable.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml\"/>"
+        var files: [String: Data] = [
+            "[Content_Types].xml": Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\(fontTypes)</Types>".utf8),
+            "_rels/.rels": Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>".utf8),
+            "word/document.xml": Data(xml.utf8)
         ]
+        if let sakkalBold {
+            // المفتاح الصفري يترك بيانات الخط كما هي ويُقرأ كخط مضمن في Word.
+            files["word/fonts/sakkal-bold.ttf"] = sakkalBold
+            files["word/fontTable.xml"] = Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:fonts xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:font w:name=\"Sakkal Majalla\"><w:embedBold r:id=\"rId1\" w:fontKey=\"{00000000-0000-0000-0000-000000000000}\"/></w:font></w:fonts>".utf8)
+            files["word/_rels/document.xml.rels"] = Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdFontTable\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable\" Target=\"fontTable.xml\"/></Relationships>".utf8)
+            files["word/_rels/fontTable.xml.rels"] = Data("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/font\" Target=\"fonts/sakkal-bold.ttf\"/></Relationships>".utf8)
+        }
         for (path, content) in files {
             let url = root.appendingPathComponent(path)
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
-            try Data(content.utf8).write(to: url, options: [.atomic, .completeFileProtection])
+            try content.write(to: url, options: [.atomic, .completeFileProtection])
         }
         var complete = false
         defer { if !complete { try? fm.removeItem(at: destination) } }
@@ -123,6 +132,13 @@ nonisolated enum TransferWordDocument {
         var output = Data()
         _ = try check.extract(entry) { output.append($0) }
         guard output == expectedXML else { throw Failure.invalidContent }
+        if let sakkalBold {
+            guard let fontEntry = check["word/fonts/sakkal-bold.ttf"], check["word/fontTable.xml"] != nil,
+                  check["word/_rels/document.xml.rels"] != nil, check["word/_rels/fontTable.xml.rels"] != nil else { throw Failure.invalidContent }
+            var readFont = Data()
+            _ = try check.extract(fontEntry) { readFont.append($0) }
+            guard readFont == sakkalBold else { throw Failure.invalidContent }
+        }
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
         complete = true
     }

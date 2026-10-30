@@ -36,6 +36,8 @@ struct ReportsView: View {
     @State private var router = AppRouter.shared
     /// كشف يُعرض في نافذة المعاينة مباشرة من بطاقته.
     @State private var previewGroup: ReportGroup?
+    @State private var simulatorWordPreview = false
+    @State private var simulatorWordFailed = false
     /// عدد ملاحظات التدقيق للشهر المختار (لبطاقة التدقيق).
     @State private var auditIssues: Int?
 
@@ -101,6 +103,10 @@ struct ReportsView: View {
                 }
             }
             .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
+            .sheet(isPresented: $simulatorWordPreview) {
+                let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("word-preview-fixture.docx")
+                TransferWordPreview(url: url, loadFailed: $simulatorWordFailed)
+            }
             .overlay { if exporter.isWorking { ExportingHUD() } }
             .alert(tr("التصدير", "Export"), isPresented: Binding(get: { exporter.error != nil }, set: { if !$0 { exporter.error = nil } })) {
                 Button(tr("حسناً", "OK"), role: .cancel) {}
@@ -110,9 +116,10 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .task {
                 #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "wordPreviewTest") { simulatorWordPreview = true }
                 if UserDefaults.standard.bool(forKey: "wordTransferTest") {
                     do { LaunchOptions.writeReport(try TransferWordSelfTest.run()) }
-                    catch { LaunchOptions.writeReport("wordTransfers=failed \(error.localizedDescription)") }
+                    catch { LaunchOptions.writeReport("wordTransfers=failed stage=\(TransferWordSelfTest.phase) \(error.localizedDescription)") }
                 }
                 if UserDefaults.standard.bool(forKey: "transferFilesTest") {
                     do { LaunchOptions.writeReport(try await TransferFilesSelfTest.run()) }

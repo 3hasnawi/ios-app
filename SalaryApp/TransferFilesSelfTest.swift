@@ -31,6 +31,9 @@ import CryptoKit
         customization.applyToAll(.init(fixedNumber: "رقم وهمي", foodContractReference: "عقد وهمي"))
         let effectiveWord = customization.effective(for: "food_company")
         try check(effectiveWord.fixedNumber == "رقم وهمي" && effectiveWord.foodContractReference == "عقد وهمي", "Word fixed references inherited")
+        customization.apply(.init(fixedNumber: "قيمة مخالفة", foodContractReference: "عقد مخالف"), to: "food_company")
+        let unifiedWord = customization.effective(for: "food_company")
+        try check(unifiedWord.fixedNumber == "رقم وهمي" && unifiedWord.foodContractReference == "عقد وهمي", "Word fixed references stay unified")
         let updatedCustomization = try JSONEncoder().encode(customization)
         try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: updatedCustomization) == customization, "Word references backup encoding")
         let wordValues = try TransferWordValues.make(month: "تشرين الاول 2026", amount: 123_456,
@@ -109,6 +112,8 @@ import CryptoKit
         try check(TransferRules.validIBAN(fakeBeneficiary), "synthetic beneficiary IBAN")
         let fakeReference = "حساب الدافع \(iban) حساب المستفيد \(fakeBeneficiary)"
         try check(try TransferWordReferenceAccounts.beneficiary(in: fakeReference, payerIBAN: iban) == fakeBeneficiary, "Word beneficiary reference account")
+        let decoratedReference = "حساب الدافع IQ06-TEST123000000000001 حساب المستفيد IQ76\u{200f}TEST123000000000002"
+        try check(try TransferWordReferenceAccounts.beneficiary(in: decoratedReference, payerIBAN: iban) == fakeBeneficiary, "Word reference formatting marks")
         do {
             _ = try TransferWordReferenceAccounts.beneficiary(in: "\(iban) \(fakeBeneficiary) \(fakeBeneficiary)", payerIBAN: iban)
             throw Failure(errorDescription: "ambiguous reference beneficiary accepted")
@@ -270,8 +275,10 @@ import CryptoKit
         catch { }
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
         try check(TransferAnbarTablePDF.matchesExtractedCell("موظف وھمي", expected: "موظف وهمي"), "PDF heh extraction")
+        try check(TransferAnbarTablePDF.matchesExtractedCell("جھه وھمیه", expected: "جهه وهميه"), "PDF heh and yeh extraction")
         try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وحمي", expected: "موظف وهمي"), "different name must not match")
         try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وهمي", expected: "موظف وھمي"), "source doachashmee remains distinct")
+        try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وهمي", expected: "موظف وهمی"), "source Persian yeh remains distinct")
         _ = try TransferIndividualPlan(kind: .water, group: group, rows: individualRows, missingAmounts: 0)
         let blankAnbarURL = FileManager.default.temporaryDirectory.appendingPathComponent("anbar-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: blankAnbarURL) }

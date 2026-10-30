@@ -77,12 +77,13 @@ jobs:
       - name: Create test workbooks for two months (made-up names)
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install -q openpyxl
+          .venv/bin/pip install -q openpyxl fonttools
           mkdir -p test-files
           .venv/bin/python ci/make_test_xlsx.py "test-files/تشرين الاول 2026.xlsx" oct.txt 26000
           .venv/bin/python ci/make_test_xlsx.py "test-files/أيلول 2026.xlsx" sep.txt 3000 previous
           .venv/bin/python ci/make_test_iban.py
           .venv/bin/python ci/make_test_annual_deductions.py
+          .venv/bin/python ci/make_test_word_font.py test-files/synthetic-word-font.ttf
           # المجموع المتوقع للملفين معاً
           cat oct.txt sep.txt | python3 -c '
           import sys, re
@@ -121,6 +122,7 @@ jobs:
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           mkdir -p "$DATA/Documents"
           cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
+          cp test-files/synthetic-word-font.ttf "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
       - name: Verify Word transfer drafts
@@ -138,6 +140,23 @@ jobs:
           fi
           xcrun simctl terminate "$UDID" "$BUNDLE"
           rm -f "$DATA/Documents/import-report.txt"
+
+      - name: Verify Word preview inside app
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -wordPreviewTest YES
+          for i in $(seq 1 90); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/word-preview-report.txt
+          if ! grep -q '^wordPreview=loaded' ci-output/word-preview-report.txt; then
+            echo "::error::Word draft preview failed to load"
+            exit 1
+          fi
+          xcrun simctl io "$UDID" screenshot ci-output/screenshots/word-draft-fixture.png
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt" "$DATA/Documents/word-preview-fixture.docx"
 
       - name: Verify transfer files
         run: |

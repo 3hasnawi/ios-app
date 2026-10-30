@@ -8,14 +8,38 @@ import CryptoKit
 /// اختبارات مستقلة لمسار Word، لا تستخدم قوالب أو حسابات حقيقية.
 @MainActor enum TransferWordSelfTest {
     struct Failure: LocalizedError { let errorDescription: String? }
+    private(set) static var phase = "start"
     static func run() throws -> String {
+        phase = "font-permissions"
         func check(_ ok: Bool, _ message: String) throws { if !ok { throw Failure(errorDescription: message) } }
+        func fontWithFlags(_ flags: UInt16) -> Data {
+            var bytes = [UInt8](repeating: 0, count: 38)
+            bytes[5] = 1
+            bytes[12] = 0x4f; bytes[13] = 0x53; bytes[14] = 0x2f; bytes[15] = 0x32
+            bytes[23] = 28; bytes[27] = 10
+            bytes[36] = UInt8(flags >> 8); bytes[37] = UInt8(flags & 0xff)
+            return Data(bytes)
+        }
+        try check(TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0008)), "editable font permission")
+        try check(!TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0002)) &&
+                  !TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0200)) &&
+                  !TransferWordFont.permitsEditableEmbedding(Data()), "restricted font permission")
         let payer = "IQ06TEST123000000000001", beneficiary = "IQ76TEST123000000000002"
         let local = String(beneficiary.suffix(15)), month = "تشرين الاول 2026"
         try check(TransferRules.validIBAN(payer) && TransferRules.validIBAN(beneficiary), "synthetic accounts")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("word-selftest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("templates"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let syntheticFont = try Data(contentsOf: documents.appendingPathComponent("synthetic-word-font.ttf"))
+        let fontDocument = root.appendingPathComponent("synthetic-font.docx")
+        try TransferWordDocument.write(blocks: [.paragraph(.init(text: "ترويسة وهمية", font: "Sakkal Majalla", halfPoints: 36, bold: true))],
+                                       destination: fontDocument, sakkalBold: syntheticFont)
+        let fontArchive = try Archive(url: fontDocument, accessMode: .read)
+        guard let fontEntry = fontArchive["word/fonts/sakkal-bold.ttf"], fontArchive["word/fontTable.xml"] != nil,
+              fontArchive["word/_rels/fontTable.xml.rels"] != nil else { throw Failure(errorDescription: "embedded Word font missing") }
+        var recoveredFont = Data(); _ = try fontArchive.extract(fontEntry) { recoveredFont.append($0) }
+        try check(recoveredFont == syntheticFont, "embedded Word font changed")
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
         guard let font = UIFont(name: "Arial-BoldMT", size: 10) else { throw Failure(errorDescription: "synthetic reference font") }
         func payerRect(_ id: String) -> CGRect {
@@ -40,6 +64,7 @@ import CryptoKit
         }
         var records: [TransferReferenceManifest.Template] = []
         for (id, count) in TransferReferencePack.expected {
+            phase = "synthetic-reference-\(id)"
             let pdf = renderer.pdfData { context in
                 context.beginPage()
                 PDFText.draw(payer, in: payerRect(id), font: font, align: .center)
@@ -47,6 +72,16 @@ import CryptoKit
                     PDFText.draw(id == "water" || id == "housing" ? local : beneficiary, in: targetRect(id), font: font, align: .center)
                 }
                 if count == 2 { context.beginPage() }
+            }
+            guard let document = PDFDocument(data: pdf), !document.isLocked, document.pageCount == count,
+                  let firstPage = document.page(at: 0),
+                  abs(firstPage.bounds(for: .mediaBox).width - 595.3) < 2,
+                  abs(firstPage.bounds(for: .mediaBox).height - 841.9) < 2 else {
+                throw Failure(errorDescription: "synthetic PDF validation \(id)")
+            }
+            for pageIndex in 0..<count {
+                guard let page = document.page(at: pageIndex), abs(page.bounds(for: .mediaBox).width - 595.3) < 2,
+                      abs(page.bounds(for: .mediaBox).height - 841.9) < 2 else { throw Failure(errorDescription: "synthetic PDF page \(id)") }
             }
             let path = "templates/\(id).pdf"
             try pdf.write(to: root.appendingPathComponent(path))
@@ -58,6 +93,16 @@ import CryptoKit
         try archive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
         for record in records { try archive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
         let references = try Data(contentsOf: packURL)
+        phase = "reference-pack"
+        let packed = try Archive(url: packURL, accessMode: .read)
+        for record in records {
+            guard let entry = packed[record.path] else { throw Failure(errorDescription: "synthetic archive entry \(record.id)") }
+            var data = Data(); _ = try packed.extract(entry) { data.append($0) }
+            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            guard hash == record.sha256, let document = PDFDocument(data: data), document.pageCount == record.pages else {
+                throw Failure(errorDescription: "synthetic archive PDF \(record.id)")
+            }
+        }
         _ = try TransferReferencePack.validateData(references)
         let figures = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
             healthcare: 20, policeFundDonations: 30, sports: 40, incomeTax: 11, socialProtection: 13,
@@ -65,6 +110,7 @@ import CryptoKit
         let custom = TransferLetterCustomization(header: "ترويسة وهمية", committeeFirst: "عضو وهمي أول",
             committeeSecond: "عضو وهمي ثان", committeeThird: "عضو وهمي ثالث", footer: "هامش وهمي",
             fixedNumber: "رقم وهمي", foodContractReference: "عقد وهمي")
+        let letterText = try TransferWordGroupDraft.letterText(from: custom)
         let cash = TransferCashList(month: month, employees: [.init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)])
         func content(_ url: URL) throws -> String {
             let zip = try Archive(url: url, accessMode: .read)
@@ -74,6 +120,7 @@ import CryptoKit
         }
         var generated = 0
         for id in ["food_company", "food_tax", "tax_social", "contracts", "cash_salary"] {
+            phase = "payroll-\(id)"
             let result = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [], entity: nil,
                 individualPlan: nil, cashList: id == "cash_salary" ? cash : nil, references: references,
                 accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: custom)
@@ -81,6 +128,17 @@ import CryptoKit
             let xml = try content(result.letter)
             try check(xml.contains(payer) && xml.contains(beneficiary) && xml.contains("عضو وهمي أول"), "Word payroll \(id)")
             if id == "cash_salary" { try check(xml.contains("موظف وهمي"), "Word cash list") }
+            if id == "food_company" {
+                do {
+                    try TransferWordVerification.verify(url: result.letter, month: month, amount: 93, payerIBAN: payer,
+                        text: letterText, table: nil, beneficiaryAccount: beneficiary)
+                    throw Failure(errorDescription: "wrong Word amount accepted")
+                } catch is Failure { throw Failure(errorDescription: "wrong Word amount accepted") }
+                catch { }
+                let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
+                try? FileManager.default.removeItem(at: fixture)
+                try FileManager.default.copyItem(at: result.letter, to: fixture)
+            }
             generated += 1
         }
         do {
@@ -98,6 +156,7 @@ import CryptoKit
         let groupEntities = [TransferEntity(group: groupA, account: accountA, category: .rafidain, missingAmounts: 0),
                              TransferEntity(group: groupB, account: accountB, category: .otherBanks, missingAmounts: 0)]
         for id in ["rafidain_group", "other_banks_group"] {
+            phase = "group-\(id)"
             let result = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: groupEntities, entity: nil,
                 individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
                 payerIBAN: payer, customization: custom)
@@ -118,6 +177,7 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "overfull Word group accepted") }
         catch { }
         for (id, kind) in [("ramadi", TransferIndividualPlan.Kind.ramadi), ("housing", .housing), ("water", .water), ("rafidain_anbar", .rafidainAnbar)] {
+            phase = "entity-\(id)"
             let title = id == "rafidain_anbar" ? "مصرف الرافدين/فرع الانبار" : "جهة وهمية \(id)"
             let group = ReportGroup(kind: .deductions, month: month, title: title, count: 1, total: 1200, byEntity: false)
             let row = ReportRow(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 1200, note: "", entity: title)

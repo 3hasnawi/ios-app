@@ -58,8 +58,10 @@ struct TransferLetterSettingsView: View {
                 field("second", tr("عضو اللجنة الثاني", "Second committee member"), text: $second)
                 field("third", tr("عضو اللجنة الثالث", "Third committee member"), text: $third)
                 field("footer", tr("الهامش السفلي", "Footer"), text: $footer, lines: true)
-                field("fixedNumber", tr("العدد الموحد", "Fixed letter number"), text: $fixedNumber)
-                field("foodContractReference", tr("رقم وتاريخ عقد الإطعام", "Food contract number and date"), text: $foodContractReference)
+                if target == "all" {
+                    field("fixedNumber", tr("العدد الموحد", "Fixed letter number"), text: $fixedNumber)
+                    field("foodContractReference", tr("رقم وتاريخ عقد الإطعام", "Food contract number and date"), text: $foodContractReference)
+                }
                 Button(tr("حفظ التخصيص", "Save customization"), systemImage: "checkmark.circle") { save() }
                     .disabled(selected.isEmpty || busy)
                 if target != "all" {
@@ -75,7 +77,7 @@ struct TransferLetterSettingsView: View {
                     Label(regularData.isEmpty ? tr("استيراد الخط العادي", "Import regular font") : tr("استبدال الخط العادي", "Replace regular font"), systemImage: "textformat")
                 }.disabled(busy)
                 if importing { ProgressView() }
-            } header: { Text(tr("خط الترويسة الخاص", "Private header font")) } footer: { Text(tr("يبقى الخط خاصاً على جهازك وضمن نسختك الاحتياطية.", "The font remains private on your device and in your backup.")) }
+            } header: { Text(tr("خط الترويسة الخاص", "Private header font")) } footer: { Text(tr("يُحفظ الخط ضمن نسختك الاحتياطية، وقد يُضمّن العريض في ملف Word إذا سمح الخط بذلك.", "The font is kept in your backup, and the bold font may be embedded in the Word file when permitted.")) }
         }
         .navigationTitle(tr("تخصيص الكتب", "Customize letters"))
         .navigationBarTitleDisplayMode(.inline)
