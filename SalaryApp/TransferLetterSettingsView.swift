@@ -29,7 +29,7 @@ struct TransferLetterSettingsView: View {
         ("water", tr("الموارد المائية", "Water resources")),
         ("rafidain_anbar", tr("الرافدين فرع الأنبار", "Rafidain Anbar")),
         ("rafidain_group", tr("مجموعة الرافدين", "Rafidain group")),
-        ("other_banks_group", tr("مجموعة بقية المصارف", "Other banks group"))
+        ("other_banks_group", tr("مجموعة رشيد ومصارف أخرى", "Rasheed and other banks group"))
     ].map { Choice(id: $0.0, title: $0.1) } }
     private var busy: Bool { importing || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting }
     private func field(_ key: String, _ title: String, text: Binding<String>, lines: Bool = false) -> some View {

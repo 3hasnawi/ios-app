@@ -9,7 +9,7 @@ nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable, 
     var title: String {
         switch self {
         case .rafidain: tr("الرافدين · عدا فرع الأنبار", "Rafidain · excluding Anbar branch")
-        case .otherBanks: tr("بقية المصارف", "Other banks")
+        case .otherBanks: tr("مجموعة رشيد ومصارف أخرى", "Rasheed and other banks group")
         case .anbar: tr("الرافدين · فرع الأنبار", "Rafidain · Anbar branch")
         case .unresolved: tr("جهات تحتاج تصنيفاً", "Entities needing classification")
         }

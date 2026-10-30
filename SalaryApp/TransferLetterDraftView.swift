@@ -18,7 +18,7 @@ nonisolated enum TransferLetterDraftKind: String, CaseIterable, Identifiable {
         case .water: tr("الموارد المائية", "Water resources")
         case .anbar: tr("الرافدين فرع الأنبار", "Rafidain Anbar")
         case .rafidain: tr("مجموعة الرافدين", "Rafidain group")
-        case .otherBanks: tr("مجموعة بقية المصارف", "Other banks group")
+        case .otherBanks: tr("مجموعة رشيد ومصارف أخرى", "Rasheed and other banks group")
         }
     }
     var requiresEntity: Bool { self == .ramadi || self == .housing || self == .water || self == .anbar }
