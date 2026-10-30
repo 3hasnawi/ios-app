@@ -159,13 +159,15 @@ struct TransferLetterDraftView: View {
                         }
                         .sheet(isPresented: $showCSV) {
                             NavigationStack {
-                                if current, let csvPreview {
-                                    ScrollView([.horizontal, .vertical]) {
-                                        Text(csvPreview).font(.system(.caption, design: .monospaced))
-                                            .fixedSize(horizontal: true, vertical: false).padding().privacySensitive()
-                                    }.environment(\.layoutDirection, .leftToRight)
-                                } else {
-                                    ContentUnavailableView(tr("تغيّرت البيانات", "Data changed"), systemImage: "exclamationmark.triangle", description: Text(tr("أغلق المعاينة وأعد تحميل الشهر.", "Close the preview and reload the month.")))
+                                Group {
+                                    if current, let csvPreview {
+                                        ScrollView([.horizontal, .vertical]) {
+                                            Text(csvPreview).font(.system(.caption, design: .monospaced))
+                                                .fixedSize(horizontal: true, vertical: false).padding().privacySensitive()
+                                        }.environment(\.layoutDirection, .leftToRight)
+                                    } else {
+                                        ContentUnavailableView(tr("تغيّرت البيانات", "Data changed"), systemImage: "exclamationmark.triangle", description: Text(tr("أغلق المعاينة وأعد تحميل الشهر.", "Close the preview and reload the month.")))
+                                    }
                                 }
                                 .navigationTitle(tr("معاينة CSV", "CSV preview"))
                                 .navigationBarTitleDisplayMode(.inline)

@@ -245,6 +245,38 @@ struct TransferFilesView: View {
         saved[recipient.rawValue] = key
         if let data = try? JSONEncoder().encode(saved) { payrollLinksData = data; BackupManager.shared.markChanged() }
     }
+    @ViewBuilder private func categoryRow(_ category: TransferCategory) -> some View {
+        let items = entities.filter { $0.category == category }
+        if category != .unresolved || !items.isEmpty {
+            NavigationLink {
+                TransferCategoryView(category: category, entities: items,
+                    unresolvedCount: entities.filter { $0.category == .unresolved }.count,
+                    month: month?.name ?? "", sourceKey: loadKey, sourceAccounts: accountData,
+                    sourceCategories: categoriesData, sourcePayrollLinks: payrollLinksData,
+                    payrollComplete: figures != nil, payerName: payerName, payerIBAN: payerIBAN,
+                    changeCategory: setCategory)
+            } label: {
+                categoryLabel(category, items: items)
+            }
+        }
+    }
+    @ViewBuilder private func categoryLabel(_ category: TransferCategory, items: [TransferEntity]) -> some View {
+        let total = items.reduce(0.0) { $0 + $1.group.total }
+        let reviewCount = items.filter { !TransferRules.issues($0).isEmpty }.count
+        VStack(alignment: .leading, spacing: 7) {
+            Label(category.title, systemImage: category.icon).font(.headline)
+            Text(tr("\(Num.format(items.count)) جهة · \(Money.format(total))", "\(items.count) entities · \(Money.format(total))"))
+                .font(.subheadline).foregroundStyle(.secondary)
+            if category == .unresolved {
+                Text(tr("حدّد المصرف لكل جهة قبل التصدير", "Classify each entity before export")).font(.caption).foregroundStyle(.orange)
+            } else if category == .anbar {
+                Text(tr("كتب منفردة", "Individual documents")).font(.caption).foregroundStyle(.secondary)
+            } else if reviewCount > 0 {
+                Text(tr("\(Num.format(reviewCount)) جهات تحتاج مراجعة", "\(reviewCount) entities need review"))
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }.padding(.vertical, 8)
+    }
     private func importReferences() {
         guard !importingReferences, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
             referenceError = tr("انتظر انتهاء العملية الحالية ثم حاول مجدداً.", "Wait for the current operation, then try again.")
@@ -297,28 +329,7 @@ struct TransferFilesView: View {
             } else {
                 Section {
                     ForEach(TransferCategory.allCases) { category in
-                        let items = entities.filter { $0.category == category }
-                        if category != .unresolved || !items.isEmpty {
-                            NavigationLink {
-                                TransferCategoryView(category: category, entities: items, unresolvedCount: entities.filter { $0.category == .unresolved }.count,
-                                    month: month?.name ?? "", sourceKey: loadKey, sourceAccounts: accountData, sourceCategories: categoriesData,
-                                    sourcePayrollLinks: payrollLinksData, payrollComplete: figures != nil,
-                                    payerName: payerName, payerIBAN: payerIBAN,
-                                    changeCategory: setCategory)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    Label(category.title, systemImage: category.icon).font(.headline)
-                                    Text(tr("\(Num.format(items.count)) جهة · \(Money.format(items.reduce(0) { $0 + $1.group.total }))", "\(items.count) entities · \(Money.format(items.reduce(0) { $0 + $1.group.total }))"))
-                                        .font(.subheadline).foregroundStyle(.secondary)
-                                    if category == .unresolved { Text(tr("حدّد المصرف لكل جهة قبل التصدير", "Classify each entity before export")).font(.caption).foregroundStyle(.orange) }
-                                    else if category == .anbar { Text(tr("كتب منفردة", "Individual documents")).font(.caption).foregroundStyle(.secondary) }
-                                    else {
-                                        let n = items.filter { !TransferRules.issues($0).isEmpty }.count
-                                        if n > 0 { Text(tr("\(Num.format(n)) جهات تحتاج مراجعة", "\(n) entities need review")).font(.caption).foregroundStyle(.orange) }
-                                    }
-                                }.padding(.vertical, 8)
-                            }
-                        }
+                        categoryRow(category)
                     }
                 } header: { Text(month?.name ?? "") }
                 if let figures, error == nil {
@@ -336,7 +347,7 @@ struct TransferFilesView: View {
                 let missingPreviews = coverageEntities.filter { prepared[$0.id] == nil }
                 let repeatedPreviews = coverageEntities.filter { (prepared[$0.id]?.count ?? 0) > 1 }
                 if !coverageEntities.isEmpty {
-                    Section(tr("تغطية معاينات الجهات", "Entity preview coverage")) {
+                    Section {
                         LabeledContent(tr("جهات مصنفة لها معاينة", "Classified entities with preview"), value: "\(Num.format(coverageEntities.count - missingPreviews.count)) / \(Num.format(coverageEntities.count))")
                         if !missingPreviews.isEmpty {
                             DisclosureGroup(tr("جهات لم تُجهّز لها معاينة · \(Num.format(missingPreviews.count))", "Entities without a prepared preview · \(Num.format(missingPreviews.count))")) {
@@ -348,12 +359,12 @@ struct TransferFilesView: View {
                                 ForEach(repeatedPreviews) { entity in Text(entity.group.title).foregroundStyle(.red) }
                             }
                         }
-                    } footer: { Text(tr("تشمل التغطية الجهات المصنفة ذات المبالغ الموجبة؛ تظهر غير المصنفة منفصلة. تتتبع معاينات الجلسة فقط ولا تعني إصدار كتاب، وتُصفّر عند تغيّر البيانات أو الإعدادات.", "Coverage includes classified entities with positive amounts; unclassified entities appear separately. It tracks session previews only, does not establish issuance, and resets when data or settings change.")) }
+                    } header: { Text(tr("تغطية معاينات الجهات", "Entity preview coverage")) } footer: { Text(tr("تشمل التغطية الجهات المصنفة ذات المبالغ الموجبة؛ تظهر غير المصنفة منفصلة. تتتبع معاينات الجلسة فقط ولا تعني إصدار كتاب، وتُصفّر عند تغيّر البيانات أو الإعدادات.", "Coverage includes classified entities with positive amounts; unclassified entities appear separately. It tracks session previews only, does not establish issuance, and resets when data or settings change.")) }
                 }
                 if bookStore.loadError != nil {
                     Section { Label(tr("تعذّر فحص أرشيف الكتب؛ راجعه من البيانات المحفوظة.", "Could not check the document archive; review it in saved data."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                 } else if !unlinkedAnbar.isEmpty {
-                    Section(tr("جهات تحتاج مراجعة كتاب", "Entities needing document review")) {
+                    Section {
                         ForEach(unlinkedAnbar) { entity in
                             NavigationLink {
                                 TransferEntityBooksView(entity: entity, month: month?.name ?? "")
@@ -361,10 +372,10 @@ struct TransferFilesView: View {
                                 Label(entity.group.title, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                             }
                         }
-                    } footer: { Text(tr("لم يُعثر على كتاب محفوظ مرتبط باسم هذه الجهات في الشهر المختار. يفحص التنبيه الأرشيف فقط ولا يثبت عدم صدور كتاب أو مطابقة مبلغه.", "No saved document linked to these entity names was found for the selected month. This checks the archive only and does not establish whether a letter was issued or its amount matched.")) }
+                    } header: { Text(tr("جهات تحتاج مراجعة كتاب", "Entities needing document review")) } footer: { Text(tr("لم يُعثر على كتاب محفوظ مرتبط باسم هذه الجهات في الشهر المختار. يفحص التنبيه الأرشيف فقط ولا يثبت عدم صدور كتاب أو مطابقة مبلغه.", "No saved document linked to these entity names was found for the selected month. This checks the archive only and does not establish whether a letter was issued or its amount matched.")) }
                 }
                 if let figures {
-                    Section(tr("حسابات استقطاعات الرواتب", "Payroll deduction accounts")) {
+                    Section {
                         ForEach(TransferPayrollRecipient.allCases) { recipient in
                             if recipient.amount(figures) > 0 {
                                 Menu {
@@ -382,7 +393,7 @@ struct TransferFilesView: View {
                                 }
                             }
                         }
-                    } footer: { Text(tr("اختر الحساب المطابق لكل بند لضمه إلى مجموعة مصرفه.", "Select the matching account for each deduction.")) }
+                    } header: { Text(tr("حسابات استقطاعات الرواتب", "Payroll deduction accounts")) } footer: { Text(tr("اختر الحساب المطابق لكل بند لضمه إلى مجموعة مصرفه.", "Select the matching account for each deduction.")) }
                     Section(tr("الكتب المنفردة", "Individual letters")) {
                         NavigationLink {
                             TransferCompanyLetterView(figures: figures, sourceKey: loadKey, payerIBAN: payerIBAN, references: referenceData)
@@ -390,7 +401,7 @@ struct TransferFilesView: View {
                             Label(tr("كتاب شركة عراق الجوال", "Iraq Al-Jawwal letter"), systemImage: "doc.text")
                         }
                     }
-                    Section(tr("معاينات الكتب قيد التحقق", "Letter drafts under verification")) {
+                    Section {
                         ForEach(TransferLetterDraftKind.allCases) { kind in
                             NavigationLink {
                                 TransferLetterDraftView(kind: kind, month: figures.month, figures: figures, entities: entities,
@@ -400,7 +411,7 @@ struct TransferFilesView: View {
                                     boldFont: boldFontData, regularFont: regularFontData)
                             } label: { Label(kind.title, systemImage: "doc.text.magnifyingglass") }
                         }
-                    } footer: { Text(tr("المعاينات للتدقيق فقط، ولا يمكن مشاركتها حتى اكتمال الميزة.", "Previews are for review only and cannot be shared until the feature is complete.")) }
+                    } header: { Text(tr("معاينات الكتب قيد التحقق", "Letter drafts under verification")) } footer: { Text(tr("المعاينات للتدقيق فقط، ولا يمكن مشاركتها حتى اكتمال الميزة.", "Previews are for review only and cannot be shared until the feature is complete.")) }
                 }
                 Section {
                     NavigationLink {
@@ -462,7 +473,7 @@ struct TransferFilesView: View {
                 catch { guard !Task.isCancelled, key == loadKey else { return }; figuresError = error.localizedDescription }
                 loadedKey = key
             } catch is CancellationError { return }
-            catch { guard !Task.isCancelled, key == loadKey else { return }; error = error.localizedDescription; loadedKey = key }
+            catch { guard !Task.isCancelled, key == loadKey else { return }; self.error = error.localizedDescription; loadedKey = key }
         }
     }
 }

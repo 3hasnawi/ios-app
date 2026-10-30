@@ -207,7 +207,7 @@ struct TransferIssuanceView: View {
             if let error { Text(error).foregroundStyle(.red) }
             if let ledger {
                 let audit = TransferIssuance.audit(current: lines, records: ledger.records, month: month)
-                Section(tr("مراجعة الجهات والبنود · \(month)", "Entity and item review · \(month)")) {
+                Section {
                     issueGroup(tr("مصادر بلا تأكيد إصدار", "Items without issuance confirmation"), audit.missing, .orange)
                     issueGroup(tr("تغيّرت الأسماء أو المبالغ أو الحسابات بعد التأكيد", "Names, amounts or accounts changed after confirmation"), audit.changed, .red)
                     issueGroup(tr("مصادر مؤكدة غير متاحة في بيانات الشهر", "Confirmed items unavailable in current data"), audit.absent, .orange)
@@ -220,8 +220,8 @@ struct TransferIssuanceView: View {
                     if detailsChecked && detailError == nil && audit.missing.isEmpty && audit.changed.isEmpty && audit.absent.isEmpty && audit.repeated.isEmpty {
                         Text(tr("لا توجد اختلافات في الإقرارات المسجلة.", "No differences in recorded confirmations.")).foregroundStyle(.secondary)
                     }
-                } footer: { Text(tr("يقارن التدقيق الجهات وبنود الكتب بإقراراتك اليدوية. لا يقرأ الكتب الصادرة أو يثبت التحويل. قد يظهر بند الكاش غير متاح إذا تعذر تحديد طريقة الدفع.", "This compares entities and letter items with manual confirmations. It does not read issued letters or prove a transfer. Cash may be unavailable if payment methods cannot be determined.")) }
-                Section(tr("تسجيل كتاب صادر يدوياً", "Manually record an issued letter")) {
+                } header: { Text(tr("مراجعة الجهات والبنود · \(month)", "Entity and item review · \(month)")) } footer: { Text(tr("يقارن التدقيق الجهات وبنود الكتب بإقراراتك اليدوية. لا يقرأ الكتب الصادرة أو يثبت التحويل. قد يظهر بند الكاش غير متاح إذا تعذر تحديد طريقة الدفع.", "This compares entities and letter items with manual confirmations. It does not read issued letters or prove a transfer. Cash may be unavailable if payment methods cannot be determined.")) }
+                Section {
                     TextField(tr("اسم الكتاب الصادر", "Issued letter name"), text: $book)
                     ForEach(lines) { line in
                         Toggle(isOn: Binding(get: { selected.contains(line.id) }, set: { if $0 { selected.insert(line.id) } else { selected.remove(line.id) } })) {
@@ -234,7 +234,7 @@ struct TransferIssuanceView: View {
                     Button(tr("تأكيد تسجيل الإصدار", "Confirm issued letter")) { confirm = true }
                         .disabled(!current || checkingDetails || confirmationTask != nil || selected.isEmpty || book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     if confirmationTask != nil { ProgressView(tr("تدقيق قوائم الأسماء", "Checking name lists")) }
-                } footer: { Text(tr("بعد إصدار الكتاب فعلياً، اختر الجهات أو بنود الرواتب التي يتضمنها. المعاينة وحدها لا تُعد إصداراً.", "After issuing the letter, select the entities or payroll items it contains. A preview is not issuance.")) }
+                } header: { Text(tr("تسجيل كتاب صادر يدوياً", "Manually record an issued letter")) } footer: { Text(tr("بعد إصدار الكتاب فعلياً، اختر الجهات أو بنود الرواتب التي يتضمنها. المعاينة وحدها لا تُعد إصداراً.", "After issuing the letter, select the entities or payroll items it contains. A preview is not issuance.")) }
                 let records = ledger.records.filter { $0.month == month }.sorted { $0.confirmedAt > $1.confirmedAt }
                 if !records.isEmpty {
                     Section(tr("الإصدارات المؤكدة يدوياً", "Manually confirmed letters")) {

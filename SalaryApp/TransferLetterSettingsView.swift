@@ -44,13 +44,13 @@ struct TransferLetterSettingsView: View {
     }
     var body: some View {
         Form {
-            Section(tr("نطاق التخصيص", "Customization scope")) {
+            Section {
                 Picker(tr("تطبيق التغييرات على", "Apply changes to"), selection: $target) {
                     Text(tr("جميع الكتب", "All letters")).tag("all")
                     ForEach(titles) { item in Text(item.title).tag(item.id) }
                 }
-            } footer: { Text(tr("اختر الحقول التي تريد تعديلها فقط؛ تطبيق حقل على جميع الكتب يستبدل تخصيصه السابق في كل كتاب.", "Select only the fields to change. Applying a field to all letters replaces its previous individual overrides.")) }
-            Section(tr("الحقول", "Fields")) {
+            } header: { Text(tr("نطاق التخصيص", "Customization scope")) } footer: { Text(tr("اختر الحقول التي تريد تعديلها فقط؛ تطبيق حقل على جميع الكتب يستبدل تخصيصه السابق في كل كتاب.", "Select only the fields to change. Applying a field to all letters replaces its previous individual overrides.")) }
+            Section {
                 field("header", tr("الترويسة", "Header"), text: $header, lines: true)
                 field("first", tr("عضو اللجنة الأول", "First committee member"), text: $first)
                 field("second", tr("عضو اللجنة الثاني", "Second committee member"), text: $second)
@@ -62,8 +62,8 @@ struct TransferLetterSettingsView: View {
                     Button(tr("إزالة تخصيص هذا الكتاب", "Remove this letter's overrides"), role: .destructive) { removeIndividual() }
                         .disabled(busy)
                 }
-            } footer: { Text(tr("تُحفظ الخيارات، وما زال تطبيقها على ملفات الكتب قيد الإكمال.", "Options are saved; applying them to letter PDFs is still in progress.")) }
-            Section(tr("خط الترويسة الخاص", "Private header font")) {
+            } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("تُحفظ الخيارات، وما زال تطبيقها على ملفات الكتب قيد الإكمال.", "Options are saved; applying them to letter PDFs is still in progress.")) }
+            Section {
                 Button { importFont(.bold) } label: {
                     Label(boldData.isEmpty ? tr("استيراد الخط العريض", "Import bold font") : tr("استبدال الخط العريض", "Replace bold font"), systemImage: "textformat")
                 }.disabled(busy)
@@ -71,7 +71,7 @@ struct TransferLetterSettingsView: View {
                     Label(regularData.isEmpty ? tr("استيراد الخط العادي", "Import regular font") : tr("استبدال الخط العادي", "Replace regular font"), systemImage: "textformat")
                 }.disabled(busy)
                 if importing { ProgressView() }
-            } footer: { Text(tr("يبقى الخط خاصاً على جهازك وضمن نسختك الاحتياطية.", "The font remains private on your device and in your backup.")) }
+            } header: { Text(tr("خط الترويسة الخاص", "Private header font")) } footer: { Text(tr("يبقى الخط خاصاً على جهازك وضمن نسختك الاحتياطية.", "The font remains private on your device and in your backup.")) }
         }
         .navigationTitle(tr("تخصيص الكتب", "Customize letters"))
         .navigationBarTitleDisplayMode(.inline)

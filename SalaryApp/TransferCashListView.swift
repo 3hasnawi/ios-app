@@ -64,7 +64,7 @@ struct TransferCashListView: View {
                 guard !Task.isCancelled, sourceIsCurrent else { return }
                 list = result
             } catch is CancellationError { return }
-            catch { guard !Task.isCancelled, sourceIsCurrent else { return }; error = error.localizedDescription }
+            catch { guard !Task.isCancelled, sourceIsCurrent else { return }; self.error = error.localizedDescription }
         }
     }
     private func export() {
