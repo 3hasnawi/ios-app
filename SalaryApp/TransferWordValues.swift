@@ -20,7 +20,7 @@ nonisolated enum TransferWordValues {
         case "food_company": amount = figures.foodCompany
         case "food_tax": amount = figures.foodTax
         case "tax_social": amount = figures.treasuryTotal
-        case "contracts": amount = figures.contractTotal
+        case "contracts": amount = figures.missingContractNominal == 0 ? figures.contractTotal : nil
         case "cash_salary": amount = figures.payrollCash
         default: throw Failure.unavailableBook
         }

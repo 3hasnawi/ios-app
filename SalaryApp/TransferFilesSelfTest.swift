@@ -41,6 +41,13 @@ import CryptoKit
         try check(try TransferWordValues.payrollAmount(bookID: "tax_social", figures: wordFigures) == 24, "Word treasury source")
         try check(try TransferWordValues.payrollAmount(bookID: "contracts", figures: wordFigures) == 36, "Word contract source")
         try check(try TransferWordValues.payrollAmount(bookID: "cash_salary", figures: wordFigures) == 23, "Word cash source")
+        var incompleteContracts = wordFigures
+        incompleteContracts.missingContractNominal = 1
+        do {
+            _ = try TransferWordValues.payrollAmount(bookID: "contracts", figures: incompleteContracts)
+            throw Failure(errorDescription: "incomplete contract amount accepted")
+        } catch is Failure { throw Failure(errorDescription: "incomplete contract amount accepted") }
+        catch { }
         do {
             _ = try TransferWordValues.payrollAmount(bookID: "water", figures: wordFigures)
             throw Failure(errorDescription: "entity amount guessed from payroll")
