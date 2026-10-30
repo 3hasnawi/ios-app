@@ -50,6 +50,7 @@ struct TransferLetterDraftView: View {
     @State private var error: String?
     @State private var previewURL: URL?
     @State private var countNotice: String?
+    @State private var groupAuditPassed = false
     @State private var showPreview = false
     @State private var generation: Task<Void, Never>?
 
@@ -97,10 +98,16 @@ struct TransferLetterDraftView: View {
             if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
             previewURL = nil
             countNotice = nil
+            groupAuditPassed = false
         }) {
             NavigationStack {
                 if let previewURL {
                     VStack(spacing: 0) {
+                        if groupAuditPassed {
+                            Label(tr("فُحصت أسماء الجدول وحساباته ومبالغه وملف CSV؛ التنسيق ما زال قيد المراجعة.", "Table names, accounts, amounts and CSV were checked; the layout remains under review."), systemImage: "checkmark.shield")
+                                .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
+                                .background(.thinMaterial)
+                        }
                         if let countNotice {
                             Label(countNotice, systemImage: "exclamationmark.triangle.fill")
                                 .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity)
@@ -123,7 +130,7 @@ struct TransferLetterDraftView: View {
             customization = store.effective(for: kind.rawValue)
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
-        working = true; error = nil; countNotice = nil
+        working = true; error = nil; countNotice = nil; groupAuditPassed = false
         generation = Task {
             defer { working = false }
             do {
@@ -143,6 +150,7 @@ struct TransferLetterDraftView: View {
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
                     url = try await TransferGroupLetter.make(allEntities: entities, category: category, month: month, payer: payerName, payerIBAN: payerIBAN, references: references, customization: customization).letter
+                    groupAuditPassed = true
                 case .ramadi, .anbar, .housing, .water:
                     guard let entity, let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
                     let container = SharedModel.container

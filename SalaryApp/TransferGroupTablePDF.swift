@@ -10,7 +10,7 @@ nonisolated enum TransferGroupTablePDF {
             case .invalidData: tr("بيانات جهات التحويل غير مكتملة أو مكررة.", "Transfer entities are incomplete or duplicated.")
             case .invalidTotal: tr("تعذّر التأكد من مجموع جهات التحويل.", "Could not verify the transfer entity total.")
             case .missingFont: tr("خط جدول التحويل غير متوفر على الجهاز.", "The transfer table font is unavailable.")
-            case .tableMismatch: tr("تعذّر مطابقة الأرقام والحسابات المرسومة في جدول التحويل مع بياناته.", "Could not reconcile the rendered transfer table amounts and accounts with its source.")
+            case .tableMismatch: tr("تعذّر مطابقة الأسماء والحسابات والمبالغ المرسومة في جدول التحويل مع بياناته.", "Could not reconcile the rendered transfer table names, accounts, and amounts with its source.")
             }
         }
     }
@@ -80,21 +80,33 @@ nonisolated enum TransferGroupTablePDF {
                 PDFText.draw("المجموع", in: labelBox.insetBy(dx: 4, dy: 1), font: bold)
                 cell(number(total), 4, y, totalHeight, bold, fill: true)
             }
-            // نقرأ الأرقام والحسابات من ملف PDF الناتج، لا من بيانات الرسم فقط.
+            // نقرأ خلايا الملف الناتج، لا بيانات الرسم وحدها؛ اختلاف النص أو تعذر قراءته يوقف الجدول.
             guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount == 1,
                   let outputPage = document.page(at: 0) else { throw Failure.tableMismatch }
             var right = page.width - 25
             let positions = widths.map { width -> CGFloat in right -= width; return right }
-            func extracted(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
+            func text(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
                 let rect = CGRect(x: positions[column] + 0.2, y: page.height - y - height + 0.2,
                                   width: widths[column] - 0.4, height: height - 0.4)
-                return ArabicText.latinDigits(outputPage.selection(for: rect)?.string ?? "")
-                    .uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+                return outputPage.selection(for: rect)?.string ?? ""
+            }
+            func extracted(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
+                ArabicText.latinDigits(text(column, y, height)).uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+            }
+            func identity(_ value: String) -> String {
+                let normalized = ArabicText.normalize(ArabicText.latinDigits(value.precomposedStringWithCompatibilityMapping))
+                var scalars = String.UnicodeScalarView()
+                for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format {
+                    scalars.append(scalar)
+                }
+                return String(scalars)
             }
             var y = top + header
             for (row, height) in zip(rows, fitting.rowHeights) {
                 guard extracted(0, y, height) == row[0], extracted(2, y, height) == row[2],
-                      extracted(4, y, height) == row[4] else { throw Failure.tableMismatch }
+                      extracted(4, y, height) == row[4],
+                      identity(text(1, y, height)) == identity(row[1]),
+                      identity(text(3, y, height)) == identity(row[3]) else { throw Failure.tableMismatch }
                 y += height
             }
             guard extracted(4, y, totalHeight) == number(total) else { throw Failure.tableMismatch }
