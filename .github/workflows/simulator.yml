@@ -123,6 +123,22 @@ jobs:
           cp test-files/*.xlsx test-files/split/*.xlsx "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
+      - name: Verify Word transfer drafts
+        run: |
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -wordTransferTest YES
+          for i in $(seq 1 120); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/word-transfer-report.txt
+          if ! grep -q '^wordTransfers=ok drafts=11 synthetic=1' ci-output/word-transfer-report.txt; then
+            echo "::error::Word transfer draft regression test failed"
+            exit 1
+          fi
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
+
       - name: Verify transfer files
         run: |
           rm -f "$DATA/Documents/import-report.txt"

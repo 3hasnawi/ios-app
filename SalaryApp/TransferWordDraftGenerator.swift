@@ -27,6 +27,7 @@ nonisolated enum TransferWordDraftGenerator {
         switch bookID {
         case "rafidain_group", "other_banks_group":
             let category: TransferCategory = bookID == "rafidain_group" ? .rafidain : .otherBanks
+            try TransferWordReferenceAccounts.verifyGroup(bookID: bookID, references: references, payerIBAN: payerIBAN)
             let plan = try TransferWordGroupPlan(allEntities: entities, category: category, month: figures.month,
                 payer: payerName, payerIBAN: payerIBAN)
             try TransferWordGroupDraft.write(plan: plan, month: figures.month, payerIBAN: payerIBAN, text: text, destination: letter)

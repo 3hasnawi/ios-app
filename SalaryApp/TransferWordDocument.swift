@@ -5,7 +5,7 @@ import ZIPFoundation
 nonisolated enum TransferWordDocument {
     struct Paragraph: Sendable {
         var text: String
-        var font: String = "Arial"
+        var font: String = "Times New Roman"
         var halfPoints: Int = 28
         var bold = false
         var centered = false

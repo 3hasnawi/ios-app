@@ -13,7 +13,7 @@ nonisolated enum TransferWordReferenceAccounts {
     static func beneficiary(in text: String, payerIBAN: String) throws -> String {
         let payer = normalized(payerIBAN)
         guard TransferRules.validIBAN(payer), text.utf8.count <= 2_000_000 else { throw Failure.mismatch }
-        let regex = try NSRegularExpression(pattern: "(?i)IQ(?:[\\s]*[A-Z0-9]){21}(?![A-Z0-9])")
+        let regex = try NSRegularExpression(pattern: "(?i)(?<![A-Z0-9])IQ(?:[\\s]*[A-Z0-9]){21}(?![A-Z0-9])")
         let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
         let values = matches.compactMap { Range($0.range, in: text).map { normalized(String(text[$0])) } }
         let unique = Set(values)
@@ -22,10 +22,24 @@ nonisolated enum TransferWordReferenceAccounts {
         return beneficiary
     }
     static func beneficiary(bookID: String, references: Data, payerIBAN: String) throws -> String {
-        guard ["food_company", "food_tax", "tax_social", "contracts", "cash_salary", "ramadi"].contains(bookID) else { throw Failure.mismatch }
+        let payerRect: CGRect
+        switch bookID {
+        case "food_company": payerRect = CGRect(x: 384, y: 350, width: 175, height: 19)
+        case "food_tax", "ramadi": payerRect = CGRect(x: 385.99, y: 349.7, width: 170.586, height: 15.543)
+        case "cash_salary": payerRect = CGRect(x: 385.99, y: 349.70, width: 170.59, height: 15.55)
+        case "contracts": payerRect = CGRect(x: 126.26, y: 333.62, width: 170.586, height: 15.543)
+        case "tax_social": payerRect = CGRect(x: 97.584, y: 333.62, width: 170.6, height: 15.543)
+        default: throw Failure.mismatch
+        }
         let source = try TransferReferencePack.load([bookID], from: references)
         guard let data = source[bookID], let document = PDFDocument(data: data), !document.isLocked,
-              let text = document.page(at: 0)?.string else { throw Failure.mismatch }
+              let page = document.page(at: 0), let text = page.string else { throw Failure.mismatch }
+        let height = page.bounds(for: .mediaBox).height
+        let box = CGRect(x: payerRect.minX - 0.2, y: height - payerRect.maxY - 0.2,
+                         width: payerRect.width + 0.4, height: payerRect.height + 0.4)
+        let selected = page.selection(for: box)?.string ?? ""
+        let referencePayer = ArabicText.latinDigits(selected).uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        guard TransferRules.validIBAN(payerIBAN), referencePayer == normalized(payerIBAN) else { throw Failure.mismatch }
         return try beneficiary(in: text, payerIBAN: payerIBAN)
     }
     /// تُقرأ حسابات الكتابين المحليين من مواضع محددة في المرجع المعتمد وتُطابق الحساب المحفوظ.
@@ -46,6 +60,9 @@ nonisolated enum TransferWordReferenceAccounts {
         case "rafidain_anbar":
             payerRect = CGRect(x: 161.06, y: 299.06, width: 170.6, height: 15.543)
             beneficiaryRect = nil
+        case "rafidain_group", "other_banks_group":
+            payerRect = CGRect(x: 385.99, y: 337.58, width: 170.685, height: 15.543)
+            beneficiaryRect = nil
         default: throw Failure.mismatch
         }
         guard TransferRules.validIBAN(payerIBAN) else { throw Failure.mismatch }
@@ -65,5 +82,9 @@ nonisolated enum TransferWordReferenceAccounts {
             guard let beneficiary, !beneficiary.isEmpty,
                   alphanumeric(selected(beneficiaryRect)) == alphanumeric(beneficiary) else { throw Failure.mismatch }
         }
+    }
+    static func verifyGroup(bookID: String, references: Data, payerIBAN: String) throws {
+        guard bookID == "rafidain_group" || bookID == "other_banks_group" else { throw Failure.mismatch }
+        try verifyIndividual(bookID: bookID, references: references, payerIBAN: payerIBAN, beneficiary: nil)
     }
 }

@@ -33,13 +33,13 @@ nonisolated enum TransferWordPayrollDraft {
         }
         let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(plan.payerIBAN)) المفتوح لديكم إلى حساب (\(plan.beneficiaryName)) المرقم (\(plan.beneficiaryIBAN)) (مصرف الرافدين / فرع الأنبار) \(reason) لشهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
         let signatureCells = text.committee.map { $0 + "\n" + period.signatureDate }
-        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], halfPoints: 28,
+        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, halfPoints: 32, bold: true)),
-            .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", halfPoints: 28)),
-            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: "م / تحويل مبلغ", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: text.header, font: "Sakkal Majalla", halfPoints: 36, bold: true)),
+            .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28))
         ]
         if plan.bookID != "cash_salary", let table = plan.table { blocks.append(.table(table)) }

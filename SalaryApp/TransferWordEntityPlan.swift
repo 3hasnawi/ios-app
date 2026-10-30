@@ -52,6 +52,8 @@ nonisolated struct TransferWordEntityPlan: Sendable {
                       ArabicText.normalize($0.rank) == ArabicText.normalize(employee.rank) }) else { throw Failure.incomplete }
             id = "water"; number = local; personName = employee.name; personRank = employee.rank; table = nil
         case .rafidainAnbar:
+            // هذا المتن موجّه لحساب مصرف الفرع نفسه؛ الجهات الأخرى تحتاج كتبها المنفردة.
+            guard TransferRules.isAnbarBankSource(plan.group.title) else { throw Failure.incomplete }
             if let account {
                 guard TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
                       TransferRules.validIBAN(account.iban), TransferRules.classify(account) == .anbar else { throw Failure.incomplete }

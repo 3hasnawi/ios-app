@@ -32,13 +32,13 @@ nonisolated enum TransferWordGroupDraft {
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
         let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(normalizedPayer)) المفتوح لديكم إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
         let signatureCells = text.committee.map { $0 + "\n" + period.signatureDate }
-        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], halfPoints: 28,
+        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         try TransferWordDocument.write(blocks: [
             .paragraph(.init(text: text.header, halfPoints: 32, bold: true)),
-            .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", halfPoints: 28)),
-            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: "م / تحويل مبلغ", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28)),
             .table(signatures),
             .paragraph(.init(text: text.footer, halfPoints: 24)),

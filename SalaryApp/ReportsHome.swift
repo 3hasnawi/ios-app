@@ -110,6 +110,10 @@ struct ReportsView: View {
             .task(id: loadKey) { await loadDeductions() }
             .task {
                 #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "wordTransferTest") {
+                    do { LaunchOptions.writeReport(try TransferWordSelfTest.run()) }
+                    catch { LaunchOptions.writeReport("wordTransfers=failed \(error.localizedDescription)") }
+                }
                 if UserDefaults.standard.bool(forKey: "transferFilesTest") {
                     do { LaunchOptions.writeReport(try await TransferFilesSelfTest.run()) }
                     catch { LaunchOptions.writeReport("transferFiles=failed \(error.localizedDescription)") }

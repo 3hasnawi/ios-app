@@ -256,6 +256,12 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "Word group wrong month accepted") }
         catch { }
         do {
+            try TransferWordGroupDraft.write(plan: wordGroup, month: group.month, payerIBAN: fakeBeneficiary, text: groupText,
+                destination: FileManager.default.temporaryDirectory.appendingPathComponent("wrong-payer-\(UUID().uuidString).docx"))
+            throw Failure(errorDescription: "Word group wrong payer accepted")
+        } catch is Failure { throw Failure(errorDescription: "Word group wrong payer accepted") }
+        catch { }
+        do {
             let unknown = TransferEntity(group: secondGroup, account: nil, category: .unresolved, missingAmounts: 0)
             _ = try TransferWordGroupPlan(allEntities: [item, unknown], category: .rafidain,
                 month: group.month, payer: "دافع وهمي", payerIBAN: iban)
