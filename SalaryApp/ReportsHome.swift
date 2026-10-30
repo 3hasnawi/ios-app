@@ -636,7 +636,7 @@ private struct ExportingHUD: View {
 
 // MARK: - جهات التنفيذ
 
-/// كل جهة بمبلغها وعدد موظفيها، مع البحث والتجميع وزر التصدير.
+/// كل جهة بمبلغها وعدد موظفيها، مع البحث وزر التصدير.
 struct EntitiesView: View {
     let month: String
     let groups: [ReportGroup]
@@ -645,6 +645,13 @@ struct EntitiesView: View {
     @State private var search = UserDefaults.standard.string(forKey: "entitySearch") ?? ""
     @State private var exporter = QuickExporter.shared
     @State private var previewGroup: ReportGroup?
+    @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
+
+    private var accountsByKey: [String: SavedExecutionAccount] {
+        ((try? ExecutionAccountStore.decode(accountData)) ?? []).reduce(into: [:]) { result, account in
+            result[account.key] = account
+        }
+    }
 
     private var filtered: [ReportGroup] {
         let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
@@ -664,10 +671,10 @@ struct EntitiesView: View {
                 } else if filtered.isEmpty {
                     Text(tr("لا توجد جهة بهذا الاسم.", "No entity matches.")).foregroundStyle(.secondary)
                 } else {
-                    let top = groups.map(\.total).max() ?? 1
+                    let accounts = accountsByKey
                     ForEach(filtered) { group in
                         NavigationLink(value: ReportsRoute.group(group)) {
-                            GroupRow(group: group, share: top > 0 ? group.total / top : 0)
+                            ExecutionEntityCard(group: group, account: accounts[ArabicText.normalize(group.title)])
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
@@ -705,5 +712,60 @@ struct EntitiesView: View {
             }
         }
         .overlay { if exporter.isWorking { ExportingHUD() } }
+    }
+}
+
+/// بيانات الفرع تعرض كما وردت في الاسم أو الحساب المطابق، دون جمع فروع مختلفة.
+struct ExecutionEntityCard: View {
+    let group: ReportGroup
+    let account: SavedExecutionAccount?
+
+    private var bankAndBranch: String? {
+        let parts = group.title.split(separator: "/", maxSplits: 1).map {
+            String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let first = parts.first ?? ""
+        let isBank = first.contains("مصرف") || first.contains("بنك")
+        let branch = (account?.branch.isEmpty == false ? account?.branch : nil) ?? (parts.count > 1 ? parts[1] : "")
+        var details: [String] = []
+        if isBank { details.append(tr("المصرف: \(first)", "Bank: \(first)")) }
+        if !branch.isEmpty { details.append(tr("الفرع: \(branch)", "Branch: \(branch)")) }
+        return details.isEmpty ? nil : details.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "building.columns.fill")
+                    .font(.body.weight(.semibold)).foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Color.teal.gradient, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(group.title).font(.body.weight(.semibold)).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+                    if let bankAndBranch {
+                        Text(bankAndBranch).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                tile(title: tr("الشهر", "Month"), value: group.month)
+                tile(title: tr("المبلغ", "Amount"), value: Money.format(group.total))
+            }
+            Text(tr("\(Num.format(group.count)) موظف", "\(Num.format(group.count)) employees"))
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func tile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.subheadline.weight(.bold).monospacedDigit())
+                .foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
