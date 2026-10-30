@@ -11,6 +11,15 @@ import CryptoKit
     struct Failure: LocalizedError { let errorDescription: String? }
     static func run() async throws -> String {
         func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(errorDescription: message) } }
+        var customization = TransferLetterCustomizationStore()
+        customization.applyToAll(.init(header: "ترويسة عامة", footer: "هامش عام"))
+        customization.apply(.init(header: "ترويسة خاصة", committeeFirst: "عضو وهمي"), to: "food_company")
+        try check(customization.effective(for: "food_company").header == "ترويسة خاصة" && customization.effective(for: "food_company").footer == "هامش عام", "individual customization inheritance")
+        try check(customization.effective(for: "cash_salary").header == "ترويسة عامة", "common customization inheritance")
+        customization.applyToAll(.init(header: "ترويسة جديدة"))
+        try check(customization.effective(for: "food_company").header == "ترويسة جديدة" && customization.effective(for: "food_company").committeeFirst == "عضو وهمي", "apply to all preserves unrelated fields")
+        let savedCustomization = try JSONEncoder().encode(customization)
+        try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: savedCustomization) == customization, "customization roundtrip")
         let iban = "IQ06TEST123000000000001"
         let account = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين فرع تجريبي", swift: "TESTIQBAAAA")
         let anbar = SavedExecutionAccount(entity: "جهة ثانية", iban: iban, branch: "مصرف الرافدين فرع الانبار", swift: "TESTIQBAAAA")
