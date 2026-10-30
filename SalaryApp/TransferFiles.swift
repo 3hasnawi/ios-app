@@ -307,6 +307,13 @@ struct TransferFilesView: View {
                             }
                         }
                     } footer: { Text(tr("اختر الحساب المطابق لكل بند لضمه إلى مجموعة مصرفه.", "Select the matching account for each deduction.")) }
+                    Section(tr("الكتب المنفردة", "Individual letters")) {
+                        NavigationLink {
+                            TransferCompanyLetterView(figures: figures, sourceKey: loadKey, payerIBAN: payerIBAN, references: referenceData)
+                        } label: {
+                            Label(tr("كتاب شركة عراق الجوال", "Iraq Al-Jawwal letter"), systemImage: "doc.text")
+                        }
+                    }
                 }
                 Section {
                     NavigationLink {

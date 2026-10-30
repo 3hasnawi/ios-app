@@ -18,12 +18,13 @@ nonisolated struct TransferReferenceManifest: Codable, Sendable {
 nonisolated enum TransferReferencePack {
     static let settingsKey = "transferReferenceArchiveData"
     enum Failure: LocalizedError {
-        case invalid, damaged, oversized
+        case invalid, damaged, oversized, missingDigitReference
         var errorDescription: String? {
             switch self {
             case .invalid: tr("حزمة قوالب التحويل غير صالحة أو لا تحتوي جميع القوالب المطلوبة.", "The transfer template package is invalid or incomplete.")
             case .damaged: tr("تعذّر التحقق من أحد ملفات PDF في حزمة القوالب.", "A PDF in the template package could not be verified.")
             case .oversized: tr("حزمة قوالب التحويل أكبر من الحد المدعوم.", "The transfer template package is too large.")
+            case .missingDigitReference: tr("حزمة المراجع القديمة لا تحتوي أشكال أرقام الشهر؛ استورد الحزمة المحدّثة.", "The older reference package lacks month digit shapes; import the updated package.")
             }
         }
     }
@@ -49,6 +50,28 @@ nonisolated enum TransferReferencePack {
         defer { try? FileManager.default.removeItem(at: url) }
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         return try validate(url)
+    }
+    /// القراءة بعد التحقق الكامل من الحزمة، دون الاعتماد على مسارات من خارجها.
+    static func load(_ ids: Set<String>, from data: Data) throws -> [String: Data] {
+        guard !data.isEmpty, data.count <= 10_000_000, !ids.isEmpty else { throw Failure.invalid }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("references-read-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        let manifest = try validate(url)
+        let records = manifest.templates.filter { ids.contains($0.id) }
+        guard records.count == ids.count else {
+            if ids.contains(digitTemplateID), !manifest.templates.contains(where: { $0.id == digitTemplateID }) { throw Failure.missingDigitReference }
+            throw Failure.invalid
+        }
+        let archive = try Archive(url: url, accessMode: .read)
+        var result: [String: Data] = [:]
+        for record in records {
+            guard let entry = archive[record.path] else { throw Failure.invalid }
+            let contents = try read(entry, from: archive, maxSize: 10_000_000)
+            guard hex(contents) == record.sha256.lowercased() else { throw Failure.damaged }
+            result[record.id] = contents
+        }
+        return result
     }
     static func validate(_ url: URL) throws -> TransferReferenceManifest {
         let archive = try Archive(url: url, accessMode: .read)

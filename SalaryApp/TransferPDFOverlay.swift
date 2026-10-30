@@ -14,6 +14,8 @@ nonisolated struct TransferPDFTextFlow: Sendable {
     let value: String
     /// عند تعدد الأسطر تحدد المساحة المتاحة لكل سطر دون الكتابة فوق نص ثابت.
     let slots: [TransferPDFTextSlot]
+    /// يحافظ على كلمة أخيرة بمحاذاة القوس الثابت في السطر الأخير من النموذج.
+    var keepLastWordOnLastLine = false
 }
 
 nonisolated struct TransferPDFMonthSlot: Sendable {
@@ -72,24 +74,36 @@ nonisolated enum TransferPDFOverlay {
                       !flow.value.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.invalidTemplate }
                 let value = flow.value as NSString
                 var offset = 0
-                for slot in flow.slots {
+                let lastSpace = value.rangeOfCharacter(from: .whitespacesAndNewlines, options: .backwards)
+                let lastWordStart = lastSpace.location == NSNotFound ? 0 : lastSpace.location + lastSpace.length
+                for (slotIndex, slot) in flow.slots.enumerated() {
                     let rect = slot.rect
                     try checkSlot(rect)
                     guard let font = UIFont(name: slot.fontName, size: slot.fontSize) else { throw Failure.missingFont }
-                    guard font.lineHeight <= rect.height else { throw Failure.doesNotFit }
                     if offset == value.length { continue }
+                    if flow.keepLastWordOnLastLine && slotIndex < flow.slots.count - 1 && offset >= lastWordStart { continue }
                     let rest = value.substring(from: offset)
                     let attributes: [NSAttributedString.Key: Any] = [
                         .font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
                     ]
                     let attributed = NSAttributedString(string: rest, attributes: attributes)
                     let typesetter = CTTypesetterCreateWithAttributedString(attributed)
-                    let count = CTTypesetterSuggestLineBreak(typesetter, 0, Double(rect.width))
+                    var count = CTTypesetterSuggestLineBreak(typesetter, 0, Double(rect.width))
+                    if flow.keepLastWordOnLastLine && slotIndex < flow.slots.count - 1 {
+                        count = min(count, lastWordStart - offset)
+                    }
                     guard count > 0 else { throw Failure.doesNotFit }
                     let line = value.substring(with: NSRange(location: offset, length: count))
                     let measuredLine = CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: attributes))
                     let width = CTLineGetTypographicBounds(measuredLine, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(measuredLine)
                     guard width <= Double(rect.width) else { throw Failure.doesNotFit }
+                    // نتحقق من حدود الحروف الفعلية بدلاً من ارتفاع الخط الاسمي الذي يشمل فراغاً إضافياً.
+                    let ink = CTLineGetBoundsWithOptions(measuredLine, [.useGlyphPathBounds])
+                    let flush: CGFloat = slot.alignment == .left ? 0 : slot.alignment == .center ? 0.5 : 1
+                    let x = rect.minX + CGFloat(CTLineGetPenOffsetForFlush(measuredLine, flush, Double(rect.width)))
+                    let baseline = rect.midY - font.lineHeight / 2 + font.ascender
+                    guard x + ink.minX >= rect.minX - 0.5, x + ink.maxX <= rect.maxX + 0.5,
+                          baseline - ink.maxY >= rect.minY - 0.5, baseline - ink.minY <= rect.maxY + 0.5 else { throw Failure.doesNotFit }
                     planned.append(Line(text: line, slot: slot, font: font))
                     offset += count
                 }

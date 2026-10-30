@@ -202,6 +202,41 @@ import CryptoKit
         try secondArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
         for record in versionTwoRecords { try secondArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
         try check(try TransferReferencePack.validateData(Data(contentsOf: secondPackage)).templates.count == 12, "digit reference package")
+        let selectedReferences = try TransferReferencePack.load(["food_company", TransferReferencePack.digitTemplateID], from: Data(contentsOf: secondPackage))
+        try check(selectedReferences.count == 2 && selectedReferences[TransferReferencePack.digitTemplateID] == digitPDF, "reference selection")
+        // مرجع وهمي بالأبعاد نفسها لاختبار خط الكتاب كاملاً دون استخدام بيانات المالك.
+        let letterRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
+        let fakeLetter = letterRenderer.pdfData { context in
+            context.beginPage()
+            let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
+            let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 16) ?? ReportFont.bold(16)
+            PDFText.draw("100,000", in: CGRect(x: 298.61, y: 317.41, width: 105.02, height: 17.79), font: ReportFont.bold(16), align: .right)
+            PDFText.draw("مبلغ وهمي", in: CGRect(x: 149.71, y: 319.34, width: 128.87, height: 15.54), font: regular, align: .right)
+            PDFText.draw("دينار", in: CGRect(x: 266.05, y: 335.78, width: 294.99, height: 15.54), font: regular, align: .right)
+            let yearBoxes = [CGRect(x: 35.52, y: 180.60, width: 33.63, height: 16.73), CGRect(x: 428.47, y: 416.30, width: 31.65, height: 15.54), CGRect(x: 468.46, y: 675.64, width: 35.97, height: 17.67), CGRect(x: 312.05, y: 675.64, width: 35.97, height: 17.67), CGRect(x: 94.22, y: 675.42, width: 36.06, height: 17.79)]
+            let yearFonts = [ReportFont.bold(15), UIFont(name: "TimesNewRomanPS-BoldMT", size: 14.04) ?? ReportFont.bold(14.04), bold, bold, ReportFont.bold(16)]
+            for (box, font) in zip(yearBoxes, yearFonts) { PDFText.draw("2026", in: box, font: font, align: .right) }
+            for box in [CGRect(x: 82.94, y: 178.27, width: 15.16, height: 21.65), CGRect(x: 512.86, y: 675.64, width: 17.97, height: 17.67), CGRect(x: 356.59, y: 675.64, width: 17.97, height: 17.67)] { PDFText.draw("10", in: box, font: bold, align: .right) }
+            PDFText.draw("شهر", in: CGRect(x: 471.10, y: 416.30, width: 55.86, height: 15.54), font: regular, align: .right)
+            PDFText.draw("أول", in: CGRect(x: 172.94, y: 675.64, width: 33.93, height: 17.67), font: bold, align: .right)
+            PDFText.draw("شهر", in: CGRect(x: 143.31, y: 675.64, width: 25.61, height: 17.67), font: bold, align: .right)
+            PDFText.draw(iban, in: CGRect(x: 384, y: 350, width: 175, height: 19), font: ReportFont.regular(10), align: .right)
+        }
+        let fakeCompanyPath = "templates/food_company.pdf"
+        try fakeLetter.write(to: root.appendingPathComponent(fakeCompanyPath))
+        let fakeCompanyDigest = SHA256.hash(data: fakeLetter).map { String(format: "%02x", $0) }.joined()
+        let fakeCompanyRecords = versionTwoRecords.map { record in
+            record.id == "food_company" ? TransferReferenceManifest.Template(id: record.id, path: record.path, sha256: fakeCompanyDigest, pages: 1) : record
+        }
+        try JSONEncoder().encode(TransferReferenceManifest(version: 2, templates: fakeCompanyRecords)).write(to: root.appendingPathComponent("manifest.json"))
+        let fakeCompanyPackage = root.appendingPathComponent("fake-company.zip")
+        let fakeCompanyArchive = try Archive(url: fakeCompanyPackage, accessMode: .create)
+        try fakeCompanyArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
+        for record in fakeCompanyRecords { try fakeCompanyArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
+        let companyOutput = try await TransferCompanyLetter.make(figures: figures, payerIBAN: iban, references: Data(contentsOf: fakeCompanyPackage))
+        defer { try? FileManager.default.removeItem(at: companyOutput.deletingLastPathComponent()) }
+        guard let companyDoc = PDFDocument(url: companyOutput), let outputText = companyDoc.page(at: 0)?.string else { throw Failure(errorDescription: "company PDF unreadable") }
+        try check(companyDoc.pageCount == 1 && outputText.contains("95,254") && !outputText.contains("100,000"), "company PDF source and amount")
         let blankRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
         let blankPDF = blankRenderer.pdfData { context in
             context.beginPage()
@@ -250,7 +285,7 @@ import CryptoKit
             throw Failure(errorDescription: "damaged template package accepted")
         } catch is Failure { throw Failure(errorDescription: "damaged template package accepted") }
         catch { }
-        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok referencePack=ok"
+        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok referencePack=ok companyLetter=ok"
     }
 }
 #endif
