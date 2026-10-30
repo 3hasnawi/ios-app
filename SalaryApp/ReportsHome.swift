@@ -723,7 +723,7 @@ struct ExecutionEntityCard: View {
     private var bankAndBranch: String? {
         guard let account else { return nil }
         let branch = account.branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        return branch.isEmpty ? nil : tr("الفرع: \(branch)", "Branch: \(branch)")
+        return branch.isEmpty ? nil : tr("المصرف: \(branch)", "Bank: \(branch)")
     }
 
     var body: some View {
