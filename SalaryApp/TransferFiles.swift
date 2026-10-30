@@ -91,6 +91,14 @@ nonisolated enum TransferRules {
         return (c.count == 8 || c.count == 11) && c.prefix(6).allSatisfy { (65...90).contains($0) }
             && c.dropFirst(6).allSatisfy { (65...90).contains($0) || (48...57).contains($0) }
     }
+    /// الجزء المحلي المكوّن من 15 رقماً في IBAN العراقي، بعد التحقق من كامل الرقم.
+    static func localAccountDigits(_ value: String) -> String? {
+        guard validIBAN(value) else { return nil }
+        let normalized = ArabicText.latinDigits(value).uppercased().filter { !$0.isWhitespace && $0 != "-" }
+        let account = String(normalized.suffix(15))
+        guard account.utf8.count == 15, account.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+        return account
+    }
     static func safeField(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("|") && !value.contains("\n") && !value.contains("\r") && !value.contains("\"")
     }

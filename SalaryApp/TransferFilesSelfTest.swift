@@ -42,6 +42,7 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "overflowing single-page table accepted") }
         catch { }
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
+        try check(TransferRules.localAccountDigits(iban) == String(iban.suffix(15)) && TransferRules.localAccountDigits("IQ00") == nil, "local account from Iraqi IBAN")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]

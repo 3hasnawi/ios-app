@@ -76,7 +76,8 @@ nonisolated enum TransferHousingLetter {
         let payerArea = CGRect(x: 211.37, y: 299.06, width: 170.586, height: 15.543)
         let referenceBeneficiary = digits(selected(CGRect(x: 140.42, y: 315.14, width: 105.20, height: 15.54), page: page, height: pageSize.height))
         let suppliedNumber = digits(beneficiaryAccountNumber)
-        guard suppliedNumber.count == 15, referenceBeneficiary == suppliedNumber else { throw Failure.beneficiaryMismatch }
+        guard suppliedNumber.count == 15, referenceBeneficiary == suppliedNumber,
+              TransferRules.localAccountDigits(account.iban) == suppliedNumber else { throw Failure.beneficiaryMismatch }
         let referencePayer = ascii(selected(payerArea, page: page, height: pageSize.height))
         guard referencePayer == ascii(payerIBAN) else { throw Failure.accountMismatch }
         let rawAmount = selected(amount, page: page, height: pageSize.height).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()")))

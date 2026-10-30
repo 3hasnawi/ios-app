@@ -22,8 +22,6 @@ nonisolated enum TransferLetterDraftKind: String, CaseIterable, Identifiable {
         }
     }
     var requiresEntity: Bool { self == .ramadi || self == .housing || self == .water || self == .anbar }
-    /// يلزم ربط رقم الحساب المحلي بحساب الجهة قبل السماح بمعاينة هذين الكتابين.
-    var requiresLocalAccountMapping: Bool { self == .housing || self == .water }
 }
 
 struct TransferLetterDraftView: View {
@@ -80,13 +78,13 @@ struct TransferLetterDraftView: View {
                 }
             }
             Section {
-                if kind.requiresLocalAccountMapping {
-                    Text(tr("تحتاج هذه المعاينة إلى ربط رقم الحساب المحلي بحساب الجهة والتحقق منه أولاً.", "This preview requires a verified link between the local account number and the entity account."))
-                        .foregroundStyle(.orange)
+                if kind == .housing || kind == .water {
+                    Text(tr("يُطابق رقم حساب المستفيد في الكتاب مع حساب الجهة المحفوظ قبل المعاينة.", "The beneficiary account in the letter is checked against the saved entity account before preview."))
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
                 Button(tr("معاينة تجريبية PDF", "Preview draft PDF"), systemImage: "doc.text.magnifyingglass") { prepare() }
-                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || kind.requiresLocalAccountMapping || (kind.requiresEntity && selectedEntity == nil))
+                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil))
             } footer: { Text(tr("معاينة قيد التحقق؛ مشاركة الكتب معطّلة حتى اعتماد التنسيق ومطابقة المبالغ.", "Preview under verification; sharing is disabled until the layout and amounts are verified.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
@@ -109,7 +107,7 @@ struct TransferLetterDraftView: View {
         .onDisappear { generation?.cancel() }
     }
     private func prepare() {
-        guard current, !working, !kind.requiresLocalAccountMapping else { return }
+        guard current, !working else { return }
         let customization: TransferLetterCustomization
         do {
             let store = try (sourceCustomization.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: sourceCustomization))
@@ -136,18 +134,30 @@ struct TransferLetterDraftView: View {
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
                     url = try await TransferGroupLetter.make(allEntities: entities, category: category, month: month, payer: payerName, payerIBAN: payerIBAN, references: references, customization: customization).letter
-                case .ramadi, .anbar:
+                case .ramadi, .anbar, .housing, .water:
                     guard let entity, let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
                     let container = SharedModel.container
                     let task = Task.detached(priority: .userInitiated) { try await ReportEngine(modelContainer: container).rows(for: entity.group) }
                     let rows = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
-                    let plan = try TransferIndividualPlan(kind: kind == .ramadi ? .ramadi : .rafidainAnbar, group: entity.group, rows: rows, missingAmounts: entity.missingAmounts)
+                    let planKind: TransferIndividualPlan.Kind = switch kind {
+                    case .ramadi: .ramadi
+                    case .housing: .housing
+                    case .water: .water
+                    default: .rafidainAnbar
+                    }
+                    let plan = try TransferIndividualPlan(kind: planKind, group: entity.group, rows: rows, missingAmounts: entity.missingAmounts)
                     if kind == .ramadi {
                         url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization)
-                    } else {
+                    } else if kind == .anbar {
                         url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization)
+                    } else {
+                        guard let local = TransferRules.localAccountDigits(account.iban) else { throw TransferIndividualPlan.Failure.invalidSource }
+                        if kind == .housing {
+                            url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization)
+                        } else {
+                            url = try await TransferWaterLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization)
+                        }
                     }
-                case .housing, .water: throw TransferIndividualPlan.Failure.invalidSource
                 }
                 guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
                 previewURL = url; generation = nil; showPreview = true
