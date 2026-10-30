@@ -38,6 +38,9 @@ nonisolated enum TransferWordValues {
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.groupingSeparator = ","
+        formatter.groupingSize = 3
         formatter.maximumFractionDigits = 0
         guard let numeric = formatter.string(from: NSNumber(value: amount)) else { throw Failure.invalidAmount }
         let names = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]

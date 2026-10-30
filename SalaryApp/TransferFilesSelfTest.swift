@@ -27,7 +27,9 @@ import CryptoKit
         try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: savedCustomization) == customization, "customization roundtrip")
         let wordValues = try TransferWordValues.make(month: "تشرين الاول 2026", amount: 123_456,
             custom: .init(header: "ترويسة وهمية"), requested: ["MONTH_NUMBER", "YEAR", "SIGNATURE_DATE", "AMOUNT", "AMOUNT_WORDS", "HEADER"])
-        try check(wordValues["MONTH_NUMBER"] == "10" && wordValues["YEAR"] == "2026" && wordValues["AMOUNT"] == "123,456", "Word period and amount")
+        try check(wordValues["MONTH_NUMBER"] == "10", "Word month number")
+        try check(wordValues["YEAR"] == "2026", "Word year")
+        try check(wordValues["AMOUNT"] == "123,456", "Word numeric amount grouping")
         try check(wordValues["SIGNATURE_DATE"] == " / 10 / 2026" && wordValues["HEADER"] == "ترويسة وهمية", "Word signature date and customization")
         try check(wordValues["AMOUNT_WORDS"] == ArabicAmountWords.dinars(123_456), "Word amount in words")
         let wordFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
