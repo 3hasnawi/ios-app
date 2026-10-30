@@ -8,6 +8,9 @@ nonisolated struct TransferPDFTextSlot: Sendable {
     let fontName: String
     let fontSize: CGFloat
     let alignment: NSTextAlignment
+    /// خط خاص يقرأ من بيانات المالك؛ nil يعني استخدام خط النظام المذكور أعلاه.
+    var privateFontData: Data? = nil
+    var privateFontStyle: TransferHeaderFont.Style? = nil
 }
 
 nonisolated struct TransferPDFTextFlow: Sendable {
@@ -39,7 +42,10 @@ nonisolated enum TransferPDFOverlay {
     private struct Line {
         let text: String
         let slot: TransferPDFTextSlot
-        let font: UIFont
+        let font: UIFont?
+        let coreLine: CTLine?
+        let x: CGFloat
+        let baseline: CGFloat
     }
     private static let rtl: CTParagraphStyle = {
         let direction = CTWritingDirection.rightToLeft
@@ -79,13 +85,23 @@ nonisolated enum TransferPDFOverlay {
                 for (slotIndex, slot) in flow.slots.enumerated() {
                     let rect = slot.rect
                     try checkSlot(rect)
-                    guard let font = UIFont(name: slot.fontName, size: slot.fontSize) else { throw Failure.missingFont }
+                    let font: UIFont?
+                    let privateFont: CTFont?
+                    if let data = slot.privateFontData {
+                        guard let style = slot.privateFontStyle else { throw Failure.missingFont }
+                        privateFont = try TransferHeaderFont.make(data: data, style: style, size: slot.fontSize)
+                        font = nil
+                    } else {
+                        guard slot.privateFontStyle == nil, let systemFont = UIFont(name: slot.fontName, size: slot.fontSize) else { throw Failure.missingFont }
+                        font = systemFont
+                        privateFont = nil
+                    }
                     if offset == value.length { continue }
                     if flow.keepLastWordOnLastLine && slotIndex < flow.slots.count - 1 && offset >= lastWordStart { continue }
                     let rest = value.substring(from: offset)
-                    let attributes: [NSAttributedString.Key: Any] = [
-                        .font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
-                    ]
+                    var attributes: [NSAttributedString.Key: Any] = [NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl]
+                    if let font { attributes[.font] = font }
+                    if let privateFont { attributes[NSAttributedString.Key(kCTFontAttributeName as String)] = privateFont }
                     let attributed = NSAttributedString(string: rest, attributes: attributes)
                     let typesetter = CTTypesetterCreateWithAttributedString(attributed)
                     var count = CTTypesetterSuggestLineBreak(typesetter, 0, Double(rect.width))
@@ -94,6 +110,7 @@ nonisolated enum TransferPDFOverlay {
                     }
                     guard count > 0 else { throw Failure.doesNotFit }
                     let line = value.substring(with: NSRange(location: offset, length: count))
+                    if let privateFont { try TransferHeaderFont.requireSupported(line, font: privateFont) }
                     let measuredLine = CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: attributes))
                     let width = CTLineGetTypographicBounds(measuredLine, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(measuredLine)
                     guard width <= Double(rect.width) else { throw Failure.doesNotFit }
@@ -101,10 +118,12 @@ nonisolated enum TransferPDFOverlay {
                     let ink = CTLineGetBoundsWithOptions(measuredLine, [.useGlyphPathBounds])
                     let flush: CGFloat = slot.alignment == .left ? 0 : slot.alignment == .center ? 0.5 : 1
                     let x = rect.minX + CGFloat(CTLineGetPenOffsetForFlush(measuredLine, flush, Double(rect.width)))
-                    let baseline = rect.midY - font.lineHeight / 2 + font.ascender
+                    let lineHeight = font?.lineHeight ?? (CTFontGetAscent(privateFont!) + CTFontGetDescent(privateFont!) + CTFontGetLeading(privateFont!))
+                    let ascent = font?.ascender ?? CTFontGetAscent(privateFont!)
+                    let baseline = rect.midY - lineHeight / 2 + ascent
                     guard x + ink.minX >= rect.minX - 0.5, x + ink.maxX <= rect.maxX + 0.5,
                           baseline - ink.maxY >= rect.minY - 0.5, baseline - ink.minY <= rect.maxY + 0.5 else { throw Failure.doesNotFit }
-                    planned.append(Line(text: line, slot: slot, font: font))
+                    planned.append(Line(text: line, slot: slot, font: font, coreLine: privateFont == nil ? nil : measuredLine, x: x, baseline: baseline))
                     offset += count
                 }
                 guard offset == value.length else { throw Failure.doesNotFit }
@@ -138,7 +157,16 @@ nonisolated enum TransferPDFOverlay {
                 page.draw(with: .mediaBox, to: cg)
                 cg.restoreGState()
                 for line in planned {
-                    PDFText.draw(line.text, in: line.slot.rect, font: line.font, align: line.slot.alignment)
+                    if let font = line.font {
+                        PDFText.draw(line.text, in: line.slot.rect, font: font, align: line.slot.alignment)
+                    } else if let coreLine = line.coreLine {
+                        cg.saveGState()
+                        cg.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+                        cg.textPosition = CGPoint(x: line.x, y: line.baseline)
+                        CTLineDraw(coreLine, cg)
+                        cg.restoreGState()
+                        cg.textMatrix = .identity
+                    }
                 }
                 for month in plannedMonths {
                     var x = month.rect.maxX - month.images.reduce(CGFloat.zero) { $0 + $1.1 }
@@ -148,6 +176,7 @@ nonisolated enum TransferPDFOverlay {
                     }
                 }
             }
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             finished = true
             return url
         }

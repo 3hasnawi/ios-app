@@ -355,6 +355,14 @@ import CryptoKit
             ("Static heading" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
         }
         let slot = TransferPDFTextSlot(rect: CGRect(x: 45, y: 100, width: 160, height: 28), fontName: ReportFont.regular(12).fontName, fontSize: 12, alignment: .right)
+        var invalidFontSlot = slot
+        invalidFontSlot.privateFontData = Data("invalid font".utf8)
+        invalidFontSlot.privateFontStyle = .bold
+        do {
+            _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "ترويسة تجريبية", slots: [invalidFontSlot])])
+            throw Failure(errorDescription: "invalid private font accepted by PDF overlay")
+        } catch is Failure { throw Failure(errorDescription: "invalid private font accepted by PDF overlay") }
+        catch { }
         let monthSlot = TransferPDFMonthSlot(rect: CGRect(x: 230, y: 100, width: 35, height: 30), month: 10, glyphs: digitGlyphs)
         let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])], months: [monthSlot])
         defer { try? FileManager.default.removeItem(at: composed.deletingLastPathComponent()) }

@@ -33,4 +33,16 @@ nonisolated enum TransferHeaderFont {
         guard complete, glyphs.allSatisfy({ $0 != 0 }) else { throw Failure.missingCharacters }
         return font
     }
+    /// يمنع استبدال حرف غير متوفر بخط آخر عند كتابة نص الترويسة.
+    static func requireSupported(_ text: String, font: CTFont) throws {
+        let chars = Array(text.utf16)
+        guard !chars.isEmpty else { throw Failure.missingCharacters }
+        var glyphs = [CGGlyph](repeating: 0, count: chars.count)
+        let complete = chars.withUnsafeBufferPointer { source in
+            glyphs.withUnsafeMutableBufferPointer { result in
+                CTFontGetGlyphsForCharacters(font, source.baseAddress!, result.baseAddress!, chars.count)
+            }
+        }
+        guard complete, glyphs.allSatisfy({ $0 != 0 }) else { throw Failure.missingCharacters }
+    }
 }
