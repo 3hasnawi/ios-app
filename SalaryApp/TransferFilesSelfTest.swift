@@ -61,10 +61,10 @@ import CryptoKit
         try check(treasuryRows.count == 3 && treasuryRows[0][2] == "13" && treasuryRows[1][2] == "11" && treasuryRows[2][2] == "24", "Word tax and social protection table")
         let contractRows = try TransferWordTables.contracts(wordFigures).rows
         try check(contractRows.count == 1 && contractRows[0] == ["19", "17", "36"], "Word contract amounts")
-        let cashList = TransferCashList(month: wordFigures.month, employees: [
+        let wordCashList = TransferCashList(month: wordFigures.month, employees: [
             .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)
         ])
-        let cashRows = try TransferWordTables.cash(cashList, figures: wordFigures).rows
+        let cashRows = try TransferWordTables.cash(wordCashList, figures: wordFigures).rows
         try check(cashRows.count == 2 && cashRows[0][3] == "23" && cashRows[1][3] == "23", "Word cash list and total")
         do {
             let wrongCash = TransferCashList(month: wordFigures.month, employees: [
@@ -97,6 +97,15 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "missing Word customization accepted") }
         catch { }
         let iban = "IQ06TEST123000000000001"
+        let fakeBeneficiary = "IQ76TEST123000000000002"
+        try check(TransferRules.validIBAN(fakeBeneficiary), "synthetic beneficiary IBAN")
+        let fakeReference = "حساب الدافع \(iban) حساب المستفيد \(fakeBeneficiary)"
+        try check(try TransferWordReferenceAccounts.beneficiary(in: fakeReference, payerIBAN: iban) == fakeBeneficiary, "Word beneficiary reference account")
+        do {
+            _ = try TransferWordReferenceAccounts.beneficiary(in: "\(iban) \(fakeBeneficiary) \(fakeBeneficiary)", payerIBAN: iban)
+            throw Failure(errorDescription: "ambiguous reference beneficiary accepted")
+        } catch is Failure { throw Failure(errorDescription: "ambiguous reference beneficiary accepted") }
+        catch { }
         let account = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين فرع تجريبي", swift: "TESTIQBAAAA")
         let anbar = SavedExecutionAccount(entity: "جهة ثانية", iban: iban, branch: "مصرف الرافدين فرع الانبار", swift: "TESTIQBAAAA")
         let other = SavedExecutionAccount(entity: "جهة ثالثة", iban: iban, branch: "مصرف الرشيد فرع تجريبي", swift: "TESTIQBAAAA")

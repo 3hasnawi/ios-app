@@ -47,7 +47,7 @@ nonisolated enum TransferWordDocument {
         let alignment = p.centered ? "center" : "right"
         let bold = p.bold ? "<w:b/><w:bCs/>" : ""
         let font = escape(p.font)
-        return "<w:p><w:pPr><w:bidi/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
+        return "<w:p><w:pPr><w:bidi/><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
     }
     private static func table(_ t: Table) throws -> String {
         let columns = t.headers.isEmpty ? (t.rows.first?.count ?? 0) : t.headers.count
