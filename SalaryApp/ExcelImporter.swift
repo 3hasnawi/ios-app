@@ -404,7 +404,7 @@ nonisolated final class SheetParser {
         let headers = row.map(ArabicText.normalize)
         var used = Set<Int>()
         // ملفات حسابات الجهات مستقلة عن الرواتب، وقد تضم عمود «المبلغ» الفارغ.
-        if let entity = Self.column(["جهة التنفيذ", "الجهة"], in: headers, used: &used, exactOnly: true),
+        if let entity = Self.column(["جهة التنفيذ", "الجهة", "المديرية"], in: headers, used: &used, exactOnly: true),
            let iban = Self.column(["رقم الايبان", "الايبان", "iban"], in: headers, used: &used) {
             accountHeaderFound = true
             let branch = Self.column(["الفرع", "اسم الفرع"], in: headers, used: &used)

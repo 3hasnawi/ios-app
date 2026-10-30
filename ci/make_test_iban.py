@@ -9,10 +9,10 @@ def iban(bban: str) -> str:
     return f"IQ{98 - int(digits) % 97:02d}{bban}"
 
 
-def save(path: str, rows: list[tuple[str, str, str, str]]) -> None:
+def save(path: str, rows: list[tuple[str, str, str, str]], entity_header: str = "جهة التنفيذ") -> None:
     book = Workbook()
     sheet = book.active
-    sheet.append(["ت", "جهة التنفيذ", "رقم الايبان", "الفرع", "SWIFT", "المبلغ"])
+    sheet.append(["ت", entity_header, "رقم الايبان", "الفرع", "SWIFT", "المبلغ"])
     for index, (name, number, branch, swift) in enumerate(rows, 1):
         sheet.append([index, name, number, branch, swift, None])
     book.save(path)
@@ -21,7 +21,7 @@ def save(path: str, rows: list[tuple[str, str, str, str]]) -> None:
 save("test-files/IBAN-1.xlsx", [
     ("جهة تجريبية أ", iban("TEST123000000000001"), "فرع أ", "TESTIQBAAAA"),
     ("جهة تجريبية ب", iban("TEST123000000000002"), "فرع ب", "TESTIQBBBBB"),
-])
+], entity_header="المديرية")
 save("test-files/IBAN-2.xlsx", [
     ("جهة تجريبية أ", iban("TEST123000000000003"), "فرع أ", "TESTIQBAAAA"),
     ("جهة تجريبية ج", iban("TEST123000000000004"), "فرع ج", "TESTIQCCCCC"),
