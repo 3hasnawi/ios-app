@@ -204,6 +204,8 @@ struct TransferFilesView: View {
     @State private var referenceError: String?
     @State private var bookStore = OfficialBookStore.shared
     @State private var draftCoverage = TransferDraftCoverage.shared
+    @State private var bankCache = BankStatementCache.shared
+    @State private var loadedRevision = -1
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
@@ -349,6 +351,9 @@ struct TransferFilesView: View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             if let figuresError { Section { Text(figuresError).foregroundStyle(.orange) } }
+            if let month {
+                Section { LabeledContent(tr("الشهر المختار", "Selected month"), value: month.name) }
+            }
             if let figures, figures.missingContractNominal > 0 {
                 Section {
                     NavigationLink {
@@ -479,7 +484,11 @@ struct TransferFilesView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     ForEach(months) { candidate in
-                        Button(candidate.name) { selectedMonth = candidate.name }
+                        Button { selectedMonth = candidate.name } label: {
+                            if candidate.name == month?.name {
+                                Label(candidate.name, systemImage: "checkmark")
+                            } else { Text(candidate.name) }
+                        }
                     }
                 } label: { Image(systemName: "calendar").accessibilityLabel(tr("اختيار الشهر", "Choose month")) }
                 .disabled(months.isEmpty).glassButtonStyle().buttonBorderShape(.circle)
@@ -505,26 +514,28 @@ struct TransferFilesView: View {
         .onChange(of: payerIBAN) { BackupManager.shared.markChanged() }
         .onAppear { draftCoverage.discardIfDifferent(draftRevision) }
         .onChange(of: draftRevision) { draftCoverage.discardIfDifferent(draftRevision) }
-        .task(id: loadKey) {
+        .task(id: "\(loadKey)|\(bankCache.revision)") {
             let key = loadKey
-            guard let name = month?.name else { groups = []; loadedKey = key; return }
+            let revision = bankCache.revision
+            guard loadedKey != key || loadedRevision != revision || error != nil else { return }
+            guard let name = month?.name else { groups = []; loadedKey = key; loadedRevision = revision; return }
             loadedKey = ""; error = nil; groups = []; missing = [:]; figures = nil; figuresError = nil
             let container = SharedModel.container
             let work = Task.detached(priority: .userInitiated) { try await TransferDataEngine(modelContainer: container).read(month: name) }
             do {
                 let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-                guard !Task.isCancelled, key == loadKey else { return }
+                guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }
                 groups = value.0; missing = value.1
                 do {
                     let figureWork = Task.detached(priority: .userInitiated) { try await TransferLetterFigureEngine(modelContainer: container).figures(month: name) }
                     let result = try await withTaskCancellationHandler { try await figureWork.value } onCancel: { figureWork.cancel() }
-                    guard !Task.isCancelled, key == loadKey else { return }
+                    guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }
                     figures = result
                 } catch is CancellationError { return }
-                catch { guard !Task.isCancelled, key == loadKey else { return }; figuresError = error.localizedDescription }
-                loadedKey = key
+                catch { guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }; figuresError = error.localizedDescription }
+                loadedKey = key; loadedRevision = revision
             } catch is CancellationError { return }
-            catch { guard !Task.isCancelled, key == loadKey else { return }; self.error = error.localizedDescription; loadedKey = key }
+            catch { guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }; self.error = error.localizedDescription; loadedKey = key; loadedRevision = revision }
         }
     }
 }
