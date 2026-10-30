@@ -183,12 +183,18 @@ struct TransferFilesView: View {
     @State private var importingReferences = false
     @State private var referenceError: String?
     @State private var bookStore = OfficialBookStore.shared
+    @State private var draftCoverage = TransferDraftCoverage.shared
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
     private var categories: [String: String] { (try? JSONDecoder().decode([String: String].self, from: categoriesData)) ?? [:] }
     private var payrollLinks: [String: String] { (try? JSONDecoder().decode([String: String].self, from: payrollLinksData)) ?? [:] }
     private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountData)) ?? [] }
+    private var draftRevision: TransferDraftRevision {
+        TransferDraftRevision(sourceKey: loadKey, accounts: accountData, categories: categoriesData,
+            payrollLinks: payrollLinksData, customization: customizationData, references: referenceData,
+            payerName: payerName, payerIBAN: payerIBAN)
+    }
     private var unlinkedAnbar: [TransferEntity] {
         guard let selected = month?.name, bookStore.loadError == nil else { return [] }
         let keys = Set(bookStore.books.compactMap { book -> String? in
@@ -313,6 +319,25 @@ struct TransferFilesView: View {
                         }
                     }
                 } header: { Text(month?.name ?? "") }
+                let prepared = draftCoverage.records(for: draftRevision)
+                let coverageEntities = entities.filter { $0.category != .unresolved && $0.group.total.isFinite && $0.group.total > 0 }
+                let missingPreviews = coverageEntities.filter { prepared[$0.id] == nil }
+                let repeatedPreviews = coverageEntities.filter { (prepared[$0.id]?.count ?? 0) > 1 }
+                if !coverageEntities.isEmpty {
+                    Section(tr("تغطية معاينات الجهات", "Entity preview coverage")) {
+                        LabeledContent(tr("جهات مصنفة لها معاينة", "Classified entities with preview"), value: "\(Num.format(coverageEntities.count - missingPreviews.count)) / \(Num.format(coverageEntities.count))")
+                        if !missingPreviews.isEmpty {
+                            DisclosureGroup(tr("جهات لم تُجهّز لها معاينة · \(Num.format(missingPreviews.count))", "Entities without a prepared preview · \(Num.format(missingPreviews.count))")) {
+                                ForEach(missingPreviews) { entity in Text(entity.group.title).foregroundStyle(.orange) }
+                            }
+                        }
+                        if !repeatedPreviews.isEmpty {
+                            DisclosureGroup(tr("جهات ظهرت في أكثر من نوع كتاب · \(Num.format(repeatedPreviews.count))", "Entities present in more than one letter type · \(Num.format(repeatedPreviews.count))")) {
+                                ForEach(repeatedPreviews) { entity in Text(entity.group.title).foregroundStyle(.red) }
+                            }
+                        }
+                    } footer: { Text(tr("تشمل التغطية الجهات المصنفة ذات المبالغ الموجبة؛ تظهر غير المصنفة منفصلة. تتتبع معاينات الجلسة فقط ولا تعني إصدار كتاب، وتُصفّر عند تغيّر البيانات أو الإعدادات.", "Coverage includes classified entities with positive amounts; unclassified entities appear separately. It tracks session previews only, does not establish issuance, and resets when data or settings change.")) }
+                }
                 if bookStore.loadError != nil {
                     Section { Label(tr("تعذّر فحص أرشيف الكتب؛ راجعه من البيانات المحفوظة.", "Could not check the document archive; review it in saved data."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                 } else if !unlinkedAnbar.isEmpty {
@@ -403,6 +428,8 @@ struct TransferFilesView: View {
         }
         .onChange(of: payerName) { BackupManager.shared.markChanged() }
         .onChange(of: payerIBAN) { BackupManager.shared.markChanged() }
+        .onAppear { draftCoverage.discardIfDifferent(draftRevision) }
+        .onChange(of: draftRevision) { draftCoverage.discardIfDifferent(draftRevision) }
         .task(id: loadKey) {
             let key = loadKey
             guard let name = month?.name else { groups = []; loadedKey = key; return }

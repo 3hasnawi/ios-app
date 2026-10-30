@@ -37,6 +37,7 @@ struct TransferLetterDraftView: View {
     let references: Data
     let payerName: String
     let payerIBAN: String
+    @State private var coverage = TransferDraftCoverage.shared
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
@@ -70,6 +71,11 @@ struct TransferLetterDraftView: View {
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
+    private var revision: TransferDraftRevision {
+        TransferDraftRevision(sourceKey: sourceKey, accounts: sourceAccounts, categories: sourceCategories,
+            payrollLinks: sourceLinks, customization: sourceCustomization, references: references,
+            payerName: payerName, payerIBAN: payerIBAN)
+    }
     var body: some View {
         List {
             Section(tr("بيانات المعاينة", "Preview details")) {
@@ -258,6 +264,14 @@ struct TransferLetterDraftView: View {
                     }
                 }
                 guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
+                switch kind {
+                case .rafidain, .otherBanks:
+                    let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
+                    coverage.record(revision: revision, entityIDs: entities.filter { $0.category == category }.map(\.id), bookID: kind.rawValue)
+                case .ramadi, .anbar, .housing, .water:
+                    if let entity { coverage.record(revision: revision, entityIDs: [entity.id], bookID: kind.rawValue) }
+                default: break
+                }
                 previewURL = url; generation = nil; showPreview = true
             } catch is CancellationError { return }
             catch { guard !Task.isCancelled else { return }; self.error = error.localizedDescription }
