@@ -11,6 +11,11 @@ import CryptoKit
     struct Failure: LocalizedError { let errorDescription: String? }
     static func run() async throws -> String {
         func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(errorDescription: message) } }
+        do {
+            _ = try TransferHeaderFont.make(data: Data("invalid".utf8), style: .bold, size: 18)
+            throw Failure(errorDescription: "invalid header font accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid header font accepted") }
+        catch { }
         var customization = TransferLetterCustomizationStore()
         customization.applyToAll(.init(header: "ترويسة عامة", footer: "هامش عام"))
         customization.apply(.init(header: "ترويسة خاصة", committeeFirst: "عضو وهمي"), to: "food_company")
