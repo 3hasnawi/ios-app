@@ -192,6 +192,21 @@ import CryptoKit
         let individualEntity = TransferEntity(group: group, account: anbar, category: .anbar, missingAmounts: 0)
         try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: []).count == 1, "unlinked individual entity")
         try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: [ArabicText.normalize(group.title)]).isEmpty, "linked individual entity")
+        let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1800, byEntity: false)
+        let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
+        let wordGroup = try TransferWordGroupPlan(allEntities: [item, secondItem], category: .rafidain,
+            month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        try check(wordGroup.total == 3000 && wordGroup.table.rows.count == 2 &&
+                  wordGroup.table.rows[0][1] == group.title && wordGroup.table.rows[1][4] == "1800", "Word group rows and total")
+        _ = try TransferGroupCSVCheck.validate(wordGroup.csv, entities: [item, secondItem], category: .rafidain,
+            month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        do {
+            let unknown = TransferEntity(group: secondGroup, account: nil, category: .unresolved, missingAmounts: 0)
+            _ = try TransferWordGroupPlan(allEntities: [item, unknown], category: .rafidain,
+                month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "unresolved Word group accepted")
+        } catch is Failure { throw Failure(errorDescription: "unresolved Word group accepted") }
+        catch { }
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
         try check(TransferAnbarTablePDF.matchesExtractedCell("موظف وھمي", expected: "موظف وهمي"), "PDF heh extraction")
         try check(!TransferAnbarTablePDF.matchesExtractedCell("موظف وحمي", expected: "موظف وهمي"), "different name must not match")
@@ -223,8 +238,6 @@ import CryptoKit
             throw Failure(errorDescription: "multiple water employees accepted")
         } catch is Failure { throw Failure(errorDescription: "multiple water employees accepted") }
         catch { }
-        let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1800, byEntity: false)
-        let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
         let data = try TransferRules.csv([item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         try TransferGroupCSVCheck.validate(data, entities: [item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let text = String(decoding: data, as: UTF8.self)
