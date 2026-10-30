@@ -11,6 +11,7 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
     let branch: String
     let swift: String
     let category: String
+    var localAccount: String? = nil
     /// اختيارية حتى تبقى الإقرارات المحفوظة قبل إضافة فحص الأسماء قابلة للقراءة.
     var detailHash: String? = nil
 
@@ -23,6 +24,7 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
         branch = entity.account?.branch ?? ""
         swift = entity.account?.swift ?? ""
         category = entity.category.rawValue
+        localAccount = entity.account?.localAccount
     }
 
     init(payrollID: String, title: String, month: String, amount: Double) {

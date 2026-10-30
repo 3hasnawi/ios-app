@@ -28,6 +28,7 @@ nonisolated struct SavedExecutionAccount: Codable, Sendable, Identifiable {
     let iban: String
     let branch: String
     let swift: String
+    var localAccount: String? = nil
 
     var key: String { ArabicText.normalize(entity) }
     var id: String { key }
@@ -61,16 +62,17 @@ nonisolated enum ExecutionAccountStore {
             let key = ArabicText.normalize(row.entity)
             if let index = positions[key] {
                 let previous = saved[index]
-                let next = SavedExecutionAccount(entity: row.entity, iban: row.iban,
+                let next = SavedExecutionAccount(entity: row.entity, iban: row.iban.isEmpty ? previous.iban : row.iban,
                     branch: row.branch.isEmpty ? previous.branch : row.branch,
-                    swift: row.swift.isEmpty ? previous.swift : row.swift)
-                if previous.entity != next.entity || previous.iban != next.iban || previous.branch != next.branch || previous.swift != next.swift {
+                    swift: row.swift.isEmpty ? previous.swift : row.swift,
+                    localAccount: row.localAccount ?? previous.localAccount)
+                if previous.entity != next.entity || previous.iban != next.iban || previous.branch != next.branch || previous.swift != next.swift || previous.localAccount != next.localAccount {
                     saved[index] = next
                     updated += 1
                 }
             } else {
                 positions[key] = saved.count
-                saved.append(SavedExecutionAccount(entity: row.entity, iban: row.iban, branch: row.branch, swift: row.swift))
+                saved.append(SavedExecutionAccount(entity: row.entity, iban: row.iban, branch: row.branch, swift: row.swift, localAccount: row.localAccount))
                 added += 1
             }
         }
@@ -110,12 +112,14 @@ struct ExecutionAccountsView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(account.entity).font(.headline)
                             if !account.branch.isEmpty { Text(account.branch).font(.subheadline).foregroundStyle(.secondary) }
-                            Text(account.iban).font(.subheadline.monospaced()).textSelection(.enabled).privacySensitive()
+                            if !account.iban.isEmpty { Text(account.iban).font(.subheadline.monospaced()).textSelection(.enabled).privacySensitive() }
+                            if let local = account.localAccount { Text(tr("حساب محلي: \(local)", "Local account: \(local)")).font(.caption.monospaced()).privacySensitive() }
                             if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
                         }
                         .padding(.vertical, 5)
                         .contextMenu {
-                            Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { UIPasteboard.general.string = account.iban }
+                            if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { UIPasteboard.general.string = account.iban } }
+                            if let local = account.localAccount { Button(tr("نسخ الحساب المحلي", "Copy local account"), systemImage: "doc.on.doc") { UIPasteboard.general.string = local } }
                         }
                     }
                 }

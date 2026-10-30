@@ -8,7 +8,8 @@ import ZIPFoundation
 /// يُحفظ في أي مكان من نافذة "الملفات" (iCloud Drive، OneDrive، Google Drive)،
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
-    static let version = 4
+    // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
+    static let version = 5
     static let prefix = "نسخة الرواتب"
 
     struct Manifest: Codable, Sendable {
@@ -30,7 +31,7 @@ nonisolated enum BackupFormat {
     struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data?; var details: Data?; var rawColumns: Data? }
     struct DeductionRecord: Codable { var month: String; var name: String; var title: String; var amount: Double?; var note: String; var rank: String }
     struct StaffRecord: Codable { var name: String; var mother: String; var stat: String; var unified: String; var rank: String; var status: String; var workplace: String; var details: Data }
-    struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String }
+    struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String; var localAccount: String? = nil }
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
@@ -119,7 +120,7 @@ actor BackupActor {
         }, from: 0.5, to: 0.8)
         let accounts = try ExecutionAccountStore.load()
         try writeLines("accounts.jsonl", accounts.map {
-            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
+            BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
         }, from: 0.8, to: 0.82)
         let books = try OfficialBookFiles.stage(into: dir.appendingPathComponent("books", isDirectory: true))
 
@@ -176,7 +177,7 @@ actor BackupActor {
             _ = try TransferReferencePack.validateData(data)
         }
         let accountData = try ExecutionAccountStore.encode(accounts.map {
-            SavedExecutionAccount(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift)
+            SavedExecutionAccount(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
         })
         let booksFolder = folder.appendingPathComponent("books", isDirectory: true)
         if manifest.version >= 3 {

@@ -91,6 +91,13 @@ struct TransferLetterDraftView: View {
                         ForEach(candidates) { entity in Text(entity.group.title).tag(entity.id) }
                     }
                     if let entity = selectedEntity { LabeledContent(tr("المبلغ", "Amount"), value: Money.format(entity.group.total)) }
+                    if let entity = selectedEntity {
+                        ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.footnote).foregroundStyle(.orange) }
+                        if (kind == .housing || kind == .water), let account = entity.account,
+                           TransferRules.individualLocalAccount(account) == nil {
+                            Text(tr("الحساب المحلي مفقود أو لا يطابق IBAN المحفوظ؛ راجع ملف الحسابات.", "The local account is missing or conflicts with the saved IBAN; review the account file.")).font(.footnote).foregroundStyle(.orange)
+                        }
+                    }
                 }
             }
             Section {
@@ -261,7 +268,7 @@ struct TransferLetterDraftView: View {
                         url = try await TransferAnbarLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                         anbarAuditPassed = true
                     } else {
-                        guard let local = TransferRules.localAccountDigits(account.iban) else { throw TransferIndividualPlan.Failure.invalidSource }
+                        guard let local = TransferRules.individualLocalAccount(account) else { throw TransferIndividualPlan.Failure.invalidSource }
                         if kind == .housing {
                             url = try await TransferHousingLetter.make(plan: plan, account: account, beneficiaryAccountNumber: local, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                         } else {

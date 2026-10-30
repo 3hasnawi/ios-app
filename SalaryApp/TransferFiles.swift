@@ -102,6 +102,17 @@ nonisolated enum TransferRules {
         guard account.utf8.count == 15, account.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
         return account
     }
+    /// يقبل الحساب المحلي للكتب فقط، ويرفض التعارض مع IBAN محفوظ.
+    static func individualLocalAccount(_ account: SavedExecutionAccount) -> String? {
+        let local = account.localAccount.map { ArabicText.latinDigits($0).filter { !$0.isWhitespace && $0 != "-" } }
+        if let local, (local.utf8.count != 15 || !local.utf8.allSatisfy({ (48...57).contains($0) })) { return nil }
+        if !account.iban.isEmpty {
+            guard let fromIBAN = localAccountDigits(account.iban) else { return nil }
+            if let local, local != fromIBAN { return nil }
+            return fromIBAN
+        }
+        return local
+    }
     static func safeField(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("|") && !value.contains("\n") && !value.contains("\r") && !value.contains("\"")
     }
@@ -109,8 +120,15 @@ nonisolated enum TransferRules {
         var result: [String] = []
         guard let account = entity.account else { return [tr("الحساب غير محفوظ", "Account is missing")] }
         if entity.duplicateSource { result.append(tr("البند موجود أيضاً في ملف الجهات؛ راجع مصدره لتجنب التكرار", "This item also exists in execution deductions; review for duplication")) }
-        if !validIBAN(account.iban) { result.append(tr("IBAN غير صالح", "Invalid IBAN")) }
-        if !validBIC(account.swift) { result.append(tr("SWIFT غير صالح أو غير موجود", "Invalid or missing SWIFT")) }
+        if entity.category == .anbar {
+            if individualLocalAccount(account) == nil { result.append(tr("حساب الجهة غير صالح أو غير مطابق", "Invalid or inconsistent beneficiary account")) }
+        } else {
+            if !validIBAN(account.iban) { result.append(tr("IBAN غير صالح", "Invalid IBAN")) }
+            if !validBIC(account.swift) { result.append(tr("SWIFT غير صالح أو غير موجود", "Invalid or missing SWIFT")) }
+            if account.localAccount != nil && individualLocalAccount(account) == nil {
+                result.append(tr("الحساب المحلي لا يطابق IBAN؛ راجع الحساب قبل التحويل", "Local account conflicts with the IBAN; review before transfer"))
+            }
+        }
         if entity.missingAmounts > 0 { result.append(tr("توجد قيود بمبلغ ناقص أو غير صالح", "Some entries have missing or invalid amounts")) }
         if !entity.group.total.isFinite || entity.group.total <= 0 || entity.group.total.rounded() != entity.group.total {
             result.append(tr("المبلغ غير صالح للتحويل", "Invalid transfer amount"))
@@ -247,6 +265,10 @@ struct TransferFilesView: View {
     }
     @ViewBuilder private func categoryRow(_ category: TransferCategory) -> some View {
         let items = entities.filter { $0.category == category }
+        let bookContext = figures.map { TransferAnbarContext(figures: $0, entities: entities, sourceKey: loadKey,
+            accounts: accountData, categories: categoriesData, links: payrollLinksData,
+            customization: customizationData, references: referenceData, payerName: payerName,
+            payerIBAN: payerIBAN, boldFont: boldFontData, regularFont: regularFontData) }
         if category != .unresolved || !items.isEmpty {
             NavigationLink {
                 TransferCategoryView(category: category, entities: items,
@@ -254,7 +276,7 @@ struct TransferFilesView: View {
                     month: month?.name ?? "", sourceKey: loadKey, sourceAccounts: accountData,
                     sourceCategories: categoriesData, sourcePayrollLinks: payrollLinksData,
                     payrollComplete: figures != nil, payerName: payerName, payerIBAN: payerIBAN,
-                    changeCategory: setCategory)
+                    changeCategory: setCategory, anbarContext: category == .anbar ? bookContext : nil)
             } label: {
                 categoryLabel(category, items: items)
             }
@@ -478,6 +500,21 @@ struct TransferFilesView: View {
     }
 }
 
+private struct TransferAnbarContext {
+    let figures: TransferLetterFigures
+    let entities: [TransferEntity]
+    let sourceKey: String
+    let accounts: Data
+    let categories: Data
+    let links: Data
+    let customization: Data
+    let references: Data
+    let payerName: String
+    let payerIBAN: String
+    let boldFont: Data
+    let regularFont: Data
+}
+
 private struct TransferCategoryView: View {
     let category: TransferCategory
     let entities: [TransferEntity]
@@ -491,6 +528,7 @@ private struct TransferCategoryView: View {
     let payerName: String
     let payerIBAN: String
     let changeCategory: (TransferCategory, TransferEntity) -> Void
+    let anbarContext: TransferAnbarContext?
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
@@ -510,8 +548,8 @@ private struct TransferCategoryView: View {
         List {
             Section {
                 LabeledContent(tr("الشهر", "Month"), value: month)
-                LabeledContent(tr("عدد الجهات", "Entities"), value: Num.format(entities.count))
-                LabeledContent(tr("المجموع", "Total"), value: Money.format(entities.reduce(0) { $0 + $1.group.total }))
+                LabeledContent(category == .anbar ? tr("عدد جهات الاستقطاع", "Deduction entities") : tr("عدد الجهات", "Entities"), value: Num.format(entities.count))
+                LabeledContent(category == .anbar ? tr("مجموع جهات الاستقطاع", "Deduction entity total") : tr("المجموع", "Total"), value: Money.format(entities.reduce(0) { $0 + $1.group.total }))
                 if category == .rafidain || category == .otherBanks {
                     LabeledContent(tr("الجهة الدافعة", "Payer"), value: payerName.isEmpty ? tr("غير محددة", "Not set") : payerName)
                     if !payerIBAN.isEmpty { LabeledContent("IBAN", value: payerIBAN).privacySensitive() }
@@ -520,6 +558,23 @@ private struct TransferCategoryView: View {
                     if !TransferRules.safeField(payerName) { Text(tr("أدخل اسم الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer name in transfer settings.")).foregroundStyle(.orange) }
                     if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN صالحاً للجهة الدافعة من إعدادات ملفات التحويل.", "Enter a valid payer IBAN in transfer settings.")).foregroundStyle(.orange) }
                     if unresolvedCount > 0 { Text(tr("صنّف \(Num.format(unresolvedCount)) جهات قبل تصدير أي ملف.", "Classify \(unresolvedCount) entities before export.")).foregroundStyle(.orange) }
+                }
+            }
+            if category == .anbar {
+                if !sourceIsCurrent {
+                    Section { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
+                }
+                if let context = anbarContext {
+                    anbarBooks(context)
+                        .disabled(!sourceIsCurrent)
+                } else {
+                    Section {
+                        Label(tr("تعذّر تحميل مبالغ الرواتب؛ راجع بيانات الشهر في ملفات التحويل.", "Payroll amounts could not be loaded; review the month in transfer files."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                        Label(tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), systemImage: "doc.text").foregroundStyle(.secondary)
+                        ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }) { kind in
+                            Label(kind.title, systemImage: "doc.text").foregroundStyle(.secondary)
+                        }
+                    } header: { Text(tr("الكتب المنفردة", "Individual letters")) }
                 }
             }
             Section(tr("الجهات", "Entities")) {
@@ -534,7 +589,8 @@ private struct TransferCategoryView: View {
                         Text(Money.format(entity.group.total)).font(.subheadline.weight(.semibold)).monospacedDigit()
                         if let account = entity.account {
                             Text(account.branch).font(.caption).foregroundStyle(.secondary)
-                            Text(account.iban).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive()
+                            if !account.iban.isEmpty { Text(account.iban).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
+                            if let local = account.localAccount { Text(tr("حساب محلي: \(local)", "Local account: \(local)")).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
                             if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
                             Menu {
                                 ForEach([TransferCategory.rafidain, .otherBanks, .anbar]) { option in
@@ -544,9 +600,7 @@ private struct TransferCategoryView: View {
                         } else {
                             Text(tr("استورد حساب الجهة من الإعدادات لإضافة IBAN وSWIFT.", "Import this entity's account in Settings to add IBAN and SWIFT.")).font(.caption).foregroundStyle(.orange)
                         }
-                        if category != .anbar {
-                            ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.caption).foregroundStyle(.orange) }
-                        }
+                        ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.caption).foregroundStyle(.orange) }
                     }.padding(.vertical, 6)
                 }
             }
@@ -562,6 +616,53 @@ private struct TransferCategoryView: View {
         .alert(tr("تعذّر التصدير", "Export failed"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+    @ViewBuilder private func anbarBooks(_ context: TransferAnbarContext) -> some View {
+        Section {
+            NavigationLink {
+                TransferCompanyLetterView(figures: context.figures, sourceKey: context.sourceKey,
+                    payerIBAN: context.payerIBAN, references: context.references)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), systemImage: "doc.text")
+                    Text(tr("من بند شركة عراق الجوال · \(Money.format(context.figures.foodCompany))", "From company payroll item · \(Money.format(context.figures.foodCompany))"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if context.figures.foodCompany <= 0 { Text(tr("لا مبلغ متاح؛ راجع بيانات الشهر", "Amount unavailable; review this month")).font(.caption).foregroundStyle(.orange) }
+                }
+            }
+            ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }) { kind in
+                NavigationLink {
+                    TransferLetterDraftView(kind: kind, month: context.figures.month, figures: context.figures,
+                        entities: context.entities, sourceKey: context.sourceKey, sourceAccounts: context.accounts,
+                        sourceCategories: context.categories, sourceLinks: context.links, sourceCustomization: context.customization,
+                        references: context.references, payerName: context.payerName, payerIBAN: context.payerIBAN,
+                        boldFont: context.boldFont, regularFont: context.regularFont)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(kind.title, systemImage: "doc.text")
+                        bookSource(kind, figures: context.figures)
+                    }
+                }
+            }
+        } header: { Text(tr("الكتب المنفردة", "Individual letters")) } footer: { Text(tr("المبالغ حسب بيانات الشهر. اختر جهة الاستقطاع للكتب المرتبطة بها، وراجع الحساب والمبلغ قبل اعتماد أي كتاب. المعاينات قيد التحقق.", "Amounts come from this month. Select the deduction entity for linked letters and review accounts and amounts. Previews are under verification.")) }
+    }
+    @ViewBuilder private func bookSource(_ kind: TransferLetterDraftKind, figures: TransferLetterFigures) -> some View {
+        if kind.requiresEntity {
+            Text(tr("من استقطاعات الشهر · اختر الجهة", "From monthly deductions · choose entity")).font(.caption).foregroundStyle(.secondary)
+        } else {
+            let value: Double? = switch kind {
+            case .foodTax: figures.foodTax
+            case .taxSocial: figures.treasuryTotal
+            case .contracts: figures.contractTotal
+            case .cash: figures.payrollCash
+            default: nil
+            }
+            if let value, value > 0 {
+                Text(tr("من بيانات الرواتب · \(Money.format(value))", "From payroll · \(Money.format(value))")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(tr("لا مبلغ متاح؛ راجع بيانات الشهر", "Amount unavailable; review this month")).font(.caption).foregroundStyle(.orange)
+            }
+        }
     }
     private func export() {
         guard canExport else { return }
@@ -588,7 +689,8 @@ private struct TransferEntityBooksView: View {
                 LabeledContent(tr("المبلغ", "Amount"), value: Money.format(entity.group.total))
                 if let account = entity.account {
                     LabeledContent(tr("المصرف", "Bank"), value: account.branch)
-                    LabeledContent("IBAN", value: account.iban).privacySensitive()
+                    if !account.iban.isEmpty { LabeledContent("IBAN", value: account.iban).privacySensitive() }
+                    if let local = account.localAccount { LabeledContent(tr("الحساب المحلي", "Local account"), value: local).privacySensitive() }
                 }
             }
             Section(tr("الكتب المرتبطة", "Linked documents")) {

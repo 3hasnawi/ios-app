@@ -62,7 +62,7 @@ nonisolated enum TransferWaterLetter {
     }
     static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         guard case .water = plan.kind, ArabicText.normalize(account.entity) == ArabicText.normalize(plan.group.title),
-              TransferRules.validIBAN(account.iban) else { throw Failure.incomplete }
+              TransferRules.individualLocalAccount(account) != nil else { throw Failure.incomplete }
         guard let employee = plan.rows.first, !employee.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               plan.rows.allSatisfy({ ArabicText.matchKey($0.name) == ArabicText.matchKey(employee.name) && ArabicText.normalize($0.rank) == ArabicText.normalize(employee.rank) }) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.group.month)
@@ -84,7 +84,7 @@ nonisolated enum TransferWaterLetter {
         let referenceBeneficiary = digits(selected(CGRect(x: 40.20, y: 349.70, width: 104.91, height: 15.54), page: page, height: pageSize.height))
         let suppliedNumber = digits(beneficiaryAccountNumber)
         guard suppliedNumber.count == 15, referenceBeneficiary == suppliedNumber,
-              TransferRules.localAccountDigits(account.iban) == suppliedNumber else { throw Failure.beneficiaryMismatch }
+              TransferRules.individualLocalAccount(account) == suppliedNumber else { throw Failure.beneficiaryMismatch }
         let referencePayer = ascii(selected(payerArea, page: page, height: pageSize.height))
         guard referencePayer == ascii(payerIBAN) else { throw Failure.accountMismatch }
         let rawAmount = selected(amount, page: page, height: pageSize.height).trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "()")))

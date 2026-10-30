@@ -72,7 +72,9 @@ struct ImportCandidate: Identifiable {
             let valid = tr("\(Num.format(result.accounts.count)) حساب صالح", "\(result.accounts.count) valid accounts")
             let invalid = result.invalidAccounts > 0
                 ? tr(" · \(Num.format(result.invalidAccounts)) IBAN غير صالح سيُتجاهل", " · \(result.invalidAccounts) invalid IBANs skipped") : ""
-            return valid + invalid
+            let localCount = result.accounts.filter { $0.localAccount != nil }.count
+            let local = localCount > 0 ? tr(" · \(Num.format(localCount)) حساب محلي للكتب فقط", " · \(localCount) local accounts for letters only") : ""
+            return valid + local + invalid
         }
         var parts: [String] = []
         if kind != .deductions, !result.employees.isEmpty {
@@ -425,6 +427,8 @@ final class ImportCenter {
                     accountTotals.invalid += result.invalidAccounts
                     lines.append(tr("حسابات جهات التنفيذ: \(Num.format(counts.added)) جديدة، \(Num.format(counts.updated)) محدّثة",
                                     "Execution accounts: \(counts.added) added, \(counts.updated) updated"))
+                    let localCount = result.accounts.filter { $0.localAccount != nil }.count
+                    if localCount > 0 { warnings.append(tr("\(Num.format(localCount)) حساب محلي للكتب المنفردة؛ يلزم IBAN كامل لملفات التحويل.", "\(localCount) local accounts are for individual letters; a complete IBAN is required for transfer files.")) }
                     if result.invalidAccounts > 0 {
                         warnings.append(Self.accountWarning(result))
                     }
@@ -470,6 +474,8 @@ final class ImportCenter {
                         accountTotals.added += counts.added
                         accountTotals.updated += counts.updated
                         accountTotals.invalid += result.invalidAccounts
+                        let localCount = result.accounts.filter { $0.localAccount != nil }.count
+                        if localCount > 0 { warnings.append(tr("\(Num.format(localCount)) حساب محلي للكتب المنفردة؛ يلزم IBAN كامل لملفات التحويل.", "\(localCount) local accounts are for individual letters; a complete IBAN is required for transfer files.")) }
                         if result.invalidAccounts > 0 {
                             warnings.append(Self.accountWarning(result))
                         }

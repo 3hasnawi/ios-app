@@ -56,6 +56,7 @@ nonisolated struct ImportedExecutionAccount: Sendable {
     var iban: String
     var branch: String
     var swift: String
+    var localAccount: String? = nil
 }
 
 /// خلل في خلية IBAN؛ تبقى القيمة الأصلية ظاهرة في مراجعة الاستيراد لتصحيحها في Excel.
@@ -538,6 +539,16 @@ nonisolated final class SheetParser {
         guard !entity.isEmpty else { return }
         let entered = cell(row, columns.iban)
         let iban = Self.cleanIBAN(entered)
+        let branch = cell(row, columns.branch)
+        let normalizedEntity = ArabicText.normalize(entity)
+        let localCandidate = iban.count == 15 && iban.utf8.allSatisfy { (48...57).contains($0) }
+        let supported = normalizedEntity.contains(ArabicText.normalize("صندوق الاسكان")) || normalizedEntity.contains(ArabicText.normalize("الموارد المائية"))
+        let account = SavedExecutionAccount(entity: entity, iban: "", branch: branch, swift: "")
+        if localCandidate && supported && TransferRules.classify(account) == .anbar {
+            result.accounts.append(ImportedExecutionAccount(entity: entity, iban: "", branch: branch,
+                swift: cell(row, columns.swift).uppercased(), localAccount: iban))
+            return
+        }
         if let reason = Self.ibanProblem(iban) {
             result.invalidAccountDetails.append(InvalidExecutionAccount(
                 location: tr("\(sheetName) · الصف \(Num.format(rowsRead))", "\(sheetName) · row \(rowsRead)"),
@@ -545,7 +556,7 @@ nonisolated final class SheetParser {
             return
         }
         result.accounts.append(ImportedExecutionAccount(entity: entity, iban: iban,
-                                                       branch: cell(row, columns.branch), swift: cell(row, columns.swift).uppercased()))
+                                                       branch: branch, swift: cell(row, columns.swift).uppercased()))
     }
 
     private static func cleanIBAN(_ text: String) -> String {

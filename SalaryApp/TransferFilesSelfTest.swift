@@ -49,8 +49,23 @@ import CryptoKit
         catch { }
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
         try check(TransferRules.localAccountDigits(iban) == String(iban.suffix(15)) && TransferRules.localAccountDigits("IQ00") == nil, "local account from Iraqi IBAN")
+        let localOnly = SavedExecutionAccount(entity: "صندوق الاسكان وهمي", iban: "", branch: "الرافدين / فرع الانبار", swift: "", localAccount: "123456789012345")
+        let conflict = SavedExecutionAccount(entity: "صندوق الاسكان وهمي", iban: iban, branch: "الرافدين / فرع الانبار", swift: "", localAccount: "123456789012345")
+        try check(TransferRules.individualLocalAccount(localOnly) == "123456789012345" && TransferRules.individualLocalAccount(conflict) == nil, "local account and conflicting IBAN")
+        let accountRoundtrip = try ExecutionAccountStore.decode(ExecutionAccountStore.encode([localOnly]))
+        try check(accountRoundtrip.first?.localAccount == localOnly.localAccount && accountRoundtrip.first?.iban == "", "local account storage roundtrip")
+        let oldAccount = Data("[{\"entity\":\"جهة وهمية\",\"iban\":\"\",\"branch\":\"\",\"swift\":\"\"}]".utf8)
+        try check(try ExecutionAccountStore.decode(oldAccount).first?.localAccount == nil, "older account without local field")
+        let backupAccount = BackupFormat.AccountRecord(entity: localOnly.entity, iban: localOnly.iban, branch: localOnly.branch, swift: localOnly.swift, localAccount: localOnly.localAccount)
+        try check(try JSONDecoder().decode(BackupFormat.AccountRecord.self, from: JSONEncoder().encode(backupAccount)).localAccount == localOnly.localAccount, "local account backup roundtrip")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let localGrouped = TransferEntity(group: group, account: localOnly, category: .rafidain, missingAmounts: 0)
+        do {
+            _ = try TransferRules.csv([localGrouped], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "local account accepted for grouped CSV")
+        } catch is Failure { throw Failure(errorDescription: "local account accepted for grouped CSV") }
+        catch { }
         let issuedLine = TransferIssuedLine(item)
         let namesA = [["موظف وهمي أ", "رتبة", "قسم", "600"], ["موظف وهمي ب", "رتبة", "قسم", "600"]]
         let namesB = [["موظف وهمي أ", "رتبة", "قسم", "600"], ["موظف وهمي ج", "رتبة", "قسم", "600"]]
