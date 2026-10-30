@@ -25,6 +25,21 @@ import CryptoKit
         try check(customization.effective(for: "food_company").header == "ترويسة جديدة" && customization.effective(for: "food_company").committeeFirst == "عضو وهمي", "apply to all preserves unrelated fields")
         let savedCustomization = try JSONEncoder().encode(customization)
         try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: savedCustomization) == customization, "customization roundtrip")
+        let wordValues = try TransferWordValues.make(month: "تشرين الاول 2026", amount: 123_456,
+            custom: .init(header: "ترويسة وهمية"), requested: ["MONTH_NUMBER", "YEAR", "SIGNATURE_DATE", "AMOUNT", "AMOUNT_WORDS", "HEADER"])
+        try check(wordValues["MONTH_NUMBER"] == "10" && wordValues["YEAR"] == "2026" && wordValues["AMOUNT"] == "123,456", "Word period and amount")
+        try check(wordValues["SIGNATURE_DATE"] == " / 10 / 2026" && wordValues["HEADER"] == "ترويسة وهمية", "Word signature date and customization")
+        try check(wordValues["AMOUNT_WORDS"] == ArabicAmountWords.dinars(123_456), "Word amount in words")
+        do {
+            _ = try TransferWordValues.make(month: "تشرين الاول 2026", amount: -1, custom: .init(), requested: ["AMOUNT"])
+            throw Failure(errorDescription: "invalid Word amount accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid Word amount accepted") }
+        catch { }
+        do {
+            _ = try TransferWordValues.make(month: "تشرين الاول 2026", amount: 100, custom: .init(), requested: ["HEADER"])
+            throw Failure(errorDescription: "missing Word customization accepted")
+        } catch is Failure { throw Failure(errorDescription: "missing Word customization accepted") }
+        catch { }
         let iban = "IQ06TEST123000000000001"
         let account = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين فرع تجريبي", swift: "TESTIQBAAAA")
         let anbar = SavedExecutionAccount(entity: "جهة ثانية", iban: iban, branch: "مصرف الرافدين فرع الانبار", swift: "TESTIQBAAAA")
