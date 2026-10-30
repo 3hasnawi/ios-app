@@ -826,6 +826,7 @@ final class BackupManager {
                 let settings = try await Task.detached(priority: .userInitiated) {
                     try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink)
                 }.value
+                BankStatementCache.shared.invalidate()
                 for (key, data) in settings {
                     if let value = try? PropertyListSerialization.propertyList(from: data, format: nil) {
                         UserDefaults.standard.set(value, forKey: key)
@@ -844,6 +845,7 @@ final class BackupManager {
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
                              "Restored: \(pending.manifest.months.count) months, \(pending.manifest.staff) staff.")
             } catch {
+                BankStatementCache.shared.invalidate()
                 progress.end()
                 message = tr("تعذّر الاسترجاع: \(error.localizedDescription)", "Restore failed: \(error.localizedDescription)")
             }

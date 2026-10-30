@@ -44,6 +44,24 @@ nonisolated struct BankManualAmounts: Codable, Equatable {
     var total: Double { accumulatedLeave + employeeRewards + singleList }
 }
 
+/// ملخصات مؤقتة داخل الذاكرة فقط؛ لا تُكتب مع بيانات الرواتب أو النسخة الاحتياطية.
+@MainActor @Observable
+final class BankStatementCache {
+    static let shared = BankStatementCache()
+    private(set) var revision = 0
+    private var entries: [String: BankStatementSummary] = [:]
+
+    func value(for key: String) -> BankStatementSummary? { entries[key] }
+    func store(_ value: BankStatementSummary, for key: String) {
+        if entries.count >= 3 && entries[key] == nil { entries.removeAll() }
+        entries[key] = value
+    }
+    func invalidate() {
+        entries.removeAll()
+        revision += 1
+    }
+}
+
 @ModelActor
 actor BankStatementEngine {
     func summary(month: String) throws -> BankStatementSummary {
@@ -113,9 +131,14 @@ struct BankStatementView: View {
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
+    @State private var cache = BankStatementCache.shared
+    @State private var requestID = UUID()
+    @State private var currentWork: Task<BankStatementSummary, Error>?
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
-    private var loadKey: String { "\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
+    private var loadKey: String {
+        "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(cache.revision)"
+    }
     private var manualAmounts: BankManualAmounts { amounts(for: month?.name ?? "") }
 
     private func amounts(for name: String) -> BankManualAmounts {
@@ -141,6 +164,10 @@ struct BankStatementView: View {
     var body: some View {
         NavigationStack {
             List {
+                if summary != nil, let loadError {
+                    Section { Text(tr("تعذّر تحديث الكشف: \(loadError)", "Couldn't refresh the statement: \(loadError)"))
+                        .foregroundStyle(.secondary) }
+                }
                 if let summary {
                     Section {
                         VStack(alignment: .leading, spacing: 10) {
@@ -245,6 +272,7 @@ struct BankStatementView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .refreshable { await loadSummary(force: true) }
             .navigationTitle(tr("كشف حساب البنك", "Bank account statement"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -271,31 +299,50 @@ struct BankStatementView: View {
                 }
             }
             .sheet(isPresented: $showSettings) { bankSettingsSheet }
-            .task(id: loadKey) {
-                guard let month else { summary = nil; return }
-                summary = nil
-                let container = SharedModel.container
-                let name = month.name
-                do {
-                    let value = try await Task.detached(priority: .userInitiated) {
-                        try await BankStatementEngine(modelContainer: container).summary(month: name)
-                    }.value
-                    guard !Task.isCancelled else { return }
-                    summary = value
-                    loadError = nil
-                } catch is CancellationError {
-                    return
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    loadError = error.localizedDescription
-                }
-            }
+            .task(id: loadKey) { await loadSummary(force: false) }
             .onChange(of: accountName) { BackupManager.shared.markChanged() }
             .onChange(of: iban) { BackupManager.shared.markChanged() }
             .onChange(of: manualAmountsData) { BackupManager.shared.markChanged() }
             .task {
                 if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
             }
+        }
+    }
+
+    @MainActor
+    private func loadSummary(force: Bool) async {
+        currentWork?.cancel()
+        let id = UUID()
+        requestID = id
+        guard let month else { summary = nil; loadError = nil; return }
+        let key = loadKey
+        let name = month.name
+        if summary?.month != name { summary = nil }
+        if !force {
+            summary = cache.value(for: key)
+            loadError = nil
+            if summary != nil { return }
+        }
+        let container = SharedModel.container
+        let work = Task.detached(priority: .userInitiated) {
+            try await BankStatementEngine(modelContainer: container).summary(month: name)
+        }
+        currentWork = work
+        do {
+            let value = try await withTaskCancellationHandler {
+                try await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            guard !Task.isCancelled, requestID == id, loadKey == key else { return }
+            cache.store(value, for: key)
+            summary = value
+            loadError = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled, requestID == id, loadKey == key else { return }
+            loadError = error.localizedDescription
         }
     }
 
