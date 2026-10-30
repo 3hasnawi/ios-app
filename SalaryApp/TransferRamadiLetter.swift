@@ -18,8 +18,9 @@ nonisolated enum TransferRamadiLetter {
     }
     private static let amount = CGRect(x: 334.99, y: 317.344, width: 79.986, height: 15.654)
     private static let wordsMasks = [
-        CGRect(x: 143.906, y: 317.54, width: 171.4, height: 15.543),
-        CGRect(x: 301.837, y: 333.62, width: 259.261, height: 15.543),
+        // حدود الحبر الفعلية أوسع من مربعات النص التي يستخرجها PDFKit من المرجع.
+        CGRect(x: 28, y: 317.54, width: 287.306, height: 15.543),
+        CGRect(x: 280, y: 333.62, width: 281.098, height: 15.543),
     ]
     private static let wordSlots = wordsMasks
     private static let years = [
@@ -38,7 +39,11 @@ nonisolated enum TransferRamadiLetter {
         CGRect(x: 467.62, y: 397.94, width: 55.851, height: 15.543),
         CGRect(x: 145.228, y: 663.52, width: 63.563, height: 17.667),
     ]
-    private static let nameSlots = monthNameMasks
+    // الامتداد الإضافي على اليسار مساحة بيضاء بين الشهر والشرطة المائلة الثابتة.
+    private static let nameSlots = [
+        CGRect(x: 461.7, y: 397.94, width: 61.771, height: 15.543),
+        CGRect(x: 138.3, y: 663.52, width: 70.491, height: 17.667),
+    ]
     private static let yearFonts = ["Arial-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "Arial-BoldMT"]
     private static let yearSizes: [CGFloat] = [15, 14.04, 16, 16, 16]
     private static let monthNames = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
@@ -100,14 +105,20 @@ nonisolated enum TransferRamadiLetter {
         guard let numeric = formatter.string(from: NSNumber(value: amountValue)) else { throw Failure.incomplete }
         let words = try ArabicAmountWords.dinars(Int64(amountValue))
         var flows = [
-            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true),
-            TransferPDFTextFlow(value: words, slots: wordSlots.map { slot($0, "TimesNewRomanPSMT", 14.04) }, keepLastWordOnLastLine: true),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)]),
-            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
+            TransferPDFTextFlow(value: numeric, slots: [slot(amount, "Arial-BoldMT", 14.04)], verifyNumericOutput: true, fieldName: tr("المبلغ الرقمي", "Numeric amount")),
+            TransferPDFTextFlow(value: words, slots: wordSlots.enumerated().map { index, rect in
+                TransferPDFTextSlot(rect: rect, fontName: "TimesNewRomanPSMT", fontSize: 14.04, alignment: index == 0 ? .right : .left)
+            }, keepLastWordOnLastLine: true, fieldName: tr("المبلغ كتابةً", "Amount in words")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)], fieldName: tr("اسم الشهر في الكتاب", "Month in letter")),
+            TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("اسم الشهر في التوقيعات", "Month in signatures"))
         ]
-        flows.append(contentsOf: customFields.flows)
-        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
-        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
+        flows.append(contentsOf: customFields.flows.map { value in
+            var flow = value
+            flow.fieldName = tr("الترويسة أو أسماء اللجنة أو الهامش", "Header, committee name or footer")
+            return flow
+        })
+        for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])], fieldName: tr("السنة", "Year"))) }
+        for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)], fieldName: tr("رقم الشهر", "Month number"))) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
         try Task.checkCancellation()
         return try await TransferPDFOverlay.make(blankReference: blank, flows: flows,

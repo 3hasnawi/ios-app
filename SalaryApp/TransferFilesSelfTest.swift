@@ -584,6 +584,12 @@ import CryptoKit
             throw Failure(errorDescription: "overflowing PDF field accepted")
         } catch is Failure { throw Failure(errorDescription: "overflowing PDF field accepted") }
         catch { }
+        do {
+            _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: String(repeating: "1234567890", count: 100), slots: [slot], fieldName: "حقل تجريبي")])
+            throw Failure(errorDescription: "labeled overflowing PDF field accepted")
+        } catch let failure as TransferPDFOverlay.Failure {
+            guard case .fieldDoesNotFit(let field) = failure, field == "حقل تجريبي" else { throw Failure(errorDescription: "wrong overflow diagnostic") }
+        }
         var badRecords = records
         badRecords[0] = .init(id: records[0].id, path: records[0].path, sha256: String(repeating: "0", count: 64), pages: records[0].pages)
         try JSONEncoder().encode(TransferReferenceManifest(version: 1, templates: badRecords)).write(to: root.appendingPathComponent("manifest.json"))

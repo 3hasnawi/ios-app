@@ -23,6 +23,8 @@ nonisolated struct TransferPDFTextFlow: Sendable {
     var verifyNumericOutput = false
     /// لحقول الاسم والرتبة في كتاب الموارد المائية.
     var verifyTextOutput = false
+    /// اسم عام للحقل دون تضمين قيم الموظفين أو الحسابات في الخطأ.
+    var fieldName: String? = nil
 }
 
 nonisolated struct TransferPDFMonthSlot: Sendable {
@@ -35,13 +37,14 @@ nonisolated struct TransferPDFMonthSlot: Sendable {
 
 nonisolated enum TransferPDFOverlay {
     enum Failure: LocalizedError {
-        case invalidTemplate, missingFont, unsafeSlot, doesNotFit, numericMismatch, textMismatch
+        case invalidTemplate, missingFont, unsafeSlot, doesNotFit, fieldDoesNotFit(String), numericMismatch, textMismatch
         var errorDescription: String? {
             switch self {
             case .invalidTemplate: tr("مرجع الكتاب غير صالح.", "The letter reference is invalid.")
             case .missingFont: tr("خط الكتاب المطلوب غير متوفر على الجهاز.", "The required letter font is unavailable on this device.")
             case .unsafeSlot: tr("تعذّر التأكد من خلو موضع البيانات القديمة في القالب.", "Could not verify that old data was removed from the template.")
             case .doesNotFit: tr("النص الجديد لا يتسع في موضعه دون تغيير تنسيق الكتاب.", "The new text does not fit without changing the letter layout.")
+            case .fieldDoesNotFit(let field): tr("\(field): النص لا يتسع في الموضع المعتمد دون تغيير التنسيق.", "\(field): the text does not fit in the approved position without changing the layout.")
             case .numericMismatch: tr("تعذّر مطابقة المبلغ المطبوع مع بيانات الشهر؛ أُوقفت المعاينة.", "The printed amount does not match the month data; preview was stopped.")
             case .textMismatch: tr("تعذّر مطابقة الاسم أو الرتبة المطبوعة مع بيانات الشهر؛ أُوقفت المعاينة.", "The printed name or rank does not match the month data; preview was stopped.")
             }
@@ -91,7 +94,7 @@ nonisolated enum TransferPDFOverlay {
                     var slot = TransferPDFTextSlot(rect: month.rect, fontName: "SakkalMajalla-Bold", fontSize: 18, alignment: .right)
                     slot.privateFontData = fontData
                     slot.privateFontStyle = .bold
-                    resolvedFlows.append(TransferPDFTextFlow(value: value, slots: [slot]))
+                    resolvedFlows.append(TransferPDFTextFlow(value: value, slots: [slot], fieldName: tr("رقم الشهر", "Month number")))
                 } else { imageMonths.append(month) }
             }
             func checkSlot(_ rect: CGRect) throws {
@@ -104,6 +107,7 @@ nonisolated enum TransferPDFOverlay {
                    existing.unicodeScalars.contains(where: { !CharacterSet.whitespacesAndNewlines.contains($0) && !CharacterSet.controlCharacters.contains($0) }) { throw Failure.unsafeSlot }
             }
             for flow in resolvedFlows {
+                let fitError: Failure = flow.fieldName.map { .fieldDoesNotFit($0) } ?? .doesNotFit
                 guard !flow.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !flow.slots.isEmpty,
                       !flow.value.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.invalidTemplate }
                 let value = flow.value as NSString
@@ -136,12 +140,12 @@ nonisolated enum TransferPDFOverlay {
                     if flow.keepLastWordOnLastLine && slotIndex < flow.slots.count - 1 {
                         count = min(count, lastWordStart - offset)
                     }
-                    guard count > 0 else { throw Failure.doesNotFit }
+                    guard count > 0 else { throw fitError }
                     let line = value.substring(with: NSRange(location: offset, length: count))
                     if let privateFont { try TransferHeaderFont.requireSupported(line, font: privateFont) }
                     let measuredLine = CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: attributes))
                     let width = CTLineGetTypographicBounds(measuredLine, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(measuredLine)
-                    guard width <= Double(rect.width) else { throw Failure.doesNotFit }
+                    guard width <= Double(rect.width) else { throw fitError }
                     // نتحقق من حدود الحروف الفعلية بدلاً من ارتفاع الخط الاسمي الذي يشمل فراغاً إضافياً.
                     let ink = CTLineGetBoundsWithOptions(measuredLine, [.useGlyphPathBounds])
                     let flush: CGFloat = slot.alignment == .left ? 0 : slot.alignment == .center ? 0.5 : 1
@@ -150,11 +154,11 @@ nonisolated enum TransferPDFOverlay {
                     let ascent = font?.ascender ?? CTFontGetAscent(privateFont!)
                     let baseline = rect.midY - lineHeight / 2 + ascent
                     guard x + ink.minX >= rect.minX - 0.5, x + ink.maxX <= rect.maxX + 0.5,
-                          baseline - ink.maxY >= rect.minY - 0.5, baseline - ink.minY <= rect.maxY + 0.5 else { throw Failure.doesNotFit }
+                          baseline - ink.maxY >= rect.minY - 0.5, baseline - ink.minY <= rect.maxY + 0.5 else { throw fitError }
                     planned.append(Line(text: line, slot: slot, font: font, coreLine: privateFont == nil ? nil : measuredLine, x: x, baseline: baseline))
                     offset += count
                 }
-                guard offset == value.length else { throw Failure.doesNotFit }
+                guard offset == value.length else { throw fitError }
             }
             for month in imageMonths {
                 try checkSlot(month.rect)
@@ -162,7 +166,7 @@ nonisolated enum TransferPDFOverlay {
                 let indexes = String(month.month).compactMap(\.wholeNumberValue)
                 let glyphs = indexes.map { month.glyphs[$0] }
                 guard glyphs.allSatisfy({ !$0.png.isEmpty && $0.width > 0 && $0.height > 0 && $0.height <= month.rect.height + 1 }),
-                      glyphs.reduce(CGFloat.zero, { $0 + $1.width }) <= month.rect.width + 0.5 else { throw Failure.doesNotFit }
+                      glyphs.reduce(CGFloat.zero, { $0 + $1.width }) <= month.rect.width + 0.5 else { throw Failure.fieldDoesNotFit(tr("رقم الشهر", "Month number")) }
                 var images: [(UIImage, CGFloat, CGFloat)] = []
                 for glyph in glyphs {
                     guard let image = UIImage(data: glyph.png), image.cgImage != nil else { throw Failure.invalidTemplate }
