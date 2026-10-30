@@ -30,6 +30,20 @@ import CryptoKit
         try check(wordValues["MONTH_NUMBER"] == "10" && wordValues["YEAR"] == "2026" && wordValues["AMOUNT"] == "123,456", "Word period and amount")
         try check(wordValues["SIGNATURE_DATE"] == " / 10 / 2026" && wordValues["HEADER"] == "ترويسة وهمية", "Word signature date and customization")
         try check(wordValues["AMOUNT_WORDS"] == ArabicAmountWords.dinars(123_456), "Word amount in words")
+        let wordFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
+            foodCompany: 92, healthcare: 20, policeFundDonations: 30, sports: 40,
+            incomeTax: 11, socialProtection: 13, contractNominalShare: 17,
+            contractRetirement: 19, payrollCash: 23)
+        try check(try TransferWordValues.payrollAmount(bookID: "food_company", figures: wordFigures) == 92, "Word company source")
+        try check(try TransferWordValues.payrollAmount(bookID: "food_tax", figures: wordFigures) == 5, "Word food tax source")
+        try check(try TransferWordValues.payrollAmount(bookID: "tax_social", figures: wordFigures) == 24, "Word treasury source")
+        try check(try TransferWordValues.payrollAmount(bookID: "contracts", figures: wordFigures) == 36, "Word contract source")
+        try check(try TransferWordValues.payrollAmount(bookID: "cash_salary", figures: wordFigures) == 23, "Word cash source")
+        do {
+            _ = try TransferWordValues.payrollAmount(bookID: "water", figures: wordFigures)
+            throw Failure(errorDescription: "entity amount guessed from payroll")
+        } catch is Failure { throw Failure(errorDescription: "entity amount guessed from payroll") }
+        catch { }
         do {
             _ = try TransferWordValues.make(month: "تشرين الاول 2026", amount: -1, custom: .init(), requested: ["AMOUNT"])
             throw Failure(errorDescription: "invalid Word amount accepted")

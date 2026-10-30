@@ -3,13 +3,30 @@ import Foundation
 /// قيم مشتركة لقوالب Word المُجهزة، دون الاعتماد على أرقام النموذج القديم.
 nonisolated enum TransferWordValues {
     enum Failure: LocalizedError {
-        case invalidAmount, unknownField(String)
+        case invalidAmount, unavailableBook, unknownField(String)
         var errorDescription: String? {
             switch self {
             case .invalidAmount: tr("مبلغ الكتاب غير صالح.", "The letter amount is invalid.")
+            case .unavailableBook: tr("بيانات مبلغ الكتاب غير مكتملة أو لا يُحسب من الرواتب مباشرة.", "The letter amount data is incomplete or is not calculated directly from payroll.")
             case .unknownField(let field): tr("حقل الكتاب غير متاح: \(field).", "Letter field is unavailable: \(field).")
             }
         }
+    }
+
+    /// الكتب الأخرى تعتمد جهة استقطاع أو مجموعة، ولا يُخمن مبلغها من الرواتب.
+    static func payrollAmount(bookID: String, figures: TransferLetterFigures) throws -> Double {
+        let amount: Double?
+        switch bookID {
+        case "food_company": amount = figures.foodCompany
+        case "food_tax": amount = figures.foodTax
+        case "tax_social": amount = figures.treasuryTotal
+        case "contracts": amount = figures.contractTotal
+        case "cash_salary": amount = figures.payrollCash
+        default: throw Failure.unavailableBook
+        }
+        guard let amount, amount.isFinite, amount >= 0, amount.rounded() == amount,
+              amount <= 9_007_199_254_740_991 else { throw Failure.unavailableBook }
+        return amount
     }
 
     /// تُطلب فقط الحقول الموجودة في القالب؛ لا تُستبدل التخصيصات غير المحددة بنص فارغ.
