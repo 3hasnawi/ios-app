@@ -117,6 +117,9 @@ nonisolated enum TransferGroupLetter {
             let csv = folder.appendingPathComponent(category == .rafidain ? "Rafidain.csv" : "OtherBanks.csv")
             try data.write(to: pdf, options: [.atomic, .completeFileProtection])
             try csvData.write(to: csv, options: [.atomic, .completeFileProtection])
+            let savedCSV = try Data(contentsOf: csv)
+            guard savedCSV == csvData else { throw Failure.invalidTable }
+            try TransferGroupCSVCheck.validate(savedCSV, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
             complete = true
             return Result(letter: pdf, csv: csv)
         }

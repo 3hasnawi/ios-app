@@ -51,6 +51,8 @@ struct TransferLetterDraftView: View {
     @State private var previewURL: URL?
     @State private var countNotice: String?
     @State private var groupAuditPassed = false
+    @State private var csvPreview: String?
+    @State private var showCSV = false
     @State private var anbarAuditPassed = false
     @State private var cashAuditPassed = false
     @State private var showPreview = false
@@ -101,23 +103,30 @@ struct TransferLetterDraftView: View {
             previewURL = nil
             countNotice = nil
             groupAuditPassed = false
+            csvPreview = nil
+            showCSV = false
             anbarAuditPassed = false
             cashAuditPassed = false
         }) {
             NavigationStack {
                 if let previewURL {
                     VStack(spacing: 0) {
-                        if groupAuditPassed {
+                        if !current {
+                            Label(tr("تغيّرت البيانات بعد إعداد هذه المعاينة؛ أغلقها وأعد تحميل الشهر.", "Data changed after this preview was prepared; close it and reload the month."), systemImage: "exclamationmark.triangle")
+                                .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity)
+                                .background(.thinMaterial)
+                        }
+                        if groupAuditPassed && current {
                             Label(tr("فُحصت أسماء الجدول وحساباته ومبالغه وملف CSV؛ التنسيق ما زال قيد المراجعة.", "Table names, accounts, amounts and CSV were checked; the layout remains under review."), systemImage: "checkmark.shield")
                                 .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
                                 .background(.thinMaterial)
                         }
-                        if anbarAuditPassed {
+                        if anbarAuditPassed && current {
                             Label(tr("فُحصت أسماء جدول الأنبار ورتبهم ومبالغهم؛ التنسيق ما زال قيد المراجعة.", "Anbar table names, ranks and amounts were checked; the layout remains under review."), systemImage: "checkmark.shield")
                                 .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
                                 .background(.thinMaterial)
                         }
-                        if cashAuditPassed {
+                        if cashAuditPassed && current {
                             Label(tr("فُحصت أسماء ورتب ومحال عمل ورواتب قائمة الكاش ومجموعها مع المصدر.", "Cash list names, ranks, workplaces, salaries and total were checked against the source."), systemImage: "checkmark.shield")
                                 .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
                                 .background(.thinMaterial)
@@ -130,7 +139,29 @@ struct TransferLetterDraftView: View {
                         PDFPreview(url: previewURL)
                     }.navigationTitle(tr("معاينة تجريبية", "Draft preview"))
                         .navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showPreview = false } } }
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showPreview = false } }
+                            if csvPreview != nil {
+                                ToolbarItem(placement: .primaryAction) {
+                                    Button(tr("معاينة CSV", "Preview CSV")) { showCSV = true }.disabled(!current)
+                                }
+                            }
+                        }
+                        .sheet(isPresented: $showCSV) {
+                            NavigationStack {
+                                if current, let csvPreview {
+                                    ScrollView([.horizontal, .vertical]) {
+                                        Text(csvPreview).font(.system(.caption, design: .monospaced))
+                                            .fixedSize(horizontal: true, vertical: false).padding().privacySensitive()
+                                    }.environment(\.layoutDirection, .leftToRight)
+                                } else {
+                                    ContentUnavailableView(tr("تغيّرت البيانات", "Data changed"), systemImage: "exclamationmark.triangle", description: Text(tr("أغلق المعاينة وأعد تحميل الشهر.", "Close the preview and reload the month.")))
+                                }
+                                .navigationTitle(tr("معاينة CSV", "CSV preview"))
+                                .navigationBarTitleDisplayMode(.inline)
+                                .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showCSV = false } } }
+                            }
+                        }
                 }
             }
         }
@@ -144,7 +175,7 @@ struct TransferLetterDraftView: View {
             customization = store.effective(for: kind.rawValue)
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
-        working = true; error = nil; countNotice = nil; groupAuditPassed = false; anbarAuditPassed = false; cashAuditPassed = false
+        working = true; error = nil; countNotice = nil; groupAuditPassed = false; anbarAuditPassed = false; cashAuditPassed = false; csvPreview = nil
         generation = Task {
             defer { working = false }
             do {
@@ -164,7 +195,21 @@ struct TransferLetterDraftView: View {
                     cashAuditPassed = true
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
-                    url = try await TransferGroupLetter.make(allEntities: entities, category: category, month: month, payer: payerName, payerIBAN: payerIBAN, references: references, customization: customization).letter
+                    let result = try await TransferGroupLetter.make(allEntities: entities, category: category, month: month, payer: payerName, payerIBAN: payerIBAN, references: references, customization: customization)
+                    do {
+                        let csvWork = Task.detached(priority: .userInitiated) {
+                            let size = try result.csv.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                            guard size > 0, size <= 1_000_000 else { throw TransferGroupCSVCheck.Failure.mismatch }
+                            let data = try Data(contentsOf: result.csv)
+                            guard data.count <= 1_000_000, let text = String(data: data, encoding: .utf8) else { throw TransferGroupCSVCheck.Failure.mismatch }
+                            return text
+                        }
+                        csvPreview = try await withTaskCancellationHandler { try await csvWork.value } onCancel: { csvWork.cancel() }
+                    } catch {
+                        try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent())
+                        throw error
+                    }
+                    url = result.letter
                     groupAuditPassed = true
                 case .ramadi, .anbar, .housing, .water:
                     guard let entity, let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
