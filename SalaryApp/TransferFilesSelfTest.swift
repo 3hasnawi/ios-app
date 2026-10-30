@@ -190,6 +190,8 @@ import CryptoKit
             context.beginPage()
             ("0123456789" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 18)])
         }
+        let digitGlyphs = try TransferMonthDigits.extract(from: digitPDF)
+        try check(digitGlyphs.count == 10 && digitGlyphs.allSatisfy { !$0.png.isEmpty && $0.width > 0 && $0.height > 0 }, "month digit glyphs")
         let digitPath = "templates/\(TransferReferencePack.digitTemplateID).pdf"
         try digitPDF.write(to: root.appendingPathComponent(digitPath))
         let digitDigest = SHA256.hash(data: digitPDF).map { String(format: "%02x", $0) }.joined()
