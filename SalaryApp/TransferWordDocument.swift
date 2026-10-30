@@ -116,6 +116,13 @@ nonisolated enum TransferWordDocument {
             try Task.checkCancellation()
             try archive.addEntry(with: path, relativeTo: root, compressionMethod: .deflate)
         }
+        let check = try Archive(url: destination, accessMode: .read)
+        let expectedXML = Data(xml.utf8)
+        guard let entry = check["word/document.xml"], check["[Content_Types].xml"] != nil,
+              check["_rels/.rels"] != nil, UInt64(entry.uncompressedSize) == UInt64(expectedXML.count) else { throw Failure.invalidContent }
+        var output = Data()
+        _ = try check.extract(entry) { output.append($0) }
+        guard output == expectedXML else { throw Failure.invalidContent }
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
         complete = true
     }

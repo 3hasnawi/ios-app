@@ -33,11 +33,17 @@ nonisolated struct TransferWordGroupPlan: Sendable {
              entry.account?.branch ?? "", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entry.group.total)]
         }
         rows.append(["", "", "", "المجموع", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), sum)])
+        let headers = ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"]
+        let weights = [40, 252, 322, 220, 166]
+        // هامش إضافي للعناوين واختلافات عرض Word. يجب معاينة الصفحة الفعلية أيضاً.
+        let widths = weights.map { CGFloat(510.3 * Double($0) / 1000) }
+        let fit = try TransferSinglePageFit.fit(rows: [headers] + rows, widths: widths, availableHeight: 680,
+            fontName: "Arial-BoldMT", maximumSize: 11, minimumSize: 9, verticalPadding: 5)
         self.total = sum
         self.csv = data
         self.month = month
         self.payerIBAN = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
-        self.table = TransferWordDocument.Table(headers: ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows: rows,
-                                                columnWeights: [40, 252, 322, 220, 166])
+        self.table = TransferWordDocument.Table(headers: headers, rows: rows, halfPoints: Int((fit.fontSize * 2).rounded()),
+                                                columnWeights: weights)
     }
 }

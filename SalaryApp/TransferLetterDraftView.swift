@@ -61,6 +61,9 @@ struct TransferLetterDraftView: View {
     @State private var anbarAuditPassed = false
     @State private var cashAuditPassed = false
     @State private var showPreview = false
+    @State private var wordResult: TransferWordDraftGenerator.Result?
+    @State private var showWordPreview = false
+    @State private var wordPreviewFailed = false
     @State private var generation: Task<Void, Never>?
 
     private var candidates: [TransferEntity] {
@@ -109,9 +112,11 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
+                Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
+                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
                 Button(tr("معاينة تجريبية PDF", "Preview draft PDF"), systemImage: "doc.text.magnifyingglass") { prepare() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
-            } footer: { Text(tr("معاينة قيد التحقق؛ مشاركة الكتب معطّلة حتى اعتماد التنسيق ومطابقة المبالغ.", "Preview under verification; sharing is disabled until the layout and amounts are verified.")) }
+            } footer: { Text(tr("معاينة Word تجريبية: اضبط العدد والترويسة واللجنة والهامش من تخصيص الكتب. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "Word preview is experimental: set the reference number, header, committee and footer in letter settings. Sharing remains disabled until verification is complete.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
         .overlay { if working { ProgressView(tr("إعداد المعاينة", "Preparing preview")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
@@ -187,7 +192,103 @@ struct TransferLetterDraftView: View {
                 }
             }
         }
+        .sheet(isPresented: $showWordPreview, onDismiss: {
+            if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
+            wordResult = nil
+            wordPreviewFailed = false
+            countNotice = nil
+        }) {
+            NavigationStack {
+                if let wordResult {
+                    VStack(spacing: 0) {
+                        Label(tr("مسودة تجريبية؛ راجع النص والمبالغ والجداول والتواقيع. لم يُتحقق بعد من عدد صفحات Word.", "Experimental draft: review the text, amounts, tables and signatures. Word pagination has not been verified."), systemImage: "exclamationmark.triangle")
+                            .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
+                        if let countNotice { Text(countNotice).font(.footnote).foregroundStyle(.orange).padding(8) }
+                        if !current { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
+                        if wordPreviewFailed {
+                            ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "doc.questionmark", description: Text(tr("تعذّر عرض مسودة Word داخل التطبيق على هذا الجهاز.", "This device could not display the Word draft inside the app.")))
+                        } else {
+                            TransferWordPreview(url: wordResult.letter, loadFailed: $wordPreviewFailed)
+                        }
+                    }
+                    .navigationTitle(tr("مسودة Word", "Word draft"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } } }
+                }
+            }
+        }
         .onDisappear { generation?.cancel() }
+    }
+    private func prepareWord() {
+        guard current, !working else { return }
+        let customization: TransferLetterCustomization
+        do {
+            let store = try (sourceCustomization.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: sourceCustomization))
+            customization = store.effective(for: kind.rawValue)
+        } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
+        let entity = selectedEntity
+        working = true; error = nil; countNotice = nil
+        generation = Task {
+            defer { working = false }
+            do {
+                var individual: TransferIndividualPlan?
+                var cash: TransferCashList?
+                if kind.requiresEntity {
+                    guard let entity else { throw TransferWordDraftGenerator.Failure.incomplete }
+                    let container = SharedModel.container
+                    let key = MonthName.sortKey(month), year = key / 100, number = key % 100
+                    let previousKey = number == 1 ? (year - 1) * 100 + 12 : year * 100 + number - 1
+                    let prior = months.first { $0.sortKey == previousKey && $0.deductionCount > 0 }
+                    let priorName = prior?.name, priorRevision = prior?.importedAt
+                    let worker = Task.detached(priority: .userInitiated) {
+                        let engine = ReportEngine(modelContainer: container)
+                        let rows = try await engine.rows(for: entity.group)
+                        guard let priorName else { return (rows, Optional<Int>.none) }
+                        let previous = try await engine.deductionGroups(month: priorName, byEntity: false)
+                        return (rows, Optional(previous.first { $0.title == entity.group.title }?.count ?? 0))
+                    }
+                    let (rows, previousCount) = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+                    if let priorName, let priorRevision, months.first(where: { $0.name == priorName })?.importedAt != priorRevision {
+                        throw TransferWordDraftGenerator.Failure.changed
+                    }
+                    let planKind: TransferIndividualPlan.Kind = switch kind {
+                    case .ramadi: .ramadi
+                    case .housing: .housing
+                    case .water: .water
+                    default: .rafidainAnbar
+                    }
+                    individual = try TransferIndividualPlan(kind: planKind, group: entity.group, rows: rows, missingAmounts: entity.missingAmounts)
+                    if let previousCount, previousCount != entity.group.count {
+                        countNotice = tr("تغيّر عدد المنتسبين: \(Num.format(previousCount)) في الشهر السابق و\(Num.format(entity.group.count)) في الشهر المختار.", "Employee count changed: \(Num.format(previousCount)) in the previous month and \(Num.format(entity.group.count)) in the selected month.")
+                    }
+                } else if kind == .cash {
+                    let container = SharedModel.container
+                    let requestedMonth = month
+                    let worker = Task.detached(priority: .userInitiated) { try await TransferCashListEngine(modelContainer: container).list(month: requestedMonth) }
+                    cash = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+                }
+                let plan = individual, list = cash, bookID = kind.rawValue
+                let snapshotFigures = figures, snapshotEntities = entities, snapshotReferences = references
+                let snapshotLinks = sourceLinks, snapshotPayer = payerName, snapshotPayerIBAN = payerIBAN
+                let worker = Task.detached(priority: .userInitiated) {
+                    try TransferWordDraftGenerator.make(bookID: bookID, figures: snapshotFigures, entities: snapshotEntities,
+                        entity: entity, individualPlan: plan, cashList: list, references: snapshotReferences,
+                        accountLinks: snapshotLinks, payerName: snapshotPayer, payerIBAN: snapshotPayerIBAN, customization: customization)
+                }
+                let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+                guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return }
+                switch kind {
+                case .rafidain, .otherBanks:
+                    let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
+                    coverage.record(revision: revision, entityIDs: entities.filter { $0.category == category }.map(\.id), bookID: kind.rawValue)
+                case .ramadi, .anbar, .housing, .water:
+                    if let entity { coverage.record(revision: revision, entityIDs: [entity.id], bookID: kind.rawValue) }
+                default: break
+                }
+                wordResult = result; generation = nil; showWordPreview = true
+            } catch is CancellationError { return }
+            catch { guard !Task.isCancelled else { return }; self.error = error.localizedDescription }
+        }
     }
     private func prepare() {
         guard current, !working else { return }

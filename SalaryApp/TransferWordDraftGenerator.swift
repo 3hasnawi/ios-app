@@ -1,0 +1,58 @@
+import Foundation
+
+/// إعداد مسودة Word وملف المجموعة عند الحاجة. لا يشارك الملفات أو يعتمدها.
+nonisolated enum TransferWordDraftGenerator {
+    struct Result: Sendable { let letter: URL; let csv: URL? }
+    enum Failure: LocalizedError {
+        case incomplete, changed
+        var errorDescription: String? {
+            switch self {
+            case .incomplete: tr("بيانات الكتاب غير مكتملة؛ راجع الجهة والتخصيصات والمراجع.", "The letter data is incomplete; review its beneficiary, customization and references.")
+            case .changed: tr("تعذّر التحقق من ملف التحويل بعد إنشائه.", "The transfer file could not be verified after creation.")
+            }
+        }
+    }
+    static func make(bookID: String, figures: TransferLetterFigures, entities: [TransferEntity],
+                     entity: TransferEntity?, individualPlan: TransferIndividualPlan?, cashList: TransferCashList?,
+                     references: Data, accountLinks: Data, payerName: String, payerIBAN: String,
+                     customization: TransferLetterCustomization) throws -> Result {
+        let text = try TransferWordGroupDraft.letterText(from: customization)
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("word-draft-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+        var complete = false
+        defer { if !complete { try? fm.removeItem(at: root) } }
+        let letter = root.appendingPathComponent("مسودة الكتاب.docx")
+        var csvURL: URL?
+        switch bookID {
+        case "rafidain_group", "other_banks_group":
+            let category: TransferCategory = bookID == "rafidain_group" ? .rafidain : .otherBanks
+            let plan = try TransferWordGroupPlan(allEntities: entities, category: category, month: figures.month,
+                payer: payerName, payerIBAN: payerIBAN)
+            try TransferWordGroupDraft.write(plan: plan, month: figures.month, payerIBAN: payerIBAN, text: text, destination: letter)
+            let csv = root.appendingPathComponent(category == .rafidain ? "Rafidain.csv" : "OtherBanks.csv")
+            try plan.csv.write(to: csv, options: [.atomic, .completeFileProtection])
+            guard try Data(contentsOf: csv) == plan.csv else { throw Failure.changed }
+            let entries = entities.filter { $0.category == category }
+            _ = try TransferGroupCSVCheck.validate(Data(contentsOf: csv), entities: entries, category: category,
+                month: figures.month, payer: payerName, payerIBAN: payerIBAN)
+            csvURL = csv
+        case "food_company", "food_tax", "tax_social", "contracts", "cash_salary":
+            let plan = try TransferWordPayrollPlan.prepare(bookID: bookID, figures: figures,
+                payerIBAN: payerIBAN, references: references, cashList: cashList)
+            try TransferWordPayrollDraft.write(plan: plan, text: text,
+                foodContractReference: customization.foodContractReference, destination: letter)
+        case "ramadi", "housing", "water", "rafidain_anbar":
+            guard let entity, let individualPlan, entity.group.id == individualPlan.group.id,
+                  entity.group.month == figures.month, entity.group.total == individualPlan.group.total,
+                  entity.missingAmounts == 0 else { throw Failure.incomplete }
+            let plan = try TransferWordEntityPlan.prepare(plan: individualPlan, account: entity.account,
+                payerIBAN: payerIBAN, references: references, accountLinks: accountLinks)
+            try TransferWordEntityDraft.write(plan: plan, text: text, destination: letter)
+        default: throw Failure.incomplete
+        }
+        try Task.checkCancellation()
+        complete = true
+        return Result(letter: letter, csv: csvURL)
+    }
+}
