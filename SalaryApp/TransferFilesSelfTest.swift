@@ -76,8 +76,18 @@ import CryptoKit
         let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1200, byEntity: false)
         let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
         let data = try TransferRules.csv([item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+        try TransferGroupCSVCheck.validate(data, entities: [item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let text = String(decoding: data, as: UTF8.self)
         let lines = text.components(separatedBy: "\r\n")
+        var alteredLines = lines
+        var alteredFields = alteredLines[1].components(separatedBy: "|")
+        alteredFields[4] = "1199"
+        alteredLines[1] = alteredFields.joined(separator: "|")
+        do {
+            try TransferGroupCSVCheck.validate(Data(alteredLines.joined(separator: "\r\n").utf8), entities: [item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "altered group CSV amount accepted")
+        } catch is Failure { throw Failure(errorDescription: "altered group CSV amount accepted") }
+        catch { }
         try check(!data.starts(with: [0xef, 0xbb, 0xbf]) && lines.count == 3 && !text.hasSuffix("\n"), "encoding")
         let first = lines[1].components(separatedBy: "|")
         let second = lines[2].components(separatedBy: "|")

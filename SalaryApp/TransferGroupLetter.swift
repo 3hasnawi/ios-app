@@ -57,6 +57,7 @@ nonisolated enum TransferGroupLetter {
         let sum = entries.reduce(0.0) { $0 + $1.group.total }
         guard sum.isFinite, sum > 0, sum.rounded() == sum, sum <= 9_007_199_254_740_991 else { throw Failure.incomplete }
         let csvData = try TransferRules.csv(entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
+        try TransferGroupCSVCheck.validate(csvData, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
         let task = Task.detached(priority: .userInitiated) { try TransferReferencePack.load([style.id], from: references) }
         let source = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
         try Task.checkCancellation()
