@@ -62,7 +62,8 @@ nonisolated enum TransferContractsLetter {
     }
     static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
-        let amountValue = figures.contractTotal
+        guard figures.missingContractNominal == 0 else { throw TransferLetterFigureError.missingContractNominal(figures.missingContractNominal) }
+        guard let amountValue = figures.contractTotal, let nominalShare = figures.contractNominalShare else { throw Failure.incomplete }
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
               amountValue.rounded() == amountValue, amountValue <= 9_007_199_254_740_991 else { throw Failure.incomplete }
         let referenceWork = Task.detached(priority: .userInitiated) {
@@ -90,9 +91,9 @@ nonisolated enum TransferContractsLetter {
         let oldTable = tableAmounts.compactMap { AnnualDeductionAmount.parse(selected($0, page: page, height: pageSize.height)) }
         guard oldTable.count == 3, oldTable[0] + oldTable[1] == oldTable[2],
               AnnualDeductionAmount.parse(rawAmount) == oldTable[2],
-              figures.contractNominalShare.isFinite, figures.contractRetirement.isFinite,
-              figures.contractNominalShare >= 0, figures.contractRetirement >= 0,
-              figures.contractNominalShare.rounded() == figures.contractNominalShare,
+              nominalShare.isFinite, figures.contractRetirement.isFinite,
+              nominalShare >= 0, figures.contractRetirement >= 0,
+              nominalShare.rounded() == nominalShare,
               figures.contractRetirement.rounded() == figures.contractRetirement else { throw Failure.missingFields }
         let customFields = try TransferPDFCustomization.prepare(id: "contracts", custom: customization, page: page, height: pageSize.height)
         let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + tableAmounts + customFields.masks
@@ -112,7 +113,7 @@ nonisolated enum TransferContractsLetter {
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 16)]),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
         ]
-        let tableValues = [figures.contractRetirement, figures.contractNominalShare, amountValue]
+        let tableValues = [figures.contractRetirement, nominalShare, amountValue]
         for i in tableAmounts.indices {
             guard let value = formatter.string(from: NSNumber(value: tableValues[i])) else { throw Failure.incomplete }
             flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableAmounts[i], i == 2 ? "Arial-BoldMT" : "TimesNewRomanPS-BoldMT", i == 2 ? 14.04 : 12)], verifyNumericOutput: true))

@@ -30,12 +30,13 @@ nonisolated struct TransferLetterFigures: Sendable {
     let sports: Double
     let incomeTax: Double
     let socialProtection: Double
-    let contractNominalShare: Double
+    let contractNominalShare: Double?
     let contractRetirement: Double
     /// لا يُعتمد مبلغ الكاش إذا وُجدت رواتب لم تُعرف طريقة دفعها.
     let payrollCash: Double?
     var treasuryTotal: Double { incomeTax + socialProtection }
-    var contractTotal: Double { contractNominalShare + contractRetirement }
+    var contractTotal: Double? { contractNominalShare.map { $0 + contractRetirement } }
+    var missingContractNominal: Int = 0
 }
 
 nonisolated enum TransferLetterFigureError: LocalizedError {
@@ -61,7 +62,6 @@ nonisolated enum TransferLetterFigureRules {
         if summary.contractCount > 0 { required += ["الاسمي", "التوقيفات التقاعدية"] }
         let missing = required.filter { !available.contains($0) }
         guard missing.isEmpty else { throw TransferLetterFigureError.missingColumns(missing) }
-        guard summary.missingContractNominal == 0 else { throw TransferLetterFigureError.missingContractNominal(summary.missingContractNominal) }
         func checked(_ name: String, _ value: Double) throws -> Double {
             guard value.isFinite, value >= 0, value.rounded() == value else { throw TransferLetterFigureError.invalidAmount(name) }
             return value
@@ -77,10 +77,11 @@ nonisolated enum TransferLetterFigureRules {
             sports: checked("النشاط الرياضي", summary.breakdown["النشاط الرياضي"] ?? 0),
             incomeTax: checked("الضريبة", summary.breakdown["الضريبة"] ?? 0),
             socialProtection: checked("الحماية الاجتماعية", summary.breakdown["الحماية الاجتماعية"] ?? 0),
-            contractNominalShare: checked("حصة اسمي العقود", summary.contractNominalShare),
+            contractNominalShare: summary.missingContractNominal == 0 ? checked("حصة اسمي العقود", summary.contractNominalShare) : nil,
             contractRetirement: checked("توقيفات العقود", summary.contractRetirement),
             payrollCash: available.contains("طريقة الدفع") && summary.unclassifiedCount == 0 && summary.missingNet == 0
-                ? checked("الرواتب كاش", summary.cashNet) : nil)
+                ? checked("الرواتب كاش", summary.cashNet) : nil,
+            missingContractNominal: summary.missingContractNominal)
     }
 }
 

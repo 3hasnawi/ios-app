@@ -101,13 +101,16 @@ struct TransferLetterDraftView: View {
                 }
             }
             Section {
+                if kind == .contracts && figures.missingContractNominal > 0 {
+                    Text(tr("يتعذر حساب هذا الكتاب: يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. راجع السجلات من صفحة ملفات التحويل.", "This letter cannot be calculated: \(figures.missingContractNominal) contracts lack readable nominal pay. Review the records in transfer files.")).font(.footnote).foregroundStyle(.orange)
+                }
                 if kind == .housing || kind == .water {
                     Text(tr("يُطابق رقم حساب المستفيد في الكتاب مع حساب الجهة المحفوظ قبل المعاينة.", "The beneficiary account in the letter is checked against the saved entity account before preview."))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
                 Button(tr("معاينة تجريبية PDF", "Preview draft PDF"), systemImage: "doc.text.magnifyingglass") { prepare() }
-                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil))
+                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
             } footer: { Text(tr("معاينة قيد التحقق؛ مشاركة الكتب معطّلة حتى اعتماد التنسيق ومطابقة المبالغ.", "Preview under verification; sharing is disabled until the layout and amounts are verified.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)

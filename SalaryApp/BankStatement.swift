@@ -44,6 +44,17 @@ nonisolated struct BankManualAmounts: Codable, Equatable {
     var total: Double { accumulatedLeave + employeeRewards + singleList }
 }
 
+/// القراءة نفسها للكشف وقائمة السجلات التي تحتاج مراجعة.
+nonisolated enum ContractNominalValue {
+    static func read(details: [String: String], items: [String: Double]) -> Double? {
+        if let value = details["الاسمي"].flatMap(ArabicText.number(from:)) ?? items["الاسمي"] { return value }
+        let key = ArabicText.normalize("الاسمي")
+        if let raw = details.first(where: { ArabicText.normalize($0.key) == key })?.value,
+           let value = ArabicText.number(from: raw) { return value }
+        return items.first(where: { ArabicText.normalize($0.key) == key })?.value
+    }
+}
+
 /// ملخصات مؤقتة داخل الذاكرة فقط؛ لا تُكتب مع بيانات الرواتب أو النسخة الاحتياطية.
 @MainActor @Observable
 final class BankStatementCache {
@@ -93,7 +104,7 @@ actor BankStatementEngine {
             // «عقد» غير مشمول؛ المعادلة تخص الرتبة المكتوبة «عقود» فقط.
             if ArabicText.normalize(employee.rank) == ArabicText.normalize("عقود") {
                 result.contractCount += 1
-                if let nominal = amount(["الاسمي"]) { result.contractNominal += nominal }
+                if let nominal = ContractNominalValue.read(details: details, items: items) { result.contractNominal += nominal }
                 else { result.missingContractNominal += 1 }
                 result.contractRetirement += amount(["توقيفات تقاعدية", "التوقيفات التقاعدية"]) ?? 0
             }

@@ -222,6 +222,16 @@ import CryptoKit
         let figures = try TransferLetterFigureRules.make(summary: summary, available: columns)
         try check(figures.foodFund == 3000 && figures.foodTax == 1746 && figures.foodCompany == 95254, "food allocation")
         try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1200 && figures.contractTotal == 1400 && figures.payrollCash == 700, "letter totals")
+        var missingNominal = summary
+        missingNominal.missingContractNominal = 1
+        let partialFigures = try TransferLetterFigureRules.make(summary: missingNominal, available: columns)
+        try check(partialFigures.contractNominalShare == nil && partialFigures.contractTotal == nil && partialFigures.missingContractNominal == 1, "missing nominal must not become a partial contract total")
+        try check(partialFigures.foodCompany == figures.foodCompany && partialFigures.treasuryTotal == figures.treasuryTotal, "missing contract nominal must not block unrelated figures")
+        do {
+            _ = try await TransferContractsLetter.make(figures: partialFigures, payerIBAN: iban, references: Data())
+            throw Failure(errorDescription: "incomplete contract letter accepted")
+        } catch is Failure { throw Failure(errorDescription: "incomplete contract letter accepted") }
+        catch { }
         var unknownPayment = summary
         unknownPayment.unclassifiedCount = 1
         try check(try TransferLetterFigureRules.make(summary: unknownPayment, available: columns).payrollCash == nil, "unclassified payroll accepted as complete cash")
@@ -264,6 +274,13 @@ import CryptoKit
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [config])
         let context = ModelContext(container)
+        let reviewMonth = "كانون الثاني 2025"
+        context.insert(Employee(month: reviewMonth, name: "اسم وهمي ناقص", rank: "عقود", workplace: "قسم وهمي", netSalary: 100))
+        context.insert(Employee(month: reviewMonth, name: "اسم وهمي مكتمل", rank: "عقود", workplace: "قسم وهمي", netSalary: 100, details: ["الاسمي": "100"]))
+        try context.save()
+        let missingRows = try await ContractNominalReviewEngine(modelContainer: container).missing(month: reviewMonth)
+        try check(missingRows.count == 1 && missingRows.first?.name == "اسم وهمي ناقص", "identify contract without nominal pay")
+        try check(ContractNominalValue.read(details: ["الاسمي": "0"], items: [:]) == 0 && ContractNominalValue.read(details: [:], items: [:]) == nil, "distinguish zero nominal from missing nominal")
         let headers = ["الرعاية الصحية", "صندوق الشهداء", "نشاط رياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "توقيفات تقاعدية", "طريقة الدفع"]
         let values = ["100", "200", "300", "400", "500", "100000", "10001", "200", "كاش"]
         let employee = Employee(month: group.month, name: "موظف وهمي", rank: "عقود", workplace: "قسم وهمي", netSalary: 1000,

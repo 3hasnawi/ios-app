@@ -349,6 +349,16 @@ struct TransferFilesView: View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             if let figuresError { Section { Text(figuresError).foregroundStyle(.orange) } }
+            if let figures, figures.missingContractNominal > 0 {
+                Section {
+                    NavigationLink {
+                        ContractNominalReviewView(month: figures.month, sourceKey: loadKey, expected: figures.missingContractNominal)
+                    } label: {
+                        Label(tr("\(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء · مراجعة السجلات", "\(Num.format(figures.missingContractNominal)) contracts without readable nominal pay · review records"), systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                } footer: { Text(tr("يتوقف كتاب ضمان العقود حتى تُراجع بياناته؛ بقية المبالغ تُحسب من مصادرها.", "The contract guarantee letter is unavailable until its data is reviewed; other amounts use their own sources.")) }
+            }
             if !linksValid { Section { Text(tr("تعذّرت قراءة روابط الحسابات؛ لا يمكن اعتماد التصنيف أو التصدير حتى استعادة الروابط.", "Account links could not be read; classification and export are unavailable until they are restored.")).foregroundStyle(.red) } }
             Section {
                 Button { importReferences() } label: {
@@ -697,7 +707,9 @@ private struct TransferCategoryView: View {
             case .cash: figures.payrollCash
             default: nil
             }
-            if let value, value > 0 {
+            if kind == .contracts && figures.missingContractNominal > 0 {
+                Text(tr("الاسمي ناقص في \(Num.format(figures.missingContractNominal)) عقد؛ راجع السجلات", "Nominal pay is missing for \(figures.missingContractNominal) contracts; review records")).font(.caption).foregroundStyle(.orange)
+            } else if let value, value > 0 {
                 Text(tr("من بيانات الرواتب · \(Money.format(value))", "From payroll · \(Money.format(value))")).font(.caption).foregroundStyle(.secondary)
             } else {
                 Text(tr("لا مبلغ متاح؛ راجع بيانات الشهر", "Amount unavailable; review this month")).font(.caption).foregroundStyle(.orange)
