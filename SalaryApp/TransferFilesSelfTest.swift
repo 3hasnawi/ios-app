@@ -202,6 +202,21 @@ import CryptoKit
         try secondArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
         for record in versionTwoRecords { try secondArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
         try check(try TransferReferencePack.validateData(Data(contentsOf: secondPackage)).templates.count == 12, "digit reference package")
+        let blankRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
+        let blankPDF = blankRenderer.pdfData { context in
+            context.beginPage()
+            ("Static heading" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
+        }
+        let slot = TransferPDFTextSlot(rect: CGRect(x: 45, y: 100, width: 160, height: 28), fontName: ReportFont.regular(12).fontName, fontSize: 12, alignment: .right)
+        let composed = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: "123456", slots: [slot])])
+        defer { try? FileManager.default.removeItem(at: composed.deletingLastPathComponent()) }
+        guard let composedDoc = PDFDocument(url: composed), let composedText = composedDoc.page(at: 0)?.string else { throw Failure(errorDescription: "composed PDF missing") }
+        try check(composedDoc.pageCount == 1 && composedText.contains("123456"), "PDF overlay")
+        do {
+            _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: String(repeating: "1234567890", count: 100), slots: [slot])])
+            throw Failure(errorDescription: "overflowing PDF field accepted")
+        } catch is Failure { throw Failure(errorDescription: "overflowing PDF field accepted") }
+        catch { }
         var badRecords = records
         badRecords[0] = .init(id: records[0].id, path: records[0].path, sha256: String(repeating: "0", count: 64), pages: records[0].pages)
         try JSONEncoder().encode(TransferReferenceManifest(version: 1, templates: badRecords)).write(to: root.appendingPathComponent("manifest.json"))
