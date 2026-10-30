@@ -98,7 +98,8 @@ nonisolated enum TransferWaterLetter {
         guard !selected(rankBox, page: page, height: pageSize.height).isEmpty,
               personBoxes.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
         let customFields = try TransferPDFCustomization.prepare(id: "water", custom: customization, page: page, height: pageSize.height)
-        let masks = [amount, rankBox] + personBoxes + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks
+        let numberMask = try TransferPDFNumberField.mask(id: "water", page: page, height: pageSize.height)
+        let masks = [amount, rankBox] + personBoxes + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks + [numberMask]
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()

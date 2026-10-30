@@ -95,7 +95,8 @@ nonisolated enum TransferTaxSocialLetter {
               figures.incomeTax.rounded() == figures.incomeTax,
               figures.socialProtection.rounded() == figures.socialProtection else { throw Failure.missingFields }
         let customFields = try TransferPDFCustomization.prepare(id: "tax_social", custom: customization, page: page, height: pageSize.height)
-        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + tableAmounts + customFields.masks
+        let numberMask = try TransferPDFNumberField.mask(id: "tax_social", page: page, height: pageSize.height)
+        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + tableAmounts + customFields.masks + [numberMask]
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()
