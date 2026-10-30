@@ -39,6 +39,21 @@ import CryptoKit
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
+        _ = try TransferIndividualPlan(kind: .water, group: group, rows: individualRows, missingAmounts: 0)
+        let wrongRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1199, note: "", entity: group.title)]
+        do {
+            _ = try TransferIndividualPlan(kind: .water, group: group, rows: wrongRows, missingAmounts: 0)
+            throw Failure(errorDescription: "individual total mismatch accepted")
+        } catch is Failure { throw Failure(errorDescription: "individual total mismatch accepted") }
+        catch { }
+        let twoPeople = [individualRows[0], ReportRow(id: 2, name: "موظف آخر وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 100, note: "", entity: group.title)]
+        let twoGroup = ReportGroup(kind: .deductions, month: group.month, title: group.title, count: 2, total: 1300, byEntity: false)
+        do {
+            _ = try TransferIndividualPlan(kind: .water, group: twoGroup, rows: twoPeople, missingAmounts: 0)
+            throw Failure(errorDescription: "multiple water employees accepted")
+        } catch is Failure { throw Failure(errorDescription: "multiple water employees accepted") }
+        catch { }
         let secondGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ثانية", count: 1, total: 1200, byEntity: false)
         let secondItem = TransferEntity(group: secondGroup, account: account, category: .rafidain, missingAmounts: 0)
         let data = try TransferRules.csv([item, secondItem], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
@@ -60,6 +75,14 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "wrong transfer month accepted") }
         catch { }
         let otherItem = TransferEntity(group: group, account: other, category: .otherBanks, missingAmounts: 0)
+        let groupTable = try await TransferGroupTablePDF.make(entities: [item, secondItem], category: .rafidain, month: group.month)
+        defer { try? FileManager.default.removeItem(at: groupTable.deletingLastPathComponent()) }
+        try check(PDFDocument(url: groupTable)?.pageCount == 1, "group table page count")
+        do {
+            _ = try await TransferGroupTablePDF.make(entities: [item, item], category: .rafidain, month: group.month)
+            throw Failure(errorDescription: "duplicate group table source accepted")
+        } catch is Failure { throw Failure(errorDescription: "duplicate group table source accepted") }
+        catch { }
         let otherData = try TransferRules.csv([otherItem], category: .otherBanks, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let otherFields = String(decoding: otherData, as: UTF8.self).components(separatedBy: "\r\n")[1].components(separatedBy: "|")
         try check(otherFields[0] == otherFields[1] + "200001", "other bank reference")
