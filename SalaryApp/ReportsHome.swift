@@ -715,22 +715,15 @@ struct EntitiesView: View {
     }
 }
 
-/// بيانات الفرع تعرض كما وردت في الاسم أو الحساب المطابق، دون جمع فروع مختلفة.
+/// بيانات الحساب من السجل المحفوظ المطابق للجهة.
 struct ExecutionEntityCard: View {
     let group: ReportGroup
     let account: SavedExecutionAccount?
 
     private var bankAndBranch: String? {
-        let parts = group.title.split(separator: "/", maxSplits: 1).map {
-            String($0).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let first = parts.first ?? ""
-        let isBank = first.contains("مصرف") || first.contains("بنك")
-        let branch = (account?.branch.isEmpty == false ? account?.branch : nil) ?? (parts.count > 1 ? parts[1] : "")
-        var details: [String] = []
-        if isBank { details.append(tr("المصرف: \(first)", "Bank: \(first)")) }
-        if !branch.isEmpty { details.append(tr("الفرع: \(branch)", "Branch: \(branch)")) }
-        return details.isEmpty ? nil : details.joined(separator: " · ")
+        guard let account else { return nil }
+        let branch = account.branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return branch.isEmpty ? nil : tr("الفرع: \(branch)", "Branch: \(branch)")
     }
 
     var body: some View {
