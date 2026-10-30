@@ -14,7 +14,6 @@ struct TransferCompanyLetterView: View {
     @State private var working = false
     @State private var error: String?
     @State private var previewURL: URL?
-    @State private var previewCustomization: Data?
     @State private var showPreview = false
     @State private var generation: Task<Void, Never>?
 
@@ -37,6 +36,7 @@ struct TransferCompanyLetterView: View {
                 if references.isEmpty { Text(tr("استورد حزمة مراجع الكتب من صفحة ملفات التحويل.", "Import the letter reference package from transfer files.")).font(.footnote).foregroundStyle(.secondary) }
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
+                Text(tr("المشاركة معطّلة حتى اكتمال تدقيق الكتب على الآيفون.", "Sharing is disabled until the letters are verified on iPhone.")).font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle(tr("كتاب شركة عراق الجوال", "Company transfer letter"))
@@ -48,7 +48,6 @@ struct TransferCompanyLetterView: View {
         .sheet(isPresented: $showPreview, onDismiss: {
             if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
             previewURL = nil
-            previewCustomization = nil
         }) {
             NavigationStack {
                 if let previewURL {
@@ -56,10 +55,6 @@ struct TransferCompanyLetterView: View {
                         .navigationTitle(tr("معاينة الكتاب", "Letter preview"))
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([previewURL]) }
-                                    .disabled(!sourceIsCurrent || previewCustomization != currentCustomization)
-                            }
                             ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showPreview = false } }
                         }
                 }
@@ -88,7 +83,6 @@ struct TransferCompanyLetterView: View {
                     return
                 }
                 previewURL = url
-                previewCustomization = snapshot
                 generation = nil
                 showPreview = true
             } catch is CancellationError { return }

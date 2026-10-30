@@ -3,7 +3,7 @@ import SwiftData
 import UniformTypeIdentifiers
 
 /// تصنيفات حسابات جهات التنفيذ؛ فرع الأنبار لا يدخل في ملف التحويل.
-nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable {
+nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case rafidain, otherBanks, anbar, unresolved
     var id: String { rawValue }
     var title: String {
@@ -18,7 +18,7 @@ nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable {
     var prefix: String { self == .rafidain ? "30000" : "20000" }
 }
 
-nonisolated struct TransferEntity: Identifiable {
+nonisolated struct TransferEntity: Identifiable, Sendable {
     let group: ReportGroup
     let account: SavedExecutionAccount?
     let category: TransferCategory
@@ -159,6 +159,7 @@ struct TransferFilesView: View {
     @AppStorage(TransferRules.settingsKey) private var categoriesData = Data()
     @AppStorage("transferPayrollAccountLinks") private var payrollLinksData = Data()
     @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
+    @AppStorage(TransferLetterCustomizationStore.settingsKey) private var customizationData = Data()
     @AppStorage("bankStatementAccountName") private var payerName = ""
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
     @State private var groups: [ReportGroup] = []
@@ -318,6 +319,16 @@ struct TransferFilesView: View {
                             Label(tr("كتاب شركة عراق الجوال", "Iraq Al-Jawwal letter"), systemImage: "doc.text")
                         }
                     }
+                    Section(tr("معاينات الكتب قيد التحقق", "Letter drafts under verification")) {
+                        ForEach(TransferLetterDraftKind.allCases) { kind in
+                            NavigationLink {
+                                TransferLetterDraftView(kind: kind, month: figures.month, figures: figures, entities: entities,
+                                    sourceKey: loadKey, sourceAccounts: accountData, sourceCategories: categoriesData,
+                                    sourceLinks: payrollLinksData, sourceCustomization: customizationData,
+                                    references: referenceData, payerName: payerName, payerIBAN: payerIBAN)
+                            } label: { Label(kind.title, systemImage: "doc.text.magnifyingglass") }
+                        }
+                    } footer: { Text(tr("المعاينات للتدقيق فقط، ولا يمكن مشاركتها حتى اكتمال الميزة.", "Previews are for review only and cannot be shared until the feature is complete.")) }
                 }
                 Section {
                     NavigationLink {
