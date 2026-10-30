@@ -15,6 +15,15 @@ import ZIPFoundation
         try check(TransferRules.classify(account) == .rafidain && TransferRules.classify(anbar) == .anbar && TransferRules.classify(other) == .otherBanks, "classification")
         let ambiguous = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين محافظة الانبار فرع آخر", swift: "TESTIQBAAAA")
         try check(TransferRules.classify(ambiguous) == .unresolved, "ambiguous Anbar branch")
+        let sampleRows = (0..<44).map { i in ["\(i + 1)", "جهة وهمية", "IQ00TEST000000000000000", "فرع تجريبي", "100000"] }
+        let widths: [CGFloat] = [30, 145, 150, 105, 90]
+        let singlePage = try TransferSinglePageFit.fit(rows: sampleRows, widths: widths, availableHeight: 700, fontName: ReportFont.regular(10).fontName)
+        try check(singlePage.rowHeights.count == 44 && singlePage.rowHeights.reduce(0, +) <= 700, "single-page group layout")
+        do {
+            _ = try TransferSinglePageFit.fit(rows: Array(repeating: sampleRows[0], count: 500), widths: widths, availableHeight: 700, fontName: ReportFont.regular(10).fontName)
+            throw Failure(errorDescription: "overflowing single-page table accepted")
+        } catch is Failure { throw Failure(errorDescription: "overflowing single-page table accepted") }
+        catch { }
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
@@ -62,6 +71,24 @@ import ZIPFoundation
         for (amount, expected) in cases { try check(try ArabicAmountWords.dinars(amount) == expected, "amount words") }
         let duplicated = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0, duplicateSource: true)
         try check(!TransferRules.issues(duplicated).isEmpty, "duplicate source not flagged")
+        let source = [TransferReconcileLine(sourceID: "execution:a", title: "جهة وهمية أ", amount: 100),
+                      TransferReconcileLine(sourceID: "execution:b", title: "جهة وهمية ب", amount: 200)]
+        try check(TransferReconciliation.check(expected: source, book: source, file: source, target: .grouped).isEmpty, "matching transfers")
+        let missing = TransferReconciliation.check(expected: source, book: source, file: [source[0]], target: .grouped)
+        try check(missing.contains { $0.kind == .missingEntityInFile && $0.sourceID == "execution:b" }, "missing entity not flagged")
+        let changed = [source[0], TransferReconcileLine(sourceID: "execution:b", title: "جهة وهمية ب", amount: 199)]
+        try check(TransferReconciliation.check(expected: source, book: source, file: changed, target: .grouped).contains { $0.kind == .fileAmount }, "changed amount not flagged")
+        try check(TransferReconciliation.check(expected: source, book: changed, file: source, target: .grouped).contains { $0.kind == .bookAmount }, "book amount not flagged")
+        try check(TransferReconciliation.check(expected: source, book: source, file: source + [source[0]], target: .grouped).contains { $0.kind == .duplicateSource }, "duplicate not flagged")
+        try check(TransferReconciliation.check(expected: source, book: source, file: nil, target: .grouped).contains { $0.kind == .missingFile }, "missing group file not flagged")
+        try check(TransferReconciliation.check(expected: source, book: source, file: nil, target: .individual).isEmpty, "individual letter incorrectly requires CSV")
+        try check(TransferReconciliation.check(expected: source, book: nil, file: nil, target: .individual).contains { $0.kind == .missingBook }, "missing individual letter")
+        let employeeRows = [TransferReconcileEmployee(name: "أحمد وهمي", amount: 100), TransferReconcileEmployee(name: "أحمد وهمي", amount: 200)]
+        let wrongAmounts = [TransferReconcileEmployee(name: "احمد وهمي", amount: 100), TransferReconcileEmployee(name: "احمد وهمي", amount: 199)]
+        let employeeIssues = TransferEmployeeReconciliation.check(expected: employeeRows, book: wrongAmounts, previousCount: 2)
+        try check(employeeIssues.contains { $0.kind == .employeeAmounts } && employeeIssues.contains { $0.kind == .countChanged }, "individual names and count")
+        let missingEmployee = TransferEmployeeReconciliation.check(expected: employeeRows, book: [wrongAmounts[0]])
+        try check(missingEmployee.contains { $0.kind == .employeeCount } && missingEmployee.contains { $0.kind == .employeeNames }, "missing employee row")
         do {
             _ = try TransferLetterFigureRules.make(summary: summary, available: [])
             throw Failure(errorDescription: "missing payroll columns accepted")
