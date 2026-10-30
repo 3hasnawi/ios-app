@@ -4,11 +4,12 @@ import PDFKit
 /// جدول تجريبي لكتاب الرافدين فرع الأنبار. يجب تفريغ الجدول القديم قبل استدعائه.
 nonisolated enum TransferAnbarTablePDF {
     enum Failure: LocalizedError {
-        case invalidSource, missingFont
+        case invalidSource, missingFont, tableMismatch
         var errorDescription: String? {
             switch self {
             case .invalidSource: tr("تعذّر التحقق من بيانات جدول فرع الأنبار.", "Could not verify the Anbar branch table data.")
             case .missingFont: tr("خط جدول فرع الأنبار غير متوفر.", "The Anbar branch table font is unavailable.")
+            case .tableMismatch: tr("تعذّر مطابقة أسماء جدول فرع الأنبار ورتبهم ومبالغهم مع بيانات الشهر.", "Could not reconcile the rendered Anbar table names, ranks, and amounts with the month's data.")
             }
         }
     }
@@ -72,6 +73,33 @@ nonisolated enum TransferAnbarTablePDF {
                 }
                 for i in 0..<widths.count { cell(i == 2 ? "المجموع" : i == 3 ? total : "", i, y, totalHeight, bold, fill: true) }
             }
+            guard let document = PDFDocument(url: url), !document.isLocked,
+                  document.pageCount == (onSeparatePage ? 2 : 1),
+                  let outputPage = document.page(at: onSeparatePage ? 1 : 0) else { throw Failure.tableMismatch }
+            var right = size.width - 36
+            let positions = widths.map { width -> CGFloat in right -= width; return right }
+            func text(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
+                let rect = CGRect(x: positions[column] + 0.2, y: size.height - y - height + 0.2,
+                                  width: widths[column] - 0.4, height: height - 0.4)
+                return outputPage.selection(for: rect)?.string ?? ""
+            }
+            func identity(_ value: String) -> String {
+                let normalized = ArabicText.normalize(ArabicText.latinDigits(value.precomposedStringWithCompatibilityMapping))
+                var scalars = String.UnicodeScalarView()
+                for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format {
+                    scalars.append(scalar)
+                }
+                return String(scalars)
+            }
+            let top = onSeparatePage ? separateTop : inlineTop
+            var y = top + header
+            for (row, height) in zip(rows, layout.rowHeights) {
+                for column in row.indices where identity(text(column, y, height)) != identity(row[column]) {
+                    throw Failure.tableMismatch
+                }
+                y += height
+            }
+            guard identity(text(3, y, totalHeight)) == identity(total) else { throw Failure.tableMismatch }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             complete = true
             return url
