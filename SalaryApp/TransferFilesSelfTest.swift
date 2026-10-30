@@ -39,6 +39,9 @@ import CryptoKit
         let widths: [CGFloat] = [30, 145, 150, 105, 90]
         let singlePage = try TransferSinglePageFit.fit(rows: sampleRows, widths: widths, availableHeight: 700, fontName: ReportFont.regular(10).fontName)
         try check(singlePage.rowHeights.count == 44 && singlePage.rowHeights.reduce(0, +) <= 700, "single-page group layout")
+        let compactPage = try TransferSinglePageFit.fit(rows: sampleRows, widths: widths, availableHeight: 680,
+                                                       fontName: ReportFont.bold(10).fontName, maximumSize: 10.8, minimumSize: 7, verticalPadding: 2)
+        try check(compactPage.rowHeights.count == 44 && compactPage.rowHeights.reduce(0, +) <= 680, "reference-style group layout")
         do {
             _ = try TransferSinglePageFit.fit(rows: Array(repeating: sampleRows[0], count: 500), widths: widths, availableHeight: 700, fontName: ReportFont.regular(10).fontName)
             throw Failure(errorDescription: "overflowing single-page table accepted")

@@ -3,6 +3,14 @@ import CoreText
 
 /// قياس جدول مجموعة التحويل قبل إخراجه: لا يُختزل نص أو يُنقل صف إلى صفحة ثانية.
 nonisolated enum TransferSinglePageFit {
+    private static let rtl: CTParagraphStyle = {
+        let direction = CTWritingDirection.rightToLeft
+        return withUnsafeBytes(of: direction) { raw in
+            var setting = CTParagraphStyleSetting(spec: .baseWritingDirection,
+                valueSize: MemoryLayout<CTWritingDirection>.size, value: raw.baseAddress!)
+            return CTParagraphStyleCreate(&setting, 1)
+        }
+    }()
     struct Layout: Sendable {
         let fontSize: CGFloat
         let rowHeights: [CGFloat]
@@ -19,11 +27,13 @@ nonisolated enum TransferSinglePageFit {
     }
     /// width وheight تحددان مساحة الجدول بعد حجز الترويسة والمجموع والهوامش.
     static func fit(rows: [[String]], widths: [CGFloat], availableHeight: CGFloat,
-                    fontName: String, maximumSize: CGFloat = 10, minimumSize: CGFloat = 7) throws -> Layout {
+                    fontName: String, maximumSize: CGFloat = 10, minimumSize: CGFloat = 7,
+                    verticalPadding: CGFloat = 5) throws -> Layout {
         guard !rows.isEmpty, rows.count <= 2000, !widths.isEmpty,
               rows.allSatisfy({ $0.count == widths.count }), widths.allSatisfy({ $0.isFinite && $0 > 10 }),
               availableHeight.isFinite, availableHeight > 0, minimumSize >= 6,
-              maximumSize >= minimumSize, maximumSize <= 24 else { throw Failure.invalidLayout }
+              maximumSize >= minimumSize, maximumSize <= 24, verticalPadding.isFinite,
+              verticalPadding >= 2, verticalPadding <= 20 else { throw Failure.invalidLayout }
         guard UIFont(name: fontName, size: maximumSize) != nil else { throw Failure.missingFont }
         let step: CGFloat = 0.5
         var size = maximumSize
@@ -32,13 +42,20 @@ nonisolated enum TransferSinglePageFit {
             guard let font = UIFont(name: fontName, size: size) else { throw Failure.missingFont }
             var heights: [CGFloat] = []
             for row in rows {
-                var height = ceil(font.lineHeight) + 5
+                var height = ceil(font.lineHeight) + verticalPadding
                 for (text, width) in zip(row, widths) where !text.isEmpty {
-                    let attributed = NSAttributedString(string: text, attributes: [.font: font])
-                    let framesetter = CTFramesetterCreateWithAttributedString(attributed as CFAttributedString)
-                    let measured = CTFramesetterSuggestFrameSizeWithConstraints(framesetter, CFRange(location: 0, length: 0), nil,
-                        CGSize(width: width - 8, height: .greatestFiniteMagnitude), nil)
-                    height = max(height, ceil(measured.height) + 5)
+                    let attributed = NSAttributedString(string: text, attributes: [
+                        .font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
+                    ])
+                    let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+                    var offset = 0, lineCount = 0
+                    while offset < attributed.length {
+                        let count = CTTypesetterSuggestLineBreak(typesetter, offset, Double(width - 8))
+                        guard count > 0, count <= attributed.length - offset else { throw Failure.cannotFit }
+                        offset += count
+                        lineCount += 1
+                    }
+                    height = max(height, ceil(font.lineHeight * CGFloat(lineCount)) + verticalPadding)
                 }
                 heights.append(height)
             }

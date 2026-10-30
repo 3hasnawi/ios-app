@@ -1,6 +1,6 @@
 import UIKit
 
-/// صفحة جدول تجريبية، ولا تُستخدم للتصدير قبل مطابقتها مع النموذج الأصلي.
+/// صفحة جدول المجموعة؛ يبقى التصدير معطلاً حتى التحقق من المرجع على الجهاز.
 nonisolated enum TransferGroupTablePDF {
     enum Failure: LocalizedError {
         case invalidData, invalidTotal, missingFont
@@ -13,11 +13,12 @@ nonisolated enum TransferGroupTablePDF {
         }
     }
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-    private static let widths: [CGFloat] = [30, 144, 170, 105, 90]
-    private static let top: CGFloat = 55
+    private static let widths: [CGFloat] = [22, 138, 176, 120, 90]
+    private static let top: CGFloat = 86.5
     private static let bottom: CGFloat = 808
-    private static let header: CGFloat = 27
-    private static let totalHeight: CGFloat = 27
+    private static let header: CGFloat = 15
+    private static let totalHeight: CGFloat = 20
+    private static let monthNames = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
     private static func number(_ value: Double) -> String {
         String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
@@ -27,18 +28,24 @@ nonisolated enum TransferGroupTablePDF {
               entities.allSatisfy({ $0.category == category && $0.group.month == month && TransferRules.issues($0).isEmpty }) else { throw Failure.invalidData }
         let total = entities.reduce(0.0) { $0 + $1.group.total }
         guard total.isFinite, total > 0, total.rounded() == total, total <= 9_007_199_254_740_991 else { throw Failure.invalidTotal }
+        let period = try TransferLetterPeriod(month)
+        let title = "استقطاعات قيادة شرطة الانبار لشهر ( \(monthNames[period.month - 1]) / \(period.year) )"
         let rows = entities.enumerated().map { index, entity in
             [String(index + 1), entity.beneficiaryName ?? entity.group.title,
              ArabicText.latinDigits(entity.account?.iban ?? "").uppercased().filter { !$0.isWhitespace && $0 != "-" },
              entity.account?.branch ?? "", number(entity.group.total)]
         }
         return try await PDFWork.run {
-            guard let bold = UIFont(name: "Arial-BoldMT", size: 10),
-                  let fontName = UIFont(name: "ArialMT", size: 10)?.fontName else { throw Failure.missingFont }
+            guard let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 11),
+                  let titleFont = UIFont(name: "TimesNewRomanPS-BoldMT", size: 14.04),
+                  let fontName = UIFont(name: "Arial-BoldMT", size: 10.8)?.fontName else { throw Failure.missingFont }
+            _ = try TransferSinglePageFit.fit(rows: [[title]], widths: [546], availableHeight: 25,
+                fontName: titleFont.fontName, maximumSize: 14.04, minimumSize: 14.04, verticalPadding: 2)
             _ = try TransferSinglePageFit.fit(rows: [[number(total)]], widths: [widths[4]],
-                availableHeight: totalHeight, fontName: bold.fontName, maximumSize: 10, minimumSize: 10)
+                availableHeight: totalHeight, fontName: bold.fontName, maximumSize: 11, minimumSize: 11, verticalPadding: 2)
             let fitting = try TransferSinglePageFit.fit(rows: rows, widths: widths,
-                availableHeight: bottom - top - header - totalHeight, fontName: fontName)
+                availableHeight: bottom - top - header - totalHeight, fontName: fontName,
+                maximumSize: 10.8, minimumSize: 7, verticalPadding: 2)
             guard let font = UIFont(name: fontName, size: fitting.fontSize) else { throw Failure.missingFont }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("transfer-group-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -48,15 +55,16 @@ nonisolated enum TransferGroupTablePDF {
             try UIGraphicsPDFRenderer(bounds: page).writePDF(to: url) { context in
                 context.beginPage()
                 let cg = context.cgContext
-                var right = page.width - 28
+                PDFText.draw(title, in: CGRect(x: 24, y: 60.8, width: 546, height: 15.6), font: titleFont)
+                var right = page.width - 25
                 let positions = widths.map { width -> CGFloat in right -= width; return right }
                 func cell(_ text: String, _ index: Int, _ y: CGFloat, _ height: CGFloat, _ face: UIFont, fill: Bool = false) {
                     let box = CGRect(x: positions[index], y: y, width: widths[index], height: height)
-                    if fill { UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(box) }
+                    if fill { UIColor(red: 1, green: 1, blue: 0, alpha: 1).setFill(); cg.fill(box) }
                     UIColor.black.setStroke(); cg.stroke(box, width: 0.5)
-                    PDFText.draw(text, in: box.insetBy(dx: 4, dy: 2), font: face, wrap: true)
+                    PDFText.draw(text, in: box.insetBy(dx: 4, dy: 1), font: face, wrap: true)
                 }
-                for (index, label) in ["ت", "الجهة", "رقم الايبان", "الفرع", "المبلغ"].enumerated() {
+                for (index, label) in ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"].enumerated() {
                     cell(label, index, top, header, bold, fill: true)
                 }
                 var y = top + header
@@ -65,9 +73,9 @@ nonisolated enum TransferGroupTablePDF {
                     y += height
                 }
                 let labelBox = CGRect(x: positions[3], y: y, width: widths.prefix(4).reduce(0, +), height: totalHeight)
-                UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(labelBox)
+                UIColor(red: 1, green: 1, blue: 0, alpha: 1).setFill(); cg.fill(labelBox)
                 UIColor.black.setStroke(); cg.stroke(labelBox, width: 0.5)
-                PDFText.draw("المجموع", in: labelBox.insetBy(dx: 4, dy: 2), font: bold)
+                PDFText.draw("المجموع", in: labelBox.insetBy(dx: 4, dy: 1), font: bold)
                 cell(number(total), 4, y, totalHeight, bold, fill: true)
             }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
