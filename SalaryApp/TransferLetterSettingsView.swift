@@ -37,7 +37,7 @@ struct TransferLetterSettingsView: View {
             Toggle(title, isOn: Binding(get: { selected.contains(key) }, set: { if $0 { selected.insert(key) } else { selected.remove(key) } }))
             if selected.contains(key) {
                 TextField(title, text: text, axis: lines ? .vertical : .horizontal)
-                    .lineLimit(lines ? 1...3 : 1...1)
+                    .lineLimit(lines ? 1...5 : 1...1)
                     .textFieldStyle(.roundedBorder)
             }
         }.padding(.vertical, 3)

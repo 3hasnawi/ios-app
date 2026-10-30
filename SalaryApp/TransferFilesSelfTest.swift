@@ -308,15 +308,20 @@ import CryptoKit
             context.beginPage()
             let boxes = [CGRect(x: 452.260, y: 638.770, width: 94.289, height: 17.668), CGRect(x: 295.610, y: 638.770, width: 98.711, height: 17.668), CGRect(x: 86.304, y: 638.666, width: 131.669, height: 17.795)]
             for box in boxes { PDFText.draw("اسم وهمي", in: box, font: ReportFont.bold(14), align: .center) }
+            PDFText.draw("ترويسة وهمية", in: CGRect(x: 28, y: 23.3, width: 192, height: 17.7), font: ReportFont.bold(14), align: .center)
+            PDFText.draw("هامش وهمي", in: CGRect(x: 28, y: 773.5, width: 533, height: 13.3), font: ReportFont.bold(11), align: .right)
         }
         guard let signaturePage = PDFDocument(data: signaturePDF)?.page(at: 0) else { throw Failure(errorDescription: "signature reference unavailable") }
         let signatureChanges = TransferLetterCustomization(committeeFirst: "اسم تجريبي", committeeSecond: "اسم ثان", committeeThird: "")
         let preparedSignatures = try TransferPDFCustomization.prepare(id: "food_company", custom: signatureChanges, page: signaturePage, height: 841.9)
         try check(preparedSignatures.masks.count == 3 && preparedSignatures.flows.count == 2, "committee name masks and clear")
+        let blockChanges = TransferLetterCustomization(header: "سطر تجريبي\nسطر ثان", footer: "هامش تجريبي")
+        let blocks = try TransferPDFCustomization.prepare(id: "food_company", custom: blockChanges, page: signaturePage, height: 841.9)
+        try check(blocks.masks.count == 2 && blocks.flows.count == 3, "header and footer customization")
         do {
-            _ = try TransferPDFCustomization.prepare(id: "food_company", custom: TransferLetterCustomization(header: "عنوان وهمي"), page: signaturePage, height: 841.9)
-            throw Failure(errorDescription: "unfinished header customization accepted")
-        } catch is Failure { throw Failure(errorDescription: "unfinished header customization accepted") }
+            _ = try TransferPDFCustomization.prepare(id: "food_company", custom: TransferLetterCustomization(header: "1\n2\n3\n4\n5\n6"), page: signaturePage, height: 841.9)
+            throw Failure(errorDescription: "oversized header accepted")
+        } catch is Failure { throw Failure(errorDescription: "oversized header accepted") }
         catch { }
         let fakeCompanyPath = "templates/food_company.pdf"
         try fakeLetter.write(to: root.appendingPathComponent(fakeCompanyPath))

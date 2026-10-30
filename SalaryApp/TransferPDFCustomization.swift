@@ -7,7 +7,7 @@ nonisolated enum TransferPDFCustomization {
         case unsupportedField, invalidTemplate
         var errorDescription: String? {
             switch self {
-            case .unsupportedField: tr("تعديل الترويسة أو الهامش لهذا الكتاب لم يكتمل بعد.", "Header or footer customization for this letter is not ready yet.")
+            case .unsupportedField: tr("عدد أسطر الترويسة أو الهامش يتجاوز المساحة المتاحة في النموذج.", "The header or footer has more lines than the template allows.")
             case .invalidTemplate: tr("تعذّر التحقق من مواضع أسماء اللجنة في مرجع الكتاب.", "Could not verify committee name locations in the letter reference.")
             }
         }
@@ -27,13 +27,46 @@ nonisolated enum TransferPDFCustomization {
         "food_tax": [CGRect(x: 452.260, y: 654.760, width: 94.289, height: 17.668), CGRect(x: 295.610, y: 654.760, width: 98.711, height: 17.668), CGRect(x: 60.864, y: 654.656, width: 182.501, height: 17.795)],
     ]
     static func prepare(id: String, custom: TransferLetterCustomization, page: PDFPage, height: CGFloat) throws -> Prepared {
-        guard custom.header == nil, custom.footer == nil else { throw Failure.unsupportedField }
         let values = [custom.committeeFirst, custom.committeeSecond, custom.committeeThird]
         guard let originals = names[id], originals.count == 3 else { throw Failure.invalidTemplate }
         let columns: [(CGFloat, CGFloat)] = [(430, 568), (278, 412), (29, 275)]
         let fonts = ["TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "Arial-BoldMT"]
         var masks: [CGRect] = []
         var flows: [TransferPDFTextFlow] = []
+        func addBlock(_ value: String, mask: CGRect, starts: [CGFloat], fontName: String, fontSize: CGFloat, lineHeight: CGFloat) throws {
+            let lines = value.components(separatedBy: .newlines)
+            guard lines.count <= starts.count else { throw Failure.unsupportedField }
+            let pdfRect = CGRect(x: mask.minX, y: height - mask.maxY, width: mask.width, height: mask.height)
+            guard let found = page.selection(for: pdfRect)?.string,
+                  !found.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.invalidTemplate }
+            masks.append(mask)
+            for (index, line) in lines.enumerated() where !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let rect = CGRect(x: mask.minX, y: starts[index], width: mask.width, height: lineHeight)
+                flows.append(TransferPDFTextFlow(value: line, slots: [TransferPDFTextSlot(rect: rect, fontName: fontName, fontSize: fontSize, alignment: mask.width < 250 ? .center : .right)]))
+            }
+        }
+        if let header = custom.header {
+            try addBlock(header, mask: CGRect(x: 28, y: 23, width: 192, height: 103),
+                         starts: [23.3, 44.5, 65.7, 87.0, 108.1], fontName: "TimesNewRomanPS-BoldMT", fontSize: 16, lineHeight: 17.7)
+        }
+        if let footer = custom.footer {
+            let start: CGFloat
+            let lines: Int
+            let step: CGFloat
+            let font: String
+            let size: CGFloat
+            switch id {
+            case "rafidain_anbar": start = 787.3; lines = 3; step = 13.8; font = "TimesNewRomanPS-BoldMT"; size = 12
+            case "ramadi", "rafidain_group", "other_banks_group": start = 759.7; lines = 4; step = 13.8; font = "TimesNewRomanPS-BoldMT"; size = 12
+            case "water": start = 778.1; lines = 4; step = 12.6; font = "TimesNewRomanPS-BoldMT"; size = 11
+            case "contracts": start = 773.5; lines = 4; step = 13.8; font = "TimesNewRomanPSMT"; size = 12
+            default: start = 773.5; lines = 4; step = 13.8; font = "TimesNewRomanPS-BoldMT"; size = 12
+            }
+            let lineHeight: CGFloat = size == 11 ? 12.2 : 13.3
+            let starts = (0..<lines).map { start + CGFloat($0) * step }
+            let mask = CGRect(x: 28, y: start, width: 533, height: CGFloat(lines - 1) * step + lineHeight)
+            try addBlock(footer, mask: mask, starts: starts, fontName: font, fontSize: size, lineHeight: lineHeight)
+        }
         for i in values.indices {
             guard let value = values[i] else { continue }
             let old = originals[i]
