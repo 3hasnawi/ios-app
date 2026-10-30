@@ -6,6 +6,7 @@ nonisolated enum TransferAnbarTablePDF {
     enum Failure: LocalizedError {
         case invalidSource, missingFont, tableMismatch
         case tableCellMismatch(row: Int, column: Int, actualCount: Int, expectedCount: Int)
+        case testMismatch(String)
         var errorDescription: String? {
             switch self {
             case .invalidSource: tr("تعذّر التحقق من بيانات جدول فرع الأنبار.", "Could not verify the Anbar branch table data.")
@@ -13,6 +14,7 @@ nonisolated enum TransferAnbarTablePDF {
             case .tableMismatch: tr("تعذّر مطابقة أسماء جدول فرع الأنبار ورتبهم ومبالغهم مع بيانات الشهر.", "Could not reconcile the rendered Anbar table names, ranks, and amounts with the month's data.")
             case .tableCellMismatch(let row, let column, let actualCount, let expectedCount):
                 tr("تعذّر تدقيق جدول الأنبار في الصف \(row) والعمود \(column) (طول النص المقروء \(actualCount)، المتوقع \(expectedCount)).", "Anbar table verification failed at row \(row), column \(column) (read length \(actualCount), expected \(expectedCount)).")
+            case .testMismatch(let diagnostic): diagnostic
             }
         }
     }
@@ -108,6 +110,10 @@ nonisolated enum TransferAnbarTablePDF {
                     let read = identity(text(column, y, height))
                     let expected = identity(row[column])
                     if read != expected {
+                        // بيانات هذا التشخيص وهمية وثابتة داخل اختبار المحاكي فقط.
+                        if ProcessInfo.processInfo.arguments.contains("-transferFilesTest"), row[column] == "موظف وهمي" {
+                            throw Failure.testMismatch("ANBAR_TEST_ACTUAL=" + read.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ",") + " EXPECTED=" + expected.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: ","))
+                        }
                         throw Failure.tableCellMismatch(row: index + 1, column: column + 1, actualCount: read.count, expectedCount: expected.count)
                     }
                 }
