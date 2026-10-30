@@ -45,6 +45,9 @@ import CryptoKit
         try check(TransferRules.localAccountDigits(iban) == String(iban.suffix(15)) && TransferRules.localAccountDigits("IQ00") == nil, "local account from Iraqi IBAN")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let individualEntity = TransferEntity(group: group, account: anbar, category: .anbar, missingAmounts: 0)
+        try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: []).count == 1, "unlinked individual entity")
+        try check(TransferArchiveCoverage.unlinked(entities: [item, individualEntity], linkedEntityKeys: [ArabicText.normalize(group.title)]).isEmpty, "linked individual entity")
         let individualRows = [ReportRow(id: 1, name: "موظف وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 1200, note: "", entity: group.title)]
         _ = try TransferIndividualPlan(kind: .water, group: group, rows: individualRows, missingAmounts: 0)
         let blankAnbarURL = FileManager.default.temporaryDirectory.appendingPathComponent("anbar-test-\(UUID().uuidString).pdf")

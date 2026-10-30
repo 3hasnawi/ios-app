@@ -179,12 +179,22 @@ struct TransferFilesView: View {
     @State private var showSettings = false
     @State private var importingReferences = false
     @State private var referenceError: String?
+    @State private var bookStore = OfficialBookStore.shared
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
     private var categories: [String: String] { (try? JSONDecoder().decode([String: String].self, from: categoriesData)) ?? [:] }
     private var payrollLinks: [String: String] { (try? JSONDecoder().decode([String: String].self, from: payrollLinksData)) ?? [:] }
     private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountData)) ?? [] }
+    private var unlinkedAnbar: [TransferEntity] {
+        guard let selected = month?.name, bookStore.loadError == nil else { return [] }
+        let keys = Set(bookStore.books.compactMap { book -> String? in
+            guard book.month == selected, FileManager.default.fileExists(atPath: OfficialBookFiles.file(book.id).path),
+                  let key = book.entityKey, !key.isEmpty else { return nil }
+            return key
+        })
+        return TransferArchiveCoverage.unlinked(entities: entities, linkedEntityKeys: keys)
+    }
     private var entities: [TransferEntity] {
         let lookup = accounts.reduce(into: [String: SavedExecutionAccount]()) { $0[$1.key] = $1 }
         let deductions = groups.map { group in
@@ -300,6 +310,19 @@ struct TransferFilesView: View {
                         }
                     }
                 } header: { Text(month?.name ?? "") }
+                if bookStore.loadError != nil {
+                    Section { Label(tr("تعذّر فحص أرشيف الكتب؛ راجعه من البيانات المحفوظة.", "Could not check the document archive; review it in saved data."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                } else if !unlinkedAnbar.isEmpty {
+                    Section(tr("جهات تحتاج مراجعة كتاب", "Entities needing document review")) {
+                        ForEach(unlinkedAnbar) { entity in
+                            NavigationLink {
+                                TransferEntityBooksView(entity: entity, month: month?.name ?? "")
+                            } label: {
+                                Label(entity.group.title, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                            }
+                        }
+                    } footer: { Text(tr("لم يُعثر على كتاب محفوظ مرتبط باسم هذه الجهات في الشهر المختار. يفحص التنبيه الأرشيف فقط ولا يثبت عدم صدور كتاب أو مطابقة مبلغه.", "No saved document linked to these entity names was found for the selected month. This checks the archive only and does not establish whether a letter was issued or its amount matched.")) }
+                }
                 if let figures {
                     Section(tr("حسابات استقطاعات الرواتب", "Payroll deduction accounts")) {
                         ForEach(TransferPayrollRecipient.allCases) { recipient in
