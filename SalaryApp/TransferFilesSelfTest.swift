@@ -319,6 +319,33 @@ import CryptoKit
         try check(selectedReferences.count == 2 && selectedReferences[TransferReferencePack.digitTemplateID] == digitPDF, "reference selection")
         // مرجع وهمي بالأبعاد نفسها لاختبار خط الكتاب كاملاً دون استخدام بيانات المالك.
         let letterRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
+        let numberCases: [(String, CGRect)] = [
+            ("food_company", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
+            ("tax_social", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
+            ("contracts", CGRect(x: 121.2, y: 151.6, width: 51.5, height: 22.2)),
+            ("rafidain_anbar", CGRect(x: 87.6, y: 151.6, width: 53.4, height: 22.2)),
+            ("water", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
+            ("housing", CGRect(x: 95.3, y: 151.6, width: 51.5, height: 22.2)),
+            ("ramadi", CGRect(x: 121.2, y: 151.6, width: 51.5, height: 22.2)),
+            ("rafidain_group", CGRect(x: 64.8, y: 160, width: 58.4, height: 20.4)),
+            ("other_banks_group", CGRect(x: 64.8, y: 160, width: 58.4, height: 20.4)),
+            ("cash_salary", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
+            ("food_tax", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2))
+        ]
+        for (id, rect) in numberCases {
+            let reference = letterRenderer.pdfData { context in
+                context.beginPage(); PDFText.draw("1/22", in: rect, font: ReportFont.bold(12), align: .right)
+            }
+            guard let document = PDFDocument(data: reference), let page = document.page(at: 0) else { throw Failure(errorDescription: "number field PDF unavailable") }
+            try check(try TransferPDFNumberField.mask(id: id, page: page, height: 841.9) == rect, "number field position")
+        }
+        let missingNumber = letterRenderer.pdfData { $0.beginPage() }
+        guard let emptyReference = PDFDocument(data: missingNumber), let emptyPage = emptyReference.page(at: 0) else { throw Failure(errorDescription: "blank number reference unavailable") }
+        do {
+            _ = try TransferPDFNumberField.mask(id: "food_company", page: emptyPage, height: 841.9)
+            throw Failure(errorDescription: "missing number field accepted")
+        } catch is Failure { throw Failure(errorDescription: "missing number field accepted") }
+        catch { }
         let fakeLetter = letterRenderer.pdfData { context in
             context.beginPage()
             let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
