@@ -1,15 +1,17 @@
 import UIKit
 import CoreText
+import PDFKit
 
 /// قائمة مرفقة بكتاب أمانات الرواتب؛ تنمو على صفحات A4 دون قص الأسماء.
 nonisolated enum TransferCashListPDF {
     enum Failure: LocalizedError {
-        case empty, invalid, rowTooTall
+        case empty, invalid, rowTooTall, tableMismatch
         var errorDescription: String? {
             switch self {
             case .empty: tr("لا توجد رواتب كاش للشهر المختار.", "There are no cash salaries for the selected month.")
             case .invalid: tr("تعذّر التحقق من بيانات قائمة الكاش.", "Could not validate the cash salary list.")
             case .rowTooTall: tr("بيانات أحد السطور أطول من مساحة الصفحة.", "A row is taller than the page.")
+            case .tableMismatch: tr("تعذّر مطابقة بيانات قائمة الكاش المرسومة مع مصدر الرواتب.", "Could not reconcile the rendered cash salary list with the payroll source.")
             }
         }
     }
@@ -80,6 +82,9 @@ nonisolated enum TransferCashListPDF {
             var complete = false
             defer { if !complete { try? FileManager.default.removeItem(at: folder) } }
             let renderer = UIGraphicsPDFRenderer(bounds: page)
+            var placements: [(page: Int, index: Int, y: CGFloat, height: CGFloat)] = []
+            var totalPlacement: (page: Int, y: CGFloat)?
+            var pageCount = 0
             try renderer.writePDF(to: url) { context in
                 var index = 0
                 var needsTotal = true
@@ -101,6 +106,7 @@ nonisolated enum TransferCashListPDF {
                     var y = tableTop + headerHeight
                     while index < list.employees.count, y + heights[index] <= bottom {
                         let row = list.employees[index], height = heights[index]
+                        placements.append((pageCount, index, y, height))
                         let values = [row.name, row.rank, row.workplace, money(row.amount)]
                         for i in values.indices {
                             let cell = CGRect(x: positions[i], y: y, width: columns[i], height: height)
@@ -116,10 +122,43 @@ nonisolated enum TransferCashListPDF {
                         UIColor.darkGray.setStroke(); cg.stroke(amountCell, width: 0.5); cg.stroke(titleCell, width: 0.5)
                         PDFText.draw("المجموع · \(list.employees.count) راتب", in: titleCell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10), align: .right)
                         PDFText.draw(money(list.total), in: amountCell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10))
+                        totalPlacement = (pageCount, y)
                         needsTotal = false
                     }
+                    pageCount += 1
                 } while index < list.employees.count || needsTotal
             }
+            // يفحص النص المقروء من الصفحات بعد رسمها للتأكد من عدم سقوط سطر أو مبلغ.
+            guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount == pageCount,
+                  placements.count == list.employees.count, let totalPlacement else { throw Failure.tableMismatch }
+            var right = page.width - margin
+            let positions = columns.map { width -> CGFloat in right -= width; return right }
+            func text(pageIndex: Int, rect: CGRect) -> String {
+                guard let output = document.page(at: pageIndex) else { return "" }
+                let pdfRect = CGRect(x: rect.minX + 0.2, y: page.height - rect.maxY + 0.2,
+                                     width: rect.width - 0.4, height: rect.height - 0.4)
+                return output.selection(for: pdfRect)?.string ?? ""
+            }
+            func identity(_ value: String) -> String {
+                let normalized = ArabicText.normalize(ArabicText.latinDigits(value.precomposedStringWithCompatibilityMapping))
+                var scalars = String.UnicodeScalarView()
+                for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format {
+                    scalars.append(scalar)
+                }
+                return String(scalars)
+            }
+            for (expectedIndex, placement) in placements.enumerated() {
+                guard placement.index == expectedIndex else { throw Failure.tableMismatch }
+                let row = list.employees[expectedIndex]
+                let values = [row.name, row.rank, row.workplace, money(row.amount)]
+                for column in values.indices {
+                    let rect = CGRect(x: positions[column], y: placement.y, width: columns[column], height: placement.height)
+                    guard identity(text(pageIndex: placement.page, rect: rect)) == identity(values[column]) else { throw Failure.tableMismatch }
+                }
+            }
+            let amountRect = CGRect(x: positions[3], y: totalPlacement.y, width: columns[3], height: totalHeight)
+            guard identity(text(pageIndex: totalPlacement.page, rect: amountRect)) == identity(money(list.total)) else { throw Failure.tableMismatch }
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             complete = true
             return url
         }

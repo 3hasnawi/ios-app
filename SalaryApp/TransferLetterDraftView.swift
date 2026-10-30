@@ -52,6 +52,7 @@ struct TransferLetterDraftView: View {
     @State private var countNotice: String?
     @State private var groupAuditPassed = false
     @State private var anbarAuditPassed = false
+    @State private var cashAuditPassed = false
     @State private var showPreview = false
     @State private var generation: Task<Void, Never>?
 
@@ -101,6 +102,7 @@ struct TransferLetterDraftView: View {
             countNotice = nil
             groupAuditPassed = false
             anbarAuditPassed = false
+            cashAuditPassed = false
         }) {
             NavigationStack {
                 if let previewURL {
@@ -112,6 +114,11 @@ struct TransferLetterDraftView: View {
                         }
                         if anbarAuditPassed {
                             Label(tr("فُحصت أسماء جدول الأنبار ورتبهم ومبالغهم؛ التنسيق ما زال قيد المراجعة.", "Anbar table names, ranks and amounts were checked; the layout remains under review."), systemImage: "checkmark.shield")
+                                .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
+                                .background(.thinMaterial)
+                        }
+                        if cashAuditPassed {
+                            Label(tr("فُحصت أسماء ورتب ومحال عمل ورواتب قائمة الكاش ومجموعها مع المصدر.", "Cash list names, ranks, workplaces, salaries and total were checked against the source."), systemImage: "checkmark.shield")
                                 .font(.footnote).foregroundStyle(.green).padding(10).frame(maxWidth: .infinity)
                                 .background(.thinMaterial)
                         }
@@ -137,7 +144,7 @@ struct TransferLetterDraftView: View {
             customization = store.effective(for: kind.rawValue)
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
-        working = true; error = nil; countNotice = nil; groupAuditPassed = false; anbarAuditPassed = false
+        working = true; error = nil; countNotice = nil; groupAuditPassed = false; anbarAuditPassed = false; cashAuditPassed = false
         generation = Task {
             defer { working = false }
             do {
@@ -154,6 +161,7 @@ struct TransferLetterDraftView: View {
                     let task = Task.detached(priority: .userInitiated) { try await TransferCashListEngine(modelContainer: container).list(month: month) }
                     let list = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
                     url = try await TransferCashLetter.makeWithList(figures: figures, list: list, payerIBAN: payerIBAN, references: references, customization: customization)
+                    cashAuditPassed = true
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks
                     url = try await TransferGroupLetter.make(allEntities: entities, category: category, month: month, payer: payerName, payerIBAN: payerIBAN, references: references, customization: customization).letter
