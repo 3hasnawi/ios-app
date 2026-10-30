@@ -14,8 +14,8 @@ nonisolated enum TransferGroupTablePDF {
             }
         }
     }
-    private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-    private static let widths: [CGFloat] = [22, 138, 176, 120, 90]
+    private static let page = CGRect(x: 0, y: 0, width: 595.32, height: 841.92)
+    private static let widths: [CGFloat] = [21.6, 137.9, 176.1, 120.5, 90.5]
     private static let top: CGFloat = 86.5
     private static let bottom: CGFloat = 808
     private static let header: CGFloat = 15
@@ -41,7 +41,7 @@ nonisolated enum TransferGroupTablePDF {
             guard let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 11),
                   let titleFont = UIFont(name: "TimesNewRomanPS-BoldMT", size: 14.04),
                   let fontName = UIFont(name: "Arial-BoldMT", size: 10.8)?.fontName else { throw Failure.missingFont }
-            _ = try TransferSinglePageFit.fit(rows: [[title]], widths: [546], availableHeight: 25,
+            _ = try TransferSinglePageFit.fit(rows: [[title]], widths: [546.6], availableHeight: 25,
                 fontName: titleFont.fontName, maximumSize: 14.04, minimumSize: 14.04, verticalPadding: 2)
             _ = try TransferSinglePageFit.fit(rows: [[number(total)]], widths: [widths[4]],
                 availableHeight: totalHeight, fontName: bold.fontName, maximumSize: 11, minimumSize: 11, verticalPadding: 2)
@@ -57,8 +57,8 @@ nonisolated enum TransferGroupTablePDF {
             try UIGraphicsPDFRenderer(bounds: page).writePDF(to: url) { context in
                 context.beginPage()
                 let cg = context.cgContext
-                PDFText.draw(title, in: CGRect(x: 24, y: 60.8, width: 546, height: 15.6), font: titleFont)
-                var right = page.width - 25
+                PDFText.draw(title, in: CGRect(x: 23.5, y: 60.8, width: 546.6, height: 15.6), font: titleFont)
+                var right = page.width - 25.22
                 let positions = widths.map { width -> CGFloat in right -= width; return right }
                 func cell(_ text: String, _ index: Int, _ y: CGFloat, _ height: CGFloat, _ face: UIFont, fill: Bool = false) {
                     let box = CGRect(x: positions[index], y: y, width: widths[index], height: height)
@@ -83,7 +83,7 @@ nonisolated enum TransferGroupTablePDF {
             // نقرأ خلايا الملف الناتج، لا بيانات الرسم وحدها؛ اختلاف النص أو تعذر قراءته يوقف الجدول.
             guard let document = PDFDocument(url: url), !document.isLocked, document.pageCount == 1,
                   let outputPage = document.page(at: 0) else { throw Failure.tableMismatch }
-            var right = page.width - 25
+            var right = page.width - 25.22
             let positions = widths.map { width -> CGFloat in right -= width; return right }
             func text(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
                 let rect = CGRect(x: positions[column] + 0.2, y: page.height - y - height + 0.2,

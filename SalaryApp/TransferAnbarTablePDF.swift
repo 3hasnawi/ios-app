@@ -13,10 +13,10 @@ nonisolated enum TransferAnbarTablePDF {
             }
         }
     }
-    private static let size = CGSize(width: 595, height: 842)
-    private static let widths: [CGFloat] = [30, 70, 170, 95, 143]
-    private static let header: CGFloat = 20
-    private static let totalHeight: CGFloat = 20
+    private static let size = CGSize(width: 595.32, height: 841.92)
+    private static let widths: [CGFloat] = [40.2, 64.7, 148.8, 74.4, 180]
+    private static let header: CGFloat = 16.4
+    private static let totalHeight: CGFloat = 14.5
     private static let inlineTop: CGFloat = 416.1
     private static let inlineBottom: CGFloat = 572.3
     private static let separateTop: CGFloat = 55
@@ -34,15 +34,17 @@ nonisolated enum TransferAnbarTablePDF {
             guard let original = PDFDocument(url: blankLetter), !original.isLocked, original.pageCount == 1,
                   let page = original.page(at: 0), abs(page.bounds(for: .mediaBox).width - size.width) < 2,
                   abs(page.bounds(for: .mediaBox).height - size.height) < 2 else { throw Failure.invalidSource }
-            guard let bold = UIFont(name: "Arial-BoldMT", size: 10),
-                  let face = UIFont(name: "ArialMT", size: 10) else { throw Failure.missingFont }
+            guard let bold = UIFont(name: "Arial-BoldMT", size: 12),
+                  let face = UIFont(name: "Arial-BoldMT", size: 10.8) else { throw Failure.missingFont }
             _ = try TransferSinglePageFit.fit(rows: [[total]], widths: [widths[3]], availableHeight: totalHeight,
-                                               fontName: bold.fontName, maximumSize: 10, minimumSize: 10)
+                                               fontName: face.fontName, maximumSize: 10.8, minimumSize: 10.8, verticalPadding: 1)
             let inlineHeight = inlineBottom - inlineTop - header - totalHeight
-            let inline = try? TransferSinglePageFit.fit(rows: rows, widths: widths, availableHeight: inlineHeight, fontName: face.fontName)
+            let inline = try? TransferSinglePageFit.fit(rows: rows, widths: widths, availableHeight: inlineHeight,
+                fontName: face.fontName, maximumSize: 10.8, minimumSize: 10.8, verticalPadding: 1)
             let onSeparatePage = inline == nil
             let layout = try inline ?? TransferSinglePageFit.fit(rows: rows, widths: widths,
-                availableHeight: separateBottom - separateTop - header - totalHeight, fontName: face.fontName)
+                availableHeight: separateBottom - separateTop - header - totalHeight, fontName: face.fontName,
+                maximumSize: 10.8, minimumSize: 7, verticalPadding: 1)
             guard let font = UIFont(name: face.fontName, size: layout.fontSize) else { throw Failure.missingFont }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("anbar-table-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -57,26 +59,30 @@ nonisolated enum TransferAnbarTablePDF {
                 cg.restoreGState()
                 if onSeparatePage { context.beginPage() }
                 let top = onSeparatePage ? separateTop : inlineTop
-                var right = size.width - 36
+                var right = size.width - 35.72
                 let positions = widths.map { width -> CGFloat in right -= width; return right }
-                func cell(_ text: String, _ column: Int, _ y: CGFloat, _ height: CGFloat, _ textFont: UIFont, fill: Bool = false) {
+                func cell(_ text: String, _ column: Int, _ y: CGFloat, _ height: CGFloat, _ textFont: UIFont, fill: UIColor? = nil, color: UIColor = .black) {
                     let rect = CGRect(x: positions[column], y: y, width: widths[column], height: height)
-                    if fill { UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(rect) }
+                    if let fill { fill.setFill(); cg.fill(rect) }
                     UIColor.black.setStroke(); cg.stroke(rect, width: 0.5)
-                    PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 2), font: textFont, wrap: true)
+                    PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 0.5), font: textFont, color: color, wrap: true)
                 }
-                for (i, title) in ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ"].enumerated() { cell(title, i, top, header, bold, fill: true) }
+                let headerColor = UIColor(red: 0.122, green: 0.306, blue: 0.471, alpha: 1)
+                let stripeColor = UIColor(red: 0.918, green: 0.949, blue: 0.973, alpha: 1)
+                let totalColor = UIColor(red: 0.851, green: 0.918, blue: 0.969, alpha: 1)
+                for (i, title) in ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ"].enumerated() { cell(title, i, top, header, bold, fill: headerColor, color: .white) }
                 var y = top + header
-                for (row, height) in zip(rows, layout.rowHeights) {
-                    for i in row.indices { cell(row[i], i, y, height, font) }
+                for (index, pair) in zip(rows, layout.rowHeights).enumerated() {
+                    let (row, height) = pair
+                    for i in row.indices { cell(row[i], i, y, height, font, fill: index.isMultiple(of: 2) ? nil : stripeColor) }
                     y += height
                 }
-                for i in 0..<widths.count { cell(i == 2 ? "المجموع" : i == 3 ? total : "", i, y, totalHeight, bold, fill: true) }
+                for i in 0..<widths.count { cell(i == 2 ? "المجموع" : i == 3 ? total : "", i, y, totalHeight, face, fill: totalColor) }
             }
             guard let document = PDFDocument(url: url), !document.isLocked,
                   document.pageCount == (onSeparatePage ? 2 : 1),
                   let outputPage = document.page(at: onSeparatePage ? 1 : 0) else { throw Failure.tableMismatch }
-            var right = size.width - 36
+            var right = size.width - 35.72
             let positions = widths.map { width -> CGFloat in right -= width; return right }
             func text(_ column: Int, _ y: CGFloat, _ height: CGFloat) -> String {
                 let rect = CGRect(x: positions[column] + 0.2, y: size.height - y - height + 0.2,

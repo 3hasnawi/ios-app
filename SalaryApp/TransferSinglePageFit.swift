@@ -33,7 +33,7 @@ nonisolated enum TransferSinglePageFit {
               rows.allSatisfy({ $0.count == widths.count }), widths.allSatisfy({ $0.isFinite && $0 > 10 }),
               availableHeight.isFinite, availableHeight > 0, minimumSize >= 6,
               maximumSize >= minimumSize, maximumSize <= 24, verticalPadding.isFinite,
-              verticalPadding >= 2, verticalPadding <= 20 else { throw Failure.invalidLayout }
+              verticalPadding >= 1, verticalPadding <= 20 else { throw Failure.invalidLayout }
         guard UIFont(name: fontName, size: maximumSize) != nil else { throw Failure.missingFont }
         let step: CGFloat = 0.5
         var size = maximumSize
@@ -42,7 +42,7 @@ nonisolated enum TransferSinglePageFit {
             guard let font = UIFont(name: fontName, size: size) else { throw Failure.missingFont }
             var heights: [CGFloat] = []
             for row in rows {
-                var height = ceil(font.lineHeight) + verticalPadding
+                var height = font.lineHeight + verticalPadding
                 for (text, width) in zip(row, widths) where !text.isEmpty {
                     let attributed = NSAttributedString(string: text, attributes: [
                         .font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
@@ -55,7 +55,7 @@ nonisolated enum TransferSinglePageFit {
                         offset += count
                         lineCount += 1
                     }
-                    height = max(height, ceil(font.lineHeight * CGFloat(lineCount)) + verticalPadding)
+                    height = max(height, font.lineHeight * CGFloat(lineCount) + verticalPadding)
                 }
                 heights.append(height)
             }
