@@ -88,6 +88,10 @@ nonisolated enum TransferWordTemplate {
                 }
                 let expression = try NSRegularExpression(pattern: "\\{\\{[A-Z_]+\\}\\}")
                 if expression.firstMatch(in: xml, range: NSRange(xml.startIndex..., in: xml)) != nil { throw Failure.unresolvedField }
+                // لا نحفظ مستنداً قد يبدو ناجحاً لكنه يحتوي محارف XML غير صالحة.
+                let parser = XMLParser(data: Data(xml.utf8))
+                parser.shouldResolveExternalEntities = false
+                guard parser.parse() else { throw Failure.invalidXML }
                 try Data(xml.utf8).write(to: output, options: .atomic)
             }
             paths.append(path)

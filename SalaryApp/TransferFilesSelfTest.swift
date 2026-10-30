@@ -375,6 +375,14 @@ import CryptoKit
             throw Failure(errorDescription: "incomplete template accepted")
         } catch is Failure { throw Failure(errorDescription: "incomplete template accepted") }
         catch { }
+        let invalidWord = root.appendingPathComponent("invalid-xml.docx")
+        do {
+            try TransferWordTemplate.render(template: input, destination: invalidWord,
+                fields: ["AMOUNT": "\u{FFFF}", "MONTH": "تشرين الأول"], tableRows: wordRows)
+            throw Failure(errorDescription: "invalid XML character accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid XML character accepted") }
+        catch { }
+        try check(!FileManager.default.fileExists(atPath: invalidWord.path), "invalid Word file not published")
         let referencesDir = root.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: referencesDir, withIntermediateDirectories: true)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
