@@ -32,6 +32,20 @@ import CryptoKit
         try check(wordValues["AMOUNT"] == "123,456", "Word numeric amount grouping")
         try check(wordValues["SIGNATURE_DATE"] == " / 10 / 2026" && wordValues["HEADER"] == "ترويسة وهمية", "Word signature date and customization")
         try check(wordValues["AMOUNT_WORDS"] == ArabicAmountWords.dinars(123_456), "Word amount in words")
+        let generatedWord = FileManager.default.temporaryDirectory.appendingPathComponent("generated-word-\(UUID().uuidString).docx")
+        defer { try? FileManager.default.removeItem(at: generatedWord) }
+        try TransferWordDocument.write(blocks: [
+            .paragraph(.init(text: "كتاب وهمي\nسطر آخر", halfPoints: 28, bold: true)),
+            .table(.init(headers: ["الجهة", "المبلغ"], rows: [["جهة وهمية", "123,456"]]))
+        ], destination: generatedWord)
+        let generatedArchive = try Archive(url: generatedWord, accessMode: .read)
+        guard let generatedBody = generatedArchive["word/document.xml"], generatedArchive["[Content_Types].xml"] != nil,
+              generatedArchive["_rels/.rels"] != nil else { throw Failure(errorDescription: "generated Word package incomplete") }
+        var generatedXML = Data()
+        _ = try generatedArchive.extract(generatedBody) { generatedXML.append($0) }
+        let generatedText = String(decoding: generatedXML, as: UTF8.self)
+        try check(generatedText.contains("جهة وهمية") && generatedText.contains("123,456") &&
+                  generatedText.contains("<w:br/>") && generatedText.contains("<w:tblBorders>"), "generated Word contents and table")
         let wordFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
             foodCompany: 92, healthcare: 20, policeFundDonations: 30, sports: 40,
             incomeTax: 11, socialProtection: 13, contractNominalShare: 17,
