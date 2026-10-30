@@ -3,6 +3,8 @@ import Foundation
 import SwiftData
 import ZIPFoundation
 import PDFKit
+import UIKit
+import CryptoKit
 
 /// يتحقق من صيغة الملف وقواعد التصنيف باستخدام حسابات وهمية فقط.
 @MainActor enum TransferFilesSelfTest {
@@ -159,7 +161,39 @@ import PDFKit
             throw Failure(errorDescription: "incomplete template accepted")
         } catch is Failure { throw Failure(errorDescription: "incomplete template accepted") }
         catch { }
-        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok"
+        let referencesDir = root.appendingPathComponent("templates", isDirectory: true)
+        try FileManager.default.createDirectory(at: referencesDir, withIntermediateDirectories: true)
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
+        let singlePDF = renderer.pdfData { $0.beginPage() }
+        let groupPDF = renderer.pdfData { $0.beginPage(); $0.beginPage() }
+        var records: [TransferReferenceManifest.Template] = []
+        for (id, count) in TransferReferencePack.expected {
+            let contents = count == 2 ? groupPDF : singlePDF
+            let path = "templates/\(id).pdf"
+            try contents.write(to: root.appendingPathComponent(path))
+            let digest = SHA256.hash(data: contents).map { String(format: "%02x", $0) }.joined()
+            records.append(.init(id: id, path: path, sha256: digest, pages: count))
+        }
+        let manifest = TransferReferenceManifest(version: 1, templates: records)
+        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"))
+        let package = root.appendingPathComponent("references.zip")
+        let archive = try Archive(url: package, accessMode: .create)
+        try archive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
+        for record in records { try archive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
+        try check(try TransferReferencePack.validate(package).templates.count == 11, "reference package")
+        var badRecords = records
+        badRecords[0] = .init(id: records[0].id, path: records[0].path, sha256: String(repeating: "0", count: 64), pages: records[0].pages)
+        try JSONEncoder().encode(TransferReferenceManifest(version: 1, templates: badRecords)).write(to: root.appendingPathComponent("manifest.json"))
+        let badPackage = root.appendingPathComponent("bad-references.zip")
+        let badArchive = try Archive(url: badPackage, accessMode: .create)
+        try badArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
+        for record in records { try badArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
+        do {
+            _ = try TransferReferencePack.validate(badPackage)
+            throw Failure(errorDescription: "damaged template package accepted")
+        } catch is Failure { throw Failure(errorDescription: "damaged template package accepted") }
+        catch { }
+        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok referencePack=ok"
     }
 }
 #endif
