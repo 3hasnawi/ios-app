@@ -49,6 +49,7 @@ struct TransferLetterDraftView: View {
     @State private var working = false
     @State private var error: String?
     @State private var previewURL: URL?
+    @State private var countNotice: String?
     @State private var showPreview = false
     @State private var generation: Task<Void, Never>?
 
@@ -95,10 +96,18 @@ struct TransferLetterDraftView: View {
         .sheet(isPresented: $showPreview, onDismiss: {
             if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
             previewURL = nil
+            countNotice = nil
         }) {
             NavigationStack {
                 if let previewURL {
-                    PDFPreview(url: previewURL).navigationTitle(tr("معاينة تجريبية", "Draft preview"))
+                    VStack(spacing: 0) {
+                        if let countNotice {
+                            Label(countNotice, systemImage: "exclamationmark.triangle.fill")
+                                .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity)
+                                .background(.thinMaterial)
+                        }
+                        PDFPreview(url: previewURL)
+                    }.navigationTitle(tr("معاينة تجريبية", "Draft preview"))
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showPreview = false } } }
                 }
@@ -114,7 +123,7 @@ struct TransferLetterDraftView: View {
             customization = store.effective(for: kind.rawValue)
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
-        working = true; error = nil
+        working = true; error = nil; countNotice = nil
         generation = Task {
             defer { working = false }
             do {
@@ -137,8 +146,25 @@ struct TransferLetterDraftView: View {
                 case .ramadi, .anbar, .housing, .water:
                     guard let entity, let account = entity.account else { throw TransferIndividualPlan.Failure.invalidSource }
                     let container = SharedModel.container
-                    let task = Task.detached(priority: .userInitiated) { try await ReportEngine(modelContainer: container).rows(for: entity.group) }
-                    let rows = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+                    let key = MonthName.sortKey(month)
+                    let year = key / 100, number = key % 100
+                    let previousKey = number == 1 ? (year - 1) * 100 + 12 : year * 100 + number - 1
+                    let prior = months.first { $0.sortKey == previousKey && $0.deductionCount > 0 }
+                    let priorName = prior?.name
+                    let priorRevision = prior?.importedAt
+                    let task = Task.detached(priority: .userInitiated) {
+                        let engine = ReportEngine(modelContainer: container)
+                        let rows = try await engine.rows(for: entity.group)
+                        guard let priorName else { return (rows, Optional<Int>.none) }
+                        let previous = try await engine.deductionGroups(month: priorName, byEntity: false)
+                        try Task.checkCancellation()
+                        return (rows, Optional(previous.first { $0.title == entity.group.title }?.count ?? 0))
+                    }
+                    let (rows, previousCount) = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+                    if let priorName, let priorRevision,
+                       months.first(where: { $0.name == priorName })?.importedAt != priorRevision {
+                        throw NSError(domain: "TransferLetterDraft", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("تغيّرت بيانات الشهر السابق؛ أعد فتح المعاينة.", "The previous month's data changed; reopen the preview.")])
+                    }
                     let planKind: TransferIndividualPlan.Kind = switch kind {
                     case .ramadi: .ramadi
                     case .housing: .housing
@@ -146,6 +172,9 @@ struct TransferLetterDraftView: View {
                     default: .rafidainAnbar
                     }
                     let plan = try TransferIndividualPlan(kind: planKind, group: entity.group, rows: rows, missingAmounts: entity.missingAmounts)
+                    if let previousCount, previousCount != entity.group.count {
+                        countNotice = tr("تغيّر عدد المنتسبين: \(Num.format(previousCount)) في الشهر السابق و\(Num.format(entity.group.count)) في الشهر المختار.", "Employee count changed: \(Num.format(previousCount)) in the previous month and \(Num.format(entity.group.count)) in the selected month.")
+                    }
                     if kind == .ramadi {
                         url = try await TransferRamadiLetter.make(plan: plan, account: account, payerIBAN: payerIBAN, references: references, customization: customization)
                     } else if kind == .anbar {
