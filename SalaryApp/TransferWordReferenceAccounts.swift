@@ -22,10 +22,48 @@ nonisolated enum TransferWordReferenceAccounts {
         return beneficiary
     }
     static func beneficiary(bookID: String, references: Data, payerIBAN: String) throws -> String {
-        guard ["food_company", "food_tax", "tax_social", "contracts", "cash_salary"].contains(bookID) else { throw Failure.mismatch }
+        guard ["food_company", "food_tax", "tax_social", "contracts", "cash_salary", "ramadi"].contains(bookID) else { throw Failure.mismatch }
         let source = try TransferReferencePack.load([bookID], from: references)
         guard let data = source[bookID], let document = PDFDocument(data: data), !document.isLocked,
               let text = document.page(at: 0)?.string else { throw Failure.mismatch }
         return try beneficiary(in: text, payerIBAN: payerIBAN)
+    }
+    /// تُقرأ حسابات الكتابين المحليين من مواضع محددة في المرجع المعتمد وتُطابق الحساب المحفوظ.
+    static func verifyIndividual(bookID: String, references: Data, payerIBAN: String,
+                                 beneficiary: String?) throws {
+        let payerRect: CGRect
+        let beneficiaryRect: CGRect?
+        switch bookID {
+        case "housing":
+            payerRect = CGRect(x: 211.37, y: 299.06, width: 170.586, height: 15.543)
+            beneficiaryRect = CGRect(x: 140.42, y: 315.14, width: 105.20, height: 15.54)
+        case "water":
+            payerRect = CGRect(x: 385.99, y: 333.62, width: 170.586, height: 15.543)
+            beneficiaryRect = CGRect(x: 40.20, y: 349.70, width: 104.91, height: 15.54)
+        case "ramadi":
+            payerRect = CGRect(x: 385.99, y: 349.7, width: 170.586, height: 15.543)
+            beneficiaryRect = CGRect(x: 334.39, y: 365.78, width: 170.66, height: 15.54)
+        case "rafidain_anbar":
+            payerRect = CGRect(x: 161.06, y: 299.06, width: 170.6, height: 15.543)
+            beneficiaryRect = nil
+        default: throw Failure.mismatch
+        }
+        guard TransferRules.validIBAN(payerIBAN) else { throw Failure.mismatch }
+        let source = try TransferReferencePack.load([bookID], from: references)
+        guard let data = source[bookID], let doc = PDFDocument(data: data), !doc.isLocked,
+              let page = doc.page(at: 0) else { throw Failure.mismatch }
+        let height = page.bounds(for: .mediaBox).height
+        func selected(_ rect: CGRect) -> String {
+            let box = CGRect(x: rect.minX - 0.2, y: height - rect.maxY - 0.2, width: rect.width + 0.4, height: rect.height + 0.4)
+            return page.selection(for: box)?.string ?? ""
+        }
+        func alphanumeric(_ value: String) -> String {
+            ArabicText.latinDigits(value).uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        }
+        guard alphanumeric(selected(payerRect)) == alphanumeric(payerIBAN) else { throw Failure.mismatch }
+        if let beneficiaryRect {
+            guard let beneficiary, !beneficiary.isEmpty,
+                  alphanumeric(selected(beneficiaryRect)) == alphanumeric(beneficiary) else { throw Failure.mismatch }
+        }
     }
 }

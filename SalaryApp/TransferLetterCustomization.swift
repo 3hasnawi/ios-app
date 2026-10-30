@@ -7,13 +7,17 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
     var committeeSecond: String?
     var committeeThird: String?
     var footer: String?
+    var fixedNumber: String? = nil
+    var foodContractReference: String? = nil
 
     func applying(over base: Self) -> Self {
         Self(header: header ?? base.header,
              committeeFirst: committeeFirst ?? base.committeeFirst,
              committeeSecond: committeeSecond ?? base.committeeSecond,
              committeeThird: committeeThird ?? base.committeeThird,
-             footer: footer ?? base.footer)
+             footer: footer ?? base.footer,
+             fixedNumber: fixedNumber ?? base.fixedNumber,
+             foodContractReference: foodContractReference ?? base.foodContractReference)
     }
 }
 
@@ -38,6 +42,8 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
             if changes.committeeSecond != nil { value.committeeSecond = nil }
             if changes.committeeThird != nil { value.committeeThird = nil }
             if changes.footer != nil { value.footer = nil }
+            if changes.fixedNumber != nil { value.fixedNumber = nil }
+            if changes.foodContractReference != nil { value.foodContractReference = nil }
             individual[key] = value
         }
     }

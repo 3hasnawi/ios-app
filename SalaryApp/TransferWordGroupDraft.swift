@@ -12,20 +12,27 @@ nonisolated enum TransferWordGroupDraft {
         case incomplete
         var errorDescription: String? { tr("تأكد من ترويسة الكتاب والعدد وأسماء اللجنة قبل إعداد المسودة.", "Check the letter header, reference number and committee names before preparing the draft.") }
     }
+    static func letterText(from custom: TransferLetterCustomization) throws -> LetterText {
+        guard let header = custom.header, let fixedNumber = custom.fixedNumber,
+              let first = custom.committeeFirst, let second = custom.committeeSecond,
+              let third = custom.committeeThird, let footer = custom.footer else { throw Failure.incomplete }
+        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer)
+    }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
                       text: LetterText, destination: URL) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let normalizedPayer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         guard TransferRules.validIBAN(payerIBAN), normalizedPayer == plan.payerIBAN, month == plan.month,
               nonempty(text.header), nonempty(text.fixedNumber),
-              text.committee.count == 3, text.committee.allSatisfy(nonempty), nonempty(text.footer) else { throw Failure.incomplete }
+              text.committee.count == 3, text.committee.allSatisfy(nonempty) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(month)
         let values = try TransferWordValues.make(month: month, amount: plan.total, custom: .init(),
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
         let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(normalizedPayer)) المفتوح لديكم إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
-        let signatures = TransferWordDocument.Table(headers: [], rows: [text.committee], halfPoints: 28,
+        let signatureCells = text.committee.map { $0 + "\n" + period.signatureDate }
+        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], halfPoints: 28,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         try TransferWordDocument.write(blocks: [
             .paragraph(.init(text: text.header, halfPoints: 32, bold: true)),

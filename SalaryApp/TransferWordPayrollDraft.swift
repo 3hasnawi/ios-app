@@ -11,7 +11,7 @@ nonisolated enum TransferWordPayrollDraft {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard TransferRules.validIBAN(plan.payerIBAN), TransferRules.validIBAN(plan.beneficiaryIBAN),
               nonempty(text.header), nonempty(text.fixedNumber), text.committee.count == 3,
-              text.committee.allSatisfy(nonempty), nonempty(text.footer), nonempty(plan.beneficiaryName) else { throw Failure.incomplete }
+              text.committee.allSatisfy(nonempty), nonempty(plan.beneficiaryName) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.month)
         let values = try TransferWordValues.make(month: plan.month, amount: plan.amount, custom: .init(),
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])

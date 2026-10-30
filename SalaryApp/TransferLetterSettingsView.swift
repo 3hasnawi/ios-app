@@ -13,6 +13,8 @@ struct TransferLetterSettingsView: View {
     @State private var second = ""
     @State private var third = ""
     @State private var footer = ""
+    @State private var fixedNumber = ""
+    @State private var foodContractReference = ""
     @State private var importing = false
     @State private var error: String?
     @State private var saved = false
@@ -56,6 +58,8 @@ struct TransferLetterSettingsView: View {
                 field("second", tr("عضو اللجنة الثاني", "Second committee member"), text: $second)
                 field("third", tr("عضو اللجنة الثالث", "Third committee member"), text: $third)
                 field("footer", tr("الهامش السفلي", "Footer"), text: $footer, lines: true)
+                field("fixedNumber", tr("العدد الموحد", "Fixed letter number"), text: $fixedNumber)
+                field("foodContractReference", tr("رقم وتاريخ عقد الإطعام", "Food contract number and date"), text: $foodContractReference)
                 Button(tr("حفظ التخصيص", "Save customization"), systemImage: "checkmark.circle") { save() }
                     .disabled(selected.isEmpty || busy)
                 if target != "all" {
@@ -93,20 +97,24 @@ struct TransferLetterSettingsView: View {
             let value = target == "all" ? store.common : store.effective(for: target)
             header = value.header ?? ""; first = value.committeeFirst ?? ""; second = value.committeeSecond ?? ""
             third = value.committeeThird ?? ""; footer = value.footer ?? ""
+            fixedNumber = value.fixedNumber ?? ""; foodContractReference = value.foodContractReference ?? ""
         } catch {
-            header = ""; first = ""; second = ""; third = ""; footer = ""
+            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""
             self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.")
         }
     }
     private func save() {
         guard !busy, !selected.isEmpty else { return }
-        let pairs = [("header", header), ("first", first), ("second", second), ("third", third), ("footer", footer)]
+        let pairs = [("header", header), ("first", first), ("second", second), ("third", third), ("footer", footer),
+                     ("fixedNumber", fixedNumber), ("foodContractReference", foodContractReference)]
         guard pairs.filter({ selected.contains($0.0) }).allSatisfy({ pair in
             pair.1.count <= 200 && !pair.1.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 })
         }) else { error = tr("أحد الحقول أطول من الحد المسموح أو يحتوي رمزاً غير صالح.", "A field is too long or contains an invalid character."); return }
         let changes = TransferLetterCustomization(header: selected.contains("header") ? header : nil,
             committeeFirst: selected.contains("first") ? first : nil, committeeSecond: selected.contains("second") ? second : nil,
-            committeeThird: selected.contains("third") ? third : nil, footer: selected.contains("footer") ? footer : nil)
+            committeeThird: selected.contains("third") ? third : nil, footer: selected.contains("footer") ? footer : nil,
+            fixedNumber: selected.contains("fixedNumber") ? fixedNumber : nil,
+            foodContractReference: selected.contains("foodContractReference") ? foodContractReference : nil)
         do {
             var store = try readStore()
             if target == "all" { store.applyToAll(changes) } else { store.apply(changes, to: target) }
