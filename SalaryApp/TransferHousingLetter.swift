@@ -55,7 +55,7 @@ nonisolated enum TransferHousingLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data) async throws -> URL {
+    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
         guard case .housing = plan.kind, ArabicText.normalize(account.entity) == ArabicText.normalize(plan.group.title),
               TransferRules.validIBAN(account.iban) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.group.month)
@@ -87,7 +87,8 @@ nonisolated enum TransferHousingLetter {
               originalYears.allSatisfy({ $0.count == 4 }), Set(originalYears).count == 1,
               originalMonths.count == numericMonths.count, originalMonths.allSatisfy({ (1...12).contains($0) }), Set(originalMonths).count == 1,
               monthNameMasks.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
-        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks
+        let customFields = try TransferPDFCustomization.prepare(id: "housing", custom: customization, page: page, height: pageSize.height)
+        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()
@@ -103,6 +104,7 @@ nonisolated enum TransferHousingLetter {
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[0], "TimesNewRomanPS-BoldMT", 14.04)]),
             TransferPDFTextFlow(value: monthNames[period.month - 1], slots: [slot(nameSlots[1], "TimesNewRomanPS-BoldMT", 16)])
         ]
+        flows.append(contentsOf: customFields.flows)
         for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
         for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)

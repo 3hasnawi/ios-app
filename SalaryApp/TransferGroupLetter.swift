@@ -47,7 +47,7 @@ nonisolated enum TransferGroupLetter {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
     static func make(allEntities: [TransferEntity], category: TransferCategory, month: String,
-                     payer: String, payerIBAN: String, references: Data) async throws -> Result {
+                     payer: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> Result {
         let style = try layout(category)
         let period = try TransferLetterPeriod(month)
         guard !allEntities.isEmpty, Set(allEntities.map(\.id)).count == allEntities.count,
@@ -74,7 +74,8 @@ nonisolated enum TransferGroupLetter {
               months.count == 3, months.allSatisfy({ (1...12).contains($0) }), Set(months).count == 1,
               style.monthNames.allSatisfy({ !selected($0, page, size.height).isEmpty }),
               let oldCount = Int(digits(selected(style.count, page, size.height))), oldCount > 0 else { throw Failure.reference }
-        let masks = [style.amount, style.count] + style.words + style.years + style.numericMonths + style.monthNames
+        let customFields = try TransferPDFCustomization.prepare(id: style.id, custom: customization, page: page, height: size.height)
+        let masks = [style.amount, style.count] + style.words + style.years + style.numericMonths + style.monthNames + customFields.masks
         let digest = SHA256.hash(data: raw).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: raw, sha256: digest, pageIndex: 0, masks: masks)
         let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -93,6 +94,7 @@ nonisolated enum TransferGroupLetter {
         ]
         let yearFonts = ["TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "TimesNewRomanPS-BoldMT", "Arial-BoldMT"]
         let yearSizes: [CGFloat] = [18, 14.04, 16, 16, 16]
+        flows.append(contentsOf: customFields.flows)
         for i in style.years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(style.years[i], yearFonts[i], yearSizes[i])])) }
         for i in style.numericMonths.indices { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(style.numericMonths[i], "TimesNewRomanPS-BoldMT", i == 0 ? 18 : 16)])) }
         let letter = try await TransferPDFOverlay.make(blankReference: blank, flows: flows)

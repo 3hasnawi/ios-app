@@ -60,7 +60,7 @@ nonisolated enum TransferContractsLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data) async throws -> URL {
+    static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
         let amountValue = figures.contractTotal
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
@@ -94,7 +94,8 @@ nonisolated enum TransferContractsLetter {
               figures.contractNominalShare >= 0, figures.contractRetirement >= 0,
               figures.contractNominalShare.rounded() == figures.contractNominalShare,
               figures.contractRetirement.rounded() == figures.contractRetirement else { throw Failure.missingFields }
-        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + tableAmounts
+        let customFields = try TransferPDFCustomization.prepare(id: "contracts", custom: customization, page: page, height: pageSize.height)
+        let masks = [amount] + wordsMasks + years + numericMonths + monthNameMasks + tableAmounts + customFields.masks
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()
@@ -115,6 +116,7 @@ nonisolated enum TransferContractsLetter {
             guard let value = formatter.string(from: NSNumber(value: tableValues[i])) else { throw Failure.incomplete }
             flows.append(TransferPDFTextFlow(value: value, slots: [slot(tableAmounts[i], i == 2 ? "Arial-BoldMT" : "TimesNewRomanPS-BoldMT", i == 2 ? 14.04 : 12)]))
         }
+        flows.append(contentsOf: customFields.flows)
         for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
         for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)

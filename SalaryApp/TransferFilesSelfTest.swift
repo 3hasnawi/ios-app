@@ -304,6 +304,20 @@ import CryptoKit
             PDFText.draw("شهر", in: CGRect(x: 143.31, y: 675.64, width: 25.61, height: 17.67), font: bold, align: .right)
             PDFText.draw(iban, in: CGRect(x: 384, y: 350, width: 175, height: 19), font: ReportFont.regular(10), align: .right)
         }
+        let signaturePDF = letterRenderer.pdfData { context in
+            context.beginPage()
+            let boxes = [CGRect(x: 452.260, y: 638.770, width: 94.289, height: 17.668), CGRect(x: 295.610, y: 638.770, width: 98.711, height: 17.668), CGRect(x: 86.304, y: 638.666, width: 131.669, height: 17.795)]
+            for box in boxes { PDFText.draw("اسم وهمي", in: box, font: ReportFont.bold(14), align: .center) }
+        }
+        guard let signaturePage = PDFDocument(data: signaturePDF)?.page(at: 0) else { throw Failure(errorDescription: "signature reference unavailable") }
+        let signatureChanges = TransferLetterCustomization(committeeFirst: "اسم تجريبي", committeeSecond: "اسم ثان", committeeThird: "")
+        let preparedSignatures = try TransferPDFCustomization.prepare(id: "food_company", custom: signatureChanges, page: signaturePage, height: 841.9)
+        try check(preparedSignatures.masks.count == 3 && preparedSignatures.flows.count == 2, "committee name masks and clear")
+        do {
+            _ = try TransferPDFCustomization.prepare(id: "food_company", custom: TransferLetterCustomization(header: "عنوان وهمي"), page: signaturePage, height: 841.9)
+            throw Failure(errorDescription: "unfinished header customization accepted")
+        } catch is Failure { throw Failure(errorDescription: "unfinished header customization accepted") }
+        catch { }
         let fakeCompanyPath = "templates/food_company.pdf"
         try fakeLetter.write(to: root.appendingPathComponent(fakeCompanyPath))
         let fakeCompanyDigest = SHA256.hash(data: fakeLetter).map { String(format: "%02x", $0) }.joined()

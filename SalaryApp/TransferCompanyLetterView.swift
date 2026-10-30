@@ -10,9 +10,11 @@ struct TransferCompanyLetterView: View {
     @Query private var months: [PayrollMonth]
     @AppStorage("bankStatementIBAN") private var currentPayer = ""
     @AppStorage(TransferReferencePack.settingsKey) private var currentReferences = Data()
+    @AppStorage(TransferLetterCustomizationStore.settingsKey) private var currentCustomization = Data()
     @State private var working = false
     @State private var error: String?
     @State private var previewURL: URL?
+    @State private var previewCustomization: Data?
     @State private var showPreview = false
     @State private var generation: Task<Void, Never>?
 
@@ -46,6 +48,7 @@ struct TransferCompanyLetterView: View {
         .sheet(isPresented: $showPreview, onDismiss: {
             if let previewURL { try? FileManager.default.removeItem(at: previewURL.deletingLastPathComponent()) }
             previewURL = nil
+            previewCustomization = nil
         }) {
             NavigationStack {
                 if let previewURL {
@@ -55,7 +58,7 @@ struct TransferCompanyLetterView: View {
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([previewURL]) }
-                                    .disabled(!sourceIsCurrent)
+                                    .disabled(!sourceIsCurrent || previewCustomization != currentCustomization)
                             }
                             ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showPreview = false } }
                         }
@@ -66,16 +69,26 @@ struct TransferCompanyLetterView: View {
     }
     private func prepare() {
         guard sourceIsCurrent, !working else { return }
+        let snapshot = currentCustomization
+        let customization: TransferLetterCustomization
+        do {
+            let store = try (snapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: snapshot))
+            customization = store.effective(for: "food_company")
+        } catch {
+            self.error = tr("تعذّر قراءة تخصيص الكتاب؛ لم تُنشأ المعاينة.", "Could not read letter customization; no preview was created.")
+            return
+        }
         working = true; error = nil
         generation = Task {
             defer { working = false }
             do {
-                let url = try await TransferCompanyLetter.make(figures: figures, payerIBAN: payerIBAN, references: references)
-                guard !Task.isCancelled, sourceIsCurrent else {
+                let url = try await TransferCompanyLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization)
+                guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization else {
                     try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
                     return
                 }
                 previewURL = url
+                previewCustomization = snapshot
                 generation = nil
                 showPreview = true
             } catch is CancellationError { return }

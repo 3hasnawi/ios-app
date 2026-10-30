@@ -60,7 +60,7 @@ nonisolated enum TransferWaterLetter {
     private static func slot(_ rect: CGRect, _ font: String, _ size: CGFloat) -> TransferPDFTextSlot {
         TransferPDFTextSlot(rect: rect, fontName: font, fontSize: size, alignment: .right)
     }
-    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data) async throws -> URL {
+    static func make(plan: TransferIndividualPlan, account: SavedExecutionAccount, beneficiaryAccountNumber: String, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init()) async throws -> URL {
         guard case .water = plan.kind, ArabicText.normalize(account.entity) == ArabicText.normalize(plan.group.title),
               TransferRules.validIBAN(account.iban) else { throw Failure.incomplete }
         guard let employee = plan.rows.first, !employee.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -96,7 +96,8 @@ nonisolated enum TransferWaterLetter {
               monthNameMasks.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
         guard !selected(rankBox, page: page, height: pageSize.height).isEmpty,
               personBoxes.allSatisfy({ !selected($0, page: page, height: pageSize.height).isEmpty }) else { throw Failure.missingFields }
-        let masks = [amount, rankBox] + personBoxes + wordsMasks + years + numericMonths + monthNameMasks
+        let customFields = try TransferPDFCustomization.prepare(id: "water", custom: customization, page: page, height: pageSize.height)
+        let masks = [amount, rankBox] + personBoxes + wordsMasks + years + numericMonths + monthNameMasks + customFields.masks
         let digest = SHA256.hash(data: original).map { String(format: "%02x", $0) }.joined()
         let blank = try await TransferPDFBackground.make(reference: original, sha256: digest, pageIndex: 0, masks: masks)
         try Task.checkCancellation()
@@ -114,6 +115,7 @@ nonisolated enum TransferWaterLetter {
         ]
         flows.append(TransferPDFTextFlow(value: employee.rank, slots: [slot(rankBox, "TimesNewRomanPSMT", 14.04)]))
         flows.append(TransferPDFTextFlow(value: employee.name, slots: personBoxes.map { slot($0, "TimesNewRomanPSMT", 14.04) }))
+        flows.append(contentsOf: customFields.flows)
         for i in years.indices { flows.append(TransferPDFTextFlow(value: String(period.year), slots: [slot(years[i], yearFonts[i], yearSizes[i])])) }
         for rect in numericMonths.dropFirst() { flows.append(TransferPDFTextFlow(value: String(period.month), slots: [slot(rect, "TimesNewRomanPS-BoldMT", 16)])) }
         let glyphs = try TransferMonthDigits.extract(from: digitPDF)
