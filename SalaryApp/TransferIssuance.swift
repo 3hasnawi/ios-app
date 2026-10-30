@@ -11,6 +11,8 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
     let branch: String
     let swift: String
     let category: String
+    /// اختيارية حتى تبقى الإقرارات المحفوظة قبل إضافة فحص الأسماء قابلة للقراءة.
+    var detailHash: String? = nil
 
     init(_ entity: TransferEntity) {
         id = entity.id
@@ -81,7 +83,11 @@ nonisolated enum TransferIssuance {
         let byRecorded = Dictionary(grouping: recorded, by: \.id)
         return Audit(
             missing: current.filter { byRecorded[$0.id] == nil },
-            changed: current.filter { line in byRecorded[line.id]?.contains(where: { $0 != line }) == true },
+            changed: current.filter { line in byRecorded[line.id]?.contains(where: { old in
+                var previous = old; previous.detailHash = nil
+                var now = line; now.detailHash = nil
+                return previous != now || (old.detailHash != nil && line.detailHash != nil && old.detailHash != line.detailHash)
+            }) == true },
             absent: recorded.filter { byCurrent[$0.id] == nil },
             repeated: current.filter { (byRecorded[$0.id]?.count ?? 0) > 1 })
     }
@@ -106,16 +112,84 @@ struct TransferIssuanceView: View {
     @State private var confirm = false
     @State private var retract: TransferIssuedRecord?
     @State private var error: String?
+    @State private var checkingDetails = false
+    @State private var detailError: String?
+    @State private var checkedHashes: [String: String] = [:]
+    @State private var detailsChecked = false
+    @State private var confirmationTask: Task<Void, Never>?
 
     private var current: Bool {
         let record = months.first { $0.name == month }
         return record != nil && currentAccounts == accounts && currentCategories == categories && currentLinks == links &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
+    private var cashID: String { "payroll|\(month)|cashSalary" }
     private var lines: [TransferIssuedLine] {
-        entities.filter { $0.group.total.isFinite && $0.group.total > 0 }.map(TransferIssuedLine.init) + TransferIssuance.payrollLines(figures)
+        (entities.filter { $0.group.total.isFinite && $0.group.total > 0 }.map(TransferIssuedLine.init) + TransferIssuance.payrollLines(figures)).map { value in
+            var line = value; line.detailHash = checkedHashes[line.id]; return line
+        }
     }
     private var ledger: TransferIssuance.Ledger? { try? TransferIssuance.decode(stored) }
+    private var nameListIDs: Set<String> {
+        Set(entities.filter { $0.payrollRecipient == nil }.map(\.id)).union([cashID])
+    }
+    private var hasOlderConfirmationsWithoutNames: Bool {
+        guard let ledger else { return false }
+        return ledger.records.filter { $0.month == month }.flatMap(\.lines)
+            .contains { $0.detailHash == nil && nameListIDs.contains($0.id) }
+    }
+    private func fetchDetails(_ ids: Set<String>) async throws -> [String: String] {
+        let container = SharedModel.container
+        let snapshot = entities, selectedMonth = month, cash = cashID, amount = figures.payrollCash
+        let work = Task.detached(priority: .utility) {
+            try await TransferIssuedDetails.load(entities: snapshot, ids: ids, month: selectedMonth,
+                cashID: cash, cashAmount: amount, container: container)
+        }
+        return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+    }
+    private func refreshDetails() async {
+        guard current, let ledger else { return }
+        let ids = Set(ledger.records.filter { $0.month == month }.flatMap(\.lines)
+            .filter { $0.detailHash != nil }.map(\.id)).intersection(nameListIDs)
+        detailsChecked = false; checkedHashes = [:]; detailError = nil
+        guard !ids.isEmpty else { detailsChecked = true; return }
+        checkingDetails = true
+        defer { checkingDetails = false }
+        do {
+            let hashes = try await fetchDetails(ids)
+            guard !Task.isCancelled, current else { return }
+            checkedHashes = hashes
+            if !ids.isSubset(of: Set(hashes.keys)) {
+                detailError = tr("تعذر فحص بعض قوائم الأسماء؛ راجع المصادر الحالية.", "Some name lists could not be checked; review current sources.")
+            }
+            detailsChecked = true
+        } catch is CancellationError { return }
+        catch { guard !Task.isCancelled else { return }; detailError = error.localizedDescription }
+    }
+    private func confirmIssued() {
+        guard current, confirmationTask == nil, !checkingDetails else { return }
+        let ids = selected, title = book.trimmingCharacters(in: .whitespacesAndNewlines), storage = stored
+        let chosen = lines.filter { ids.contains($0.id) }
+        guard !title.isEmpty, !chosen.isEmpty, Set(chosen.map(\.id)).count == chosen.count else { return }
+        confirmationTask = Task {
+            defer { confirmationTask = nil }
+            do {
+                let required = ids.intersection(nameListIDs)
+                let hashes = try await fetchDetails(required)
+                guard !Task.isCancelled, current, storage == stored, ids == selected,
+                      required.isSubset(of: Set(hashes.keys)), let ledger else {
+                    if !Task.isCancelled { error = tr("تغيرت البيانات أثناء تدقيق الأسماء؛ أعد المحاولة.", "Data changed during name-list checking; try again.") }
+                    return
+                }
+                let verified = chosen.map { value -> TransferIssuedLine in
+                    var line = value; line.detailHash = hashes[line.id]; return line
+                }
+                let record = TransferIssuedRecord(id: UUID(), month: month, book: title, confirmedAt: .now, lines: verified)
+                if save(ledger.records + [record]) { selected = []; book = "" }
+            } catch is CancellationError { return }
+            catch { self.error = error.localizedDescription }
+        }
+    }
     @discardableResult private func save(_ records: [TransferIssuedRecord]) -> Bool {
         guard current, ledger != nil, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
             error = tr("تغيرت البيانات أو توجد عملية استيراد أو نسخ جارية. أعد فتح الصفحة وحاول مجدداً.", "Data changed or another operation is in progress. Reopen this page and try again.")
@@ -135,10 +209,15 @@ struct TransferIssuanceView: View {
                 let audit = TransferIssuance.audit(current: lines, records: ledger.records, month: month)
                 Section(tr("مراجعة الجهات والبنود · \(month)", "Entity and item review · \(month)")) {
                     issueGroup(tr("مصادر بلا تأكيد إصدار", "Items without issuance confirmation"), audit.missing, .orange)
-                    issueGroup(tr("تغيّر المبلغ أو العدد أو الحساب بعد التأكيد", "Amount, count or account changed after confirmation"), audit.changed, .red)
+                    issueGroup(tr("تغيّرت الأسماء أو المبالغ أو الحسابات بعد التأكيد", "Names, amounts or accounts changed after confirmation"), audit.changed, .red)
                     issueGroup(tr("مصادر مؤكدة غير متاحة في بيانات الشهر", "Confirmed items unavailable in current data"), audit.absent, .orange)
                     issueGroup(tr("جهات مؤكدة في أكثر من كتاب", "Entities confirmed in multiple letters"), audit.repeated, .red)
-                    if audit.missing.isEmpty && audit.changed.isEmpty && audit.absent.isEmpty && audit.repeated.isEmpty {
+                    if checkingDetails { ProgressView(tr("تدقيق قوائم الأسماء", "Checking name lists")) }
+                    if let detailError { Text(detailError).foregroundStyle(.orange) }
+                    if hasOlderConfirmationsWithoutNames {
+                        Text(tr("بعض الإقرارات السابقة لم تحفظ بصمة قائمة الأسماء؛ راجع كتابها وأعد تأكيده عند الحاجة.", "Some older confirmations have no name-list fingerprint; review and reconfirm if needed.")).font(.footnote).foregroundStyle(.orange)
+                    }
+                    if detailsChecked && detailError == nil && audit.missing.isEmpty && audit.changed.isEmpty && audit.absent.isEmpty && audit.repeated.isEmpty {
                         Text(tr("لا توجد اختلافات في الإقرارات المسجلة.", "No differences in recorded confirmations.")).foregroundStyle(.secondary)
                     }
                 } footer: { Text(tr("يقارن التدقيق الجهات وبنود الكتب بإقراراتك اليدوية. لا يقرأ الكتب الصادرة أو يثبت التحويل. قد يظهر بند الكاش غير متاح إذا تعذر تحديد طريقة الدفع.", "This compares entities and letter items with manual confirmations. It does not read issued letters or prove a transfer. Cash may be unavailable if payment methods cannot be determined.")) }
@@ -153,7 +232,8 @@ struct TransferIssuanceView: View {
                         }
                     }
                     Button(tr("تأكيد تسجيل الإصدار", "Confirm issued letter")) { confirm = true }
-                        .disabled(!current || selected.isEmpty || book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!current || checkingDetails || confirmationTask != nil || selected.isEmpty || book.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if confirmationTask != nil { ProgressView(tr("تدقيق قوائم الأسماء", "Checking name lists")) }
                 } footer: { Text(tr("بعد إصدار الكتاب فعلياً، اختر الجهات أو بنود الرواتب التي يتضمنها. المعاينة وحدها لا تُعد إصداراً.", "After issuing the letter, select the entities or payroll items it contains. A preview is not issuance.")) }
                 let records = ledger.records.filter { $0.month == month }.sorted { $0.confirmedAt > $1.confirmedAt }
                 if !records.isEmpty {
@@ -176,14 +256,10 @@ struct TransferIssuanceView: View {
         .navigationTitle(tr("تدقيق الكتب الصادرة", "Issued letter review"))
         .alert(tr("تأكيد إصدار الكتاب؟", "Confirm letter issued?"), isPresented: $confirm) {
             Button(tr("تأكيد الإصدار", "Confirm issuance")) {
-                guard let ledger, current else { return }
-                let chosen = lines.filter { selected.contains($0.id) }
-                guard !chosen.isEmpty, Set(chosen.map(\.id)).count == chosen.count else { return }
-                let record = TransferIssuedRecord(id: UUID(), month: month, book: book.trimmingCharacters(in: .whitespacesAndNewlines), confirmedAt: .now, lines: chosen)
-                if save(ledger.records + [record]) { selected = []; book = "" }
+                confirmIssued()
             }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { }
-        } message: { Text(tr("أؤكد أنني أصدرت الكتاب فعلياً وأن الجهات والبنود المختارة وردت فيه بالمبالغ المعروضة. لا يتحقق التطبيق من الكتاب أو المصرف بهذا الإقرار.", "I confirm that I issued this letter and it contains the selected entities and items with their amounts. This confirmation does not verify the document or the bank.")) }
+        } message: { Text(tr("أؤكد أنني أصدرت الكتاب فعلياً وأن الجهات والبنود المختارة وردت فيه بالمبالغ والأسماء الصحيحة. لا يتحقق التطبيق من الكتاب أو المصرف بهذا الإقرار.", "I confirm that I issued this letter and it contains the selected entities and items with their correct amounts and names. This confirmation does not verify the document or the bank.")) }
         .alert(tr("إلغاء تأكيد الإصدار؟", "Retract issuance confirmation?"), isPresented: Binding(get: { retract != nil }, set: { if !$0 { retract = nil } })) {
             Button(tr("إلغاء التأكيد", "Retract"), role: .destructive) {
                 if let id = retract?.id, let ledger { save(ledger.records.filter { $0.id != id }) }
@@ -191,6 +267,8 @@ struct TransferIssuanceView: View {
             }
             Button(tr("رجوع", "Back"), role: .cancel) { retract = nil }
         } message: { Text(tr("يُحذف الإقرار فقط، ولا يُحذف الكتاب أو بيانات الشهر.", "Only the confirmation is removed; the letter and monthly data are unchanged.")) }
+        .task(id: stored) { await refreshDetails() }
+        .onDisappear { confirmationTask?.cancel(); confirmationTask = nil }
     }
     @ViewBuilder private func issueGroup(_ title: String, _ values: [TransferIssuedLine], _ color: Color) -> some View {
         if !values.isEmpty {

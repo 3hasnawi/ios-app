@@ -52,6 +52,16 @@ import CryptoKit
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
         let issuedLine = TransferIssuedLine(item)
+        let namesA = [["موظف وهمي أ", "رتبة", "قسم", "600"], ["موظف وهمي ب", "رتبة", "قسم", "600"]]
+        let namesB = [["موظف وهمي أ", "رتبة", "قسم", "600"], ["موظف وهمي ج", "رتبة", "قسم", "600"]]
+        let hashA = try TransferIssuedDetails.fingerprint(namesA)
+        try check(hashA == TransferIssuedDetails.fingerprint(namesA.reversed().map { $0 }), "name fingerprint must ignore order")
+        try check(hashA != TransferIssuedDetails.fingerprint(namesB), "name substitution must change fingerprint")
+        var namedLine = issuedLine; namedLine.detailHash = hashA
+        var changedNames = issuedLine; changedNames.detailHash = try TransferIssuedDetails.fingerprint(namesB)
+        let namedRecord = TransferIssuedRecord(id: UUID(), month: group.month, book: "كتاب وهمي", confirmedAt: .now, lines: [namedLine])
+        try check(TransferIssuance.audit(current: [changedNames], records: [namedRecord], month: group.month).changed.count == 1, "changed names after confirmation")
+        try check(TransferIssuance.audit(current: [issuedLine], records: [namedRecord], month: group.month).changed.isEmpty, "unread name list must not be a false mismatch")
         let issuedRecord = TransferIssuedRecord(id: UUID(), month: group.month, book: "كتاب وهمي", confirmedAt: .now, lines: [issuedLine])
         let ledgerBytes = try JSONEncoder().encode(TransferIssuance.Ledger(records: [issuedRecord]))
         let restoredLedger = try TransferIssuance.decode(ledgerBytes)
