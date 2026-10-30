@@ -4,6 +4,25 @@ import ZIPFoundation
 /// تعبئة قالب Word مجهّز بعلامات واضحة، مع الإبقاء على أجزاء الملف وتنسيقها.
 /// لا يتعامل مع ملف .doc القديم مباشرة ولا يخمّن مواضع البيانات داخل النموذج.
 nonisolated enum TransferWordTemplate {
+    /// يجمع النص داخل الفقرة لكشف علامة قُسمت بين مقاطع Word المختلفة.
+    private final class ParagraphMarkerCheck: NSObject, XMLParserDelegate {
+        private var depth = 0
+        private var paragraph = ""
+        private(set) var unresolved = false
+        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            if elementName == "w:p" { depth += 1; if depth == 1 { paragraph = "" } }
+        }
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            if depth > 0 { paragraph += string }
+        }
+        func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+            guard elementName == "w:p", depth > 0 else { return }
+            depth -= 1
+            if depth == 0 && paragraph.range(of: "\\{\\{[A-Z_]+\\}\\}", options: .regularExpression) != nil {
+                unresolved = true
+            }
+        }
+    }
     enum Failure: LocalizedError {
         case invalidTemplate, unsafePath, oversized, missingField(String), unresolvedField, invalidXML
         var errorDescription: String? {
@@ -91,7 +110,10 @@ nonisolated enum TransferWordTemplate {
                 // لا نحفظ مستنداً قد يبدو ناجحاً لكنه يحتوي محارف XML غير صالحة.
                 let parser = XMLParser(data: Data(xml.utf8))
                 parser.shouldResolveExternalEntities = false
+                let markerCheck = ParagraphMarkerCheck()
+                parser.delegate = markerCheck
                 guard parser.parse() else { throw Failure.invalidXML }
+                guard !markerCheck.unresolved else { throw Failure.unresolvedField }
                 try Data(xml.utf8).write(to: output, options: .atomic)
             }
             paths.append(path)

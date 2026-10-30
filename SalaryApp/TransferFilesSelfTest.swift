@@ -383,6 +383,23 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "invalid XML character accepted") }
         catch { }
         try check(!FileManager.default.fileExists(atPath: invalidWord.path), "invalid Word file not published")
+        // Word قد يقسم علامة الحقل بين مقطعين؛ لا يجوز تصديرها كنص ظاهر في الكتاب.
+        let splitRoot = root.appendingPathComponent("split", isDirectory: true)
+        try FileManager.default.createDirectory(at: splitRoot.appendingPathComponent("word"), withIntermediateDirectories: true)
+        try Data("<types/>".utf8).write(to: splitRoot.appendingPathComponent("[Content_Types].xml"))
+        let splitXML = "<document xmlns:w=\"urn:word-test\"><w:p><w:r><w:t>{{AMOUNT}}</w:t></w:r><w:r><w:t>{{MIS</w:t></w:r><w:r><w:t>SING}}</w:t></w:r></w:p></document>"
+        try Data(splitXML.utf8).write(to: splitRoot.appendingPathComponent("word/document.xml"))
+        let splitInput = root.appendingPathComponent("split.docx")
+        let splitArchive = try Archive(url: splitInput, accessMode: .create)
+        try splitArchive.addEntry(with: "[Content_Types].xml", relativeTo: splitRoot, compressionMethod: .deflate)
+        try splitArchive.addEntry(with: "word/document.xml", relativeTo: splitRoot, compressionMethod: .deflate)
+        let splitOutput = root.appendingPathComponent("split-output.docx")
+        do {
+            try TransferWordTemplate.render(template: splitInput, destination: splitOutput, fields: ["AMOUNT": "100"])
+            throw Failure(errorDescription: "split Word placeholder accepted")
+        } catch is Failure { throw Failure(errorDescription: "split Word placeholder accepted") }
+        catch { }
+        try check(!FileManager.default.fileExists(atPath: splitOutput.path), "split placeholder file not published")
         let referencesDir = root.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: referencesDir, withIntermediateDirectories: true)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
