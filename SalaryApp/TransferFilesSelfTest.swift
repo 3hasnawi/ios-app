@@ -222,6 +222,17 @@ import CryptoKit
             throw Failure(errorDescription: "old PDF field was not rejected")
         } catch is Failure { throw Failure(errorDescription: "old PDF field was not rejected") }
         catch { }
+        let occupiedHash = SHA256.hash(data: occupiedPDF).map { String(format: "%02x", $0) }.joined()
+        let preparedBackground = try await TransferPDFBackground.make(reference: occupiedPDF, sha256: occupiedHash, pageIndex: 0,
+                                                                       masks: [CGRect(x: 45, y: 100, width: 160, height: 28)])
+        guard let preparedDocument = PDFDocument(data: preparedBackground) else { throw Failure(errorDescription: "prepared background unreadable") }
+        try check(!(preparedDocument.page(at: 0)?.string ?? "").contains("OLD"), "old field survived in PDF text")
+        do {
+            _ = try await TransferPDFBackground.make(reference: occupiedPDF, sha256: String(repeating: "0", count: 64), pageIndex: 0,
+                                                      masks: [CGRect(x: 45, y: 100, width: 160, height: 28)])
+            throw Failure(errorDescription: "wrong template hash accepted")
+        } catch is Failure { throw Failure(errorDescription: "wrong template hash accepted") }
+        catch { }
         do {
             _ = try await TransferPDFOverlay.make(blankReference: blankPDF, flows: [TransferPDFTextFlow(value: String(repeating: "1234567890", count: 100), slots: [slot])])
             throw Failure(errorDescription: "overflowing PDF field accepted")
