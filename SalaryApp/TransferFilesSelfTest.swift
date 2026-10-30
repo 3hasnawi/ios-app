@@ -403,6 +403,21 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "split Word placeholder accepted") }
         catch { }
         try check(!FileManager.default.fileExists(atPath: splitOutput.path), "split placeholder file not published")
+        let linesRoot = root.appendingPathComponent("lines", isDirectory: true)
+        try FileManager.default.createDirectory(at: linesRoot.appendingPathComponent("word"), withIntermediateDirectories: true)
+        try Data("<types/>".utf8).write(to: linesRoot.appendingPathComponent("[Content_Types].xml"))
+        let linesXML = "<document xmlns:w=\"urn:word-test\"><w:p><w:r><w:t>{{HEADER}}</w:t></w:r></w:p></document>"
+        try Data(linesXML.utf8).write(to: linesRoot.appendingPathComponent("word/document.xml"))
+        let linesInput = root.appendingPathComponent("lines.docx"), linesOutput = root.appendingPathComponent("lines-output.docx")
+        let linesArchive = try Archive(url: linesInput, accessMode: .create)
+        try linesArchive.addEntry(with: "[Content_Types].xml", relativeTo: linesRoot, compressionMethod: .deflate)
+        try linesArchive.addEntry(with: "word/document.xml", relativeTo: linesRoot, compressionMethod: .deflate)
+        try TransferWordTemplate.render(template: linesInput, destination: linesOutput, fields: ["HEADER": "سطر أول\nسطر ثانٍ"])
+        let linesResult = try Archive(url: linesOutput, accessMode: .read)
+        guard let linesDocument = linesResult["word/document.xml"] else { throw Failure(errorDescription: "Word multiline document missing") }
+        var linesData = Data()
+        _ = try linesResult.extract(linesDocument) { linesData.append($0) }
+        try check(String(decoding: linesData, as: UTF8.self).contains("</w:t><w:br/><w:t xml:space=\"preserve\">"), "Word multiline field")
         let referencesDir = root.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: referencesDir, withIntermediateDirectories: true)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))

@@ -43,6 +43,12 @@ nonisolated enum TransferWordTemplate {
         value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
     }
+    /// القيم متعددة السطور تُكتب كفواصل Word فعلية داخل المقطع نفسه.
+    private static func wordText(_ value: String) -> String {
+        let lines = value.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
+        return lines.map(escaped).joined(separator: "</w:t><w:br/><w:t xml:space=\"preserve\">")
+    }
     /// صف القالب يحمل علامات ROW_؛ ينسخ لكل سطر حتى تبقى أعمدة Word قابلة للتعديل.
     private static func expandTable(in xml: String, rows: [[String: String]]) throws -> String {
         guard !rows.isEmpty, rows.count <= 2000 else { throw Failure.invalidTemplate }
@@ -103,7 +109,7 @@ nonisolated enum TransferWordTemplate {
                     guard !key.isEmpty, key.utf8.allSatisfy({ (65...90).contains($0) || $0 == 95 }) else { throw Failure.invalidTemplate }
                     guard !value.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 9 && $0.value != 10 && $0.value != 13 }) else { throw Failure.invalidXML }
                     let marker = "{{\(key)}}"
-                    if xml.contains(marker) { found.insert(key); xml = xml.replacingOccurrences(of: marker, with: escaped(value)) }
+                    if xml.contains(marker) { found.insert(key); xml = xml.replacingOccurrences(of: marker, with: wordText(value)) }
                 }
                 let expression = try NSRegularExpression(pattern: "\\{\\{[A-Z_]+\\}\\}")
                 if expression.firstMatch(in: xml, range: NSRange(xml.startIndex..., in: xml)) != nil { throw Failure.unresolvedField }
