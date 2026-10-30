@@ -278,6 +278,36 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: companyOutput.deletingLastPathComponent()) }
         guard let companyDoc = PDFDocument(url: companyOutput), let outputText = companyDoc.page(at: 0)?.string else { throw Failure(errorDescription: "company PDF unreadable") }
         try check(companyDoc.pageCount == 1 && outputText.contains("95,254") && !outputText.contains("100,000"), "company PDF source and amount")
+        let fakeCashPDF = letterRenderer.pdfData { context in
+            context.beginPage()
+            let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
+            let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 16) ?? ReportFont.bold(16)
+            PDFText.draw("100,000", in: CGRect(x: 355.27, y: 317.344, width: 72.166, height: 15.654), font: ReportFont.bold(14.04), align: .right)
+            PDFText.draw("مبلغ وهمي", in: CGRect(x: 168.122, y: 317.54, width: 167.244, height: 15.543), font: regular, align: .right)
+            PDFText.draw("دينار", in: CGRect(x: 289.25, y: 333.62, width: 271.846, height: 15.543), font: regular, align: .right)
+            let boxes = [CGRect(x: 35.52, y: 180.605, width: 33.654, height: 16.725), CGRect(x: 40.2, y: 381.86, width: 31.52, height: 15.543), CGRect(x: 468.46, y: 666.76, width: 35.97, height: 17.667), CGRect(x: 312.05, y: 666.76, width: 35.99, height: 17.667), CGRect(x: 94.224, y: 666.656, width: 36.086, height: 17.796)]
+            let fonts = [ReportFont.bold(15), UIFont(name: "TimesNewRomanPS-BoldMT", size: 14.04) ?? ReportFont.bold(14.04), bold, bold, ReportFont.bold(16)]
+            for (box, font) in zip(boxes, fonts) { PDFText.draw("2026", in: box, font: font, align: .right) }
+            for box in [CGRect(x: 82.944, y: 178.268, width: 15.156, height: 21.654), CGRect(x: 512.86, y: 666.76, width: 17.97, height: 17.667), CGRect(x: 356.59, y: 666.76, width: 17.97, height: 17.667)] { PDFText.draw("10", in: box, font: bold, align: .right) }
+            PDFText.draw("شهر وهمي", in: CGRect(x: 85.704, y: 381.86, width: 66.351, height: 15.543), font: regular, align: .right)
+            PDFText.draw("شهر وهمي", in: CGRect(x: 143.308, y: 666.88, width: 63.563, height: 17.667), font: bold, align: .right)
+            PDFText.draw(iban, in: CGRect(x: 385.99, y: 349.70, width: 170.59, height: 15.55), font: ReportFont.regular(10), align: .right)
+        }
+        let fakeCashPath = "templates/cash_salary.pdf"
+        try fakeCashPDF.write(to: root.appendingPathComponent(fakeCashPath))
+        let fakeCashDigest = SHA256.hash(data: fakeCashPDF).map { String(format: "%02x", $0) }.joined()
+        let fakeCashRecords = fakeCompanyRecords.map { record in
+            record.id == "cash_salary" ? TransferReferenceManifest.Template(id: record.id, path: record.path, sha256: fakeCashDigest, pages: 1) : record
+        }
+        try JSONEncoder().encode(TransferReferenceManifest(version: 2, templates: fakeCashRecords)).write(to: root.appendingPathComponent("manifest.json"))
+        let fakeCashPackage = root.appendingPathComponent("fake-cash.zip")
+        let fakeCashArchive = try Archive(url: fakeCashPackage, accessMode: .create)
+        try fakeCashArchive.addEntry(with: "manifest.json", relativeTo: root, compressionMethod: .deflate)
+        for record in fakeCashRecords { try fakeCashArchive.addEntry(with: record.path, relativeTo: root, compressionMethod: .deflate) }
+        let cashLetter = try await TransferCashLetter.makeWithList(figures: actual, list: cashList, payerIBAN: iban, references: Data(contentsOf: fakeCashPackage))
+        defer { try? FileManager.default.removeItem(at: cashLetter.deletingLastPathComponent()) }
+        guard let cashLetterDoc = PDFDocument(url: cashLetter), let cashLetterText = cashLetterDoc.page(at: 0)?.string else { throw Failure(errorDescription: "cash letter unreadable") }
+        try check(cashLetterDoc.pageCount == 2 && cashLetterText.contains("1,000") && !cashLetterText.contains("100,000"), "cash letter and appendix")
         let blankRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
         let blankPDF = blankRenderer.pdfData { context in
             context.beginPage()
