@@ -111,7 +111,7 @@ struct ReportsView: View {
             .task {
                 #if targetEnvironment(simulator)
                 if UserDefaults.standard.bool(forKey: "transferFilesTest") {
-                    do { LaunchOptions.writeReport(try TransferFilesSelfTest.run()) }
+                    do { LaunchOptions.writeReport(try await TransferFilesSelfTest.run()) }
                     catch { LaunchOptions.writeReport("transferFiles=failed \(error.localizedDescription)") }
                 }
                 if UserDefaults.standard.bool(forKey: "annualDeductionImportTest") {

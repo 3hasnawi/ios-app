@@ -1,16 +1,20 @@
 #if targetEnvironment(simulator)
 import Foundation
+import SwiftData
+import ZIPFoundation
 
 /// يتحقق من صيغة الملف وقواعد التصنيف باستخدام حسابات وهمية فقط.
 @MainActor enum TransferFilesSelfTest {
     struct Failure: LocalizedError { let errorDescription: String? }
-    static func run() throws -> String {
+    static func run() async throws -> String {
         func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(errorDescription: message) } }
         let iban = "IQ06TEST123000000000001"
         let account = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين فرع تجريبي", swift: "TESTIQBAAAA")
         let anbar = SavedExecutionAccount(entity: "جهة ثانية", iban: iban, branch: "مصرف الرافدين فرع الانبار", swift: "TESTIQBAAAA")
         let other = SavedExecutionAccount(entity: "جهة ثالثة", iban: iban, branch: "مصرف الرشيد فرع تجريبي", swift: "TESTIQBAAAA")
         try check(TransferRules.classify(account) == .rafidain && TransferRules.classify(anbar) == .anbar && TransferRules.classify(other) == .otherBanks, "classification")
+        let ambiguous = SavedExecutionAccount(entity: "جهة وهمية", iban: iban, branch: "مصرف الرافدين محافظة الانبار فرع آخر", swift: "TESTIQBAAAA")
+        try check(TransferRules.classify(ambiguous) == .unresolved, "ambiguous Anbar branch")
         try check(TransferRules.classify(nil) == .unresolved && TransferRules.validIBAN(iban) && !TransferRules.validIBAN("IQ00"), "invalid accounts")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
@@ -32,7 +36,96 @@ import Foundation
             throw Failure(errorDescription: "invalid amount accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid amount accepted") }
         catch { }
-        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok"
+        var summary = BankStatementSummary(month: group.month)
+        summary.payrollCount = 1
+        summary.contractCount = 1
+        summary.contractNominal = 10001
+        summary.contractRetirement = 200
+        summary.cashNet = 700
+        summary.breakdown = ["شركة عراق الجوال": 100000, "الرعاية الصحية": 100,
+                             "صندوق شهداء الشرطة": 200, "النشاط الرياضي": 300,
+                             "الضريبة": 400, "الحماية الاجتماعية": 500]
+        let columns: Set<String> = ["الرعاية الصحية", "صندوق شهداء الشرطة", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "التوقيفات التقاعدية", "طريقة الدفع"]
+        let figures = try TransferLetterFigureRules.make(summary: summary, available: columns)
+        try check(figures.foodFund == 3000 && figures.foodTax == 1746 && figures.foodCompany == 95254, "food allocation")
+        try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1200 && figures.contractTotal == 1400 && figures.payrollCash == 700, "letter totals")
+        var unknownPayment = summary
+        unknownPayment.unclassifiedCount = 1
+        try check(try TransferLetterFigureRules.make(summary: unknownPayment, available: columns).payrollCash == nil, "unclassified payroll accepted as complete cash")
+        try check(TransferPayrollRecipient.health.amount(figures) == 100 && TransferPayrollRecipient.fundFood.amount(figures) == 3000 &&
+                  TransferPayrollRecipient.fundDonations.amount(figures) == 200 && TransferPayrollRecipient.sports.amount(figures) == 300, "payroll transfer sources")
+        let period = try TransferLetterPeriod("تشرين الأول 2026")
+        try check(period.month == 10 && period.year == 2026 && period.signatureDate == " / 10 / 2026", "letter month")
+        let cases: [(Int64, String)] = [(0, "صفر دينار"), (1, "دينار واحد"), (2, "ديناران"), (3, "ثلاثة دنانير"), (12, "اثنا عشر دينار"),
+                                         (1001, "ألف ودينار واحد"), (2000000, "مليونان دينار"),
+                                         (95254, "خمسة وتسعون ألف ومائتان وأربعة وخمسون دينار")]
+        for (amount, expected) in cases { try check(try ArabicAmountWords.dinars(amount) == expected, "amount words") }
+        let duplicated = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0, duplicateSource: true)
+        try check(!TransferRules.issues(duplicated).isEmpty, "duplicate source not flagged")
+        do {
+            _ = try TransferLetterFigureRules.make(summary: summary, available: [])
+            throw Failure(errorDescription: "missing payroll columns accepted")
+        } catch is Failure { throw Failure(errorDescription: "missing payroll columns accepted") }
+        catch { }
+        let schema = Schema([PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
+        let headers = ["الرعاية الصحية", "صندوق الشهداء", "نشاط رياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "توقيفات تقاعدية", "طريقة الدفع"]
+        let values = ["100", "200", "300", "400", "500", "100000", "10001", "200", "كاش"]
+        let employee = Employee(month: group.month, name: "موظف وهمي", rank: "عقود", workplace: "قسم وهمي", netSalary: 1000,
+                                items: ["الرعاية الصحية": 100, "صندوق الشهداء": 200, "نشاط رياضي": 300, "الضريبة": 400,
+                                        "الحماية الاجتماعية": 500, "شركة عراق الجوال": 100000, "الاسمي": 10001, "توقيفات تقاعدية": 200],
+                                details: ["طريقة الدفع": "كاش"],
+                                rawColumnsData: PayrollColumnSnapshot.encode(headers: headers, values: values))
+        context.insert(employee)
+        context.insert(Employee(month: group.month, name: "موظف بطاقة وهمي", rank: "موظف", workplace: "قسم وهمي", netSalary: 250,
+                                details: ["طريقة الدفع": "بطاقة"]))
+        try context.save()
+        let engine = TransferLetterFigureEngine(modelContainer: container)
+        let actual = try await engine.figures(month: group.month)
+        let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
+        try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1, "payroll data integration")
+        var broken = values
+        broken[0] = "100 خطأ"
+        employee.rawColumnsData = PayrollColumnSnapshot.encode(headers: headers, values: broken)
+        try context.save()
+        do {
+            _ = try await TransferLetterFigureEngine(modelContainer: container).figures(month: group.month)
+            throw Failure(errorDescription: "invalid payroll cell accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid payroll cell accepted") }
+        catch { }
+        context.insert(Employee(month: group.month, name: "موظف غير مصنف وهمي", rank: "موظف", workplace: "قسم وهمي", netSalary: 300))
+        try context.save()
+        do {
+            _ = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
+            throw Failure(errorDescription: "unknown payment accepted")
+        } catch is Failure { throw Failure(errorDescription: "unknown payment accepted") }
+        catch { }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("word-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("word"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("<types/>".utf8).write(to: root.appendingPathComponent("[Content_Types].xml"))
+        let templateXML = "<document xmlns:w=\"urn:word-test\"><text>{{AMOUNT}}</text><text>{{MONTH}}</text><w:tbl><w:tr><w:tc><w:p><w:r><w:t>{{ROW_NAME}}</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>{{ROW_AMOUNT}}</w:t></w:r></w:p></w:tc></w:tr></w:tbl></document>"
+        try Data(templateXML.utf8).write(to: root.appendingPathComponent("word/document.xml"))
+        let input = root.appendingPathComponent("template.docx"), output = root.appendingPathComponent("result.docx")
+        let template = try Archive(url: input, accessMode: .create)
+        try template.addEntry(with: "[Content_Types].xml", relativeTo: root, compressionMethod: .deflate)
+        try template.addEntry(with: "word/document.xml", relativeTo: root, compressionMethod: .deflate)
+        let wordRows = [["ROW_NAME": "شخص تجريبي أ", "ROW_AMOUNT": "100"], ["ROW_NAME": "شخص تجريبي ب", "ROW_AMOUNT": "200"]]
+        try TransferWordTemplate.render(template: input, destination: output, fields: ["AMOUNT": "1 & 2", "MONTH": "تشرين الأول"], tableRows: wordRows)
+        let result = try Archive(url: output, accessMode: .read)
+        guard let document = result["word/document.xml"] else { throw Failure(errorDescription: "word document missing") }
+        var xml = Data()
+        _ = try result.extract(document) { xml.append($0) }
+        let xmlText = String(decoding: xml, as: UTF8.self)
+        try check(xmlText.contains("1 &amp; 2") && xmlText.contains("تشرين الأول") && xmlText.contains("شخص تجريبي أ") && xmlText.contains("شخص تجريبي ب") && !xmlText.contains("{{"), "word template fields and table")
+        do {
+            try TransferWordTemplate.render(template: input, destination: root.appendingPathComponent("bad.docx"), fields: ["AMOUNT": "1"], tableRows: wordRows)
+            throw Failure(errorDescription: "incomplete template accepted")
+        } catch is Failure { throw Failure(errorDescription: "incomplete template accepted") }
+        catch { }
+        return "transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok"
     }
 }
 #endif

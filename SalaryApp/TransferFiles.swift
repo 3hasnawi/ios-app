@@ -22,7 +22,40 @@ nonisolated struct TransferEntity: Identifiable {
     let account: SavedExecutionAccount?
     let category: TransferCategory
     let missingAmounts: Int
-    var id: String { group.id }
+    var beneficiaryName: String? = nil
+    var payrollRecipient: String? = nil
+    var duplicateSource = false
+    var id: String { "\(group.id)|\(payrollRecipient ?? "execution")" }
+}
+
+/// بنود الرواتب المستقلة عن ملف جهات التنفيذ وتحتاج ربط حساب كل مستفيد.
+nonisolated enum TransferPayrollRecipient: String, CaseIterable, Identifiable {
+    case health, fundFood, fundDonations, sports
+    var id: String { rawValue }
+    var arabicTitle: String {
+        switch self {
+        case .health: "مديرية شؤون الرعاية الصحية"
+        case .fundFood: "صندوق شهداء الشرطة (عقد إطعام)"
+        case .fundDonations: "صندوق شهداء الشرطة (تبرعات)"
+        case .sports: "مديرية التدريب البدني وألعاب الشرطة"
+        }
+    }
+    var title: String {
+        switch self {
+        case .health: tr(arabicTitle, "Health affairs directorate")
+        case .fundFood: tr(arabicTitle, "Police martyrs fund (food contract)")
+        case .fundDonations: tr(arabicTitle, "Police martyrs fund (donations)")
+        case .sports: tr(arabicTitle, "Police physical training and sports")
+        }
+    }
+    func amount(_ figures: TransferLetterFigures) -> Double {
+        switch self {
+        case .health: figures.healthcare
+        case .fundFood: figures.foodFund
+        case .fundDonations: figures.policeFundDonations
+        case .sports: figures.sports
+        }
+    }
 }
 
 nonisolated enum TransferRules {
@@ -31,7 +64,10 @@ nonisolated enum TransferRules {
         guard let account else { return .unresolved }
         let branch = ArabicText.normalize(account.branch)
         if branch.contains(ArabicText.normalize("الرافدين")) {
-            if branch.contains(ArabicText.normalize("الانبار")) { return .anbar }
+            let clean = branch.replacingOccurrences(of: "/", with: " ").replacingOccurrences(of: "-", with: " ")
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if clean.hasSuffix("فرع الانبار") { return .anbar }
+            if clean.contains("الانبار") { return .unresolved }
             return branch.contains(ArabicText.normalize("فرع")) ? .rafidain : .unresolved
         }
         let known = ["الرشيد", "العقاري", "الزراعي", "الاسلامي", "التجاري", "الاهلي"]
@@ -60,13 +96,14 @@ nonisolated enum TransferRules {
     static func issues(_ entity: TransferEntity) -> [String] {
         var result: [String] = []
         guard let account = entity.account else { return [tr("الحساب غير محفوظ", "Account is missing")] }
+        if entity.duplicateSource { result.append(tr("البند موجود أيضاً في ملف الجهات؛ راجع مصدره لتجنب التكرار", "This item also exists in execution deductions; review for duplication")) }
         if !validIBAN(account.iban) { result.append(tr("IBAN غير صالح", "Invalid IBAN")) }
         if !validBIC(account.swift) { result.append(tr("SWIFT غير صالح أو غير موجود", "Invalid or missing SWIFT")) }
         if entity.missingAmounts > 0 { result.append(tr("توجد قيود بمبلغ ناقص أو غير صالح", "Some entries have missing or invalid amounts")) }
         if !entity.group.total.isFinite || entity.group.total <= 0 || entity.group.total.rounded() != entity.group.total {
             result.append(tr("المبلغ غير صالح للتحويل", "Invalid transfer amount"))
         }
-        if !safeField(entity.group.title) { result.append(tr("اسم الجهة يحتوي رمزاً غير مقبول", "Unsupported character in entity name")) }
+        if !safeField(entity.beneficiaryName ?? entity.group.title) { result.append(tr("اسم الجهة يحتوي رمزاً غير مقبول", "Unsupported character in entity name")) }
         return result
     }
     static func csv(_ entities: [TransferEntity], category: TransferCategory, month: String, payer: String, payerIBAN: String, date: Date = .now) throws -> Data {
@@ -87,7 +124,7 @@ nonisolated enum TransferRules {
             let fields = [day + category.prefix + String(index + 1), day, payer,
                           ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" },
                           amount, "IQD", account.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
-                          entity.group.title, ArabicText.latinDigits(account.iban).uppercased().filter { !$0.isWhitespace && $0 != "-" },
+                          entity.beneficiaryName ?? entity.group.title, ArabicText.latinDigits(account.iban).uppercased().filter { !$0.isWhitespace && $0 != "-" },
                           "استقطاعات \(month)", "SLEV"]
             guard fields.allSatisfy(safeField) else { throw CocoaError(.fileWriteUnknown) }
             rows.append(fields.joined(separator: "|"))
@@ -118,10 +155,13 @@ struct TransferFilesView: View {
     @AppStorage("reportMonth") private var selectedMonth = ""
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @AppStorage(TransferRules.settingsKey) private var categoriesData = Data()
+    @AppStorage("transferPayrollAccountLinks") private var payrollLinksData = Data()
     @AppStorage("bankStatementAccountName") private var payerName = ""
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
     @State private var groups: [ReportGroup] = []
     @State private var missing: [String: Int] = [:]
+    @State private var figures: TransferLetterFigures?
+    @State private var figuresError: String?
     @State private var loadedKey = ""
     @State private var error: String?
     @State private var showSettings = false
@@ -129,14 +169,28 @@ struct TransferFilesView: View {
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
     private var categories: [String: String] { (try? JSONDecoder().decode([String: String].self, from: categoriesData)) ?? [:] }
+    private var payrollLinks: [String: String] { (try? JSONDecoder().decode([String: String].self, from: payrollLinksData)) ?? [:] }
+    private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountData)) ?? [] }
     private var entities: [TransferEntity] {
-        let accounts = ((try? ExecutionAccountStore.decode(accountData)) ?? []).reduce(into: [String: SavedExecutionAccount]()) { $0[$1.key] = $1 }
-        return groups.map { group in
-            let account = accounts[ArabicText.normalize(group.title)]
+        let lookup = accounts.reduce(into: [String: SavedExecutionAccount]()) { $0[$1.key] = $1 }
+        let deductions = groups.map { group in
+            let account = lookup[ArabicText.normalize(group.title)]
             let key = categoryKey(group.title, account)
             let category = categories[key].flatMap(TransferCategory.init(rawValue:)) ?? TransferRules.classify(account)
             return TransferEntity(group: group, account: account, category: category, missingAmounts: missing[group.title] ?? 0)
         }
+        guard let figures else { return deductions }
+        let payroll = TransferPayrollRecipient.allCases.compactMap { recipient -> TransferEntity? in
+            let amount = recipient.amount(figures)
+            guard amount > 0 else { return nil }
+            let account = payrollLinks[recipient.rawValue].flatMap { lookup[$0] }
+            let group = ReportGroup(kind: .deductions, month: figures.month, title: recipient.arabicTitle, count: 1, total: amount, byEntity: false)
+            let category = categories[categoryKey(group.title, account)].flatMap(TransferCategory.init(rawValue:)) ?? TransferRules.classify(account)
+            let duplicate = groups.contains { ArabicText.normalize($0.title) == ArabicText.normalize(recipient.arabicTitle) }
+            return TransferEntity(group: group, account: account, category: category, missingAmounts: 0,
+                                  beneficiaryName: account?.entity, payrollRecipient: recipient.rawValue, duplicateSource: duplicate)
+        }
+        return deductions + payroll
     }
     private func categoryKey(_ name: String, _ account: SavedExecutionAccount?) -> String {
         "\(ArabicText.normalize(name))|\(account?.iban ?? "")|\(ArabicText.normalize(account?.branch ?? ""))"
@@ -151,9 +205,15 @@ struct TransferFilesView: View {
             BackupManager.shared.markChanged()
         }
     }
+    private func setPayrollAccount(_ recipient: TransferPayrollRecipient, key: String) {
+        var saved = payrollLinks
+        saved[recipient.rawValue] = key
+        if let data = try? JSONEncoder().encode(saved) { payrollLinksData = data; BackupManager.shared.markChanged() }
+    }
     var body: some View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
+            if let figuresError { Section { Text(figuresError).foregroundStyle(.orange) } }
             if loadedKey != loadKey && month != nil {
                 ProgressView().frame(maxWidth: .infinity)
             } else if month == nil {
@@ -166,6 +226,7 @@ struct TransferFilesView: View {
                             NavigationLink {
                                 TransferCategoryView(category: category, entities: items, unresolvedCount: entities.filter { $0.category == .unresolved }.count,
                                     month: month?.name ?? "", sourceKey: loadKey, sourceAccounts: accountData, sourceCategories: categoriesData,
+                                    sourcePayrollLinks: payrollLinksData, payrollComplete: figures != nil,
                                     payerName: payerName, payerIBAN: payerIBAN,
                                     changeCategory: setCategory)
                             } label: {
@@ -184,6 +245,27 @@ struct TransferFilesView: View {
                         }
                     }
                 } header: { Text(month?.name ?? "") }
+                if let figures {
+                    Section(tr("حسابات استقطاعات الرواتب", "Payroll deduction accounts")) {
+                        ForEach(TransferPayrollRecipient.allCases) { recipient in
+                            if recipient.amount(figures) > 0 {
+                                Menu {
+                                    ForEach(accounts) { account in
+                                        Button(account.entity + (account.branch.isEmpty ? "" : " · \(account.branch)")) {
+                                            setPayrollAccount(recipient, key: account.key)
+                                        }
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(recipient.title).foregroundStyle(.primary)
+                                        Text(accounts.first { $0.key == payrollLinks[recipient.rawValue] }?.entity ?? tr("اختر حساب الجهة", "Choose account"))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    } footer: { Text(tr("اختر الحساب المطابق لكل بند لضمه إلى مجموعة مصرفه.", "Select the matching account for each deduction.")) }
+                }
             }
         }
         .navigationTitle(tr("ملفات التحويل", "Transfer files"))
@@ -219,13 +301,21 @@ struct TransferFilesView: View {
         .task(id: loadKey) {
             let key = loadKey
             guard let name = month?.name else { groups = []; loadedKey = key; return }
-            loadedKey = ""; error = nil; groups = []; missing = [:]
+            loadedKey = ""; error = nil; groups = []; missing = [:]; figures = nil; figuresError = nil
             let container = SharedModel.container
             let work = Task.detached(priority: .userInitiated) { try await TransferDataEngine(modelContainer: container).read(month: name) }
             do {
                 let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
                 guard !Task.isCancelled, key == loadKey else { return }
-                groups = value.0; missing = value.1; loadedKey = key
+                groups = value.0; missing = value.1
+                do {
+                    let figureWork = Task.detached(priority: .userInitiated) { try await TransferLetterFigureEngine(modelContainer: container).figures(month: name) }
+                    let result = try await withTaskCancellationHandler { try await figureWork.value } onCancel: { figureWork.cancel() }
+                    guard !Task.isCancelled, key == loadKey else { return }
+                    figures = result
+                } catch is CancellationError { return }
+                catch { guard !Task.isCancelled, key == loadKey else { return }; figuresError = error.localizedDescription }
+                loadedKey = key
             } catch is CancellationError { return }
             catch { guard !Task.isCancelled, key == loadKey else { return }; error = error.localizedDescription; loadedKey = key }
         }
@@ -240,20 +330,23 @@ private struct TransferCategoryView: View {
     let sourceKey: String
     let sourceAccounts: Data
     let sourceCategories: Data
+    let sourcePayrollLinks: Data
+    let payrollComplete: Bool
     let payerName: String
     let payerIBAN: String
     let changeCategory: (TransferCategory, TransferEntity) -> Void
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
+    @AppStorage("transferPayrollAccountLinks") private var currentPayrollLinks = Data()
     @State private var error: String?
     private var allIssues: Int { entities.filter { !TransferRules.issues($0).isEmpty }.count }
     private var sourceIsCurrent: Bool {
         let record = months.first { $0.name == month }
-        return record != nil && currentAccounts == sourceAccounts && currentCategories == sourceCategories
+        return record != nil && currentAccounts == sourceAccounts && currentCategories == sourceCategories && currentPayrollLinks == sourcePayrollLinks
             && "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
-    private var canExport: Bool { sourceIsCurrent && !entities.isEmpty && unresolvedCount == 0 && allIssues == 0 && TransferRules.safeField(payerName) && TransferRules.validIBAN(payerIBAN) }
+    private var canExport: Bool { payrollComplete && sourceIsCurrent && !entities.isEmpty && unresolvedCount == 0 && allIssues == 0 && TransferRules.safeField(payerName) && TransferRules.validIBAN(payerIBAN) }
     var body: some View {
         List {
             Section {
@@ -264,6 +357,7 @@ private struct TransferCategoryView: View {
                     LabeledContent(tr("الجهة الدافعة", "Payer"), value: payerName.isEmpty ? tr("غير محددة", "Not set") : payerName)
                     if !payerIBAN.isEmpty { LabeledContent("IBAN", value: payerIBAN).privacySensitive() }
                     if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى قائمة ملفات التحويل لإعادة تحميلها.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
+                    if !payrollComplete { Text(tr("استقطاعات الرواتب غير مكتملة؛ ارجع إلى ملفات التحويل وراجع البيانات.", "Payroll deductions are incomplete; return to transfer files and review them.")).foregroundStyle(.orange) }
                     if !TransferRules.safeField(payerName) { Text(tr("أدخل اسم الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer name in transfer settings.")).foregroundStyle(.orange) }
                     if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN صالحاً للجهة الدافعة من إعدادات ملفات التحويل.", "Enter a valid payer IBAN in transfer settings.")).foregroundStyle(.orange) }
                     if unresolvedCount > 0 { Text(tr("صنّف \(Num.format(unresolvedCount)) جهات قبل تصدير أي ملف.", "Classify \(unresolvedCount) entities before export.")).foregroundStyle(.orange) }
