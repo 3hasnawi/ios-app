@@ -12,6 +12,7 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
     var bodyTemplate: String? = nil
     var signatureOffset: Int? = nil
     var bodyMonth: String? = nil
+    var outgoingMonth: String? = nil
     var committeeDateFirst: String? = nil
     var committeeDateSecond: String? = nil
     var committeeDateThird: String? = nil
@@ -32,6 +33,7 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
         result.bodyTemplate = bodyTemplate ?? base.bodyTemplate
         result.signatureOffset = signatureOffset ?? base.signatureOffset
         result.bodyMonth = bodyMonth ?? base.bodyMonth
+        result.outgoingMonth = outgoingMonth ?? base.outgoingMonth
         result.committeeDateFirst = committeeDateFirst ?? base.committeeDateFirst
         result.committeeDateSecond = committeeDateSecond ?? base.committeeDateSecond
         result.committeeDateThird = committeeDateThird ?? base.committeeDateThird
@@ -75,6 +77,7 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
             if changes.bodyTemplate != nil { value.bodyTemplate = nil }
             if changes.signatureOffset != nil { value.signatureOffset = nil }
             if changes.bodyMonth != nil { value.bodyMonth = nil }
+            if changes.outgoingMonth != nil { value.outgoingMonth = nil }
             if changes.committeeDateFirst != nil { value.committeeDateFirst = nil }
             if changes.committeeDateSecond != nil { value.committeeDateSecond = nil }
             if changes.committeeDateThird != nil { value.committeeDateThird = nil }

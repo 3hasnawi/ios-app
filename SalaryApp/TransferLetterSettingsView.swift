@@ -35,9 +35,7 @@ struct TransferLetterSettingsView: View {
     @State private var signatureOffset = 0
     @State private var bodyMonth = ""
     @State private var manualBodyMonth = ""
-    @State private var firstDate = ""
-    @State private var secondDate = ""
-    @State private var thirdDate = ""
+    @State private var outgoingMonth = ""
     @State private var beneficiary = ""
     @State private var referenceBeneficiary: String?
     @State private var accountReferenceSnapshot = Data()
@@ -76,11 +74,6 @@ struct TransferLetterSettingsView: View {
         if !bodyMonth.isEmpty, MonthName.sortKey(bodyMonth) > 0 { values.insert(bodyMonth) }
         return values.sorted { MonthName.sortKey($0) > MonthName.sortKey($1) }
     }
-    private func shownSignatureDate(_ value: String) -> String {
-        let fallback = currentMonth.flatMap { try? TransferLetterPeriod($0).signatureDate } ?? ""
-        guard !fallback.isEmpty || !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return tr("شهر البيانات", "Data month") }
-        return (try? TransferLetterCustomValues.signatureDate(value, fallback: fallback, eastern: true)) ?? tr("تاريخ غير صالح", "Invalid date")
-    }
     private var signatureOffsetLabel: String {
         if signatureOffset == 0 { return tr("الموضع الافتراضي", "Default position") }
         let distance = Num.format(abs(signatureOffset))
@@ -102,16 +95,19 @@ struct TransferLetterSettingsView: View {
         }.padding(.vertical, 3)
     }
     @ViewBuilder private var datesAndBodyMonth: some View {
-                field("firstDate", tr("تاريخ العضو الأول", "First member date"), text: $firstDate)
-                field("secondDate", tr("تاريخ العضو الثاني", "Second member date"), text: $secondDate)
-                field("thirdDate", tr("تاريخ العضو الثالث", "Third member date"), text: $thirdDate)
-                if selected.contains("firstDate") { LabeledContent(tr("تاريخ العضو الأول المعتمد", "Effective first date"), value: shownSignatureDate(firstDate)) }
-                if selected.contains("secondDate") { LabeledContent(tr("تاريخ العضو الثاني المعتمد", "Effective second date"), value: shownSignatureDate(secondDate)) }
-                if selected.contains("thirdDate") { LabeledContent(tr("تاريخ العضو الثالث المعتمد", "Effective third date"), value: shownSignatureDate(thirdDate)) }
-                if selected.contains("firstDate") || selected.contains("secondDate") || selected.contains("thirdDate") {
-                    Text(tr("أدخل يوم/شهر/سنة، أو /شهر/سنة لترك اليوم فارغاً. الحقل الفارغ يستخدم شهر البيانات؛ التاريخ المخصص يبقى ثابتاً حتى تغييره.", "Enter day/month/year, or /month/year to leave the day blank. An empty field uses the letter's data month."))
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(tr("شهر الصادر", "Outgoing month"), isOn: Binding(get: { selected.contains("outgoingMonth") }, set: { if $0 { selected.insert("outgoingMonth") } else { selected.remove("outgoingMonth") } }))
+                    if selected.contains("outgoingMonth") {
+                        TextField(tr("رقم الشهر من ١ إلى ١٢", "Month number from 1 to 12"), text: $outgoingMonth)
+                            .keyboardType(.numberPad).textFieldStyle(.roundedBorder)
+                        if mixed.contains("outgoingMonth") {
+                            Text(tr("تختلف الأشهر بين الكتب؛ أدخل شهراً موحداً أو اترك الحقل فارغاً لاستخدام شهر البيانات.", "Months differ between letters; enter one month or leave blank to use the data month."))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Text(tr("يغيّر شهر التاريخ تحت العدد وتحت تواقيع اللجنة فقط. تبقى السنة من شهر البيانات واليوم فارغاً؛ اترك الحقل فارغاً للعودة لشهر البيانات.", "Changes only the month under the reference number and committee signatures. The year follows the data month and the day stays blank. Leave empty to use the data month."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }.padding(.vertical, 3)
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(tr("الشهر في متن الكتاب", "Month in letter body"), isOn: Binding(get: { selected.contains("bodyMonth") }, set: { if $0 { selected.insert("bodyMonth") } else { selected.remove("bodyMonth") } }))
                     if selected.contains("bodyMonth") {
@@ -254,8 +250,7 @@ struct TransferLetterSettingsView: View {
             footer = value("footer", \.footer); fixedNumber = store.common.fixedNumber ?? ""
             foodContractReference = store.common.foodContractReference ?? ""
             bodyTemplate = target == "all" ? "" : (store.effective(for: target).bodyTemplate ?? TransferLetterBody.template(for: target) ?? "")
-            firstDate = value("firstDate", \.committeeDateFirst); secondDate = value("secondDate", \.committeeDateSecond)
-            thirdDate = value("thirdDate", \.committeeDateThird); bodyMonth = value("bodyMonth", \.bodyMonth)
+            outgoingMonth = value("outgoingMonth", \.outgoingMonth); bodyMonth = value("bodyMonth", \.bodyMonth)
             let override = target == "all" ? nil : store.effective(for: target).beneficiaryAccount
             beneficiary = (override?.isEmpty == false ? override : nil) ?? originalAccount ?? ""
             let offsets = target == "all" ? titles.map { store.effective(for: $0.id).signatureOffset ?? 0 } : [store.effective(for: target).signatureOffset ?? 0]
@@ -264,15 +259,15 @@ struct TransferLetterSettingsView: View {
                 signatureOffset = firstOffset
             } else { signatureOffset = 0; mixed.insert("signatureOffset") }
         } catch {
-            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""; bodyTemplate = ""; signatureOffset = 0; bodyMonth = ""; manualBodyMonth = ""; firstDate = ""; secondDate = ""; thirdDate = ""; beneficiary = ""; mixed.removeAll()
+            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""; bodyTemplate = ""; signatureOffset = 0; bodyMonth = ""; manualBodyMonth = ""; outgoingMonth = ""; beneficiary = ""; mixed.removeAll()
             self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.")
         }
     }
     private func save() {
         guard !busy, !selected.isEmpty else { return }
         let pairs = [("header", header), ("first", first), ("second", second), ("third", third), ("footer", footer),
-                     ("fixedNumber", fixedNumber), ("foodContractReference", foodContractReference), ("firstDate", firstDate), ("secondDate", secondDate), ("thirdDate", thirdDate), ("beneficiary", beneficiary)]
-        guard pairs.filter({ selected.contains($0.0) && mixed.contains($0.0) && !["firstDate", "secondDate", "thirdDate"].contains($0.0) }).allSatisfy({ !$0.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                     ("fixedNumber", fixedNumber), ("foodContractReference", foodContractReference), ("outgoingMonth", outgoingMonth), ("beneficiary", beneficiary)]
+        guard pairs.filter({ selected.contains($0.0) && mixed.contains($0.0) && $0.0 != "outgoingMonth" }).allSatisfy({ !$0.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
             error = tr("أدخل قيمة موحدة للحقل الذي يختلف بين الكتب، أو اختر كتاباً محدداً.", "Enter a value for the field that differs between letters, or choose a specific letter."); return
         }
         guard pairs.filter({ selected.contains($0.0) }).allSatisfy({ pair in
@@ -281,8 +276,8 @@ struct TransferLetterSettingsView: View {
         }) else { error = tr("أحد الحقول أطول من الحد المسموح أو يحتوي رمزاً غير صالح.", "A field is too long or contains an invalid character."); return }
         let chosenBodyMonth = bodyMonth == "__manual__" ? manualBodyMonth.trimmingCharacters(in: .whitespacesAndNewlines) : bodyMonth
         do {
-            for (key, value) in [("firstDate", firstDate), ("secondDate", secondDate), ("thirdDate", thirdDate)] where selected.contains(key) {
-                _ = try TransferLetterCustomValues.signatureDate(value, fallback: " / 1 / 2026", eastern: false)
+            if selected.contains("outgoingMonth") {
+                _ = try TransferLetterCustomValues.outgoingDate(outgoingMonth, sourceMonth: "كانون الثاني 2026", eastern: false)
             }
             if selected.contains("bodyMonth") {
                 if bodyMonth == "__manual__" && chosenBodyMonth.isEmpty { throw TransferLetterCustomValues.Failure.month }
@@ -317,9 +312,7 @@ struct TransferLetterSettingsView: View {
         if selected.contains("body") { changes.bodyTemplate = bodyTemplate }
         if selected.contains("signatureOffset") { changes.signatureOffset = signatureOffset }
         if selected.contains("bodyMonth") { changes.bodyMonth = chosenBodyMonth }
-        if selected.contains("firstDate") { changes.committeeDateFirst = firstDate }
-        if selected.contains("secondDate") { changes.committeeDateSecond = secondDate }
-        if selected.contains("thirdDate") { changes.committeeDateThird = thirdDate }
+        if selected.contains("outgoingMonth") { changes.outgoingMonth = outgoingMonth }
         if selected.contains("beneficiary") {
             changes.beneficiaryAccount = beneficiary
             changes.beneficiarySource = beneficiarySource ?? ""

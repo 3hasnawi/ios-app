@@ -3,11 +3,12 @@ import Foundation
 /// قيم اختيارية للكتاب، دون تغيير بيانات الشهر أو حسابات التحويل المحفوظة.
 nonisolated enum TransferLetterCustomValues {
     enum Failure: LocalizedError {
-        case date, month, account, sourceChanged, bankChanged
+        case date, month, outgoingMonth, account, sourceChanged, bankChanged
         var errorDescription: String? {
             switch self {
             case .date: tr("أدخل تاريخ التوقيع بصيغة يوم/شهر/سنة أو /شهر/سنة، مع شهر وسنة صالحين.", "Enter a valid signature date as day/month/year or /month/year.")
             case .month: tr("اختر شهراً وسنة صالحين لمتن الكتاب.", "Choose a valid body month and year.")
+            case .outgoingMonth: tr("أدخل رقم شهر الصادر من ١ إلى ١٢، أو اتركه فارغاً.", "Enter an outgoing month from 1 to 12, or leave it blank.")
             case .account: tr("رقم حساب المستفيد غير صالح لهذا الكتاب؛ تحقق من نوعه وأرقامه.", "The beneficiary account is invalid for this letter; check its type and digits.")
             case .sourceChanged: tr("تغيّرت الجهة أو حسابها الأصلي؛ راجع تخصيص حساب الكتاب واحفظه مجدداً.", "The source entity or account changed; review and save the letter account again.")
             case .bankChanged: tr("الحساب البديل يتبع مصرفاً مختلفاً عن المصرف المذكور في الكتاب؛ راجع بيانات المصرف أولاً.", "The alternate account belongs to a different bank than the letter states; review the bank details first.")
@@ -39,6 +40,15 @@ nonisolated enum TransferLetterCustomValues {
         }
         let formatted = "\(dayText) / \(month) / \(year)"
         return eastern ? ReportSheet.easternDigits(formatted) : formatted
+    }
+    /// شهر الصادر يغيّر الشهر فقط؛ السنة من شهر البيانات واليوم يظل فارغاً.
+    static func outgoingDate(_ value: String?, sourceMonth: String, eastern: Bool) throws -> String {
+        let period = try TransferLetterPeriod(sourceMonth)
+        let raw = ArabicText.latinDigits(value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if raw.isEmpty { return eastern ? ReportSheet.easternDigits(period.signatureDate) : period.signatureDate }
+        guard raw.utf8.count <= 2, raw.utf8.allSatisfy({ (48...57).contains($0) }),
+              let month = Int(raw), (1...12).contains(month) else { throw Failure.outgoingMonth }
+        return try signatureDate("/\(month)/\(period.year)", fallback: period.signatureDate, eastern: eastern)
     }
     static func normalizedAccount(_ value: String) -> String {
         ArabicText.latinDigits(value).uppercased().filter { !$0.isWhitespace && $0 != "-" }

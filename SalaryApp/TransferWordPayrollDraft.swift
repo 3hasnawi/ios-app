@@ -12,21 +12,19 @@ nonisolated enum TransferWordPayrollDraft {
         guard TransferRules.validIBAN(plan.payerIBAN), TransferRules.validIBAN(plan.beneficiaryIBAN),
               nonempty(text.header), nonempty(text.fixedNumber), text.committee.count == 3,
               text.committee.allSatisfy(nonempty), nonempty(plan.beneficiaryName) else { throw Failure.incomplete }
-        let period = try TransferLetterPeriod(plan.month)
-        let signatureDate = adaptivePDF ? ReportSheet.easternDigits(period.signatureDate) : period.signatureDate
+        let signatureDate = try TransferLetterCustomValues.outgoingDate(adaptivePDF ? text.outgoingMonth : nil, sourceMonth: plan.month, eastern: adaptivePDF)
         let letterNumber = adaptivePDF ? ReportSheet.easternDigits(text.fixedNumber) : text.fixedNumber
         let values = try TransferWordValues.make(month: plan.month, amount: plan.amount, custom: .init(),
             requested: ["AMOUNT", "AMOUNT_WORDS"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"] else { throw Failure.incomplete }
         let bodyPeriod = try TransferWordGroupDraft.bodyValues(for: text, sourceMonth: plan.month, amount: plan.amount, adaptivePDF: adaptivePDF)
         guard let bodyMonth = bodyPeriod["MONTH"], let bodyYear = bodyPeriod["YEAR"] else { throw Failure.incomplete }
-        let dates = try TransferWordGroupDraft.dates(for: text, fallback: period.signatureDate, adaptivePDF: adaptivePDF)
         var fields = ["المبلغ": TransferWordGroupDraft.bodyNumber(amount, adaptivePDF: adaptivePDF), "المبلغ كتابة": words, "حسابنا": plan.payerIBAN,
                       "المستفيد": plan.beneficiaryName, "حساب المستفيد": plan.beneficiaryIBAN,
                       "الشهر": bodyMonth, "السنة": TransferWordGroupDraft.bodyNumber(bodyYear, adaptivePDF: adaptivePDF)]
         if let reference = foodContractReference { fields["عقد الإطعام"] = reference }
         let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? text.bodyTemplate : nil, values: fields)
-        let signatureCells = TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF, dates: dates)
+        let signatureCells = TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
