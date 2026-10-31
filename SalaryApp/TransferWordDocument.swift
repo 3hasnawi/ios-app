@@ -18,6 +18,8 @@ nonisolated enum TransferWordDocument {
         var columnWeights: [Int]? = nil
         var showBorders = true
         var boldLastRow = false
+        var widthFraction: Double = 1
+        var alignRight = false
     }
     enum Block: Sendable {
         case paragraph(Paragraph)

@@ -35,7 +35,7 @@ nonisolated enum TransferWordDraftGenerator {
             let category: TransferCategory = bookID == "rafidain_group" ? .rafidain : .otherBanks
             try TransferWordReferenceAccounts.verifyGroup(bookID: bookID, references: references, payerIBAN: payerIBAN)
             let plan = try TransferWordGroupPlan(allEntities: entities, category: category, month: figures.month,
-                payer: payerName, payerIBAN: payerIBAN)
+                payer: payerName, payerIBAN: payerIBAN, adaptivePDF: adaptivePDF)
             try TransferWordGroupDraft.write(plan: plan, month: figures.month, payerIBAN: payerIBAN, text: text, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
                 var checks = [plan.payerIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.total)]

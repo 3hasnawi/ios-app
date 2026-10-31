@@ -6,12 +6,14 @@ import PDFKit
 /// لا تعني اجتياز التحقق على الجهاز أو السماح بالمشاركة.
 nonisolated enum TransferAdaptivePDF {
     enum Failure: LocalizedError {
-        case invalid, noFont, doesNotFit, damaged
+        case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, damaged
         var errorDescription: String? {
             switch self {
             case .invalid: tr("بيانات الكتاب غير مكتملة.", "The letter data is incomplete.")
             case .noFont: tr("استورد خط ساكال العريض والشعار قبل إعداد الكتاب.", "Import the bold Sakkal font and logo before preparing the letter.")
             case .doesNotFit: tr("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.", "A field or the group table does not fit legibly; review the data.")
+            case .groupTableDoesNotFit: tr("جدول المجموعة لا يتسع في صفحة واحدة بوضوح؛ راجع أطوال الأسماء وعدد الجهات.", "The group table does not fit legibly on one page; review entity names and count.")
+            case .signatureDoesNotFit: tr("أحد أسماء اللجنة أو صفاتها لا يتسع في سطر التوقيع؛ راجع أسماء اللجنة.", "A committee name or title does not fit on its signature line; review the names.")
             case .damaged: tr("تعذّر التحقق من صفحات مسودة الكتاب.", "The letter draft pages could not be verified.")
             }
         }
@@ -163,33 +165,56 @@ nonisolated enum TransferAdaptivePDF {
                 let weights = table.columnWeights ?? Array(repeating: 1, count: count)
                 guard count > 0, count <= 12, weights.count == count, weights.allSatisfy({ $0 > 0 }),
                       table.rows.allSatisfy({ $0.count == count }), table.rows.count < 50_000 else { throw Failure.invalid }
+                guard table.widthFraction > 0, table.widthFraction <= 1 else { throw Failure.invalid }
                 let sum = weights.reduce(0, +)
-                let widths = weights.map { contentWidth * CGFloat($0) / CGFloat(sum) }
+                let tableWidth = contentWidth * CGFloat(table.widthFraction)
+                let widths = weights.map { tableWidth * CGFloat($0) / CGFloat(sum) }
                 guard widths.allSatisfy({ $0 > 10 }) else { throw Failure.doesNotFit }
-                let face = try font(.init(text: "", font: table.font, halfPoints: table.halfPoints), sakkal: sakkalBold)
-                let boldFace = try font(.init(text: "", font: table.font, halfPoints: table.halfPoints, bold: true), sakkal: sakkalBold)
-                func layout(_ values: [String], bold: Bool) throws -> ([[TextLine]], CGFloat) {
+                let tableRight = table.alignRight ? page.width - margin : margin + (contentWidth + tableWidth) / 2
+                let groupTable = group && afterBreak
+                let signature = !table.showBorders
+                var chosenHalfPoints = table.halfPoints
+                var fonts: [Int: CTFont] = [:]
+                func layout(_ values: [String], bold: Bool, halfPoints: Int) throws -> ([[TextLine]], CGFloat) {
                     guard values.count == count else { throw Failure.invalid }
-                    let cellFont: CTFont = bold ? boldFace : face
+                    let fontKey = halfPoints * 2 + (bold ? 1 : 0)
+                    let cellFont: CTFont
+                    if let cached = fonts[fontKey] { cellFont = cached }
+                    else {
+                        cellFont = try font(.init(text: "", font: table.font, halfPoints: halfPoints, bold: bold), sakkal: sakkalBold)
+                        fonts[fontKey] = cellFont
+                    }
+                    let spacing: CGFloat = groupTable ? 0.5 : (signature ? 1 : 3)
+                    let padding: CGFloat = groupTable ? 2 : 6
                     var cells: [[TextLine]] = []
                     var tallest: CGFloat = 0
                     for index in values.indices {
-                        let cell = try lines(values[index], font: cellFont, width: widths[index] - 8)
-                        var cellHeight: CGFloat = 0
-                        for line in cell { cellHeight += line.height }
-                        tallest = max(tallest, cellHeight)
+                        let cell: [TextLine]
+                        if signature {
+                            let parts = values[index].components(separatedBy: "\n")
+                            guard parts.count == 4 else { throw Failure.signatureDoesNotFit }
+                            var singleLines: [TextLine] = []
+                            for part in parts {
+                                let measured = try lines(part, font: cellFont, width: widths[index] - 8, spacing: spacing)
+                                guard measured.count == 1 else { throw Failure.signatureDoesNotFit }
+                                singleLines.append(contentsOf: measured)
+                            }
+                            cell = singleLines
+                        } else {
+                            cell = try lines(values[index], font: cellFont, width: widths[index] - 8, spacing: spacing)
+                        }
+                        tallest = max(tallest, cell.reduce(CGFloat.zero) { $0 + $1.height })
                         cells.append(cell)
                     }
-                    let fontSize = CGFloat(table.halfPoints) / 2
-                    let minimumHeight = ceil(fontSize * 1.3) + 6
-                    let height: CGFloat = max(minimumHeight, tallest + 6)
+                    let minimumHeight = ceil(CGFloat(halfPoints) / 2 * 1.3) + padding
+                    let height = max(minimumHeight, tallest + padding)
                     guard height <= bottom - margin else { throw Failure.doesNotFit }
                     return (cells, height)
                 }
                 func drawRow(_ values: [String], bold: Bool) throws {
-                    let (cells, height) = try layout(values, bold: bold)
+                    let (cells, height) = try layout(values, bold: bold, halfPoints: chosenHalfPoints)
                     guard y + height <= limit else { throw Failure.doesNotFit }
-                    var right = page.width - margin
+                    var right = tableRight
                     for index in 0..<count {
                         right -= widths[index]
                         let rect = CGRect(x: right, y: y, width: widths[index], height: height)
@@ -202,38 +227,48 @@ nonisolated enum TransferAdaptivePDF {
                     }
                     y += height
                 }
-                if !table.showBorders {
+                if signature {
                     guard table.rows.count == 1 else { throw Failure.invalid }
                     if needsClosing { try addClosing() }
-                    let height = try layout(table.rows[0], bold: true).1
-                    guard height <= 125 else { throw Failure.doesNotFit }
+                    var found = false
+                    for size in stride(from: table.halfPoints, through: 24, by: -1) {
+                        do {
+                            let height = try layout(table.rows[0], bold: true, halfPoints: size).1
+                            if height <= 125 { chosenHalfPoints = size; found = true; break }
+                        } catch Failure.signatureDoesNotFit { continue }
+                    }
+                    guard found else { throw Failure.signatureDoesNotFit }
                     y = 610; limit = 736
                     try drawRow(table.rows[0], bold: true)
                     signatureEnd = y
                     expectingFooter = true
                     continue
                 }
-                let groupTable = group && afterBreak
                 if groupTable {
-                    var required: CGFloat = 0
-                    if !table.headers.isEmpty { required += try layout(table.headers, bold: true).1 }
-                    for (i, row) in table.rows.enumerated() {
-                        if i.isMultiple(of: 128) { try Task.checkCancellation() }
-                        required += try layout(row, bold: table.boldLastRow && i == table.rows.count - 1).1
+                    var found = false
+                    for size in stride(from: min(table.halfPoints, 22), through: 14, by: -1) {
+                        try Task.checkCancellation()
+                        var required: CGFloat = 0
+                        if !table.headers.isEmpty { required += try layout(table.headers, bold: true, halfPoints: size).1 }
+                        for (i, row) in table.rows.enumerated() {
+                            if i.isMultiple(of: 128) { try Task.checkCancellation() }
+                            required += try layout(row, bold: table.boldLastRow && i == table.rows.count - 1, halfPoints: size).1
+                        }
+                        if y + required <= limit { chosenHalfPoints = size; found = true; break }
                     }
-                    guard y + required <= limit else { throw Failure.doesNotFit }
+                    guard found else { throw Failure.groupTableDoesNotFit }
                 }
                 if !table.headers.isEmpty {
-                    let h = try layout(table.headers, bold: true).1
+                    let h = try layout(table.headers, bold: true, halfPoints: chosenHalfPoints).1
                     if y + h > limit { try nextPage() }
                     try drawRow(table.headers, bold: true)
                 }
                 for (index, row) in table.rows.enumerated() {
                     if index.isMultiple(of: 128) { try Task.checkCancellation() }
                     let bold = table.boldLastRow && index == table.rows.count - 1
-                    let height = try layout(row, bold: bold).1
+                    let height = try layout(row, bold: bold, halfPoints: chosenHalfPoints).1
                     if y + height > limit {
-                        guard !groupTable else { throw Failure.doesNotFit }
+                        guard !groupTable else { throw Failure.groupTableDoesNotFit }
                         try nextPage()
                         if !table.headers.isEmpty { try drawRow(table.headers, bold: true) }
                     }

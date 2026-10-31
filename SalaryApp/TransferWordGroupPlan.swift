@@ -15,7 +15,7 @@ nonisolated struct TransferWordGroupPlan: Sendable {
     let payerIBAN: String
 
     init(allEntities: [TransferEntity], category: TransferCategory, month: String,
-         payer: String, payerIBAN: String, date: Date = .now) throws {
+         payer: String, payerIBAN: String, date: Date = .now, adaptivePDF: Bool = false) throws {
         guard category == .rafidain || category == .otherBanks, !allEntities.isEmpty,
               Set(allEntities.map(\.id)).count == allEntities.count,
               allEntities.allSatisfy({ $0.group.month == month && $0.category != .unresolved }) else { throw Failure.incomplete }
@@ -37,13 +37,20 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         let weights = [40, 252, 322, 220, 166]
         // هامش إضافي للعناوين واختلافات عرض Word. يجب معاينة الصفحة الفعلية أيضاً.
         let widths = weights.map { CGFloat(510.3 * Double($0) / 1000) }
-        let fit = try TransferSinglePageFit.fit(rows: [headers] + rows, widths: widths, availableHeight: 680,
-            fontName: "Arial-BoldMT", maximumSize: 11, minimumSize: 9, verticalPadding: 5)
+        let halfPoints: Int
+        if adaptivePDF {
+            // يقيس منشئ PDF صفوفه الفعلية؛ لا نرفض الجدول بمقاييس Word المختلفة.
+            halfPoints = 22
+        } else {
+            let fit = try TransferSinglePageFit.fit(rows: [headers] + rows, widths: widths, availableHeight: 680,
+                fontName: "Arial-BoldMT", maximumSize: 11, minimumSize: 9, verticalPadding: 5)
+            halfPoints = Int((fit.fontSize * 2).rounded())
+        }
         self.total = sum
         self.csv = data
         self.month = month
         self.payerIBAN = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
-        self.table = TransferWordDocument.Table(headers: headers, rows: rows, halfPoints: Int((fit.fontSize * 2).rounded()),
+        self.table = TransferWordDocument.Table(headers: headers, rows: rows, halfPoints: halfPoints,
                                                 columnWeights: weights, boldLastRow: true)
     }
 }

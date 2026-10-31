@@ -233,6 +233,24 @@ import CryptoKit
             try check(PDFDocument(url: pdf.letter)?.pageCount == 2 && pdf.csv != nil, "Adaptive PDF group \(id)")
             generated += 1
         }
+        for (id, category, count) in [("rafidain_group", TransferCategory.rafidain, 29), ("other_banks_group", TransferCategory.otherBanks, 39)] {
+            phase = "adaptive-large-group-\(id)"
+            let entries = (1...count).map { index -> TransferEntity in
+                let title = "جهة تنفيذ وهمية رقم \(index)"
+                let group = ReportGroup(kind: .deductions, month: month, title: title, count: 1, total: Double(1000 + index), byEntity: false)
+                let bank = category == .rafidain ? "مصرف الرافدين فرع تجريبي" : "مصرف الرشيد فرع تجريبي"
+                let account = SavedExecutionAccount(entity: title, iban: beneficiary, branch: bank, swift: "TESTIQBAAAA")
+                return TransferEntity(group: group, account: account, category: category, missingAmounts: 0)
+            }
+            let pdf = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: entries, entity: nil,
+                individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: pdf.letter)?.pageCount == 2 && pdf.csv != nil, "Large adaptive group \(id)")
+        }
+        let signatureExample = TransferWordGroupDraft.signatureCells(["عضو وهمي أول", "عضو وهمي ثان", "اســم وهمــي ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true)
+        try check(signatureExample.count == 3 && signatureExample[2].contains("اسم وهمي ثالث") && !signatureExample[2].contains("ـ"), "Fixed signature names")
+        try check(ReportSheet.easternDigits("ح/1/22/ / 10 / 2026") == "ح/١/٢٢/ / ١٠ / ٢٠٢٦", "Indic letter dates")
         let tooMany = (1...100).map { index -> TransferEntity in
             let title = "جهة وهمية \(index)"
             let group = ReportGroup(kind: .deductions, month: month, title: title, count: 1, total: 100, byEntity: false)
@@ -271,7 +289,7 @@ import CryptoKit
         let longPDF = documents.appendingPathComponent("adaptive-long-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: longPDF) }
         let longBody = Array(repeating: "نص تجريبي طويل للتأكد من التفاف الأسطر وانتقال المحتوى.", count: 160).joined(separator: " ")
-        let fixedSignatures = TransferWordDocument.Table(headers: [], rows: [["عضو أول\n2026 / 10 /", "عضو ثان\n2026 / 10 /", "عضو ثالث\n2026 / 10 /"]], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
+        let fixedSignatures = TransferWordDocument.Table(headers: [], rows: [TransferWordGroupDraft.signatureCells(["عضو أول", "عضو ثان", "عضو ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true)], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
         try TransferAdaptivePDF.write(blocks: [
             .paragraph(.init(text: "ترويسة وهمية", font: "Times New Roman", halfPoints: 32, bold: true)),
             .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: 2026 / 10 /", font: "Sakkal Majalla", halfPoints: 36, bold: true)),

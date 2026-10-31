@@ -13,6 +13,8 @@ nonisolated enum TransferWordEntityDraft {
               text.committee.count == 3, text.committee.allSatisfy(nonempty),
               nonempty(plan.beneficiaryName) else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.month)
+        let signatureDate = adaptivePDF ? ReportSheet.easternDigits(period.signatureDate) : period.signatureDate
+        let letterNumber = adaptivePDF ? ReportSheet.easternDigits(text.fixedNumber) : text.fixedNumber
         let values = try TransferWordValues.make(month: plan.month, amount: plan.amount, custom: .init(),
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
@@ -37,11 +39,11 @@ nonisolated enum TransferWordEntityDraft {
         default: throw Failure.incomplete
         }
         let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(plan.payerIBAN)) المفتوح لديكم \(target) \(reason) لشهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
-        let signatures = TransferWordDocument.Table(headers: [], rows: [TransferWordGroupDraft.signatureCells(text.committee, date: period.signatureDate, adaptivePDF: adaptivePDF)],
+        let signatures = TransferWordDocument.Table(headers: [], rows: [TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)],
             font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
             .paragraph(.init(text: text.header, font: adaptivePDF ? "Times New Roman" : "Sakkal Majalla", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
-            .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
+            .paragraph(.init(text: "العدد: \(letterNumber)\nالتاريخ: \(signatureDate)", font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
             .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28)),
