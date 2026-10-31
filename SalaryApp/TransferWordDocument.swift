@@ -72,7 +72,9 @@ nonisolated enum TransferWordDocument {
             .map { "<w:\($0) w:val=\"\(t.showBorders ? "single" : "nil")\" w:sz=\"8\" w:color=\"000000\"/>" }.joined()
         func row(_ cells: [String], header: Bool, bold: Bool = false) throws -> String {
             let result = try cells.enumerated().map { index, text in
-                "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header || bold, centered: true)))</w:tc>"
+                // تباعد التواقيع يحافظ على وضوح الأسماء الطويلة عند اختلاف عارض Word.
+                let margins = t.showBorders ? "" : "<w:tcMar><w:left w:w=\"500\" w:type=\"dxa\"/><w:right w:w=\"500\" w:type=\"dxa\"/></w:tcMar>"
+                return "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/>\(margins)</w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header || bold, centered: true)))</w:tc>"
             }.joined()
             return "<w:tr><w:trPr><w:cantSplit/>\(header ? "<w:tblHeader/>" : "")</w:trPr>\(result)</w:tr>"
         }
