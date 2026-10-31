@@ -81,9 +81,9 @@ public static class ReconciliationPdf
                 canvas = pdf.BeginPage(PageWidth, PageHeight); canvas.Clear(SKColors.White); y = TableTop;
                 paint.TextSize = 17; Text(canvas, shaper, paint, "كشف مطابقة حساب المصرف", PageWidth / 2, 54, true);
                 paint.TextSize = 10; Text(canvas, shaper, paint, "مسودة للمراجعة — غير معتمدة", PageWidth / 2, 78, true);
-                Text(canvas, shaper, paint, "شهر الرواتب: " + period.Month, Right, 107);
-                Text(canvas, shaper, paint, "الفترة: " + Date(period.Start) + " - " + Date(period.End), Right, 126);
-                Text(canvas, shaper, paint, "الرصيد الافتتاحي: " + Number(period.OpeningBalance), Right, 145);
+                Fit(canvas, shaper, paint, "شهر الرواتب: " + period.Month, Left, Right, 107, true);
+                Fit(canvas, shaper, paint, "الفترة: " + Date(period.Start) + " - " + Date(period.End), Left, Right, 126, true);
+                Fit(canvas, shaper, paint, "الرصيد الافتتاحي: " + Number(period.OpeningBalance), Left, Right, 145, true);
                 var headings = new[] { "الرصيد", "مدين", "دائن", "البيان", "التاريخ" };
                 for (int i = 0; i < headings.Length; i++) { canvas.DrawRect(X[i], y, X[i+1] - X[i], 25, stroke); Fit(canvas, shaper, paint, headings[i], X[i], X[i+1], y + 17); }
                 y += 25;
