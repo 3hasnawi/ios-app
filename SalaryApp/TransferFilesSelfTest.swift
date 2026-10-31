@@ -356,6 +356,10 @@ import CryptoKit
         let groupNew = TransferIssuedRecord(id: UUID(), month: group.month, book: "مجموعة وهمية", confirmedAt: Date(timeIntervalSince1970: 20), lines: [changedWithNames, extraLine], groupCategory: TransferCategory.rafidain.rawValue, note: "مراجعة وهمية", groupChanges: ["تغير وهمي"])
         let activeGroups = TransferIssuance.activeRecords([groupOld, groupNew], month: group.month)
         try check(activeGroups.count == 1 && activeGroups[0].id == groupNew.id, "latest group confirmation supersedes earlier snapshot")
+        let bankGroupSuggestions = try BankReconciliation.groupSuggestions(records: [groupOld, groupNew], month: group.month)
+        try check(bankGroupSuggestions.count == 1 && bankGroupSuggestions[0].confirmationID == groupNew.id &&
+                  bankGroupSuggestions[0].amount == Int64(changedWithNames.amount + extraLine.amount), "bank reconciliation uses one latest grouped transfer")
+        try check(try BankReconciliation.groupSuggestions(records: [groupOld, groupNew], month: "تشرين الثاني 2026").isEmpty, "bank group suggestion month isolation")
         let activeAudit = TransferIssuance.audit(current: [changedWithNames, extraLine], records: [groupOld, groupNew], month: group.month)
         try check(activeAudit.changed.isEmpty && activeAudit.missing.isEmpty && activeAudit.repeated.isEmpty, "group reconfirmation does not create duplicates")
         let groupLedger = try TransferIssuance.decode(JSONEncoder().encode(TransferIssuance.Ledger(records: [groupOld, groupNew])))

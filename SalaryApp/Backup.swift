@@ -36,7 +36,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementManualAmounts", TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
+                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementManualAmounts", BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -172,6 +172,10 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        if let serialized = settings[BankReconciliation.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try BankReconciliation.decode(data)
+        }
         if let serialized = settings[TransferReferencePack.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try TransferReferencePack.validateData(data)

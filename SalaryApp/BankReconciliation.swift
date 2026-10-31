@@ -49,6 +49,31 @@ nonisolated enum BankReconciliation {
         var version = 1
         var periods: [Period] = []
     }
+    /// اقتراح مصدره آخر تأكيد لمجموعة الشهر؛ لا يتضمن تاريخ تنفيذ ولا يؤشر المطابقة.
+    struct GroupSuggestion: Identifiable, Sendable {
+        let id: String
+        let title: String
+        let amount: Int64
+        let confirmationID: UUID
+    }
+    static func groupSuggestions(records: [TransferIssuedRecord], month: String) throws -> [GroupSuggestion] {
+        var result: [GroupSuggestion] = []
+        for category in [TransferCategory.rafidain, .otherBanks] {
+            guard let record = TransferGroupIssuance.latest(records: records, category: category, month: month) else { continue }
+            var amount: Int64 = 0
+            for line in record.lines {
+                guard line.amount.isFinite, line.amount > 0, line.amount.rounded() == line.amount,
+                      line.amount <= Double(maximumAmount) else { throw Failure.invalid }
+                let (sum, overflow) = amount.addingReportingOverflow(Int64(line.amount))
+                guard !overflow, sum <= maximumAmount else { throw Failure.overflow }
+                amount = sum
+            }
+            guard amount > 0 else { throw Failure.invalid }
+            result.append(GroupSuggestion(id: "group|\(month)|\(category.rawValue)", title: category.title,
+                                          amount: amount, confirmationID: record.id))
+        }
+        return result
+    }
     struct Line: Sendable {
         let movement: Movement
         let balance: Int64
