@@ -61,7 +61,8 @@ nonisolated enum TransferWordDocument {
         let widths = weights.map { 10206 * $0 / weightSum }
         guard widths.allSatisfy({ $0 >= 100 }) else { throw Failure.invalidContent }
         var textBytes = 0
-        for values in [t.headers] + t.rows {
+        for (index, values) in ([t.headers] + t.rows).enumerated() {
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
             for value in values {
                 textBytes += value.utf8.count
                 guard textBytes <= 10_000_000 else { throw Failure.invalidContent }
@@ -78,7 +79,8 @@ nonisolated enum TransferWordDocument {
         let headers: String
         if t.headers.isEmpty { headers = "" } else { headers = try row(t.headers, header: true) }
         let rows = try t.rows.enumerated().map { index, values in
-            try row(values, header: false, bold: t.boldLastRow && index == t.rows.count - 1)
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
+            return try row(values, header: false, bold: t.boldLastRow && index == t.rows.count - 1)
         }.joined()
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"10206\" w:type=\"dxa\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"

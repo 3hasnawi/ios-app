@@ -62,7 +62,6 @@ import CryptoKit
               fontArchive["word/_rels/fontTable.xml.rels"] != nil else { throw Failure(errorDescription: "embedded Word font missing") }
         var recoveredFont = Data(); _ = try fontArchive.extract(fontEntry) { recoveredFont.append($0) }
         try check(recoveredFont == syntheticFont, "embedded Word font changed")
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
         guard let font = UIFont(name: "Arial-BoldMT", size: 10) else { throw Failure(errorDescription: "synthetic reference font") }
         func payerRect(_ id: String) -> CGRect {
             switch id {
@@ -87,13 +86,16 @@ import CryptoKit
         var records: [TransferReferenceManifest.Template] = []
         for (id, count) in TransferReferencePack.expected {
             phase = "synthetic-reference-\(id)"
-            let pdf = renderer.pdfData { context in
-                context.beginPage()
-                PDFText.draw(payer, in: payerRect(id), font: font, align: .center)
-                if id != "rafidain_anbar" && id != "rafidain_group" && id != "other_banks_group" {
-                    PDFText.draw(id == "water" || id == "housing" ? local : beneficiary, in: targetRect(id), font: font, align: .center)
+            let pdf = autoreleasepool {
+                let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
+                return renderer.pdfData { context in
+                    context.beginPage()
+                    PDFText.draw(payer, in: payerRect(id), font: font, align: .center)
+                    if id != "rafidain_anbar" && id != "rafidain_group" && id != "other_banks_group" {
+                        PDFText.draw(id == "water" || id == "housing" ? local : beneficiary, in: targetRect(id), font: font, align: .center)
+                    }
+                    if count == 2 { context.beginPage() }
                 }
-                if count == 2 { context.beginPage() }
             }
             guard let document = PDFDocument(data: pdf) else { throw Failure(errorDescription: "synthetic PDF unreadable \(id) bytes=\(pdf.count)") }
             guard !document.isLocked else { throw Failure(errorDescription: "synthetic PDF locked \(id)") }

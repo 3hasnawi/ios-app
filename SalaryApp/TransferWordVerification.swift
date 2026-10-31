@@ -15,8 +15,11 @@ nonisolated enum TransferWordVerification {
         private var table: [[String]]?
         private var row: [String]?
         private var cell: String?
+        private var elements = 0
         private(set) var invalid = false
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String] = [:]) {
+            elements += 1
+            if elements.isMultiple(of: 512), Task.isCancelled { parser.abortParsing(); return }
             switch name {
             case "w:tbl": if table != nil { invalid = true }; table = []
             case "w:tr": if table == nil || row != nil { invalid = true }; row = []
@@ -57,10 +60,16 @@ nonisolated enum TransferWordVerification {
         let archive = try Archive(url: url, accessMode: .read)
         guard let entry = archive["word/document.xml"], entry.type == .file,
               entry.uncompressedSize <= 80_000_000 else { throw Failure.mismatch }
-        var xml = Data(); _ = try archive.extract(entry) { xml.append($0) }
+        var xml = Data()
+        _ = try archive.extract(entry) { chunk in
+            try Task.checkCancellation()
+            xml.append(chunk)
+        }
         let reader = Reader(), parser = XMLParser(data: xml)
         parser.shouldResolveExternalEntities = false; parser.delegate = reader
-        guard parser.parse(), !reader.invalid else { throw Failure.mismatch }
+        let parsed = parser.parse()
+        try Task.checkCancellation()
+        guard parsed, !reader.invalid else { throw Failure.mismatch }
         let values = try TransferWordValues.make(month: month, amount: amount, custom: .init(), requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let numeric = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.mismatch }
