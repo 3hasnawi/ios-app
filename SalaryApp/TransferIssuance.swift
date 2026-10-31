@@ -59,6 +59,12 @@ nonisolated enum TransferIssuance {
                   $0.lines.allSatisfy { !$0.id.isEmpty && $0.amount.isFinite && $0.amount > 0 } }) else { throw Failure.invalid }
         return ledger
     }
+    /// الأسماء هي نفسها عناوين مجموعات وكتب التحويل المعروضة للمستخدم.
+    static var bookNames: [String] {
+        [TransferCategory.rafidain.title, TransferCategory.otherBanks.title,
+         tr("شركة عراق الجوال", "Iraq Al-Jawwal Company")] +
+        TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }.map(\.title)
+    }
     struct Audit {
         let missing: [TransferIssuedLine]
         let changed: [TransferIssuedLine]
@@ -113,6 +119,7 @@ struct TransferIssuanceView: View {
     @AppStorage("transferPayrollAccountLinks") private var currentLinks = Data()
     @State private var selected: Set<String> = []
     @State private var book = ""
+    @State private var bookChoice = ""
     @State private var confirm = false
     @State private var retract: TransferIssuedRecord?
     @State private var error: String?
@@ -181,6 +188,7 @@ struct TransferIssuanceView: View {
                 let required = ids.intersection(nameListIDs)
                 let hashes = try await fetchDetails(required)
                 guard !Task.isCancelled, current, storage == stored, ids == selected,
+                      title == book.trimmingCharacters(in: .whitespacesAndNewlines),
                       required.isSubset(of: Set(hashes.keys)), let ledger else {
                     if !Task.isCancelled { error = tr("تغيرت البيانات أثناء تدقيق الأسماء؛ أعد المحاولة.", "Data changed during name-list checking; try again.") }
                     return
@@ -189,7 +197,7 @@ struct TransferIssuanceView: View {
                     var line = value; line.detailHash = hashes[line.id]; return line
                 }
                 let record = TransferIssuedRecord(id: UUID(), month: month, book: title, confirmedAt: .now, lines: verified)
-                if save(ledger.records + [record]) { selected = []; book = "" }
+                if save(ledger.records + [record]) { selected = []; book = ""; bookChoice = "" }
             } catch is CancellationError { return }
             catch { self.error = error.localizedDescription }
         }
@@ -226,7 +234,14 @@ struct TransferIssuanceView: View {
                     }
                 } header: { Text(tr("مراجعة الجهات والبنود · \(month)", "Entity and item review · \(month)")) } footer: { Text(tr("يقارن التدقيق الجهات وبنود الكتب بإقراراتك اليدوية. لا يقرأ الكتب الصادرة أو يثبت التحويل. قد يظهر بند الكاش غير متاح إذا تعذر تحديد طريقة الدفع.", "This compares entities and letter items with manual confirmations. It does not read issued letters or prove a transfer. Cash may be unavailable if payment methods cannot be determined.")) }
                 Section {
-                    TextField(tr("اسم الكتاب الصادر", "Issued letter name"), text: $book)
+                    Picker(tr("اسم الكتاب الصادر", "Issued letter name"), selection: $bookChoice) {
+                        Text(tr("اختر الكتاب", "Choose letter")).tag("")
+                        ForEach(TransferIssuance.bookNames, id: \.self) { title in Text(title).tag(title) }
+                        Text(tr("اسم آخر", "Other name")).tag("__other__")
+                    }
+                    if bookChoice == "__other__" {
+                        TextField(tr("اسم الكتاب الصادر", "Issued letter name"), text: $book)
+                    }
                     ForEach(lines) { line in
                         Toggle(isOn: Binding(get: { selected.contains(line.id) }, set: { if $0 { selected.insert(line.id) } else { selected.remove(line.id) } })) {
                             VStack(alignment: .leading) {
@@ -271,6 +286,9 @@ struct TransferIssuanceView: View {
             }
             Button(tr("رجوع", "Back"), role: .cancel) { retract = nil }
         } message: { Text(tr("يُحذف الإقرار فقط، ولا يُحذف الكتاب أو بيانات الشهر.", "Only the confirmation is removed; the letter and monthly data are unchanged.")) }
+        .onChange(of: bookChoice) {
+            book = bookChoice == "__other__" ? "" : bookChoice
+        }
         .task(id: stored) { await refreshDetails() }
         .onDisappear { confirmationTask?.cancel(); confirmationTask = nil }
     }

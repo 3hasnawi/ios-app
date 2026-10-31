@@ -16,6 +16,9 @@ import CryptoKit
             throw Failure(errorDescription: "invalid header font accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid header font accepted") }
         catch { }
+        let issuanceNames = TransferIssuance.bookNames
+        try check(issuanceNames.count == 11 && Set(issuanceNames).count == 11 &&
+                  issuanceNames.contains(TransferCategory.rafidain.title) && issuanceNames.contains(TransferCategory.otherBanks.title), "issuance names match transfer groups")
         var customization = TransferLetterCustomizationStore()
         customization.applyToAll(.init(header: "ترويسة عامة", footer: "هامش عام"))
         customization.apply(.init(header: "ترويسة خاصة", committeeFirst: "عضو وهمي"), to: "food_company")
