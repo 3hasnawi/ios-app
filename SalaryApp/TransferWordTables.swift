@@ -12,25 +12,29 @@ nonisolated enum TransferWordTables {
     private static func number(_ amount: Double) -> String {
         String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), amount)
     }
+    private static func letterAmount(_ amount: Double, eastern: Bool) throws -> String {
+        guard eastern else { return number(amount) }
+        return ReportSheet.easternDigits(try TransferWordValues.groupedAmount(amount))
+    }
     /// يطابق العدد صفوف قائمة الأسماء نفسها دون صف المجموع.
     static func attachment(for table: TransferWordDocument.Table?) throws -> TransferWordDocument.Paragraph {
         guard let table, table.boldLastRow, table.rows.count > 1 else { throw Failure.incomplete }
         let count = ReportSheet.easternDigits(String(table.rows.count - 1))
         return .init(text: "المرفقات:\nقائمة أسماء عدد (\(count))", halfPoints: 24, bold: true)
     }
-    static func treasury(_ figures: TransferLetterFigures) throws -> TransferWordDocument.Table {
+    static func treasury(_ figures: TransferLetterFigures, eastern: Bool = false) throws -> TransferWordDocument.Table {
         guard valid(figures.incomeTax), valid(figures.socialProtection), valid(figures.treasuryTotal) else { throw Failure.incomplete }
         return .init(headers: ["ت", "البيان", "المبلغ"], rows: [
-            ["1", "الحماية الاجتماعية", number(figures.socialProtection)],
-            ["2", "ضريبة الدخل", number(figures.incomeTax)],
-            ["", "المجموع", number(figures.treasuryTotal)]
+            ["1", "الحماية الاجتماعية", try letterAmount(figures.socialProtection, eastern: eastern)],
+            ["2", "ضريبة الدخل", try letterAmount(figures.incomeTax, eastern: eastern)],
+            ["", "المجموع", try letterAmount(figures.treasuryTotal, eastern: eastern)]
         ], columnWeights: [1, 6, 3], boldLastRow: true, widthFraction: 0.56, alignRight: true)
     }
-    static func contracts(_ figures: TransferLetterFigures) throws -> TransferWordDocument.Table {
+    static func contracts(_ figures: TransferLetterFigures, eastern: Bool = false) throws -> TransferWordDocument.Table {
         guard (figures.missingContractNominal == 0 || figures.contractNominalReviewed), let nominal = figures.effectiveContractNominalShare,
               let total = figures.contractTotal, valid(nominal), valid(figures.contractRetirement), valid(total) else { throw Failure.incomplete }
         return .init(headers: ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "المجموع"], rows: [
-            [number(figures.contractRetirement), number(nominal), number(total)]
+            [try letterAmount(figures.contractRetirement, eastern: eastern), try letterAmount(nominal, eastern: eastern), try letterAmount(total, eastern: eastern)]
         ])
     }
     static func cash(_ list: TransferCashList, figures: TransferLetterFigures) throws -> TransferWordDocument.Table {

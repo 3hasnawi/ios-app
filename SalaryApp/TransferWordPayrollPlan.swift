@@ -22,7 +22,7 @@ nonisolated struct TransferWordPayrollPlan: Sendable {
 
     static func prepare(bookID: String, figures: TransferLetterFigures, payerIBAN: String,
                         references: Data, cashList: TransferCashList? = nil,
-                        customization: TransferLetterCustomization = .init()) throws -> Self {
+                        customization: TransferLetterCustomization = .init(), adaptivePDF: Bool = false) throws -> Self {
         let name: String
         let table: TransferWordDocument.Table?
         switch bookID {
@@ -31,9 +31,9 @@ nonisolated struct TransferWordPayrollPlan: Sendable {
         case "food_tax":
             name = "مديرية خزينة الأنبار"; table = nil
         case "tax_social":
-            name = "مديرية خزينة الأنبار"; table = try TransferWordTables.treasury(figures)
+            name = "مديرية خزينة الأنبار"; table = try TransferWordTables.treasury(figures, eastern: adaptivePDF)
         case "contracts":
-            name = "قسم التقاعد والضمان الاجتماعي للعمال في محافظة الأنبار"; table = try TransferWordTables.contracts(figures)
+            name = "قسم التقاعد والضمان الاجتماعي للعمال في محافظة الأنبار"; table = try TransferWordTables.contracts(figures, eastern: adaptivePDF)
         case "cash_salary":
             guard let cashList else { throw Failure.incomplete }
             name = "مديرية خزينة الأنبار"; table = try TransferWordTables.cash(cashList, figures: figures)

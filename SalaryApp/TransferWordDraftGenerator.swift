@@ -52,12 +52,12 @@ nonisolated enum TransferWordDraftGenerator {
             csvURL = csv
         case "food_company", "food_tax", "tax_social", "contracts", "cash_salary":
             let plan = try TransferWordPayrollPlan.prepare(bookID: bookID, figures: figures,
-                payerIBAN: payerIBAN, references: references, cashList: cashList, customization: adaptivePDF ? customization : .init())
+                payerIBAN: payerIBAN, references: references, cashList: cashList, customization: adaptivePDF ? customization : .init(), adaptivePDF: adaptivePDF)
             try TransferWordPayrollDraft.write(plan: plan, text: text,
                 foodContractReference: customization.foodContractReference, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
                 var checks = [plan.payerIBAN, plan.beneficiaryIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.amount)]
-                if bookID != "cash_salary", let table = plan.table { for row in table.rows { checks.append(contentsOf: row.filter { !$0.isEmpty && $0.allSatisfy(\.isNumber) }) } }
+                if bookID != "cash_salary", let table = plan.table { for row in table.rows { checks.append(contentsOf: row.filter { !$0.isEmpty && $0.allSatisfy { $0.isNumber || $0 == "," } }) } }
                 try TransferAdaptivePDF.verify(letter, required: checks)
             } else { try TransferWordVerification.verify(url: letter, month: plan.month, amount: plan.amount, payerIBAN: plan.payerIBAN,
                 text: text, table: bookID == "cash_salary" ? nil : plan.table, beneficiaryName: plan.beneficiaryName, beneficiaryAccount: plan.beneficiaryIBAN,

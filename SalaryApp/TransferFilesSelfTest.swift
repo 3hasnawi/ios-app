@@ -108,6 +108,14 @@ import CryptoKit
         try check(treasuryRows.count == 3 && treasuryRows[0][2] == "13" && treasuryRows[1][2] == "11" && treasuryRows[2][2] == "24", "Word tax and social protection table")
         let contractRows = try TransferWordTables.contracts(wordFigures).rows
         try check(contractRows.count == 1 && contractRows[0] == ["19", "17", "36"], "Word contract amounts")
+        let largeFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
+            foodCompany: 92, healthcare: 20, policeFundDonations: 30, sports: 40,
+            incomeTax: 56_204_581, socialProtection: 21_201_486, contractNominalShare: 1_234_567,
+            contractRetirement: 2_000_000, payrollCash: 23)
+        let easternTreasury = try TransferWordTables.treasury(largeFigures, eastern: true).rows
+        try check(easternTreasury.map { $0[2] } == ["٢١,٢٠١,٤٨٦", "٥٦,٢٠٤,٥٨١", "٧٧,٤٠٦,٠٦٧"], "PDF treasury table formats amounts")
+        let easternContracts = try TransferWordTables.contracts(largeFigures, eastern: true).rows
+        try check(easternContracts == [["٢,٠٠٠,٠٠٠", "١,٢٣٤,٥٦٧", "٣,٢٣٤,٥٦٧"]], "PDF contract table formats amounts")
         let wordCashList = TransferCashList(month: wordFigures.month, employees: [
             .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)
         ])
