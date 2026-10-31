@@ -31,6 +31,8 @@ nonisolated enum TransferAdaptivePDF {
     private struct TextLine {
         let text: String
         let font: CTFont
+        let underline: Bool
+        let justify: Bool
         let height: CGFloat
         let ascent: CGFloat
     }
@@ -54,7 +56,7 @@ nonisolated enum TransferAdaptivePDF {
         guard let face = UIFont(name: name, size: size) else { throw Failure.noFont }
         return CTFontCreateWithName(face.fontName as CFString, size, nil)
     }
-    private static func lines(_ text: String, font: CTFont, width: CGFloat) throws -> [TextLine] {
+    private static func lines(_ text: String, font: CTFont, width: CGFloat, underline: Bool = false, justify: Bool = false, spacing: CGFloat = 3) throws -> [TextLine] {
         guard text.utf8.count <= 100_000, width > 8 else { throw Failure.invalid }
         if text.isEmpty { return [] }
         let attr = NSAttributedString(string: text, attributes: [
@@ -62,7 +64,7 @@ nonisolated enum TransferAdaptivePDF {
             NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
         ])
         let typesetter = CTTypesetterCreateWithAttributedString(attr)
-        let height = ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)) + 3
+        let height = ceil(CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)) + spacing
         var result: [TextLine] = [], offset = 0
         while offset < attr.length {
             if result.count.isMultiple(of: 128) { try Task.checkCancellation() }
@@ -72,7 +74,9 @@ nonisolated enum TransferAdaptivePDF {
             let measured = CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line)
             guard measured <= Double(width) + 0.5 else { throw Failure.doesNotFit }
             let value = (text as NSString).substring(with: NSRange(location: offset, length: count))
-            result.append(TextLine(text: value, font: font, height: height, ascent: CTFontGetAscent(font)))
+            result.append(TextLine(text: value, font: font, underline: underline,
+                                   justify: justify && offset + count < attr.length && !value.hasSuffix("\n"),
+                                   height: height, ascent: CTFontGetAscent(font)))
             guard result.count <= 20_000 else { throw Failure.doesNotFit }
             offset += count
         }
@@ -82,18 +86,21 @@ nonisolated enum TransferAdaptivePDF {
                       sakkalBold: Data?, group: Bool) throws {
         guard blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
-              let logo = UIImage(named: "HomeLogo")?.cgImage else { throw Failure.invalid }
+              let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
         let headerFont = try font(header, sakkal: sakkalBold)
         let refFont = try font(reference, sakkal: sakkalBold)
-        let headerLines = try lines(header.text, font: headerFont, width: contentWidth - 86)
-        let refLines = try lines(reference.text, font: refFont, width: contentWidth - 86)
-        let fixedHeight = (headerLines + refLines).reduce(CGFloat.zero) { $0 + $1.height }
-        guard !headerLines.isEmpty, !refLines.isEmpty, fixedHeight <= 205 else { throw Failure.doesNotFit }
+        let headingWidth: CGFloat = 190
+        let headerLines = try lines(header.text, font: headerFont, width: headingWidth)
+        let refLines = try lines(reference.text, font: refFont, width: headingWidth)
+        guard !headerLines.isEmpty, !refLines.isEmpty,
+              headerLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 123,
+              refLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 58 else { throw Failure.doesNotFit }
         var pages: [[Draw]] = [[]]
-        var y: CGFloat = margin
+        var y: CGFloat = 23
         // يترك المتن مساحة ثابتة للتواقيع والنسخ أسفل صفحة الكتاب.
-        var limit: CGFloat = 640
+        var limit: CGFloat = 590
         var expectingFooter = false
+        var signatureEnd: CGFloat?
         func add(_ operation: Draw) { pages[pages.count - 1].append(operation) }
         func nextPage() throws {
             guard pages.count < 4000 else { throw Failure.doesNotFit }
@@ -106,11 +113,21 @@ nonisolated enum TransferAdaptivePDF {
                 y += line.height
             }
         }
-        add(.logo(CGRect(x: margin, y: margin, width: 66, height: 66)))
-        try addLines(headerLines, x: margin + 86, width: contentWidth - 86, flush: 1)
-        try addLines(refLines, x: margin + 86, width: contentWidth - 86, flush: 1)
-        y = max(y, margin + 72) + 10
+        // مواضع ثابتة مأخوذة من هيئة النماذج: الترويسة يساراً وشعار الجمهورية وسط الصفحة.
+        add(.logo(CGRect(x: 271.2, y: 36.1, width: 86.4, height: 107.9)))
+        try addLines(headerLines, x: 28, width: headingWidth, flush: 0.5)
+        y = max(150, y + 8)
+        try addLines(refLines, x: 28, width: headingWidth, flush: 1)
+        y = max(220, y + 12)
         var afterBreak = false
+        var needsClosing = false
+        func addClosing() throws {
+            let closing = TransferWordDocument.Paragraph(text: "للتفضل بالاطلاع وإجراء اللازم وإعلامنا... مع التقدير.", font: "Times New Roman", halfPoints: 32, bold: true, centered: true)
+            let closingFont = try font(closing, sakkal: sakkalBold)
+            y += 15
+            try addLines(lines(closing.text, font: closingFont, width: contentWidth), x: margin, width: contentWidth, flush: 0.5)
+            needsClosing = false
+        }
         for block in blocks.dropFirst(2) {
             try Task.checkCancellation()
             switch block {
@@ -118,11 +135,25 @@ nonisolated enum TransferAdaptivePDF {
                 guard !expectingFooter else { throw Failure.invalid }
                 try nextPage(); limit = bottom; afterBreak = true
             case .paragraph(let p):
+                if needsClosing && p.text.hasPrefix("المرفقات:") { try addClosing() }
+                if p.text.hasPrefix("نرجو تحويل مبلغ قدره") {
+                    y += 18
+                    let salutation = TransferWordDocument.Paragraph(text: "تحية طيبة ..", font: "Times New Roman", halfPoints: 28, bold: true)
+                    let salutationFont = try font(salutation, sakkal: sakkalBold)
+                    try addLines(lines(salutation.text, font: salutationFont, width: contentWidth), x: margin, width: contentWidth, flush: 1)
+                    y += 7; needsClosing = true
+                }
                 let face = try font(p, sakkal: sakkalBold)
-                let ls = try lines(p.text, font: face, width: contentWidth)
+                let ls = try lines(p.text, font: face, width: contentWidth,
+                                   underline: p.centered && p.text.hasPrefix("م /"),
+                                   justify: p.text.hasPrefix("نرجو تحويل مبلغ قدره"),
+                                   spacing: expectingFooter ? 0 : 3)
                 if expectingFooter {
-                    y = 741; limit = bottom
-                    guard y + ls.reduce(CGFloat.zero, { $0 + $1.height }) <= bottom else { throw Failure.doesNotFit }
+                    let footerHeight = ls.reduce(CGFloat.zero, { $0 + $1.height })
+                    let footerBottom: CGFloat = 832
+                    guard let signatureEnd, footerHeight <= footerBottom - margin else { throw Failure.doesNotFit }
+                    y = footerBottom - footerHeight; limit = footerBottom
+                    guard y >= signatureEnd + 8 else { throw Failure.doesNotFit }
                     expectingFooter = false
                 }
                 try addLines(ls, x: margin, width: contentWidth, flush: p.centered ? 0.5 : 1)
@@ -163,10 +194,12 @@ nonisolated enum TransferAdaptivePDF {
                 }
                 if !table.showBorders {
                     guard table.rows.count == 1 else { throw Failure.invalid }
-                    let height = try layout(table.rows[0], bold: false).1
-                    guard height <= 72 else { throw Failure.doesNotFit }
-                    y = 662; limit = 735
-                    try drawRow(table.rows[0], bold: false)
+                    if needsClosing { try addClosing() }
+                    let height = try layout(table.rows[0], bold: true).1
+                    guard height <= 125 else { throw Failure.doesNotFit }
+                    y = 610; limit = 736
+                    try drawRow(table.rows[0], bold: true)
+                    signatureEnd = y
                     expectingFooter = true
                     continue
                 }
@@ -222,11 +255,19 @@ nonisolated enum TransferAdaptivePDF {
                             NSAttributedString.Key(kCTFontAttributeName as String): item.font,
                             NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
                         ])
-                        let line = CTLineCreateWithAttributedString(text)
+                        let originalLine = CTLineCreateWithAttributedString(text)
+                        let line = item.justify ? (CTLineCreateJustifiedLine(originalLine, 1, Double(rect.width)) ?? originalLine) : originalLine
                         cg.saveGState(); cg.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-                        cg.textPosition = CGPoint(x: rect.minX + CGFloat(CTLineGetPenOffsetForFlush(line, flush, Double(rect.width))),
-                                                  y: rect.minY + item.ascent)
+                        let x = rect.minX + CGFloat(CTLineGetPenOffsetForFlush(line, flush, Double(rect.width)))
+                        cg.textPosition = CGPoint(x: x, y: rect.minY + item.ascent)
                         CTLineDraw(line, cg); cg.restoreGState(); cg.textMatrix = .identity
+                        if item.underline {
+                            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line))
+                            cg.saveGState(); UIColor.black.setStroke(); cg.setLineWidth(0.7)
+                            cg.move(to: CGPoint(x: x, y: rect.minY + item.ascent + 2))
+                            cg.addLine(to: CGPoint(x: x + lineWidth, y: rect.minY + item.ascent + 2))
+                            cg.strokePath(); cg.restoreGState()
+                        }
                     }
                 }
             }

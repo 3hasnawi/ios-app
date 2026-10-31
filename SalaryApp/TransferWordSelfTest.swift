@@ -150,6 +150,9 @@ import CryptoKit
             committeeSecond: "عضو وهمي ثان", committeeThird: "عضو وهمي ثالث", footer: "هامش وهمي",
             fixedNumber: "رقم وهمي", foodContractReference: "عقد وهمي")
         let letterText = try TransferWordGroupDraft.letterText(from: custom)
+        let fixedRoles = TransferWordGroupDraft.signatureCells(letterText.committee, date: "2026 / 10 /", adaptivePDF: true)
+        try check(fixedRoles.count == 3 && fixedRoles[0].contains("معاون مدير تدقيق") &&
+                  fixedRoles[1].contains("مدير الحسابات") && fixedRoles[2].contains("قائد شرطة محافظة الأنبار"), "Adaptive PDF signature roles")
         let cash = TransferCashList(month: month, employees: [.init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)])
         func content(_ url: URL) throws -> String {
             let zip = try Archive(url: url, accessMode: .read)
@@ -270,8 +273,8 @@ import CryptoKit
         let longBody = Array(repeating: "نص تجريبي طويل للتأكد من التفاف الأسطر وانتقال المحتوى.", count: 160).joined(separator: " ")
         let fixedSignatures = TransferWordDocument.Table(headers: [], rows: [["عضو أول\n2026 / 10 /", "عضو ثان\n2026 / 10 /", "عضو ثالث\n2026 / 10 /"]], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
         try TransferAdaptivePDF.write(blocks: [
-            .paragraph(.init(text: "ترويسة وهمية", font: "Sakkal Majalla", halfPoints: 36, bold: true)),
-            .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: 2026 / 10 /", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "ترويسة وهمية", font: "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: 2026 / 10 /", font: "Sakkal Majalla", halfPoints: 36, bold: true)),
             .paragraph(.init(text: "إلى / جهة وهمية")),
             .paragraph(.init(text: "م / اختبار", centered: true)),
             .paragraph(.init(text: longBody)), .table(fixedSignatures),

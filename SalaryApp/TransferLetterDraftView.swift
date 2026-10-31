@@ -120,7 +120,7 @@ struct TransferLetterDraftView: View {
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
                 if boldFont.isEmpty {
-                    Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد ترويسة PDF.", "Import the bold Sakkal font in letter settings to prepare the PDF header."))
+                    Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد العدد والتاريخ.", "Import the bold Sakkal font in letter settings to prepare the reference and date."))
                         .font(.footnote).foregroundStyle(.orange)
                 }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
