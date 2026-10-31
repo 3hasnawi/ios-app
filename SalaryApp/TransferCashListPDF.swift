@@ -6,12 +6,15 @@ import PDFKit
 nonisolated enum TransferCashListPDF {
     enum Failure: LocalizedError {
         case empty, invalid, rowTooTall, tableMismatch
+        case cellMismatch(row: Int, column: Int, readCount: Int, expectedCount: Int)
         var errorDescription: String? {
             switch self {
             case .empty: tr("لا توجد رواتب كاش للشهر المختار.", "There are no cash salaries for the selected month.")
             case .invalid: tr("تعذّر التحقق من بيانات قائمة الكاش.", "Could not validate the cash salary list.")
             case .rowTooTall: tr("بيانات أحد السطور أطول من مساحة الصفحة.", "A row is taller than the page.")
             case .tableMismatch: tr("تعذّر مطابقة بيانات قائمة الكاش المرسومة مع مصدر الرواتب.", "Could not reconcile the rendered cash salary list with the payroll source.")
+            case .cellMismatch(let row, let column, let readCount, let expectedCount):
+                tr("تعذّر تدقيق قائمة الكاش في الصف \(row) والعمود \(column) (طول المقروء \(readCount)، المتوقع \(expectedCount)).", "Cash list verification failed at row \(row), column \(column) (read length \(readCount), expected \(expectedCount)).")
             }
         }
     }
@@ -153,7 +156,10 @@ nonisolated enum TransferCashListPDF {
                 let values = [row.name, row.rank, row.workplace, money(row.amount)]
                 for column in values.indices {
                     let rect = CGRect(x: positions[column], y: placement.y, width: columns[column], height: placement.height)
-                    guard identity(text(pageIndex: placement.page, rect: rect)) == identity(values[column]) else { throw Failure.tableMismatch }
+                    let read = identity(text(pageIndex: placement.page, rect: rect))
+                    let expected = identity(values[column])
+                    let matches = column == 3 ? read == expected : TransferAnbarTablePDF.matchesExtractedCell(read, expected: expected)
+                    guard matches else { throw Failure.cellMismatch(row: expectedIndex + 1, column: column + 1, readCount: read.count, expectedCount: expected.count) }
                 }
             }
             let amountRect = CGRect(x: positions[3], y: totalPlacement.y, width: columns[3], height: totalHeight)
