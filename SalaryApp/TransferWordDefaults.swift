@@ -32,11 +32,13 @@ nonisolated enum TransferWordDefaults {
             }
         }
         let common = package.defaults.common
-        guard valid(common.header, max: 2000), valid(common.fixedNumber, max: 200),
+        guard (common.signatureOffset.map { (-60...60).contains($0) } ?? true),
+              valid(common.header, max: 2000), valid(common.fixedNumber, max: 200),
               valid(common.foodContractReference, max: 200) else { throw Failure.invalid }
         for id in TransferReferencePack.expected.keys {
             let raw = package.defaults.individual[id]
             guard raw?.fixedNumber == nil, raw?.foodContractReference == nil else { throw Failure.invalid }
+            if let offset = raw?.signatureOffset, !(-60...60).contains(offset) { throw Failure.invalid }
             let value = package.defaults.effective(for: id)
             guard valid(value.header, max: 2000), valid(value.committeeFirst, max: 200),
                   valid(value.committeeSecond, max: 200), valid(value.committeeThird, max: 200),

@@ -8,6 +8,7 @@ nonisolated enum TransferWordGroupDraft {
         let committee: [String]
         let footer: String
         var bodyTemplate: String? = nil
+        var signatureOffset: Int = 0
     }
     enum Failure: LocalizedError {
         case incomplete
@@ -16,8 +17,9 @@ nonisolated enum TransferWordGroupDraft {
     static func letterText(from custom: TransferLetterCustomization) throws -> LetterText {
         guard let header = custom.header, let fixedNumber = custom.fixedNumber,
               let first = custom.committeeFirst, let second = custom.committeeSecond,
-              let third = custom.committeeThird, let footer = custom.footer else { throw Failure.incomplete }
-        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer, bodyTemplate: custom.bodyTemplate)
+              let third = custom.committeeThird, let footer = custom.footer,
+              (-60...60).contains(custom.signatureOffset ?? 0) else { throw Failure.incomplete }
+        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer, bodyTemplate: custom.bodyTemplate, signatureOffset: custom.signatureOffset ?? 0)
     }
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
     static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool) -> [String] {
@@ -74,7 +76,7 @@ nonisolated enum TransferWordGroupDraft {
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(year))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)
         ]
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true) }
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }

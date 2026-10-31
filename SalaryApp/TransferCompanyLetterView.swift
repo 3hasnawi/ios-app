@@ -38,7 +38,7 @@ struct TransferCompanyLetterView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView()
+                    TransferLetterSettingsView(bookID: "food_company")
                 } label: {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
                 }

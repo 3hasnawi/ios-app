@@ -6,7 +6,7 @@ import PDFKit
 /// لا تعني اجتياز التحقق على الجهاز أو السماح بالمشاركة.
 nonisolated enum TransferAdaptivePDF {
     enum Failure: LocalizedError {
-        case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, damaged
+        case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, signaturePlacement, damaged
         var errorDescription: String? {
             switch self {
             case .invalid: tr("بيانات الكتاب غير مكتملة.", "The letter data is incomplete.")
@@ -14,6 +14,7 @@ nonisolated enum TransferAdaptivePDF {
             case .doesNotFit: tr("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.", "A field or the group table does not fit legibly; review the data.")
             case .groupTableDoesNotFit: tr("جدول المجموعة لا يتسع في صفحة واحدة بوضوح؛ راجع أطوال الأسماء وعدد الجهات.", "The group table does not fit legibly on one page; review entity names and count.")
             case .signatureDoesNotFit: tr("أحد أسماء اللجنة أو صفاتها لا يتسع في سطر التوقيع؛ راجع أسماء اللجنة.", "A committee name or title does not fit on its signature line; review the names.")
+            case .signaturePlacement: tr("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.", "The committee overlaps the body or footer; adjust its position or shorten the text.")
             case .damaged: tr("تعذّر التحقق من صفحات مسودة الكتاب.", "The letter draft pages could not be verified.")
             }
         }
@@ -85,8 +86,8 @@ nonisolated enum TransferAdaptivePDF {
         return result
     }
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
-                      sakkalBold: Data?, group: Bool) throws {
-        guard blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
+                      sakkalBold: Data?, group: Bool, signatureOffset: Int = 0) throws {
+        guard (-60...60).contains(signatureOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
               let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
         let headerFont = try font(header, sakkal: sakkalBold)
@@ -155,7 +156,7 @@ nonisolated enum TransferAdaptivePDF {
                     let footerBottom: CGFloat = 832
                     guard let signatureEnd, footerHeight <= footerBottom - margin else { throw Failure.doesNotFit }
                     y = footerBottom - footerHeight; limit = footerBottom
-                    guard y >= signatureEnd + 8 else { throw Failure.doesNotFit }
+                    guard y >= signatureEnd + 8 else { throw Failure.signaturePlacement }
                     expectingFooter = false
                 }
                 try addLines(ls, x: margin, width: contentWidth, flush: p.centered ? 0.5 : 1)
@@ -242,7 +243,10 @@ nonisolated enum TransferAdaptivePDF {
                         } catch Failure.signatureDoesNotFit { continue }
                     }
                     guard found else { throw Failure.signatureDoesNotFit }
-                    y = 610; limit = 736
+                    let signatureStart = CGFloat(610 + signatureOffset)
+                    let signatureHeight = try layout(table.rows[0], bold: true, halfPoints: chosenHalfPoints).1
+                    guard y + 8 <= signatureStart, signatureStart + signatureHeight <= bottom else { throw Failure.signaturePlacement }
+                    y = signatureStart; limit = bottom
                     try drawRow(table.rows[0], bold: true)
                     signatureEnd = y
                     expectingFooter = true

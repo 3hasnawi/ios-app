@@ -3,6 +3,11 @@ import UniformTypeIdentifiers
 
 /// حفظ الخيارات فقط؛ يجب ربطها بمواضع كل قالب قبل تفعيلها في الكتب.
 struct TransferLetterSettingsView: View {
+    let bookID: String?
+    init(bookID: String? = nil) {
+        self.bookID = bookID
+        _target = State(initialValue: bookID ?? "all")
+    }
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var storedData = Data()
     @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldData = Data()
     @AppStorage(TransferHeaderFont.regularSettingsKey) private var regularData = Data()
@@ -17,6 +22,7 @@ struct TransferLetterSettingsView: View {
     @State private var fixedNumber = ""
     @State private var foodContractReference = ""
     @State private var bodyTemplate = ""
+    @State private var signatureOffset = 0
     @State private var mixed = Set<String>()
     @State private var importing = false
     @State private var error: String?
@@ -36,6 +42,11 @@ struct TransferLetterSettingsView: View {
         ("rafidain_group", tr("مجموعة الرافدين", "Rafidain group")),
         ("other_banks_group", tr("مجموعة رشيد ومصارف أخرى", "Rasheed and other banks group"))
     ].map { Choice(id: $0.0, title: $0.1) } }
+    private var signatureOffsetLabel: String {
+        if signatureOffset == 0 { return tr("الموضع الافتراضي", "Default position") }
+        let distance = Num.format(abs(signatureOffset))
+        return signatureOffset < 0 ? tr("أعلى \(distance) نقطة", "Up \(distance) points") : tr("أسفل \(distance) نقطة", "Down \(distance) points")
+    }
     private var busy: Bool { importing || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting }
     private func field(_ key: String, _ title: String, text: Binding<String>, lines: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -59,9 +70,16 @@ struct TransferLetterSettingsView: View {
                 if importing { ProgressView() }
             } footer: { Text(tr("يملأ العدد والتواقيع والهامش من ملف الإعدادات الخاص، مع الاحتفاظ بتخصيصاتك السابقة. راجع العدد وأسماء اللجنة بعد الاستيراد.", "Fills the reference number, signatures and footer from the private settings file while preserving existing customizations. Review the reference number and committee names after import.")) }
             Section {
-                Picker(tr("تطبيق التغييرات على", "Apply changes to"), selection: $target) {
-                    Text(tr("جميع الكتب", "All letters")).tag("all")
-                    ForEach(titles) { item in Text(item.title).tag(item.id) }
+                if let bookID {
+                    Picker(tr("تطبيق التغييرات على", "Apply changes to"), selection: $target) {
+                        Text(tr("هذا الكتاب", "This letter")).tag(bookID)
+                        Text(tr("جميع الكتب", "All letters")).tag("all")
+                    }
+                    if let title = titles.first(where: { $0.id == bookID })?.title {
+                        LabeledContent(tr("الكتاب الحالي", "Current letter"), value: title)
+                    }
+                } else {
+                    LabeledContent(tr("تطبيق التغييرات على", "Apply changes to"), value: tr("جميع الكتب", "All letters"))
                 }
             } header: { Text(tr("نطاق التخصيص", "Customization scope")) } footer: { Text(tr("اختر الحقول التي تريد تعديلها فقط؛ تطبيق حقل على جميع الكتب يستبدل تخصيصه السابق في كل كتاب.", "Select only the fields to change. Applying a field to all letters replaces its previous individual overrides.")) }
             Section {
@@ -69,6 +87,27 @@ struct TransferLetterSettingsView: View {
                 field("first", tr("عضو اللجنة الأول", "First committee member"), text: $first)
                 field("second", tr("عضو اللجنة الثاني", "Second committee member"), text: $second)
                 field("third", tr("عضو اللجنة الثالث", "Third committee member"), text: $third)
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle(tr("موضع تواقيع اللجنة", "Committee signature position"), isOn: Binding(get: { selected.contains("signatureOffset") }, set: { if $0 { selected.insert("signatureOffset") } else { selected.remove("signatureOffset") } }))
+                    if selected.contains("signatureOffset") {
+                        HStack {
+                            Button(tr("رفع", "Move up"), systemImage: "arrow.up") { signatureOffset = max(-60, signatureOffset - 5) }
+                                .disabled(signatureOffset <= -60)
+                            Spacer()
+                            Text(signatureOffsetLabel)
+                                .font(.footnote).foregroundStyle(.secondary)
+                            Spacer()
+                            Button(tr("خفض", "Move down"), systemImage: "arrow.down") { signatureOffset = min(60, signatureOffset + 5) }
+                                .disabled(signatureOffset >= 60)
+                        }.buttonStyle(.borderless)
+                        if mixed.contains("signatureOffset") {
+                            Text(tr("تختلف مواضع اللجنة بين الكتب؛ اختر موضعاً موحداً أو عدّل الكتاب الحالي.", "Committee positions differ between letters; choose a shared position or edit the current letter."))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Text(tr("تتحرك التواقيع الثلاثة معاً. راجع المعاينة بعد الحفظ.", "All three signatures move together. Review the preview after saving."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }.padding(.vertical, 3)
                 field("footer", tr("الهامش السفلي", "Footer"), text: $footer, lines: true)
                 if target != "all" {
                     field("body", tr("متن الكتاب", "Letter body"), text: $bodyTemplate, lines: true)
@@ -87,7 +126,7 @@ struct TransferLetterSettingsView: View {
                     Button(tr("إزالة تخصيص هذا الكتاب", "Remove this letter's overrides"), role: .destructive) { removeIndividual() }
                         .disabled(busy)
                 }
-            } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("اختر كتاباً لتعديل متنه. تظهر القيم المشتركة عندما تتطابق في جميع الكتب.", "Choose a letter to edit its body. Shared values appear when they match across all letters.")) }
+            } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("لتعديل متن كتاب محدد، افتح التخصيص من داخل الكتاب. تظهر القيم المشتركة عندما تتطابق في جميع الكتب.", "To edit a letter body, open settings from that letter. Shared values appear when they match across all letters.")) }
             Section {
                 Button { importFont(.bold) } label: {
                     Label(boldData.isEmpty ? tr("استيراد الخط العريض", "Import bold font") : tr("استبدال الخط العريض", "Replace bold font"), systemImage: "textformat")
@@ -129,8 +168,13 @@ struct TransferLetterSettingsView: View {
             footer = value("footer", \.footer); fixedNumber = store.common.fixedNumber ?? ""
             foodContractReference = store.common.foodContractReference ?? ""
             bodyTemplate = target == "all" ? "" : (store.effective(for: target).bodyTemplate ?? TransferLetterBody.template(for: target) ?? "")
+            let offsets = target == "all" ? titles.map { store.effective(for: $0.id).signatureOffset ?? 0 } : [store.effective(for: target).signatureOffset ?? 0]
+            if let firstOffset = offsets.first, offsets.allSatisfy({ $0 == firstOffset }) {
+                guard (-60...60).contains(firstOffset) else { throw TransferWordGroupDraft.Failure.incomplete }
+                signatureOffset = firstOffset
+            } else { signatureOffset = 0; mixed.insert("signatureOffset") }
         } catch {
-            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""; bodyTemplate = ""; mixed.removeAll()
+            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""; bodyTemplate = ""; signatureOffset = 0; mixed.removeAll()
             self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.")
         }
     }
@@ -154,7 +198,8 @@ struct TransferLetterSettingsView: View {
             committeeThird: selected.contains("third") ? third : nil, footer: selected.contains("footer") ? footer : nil,
             fixedNumber: selected.contains("fixedNumber") ? fixedNumber : nil,
             foodContractReference: selected.contains("foodContractReference") ? foodContractReference : nil,
-            bodyTemplate: selected.contains("body") ? bodyTemplate : nil)
+            bodyTemplate: selected.contains("body") ? bodyTemplate : nil,
+            signatureOffset: selected.contains("signatureOffset") ? signatureOffset : nil)
         do {
             var store = try readStore()
             if target == "all" { store.applyToAll(changes) } else { store.apply(changes, to: target) }

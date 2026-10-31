@@ -39,7 +39,7 @@ nonisolated enum TransferWordEntityDraft {
         if plan.table != nil { blocks.append(.paragraph(try TransferWordTables.attachment(for: plan.table))) }
         blocks.append(.table(signatures))
         blocks.append(.paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)))
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false) }
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false, signatureOffset: text.signatureOffset) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }

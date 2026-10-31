@@ -66,6 +66,7 @@ struct TransferLetterDraftView: View {
     @State private var anbarAuditPassed = false
     @State private var cashAuditPassed = false
     @State private var showPreview = false
+    @State private var wordCustomizationSnapshot = Data()
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
     @State private var wordCSVText: String?
@@ -80,10 +81,11 @@ struct TransferLetterDraftView: View {
     private var current: Bool {
         let record = months.first { $0.name == month }
         return record != nil && figures.month == month && currentAccounts == sourceAccounts && currentCategories == sourceCategories &&
-            currentLinks == sourceLinks && currentCustomization == sourceCustomization && currentReferences == references &&
+            currentLinks == sourceLinks && currentReferences == references &&
             currentPayerName == payerName && currentPayerIBAN == payerIBAN && currentBoldFont == boldFont && currentRegularFont == regularFont &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
+    private var wordIsCurrent: Bool { current && currentCustomization == wordCustomizationSnapshot }
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
     private var preparedFigures: TransferLetterFigures {
         var result = figures
@@ -93,7 +95,7 @@ struct TransferLetterDraftView: View {
 
     private var revision: TransferDraftRevision {
         TransferDraftRevision(sourceKey: sourceKey, accounts: sourceAccounts, categories: sourceCategories,
-            payrollLinks: sourceLinks, customization: sourceCustomization, references: references,
+            payrollLinks: sourceLinks, customization: currentCustomization, references: references,
             payerName: payerName, payerIBAN: payerIBAN, boldFont: boldFont, regularFont: regularFont)
     }
     var body: some View {
@@ -121,7 +123,7 @@ struct TransferLetterDraftView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView()
+                    TransferLetterSettingsView(bookID: kind.rawValue)
                 } label: {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
                 }
@@ -243,7 +245,7 @@ struct TransferLetterDraftView: View {
                                 .font(.footnote).foregroundStyle(.orange).padding(8)
                         }
                         if let countNotice { Text(countNotice).font(.footnote).foregroundStyle(.orange).padding(8) }
-                        if !current { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
+                        if !wordIsCurrent { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         if let wordCSVError { Text(wordCSVError).font(.footnote).foregroundStyle(.orange).padding(8) }
                         PDFPreview(url: wordResult.letter)
                     }
@@ -254,21 +256,21 @@ struct TransferLetterDraftView: View {
                         if kind == .contracts && draftUsedNominalReview {
                             ToolbarItem(placement: .primaryAction) {
                                 Button(tr("مشاركة الكتاب", "Share letter"), systemImage: "square.and.arrow.up") {
-                                    guard current else { return }
+                                    guard wordIsCurrent else { return }
                                     ActivityShare.present([wordResult.letter])
-                                }.disabled(!current)
+                                }.disabled(!wordIsCurrent)
                             }
                         }
                         if wordResult.csv != nil {
                             ToolbarItem(placement: .primaryAction) {
-                                Button(tr("معاينة CSV", "Preview CSV")) { prepareWordCSV() }.disabled(!current)
+                                Button(tr("معاينة CSV", "Preview CSV")) { prepareWordCSV() }.disabled(!wordIsCurrent)
                             }
                         }
                     }
                     .sheet(isPresented: $showWordCSV) {
                         NavigationStack {
                             Group {
-                                if current, let wordCSVText {
+                                if wordIsCurrent, let wordCSVText {
                                     ScrollView([.horizontal, .vertical]) {
                                         Text(wordCSVText).font(.system(.caption, design: .monospaced)).fixedSize(horizontal: true, vertical: false).padding().privacySensitive()
                                     }.environment(\.layoutDirection, .leftToRight)
@@ -288,7 +290,7 @@ struct TransferLetterDraftView: View {
         .onDisappear { generation?.cancel() }
     }
     private func prepareWordCSV() {
-        guard current, let url = wordResult?.csv else { return }
+        guard wordIsCurrent, let url = wordResult?.csv else { return }
         wordCSVError = nil
         Task {
             do {
@@ -299,7 +301,7 @@ struct TransferLetterDraftView: View {
                     guard data.count <= 1_000_000, let text = String(data: data, encoding: .utf8) else { throw TransferWordDraftGenerator.Failure.changed }
                     return text
                 }.value
-                guard current, wordResult?.csv == url else { return }
+                guard wordIsCurrent, wordResult?.csv == url else { return }
                 wordCSVText = value; showWordCSV = true
             } catch { wordCSVError = error.localizedDescription }
         }
@@ -362,8 +364,9 @@ struct TransferLetterDraftView: View {
         guard current, !working else { return }
         let customization: TransferLetterCustomization
         let referenceHashes: [String: String]?
+        let customizationSnapshot = currentCustomization
         do {
-            let store = try (sourceCustomization.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: sourceCustomization))
+            let store = try (customizationSnapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: customizationSnapshot))
             customization = store.effective(for: kind.rawValue)
             referenceHashes = store.wordReferenceHashes
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
@@ -423,7 +426,7 @@ struct TransferLetterDraftView: View {
                         customization: customization, sakkalBold: snapshotBoldFont.isEmpty ? nil : snapshotBoldFont, adaptivePDF: true)
                 }
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-                guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return }
+                guard !Task.isCancelled, current, currentCustomization == customizationSnapshot else { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return }
                 if let previousNameSnapshot, let previousRevisionSnapshot,
                    months.first(where: { $0.name == previousNameSnapshot })?.importedAt != previousRevisionSnapshot {
                     try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent())
@@ -437,6 +440,7 @@ struct TransferLetterDraftView: View {
                     if let entity { coverage.record(revision: revision, entityIDs: [entity.id], bookID: kind.rawValue) }
                 default: break
                 }
+                wordCustomizationSnapshot = customizationSnapshot
                 draftUsedNominalReview = snapshotFigures.contractNominalReviewed
                 wordResult = result; generation = nil; showWordPreview = true
             } catch is CancellationError { return }
@@ -446,8 +450,9 @@ struct TransferLetterDraftView: View {
     private func prepare() {
         guard current, !working else { return }
         let customization: TransferLetterCustomization
+        let customizationSnapshot = currentCustomization
         do {
-            let store = try (sourceCustomization.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: sourceCustomization))
+            let store = try (customizationSnapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: customizationSnapshot))
             customization = store.effective(for: kind.rawValue)
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
@@ -535,7 +540,7 @@ struct TransferLetterDraftView: View {
                         }
                     }
                 }
-                guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
+                guard !Task.isCancelled, current, currentCustomization == customizationSnapshot else { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()); return }
                 switch kind {
                 case .rafidain, .otherBanks:
                     let category: TransferCategory = kind == .rafidain ? .rafidain : .otherBanks

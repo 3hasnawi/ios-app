@@ -180,6 +180,13 @@ import CryptoKit
         let fixedRoles = TransferWordGroupDraft.signatureCells(letterText.committee, date: "2026 / 10 /", adaptivePDF: true)
         try check(fixedRoles.count == 3 && fixedRoles[0].contains("معاون مدير تدقيق") &&
                   fixedRoles[1].contains("مدير الحسابات") && fixedRoles[2].contains("قائد شرطة محافظة الأنبار"), "Adaptive PDF signature roles")
+        var badPosition = custom
+        badPosition.signatureOffset = 61
+        do {
+            _ = try TransferWordGroupDraft.letterText(from: badPosition)
+            throw Failure(errorDescription: "out-of-range signature position accepted")
+        } catch is Failure { throw Failure(errorDescription: "out-of-range signature position accepted") }
+        catch { }
         let cash = TransferCashList(month: month, employees: [.init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)])
         func content(_ url: URL) throws -> String {
             let zip = try Archive(url: url, accessMode: .read)
@@ -340,6 +347,13 @@ import CryptoKit
             try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF entity \(id)")
             generated += 1
         }
+        var adjusted = custom
+        adjusted.signatureOffset = 15
+        let adjustedPDF = try TransferWordDraftGenerator.make(bookID: "tax_social", figures: figures, entities: [], entity: nil,
+            individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+            payerIBAN: payer, customization: adjusted, sakkalBold: syntheticFont, adaptivePDF: true)
+        defer { try? FileManager.default.removeItem(at: adjustedPDF.letter.deletingLastPathComponent()) }
+        try check(PDFDocument(url: adjustedPDF.letter)?.pageCount == 1, "adjusted committee PDF")
         try check(generated == 11, "Word draft count")
         phase = "adaptive-long-text"
         let longPDF = documents.appendingPathComponent("adaptive-long-test-\(UUID().uuidString).pdf")
@@ -351,7 +365,7 @@ import CryptoKit
             .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: 2026 / 10 /", font: "Sakkal Majalla", halfPoints: 36, bold: true)),
             .paragraph(.init(text: "إلى / جهة وهمية")),
             .paragraph(.init(text: "م / اختبار", centered: true)),
-            .paragraph(.init(text: longBody)), .table(fixedSignatures),
+            .paragraph(.init(text: longBody)), .pageBreak, .table(fixedSignatures),
             .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
         ], destination: longPDF, sakkalBold: syntheticFont, group: false)
         try check((PDFDocument(url: longPDF)?.pageCount ?? 0) > 1, "Adaptive PDF long text pagination")
