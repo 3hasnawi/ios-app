@@ -15,6 +15,7 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
     var beneficiary: String? = nil
     /// اختيارية حتى تبقى الإقرارات المحفوظة قبل إضافة فحص الأسماء قابلة للقراءة.
     var detailHash: String? = nil
+    var sourceIdentity: String? = nil
 
     init(_ entity: TransferEntity) {
         id = entity.id
@@ -27,6 +28,7 @@ nonisolated struct TransferIssuedLine: Codable, Equatable, Identifiable {
         category = entity.category.rawValue
         localAccount = entity.account?.localAccount
         beneficiary = entity.beneficiaryName
+        sourceIdentity = entity.payrollRecipient.map { "payroll|" + $0 } ?? "deduction|" + entity.group.title
     }
 
     init(payrollID: String, title: String, month: String, amount: Double) {
@@ -44,6 +46,12 @@ nonisolated struct TransferIssuedRecord: Codable, Identifiable {
     let book: String
     let confirmedAt: Date
     let lines: [TransferIssuedLine]
+    /// تُترك فارغة للإقرارات اليدوية القديمة.
+    var groupCategory: String? = nil
+    var note: String? = nil
+    var payerName: String? = nil
+    var payerIBAN: String? = nil
+    var groupChanges: [String]? = nil
 }
 
 nonisolated enum TransferIssuance {
@@ -54,10 +62,19 @@ nonisolated enum TransferIssuance {
         if data.isEmpty { return Ledger() }
         let ledger = try JSONDecoder().decode(Ledger.self, from: data)
         guard ledger.version == 1, Set(ledger.records.map(\.id)).count == ledger.records.count,
-              ledger.records.allSatisfy({ !$0.month.isEmpty && !$0.book.isEmpty && !$0.lines.isEmpty &&
-                  Set($0.lines.map(\.id)).count == $0.lines.count &&
-                  $0.lines.allSatisfy { !$0.id.isEmpty && $0.amount.isFinite && $0.amount > 0 } }) else { throw Failure.invalid }
+              ledger.records.allSatisfy(validRecord) else { throw Failure.invalid }
         return ledger
+    }
+    private static func validRecord(_ record: TransferIssuedRecord) -> Bool {
+        guard !record.month.isEmpty, !record.book.isEmpty, !record.lines.isEmpty,
+              Set(record.lines.map(\.id)).count == record.lines.count,
+              record.lines.allSatisfy({ !$0.id.isEmpty && $0.amount.isFinite && $0.amount > 0 }),
+              (record.note?.count ?? 0) <= 2000, (record.groupChanges?.count ?? 0) <= 10000,
+              record.groupChanges?.allSatisfy({ $0.count <= 2000 }) ?? true else { return false }
+        guard let category = record.groupCategory else { return true }
+        guard category == TransferCategory.rafidain.rawValue || category == TransferCategory.otherBanks.rawValue else { return false }
+        return Set(record.lines.compactMap(\.sourceIdentity)).count == record.lines.count &&
+            record.lines.allSatisfy { !($0.sourceIdentity ?? "").isEmpty }
     }
     /// الأسماء هي نفسها عناوين مجموعات وكتب التحويل المعروضة للمستخدم.
     static var bookNames: [String] {
@@ -87,15 +104,29 @@ nonisolated enum TransferIssuance {
             return TransferIssuedLine(payrollID: id, title: title, month: figures.month, amount: amount)
         }
     }
+    /// آخر تأكيد لكل مجموعة هو المعتمد، مع إبقاء الإصدارات السابقة في السجل.
+    static func activeRecords(_ records: [TransferIssuedRecord], month: String) -> [TransferIssuedRecord] {
+        let relevant = records.filter { $0.month == month }
+        var latest: [String: TransferIssuedRecord] = [:]
+        for record in relevant {
+            guard let category = record.groupCategory else { continue }
+            if let previous = latest[category], previous.confirmedAt > record.confirmedAt { continue }
+            latest[category] = record
+        }
+        return relevant.filter { record in
+            guard let category = record.groupCategory else { return true }
+            return latest[category]?.id == record.id
+        }
+    }
     static func audit(current: [TransferIssuedLine], records: [TransferIssuedRecord], month: String) -> Audit {
-        let recorded = records.filter { $0.month == month }.flatMap(\.lines)
+        let recorded = activeRecords(records, month: month).flatMap(\.lines)
         let byCurrent = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let byRecorded = Dictionary(grouping: recorded, by: \.id)
         return Audit(
             missing: current.filter { byRecorded[$0.id] == nil },
             changed: current.filter { line in byRecorded[line.id]?.contains(where: { old in
-                var previous = old; previous.detailHash = nil
-                var now = line; now.detailHash = nil
+                var previous = old; previous.detailHash = nil; previous.sourceIdentity = nil
+                var now = line; now.detailHash = nil; now.sourceIdentity = nil
                 return previous != now || (old.detailHash != nil && line.detailHash != nil && old.detailHash != line.detailHash)
             }) == true },
             absent: recorded.filter { byCurrent[$0.id] == nil },
@@ -146,7 +177,7 @@ struct TransferIssuanceView: View {
     }
     private var hasOlderConfirmationsWithoutNames: Bool {
         guard let ledger else { return false }
-        return ledger.records.filter { $0.month == month }.flatMap(\.lines)
+        return TransferIssuance.activeRecords(ledger.records, month: month).flatMap(\.lines)
             .contains { $0.detailHash == nil && nameListIDs.contains($0.id) }
     }
     private func fetchDetails(_ ids: Set<String>) async throws -> [String: String] {
@@ -160,7 +191,7 @@ struct TransferIssuanceView: View {
     }
     private func refreshDetails() async {
         guard current, let ledger else { return }
-        let ids = Set(ledger.records.filter { $0.month == month }.flatMap(\.lines)
+        let ids = Set(TransferIssuance.activeRecords(ledger.records, month: month).flatMap(\.lines)
             .filter { $0.detailHash != nil }.map(\.id)).intersection(nameListIDs)
         detailsChecked = false; checkedHashes = [:]; detailError = nil
         guard !ids.isEmpty else { detailsChecked = true; return }
@@ -263,6 +294,7 @@ struct TransferIssuanceView: View {
                                 Text(tr("\(Num.format(record.lines.count)) مصدر", "\(record.lines.count) items"))
                                     .font(.caption).foregroundStyle(.secondary)
                                 Text(record.confirmedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                                if let note = record.note, !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary) }
                                 Button(tr("إلغاء التأكيد", "Retract confirmation"), role: .destructive) { retract = record }
                             }
                         }

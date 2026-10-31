@@ -253,6 +253,36 @@ import CryptoKit
         try check(changedAudit.changed.count == 1 && changedAudit.repeated.count == 1, "changed and duplicate confirmations")
         try check(TransferIssuance.audit(current: [], records: [issuedRecord], month: group.month).absent.count == 1, "removed confirmed entity")
         try check(TransferIssuance.audit(current: [issuedLine], records: [issuedRecord], month: "شهر آخر").missing.count == 1, "confirmation month isolation")
+        var legacyLine = issuedLine; legacyLine.sourceIdentity = nil
+        let legacyRecord = TransferIssuedRecord(id: UUID(), month: group.month, book: "قديم وهمي", confirmedAt: .now, lines: [legacyLine])
+        try check(TransferIssuance.audit(current: [issuedLine], records: [legacyRecord], month: group.month).changed.isEmpty, "legacy records do not report identity metadata as a change")
+        let extraGroup = ReportGroup(kind: .deductions, month: group.month, title: "جهة جديدة وهمية", count: 1, total: 700, byEntity: false)
+        let extraLine = TransferIssuedLine(TransferEntity(group: extraGroup, account: account, category: .rafidain, missingAmounts: 0))
+        var changedWithNames = changedLine; changedWithNames.detailHash = try TransferIssuedDetails.fingerprint(namesB)
+        let groupChanges = try TransferGroupIssuance.differences(old: [namedLine], current: [changedWithNames, extraLine])
+        try check(groupChanges.count == 2 && groupChanges.contains { $0.id.hasPrefix("new|") } && groupChanges.contains { $0.details.count >= 2 }, "group additions, amounts, and name changes")
+        let followingGroup = ReportGroup(kind: .deductions, month: "تشرين الثاني 2026", title: group.title, count: 1, total: group.total, byEntity: false)
+        var followingLine = TransferIssuedLine(TransferEntity(group: followingGroup, account: account, category: .rafidain, missingAmounts: 0))
+        followingLine.detailHash = hashA
+        try check(try TransferGroupIssuance.differences(old: [namedLine], current: [followingLine]).isEmpty, "cross-month identity remains stable")
+        let removedChanges = try TransferGroupIssuance.differences(old: [namedLine, extraLine], current: [namedLine])
+        try check(removedChanges.count == 1 && removedChanges[0].id.hasPrefix("missing|"), "removed group entity")
+        do {
+            _ = try TransferGroupIssuance.differences(old: [namedLine, namedLine], current: [namedLine])
+            throw Failure(errorDescription: "ambiguous group identity accepted")
+        } catch is Failure { throw Failure(errorDescription: "ambiguous group identity accepted") }
+        catch { }
+        let groupOld = TransferIssuedRecord(id: UUID(), month: group.month, book: "مجموعة وهمية", confirmedAt: Date(timeIntervalSince1970: 10), lines: [namedLine], groupCategory: TransferCategory.rafidain.rawValue)
+        let groupNew = TransferIssuedRecord(id: UUID(), month: group.month, book: "مجموعة وهمية", confirmedAt: Date(timeIntervalSince1970: 20), lines: [changedWithNames, extraLine], groupCategory: TransferCategory.rafidain.rawValue, note: "مراجعة وهمية", groupChanges: ["تغير وهمي"])
+        let activeGroups = TransferIssuance.activeRecords([groupOld, groupNew], month: group.month)
+        try check(activeGroups.count == 1 && activeGroups[0].id == groupNew.id, "latest group confirmation supersedes earlier snapshot")
+        let activeAudit = TransferIssuance.audit(current: [changedWithNames, extraLine], records: [groupOld, groupNew], month: group.month)
+        try check(activeAudit.changed.isEmpty && activeAudit.missing.isEmpty && activeAudit.repeated.isEmpty, "group reconfirmation does not create duplicates")
+        let groupLedger = try TransferIssuance.decode(JSONEncoder().encode(TransferIssuance.Ledger(records: [groupOld, groupNew])))
+        try check(groupLedger.records.last?.note == "مراجعة وهمية" && groupLedger.records.last?.groupChanges == ["تغير وهمي"], "group notes and changes survive backup encoding")
+        try check(TransferGroupIssuance.latest(records: groupLedger.records, category: .rafidain, month: group.month)?.id == groupNew.id, "latest same-month group record")
+        let nextGroupMonth = "تشرين الثاني 2026"
+        try check(TransferGroupIssuance.previous(records: groupLedger.records, category: .rafidain, month: nextGroupMonth)?.id == groupNew.id, "previous month comparison")
         do { _ = try TransferIssuance.decode(Data("invalid".utf8)); throw Failure(errorDescription: "invalid issuance ledger accepted") }
         catch is Failure { throw Failure(errorDescription: "invalid issuance ledger accepted") }
         catch { }

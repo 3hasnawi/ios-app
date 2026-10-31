@@ -568,6 +568,10 @@ private struct TransferCategoryView: View {
                 }
             }
             if category == .rafidain || category == .otherBanks {
+                TransferGroupIssuanceSection(category: category, month: month, entities: entities,
+                    sourceKey: sourceKey, sourceRevision: sourceRevision, accounts: currentAccounts,
+                    categories: currentCategories, accountLinks: currentPayrollLinks,
+                    payerName: payerName, payerIBAN: payerIBAN, canConfirm: canExport)
                 groupBook
                 Section {
                     Button(tr("تصدير ملف التحويل CSV", "Export transfer CSV"), systemImage: "square.and.arrow.up") { export() }
