@@ -142,4 +142,22 @@ public partial class ReconciliationWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportButton.IsEnabled = true; }
     }
+    private async void ExportPdf(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } period) return;
+        var revision = state.Revision;
+        var dialog = new SaveFileDialog { Title = "حفظ مسودة كشف المطابقة", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة مطابقة الحساب.pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
+        if (dialog.ShowDialog(this) != true) return;
+        ExportPdfButton.IsEnabled = false;
+        try
+        {
+            var font = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
+            await Task.Run(() => ReconciliationPdf.SaveDraft(period, font, dialog.FileName));
+            var changed = state.Revision != revision || Current?.Id != period.Id;
+            MessageBox.Show(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
+        { MessageBox.Show(this, "تعذّر إعداد مسودة الكشف.\n" + ex.Message, "كشف المطابقة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { ExportPdfButton.IsEnabled = true; }
+    }
 }
