@@ -115,6 +115,11 @@ final class ImportCenter {
 
     func pick() { pick(types: Self.fileTypes, multiple: true) }
 
+    /// اختيار ملفات الحسابات من شاشة التحويل مع إبقاء فحص الملف ومراجعته المعتادين.
+    func pickAccounts() {
+        pick(types: [UTType(filenameExtension: "xlsx") ?? .spreadsheet, .commaSeparatedText], multiple: false)
+    }
+
     /// إعادة استيراد الملاك من ملف Access فقط، حتى لا يُختار كشف رواتب بالخطأ.
     func pickStaff() { pick(types: accessFileTypes, multiple: false) }
 

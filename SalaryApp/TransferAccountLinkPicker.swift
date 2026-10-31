@@ -46,7 +46,7 @@ struct TransferAccountLinkPicker: View {
             } header: { Text(tr("الحسابات المحفوظة", "Saved accounts")) }
             Section {
                 Button(entity.payrollRecipient == nil ? tr("إزالة الربط واستخدام الاسم المطابق", "Remove link and match by name") : tr("إزالة ربط الحساب", "Remove account link")) { unlink = true }
-            } footer: { Text(tr("بعد الربط تعود إلى ملفات التحويل لمراجعة التصنيف والمبالغ. لا ينشئ الربط تحويلاً.", "After linking, return to transfer files to review classification and amounts. Linking does not create a transfer.")) }
+            } footer: { Text(tr("بعد الربط تظهر الجهة في المجموعة حسب مصرف حسابها. راجع المبلغ والبيانات؛ لا ينشئ الربط تحويلاً.", "After linking, the entity appears in the group for its account's bank. Review its amount and details; linking does not create a transfer.")) }
         }
         .adaptiveSearchable(text: $query, prompt: tr("ابحث عن الجهة أو المصرف أو IBAN", "Search entity, bank or IBAN"))
         .navigationTitle(tr("ربط حساب الجهة", "Link beneficiary account"))

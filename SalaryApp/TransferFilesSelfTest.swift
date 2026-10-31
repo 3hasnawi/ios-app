@@ -154,6 +154,15 @@ import CryptoKit
         try check(try JSONDecoder().decode(BackupFormat.AccountRecord.self, from: JSONEncoder().encode(backupAccount)).localAccount == localOnly.localAccount, "local account backup roundtrip")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
+        let misplacedAnbar = TransferEntity(group: group, account: anbar, category: .rafidain, missingAmounts: 0)
+        let misplacedRasheed = TransferEntity(group: group, account: other, category: .rafidain, missingAmounts: 0)
+        try check(!TransferRules.issues(misplacedAnbar).isEmpty && !TransferRules.issues(misplacedRasheed).isEmpty,
+                  "account bank must match transfer group")
+        do {
+            _ = try TransferRules.csv([misplacedAnbar], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
+            throw Failure(errorDescription: "Anbar branch accepted in grouped CSV")
+        } catch is Failure { throw Failure(errorDescription: "Anbar branch accepted in grouped CSV") }
+        catch { }
         let bankTitle = "مصرف الرافدين/فرع الانبار"
         let bankGroup = ReportGroup(kind: .deductions, month: group.month, title: bankTitle, count: 1, total: 1200, byEntity: false)
         let directBank = TransferEntity(group: bankGroup, account: nil, category: .anbar, missingAmounts: 0)
