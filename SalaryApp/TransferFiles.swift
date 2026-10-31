@@ -610,39 +610,18 @@ private struct TransferCategoryView: View {
                     }
                 } footer: { Text(tr("اختر ملف الحسابات الصحيح، ثم راجع نتيجة فحصه قبل الاستيراد.", "Choose the correct accounts file and review it before import.")) }
             }
-            Section(tr("الجهات", "Entities")) {
-                if entities.isEmpty { Text(tr("لا توجد جهات في هذه المجموعة.", "No entities in this group.")).foregroundStyle(.secondary) }
-                ForEach(entities) { entity in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(entity.group.title).font(.headline)
-                        Text(Money.format(entity.group.total)).font(.subheadline.weight(.semibold)).monospacedDigit()
-                        if let account = entity.account {
-                            if entity.payrollRecipient == nil && ArabicText.normalize(account.entity) != ArabicText.normalize(entity.group.title) {
-                                Text(tr("الحساب المرتبط: \(account.entity)", "Linked account: \(account.entity)")).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Text(account.branch).font(.caption).foregroundStyle(.secondary)
-                            if !account.iban.isEmpty { Text(account.iban).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
-                            if let local = account.localAccount { Text(tr("حساب محلي: \(local)", "Local account: \(local)")).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
-                            if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
-                            Menu {
-                                ForEach([TransferCategory.rafidain, .otherBanks, .anbar]) { option in
-                                    Button(option.title) { chooseCategory(option, for: entity) }
-                                }
-                            } label: { Label(tr("تحديد مجموعة التحويل", "Set transfer category"), systemImage: "arrow.triangle.branch").font(.caption) }
-                            .disabled(!sourceIsCurrent || !linksValidHere || !categoriesValidHere)
-                        } else if entity.isDirectAnbarBank {
-                            Text(tr("يُدرج في كتاب الرافدين فرع الأنبار؛ لا يحتاج ملف CSV.", "Included in the Rafidain Anbar letter; no CSV is needed.")).font(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text(tr("لم يُعثر على الحساب؛ اربط جهة الاستقطاع بحساب محفوظ أو استورد حسابها.", "No account found; link this deduction entity to a saved account or import it.")).font(.caption).foregroundStyle(.orange)
-                        }
-                        if !entity.isDirectAnbarBank {
-                            Button(tr("ربط حساب الجهة", "Link beneficiary account"), systemImage: "link") { beginLink(entity) }
-                                .disabled(!sourceIsCurrent || !linksValidHere || !categoriesValidHere)
-                        }
-                        ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.caption).foregroundStyle(.orange) }
-                    }.padding(.vertical, 6)
+            Section {
+                NavigationLink {
+                    entityList
+                } label: {
+                    HStack {
+                        Label(tr("الجهات", "Entities"), systemImage: "building.2")
+                        Spacer()
+                        Text(Num.format(entities.count)).foregroundStyle(.secondary)
+                    }
                 }
             }
+
         }
         .navigationTitle(category.title).navigationBarTitleDisplayMode(.inline)
         .sheet(item: $linkEntity) { entity in
@@ -661,6 +640,72 @@ private struct TransferCategoryView: View {
         .alert(tr("تعذّرت العملية", "Operation failed"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+    private var entityList: some View {
+        List {
+            Section {
+                if entities.isEmpty {
+                    Text(tr("لا توجد جهات في هذه المجموعة.", "No entities in this group.")).foregroundStyle(.secondary)
+                }
+                ForEach(entities) { entity in
+                    DisclosureGroup {
+                        entityDetails(entity)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entity.group.title).font(.subheadline.weight(.semibold))
+                            HStack {
+                                Text(Money.format(entity.group.total)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                                Spacer(minLength: 8)
+                                if let account = entity.account {
+                                    Text(account.branch).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            if !TransferRules.issues(entity).isEmpty {
+                                Label(tr("تحتاج مراجعة", "Needs review"), systemImage: "exclamationmark.triangle")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
+                        }.padding(.vertical, 2)
+                    }
+                }
+            } header: {
+                Text(tr("\(Num.format(entities.count)) جهة · \(month)", "\(Num.format(entities.count)) entities · \(month)"))
+            } footer: {
+                Text(tr("اضغط على الجهة لعرض الحساب والتصنيف والربط.", "Open an entity to view its account, category and link."))
+            }
+        }
+        .navigationTitle(tr("الجهات", "Entities"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    @ViewBuilder private func entityDetails(_ entity: TransferEntity) -> some View {
+        if let account = entity.account {
+            if entity.payrollRecipient == nil && ArabicText.normalize(account.entity) != ArabicText.normalize(entity.group.title) {
+                Text(tr("الحساب المرتبط: \(account.entity)", "Linked account: \(account.entity)"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Text(account.branch).font(.caption).foregroundStyle(.secondary)
+            if !account.iban.isEmpty { Text(account.iban).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
+            if let local = account.localAccount { Text(tr("حساب محلي: \(local)", "Local account: \(local)")).font(.caption.monospaced()).foregroundStyle(.secondary).privacySensitive() }
+            if !account.swift.isEmpty { Text("SWIFT: \(account.swift)").font(.caption).foregroundStyle(.secondary) }
+            Menu {
+                ForEach([TransferCategory.rafidain, .otherBanks, .anbar]) { option in
+                    Button(option.title) { chooseCategory(option, for: entity) }
+                }
+            } label: { Label(tr("تحديد مجموعة التحويل", "Set transfer category"), systemImage: "arrow.triangle.branch") }
+            .disabled(!sourceIsCurrent || !linksValidHere || !categoriesValidHere)
+        } else if entity.isDirectAnbarBank {
+            Text(tr("يُدرج في كتاب الرافدين فرع الأنبار؛ لا يحتاج ملف CSV.", "Included in the Rafidain Anbar letter; no CSV is needed."))
+                .font(.caption).foregroundStyle(.secondary)
+        } else {
+            Text(tr("لم يُعثر على الحساب؛ اربط جهة الاستقطاع بحساب محفوظ أو استورد حسابها.", "No account found; link this deduction entity to a saved account or import it."))
+                .font(.caption).foregroundStyle(.orange)
+        }
+        if !entity.isDirectAnbarBank {
+            Button(tr("ربط حساب الجهة", "Link beneficiary account"), systemImage: "link") { beginLink(entity) }
+                .disabled(!sourceIsCurrent || !linksValidHere || !categoriesValidHere)
+        }
+        ForEach(TransferRules.issues(entity), id: \.self) { issue in
+            Text(issue).font(.caption).foregroundStyle(.orange)
+        }
     }
     private func chooseCategory(_ category: TransferCategory, for entity: TransferEntity) {
         guard sourceIsCurrent, linksValidHere, categoriesValidHere,
