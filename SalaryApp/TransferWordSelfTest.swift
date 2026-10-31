@@ -297,6 +297,14 @@ import CryptoKit
             let plan = try TransferIndividualPlan(kind: kind, group: group, rows: [row], missingAmounts: 0)
             let account: SavedExecutionAccount? = id == "rafidain_anbar" ? nil : SavedExecutionAccount(entity: title, iban: beneficiary, branch: "مصرف وهمي / فرع وهمي", swift: "TESTIQBAAAA")
             let entity = TransferEntity(group: group, account: account, category: id == "rafidain_anbar" ? .anbar : .otherBanks, missingAmounts: 0)
+            if id == "ramadi" || id == "rafidain_anbar" {
+                let matched = try TransferLetterEntityLinks.uniqueReferenceMatch(bookID: id, candidates: [entity],
+                    references: references, payerIBAN: payer, accountLinks: Data())
+                try check(matched?.id == entity.id, "unique letter reference beneficiary \(id)")
+                let ambiguous = try TransferLetterEntityLinks.uniqueReferenceMatch(bookID: id, candidates: [entity, entity],
+                    references: references, payerIBAN: payer, accountLinks: Data())
+                try check(ambiguous == nil, "ambiguous reference beneficiary \(id)")
+            }
             let result = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [entity], entity: entity,
                 individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
                 payerIBAN: payer, customization: custom)

@@ -44,8 +44,7 @@ nonisolated enum TransferWordReferenceAccounts {
         return try beneficiary(in: text, payerIBAN: payerIBAN)
     }
     /// تُقرأ حسابات الكتابين المحليين من مواضع محددة في المرجع المعتمد وتُطابق الحساب المحفوظ.
-    static func verifyIndividual(bookID: String, references: Data, payerIBAN: String,
-                                 beneficiary: String?) throws {
+    static func individualBeneficiary(bookID: String, references: Data, payerIBAN: String) throws -> String? {
         let payerRect: CGRect
         let beneficiaryRect: CGRect?
         switch bookID {
@@ -79,9 +78,17 @@ nonisolated enum TransferWordReferenceAccounts {
             ArabicText.latinDigits(value).uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
         }
         guard alphanumeric(selected(payerRect)) == alphanumeric(payerIBAN) else { throw Failure.mismatch }
-        if let beneficiaryRect {
+        guard let beneficiaryRect else { return nil }
+        let beneficiary = alphanumeric(selected(beneficiaryRect))
+        guard !beneficiary.isEmpty else { throw Failure.mismatch }
+        return beneficiary
+    }
+    static func verifyIndividual(bookID: String, references: Data, payerIBAN: String,
+                                 beneficiary: String?) throws {
+        let expected = try individualBeneficiary(bookID: bookID, references: references, payerIBAN: payerIBAN)
+        if let expected {
             guard let beneficiary, !beneficiary.isEmpty,
-                  alphanumeric(selected(beneficiaryRect)) == alphanumeric(beneficiary) else { throw Failure.mismatch }
+                  expected == ArabicText.latinDigits(beneficiary).uppercased().filter({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { throw Failure.mismatch }
         }
     }
     static func verifyGroup(bookID: String, references: Data, payerIBAN: String) throws {

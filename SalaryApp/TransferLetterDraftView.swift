@@ -46,11 +46,14 @@ struct TransferLetterDraftView: View {
     @AppStorage("transferPayrollAccountLinks") private var currentLinks = Data()
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var currentCustomization = Data()
     @AppStorage(TransferReferencePack.settingsKey) private var currentReferences = Data()
+    @AppStorage(TransferLetterEntityLinks.settingsKey) private var savedEntityLinks = Data()
     @AppStorage("bankStatementAccountName") private var currentPayerName = ""
     @AppStorage("bankStatementIBAN") private var currentPayerIBAN = ""
     @AppStorage(TransferHeaderFont.boldSettingsKey) private var currentBoldFont = Data()
     @AppStorage(TransferHeaderFont.regularSettingsKey) private var currentRegularFont = Data()
     @State private var selectedID = ""
+    @State private var selectingEntity = false
+    @State private var selectionNotice: String?
     @State private var working = false
     @State private var error: String?
     @State private var previewURL: URL?
@@ -91,10 +94,13 @@ struct TransferLetterDraftView: View {
                 LabeledContent(tr("الكتاب", "Letter"), value: kind.title)
                 LabeledContent(tr("الشهر", "Month"), value: month)
                 if kind.requiresEntity {
-                    Picker(tr("جهة الاستقطاع", "Deduction entity"), selection: $selectedID) {
+                    Picker(tr("جهة الاستقطاع", "Deduction entity"), selection: Binding(get: { selectedID }, set: { selectEntity($0) })) {
                         Text(tr("اختر الجهة", "Choose entity")).tag("")
                         ForEach(candidates) { entity in Text(entity.group.title).tag(entity.id) }
                     }
+                    .disabled(selectingEntity || working || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
+                    if selectingEntity { ProgressView(tr("التحقق من الجهة", "Checking beneficiary")) }
+                    if let selectionNotice { Text(selectionNotice).font(.footnote).foregroundStyle(.orange) }
                     if let entity = selectedEntity { LabeledContent(tr("المبلغ", "Amount"), value: Money.format(entity.group.total)) }
                     if let entity = selectedEntity {
                         ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.footnote).foregroundStyle(.orange) }
@@ -128,6 +134,7 @@ struct TransferLetterDraftView: View {
             } footer: { Text(tr("معاينة PDF تجريبية: راجع البيانات والتواقيع وعدد الصفحات على الآيفون. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "PDF preview is experimental: review the details, signatures and pages on iPhone. Sharing remains disabled until verification is complete.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
+        .task(id: sourceKey) { await restoreEntity() }
         .overlay { if working { ProgressView(tr("إعداد المعاينة", "Preparing preview")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .alert(tr("تعذّر إعداد المعاينة", "Couldn't prepare preview"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
@@ -263,6 +270,60 @@ struct TransferLetterDraftView: View {
                 guard current, wordResult?.csv == url else { return }
                 wordCSVText = value; showWordCSV = true
             } catch { wordCSVError = error.localizedDescription }
+        }
+    }
+    private func selectEntity(_ id: String) {
+        guard current, !selectingEntity, !working, !BackupManager.shared.isWorking,
+              !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
+        do {
+            var links = try TransferLetterEntityLinks.decode(savedEntityLinks)
+            if id.isEmpty { links.removeValue(forKey: kind.rawValue) }
+            else {
+                guard let entity = candidates.first(where: { $0.id == id }) else { return }
+                links[kind.rawValue] = TransferLetterEntityLinks.Link(entity)
+            }
+            savedEntityLinks = try JSONEncoder().encode(links)
+            selectedID = id; selectionNotice = nil
+            BackupManager.shared.markChanged()
+        } catch {
+            self.error = tr("تعذّر قراءة ربط الجهات المحفوظ؛ لم يتم استبداله.", "Could not read saved letter links; they were not replaced.")
+        }
+    }
+    private func restoreEntity() async {
+        guard kind.requiresEntity, current else { return }
+        selectingEntity = true
+        defer { selectingEntity = false }
+        selectionNotice = nil
+        let saved: [String: TransferLetterEntityLinks.Link]
+        do { saved = try TransferLetterEntityLinks.decode(savedEntityLinks) }
+        catch {
+            selectionNotice = tr("تعذّر قراءة ربط الجهات المحفوظ؛ استعده من النسخة الاحتياطية.", "Could not read saved letter links; restore them from backup.")
+            return
+        }
+        if let link = saved[kind.rawValue] {
+            if let found = TransferLetterEntityLinks.resolve(link, candidates: candidates, accountLinks: sourceLinks) {
+                selectedID = found.id
+            } else {
+                selectedID = ""
+                selectionNotice = tr("الجهة المرتبطة غير موجودة في هذا الشهر أو تغيّر حسابها؛ اختر الجهة وتحقق من الحساب.", "The linked entity is absent this month or its account changed; choose it and review the account.")
+            }
+            return
+        }
+        let candidatesSnapshot = candidates, bookID = kind.rawValue, referenceSnapshot = references
+        let payerSnapshot = payerIBAN, accountLinkSnapshot = sourceLinks, savedSnapshot = savedEntityLinks
+        let task = Task.detached(priority: .userInitiated) {
+            try TransferLetterEntityLinks.uniqueReferenceMatch(bookID: bookID, candidates: candidatesSnapshot,
+                references: referenceSnapshot, payerIBAN: payerSnapshot, accountLinks: accountLinkSnapshot)
+        }
+        do {
+            let found = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+            guard !Task.isCancelled, current, savedEntityLinks == savedSnapshot, selectedID.isEmpty else { return }
+            if let found { selectedID = found.id }
+            else { selectionNotice = tr("لم يُعثر على جهة واحدة مؤكدة؛ اختر الجهة بعد مراجعة حسابها.", "No unique beneficiary was confirmed; choose the entity after reviewing its account.") }
+        } catch is CancellationError { return }
+        catch {
+            guard !Task.isCancelled, current else { return }
+            selectionNotice = tr("تعذّر تحديد الجهة من مرجع الكتاب؛ اختر الجهة وراجع الحساب.", "The letter reference could not identify the beneficiary; choose it and review the account.")
         }
     }
     private func prepareWord() {
