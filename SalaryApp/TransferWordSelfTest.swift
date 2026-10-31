@@ -179,9 +179,6 @@ import CryptoKit
                     throw Failure(errorDescription: "wrong Word amount accepted")
                 } catch is Failure { throw Failure(errorDescription: "wrong Word amount accepted") }
                 catch { }
-                let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
-                try? FileManager.default.removeItem(at: fixture)
-                try FileManager.default.copyItem(at: result.letter, to: fixture)
             }
             generated += 1
         }
@@ -248,6 +245,18 @@ import CryptoKit
             generated += 1
         }
         try check(generated == 11, "Word draft count")
+        // معاينة منشأة بالكامل بأسماء وهمية، دون استخدام اسم جهة حقيقية في الصور.
+        let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
+        try? FileManager.default.removeItem(at: fixture)
+        let signatures = TransferWordDocument.Table(headers: [], rows: [["عضو وهمي أول\n2026 / 10 /", "عضو وهمي ثان\n2026 / 10 /", "عضو وهمي ثالث\n2026 / 10 /"]], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
+        try TransferWordDocument.write(blocks: [
+            .paragraph(.init(text: "ترويسة وهمية", font: "Sakkal Majalla", halfPoints: 36, bold: true)),
+            .paragraph(.init(text: "العدد: رقم وهمي\nالتاريخ: 2026 / 10 /", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / مصرف وهمي / فرع وهمي", font: "Arial", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "نرجو تحويل مبلغ تجريبي إلى حساب جهة وهمية عن استقطاعات الشهر، وتزويدنا بالإشعار اللازم بذلك.", halfPoints: 28)),
+            .table(signatures), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
+        ], destination: fixture)
         return "wordTransfers=ok drafts=11 synthetic=1"
     }
 }
