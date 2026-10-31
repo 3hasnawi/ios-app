@@ -28,6 +28,25 @@ nonisolated enum TransferLetterEntityLinks {
         }
         return matches.count == 1 ? matches[0] : nil
     }
+    /// بعد تحديث قائمة الحسابات، يقبل الربط السابق إذا أصبح الحساب المحدث هو الحساب الذي اختاره المستخدم للكتاب.
+    static func resolveUpdated(_ link: Link, candidates: [TransferEntity], accountLinks: Data,
+                               bookID: String, customization: TransferLetterCustomization) -> TransferEntity? {
+        guard ["ramadi", "housing", "water"].contains(bookID),
+              let override = customization.beneficiaryAccount, !override.isEmpty else { return nil }
+        let previous: String?
+        if bookID == "ramadi" { previous = link.iban }
+        else { previous = link.localAccount ?? link.iban.flatMap { TransferRules.localAccountDigits($0) } }
+        guard let previous, let pinned = customization.beneficiaryOriginal,
+              pinned == TransferLetterCustomValues.normalizedAccount(previous) || pinned == TransferLetterCustomValues.normalizedAccount(override) else { return nil }
+        let matches = candidates.filter { entity in
+            guard ArabicText.normalize(entity.group.title) == link.title, let account = entity.account,
+                  account.key == link.accountKey, TransferAccountLinks.authorizes(title: entity.group.title, account: account, data: accountLinks) else { return false }
+            let original = bookID == "ramadi" ? account.iban : (TransferRules.individualLocalAccount(account) ?? "")
+            guard TransferLetterCustomValues.normalizedAccount(original) == TransferLetterCustomValues.normalizedAccount(override) else { return false }
+            return (try? TransferLetterCustomValues.account(customization, bookID: bookID, source: entity.group.title, original: original, reference: customization.beneficiaryReference ?? "")) != nil
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
     static func uniqueReferenceMatch(bookID: String, candidates: [TransferEntity], references: Data,
                                      payerIBAN: String, accountLinks: Data) throws -> TransferEntity? {
         let reference = try TransferWordReferenceAccounts.individualBeneficiary(bookID: bookID, references: references, payerIBAN: payerIBAN)

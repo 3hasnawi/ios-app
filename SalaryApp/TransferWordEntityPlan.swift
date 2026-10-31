@@ -25,7 +25,7 @@ nonisolated struct TransferWordEntityPlan: Sendable {
         self.personName = personName; self.personRank = personRank; self.table = table
     }
     static func prepare(plan: TransferIndividualPlan, account: SavedExecutionAccount?, payerIBAN: String,
-                        references: Data, accountLinks: Data) throws -> Self {
+                        references: Data, accountLinks: Data, customization: TransferLetterCustomization = .init()) throws -> Self {
         guard TransferRules.validIBAN(payerIBAN), plan.group.total.isFinite, plan.group.total > 0,
               plan.group.total.rounded() == plan.group.total, plan.group.total <= 9_007_199_254_740_991 else { throw Failure.incomplete }
         _ = try TransferLetterPeriod(plan.group.month)
@@ -63,10 +63,25 @@ nonisolated struct TransferWordEntityPlan: Sendable {
         }
         let recipient = account?.entity ?? plan.group.title
         guard !recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Failure.incomplete }
-        try TransferWordReferenceAccounts.verifyIndividual(bookID: id, references: references, payerIBAN: payerIBAN, beneficiary: number)
+        let selectedNumber: String?
+        if let number {
+            let reference = try TransferWordReferenceAccounts.individualBeneficiary(bookID: id, references: references, payerIBAN: payerIBAN)
+            guard let reference else { throw Failure.incomplete }
+            let chosen = try TransferLetterCustomValues.account(customization, bookID: id, source: plan.group.title, original: number, reference: reference)
+            if let chosen { selectedNumber = chosen }
+            else {
+                guard reference == TransferLetterCustomValues.normalizedAccount(number) else { throw Failure.incomplete }
+                selectedNumber = number
+            }
+            if id == "ramadi", selectedNumber == TransferLetterCustomValues.normalizedAccount(payerIBAN) { throw Failure.incomplete }
+        } else {
+            guard customization.beneficiaryAccount?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else { throw Failure.incomplete }
+            try TransferWordReferenceAccounts.verifyIndividual(bookID: id, references: references, payerIBAN: payerIBAN, beneficiary: nil)
+            selectedNumber = nil
+        }
         return Self(bookID: id, month: plan.group.month, amount: plan.group.total,
                     payerIBAN: ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" },
-                    beneficiaryName: recipient, beneficiaryAccount: number, bank: account?.branch,
+                    beneficiaryName: recipient, beneficiaryAccount: selectedNumber, bank: account?.branch,
                     personName: personName, personRank: personRank, table: table)
     }
 }

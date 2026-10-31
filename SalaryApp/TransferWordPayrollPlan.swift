@@ -21,7 +21,8 @@ nonisolated struct TransferWordPayrollPlan: Sendable {
     }
 
     static func prepare(bookID: String, figures: TransferLetterFigures, payerIBAN: String,
-                        references: Data, cashList: TransferCashList? = nil) throws -> Self {
+                        references: Data, cashList: TransferCashList? = nil,
+                        customization: TransferLetterCustomization = .init()) throws -> Self {
         let name: String
         let table: TransferWordDocument.Table?
         switch bookID {
@@ -41,7 +42,9 @@ nonisolated struct TransferWordPayrollPlan: Sendable {
         let amount = try TransferWordValues.payrollAmount(bookID: bookID, figures: figures)
         guard amount > 0, TransferRules.validIBAN(payerIBAN) else { throw Failure.incomplete }
         _ = try TransferLetterPeriod(figures.month)
-        let beneficiary = try TransferWordReferenceAccounts.beneficiary(bookID: bookID, references: references, payerIBAN: payerIBAN)
+        let original = try TransferWordReferenceAccounts.beneficiary(bookID: bookID, references: references, payerIBAN: payerIBAN)
+        let beneficiary = try TransferLetterCustomValues.account(customization, bookID: bookID, source: bookID, original: original, reference: original) ?? original
+        guard beneficiary != TransferLetterCustomValues.normalizedAccount(payerIBAN) else { throw Failure.incomplete }
         return Self(bookID: bookID, month: figures.month, amount: amount,
                     payerIBAN: ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" },
                     beneficiaryName: name, beneficiaryIBAN: beneficiary, table: table)

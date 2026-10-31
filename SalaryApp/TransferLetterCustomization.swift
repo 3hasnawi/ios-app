@@ -11,17 +11,35 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
     var foodContractReference: String? = nil
     var bodyTemplate: String? = nil
     var signatureOffset: Int? = nil
+    var bodyMonth: String? = nil
+    var committeeDateFirst: String? = nil
+    var committeeDateSecond: String? = nil
+    var committeeDateThird: String? = nil
+    var beneficiaryAccount: String? = nil
+    var beneficiarySource: String? = nil
+    var beneficiaryOriginal: String? = nil
+    var beneficiaryReference: String? = nil
 
     func applying(over base: Self) -> Self {
-        Self(header: header ?? base.header,
-             committeeFirst: committeeFirst ?? base.committeeFirst,
-             committeeSecond: committeeSecond ?? base.committeeSecond,
-             committeeThird: committeeThird ?? base.committeeThird,
-             footer: footer ?? base.footer,
-             fixedNumber: fixedNumber ?? base.fixedNumber,
-             foodContractReference: foodContractReference ?? base.foodContractReference,
-             bodyTemplate: bodyTemplate ?? base.bodyTemplate,
-             signatureOffset: signatureOffset ?? base.signatureOffset)
+        var result = base
+        result.header = header ?? base.header
+        result.committeeFirst = committeeFirst ?? base.committeeFirst
+        result.committeeSecond = committeeSecond ?? base.committeeSecond
+        result.committeeThird = committeeThird ?? base.committeeThird
+        result.footer = footer ?? base.footer
+        result.fixedNumber = fixedNumber ?? base.fixedNumber
+        result.foodContractReference = foodContractReference ?? base.foodContractReference
+        result.bodyTemplate = bodyTemplate ?? base.bodyTemplate
+        result.signatureOffset = signatureOffset ?? base.signatureOffset
+        result.bodyMonth = bodyMonth ?? base.bodyMonth
+        result.committeeDateFirst = committeeDateFirst ?? base.committeeDateFirst
+        result.committeeDateSecond = committeeDateSecond ?? base.committeeDateSecond
+        result.committeeDateThird = committeeDateThird ?? base.committeeDateThird
+        result.beneficiaryAccount = beneficiaryAccount ?? base.beneficiaryAccount
+        result.beneficiarySource = beneficiarySource ?? base.beneficiarySource
+        result.beneficiaryOriginal = beneficiaryOriginal ?? base.beneficiaryOriginal
+        result.beneficiaryReference = beneficiaryReference ?? base.beneficiaryReference
+        return result
     }
 }
 
@@ -56,6 +74,11 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
             if changes.foodContractReference != nil { value.foodContractReference = nil }
             if changes.bodyTemplate != nil { value.bodyTemplate = nil }
             if changes.signatureOffset != nil { value.signatureOffset = nil }
+            if changes.bodyMonth != nil { value.bodyMonth = nil }
+            if changes.committeeDateFirst != nil { value.committeeDateFirst = nil }
+            if changes.committeeDateSecond != nil { value.committeeDateSecond = nil }
+            if changes.committeeDateThird != nil { value.committeeDateThird = nil }
+            if changes.beneficiaryAccount != nil { value.beneficiaryAccount = nil; value.beneficiarySource = nil; value.beneficiaryOriginal = nil; value.beneficiaryReference = nil }
             individual[key] = value
         }
     }

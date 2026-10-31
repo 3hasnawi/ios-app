@@ -9,6 +9,8 @@ nonisolated enum TransferWordGroupDraft {
         let footer: String
         var bodyTemplate: String? = nil
         var signatureOffset: Int = 0
+        var bodyMonth: String? = nil
+        var committeeDates: [String?] = [nil, nil, nil]
     }
     enum Failure: LocalizedError {
         case incomplete
@@ -19,18 +21,34 @@ nonisolated enum TransferWordGroupDraft {
               let first = custom.committeeFirst, let second = custom.committeeSecond,
               let third = custom.committeeThird, let footer = custom.footer,
               (-60...60).contains(custom.signatureOffset ?? 0) else { throw Failure.incomplete }
-        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer, bodyTemplate: custom.bodyTemplate, signatureOffset: custom.signatureOffset ?? 0)
+        let dates = [custom.committeeDateFirst, custom.committeeDateSecond, custom.committeeDateThird]
+        for date in dates { _ = try TransferLetterCustomValues.signatureDate(date, fallback: " / 1 / 2026", eastern: false) }
+        if let month = custom.bodyMonth, !month.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = try TransferLetterCustomValues.bodyMonth(month, source: month)
+        }
+        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer,
+            bodyTemplate: custom.bodyTemplate, signatureOffset: custom.signatureOffset ?? 0, bodyMonth: custom.bodyMonth, committeeDates: dates)
     }
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
-    static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool) -> [String] {
+    static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool, dates: [String]? = nil) -> [String] {
         guard committee.count == 3 else { return [] }
         guard adaptivePDF else { return committee.map { $0 + "\n" + date } }
+        let signatureDates = (dates?.count == 3 ? dates : nil) ?? [date, date, date]
         let names = committee.map { $0.replacingOccurrences(of: "ـ", with: "").split(whereSeparator: \.isWhitespace).joined(separator: " ") }
         return [
-            "معاون مدير تدقيق\n\(names[0])\nالمصروفات\n\(date)",
-            "العميد\n\(names[1])\nمدير الحسابات\n\(date)",
-            "لواء الشرطة الحقوقي\n\(names[2])\nقائد شرطة محافظة الأنبار\n\(date)"
+            "معاون مدير تدقيق\n\(names[0])\nالمصروفات\n\(signatureDates[0])",
+            "العميد\n\(names[1])\nمدير الحسابات\n\(signatureDates[1])",
+            "لواء الشرطة الحقوقي\n\(names[2])\nقائد شرطة محافظة الأنبار\n\(signatureDates[2])"
         ]
+    }
+    static func dates(for text: LetterText, fallback: String, adaptivePDF: Bool) throws -> [String]? {
+        guard adaptivePDF else { return nil }
+        guard text.committeeDates.count == 3 else { throw Failure.incomplete }
+        return try text.committeeDates.map { try TransferLetterCustomValues.signatureDate($0, fallback: fallback, eastern: true) }
+    }
+    static func bodyValues(for text: LetterText, sourceMonth: String, amount: Double, adaptivePDF: Bool) throws -> [String: String] {
+        let displayedMonth = try TransferLetterCustomValues.bodyMonth(adaptivePDF ? text.bodyMonth : nil, source: sourceMonth)
+        return try TransferWordValues.make(month: displayedMonth, amount: amount, custom: .init(), requested: ["MONTH", "YEAR"])
     }
     /// عرض ١٤ مسافة غير قابلة للكسر يقارب عرض خمسة أرقام بخط ساكال المعتمد.
     static func referenceText(number: String, date: String, adaptivePDF: Bool) -> String {
@@ -51,10 +69,13 @@ nonisolated enum TransferWordGroupDraft {
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
+        let bodyPeriod = try Self.bodyValues(for: text, sourceMonth: month, amount: plan.total, adaptivePDF: adaptivePDF)
+        guard let bodyMonth = bodyPeriod["MONTH"], let bodyYear = bodyPeriod["YEAR"] else { throw Failure.incomplete }
         let body = try TransferLetterBody.render(id: plan.category == .rafidain ? "rafidain_group" : "other_banks_group", custom: adaptivePDF ? text.bodyTemplate : nil, values: [
-            "المبلغ": amount, "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": monthName, "السنة": year
+            "المبلغ": amount, "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": bodyMonth, "السنة": bodyYear
         ])
-        let signatureCells = Self.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)
+        let dates = try Self.dates(for: text, fallback: period.signatureDate, adaptivePDF: adaptivePDF)
+        let signatureCells = Self.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF, dates: dates)
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [

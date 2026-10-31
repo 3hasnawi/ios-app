@@ -28,6 +28,19 @@ struct TransferCompanyLetterView: View {
         return record != nil && currentPayer == payerIBAN && currentReferences == references
             && "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
+    private func customWarnings(_ data: Data) -> [String] {
+        guard let store = try? (data.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data)) else { return [] }
+        let custom = store.effective(for: "food_company")
+        var warnings: [String] = []
+        if let display = custom.bodyMonth, !display.isEmpty, MonthName.sortKey(display) != MonthName.sortKey(figures.month) {
+            warnings.append(tr("شهر المتن \(display)، لكن المبلغ من بيانات \(figures.month).", "The body says \(display), but the amount comes from \(figures.month)."))
+        }
+        if let value = custom.beneficiaryAccount, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           TransferLetterCustomValues.normalizedAccount(value) != (custom.beneficiaryOriginal ?? "") {
+            warnings.append(tr("حساب المستفيد مخصص لهذا الكتاب؛ تحقق من مطابقته لقائمة IBAN.", "The beneficiary is customized for this letter; check it against the IBAN list."))
+        }
+        return warnings
+    }
     private var wordIsCurrent: Bool { sourceIsCurrent && currentCustomization == wordCustomizationSnapshot && currentBoldFont == wordBoldSnapshot }
     var body: some View {
         List {
@@ -39,12 +52,15 @@ struct TransferCompanyLetterView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView(bookID: "food_company")
+                    TransferLetterSettingsView(bookID: "food_company", currentMonth: figures.month)
                 } label: {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
                 }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!sourceIsCurrent || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working)
+                ForEach(customWarnings(currentCustomization), id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                }
                 if references.isEmpty { Text(tr("استورد حزمة مراجع الكتب من صفحة ملفات التحويل.", "Import the letter reference package from transfer files.")).font(.footnote).foregroundStyle(.secondary) }
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
@@ -82,6 +98,9 @@ struct TransferCompanyLetterView: View {
                     VStack(spacing: 0) {
                         Label(tr("مسودة تجريبية؛ راجع النص والمبلغ والحسابات والتواقيع قبل اعتمادها.", "Experimental draft: review the text, amount, accounts and signatures before approval."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
+                        ForEach(customWarnings(wordCustomizationSnapshot), id: \.self) { warning in
+                            Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange).padding(8)
+                        }
                         if !wordIsCurrent { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         PDFPreview(url: wordResult.letter)
                     }

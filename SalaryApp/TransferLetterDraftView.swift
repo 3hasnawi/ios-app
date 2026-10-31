@@ -85,6 +85,30 @@ struct TransferLetterDraftView: View {
             currentPayerName == payerName && currentPayerIBAN == payerIBAN && currentBoldFont == boldFont && currentRegularFont == regularFont &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
+    private var entityAccountForSettings: String? {
+        guard let account = selectedEntity?.account else { return nil }
+        if kind == .ramadi { return account.iban }
+        if kind == .housing || kind == .water { return TransferRules.individualLocalAccount(account) }
+        return nil
+    }
+    private func customValues(_ data: Data) -> TransferLetterCustomization? {
+        guard let store = try? (data.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data)) else { return nil }
+        return store.effective(for: kind.rawValue)
+    }
+    private func customWarnings(_ data: Data) -> [String] {
+        guard let custom = customValues(data) else { return [] }
+        var warnings: [String] = []
+        if let display = custom.bodyMonth, !display.isEmpty, MonthName.sortKey(display) != MonthName.sortKey(month) {
+            warnings.append(tr("شهر المتن \(display)، لكن المبالغ والقوائم وCSV تخص \(month).", "The body says \(display), but amounts, lists and CSV use \(month)."))
+        }
+        if let value = custom.beneficiaryAccount, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let comparison = entityAccountForSettings ?? custom.beneficiaryOriginal ?? ""
+            if TransferLetterCustomValues.normalizedAccount(value) != TransferLetterCustomValues.normalizedAccount(comparison) {
+                warnings.append(tr("حساب المستفيد في الكتاب مخصص ويختلف عن الحساب الأصلي؛ راجع التطابق مع قائمة IBAN وملف CSV إن وُجد.", "The letter's custom beneficiary differs from the original account; check it against the IBAN list and CSV, if applicable."))
+            }
+        }
+        return warnings
+    }
     private var wordIsCurrent: Bool { current && currentCustomization == wordCustomizationSnapshot }
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
     private var preparedFigures: TransferLetterFigures {
@@ -123,9 +147,13 @@ struct TransferLetterDraftView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView(bookID: kind.rawValue)
+                    TransferLetterSettingsView(bookID: kind.rawValue, currentMonth: month, entityTitle: selectedEntity?.group.title,
+                        entityAccount: entityAccountForSettings, entityAccountKey: selectedEntity?.account?.key)
                 } label: {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
+                }
+                ForEach(customWarnings(currentCustomization), id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                 }
                 if kind == .contracts && figures.missingContractNominal > 0 {
                     Text(tr("يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. مبلغ ١٢٪ أدناه محسوب من الاسمي المتوفر فقط؛ الاسمي المفقود غير محتسب.", "\(Num.format(figures.missingContractNominal)) contracts lack nominal pay. The 12% below uses available nominal pay only; missing amounts are excluded."))
@@ -238,6 +266,9 @@ struct TransferLetterDraftView: View {
                     VStack(spacing: 0) {
                         Label(tr("مسودة PDF تجريبية؛ راجع النص والمبالغ والحسابات والجداول والتواقيع على الآيفون.", "Experimental PDF: review text, amounts, accounts, tables and signatures on iPhone."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
+                        ForEach(customWarnings(wordCustomizationSnapshot), id: \.self) { warning in
+                            Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange).padding(8)
+                        }
                         if draftUsedNominalReview {
                             Text(tr("أُعدّ الكتاب بالمبلغ المتوفر بعد تأكيدك؛ الاسمي المفقود غير محتسب.", "This letter uses the available amount you confirmed; missing nominal pay is excluded."))
                                 .font(.footnote).foregroundStyle(.orange).padding(8)
@@ -333,7 +364,10 @@ struct TransferLetterDraftView: View {
             return
         }
         if let link = saved[kind.rawValue] {
-            if let found = TransferLetterEntityLinks.resolve(link, candidates: candidates, accountLinks: sourceLinks) {
+            let custom = customValues(currentCustomization) ?? .init()
+            let original = TransferLetterEntityLinks.resolve(link, candidates: candidates, accountLinks: sourceLinks)
+            let updated = TransferLetterEntityLinks.resolveUpdated(link, candidates: candidates, accountLinks: sourceLinks, bookID: kind.rawValue, customization: custom)
+            if let found = original ?? updated {
                 selectedID = found.id
             } else {
                 selectedID = ""

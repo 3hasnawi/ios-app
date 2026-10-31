@@ -52,7 +52,7 @@ nonisolated enum TransferWordDraftGenerator {
             csvURL = csv
         case "food_company", "food_tax", "tax_social", "contracts", "cash_salary":
             let plan = try TransferWordPayrollPlan.prepare(bookID: bookID, figures: figures,
-                payerIBAN: payerIBAN, references: references, cashList: cashList)
+                payerIBAN: payerIBAN, references: references, cashList: cashList, customization: adaptivePDF ? customization : .init())
             try TransferWordPayrollDraft.write(plan: plan, text: text,
                 foodContractReference: customization.foodContractReference, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
@@ -68,7 +68,7 @@ nonisolated enum TransferWordDraftGenerator {
                   entity.group.month == figures.month, entity.group.total == individualPlan.group.total,
                   entity.missingAmounts == 0 else { throw Failure.incomplete }
             let plan = try TransferWordEntityPlan.prepare(plan: individualPlan, account: entity.account,
-                payerIBAN: payerIBAN, references: references, accountLinks: accountLinks)
+                payerIBAN: payerIBAN, references: references, accountLinks: accountLinks, customization: adaptivePDF ? customization : .init())
             try TransferWordEntityDraft.write(plan: plan, text: text, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
                 var checks = [plan.payerIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.amount)]

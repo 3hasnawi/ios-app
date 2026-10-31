@@ -32,6 +32,31 @@ import CryptoKit
         try check(customization.effective(for: "food_company").signatureOffset == -10 && customization.effective(for: "cash_salary").signatureOffset == -10, "shared signature position replaces overrides")
         let savedCustomization = try JSONEncoder().encode(customization)
         try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: savedCustomization) == customization, "customization roundtrip")
+        let automaticDate = try TransferLetterCustomValues.signatureDate(nil, fallback: " / 10 / 2026", eastern: true)
+        try check(automaticDate == " / ١٠ / ٢٠٢٦", "automatic signature date")
+        try check(try TransferLetterCustomValues.signatureDate("٢٩/٢/٢٠٢٤", fallback: "", eastern: true) == "٢٩ / ٢ / ٢٠٢٤", "leap signature date")
+        do {
+            _ = try TransferLetterCustomValues.signatureDate("31/2/2026", fallback: "", eastern: false)
+            throw Failure(errorDescription: "invalid signature date accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid signature date accepted") } catch { }
+        customization.apply(.init(bodyMonth: "تشرين الاول 2026", committeeDateFirst: "1/10/2026"), to: "food_company")
+        try check(customization.effective(for: "food_company").committeeDateFirst == "1/10/2026", "individual signature date")
+        customization.applyToAll(.init(bodyMonth: "ايلول 2026"))
+        try check(customization.effective(for: "food_company").bodyMonth == "ايلول 2026" && customization.effective(for: "food_company").committeeDateFirst == "1/10/2026", "shared month preserves signature")
+        let extended = try JSONEncoder().encode(customization)
+        try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: extended) == customization, "extended customization backup")
+        let originalIBAN = "IQ06TEST123000000000001", updatedIBAN = "IQ76TEST123000000000002"
+        let accountCustomization = TransferLetterCustomization(beneficiaryAccount: updatedIBAN, beneficiarySource: "جهة وهمية", beneficiaryOriginal: originalIBAN, beneficiaryReference: originalIBAN)
+        try check(try TransferLetterCustomValues.account(accountCustomization, bookID: "ramadi", source: "جهة وهمية", original: originalIBAN, reference: originalIBAN) == updatedIBAN, "letter account override")
+        try check(try TransferLetterCustomValues.account(accountCustomization, bookID: "ramadi", source: "جهة وهمية", original: updatedIBAN, reference: originalIBAN) == updatedIBAN, "updated account accepted")
+        do {
+            _ = try TransferLetterCustomValues.account(accountCustomization, bookID: "ramadi", source: "جهة أخرى", original: originalIBAN, reference: originalIBAN)
+            throw Failure(errorDescription: "changed entity accepted")
+        } catch is Failure { throw Failure(errorDescription: "changed entity accepted") } catch { }
+        do {
+            _ = try TransferLetterCustomValues.account(accountCustomization, bookID: "ramadi", source: "جهة وهمية", original: originalIBAN, reference: updatedIBAN)
+            throw Failure(errorDescription: "changed reference accepted")
+        } catch is Failure { throw Failure(errorDescription: "changed reference accepted") } catch { }
         let legacyCustom = Data("{\"header\":\"ترويسة وهمية\"}".utf8)
         let decodedLegacy = try JSONDecoder().decode(TransferLetterCustomization.self, from: legacyCustom)
         try check(decodedLegacy.header == "ترويسة وهمية" && decodedLegacy.fixedNumber == nil && decodedLegacy.foodContractReference == nil, "legacy customization compatibility")
