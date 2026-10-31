@@ -28,12 +28,12 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         let verified = try TransferGroupCSVCheck.validate(data, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
         let expected = entries.map { TransferReconcileLine(sourceID: $0.id, title: $0.group.title, amount: Int64($0.group.total)) }
         guard TransferReconciliation.check(expected: expected, book: expected, file: verified, target: .grouped).isEmpty else { throw Failure.incomplete }
-        var rows: [[String]] = entries.enumerated().map { index, entry in
+        var rows: [[String]] = try entries.enumerated().map { index, entry in
             [String(index + 1), entry.beneficiaryName ?? entry.group.title,
              ArabicText.latinDigits(entry.account?.iban ?? "").uppercased().filter { !$0.isWhitespace && $0 != "-" },
-             entry.account?.branch ?? "", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entry.group.total)]
+             entry.account?.branch ?? "", try TransferWordValues.groupedAmount(entry.group.total)]
         }
-        rows.append(["", "", "", "المجموع", String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), sum)])
+        rows.append(["", "", "", "المجموع", try TransferWordValues.groupedAmount(sum)])
         let headers = ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"]
         let weights = [40, 252, 322, 220, 166]
         // هامش إضافي للعناوين واختلافات عرض Word. يجب معاينة الصفحة الفعلية أيضاً.

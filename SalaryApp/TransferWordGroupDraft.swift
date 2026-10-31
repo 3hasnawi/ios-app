@@ -50,6 +50,10 @@ nonisolated enum TransferWordGroupDraft {
         let displayedMonth = try TransferLetterCustomValues.bodyMonth(adaptivePDF ? text.bodyMonth : nil, source: sourceMonth)
         return try TransferWordValues.make(month: displayedMonth, amount: amount, custom: .init(), requested: ["MONTH", "YEAR"])
     }
+    /// أرقام المبلغ والسنة في المتن فقط؛ أرقام الحسابات تبقى كما هي.
+    static func bodyNumber(_ value: String, adaptivePDF: Bool) -> String {
+        adaptivePDF ? ReportSheet.easternDigits(value) : value
+    }
     /// عرض ١٤ مسافة غير قابلة للكسر يقارب عرض خمسة أرقام بخط ساكال المعتمد.
     static func referenceText(number: String, date: String, adaptivePDF: Bool) -> String {
         let writingSpace = adaptivePDF ? String(repeating: "\u{00A0}", count: 14) : " "
@@ -72,7 +76,7 @@ nonisolated enum TransferWordGroupDraft {
         let bodyPeriod = try Self.bodyValues(for: text, sourceMonth: month, amount: plan.total, adaptivePDF: adaptivePDF)
         guard let bodyMonth = bodyPeriod["MONTH"], let bodyYear = bodyPeriod["YEAR"] else { throw Failure.incomplete }
         let body = try TransferLetterBody.render(id: plan.category == .rafidain ? "rafidain_group" : "other_banks_group", custom: adaptivePDF ? text.bodyTemplate : nil, values: [
-            "المبلغ": amount, "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": bodyMonth, "السنة": bodyYear
+            "المبلغ": bodyNumber(amount, adaptivePDF: adaptivePDF), "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": bodyMonth, "السنة": bodyNumber(bodyYear, adaptivePDF: adaptivePDF)
         ])
         let dates = try Self.dates(for: text, fallback: period.signatureDate, adaptivePDF: adaptivePDF)
         let signatureCells = Self.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF, dates: dates)
@@ -94,7 +98,7 @@ nonisolated enum TransferWordGroupDraft {
             .table(signatures),
             .paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)),
             .pageBreak,
-            .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(year))", halfPoints: 28, bold: true, centered: true)),
+            .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(bodyNumber(year, adaptivePDF: adaptivePDF)))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)
         ]
         if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset) }

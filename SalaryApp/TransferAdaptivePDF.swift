@@ -341,11 +341,13 @@ nonisolated enum TransferAdaptivePDF {
             ArabicText.latinDigits(value).uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
         }
         var text = "", tokens = Set<String>()
+        let numericSeparators = CharacterSet(charactersIn: ",٬")
+        let tokenSeparators = CharacterSet.alphanumerics.union(numericSeparators).inverted
         for index in 0..<document.pageCount {
             try Task.checkCancellation()
             guard let page = document.page(at: index), let value = page.string else { throw Failure.damaged }
             let normalized = ArabicText.latinDigits(value).uppercased()
-            for word in normalized.components(separatedBy: CharacterSet.alphanumerics.inverted) {
+            for word in normalized.components(separatedBy: tokenSeparators) {
                 let token = key(word)
                 if !token.isEmpty { tokens.insert(token) }
             }

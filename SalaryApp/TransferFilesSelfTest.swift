@@ -73,6 +73,9 @@ import CryptoKit
         try check(wordValues["MONTH_NUMBER"] == "10", "Word month number")
         try check(wordValues["YEAR"] == "2026", "Word year")
         try check(wordValues["AMOUNT"] == "123,456", "Word numeric amount grouping")
+        try check(TransferWordGroupDraft.bodyNumber(wordValues["AMOUNT"] ?? "", adaptivePDF: true) == "١٢٣,٤٥٦", "PDF amount uses eastern digits")
+        try check(TransferWordGroupDraft.bodyNumber(wordValues["YEAR"] ?? "", adaptivePDF: true) == "٢٠٢٦", "PDF body year uses eastern digits")
+        try check(TransferWordGroupDraft.bodyNumber("123,456", adaptivePDF: false) == "123,456", "Word values remain unchanged")
         try check(wordValues["SIGNATURE_DATE"] == " / 10 / 2026" && wordValues["HEADER"] == "ترويسة وهمية", "Word signature date and customization")
         try check(wordValues["AMOUNT_WORDS"] == ArabicAmountWords.dinars(123_456), "Word amount in words")
         let generatedWord = FileManager.default.temporaryDirectory.appendingPathComponent("generated-word-\(UUID().uuidString).docx")
@@ -329,8 +332,8 @@ import CryptoKit
         let wordGroup = try TransferWordGroupPlan(allEntities: [item, secondItem], category: .rafidain,
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         try check(wordGroup.total == 3000 && wordGroup.table.rows.count == 3 &&
-                  wordGroup.table.rows[0][1] == group.title && wordGroup.table.rows[1][4] == "1800" &&
-                  wordGroup.table.rows[2][4] == "3000", "Word group rows and total")
+                  wordGroup.table.rows[0][1] == group.title && wordGroup.table.rows[1][4] == "1,800" &&
+                  wordGroup.table.rows[2][4] == "3,000", "Word group rows and total")
         _ = try TransferGroupCSVCheck.validate(wordGroup.csv, entities: [item, secondItem], category: .rafidain,
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let groupText = TransferWordGroupDraft.LetterText(header: "ترويسة وهمية", fixedNumber: "رقم وهمي",

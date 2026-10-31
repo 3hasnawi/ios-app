@@ -29,12 +29,10 @@ nonisolated enum TransferWordValues {
         return amount
     }
 
-    /// تُطلب فقط الحقول الموجودة في القالب؛ لا تُستبدل التخصيصات غير المحددة بنص فارغ.
-    static func make(month: String, amount: Double, custom: TransferLetterCustomization,
-                     requested: Set<String>) throws -> [String: String] {
+    /// تنسيق للعرض في الكتب فقط؛ ملف التحويل يحتفظ بقيمه الأصلية.
+    static func groupedAmount(_ amount: Double) throws -> String {
         guard amount.isFinite, amount >= 0, amount.rounded() == amount,
               amount <= 9_007_199_254_740_991 else { throw Failure.invalidAmount }
-        let period = try TransferLetterPeriod(month)
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.numberStyle = .decimal
@@ -43,6 +41,16 @@ nonisolated enum TransferWordValues {
         formatter.groupingSize = 3
         formatter.maximumFractionDigits = 0
         guard let numeric = formatter.string(from: NSNumber(value: amount)) else { throw Failure.invalidAmount }
+        return numeric
+    }
+
+    /// تُطلب فقط الحقول الموجودة في القالب؛ لا تُستبدل التخصيصات غير المحددة بنص فارغ.
+    static func make(month: String, amount: Double, custom: TransferLetterCustomization,
+                     requested: Set<String>) throws -> [String: String] {
+        guard amount.isFinite, amount >= 0, amount.rounded() == amount,
+              amount <= 9_007_199_254_740_991 else { throw Failure.invalidAmount }
+        let period = try TransferLetterPeriod(month)
+        let numeric = try groupedAmount(amount)
         let names = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
         let available: [String: String?] = [
             "MONTH": names[period.month - 1],

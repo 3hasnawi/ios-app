@@ -21,9 +21,9 @@ nonisolated enum TransferWordPayrollDraft {
         let bodyPeriod = try TransferWordGroupDraft.bodyValues(for: text, sourceMonth: plan.month, amount: plan.amount, adaptivePDF: adaptivePDF)
         guard let bodyMonth = bodyPeriod["MONTH"], let bodyYear = bodyPeriod["YEAR"] else { throw Failure.incomplete }
         let dates = try TransferWordGroupDraft.dates(for: text, fallback: period.signatureDate, adaptivePDF: adaptivePDF)
-        var fields = ["المبلغ": amount, "المبلغ كتابة": words, "حسابنا": plan.payerIBAN,
+        var fields = ["المبلغ": TransferWordGroupDraft.bodyNumber(amount, adaptivePDF: adaptivePDF), "المبلغ كتابة": words, "حسابنا": plan.payerIBAN,
                       "المستفيد": plan.beneficiaryName, "حساب المستفيد": plan.beneficiaryIBAN,
-                      "الشهر": bodyMonth, "السنة": bodyYear]
+                      "الشهر": bodyMonth, "السنة": TransferWordGroupDraft.bodyNumber(bodyYear, adaptivePDF: adaptivePDF)]
         if let reference = foodContractReference { fields["عقد الإطعام"] = reference }
         let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? text.bodyTemplate : nil, values: fields)
         let signatureCells = TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF, dates: dates)
