@@ -17,6 +17,7 @@ nonisolated enum TransferWordDocument {
         var halfPoints: Int = 22
         var columnWeights: [Int]? = nil
         var showBorders = true
+        var boldLastRow = false
     }
     enum Block: Sendable {
         case paragraph(Paragraph)
@@ -68,15 +69,17 @@ nonisolated enum TransferWordDocument {
         }
         let borders = ["top", "left", "bottom", "right", "insideH", "insideV"]
             .map { "<w:\($0) w:val=\"\(t.showBorders ? "single" : "nil")\" w:sz=\"8\" w:color=\"000000\"/>" }.joined()
-        func row(_ cells: [String], header: Bool) throws -> String {
+        func row(_ cells: [String], header: Bool, bold: Bool = false) throws -> String {
             let result = try cells.enumerated().map { index, text in
-                "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header, centered: true)))</w:tc>"
+                "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header || bold, centered: true)))</w:tc>"
             }.joined()
             return "<w:tr>\(header ? "<w:trPr><w:tblHeader/></w:trPr>" : "")\(result)</w:tr>"
         }
         let headers: String
         if t.headers.isEmpty { headers = "" } else { headers = try row(t.headers, header: true) }
-        let rows = try t.rows.map { try row($0, header: false) }.joined()
+        let rows = try t.rows.enumerated().map { index, values in
+            try row(values, header: false, bold: t.boldLastRow && index == t.rows.count - 1)
+        }.joined()
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"10206\" w:type=\"dxa\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"
     }

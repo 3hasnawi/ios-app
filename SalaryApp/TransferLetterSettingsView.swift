@@ -47,6 +47,11 @@ struct TransferLetterSettingsView: View {
     var body: some View {
         Form {
             Section {
+                Button(tr("استيراد إعدادات النماذج", "Import letter settings"), systemImage: "square.and.arrow.down") { importDefaults() }
+                    .disabled(busy)
+                if importing { ProgressView() }
+            } footer: { Text(tr("يملأ العدد والتواقيع والهامش من ملف الإعدادات الخاص، مع الاحتفاظ بتخصيصاتك السابقة. راجع العدد وأسماء اللجنة بعد الاستيراد.", "Fills the reference number, signatures and footer from the private settings file while preserving existing customizations. Review the reference number and committee names after import.")) }
+            Section {
                 Picker(tr("تطبيق التغييرات على", "Apply changes to"), selection: $target) {
                     Text(tr("جميع الكتب", "All letters")).tag("all")
                     ForEach(titles) { item in Text(item.title).tag(item.id) }
@@ -110,7 +115,8 @@ struct TransferLetterSettingsView: View {
         let pairs = [("header", header), ("first", first), ("second", second), ("third", third), ("footer", footer),
                      ("fixedNumber", fixedNumber), ("foodContractReference", foodContractReference)]
         guard pairs.filter({ selected.contains($0.0) }).allSatisfy({ pair in
-            pair.1.count <= 200 && !pair.1.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 })
+            let limit = pair.0 == "footer" ? 4000 : pair.0 == "header" ? 2000 : 200
+            return pair.1.count <= limit && !pair.1.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 })
         }) else { error = tr("أحد الحقول أطول من الحد المسموح أو يحتوي رمزاً غير صالح.", "A field is too long or contains an invalid character."); return }
         let changes = TransferLetterCustomization(header: selected.contains("header") ? header : nil,
             committeeFirst: selected.contains("first") ? first : nil, committeeSecond: selected.contains("second") ? second : nil,
@@ -130,6 +136,30 @@ struct TransferLetterSettingsView: View {
             var store = try readStore(); store.individual.removeValue(forKey: target)
             storedData = try JSONEncoder().encode(store); BackupManager.shared.markChanged(); loadTarget(); saved = true
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.") }
+    }
+    private func importDefaults() {
+        guard !busy else { return }
+        FilePicker.present(types: [.json], multiple: false) { urls in
+            guard let url = urls.first else { return }
+            importing = true; error = nil
+            Task {
+                defer { importing = false }
+                do {
+                    let imported = try await Task.detached(priority: .userInitiated) {
+                        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                        guard size > 0, size <= 1_000_000 else { throw TransferWordDefaults.Failure.invalid }
+                        return try TransferWordDefaults.decode(Data(contentsOf: url))
+                    }.value
+                    await FilePicker.waitUntilSettled()
+                    guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+                        throw NSError(domain: "WordDefaults", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("انتظر انتهاء العملية الحالية ثم أعد الاستيراد.", "Wait for the current operation and import again.")])
+                    }
+                    let merged = TransferWordDefaults.merging(imported, preserving: try readStore())
+                    storedData = try JSONEncoder().encode(merged)
+                    BackupManager.shared.markChanged(); loadTarget(); saved = true
+                } catch { self.error = error.localizedDescription }
+            }
+        }
     }
     private func importFont(_ style: TransferHeaderFont.Style) {
         guard !busy else { return }

@@ -44,6 +44,6 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         self.month = month
         self.payerIBAN = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         self.table = TransferWordDocument.Table(headers: headers, rows: rows, halfPoints: Int((fit.fontSize * 2).rounded()),
-                                                columnWeights: weights)
+                                                columnWeights: weights, boldLastRow: true)
     }
 }

@@ -24,6 +24,27 @@ import CryptoKit
         try check(!TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0002)) &&
                   !TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0200)) &&
                   !TransferWordFont.permitsEditableEmbedding(Data()), "restricted font permission")
+        var defaults = TransferLetterCustomizationStore()
+        defaults.common = .init(header: "ترويسة وهمية", fixedNumber: "عدد وهمي", foodContractReference: "عقد وهمي")
+        for id in TransferReferencePack.expected.keys {
+            defaults.individual[id] = .init(committeeFirst: "عضو أول", committeeSecond: "عضو ثان", committeeThird: "عضو ثالث", footer: "هامش وهمي")
+        }
+        let package = TransferWordDefaults.Package(version: 1, defaults: defaults)
+        let decoded = try TransferWordDefaults.decode(JSONEncoder().encode(package))
+        var prior = TransferLetterCustomizationStore()
+        prior.applyToAll(.init(header: "ترويسة مخصصة"))
+        prior.apply(.init(committeeFirst: "عضو مخصص"), to: "food_company")
+        let merged = TransferWordDefaults.merging(decoded, preserving: prior)
+        try check(merged.effective(for: "food_company").header == "ترويسة مخصصة" &&
+                  merged.effective(for: "food_company").committeeFirst == "عضو مخصص" &&
+                  merged.effective(for: "food_company").committeeSecond == "عضو ثان", "Word defaults preserve customizations")
+        var incompleteDefaults = defaults
+        incompleteDefaults.individual.removeValue(forKey: "water")
+        do {
+            _ = try TransferWordDefaults.decode(JSONEncoder().encode(TransferWordDefaults.Package(version: 1, defaults: incompleteDefaults)))
+            throw Failure(errorDescription: "incomplete Word settings accepted")
+        } catch is Failure { throw Failure(errorDescription: "incomplete Word settings accepted") }
+        catch { }
         let payer = "IQ06TEST123000000000001", beneficiary = "IQ76TEST123000000000002"
         let local = String(beneficiary.suffix(15)), month = "تشرين الاول 2026"
         try check(TransferRules.validIBAN(payer) && TransferRules.validIBAN(beneficiary), "synthetic accounts")
@@ -73,11 +94,13 @@ import CryptoKit
                 }
                 if count == 2 { context.beginPage() }
             }
-            guard let document = PDFDocument(data: pdf), !document.isLocked, document.pageCount == count,
-                  let firstPage = document.page(at: 0),
-                  abs(firstPage.bounds(for: .mediaBox).width - 595.3) < 2,
-                  abs(firstPage.bounds(for: .mediaBox).height - 841.9) < 2 else {
-                throw Failure(errorDescription: "synthetic PDF validation \(id)")
+            guard let document = PDFDocument(data: pdf) else { throw Failure(errorDescription: "synthetic PDF unreadable \(id) bytes=\(pdf.count)") }
+            guard !document.isLocked else { throw Failure(errorDescription: "synthetic PDF locked \(id)") }
+            guard document.pageCount == count else { throw Failure(errorDescription: "synthetic PDF pages \(id) actual=\(document.pageCount) expected=\(count)") }
+            guard let firstPage = document.page(at: 0) else { throw Failure(errorDescription: "synthetic PDF missing page \(id)") }
+            let box = firstPage.bounds(for: .mediaBox)
+            guard abs(box.width - 595.3) < 2, abs(box.height - 841.9) < 2 else {
+                throw Failure(errorDescription: "synthetic PDF size \(id) width=\(Int(box.width)) height=\(Int(box.height))")
             }
             for pageIndex in 0..<count {
                 guard let page = document.page(at: pageIndex), abs(page.bounds(for: .mediaBox).width - 595.3) < 2,
@@ -163,6 +186,17 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let groupXML = try content(result.letter)
             try check(result.csv != nil && groupXML.contains("المجموع"), "Word group \(id)")
+            let category: TransferCategory = id == "rafidain_group" ? .rafidain : .otherBanks
+            let expectedPlan = try TransferWordGroupPlan(allEntities: groupEntities, category: category, month: month,
+                payer: "دافع وهمي", payerIBAN: payer)
+            var wrongTable = expectedPlan.table
+            wrongTable.rows[0][4] = "999"
+            do {
+                try TransferWordVerification.verify(url: result.letter, month: month, amount: expectedPlan.total,
+                    payerIBAN: payer, text: letterText, table: wrongTable)
+                throw Failure(errorDescription: "wrong Word table amount accepted")
+            } catch is Failure { throw Failure(errorDescription: "wrong Word table amount accepted") }
+            catch { }
             generated += 1
         }
         let tooMany = (1...100).map { index -> TransferEntity in
