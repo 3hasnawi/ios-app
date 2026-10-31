@@ -31,7 +31,7 @@ nonisolated enum TransferWordEntityDraft {
             font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
             .paragraph(.init(text: text.header, font: adaptivePDF ? "Times New Roman" : "Sakkal Majalla", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
-            .paragraph(.init(text: "العدد: \(letterNumber)\nالتاريخ: \(signatureDate)", font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
             .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28))

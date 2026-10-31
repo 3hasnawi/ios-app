@@ -30,6 +30,11 @@ nonisolated enum TransferWordGroupDraft {
             "لواء الشرطة الحقوقي\n\(names[2])\nقائد شرطة محافظة الأنبار\n\(date)"
         ]
     }
+    /// عرض ١٤ مسافة غير قابلة للكسر يقارب عرض خمسة أرقام بخط ساكال المعتمد.
+    static func referenceText(number: String, date: String, adaptivePDF: Bool) -> String {
+        let writingSpace = adaptivePDF ? String(repeating: "\u{00A0}", count: 14) : " "
+        return "العدد: \(number)\nالتاريخ:\(writingSpace)\(date)"
+    }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
                       text: LetterText, destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -52,7 +57,7 @@ nonisolated enum TransferWordGroupDraft {
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
             .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: "العدد: \(letterNumber)\nالتاريخ: \(signatureDate)", font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
+            .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
             .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28))

@@ -292,6 +292,8 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: pdf.letter)?.pageCount == 2 && pdf.csv != nil, "Large adaptive group \(id)")
         }
+        let referenceLine = TransferWordGroupDraft.referenceText(number: "ح/١/٢٢", date: " / ١٠ / ٢٠٢٦", adaptivePDF: true)
+        try check(referenceLine.contains("التاريخ:" + String(repeating: "\u{00A0}", count: 14) + " / ١٠ / ٢٠٢٦"), "Handwriting space after date label")
         let signatureExample = TransferWordGroupDraft.signatureCells(["عضو وهمي أول", "عضو وهمي ثان", "اســم وهمــي ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true)
         try check(signatureExample.count == 3 && signatureExample[2].contains("اسم وهمي ثالث") && !signatureExample[2].contains("ـ"), "Fixed signature names")
         try check(ReportSheet.easternDigits("ح/1/22/ / 10 / 2026") == "ح/١/٢٢/ / ١٠ / ٢٠٢٦", "Indic letter dates")
