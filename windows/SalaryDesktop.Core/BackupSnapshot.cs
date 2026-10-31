@@ -13,7 +13,7 @@ public sealed record Deduction(string Month, string Name, string Title, decimal?
 public sealed record ExecutionAccount(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);
 public sealed record ArchiveBook(Guid Id, string Title, string Month, int Pages, string? Entity);
 public sealed record BackupSnapshot(string SourcePath, string SourceDigest, int Version, IReadOnlyList<PayrollMonth> Months,
-    IReadOnlyList<Employee> Employees, IReadOnlyList<Deduction> Deductions,
+    IReadOnlyList<Employee> Employees, IReadOnlyList<Deduction> Deductions, int StaffCount,
     IReadOnlyList<ExecutionAccount> Accounts, IReadOnlyList<ArchiveBook> Books, IReadOnlyDictionary<string, byte[]> SettingsPlists);
 
 public static class BackupReader
@@ -90,6 +90,8 @@ public static class BackupReader
         var manifest = ReadJson<Manifest>("manifest.json");
         if (manifest.Version is < 1 or > 5 || manifest.Months is null || manifest.Employees < 0 || manifest.Deductions < 0 || manifest.Staff < 0)
             throw new InvalidDataException("إصدار النسخة أو فهرسها غير مدعوم.");
+        if (manifest.Months.Length == 0 && manifest.Employees == 0 && manifest.Deductions == 0 && manifest.Staff == 0 && (manifest.Accounts ?? 0) == 0 && (manifest.Books ?? 0) == 0)
+            throw new InvalidDataException("النسخة لا تحتوي بيانات محفوظة.");
         var months = ReadLines<MonthData>("months.jsonl");
         var employees = ReadLines<EmployeeData>("employees.jsonl");
         var deductions = ReadLines<DeductionData>("deductions.jsonl");
@@ -156,6 +158,7 @@ public static class BackupReader
             manifest.Months.Select(name => monthIndex[name]).Select(m => new PayrollMonth(m.Name, m.EmployeeCount, m.DeductionCount)).ToArray(),
             employees.Select(e => new Employee(e.Month, e.Name, e.Rank ?? "", e.Workplace ?? "", e.Net, e.Items, e.Details, e.RawColumns)).ToArray(),
             deductions.Select(d => new Deduction(d.Month, d.Name, d.Title, d.Amount, d.Note ?? "", d.Rank ?? "")).ToArray(),
+            staffCount,
             accounts.Select(a => new ExecutionAccount(a.Entity, a.Iban ?? "", a.Branch ?? "", a.Swift ?? "", a.LocalAccount)).ToArray(),
             books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity)).ToArray(), settingsPlists);
     }

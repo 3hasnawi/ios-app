@@ -15,6 +15,7 @@ namespace SalaryDesktop;
 public partial class MainWindow : Window
 {
     private BackupSnapshot? snapshot;
+    private readonly LocalSnapshotStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Backups"));
     private string page = "home";
     private bool loading;
     private int bankRequest;
@@ -29,6 +30,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
+        Loaded += async (_, _) => await LoadStoredSnapshot();
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
@@ -41,13 +43,9 @@ public partial class MainWindow : Window
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
         {
-            var loaded = await Task.Run(() => BackupReader.Read(dialog.FileName));
-            snapshot = loaded;
-            MonthPicker.ItemsSource = loaded.Months.Select(m => m.Name).ToArray();
-            MonthPicker.SelectedIndex = loaded.Months.Count > 0 ? 0 : -1;
-            SourceMessage.Text = "البيانات للعرض فقط. النسخة الأصلية لم تتغير، ولا يتم رفعها إلى الإنترنت.";
-            StatusBar.Text = "النسخة الحالية مفتوحة من الجهاز. أعد فتحها عند تشغيل البرنامج من جديد.";
-            RenderPage();
+            var loaded = await Task.Run(() => store.Import(dialog.FileName));
+            SetSnapshot(loaded);
+            SourceMessage.Text = "حُفظت نسخة محلية بعد فحصها؛ ملف الآيفون الأصلي لم يتغير.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
         {
@@ -57,6 +55,28 @@ public partial class MainWindow : Window
         finally { loading = false; }
     }
 
+    private void SetSnapshot(BackupSnapshot loaded)
+    {
+        snapshot = loaded;
+        OpenReconciliationButton.IsEnabled = true;
+        MonthPicker.ItemsSource = loaded.Months.Select(m => m.Name).ToArray();
+        MonthPicker.SelectedIndex = loaded.Months.Count > 0 ? 0 : -1;
+        StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون.";
+        RenderPage();
+    }
+    private async Task LoadStoredSnapshot()
+    {
+        if (loading || snapshot is not null) return;
+        loading = true;
+        try
+        {
+            var loaded = await Task.Run(store.LoadCurrent);
+            if (loaded is not null) { SetSnapshot(loaded); SourceMessage.Text = "تم فتح النسخة المحلية المحفوظة على هذا الجهاز."; }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
+        { SourceMessage.Text = "تعذّر فتح النسخة المحلية. لم تُستبدل؛ اختر نسخة احتياطية صالحة. " + ex.Message; }
+        finally { loading = false; }
+    }
     private void Navigate(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string next }) return;
@@ -75,9 +95,10 @@ public partial class MainWindow : Window
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive";
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && !available ? Visibility.Visible : Visibility.Collapsed;
+        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = page switch
         {
             "payroll" => "الرواتب", "deductions" => "الاستقطاعات", "groups" => "جهات التنفيذ",
@@ -87,6 +108,7 @@ public partial class MainWindow : Window
         if (page == "home") { RenderHome(); return; }
         if (page == "bank") { RenderBank(); return; }
         if (page == "transfer") { RenderTransfers(); return; }
+        if (page == "settings") { BackupExport.IsEnabled = snapshot is not null; return; }
         if (!available)
         {
             UnavailableTitle.Text = PageTitle.Text;
@@ -166,6 +188,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ExportBackup(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot;
+        if (source is null) return;
+        var dialog = new SaveFileDialog { Title = "حفظ نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
+        if (dialog.ShowDialog(this) != true) return;
+        BackupExport.IsEnabled = false;
+        try
+        {
+            await Task.Run(() => LocalSnapshotStore.ExportOriginal(source, dialog.FileName));
+            MessageBox.Show(this, "حُفظت نسخة مطابقة للنسخة المفتوحة بعد التحقق منها.", "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { if (page == "settings") BackupExport.IsEnabled = snapshot is not null; }
+    }
+
     private sealed record TransferRow(string Title, string Amount, string Branch, string Iban, string Issues);
     private TransferGroup CurrentTransferGroup => ((TransferGroupPicker.SelectedItem as ComboBoxItem)?.Tag as string) switch
     {
@@ -225,6 +264,13 @@ public partial class MainWindow : Window
     }
 
     private sealed record BankRow(string Title, string Value);
+    private void OpenReconciliation(object sender, RoutedEventArgs e)
+    {
+        if (snapshot is null) return;
+        try { new ReconciliationWindow(BankReconciliation.ReadFromBackup(snapshot)) { Owner = this }.ShowDialog(); }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر فتح دفتر المطابقة المحفوظ. لم تُغيّر البيانات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void RenderBank()
     {
         var ticket = ++bankRequest;
