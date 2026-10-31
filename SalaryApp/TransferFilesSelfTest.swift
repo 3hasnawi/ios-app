@@ -76,6 +76,14 @@ import CryptoKit
         let wordCashList = TransferCashList(month: wordFigures.month, employees: [
             .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 23)
         ])
+        let attachmentTable = TransferWordDocument.Table(headers: ["الاسم"], rows: [["أول"], ["ثان"], ["ثالث"], ["المجموع"]], boldLastRow: true)
+        let attachment = try TransferWordTables.attachment(for: attachmentTable)
+        try check(attachment.text == "المرفقات:\nقائمة أسماء عدد (٣)", "attachment count excludes total row")
+        do {
+            _ = try TransferWordTables.attachment(for: nil)
+            throw Failure(errorDescription: "missing attachment list accepted")
+        } catch is Failure { throw Failure(errorDescription: "missing attachment list accepted") }
+        catch { }
         let cashRows = try TransferWordTables.cash(wordCashList, figures: wordFigures).rows
         try check(cashRows.count == 2 && cashRows[0][3] == "23" && cashRows[1][3] == "23", "Word cash list and total")
         do {

@@ -197,7 +197,7 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let xml = try content(result.letter)
             try check(xml.contains(payer) && xml.contains(beneficiary) && xml.contains("عضو وهمي أول"), "Word payroll \(id)")
-            if id == "cash_salary" { try check(!xml.contains("موظف وهمي"), "Word cash letter excludes the list") }
+            if id == "cash_salary" { try check(!xml.contains("موظف وهمي") && xml.contains("المرفقات:") && xml.contains("قائمة أسماء عدد (١)"), "Word cash letter identifies separate list") }
             if id == "food_tax" {
                 let embedded = try Archive(url: result.letter, accessMode: .read)
                 try check(embedded["word/fonts/sakkal-bold.ttf"] != nil, "Word draft embedded font")
@@ -311,6 +311,8 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let xml = try content(result.letter)
             try check(xml.contains(payer) && (id != "water" || xml.contains("موظف وهمي")), "Word entity \(id)")
+            if id == "water" { try check(!xml.contains("المرفقات:"), "Water letter has no list attachment") }
+            else { try check(xml.contains("المرفقات:") && xml.contains("قائمة أسماء عدد (١)"), "Individual letter identifies separate list \(id)") }
             phase = "adaptive-entity-\(id)"
             let pdf = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [entity], entity: entity,
                 individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",

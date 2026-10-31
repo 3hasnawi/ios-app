@@ -34,7 +34,8 @@ nonisolated enum TransferWordPayrollDraft {
             .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(.init(text: body, halfPoints: 28))
         ]
-        if plan.bookID != "cash_salary", let table = plan.table { blocks.append(.table(table)) }
+        if plan.bookID == "cash_salary" { blocks.append(.paragraph(try TransferWordTables.attachment(for: plan.table))) }
+        else if let table = plan.table { blocks.append(.table(table)) }
         blocks.append(.table(signatures))
         blocks.append(.paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)))
         if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false) }

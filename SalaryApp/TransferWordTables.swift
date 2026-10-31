@@ -12,6 +12,12 @@ nonisolated enum TransferWordTables {
     private static func number(_ amount: Double) -> String {
         String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), amount)
     }
+    /// يطابق العدد صفوف قائمة الأسماء نفسها دون صف المجموع.
+    static func attachment(for table: TransferWordDocument.Table?) throws -> TransferWordDocument.Paragraph {
+        guard let table, table.boldLastRow, table.rows.count > 1 else { throw Failure.incomplete }
+        let count = ReportSheet.easternDigits(String(table.rows.count - 1))
+        return .init(text: "المرفقات:\nقائمة أسماء عدد (\(count))", halfPoints: 28, bold: true)
+    }
     static func treasury(_ figures: TransferLetterFigures) throws -> TransferWordDocument.Table {
         guard valid(figures.incomeTax), valid(figures.socialProtection), valid(figures.treasuryTotal) else { throw Failure.incomplete }
         return .init(headers: ["ت", "البيان", "المبلغ"], rows: [
