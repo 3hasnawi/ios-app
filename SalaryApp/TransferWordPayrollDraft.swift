@@ -19,21 +19,11 @@ nonisolated enum TransferWordPayrollDraft {
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
-        let reason: String
-        switch plan.bookID {
-        case "food_company", "food_tax":
-            guard let reference = foodContractReference, nonempty(reference) else { throw Failure.incomplete }
-            let prefix = plan.bookID == "food_company" ? "عن مستحقات الشركة" : "وذلك عن أمانات ضريبة"
-            reason = "\(prefix) عقد تجهيز الأرزاق الجافة والطرية المرقم (\(reference))"
-        case "tax_social":
-            reason = "وذلك عن مبالغ رسوم الضريبة والحماية الاجتماعية لرواتب قيادة شرطة الأنبار المبينة تفاصيلها أدناه"
-        case "contracts":
-            reason = "وذلك عن المساهمات التقاعدية بنسبة ١٧٪ الخاصة بالمتعاقدين بصفة رجل أمن ضمن تشكيلات قيادتنا حسب الجدول أدناه"
-        case "cash_salary":
-            reason = "وذلك عن أمانات رواتب منتسبي قيادتنا المبينة تفاصيلها بالقائمة المرفقة"
-        default: throw Failure.incomplete
-        }
-        let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(plan.payerIBAN)) المفتوح لديكم إلى حساب (\(plan.beneficiaryName)) المرقم (\(plan.beneficiaryIBAN)) (مصرف الرافدين / فرع الأنبار) \(reason) لشهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
+        var fields = ["المبلغ": amount, "المبلغ كتابة": words, "حسابنا": plan.payerIBAN,
+                      "المستفيد": plan.beneficiaryName, "حساب المستفيد": plan.beneficiaryIBAN,
+                      "الشهر": monthName, "السنة": year]
+        if let reference = foodContractReference { fields["عقد الإطعام"] = reference }
+        let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? text.bodyTemplate : nil, values: fields)
         let signatureCells = TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)

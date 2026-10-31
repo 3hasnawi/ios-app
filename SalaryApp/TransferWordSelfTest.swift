@@ -143,6 +143,33 @@ import CryptoKit
             throw Failure(errorDescription: "wrong Word reference hashes accepted")
         } catch is Failure { throw Failure(errorDescription: "wrong Word reference hashes accepted") }
         catch { }
+        for id in TransferReferencePack.expected.keys {
+            guard let template = TransferLetterBody.template(for: id) else { throw Failure(errorDescription: "missing body template \(id)") }
+            try TransferLetterBody.validate(template, for: id)
+            let changed = template.replacingOccurrences(of: "نرجو تحويل", with: "يرجى تحويل")
+            try TransferLetterBody.validate(changed, for: id)
+            do {
+                try TransferLetterBody.validate(changed.replacingOccurrences(of: "{{المبلغ}}", with: "0"), for: id)
+                throw Failure(errorDescription: "missing body amount accepted")
+            } catch is Failure { throw Failure(errorDescription: "missing body amount accepted") }
+            catch { }
+            do {
+                try TransferLetterBody.validate(changed + " {{المبلغ}}", for: id)
+                throw Failure(errorDescription: "duplicate body amount accepted")
+            } catch is Failure { throw Failure(errorDescription: "duplicate body amount accepted") }
+            catch { }
+        }
+        let bodyValues = ["المبلغ": "1200", "المبلغ كتابة": "ألف ومئتان", "حسابنا": "IQ00TEST",
+                          "المستفيد": "جهة وهمية", "حساب المستفيد": "IQ11TEST", "الشهر": "تشرين الأول", "السنة": "2026"]
+        let renderedBody = try TransferLetterBody.render(id: "tax_social", custom: nil, values: bodyValues)
+        try check(renderedBody.contains("1200") && renderedBody.contains("IQ00TEST") && renderedBody.contains("IQ11TEST") && !renderedBody.contains("{{"), "Dynamic letter body fields")
+        let changedTemplate = TransferLetterBody.template(for: "tax_social")!.replacingOccurrences(of: "نرجو تحويل", with: "يرجى تحويل")
+        let changedBody = try TransferLetterBody.render(id: "tax_social", custom: changedTemplate, values: bodyValues)
+        try check(changedBody.contains("يرجى تحويل") && changedBody.contains("1200"), "Customized body rendering")
+        var bodyStore = TransferLetterCustomizationStore()
+        bodyStore.apply(.init(bodyTemplate: "متن وهمي {{المبلغ}}"), to: "food_tax")
+        let restoredBodyStore = try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: JSONEncoder().encode(bodyStore))
+        try check(restoredBodyStore.effective(for: "food_tax").bodyTemplate == "متن وهمي {{المبلغ}}", "Body customization persistence")
         let figures = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
             healthcare: 20, policeFundDonations: 30, sports: 40, incomeTax: 11, socialProtection: 13,
             contractNominalShare: 17, contractRetirement: 19, payrollCash: 23)

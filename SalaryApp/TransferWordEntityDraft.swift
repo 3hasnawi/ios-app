@@ -11,7 +11,8 @@ nonisolated enum TransferWordEntityDraft {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard TransferRules.validIBAN(plan.payerIBAN), nonempty(text.header), nonempty(text.fixedNumber),
               text.committee.count == 3, text.committee.allSatisfy(nonempty),
-              nonempty(plan.beneficiaryName) else { throw Failure.incomplete }
+              nonempty(plan.beneficiaryName),
+              plan.bookID != "rafidain_anbar" || plan.table != nil else { throw Failure.incomplete }
         let period = try TransferLetterPeriod(plan.month)
         let signatureDate = adaptivePDF ? ReportSheet.easternDigits(period.signatureDate) : period.signatureDate
         let letterNumber = adaptivePDF ? ReportSheet.easternDigits(text.fixedNumber) : text.fixedNumber
@@ -19,26 +20,13 @@ nonisolated enum TransferWordEntityDraft {
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
-        let target: String
-        let reason: String
-        switch plan.bookID {
-        case "ramadi", "housing", "water":
-            guard let account = plan.beneficiaryAccount, nonempty(account), let bank = plan.bank, nonempty(bank) else { throw Failure.incomplete }
-            target = "إلى حساب (\(plan.beneficiaryName)) المرقم (\(account)) والمفتوح لدى (\(bank))"
-            switch plan.bookID {
-            case "ramadi": reason = "وذلك عن المبالغ المستقطعة والمحسومة من منتسبي قيادة شرطة الأنبار وحسب القوائم المرفقة طياً"
-            case "housing": reason = "وذلك عن مبالغ السلف والقروض المستقطعة والمحسومة من منتسبي قيادة شرطة الأنبار المدرجة أسماؤهم في القائمة المرفقة طياً"
-            default:
-                guard let rank = plan.personRank, let name = plan.personName, nonempty(rank), nonempty(name) else { throw Failure.incomplete }
-                reason = "وذلك عن مبالغ استقطاع منسوبنا \(rank) (\(name))"
-            }
-        case "rafidain_anbar":
-            guard plan.table != nil else { throw Failure.incomplete }
-            target = "إلى حساب مصرفكم (مصرف الرافدين / فرع الأنبار)"
-            reason = "وذلك عن مبالغ السلف والقروض المستقطعة والمحسومة من منتسبينا المدرجة أسماؤهم في القائمة المرفقة"
-        default: throw Failure.incomplete
-        }
-        let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(plan.payerIBAN)) المفتوح لديكم \(target) \(reason) لشهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
+        var fields = ["المبلغ": amount, "المبلغ كتابة": words, "حسابنا": plan.payerIBAN,
+                      "المستفيد": plan.beneficiaryName, "الشهر": monthName, "السنة": year]
+        if let value = plan.beneficiaryAccount { fields["حساب المستفيد"] = value }
+        if let value = plan.bank { fields["المصرف"] = value }
+        if let value = plan.personRank { fields["الرتبة"] = value }
+        if let value = plan.personName { fields["الاسم"] = value }
+        let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? text.bodyTemplate : nil, values: fields)
         let signatures = TransferWordDocument.Table(headers: [], rows: [TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)],
             font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [

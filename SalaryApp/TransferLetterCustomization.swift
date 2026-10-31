@@ -9,6 +9,7 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
     var footer: String?
     var fixedNumber: String? = nil
     var foodContractReference: String? = nil
+    var bodyTemplate: String? = nil
 
     func applying(over base: Self) -> Self {
         Self(header: header ?? base.header,
@@ -17,7 +18,8 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
              committeeThird: committeeThird ?? base.committeeThird,
              footer: footer ?? base.footer,
              fixedNumber: fixedNumber ?? base.fixedNumber,
-             foodContractReference: foodContractReference ?? base.foodContractReference)
+             foodContractReference: foodContractReference ?? base.foodContractReference,
+             bodyTemplate: bodyTemplate ?? base.bodyTemplate)
     }
 }
 
@@ -50,6 +52,7 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
             if changes.footer != nil { value.footer = nil }
             if changes.fixedNumber != nil { value.fixedNumber = nil }
             if changes.foodContractReference != nil { value.foodContractReference = nil }
+            if changes.bodyTemplate != nil { value.bodyTemplate = nil }
             individual[key] = value
         }
     }

@@ -16,6 +16,8 @@ struct TransferLetterSettingsView: View {
     @State private var footer = ""
     @State private var fixedNumber = ""
     @State private var foodContractReference = ""
+    @State private var bodyTemplate = ""
+    @State private var mixed = Set<String>()
     @State private var importing = false
     @State private var error: String?
     @State private var saved = false
@@ -40,15 +42,19 @@ struct TransferLetterSettingsView: View {
             Toggle(title, isOn: Binding(get: { selected.contains(key) }, set: { if $0 { selected.insert(key) } else { selected.remove(key) } }))
             if selected.contains(key) {
                 TextField(title, text: text, axis: lines ? .vertical : .horizontal)
-                    .lineLimit(lines ? 1...5 : 1...1)
+                    .lineLimit(lines ? (key == "body" ? 5...14 : 1...5) : 1...1)
                     .textFieldStyle(.roundedBorder)
+                if mixed.contains(key) {
+                    Text(tr("تختلف القيمة بين الكتب؛ اختر كتاباً لرؤية قيمته، أو أدخل قيمة موحدة للجميع.", "Values differ between letters; choose a letter to view its value, or enter one value for all."))
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
         }.padding(.vertical, 3)
     }
     var body: some View {
         Form {
             Section {
-                Button(tr("استيراد إعدادات النماذج", "Import letter settings"), systemImage: "square.and.arrow.down") { importDefaults() }
+                Button(tr("استيراد القيم من النماذج", "Import values from letter templates"), systemImage: "square.and.arrow.down") { importDefaults() }
                     .disabled(busy)
                 if importing { ProgressView() }
             } footer: { Text(tr("يملأ العدد والتواقيع والهامش من ملف الإعدادات الخاص، مع الاحتفاظ بتخصيصاتك السابقة. راجع العدد وأسماء اللجنة بعد الاستيراد.", "Fills the reference number, signatures and footer from the private settings file while preserving existing customizations. Review the reference number and committee names after import.")) }
@@ -64,6 +70,13 @@ struct TransferLetterSettingsView: View {
                 field("second", tr("عضو اللجنة الثاني", "Second committee member"), text: $second)
                 field("third", tr("عضو اللجنة الثالث", "Third committee member"), text: $third)
                 field("footer", tr("الهامش السفلي", "Footer"), text: $footer, lines: true)
+                if target != "all" {
+                    field("body", tr("متن الكتاب", "Letter body"), text: $bodyTemplate, lines: true)
+                    if selected.contains("body") {
+                        Text(tr("عدّل الصياغة واترك الحقول بين {{ }} كما هي؛ يملؤها التطبيق من بيانات الشهر تلقائياً.", "Edit the wording and keep the fields in {{ }} unchanged; the app fills them from the selected month."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if target == "all" {
                     field("fixedNumber", tr("العدد الموحد", "Fixed letter number"), text: $fixedNumber)
                     field("foodContractReference", tr("رقم وتاريخ عقد الإطعام", "Food contract number and date"), text: $foodContractReference)
@@ -74,7 +87,7 @@ struct TransferLetterSettingsView: View {
                     Button(tr("إزالة تخصيص هذا الكتاب", "Remove this letter's overrides"), role: .destructive) { removeIndividual() }
                         .disabled(busy)
                 }
-            } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("تُحفظ الخيارات، وما زال تطبيقها على ملفات الكتب قيد الإكمال.", "Options are saved; applying them to letter PDFs is still in progress.")) }
+            } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("اختر كتاباً لتعديل متنه. تظهر القيم المشتركة عندما تتطابق في جميع الكتب.", "Choose a letter to edit its body. Shared values appear when they match across all letters.")) }
             Section {
                 Button { importFont(.bold) } label: {
                     Label(boldData.isEmpty ? tr("استيراد الخط العريض", "Import bold font") : tr("استبدال الخط العريض", "Replace bold font"), systemImage: "textformat")
@@ -102,12 +115,22 @@ struct TransferLetterSettingsView: View {
         selected.removeAll()
         do {
             let store = try readStore()
-            let value = target == "all" ? store.common : store.effective(for: target)
-            header = value.header ?? ""; first = value.committeeFirst ?? ""; second = value.committeeSecond ?? ""
-            third = value.committeeThird ?? ""; footer = value.footer ?? ""
-            fixedNumber = value.fixedNumber ?? ""; foodContractReference = value.foodContractReference ?? ""
+            mixed.removeAll()
+            func value(_ key: String, _ path: KeyPath<TransferLetterCustomization, String?>) -> String {
+                if target != "all" { return store.effective(for: target)[keyPath: path] ?? "" }
+                let values = titles.map { store.effective(for: $0.id)[keyPath: path] }
+                guard let first = values.first, values.allSatisfy({ $0 == first }) else {
+                    mixed.insert(key); return ""
+                }
+                return first ?? ""
+            }
+            header = value("header", \.header); first = value("first", \.committeeFirst)
+            second = value("second", \.committeeSecond); third = value("third", \.committeeThird)
+            footer = value("footer", \.footer); fixedNumber = store.common.fixedNumber ?? ""
+            foodContractReference = store.common.foodContractReference ?? ""
+            bodyTemplate = target == "all" ? "" : (store.effective(for: target).bodyTemplate ?? TransferLetterBody.template(for: target) ?? "")
         } catch {
-            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""
+            header = ""; first = ""; second = ""; third = ""; footer = ""; fixedNumber = ""; foodContractReference = ""; bodyTemplate = ""; mixed.removeAll()
             self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.")
         }
     }
@@ -115,20 +138,28 @@ struct TransferLetterSettingsView: View {
         guard !busy, !selected.isEmpty else { return }
         let pairs = [("header", header), ("first", first), ("second", second), ("third", third), ("footer", footer),
                      ("fixedNumber", fixedNumber), ("foodContractReference", foodContractReference)]
+        guard pairs.filter({ selected.contains($0.0) && mixed.contains($0.0) }).allSatisfy({ !$0.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            error = tr("أدخل قيمة موحدة للحقل الذي يختلف بين الكتب، أو اختر كتاباً محدداً.", "Enter a value for the field that differs between letters, or choose a specific letter."); return
+        }
         guard pairs.filter({ selected.contains($0.0) }).allSatisfy({ pair in
             let limit = pair.0 == "footer" ? 4000 : pair.0 == "header" ? 2000 : 200
             return pair.1.count <= limit && !pair.1.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 })
         }) else { error = tr("أحد الحقول أطول من الحد المسموح أو يحتوي رمزاً غير صالح.", "A field is too long or contains an invalid character."); return }
+        if selected.contains("body") {
+            do { try TransferLetterBody.validate(bodyTemplate, for: target) }
+            catch { self.error = error.localizedDescription; return }
+        }
         let changes = TransferLetterCustomization(header: selected.contains("header") ? header : nil,
             committeeFirst: selected.contains("first") ? first : nil, committeeSecond: selected.contains("second") ? second : nil,
             committeeThird: selected.contains("third") ? third : nil, footer: selected.contains("footer") ? footer : nil,
             fixedNumber: selected.contains("fixedNumber") ? fixedNumber : nil,
-            foodContractReference: selected.contains("foodContractReference") ? foodContractReference : nil)
+            foodContractReference: selected.contains("foodContractReference") ? foodContractReference : nil,
+            bodyTemplate: selected.contains("body") ? bodyTemplate : nil)
         do {
             var store = try readStore()
             if target == "all" { store.applyToAll(changes) } else { store.apply(changes, to: target) }
             storedData = try JSONEncoder().encode(store)
-            BackupManager.shared.markChanged(); selected.removeAll(); saved = true
+            BackupManager.shared.markChanged(); loadTarget(); saved = true
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة؛ لم يتم استبدالها.", "Could not read saved customizations; they were not replaced.") }
     }
     private func removeIndividual() {

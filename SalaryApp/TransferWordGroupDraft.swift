@@ -7,6 +7,7 @@ nonisolated enum TransferWordGroupDraft {
         let fixedNumber: String
         let committee: [String]
         let footer: String
+        var bodyTemplate: String? = nil
     }
     enum Failure: LocalizedError {
         case incomplete
@@ -16,7 +17,7 @@ nonisolated enum TransferWordGroupDraft {
         guard let header = custom.header, let fixedNumber = custom.fixedNumber,
               let first = custom.committeeFirst, let second = custom.committeeSecond,
               let third = custom.committeeThird, let footer = custom.footer else { throw Failure.incomplete }
-        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer)
+        return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer, bodyTemplate: custom.bodyTemplate)
     }
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
     static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool) -> [String] {
@@ -43,7 +44,9 @@ nonisolated enum TransferWordGroupDraft {
             requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
         guard let amount = values["AMOUNT"], let words = values["AMOUNT_WORDS"],
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
-        let body = "نرجو تحويل مبلغ قدره (\(amount)) (\(words)) لا غيرها من حسابنا المرقم (\(normalizedPayer)) المفتوح لديكم إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر (\(monthName) / \(year)) وتزويدنا بالإشعار اللازم بذلك."
+        let body = try TransferLetterBody.render(id: plan.category == .rafidain ? "rafidain_group" : "other_banks_group", custom: adaptivePDF ? text.bodyTemplate : nil, values: [
+            "المبلغ": amount, "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": monthName, "السنة": year
+        ])
         let signatureCells = Self.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)

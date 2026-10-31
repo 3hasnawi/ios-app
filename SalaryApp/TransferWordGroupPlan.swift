@@ -8,6 +8,7 @@ nonisolated struct TransferWordGroupPlan: Sendable {
             tr("تعذّر تجهيز جدول المجموعة: راجع تصنيف الجهات والحسابات والمبالغ.", "Could not prepare the group table; review entity classification, accounts and amounts.")
         }
     }
+    let category: TransferCategory
     let total: Double
     let table: TransferWordDocument.Table
     let csv: Data
@@ -46,6 +47,7 @@ nonisolated struct TransferWordGroupPlan: Sendable {
                 fontName: "Arial-BoldMT", maximumSize: 11, minimumSize: 9, verticalPadding: 5)
             halfPoints = Int((fit.fontSize * 2).rounded())
         }
+        self.category = category
         self.total = sum
         self.csv = data
         self.month = month

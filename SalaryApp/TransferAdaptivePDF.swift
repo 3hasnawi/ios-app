@@ -130,7 +130,7 @@ nonisolated enum TransferAdaptivePDF {
             try addLines(lines(closing.text, font: closingFont, width: contentWidth), x: margin, width: contentWidth, flush: 0.5)
             needsClosing = false
         }
-        for block in blocks.dropFirst(2) {
+        for (blockIndex, block) in blocks.dropFirst(2).enumerated() {
             try Task.checkCancellation()
             switch block {
             case .pageBreak:
@@ -138,7 +138,7 @@ nonisolated enum TransferAdaptivePDF {
                 try nextPage(); limit = bottom; afterBreak = true
             case .paragraph(let p):
                 if needsClosing && p.text.hasPrefix("المرفقات:") { try addClosing() }
-                if p.text.hasPrefix("نرجو تحويل مبلغ قدره") {
+                if blockIndex == 2 {
                     y += 18
                     let salutation = TransferWordDocument.Paragraph(text: "تحية طيبة ..", font: "Times New Roman", halfPoints: 28, bold: true)
                     let salutationFont = try font(salutation, sakkal: sakkalBold)
@@ -148,7 +148,7 @@ nonisolated enum TransferAdaptivePDF {
                 let face = try font(p, sakkal: sakkalBold)
                 let ls = try lines(p.text, font: face, width: contentWidth,
                                    underline: p.centered && p.text.hasPrefix("م /"),
-                                   justify: p.text.hasPrefix("نرجو تحويل مبلغ قدره"),
+                                   justify: blockIndex == 2,
                                    spacing: expectingFooter ? 0 : 3)
                 if expectingFooter {
                     let footerHeight = ls.reduce(CGFloat.zero, { $0 + $1.height })
