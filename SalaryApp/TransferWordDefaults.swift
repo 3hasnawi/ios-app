@@ -8,8 +8,13 @@ nonisolated enum TransferWordDefaults {
         let referenceHashes: [String: String]
     }
     enum Failure: LocalizedError {
-        case invalid
-        var errorDescription: String? { tr("ملف إعدادات الكتب غير صالح أو لا يحتوي جميع الكتب المطلوبة.", "The letter settings file is invalid or incomplete.") }
+        case invalid, referencesChanged
+        var errorDescription: String? {
+            switch self {
+            case .invalid: tr("ملف إعدادات الكتب غير صالح أو لا يحتوي جميع الكتب المطلوبة.", "The letter settings file is invalid or incomplete.")
+            case .referencesChanged: tr("مراجع الكتب لا تطابق الإعدادات المستوردة؛ استورد المراجع والإعدادات المتطابقة مجدداً.", "Letter references do not match the imported settings; reimport matching references and settings.")
+            }
+        }
     }
     static func decode(_ data: Data) throws -> Package {
         guard !data.isEmpty, data.count <= 1_000_000,
@@ -43,10 +48,10 @@ nonisolated enum TransferWordDefaults {
         try verifyHashes(package.referenceHashes, data: data)
     }
     static func verifyHashes(_ hashes: [String: String], data: Data) throws {
-        guard Set(hashes.keys) == Set(TransferReferencePack.expected.keys) else { throw Failure.invalid }
+        guard Set(hashes.keys) == Set(TransferReferencePack.expected.keys) else { throw Failure.referencesChanged }
         let manifest = try TransferReferencePack.validateData(data)
         for template in manifest.templates where TransferReferencePack.expected[template.id] != nil {
-            guard hashes[template.id] == template.sha256.lowercased() else { throw Failure.invalid }
+            guard hashes[template.id] == template.sha256.lowercased() else { throw Failure.referencesChanged }
         }
     }
     static func merging(_ imported: TransferLetterCustomizationStore,

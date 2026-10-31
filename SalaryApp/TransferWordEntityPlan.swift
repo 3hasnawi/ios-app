@@ -39,11 +39,11 @@ nonisolated struct TransferWordEntityPlan: Sendable {
             guard let account, TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
                   TransferRules.validIBAN(account.iban) else { throw Failure.incomplete }
             id = "ramadi"; number = ArabicText.latinDigits(account.iban).uppercased().filter { !$0.isWhitespace && $0 != "-" }
-            personName = nil; personRank = nil; table = nil
+            personName = nil; personRank = nil; table = try TransferWordTables.individual(plan)
         case .housing:
             guard let account, TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
                   let local = TransferRules.individualLocalAccount(account) else { throw Failure.incomplete }
-            id = "housing"; number = local; personName = nil; personRank = nil; table = nil
+            id = "housing"; number = local; personName = nil; personRank = nil; table = try TransferWordTables.individual(plan)
         case .water:
             guard let account, TransferAccountLinks.authorizes(title: plan.group.title, account: account, data: accountLinks),
                   let local = TransferRules.individualLocalAccount(account), let employee = plan.rows.first,

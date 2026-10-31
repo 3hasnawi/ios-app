@@ -133,6 +133,11 @@ import CryptoKit
         let matchingHashes = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.sha256) })
         let matchingPackage = TransferWordDefaults.Package(version: 1, defaults: defaults, referenceHashes: matchingHashes)
         try TransferWordDefaults.verifyReferences(matchingPackage, data: references)
+        var boundStore = defaults
+        boundStore.wordReferenceHashes = matchingHashes
+        let savedStore = try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: JSONEncoder().encode(boundStore))
+        try check(savedStore.wordReferenceHashes == matchingHashes, "Word reference binding persistence")
+        try TransferWordDefaults.verifyHashes(savedStore.wordReferenceHashes!, data: references)
         do {
             try TransferWordDefaults.verifyReferences(package, data: references)
             throw Failure(errorDescription: "wrong Word reference hashes accepted")

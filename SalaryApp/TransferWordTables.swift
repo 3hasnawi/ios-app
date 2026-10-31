@@ -43,6 +43,20 @@ nonisolated enum TransferWordTables {
         rows.append(["", "", "المجموع", number(expected)])
         return .init(headers: ["الاسم", "الرتبة", "محل العمل", "صافي الراتب"], rows: rows, columnWeights: [150, 80, 190, 119], boldLastRow: true)
     }
+    /// قائمة مرفقة للجهات التي يذكر كتابها وجود قائمة أسماء.
+    static func individual(_ plan: TransferIndividualPlan) throws -> TransferWordDocument.Table {
+        guard !plan.rows.isEmpty, plan.rows.count < 50_000, valid(plan.group.total),
+              plan.rows.allSatisfy({ !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && valid($0.amount) }) else { throw Failure.incomplete }
+        var rows: [[String]] = []
+        rows.reserveCapacity(plan.rows.count + 1)
+        for (index, row) in plan.rows.enumerated() {
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
+            rows.append([String(index + 1), row.rank, row.name, number(row.amount)])
+        }
+        rows.append(["", "", "المجموع", number(plan.group.total)])
+        return .init(headers: ["ت", "الرتبة", "الاسم الكامل", "المبلغ"], rows: rows,
+                     columnWeights: [40, 90, 260, 120], boldLastRow: true)
+    }
     static func anbar(_ plan: TransferIndividualPlan) throws -> TransferWordDocument.Table {
         guard case .rafidainAnbar = plan.kind, !plan.rows.isEmpty, plan.rows.count < 50_000,
               valid(plan.group.total), plan.rows.allSatisfy({ !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && valid($0.amount) }) else { throw Failure.incomplete }
