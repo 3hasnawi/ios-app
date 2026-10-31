@@ -21,6 +21,7 @@ enum ReportsRoute: Hashable {
 /// ثم جهات التنفيذ مع البحث، وزر "تصدير" واحد يفتح نافذة التصدير (جهة واحدة أو مجموعة جهات).
 struct ReportsView: View {
     var presentedFromHome = false
+    var pushedFromHome = false
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
@@ -75,7 +76,16 @@ struct ReportsView: View {
             .navigationTitle(tr("التقارير", "Reports"))
             // عنوان صغير وزر الشهر في شريط العنوان (مثل الرئيسية) حتى تبدأ البطاقات من أعلى الشاشة.
             .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(pushedFromHome)
             .toolbar {
+                if pushedFromHome {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.backward")
+                        }
+                        .accessibilityLabel(tr("العودة", "Back"))
+                    }
+                }
                 if presentedFromHome {
                     ToolbarItem(placement: .topBarLeading) {
                         Button(tr("إغلاق", "Close"), systemImage: "xmark") { dismiss() }

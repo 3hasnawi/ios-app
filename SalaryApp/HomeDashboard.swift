@@ -182,7 +182,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup
+    case audit, salary, deductions, backup, reports
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
     var id: Self { self }
@@ -234,7 +234,7 @@ struct HomeDashboard: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let current {
                     HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
-                                   openReports: { AppRouter.shared.showReports = true },
+                                   openReports: { route = .reports },
                                    openRoute: { route = $0 },
                                    openEntities: { openReports(.entities, month: current) })
                 } else { welcome }
@@ -264,6 +264,7 @@ struct HomeDashboard: View {
         }
         .navigationDestination(item: $route) { route in
             switch route {
+            case .reports: ReportsView(pushedFromHome: true)
             case .audit: AuditView(months: months.map(\.name))
             case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")
             case .deductions: DeductionAuditView(months: months.map(\.name), to: current?.name ?? "")
@@ -379,7 +380,7 @@ struct HomeDashboard: View {
 
     private func openTile(_ kind: HomeTileKind, month: PayrollMonth) {
         switch kind {
-        case .reports, .special: AppRouter.shared.showReports = true
+        case .reports, .special: route = .reports
         case .attention: route = .audit
         case .changes: route = .salary
         case .deductionCount, .deductionTotal, .entities: openReports(.entities, month: month)
@@ -396,7 +397,7 @@ struct HomeDashboard: View {
     /// مدخل ثابت للتقارير بعد نقلها من الشريط السفلي.
     private var reportsEntry: some View {
         Button {
-            AppRouter.shared.showReports = true
+            route = .reports
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "chart.bar.doc.horizontal")
