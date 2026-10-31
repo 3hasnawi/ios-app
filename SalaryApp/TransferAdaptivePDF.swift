@@ -161,6 +161,7 @@ nonisolated enum TransferAdaptivePDF {
                 try addLines(ls, x: margin, width: contentWidth, flush: p.centered ? 0.5 : 1)
                 if !ls.isEmpty { y += 6 }
             case .table(let table):
+                if needsClosing && table.showBorders && !afterBreak { try addClosing() }
                 let count = table.headers.isEmpty ? (table.rows.first?.count ?? 0) : table.headers.count
                 let weights = table.columnWeights ?? Array(repeating: 1, count: count)
                 guard count > 0, count <= 12, weights.count == count, weights.allSatisfy({ $0 > 0 }),
