@@ -170,9 +170,19 @@ nonisolated enum TransferAdaptivePDF {
                 let boldFace = try font(.init(text: "", font: table.font, halfPoints: table.halfPoints, bold: true), sakkal: sakkalBold)
                 func layout(_ values: [String], bold: Bool) throws -> ([[TextLine]], CGFloat) {
                     guard values.count == count else { throw Failure.invalid }
-                    let cells = try zip(values, widths).map { try lines($0.0, font: bold ? boldFace : face, width: $0.1 - 8) }
-                    let height = max(ceil(CGFloat(table.halfPoints) / 2 * 1.3) + 6,
-                                     (cells.map { $0.reduce(CGFloat.zero) { $0 + $1.height } }.max() ?? 0) + 6)
+                    let cellFont: CTFont = bold ? boldFace : face
+                    var cells: [[TextLine]] = []
+                    var tallest: CGFloat = 0
+                    for index in values.indices {
+                        let cell = try lines(values[index], font: cellFont, width: widths[index] - 8)
+                        var cellHeight: CGFloat = 0
+                        for line in cell { cellHeight += line.height }
+                        tallest = max(tallest, cellHeight)
+                        cells.append(cell)
+                    }
+                    let fontSize = CGFloat(table.halfPoints) / 2
+                    let minimumHeight = ceil(fontSize * 1.3) + 6
+                    let height: CGFloat = max(minimumHeight, tallest + 6)
                     guard height <= bottom - margin else { throw Failure.doesNotFit }
                     return (cells, height)
                 }
