@@ -690,7 +690,7 @@ private struct TransferCategoryView: View {
             } else {
                 Label(figuresError ?? tr("تعذّر تحميل بيانات الكتاب للشهر المختار.", "Could not load letter data for the selected month."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
             }
-        } footer: { Text(tr("معاينة الكتاب قيد التحقق؛ تصدير الكتاب سيُتاح بعد مراجعته على الجهاز.", "The letter preview is under verification; export will be available after review on the device.")) }
+        } footer: { Text(tr("راجع الكتاب ومبالغه على الجهاز، ثم صدّر PDF من المعاينة.", "Review the letter and amounts on the device, then export the PDF from the preview.")) }
     }
     @ViewBuilder private func anbarBooks(_ context: TransferAnbarContext) -> some View {
         if context.figures.missingContractNominal > 0 {

@@ -149,9 +149,7 @@ struct TransferLetterDraftView: View {
                 }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && preparedFigures.contractTotal == nil))
-            } footer: { Text(kind == .contracts && reviewedContractAmount
-                ? tr("راجع المبلغ والجدول والتواقيع في المعاينة قبل مشاركة الكتاب.", "Review the amount, table and signatures in the preview before sharing.")
-                : tr("معاينة PDF تجريبية: راجع البيانات والتواقيع وعدد الصفحات على الآيفون. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "PDF preview is experimental: review the details, signatures and pages on iPhone. Sharing remains disabled until verification is complete.")) }
+            } footer: { Text(tr("راجع البيانات والتواقيع وعدد الصفحات في المعاينة قبل تصدير الكتاب.", "Review the details, signatures and pages in the preview before exporting the letter.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
         .task(id: sourceKey) { await restoreEntity() }
@@ -253,13 +251,13 @@ struct TransferLetterDraftView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
-                        if kind == .contracts && draftUsedNominalReview {
-                            ToolbarItem(placement: .primaryAction) {
-                                Button(tr("مشاركة الكتاب", "Share letter"), systemImage: "square.and.arrow.up") {
-                                    guard wordIsCurrent else { return }
-                                    ActivityShare.present([wordResult.letter])
-                                }.disabled(!wordIsCurrent)
+                        ToolbarItem(placement: .bottomBar) {
+                            Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
+                                guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
+                                ActivityShare.present([wordResult.letter])
                             }
+                            .disabled(!wordIsCurrent)
+                            .accessibilityIdentifier("exportTransferLetterPDF")
                         }
                         if wordResult.csv != nil {
                             ToolbarItem(placement: .primaryAction) {

@@ -28,6 +28,7 @@ struct TransferCompanyLetterView: View {
         return record != nil && currentPayer == payerIBAN && currentReferences == references
             && "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
+    private var wordIsCurrent: Bool { sourceIsCurrent && currentCustomization == wordCustomizationSnapshot && currentBoldFont == wordBoldSnapshot }
     var body: some View {
         List {
             Section(tr("بيانات الكتاب", "Letter details")) {
@@ -48,7 +49,7 @@ struct TransferCompanyLetterView: View {
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
                 if currentBoldFont.isEmpty { Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد العدد والتاريخ.", "Import the bold Sakkal font in letter settings to prepare the reference and date.")).font(.footnote).foregroundStyle(.orange) }
-                Text(tr("اضبط العدد والترويسة واللجنة والهامش ورقم عقد الإطعام من تخصيص الكتب. المشاركة معطّلة حتى اكتمال التدقيق.", "Set the reference, header, committee, footer and food contract reference in letter settings. Sharing remains disabled until verification is complete.")).font(.footnote).foregroundStyle(.secondary)
+                Text(tr("اضبط بيانات الكتاب من التخصيص، ثم راجع المعاينة قبل تصدير PDF.", "Customize the letter details, then review the preview before exporting the PDF.")).font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle(tr("كتاب شركة عراق الجوال", "Company transfer letter"))
@@ -81,12 +82,22 @@ struct TransferCompanyLetterView: View {
                     VStack(spacing: 0) {
                         Label(tr("مسودة تجريبية؛ راجع النص والمبلغ والحسابات والتواقيع قبل اعتمادها.", "Experimental draft: review the text, amount, accounts and signatures before approval."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
-                        if !sourceIsCurrent || currentCustomization != wordCustomizationSnapshot || currentBoldFont != wordBoldSnapshot { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
+                        if !wordIsCurrent { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         PDFPreview(url: wordResult.letter)
                     }
                     .navigationTitle(tr("مسودة PDF", "PDF draft"))
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } } }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
+                        ToolbarItem(placement: .bottomBar) {
+                            Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
+                                guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
+                                ActivityShare.present([wordResult.letter])
+                            }
+                            .disabled(!wordIsCurrent)
+                            .accessibilityIdentifier("exportTransferLetterPDF")
+                        }
+                    }
                 }
             }
         }
