@@ -85,7 +85,7 @@ jobs:
         if: always()
         run: |
           if [ -s ci-output/word-preview.png ]; then
-            python3 -c 'import base64; print("SYNTHETIC_PREVIEW=" + base64.b64encode(open("ci-output/word-preview.png", "rb").read()).decode())'
+            python3 -c 'import base64; s=base64.b64encode(open("ci-output/word-preview.png", "rb").read()).decode(); [print("PREVIEW_CHUNK=" + s[i:i+2000]) for i in range(0,len(s),2000)]'
           fi
       - uses: actions/upload-artifact@v4
         if: always()
