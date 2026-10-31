@@ -58,6 +58,40 @@
           <TextBlock x:Name="TableStatus" Grid.Row="1" Foreground="#718481" Margin="0,10,0,10" TextWrapping="Wrap"/>
           <DataGrid x:Name="DataTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Background="White" BorderBrush="#E1E7E8" GridLinesVisibility="Horizontal" RowHeaderWidth="0" HeadersVisibility="Column" SelectionMode="Single" MouseDoubleClick="OpenArchiveBook"/>
         </Grid>
+        <ScrollViewer x:Name="BankPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Text="كشف حساب البنك · مبلغ للمراجعة" FontSize="15" Foreground="#617A77"/>
+              <TextBlock x:Name="BankTotalText" FontSize="34" FontWeight="Bold" Foreground="{StaticResource Primary}" Margin="0,8" Text="—"/>
+              <TextBlock x:Name="BankNotice" Foreground="#C57A19" TextWrapping="Wrap"/>
+            </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Text="تفاصيل المبالغ" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10"/>
+              <ItemsControl x:Name="BankRows"><ItemsControl.ItemTemplate><DataTemplate>
+                <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Title}"/><TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold"/></Grid>
+              </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+            </StackPanel></Border>
+            <Border Style="{StaticResource Card}"><StackPanel>
+              <TextBlock Text="مطابقة استقطاعات المصارف" FontSize="18" FontWeight="SemiBold"/>
+              <TextBlock x:Name="BankReconcileText" TextWrapping="Wrap" Margin="0,10,0,0"/>
+              <TextBlock Text="مطابقة كشف المصرف الورقي وإدخال الحركات غير مكتملين في نسخة ويندوز." Foreground="#718481" TextWrapping="Wrap" Margin="0,10,0,0"/>
+            </StackPanel></Border>
+          </StackPanel>
+        </ScrollViewer>
+        <Grid x:Name="TransferPanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <ComboBox x:Name="TransferGroupPicker" Height="38" SelectedIndex="0" SelectionChanged="TransferGroupChanged" VerticalContentAlignment="Center">
+            <ComboBoxItem Tag="rafidain" Content="الرافدين · عدا فرع الأنبار"/><ComboBoxItem Tag="other" Content="مجموعة رشيد ومصارف أخرى"/><ComboBoxItem Tag="anbar" Content="الكتب المنفردة · فرع الأنبار"/><ComboBoxItem Tag="unresolved" Content="جهات تحتاج تصنيفاً"/>
+          </ComboBox>
+          <TextBlock x:Name="TransferNotice" Grid.Row="1" Foreground="#BD741B" TextWrapping="Wrap" Margin="0,10,0,10"/>
+          <DataGrid x:Name="TransferTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" RowHeaderWidth="0" HeadersVisibility="Column" Background="White" EnableRowVirtualization="True" GridLinesVisibility="Horizontal">
+            <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="2*"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="2*"/></DataGrid.Columns>
+          </DataGrid>
+          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
+            <Button x:Name="TransferExport" Style="{StaticResource ActionButton}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
+            <Button Content="كتاب المجموعة · قيد التطوير" IsEnabled="False" Padding="16,10" Margin="12,0,0,0"/>
+          </StackPanel>
+        </Grid>
         <Border x:Name="UnavailablePanel" Visibility="Collapsed" Style="{StaticResource Card}" VerticalAlignment="Top"><StackPanel><TextBlock x:Name="UnavailableTitle" FontSize="20" FontWeight="SemiBold"/><TextBlock x:Name="UnavailableMessage" Margin="0,10,0,0" Foreground="#718481" TextWrapping="Wrap" FontSize="14"/></StackPanel></Border>
       </Grid>
       <TextBlock Grid.Row="3" x:Name="StatusBar" Margin="0,12,0,0" Foreground="#718481" FontSize="12" Text="القراءة محلية على جهازك؛ لا توجد مزامنة أو تعديل للنسخة."/>

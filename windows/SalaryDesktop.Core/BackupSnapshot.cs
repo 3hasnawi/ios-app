@@ -8,13 +8,13 @@ namespace SalaryDesktop.Core;
 
 // Snapshot is read only. The original backup is never extracted or overwritten.
 public sealed record PayrollMonth(string Name, int EmployeeCount, int DeductionCount);
-public sealed record Employee(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details);
+public sealed record Employee(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
 public sealed record Deduction(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
 public sealed record ExecutionAccount(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);
 public sealed record ArchiveBook(Guid Id, string Title, string Month, int Pages, string? Entity);
 public sealed record BackupSnapshot(string SourcePath, string SourceDigest, int Version, IReadOnlyList<PayrollMonth> Months,
     IReadOnlyList<Employee> Employees, IReadOnlyList<Deduction> Deductions,
-    IReadOnlyList<ExecutionAccount> Accounts, IReadOnlyList<ArchiveBook> Books);
+    IReadOnlyList<ExecutionAccount> Accounts, IReadOnlyList<ArchiveBook> Books, IReadOnlyDictionary<string, byte[]> SettingsPlists);
 
 public static class BackupReader
 {
@@ -24,7 +24,7 @@ public static class BackupReader
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true, MaxDepth = 64 };
     private sealed record Manifest(int Version, string[] Months, int Employees, int Deductions, int Staff, int? Accounts, int? Books);
     private sealed record MonthData(string Name, int EmployeeCount, int DeductionCount);
-    private sealed record EmployeeData(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details);
+    private sealed record EmployeeData(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
     private sealed record DeductionData(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
     private sealed record AccountData(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);
     private sealed record BookData(Guid Id, string Title, string Month, int Pages, string? Entity);
@@ -125,6 +125,17 @@ public static class BackupReader
         // Read settings as a JSON object without attempting to reinterpret or overwrite iOS property-list values.
         var settings = ReadJson<JsonElement>("settings.json");
         if (settings.ValueKind != JsonValueKind.Object) throw new InvalidDataException("إعدادات النسخة غير صالحة.");
+        var settingsPlists = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var setting in settings.EnumerateObject())
+            {
+                if (setting.Value.ValueKind != JsonValueKind.String || setting.Value.GetString() is not { } encoded ||
+                    !settingsPlists.TryAdd(setting.Name, Convert.FromBase64String(encoded)))
+                    throw new InvalidDataException("إعدادات النسخة غير صالحة أو مكررة.");
+            }
+        }
+        catch (FormatException ex) { throw new InvalidDataException("تعذّر قراءة إعدادات النسخة.", ex); }
         var books = manifest.Version >= 3 ? ReadJson<List<BookData>>("books/index.json") : new List<BookData>();
         if (manifest.Version >= 3 && (manifest.Books is null || books.Count != manifest.Books || books.Select(b => b.Id).Distinct().Count() != books.Count))
             throw new InvalidDataException("فهرس الأرشيف لا يطابق النسخة.");
@@ -143,9 +154,9 @@ public static class BackupReader
         var monthIndex = months.ToDictionary(m => m.Name, StringComparer.Ordinal);
         return new BackupSnapshot(Path.GetFullPath(file), digest, manifest.Version,
             manifest.Months.Select(name => monthIndex[name]).Select(m => new PayrollMonth(m.Name, m.EmployeeCount, m.DeductionCount)).ToArray(),
-            employees.Select(e => new Employee(e.Month, e.Name, e.Rank ?? "", e.Workplace ?? "", e.Net, e.Items, e.Details)).ToArray(),
+            employees.Select(e => new Employee(e.Month, e.Name, e.Rank ?? "", e.Workplace ?? "", e.Net, e.Items, e.Details, e.RawColumns)).ToArray(),
             deductions.Select(d => new Deduction(d.Month, d.Name, d.Title, d.Amount, d.Note ?? "", d.Rank ?? "")).ToArray(),
             accounts.Select(a => new ExecutionAccount(a.Entity, a.Iban ?? "", a.Branch ?? "", a.Swift ?? "", a.LocalAccount)).ToArray(),
-            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity)).ToArray());
+            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity)).ToArray(), settingsPlists);
     }
 }
