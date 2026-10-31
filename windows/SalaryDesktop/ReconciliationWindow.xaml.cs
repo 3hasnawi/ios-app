@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 using SalaryDesktop.Core;
 
 namespace SalaryDesktop;
@@ -8,26 +10,100 @@ namespace SalaryDesktop;
 public partial class ReconciliationWindow : Window
 {
     private sealed record PeriodChoice(BankPeriod Period, string Label);
-    private sealed record MovementRow(string Date, string Description, string Credit, string Debit, string Balance, string Status);
+    private sealed record MovementRow(Guid Id, string Date, string Description, string Credit, string Debit, string Balance, string Status);
+    private readonly BackupSnapshot source;
+    private readonly LocalReconciliationStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
+    private ReconciliationSnapshot state;
+    private readonly string suggestedMonth;
     private static string Number(long value) => value.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
-    public ReconciliationWindow(IReadOnlyList<BankPeriod> periods, string selectedMonth)
+    public ReconciliationWindow(BackupSnapshot source, string selectedMonth)
     {
-        InitializeComponent();
-        var choices = periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
-        Periods.ItemsSource = choices;
+        InitializeComponent(); this.source = source; state = store.Load(source);
         var previous = MonthNames.Previous(selectedMonth);
-        var matches = choices.Where(c => previous is not null && MonthNames.SortKey(c.Period.Month) == previous).ToArray();
-        if (matches.Length == 1) Periods.SelectedItem = matches[0];
-        else Summary.Text = periods.Count == 0 ? "لا توجد فترات مطابقة محفوظة في النسخة المفتوحة." : "اختر فترة المطابقة من القائمة؛ لم يُحدد الشهر السابق تلقائياً.";
+        var matchingMonths = source.Months.Where(m => previous is not null && MonthNames.SortKey(m.Name) == previous).ToArray();
+        suggestedMonth = matchingMonths.Length == 1 ? matchingMonths[0].Name : "";
+        var matches = state.Periods.Where(p => previous is not null && MonthNames.SortKey(p.Month) == previous).ToArray();
+        Refresh(matches.Length == 1 ? matches[0].Id : null);
+    }
+    private BankPeriod? Current => (Periods.SelectedItem as PeriodChoice)?.Period;
+    private BankMovement? CurrentMovement => Lines.SelectedItem is MovementRow row ? Current?.Movements.FirstOrDefault(m => m.Id == row.Id) : null;
+    private void Refresh(Guid? selected)
+    {
+        var choices = state.Periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
+        Periods.ItemsSource = choices;
+        Periods.SelectedItem = choices.FirstOrDefault(c => c.Period.Id == selected);
+        if (Periods.SelectedItem is null) { Lines.ItemsSource = null; Summary.Text = choices.Length == 0 ? "لا توجد فترات مطابقة؛ أضف فترة جديدة." : "اختر فترة المطابقة من القائمة."; }
     }
     private void PeriodChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Periods.SelectedItem is not PeriodChoice choice) return;
-        var p = choice.Period;
+        if (Current is not { } p) return;
         var result = BankReconciliation.Calculate(p);
         Summary.Text = $"الرصيد الافتتاحي: {Number(p.OpeningBalance)}  ·  الدائن: {Number(result.Credits)}  ·  المدين: {Number(result.Debits)}  ·  الرصيد: {Number(result.Balance)}  ·  مبالغ مسترجعة لم تُعد بالكامل: {result.OutstandingRefunds.Count}";
-        Lines.ItemsSource = result.Lines.Select(line => new MovementRow(line.Movement.Date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture), line.Movement.Description,
+        Lines.ItemsSource = result.Lines.Select(line => new MovementRow(line.Movement.Id, line.Movement.Date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture), line.Movement.Description,
             line.Movement.Direction == MovementDirection.Credit ? Number(line.Movement.Amount) : "—",
             line.Movement.Direction == MovementDirection.Debit ? Number(line.Movement.Amount) : "—", Number(line.Balance), line.Movement.Matched ? "مطابقة" : "غير مؤكدة")).ToArray();
+    }
+    private void Save(BankPeriod updated)
+    {
+        try
+        {
+            var all = state.Periods.Where(p => p.Id != updated.Id).Concat([updated]).ToArray();
+            state = store.Save(source, state, all); Refresh(updated.Id);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        { MessageBox.Show(this, "لم تُحفظ التغييرات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+    private void AddPeriod(object sender, RoutedEventArgs e)
+    {
+        var editor = new ReconciliationEditor(null, suggestedMonth) { Owner = this };
+        if (editor.ShowDialog() == true && editor.ResultPeriod is { } value) Save(value);
+    }
+    private void EditPeriod(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } p) return;
+        var editor = new ReconciliationEditor(p, suggestedMonth) { Owner = this };
+        if (editor.ShowDialog() == true && editor.ResultPeriod is { } value) Save(value);
+    }
+    private void AddMovement(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } p) return;
+        var editor = new ReconciliationEditor(p, (BankMovement?)null) { Owner = this };
+        if (editor.ShowDialog() == true && editor.ResultMovement is { } value) Save(p with { Movements = p.Movements.Concat([value]).ToArray() });
+    }
+    private void EditMovement(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } p || CurrentMovement is not { } m) return;
+        var editor = new ReconciliationEditor(p, m) { Owner = this };
+        if (editor.ShowDialog() == true && editor.ResultMovement is { } value) Save(p with { Movements = p.Movements.Select(x => x.Id == value.Id ? value : x).ToArray() });
+    }
+    private void ToggleMatched(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } p || CurrentMovement is not { } m) return;
+        Save(p with { Movements = p.Movements.Select(x => x.Id == m.Id ? x with { Matched = !x.Matched } : x).ToArray() });
+    }
+    private void DeleteMovement(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } p || CurrentMovement is not { } m) return;
+        if (MessageBox.Show(this, "حذف الحركة المختارة من هذه الفترة؟", "حذف حركة", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        Save(p with { Movements = p.Movements.Where(x => x.Id != m.Id).ToArray() });
+    }
+    private async void ExportBackup(object sender, RoutedEventArgs e)
+    {
+        var captured = state;
+        var dialog = new SaveFileDialog { Title = "حفظ نسخة تشمل المطابقة", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب والمطابقة.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
+        if (dialog.ShowDialog(this) != true) return;
+        ExportButton.IsEnabled = false;
+        try
+        {
+            await Task.Run(() => {
+                if (store.Load(source).Revision != captured.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة؛ أعد فتحه قبل تصدير النسخة.");
+                ReconciliationBackupExport.Write(source, captured.Periods, dialog.FileName);
+            });
+            var changed = state.Revision != captured.Revision;
+            MessageBox.Show(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { ExportButton.IsEnabled = true; }
     }
 }

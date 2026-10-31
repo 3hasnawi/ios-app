@@ -1,0 +1,10 @@
+<Window x:Class="SalaryDesktop.ReconciliationEditor" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="بيانات المطابقة" Width="520" Height="680" MinHeight="480" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" Background="#F1F4F6">
+ <DockPanel Margin="22"><StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0"><Button Content="حفظ" Click="Save" Style="{StaticResource ActionButton}"/><Button Content="إلغاء" IsCancel="True" Padding="20,9" Margin="12,0,0,0"/></StackPanel>
+ <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+  <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold" Margin="0,0,0,14"/>
+  <TextBlock x:Name="FirstLabel"/><TextBox x:Name="First" Margin="0,4,0,12" Padding="8"/>
+  <TextBlock x:Name="DateLabel"/><DatePicker x:Name="Date" Margin="0,4,0,12"/>
+  <StackPanel x:Name="PeriodFields"><TextBlock Text="نهاية الفترة · قبل التمويل الجديد"/><DatePicker x:Name="EndDate" Margin="0,4,0,12"/><TextBlock Text="الرصيد الافتتاحي"/><TextBox x:Name="Opening" Margin="0,4,0,12" Padding="8"/><TextBlock Text="اسم العضو الأول"/><TextBox x:Name="MemberFirst" Margin="0,4,0,12" Padding="8"/><TextBlock Text="اسم العضو الثاني"/><TextBox x:Name="MemberSecond" Margin="0,4,0,12" Padding="8"/></StackPanel>
+  <StackPanel x:Name="MovementFields"><TextBlock Text="المبلغ بالدينار"/><TextBox x:Name="Amount" Margin="0,4,0,12" Padding="8"/><TextBlock Text="نوع الحركة"/><ComboBox x:Name="Direction" Margin="0,4,0,12" SelectedIndex="0"><ComboBoxItem Content="دائن · وارد"/><ComboBoxItem Content="مدين · مصروف"/></ComboBox><CheckBox x:Name="Funding" Content="تمويل" Margin="0,4"/><CheckBox x:Name="Refund" Content="وارد مسترجع من جهة" Margin="0,4"/><TextBlock Text="ربط الصرف بوارد مسترجع (اختياري)" Margin="0,12,0,4"/><ComboBox x:Name="RefundOf" DisplayMemberPath="Label"/></StackPanel>
+ </StackPanel></ScrollViewer></DockPanel>
+</Window>

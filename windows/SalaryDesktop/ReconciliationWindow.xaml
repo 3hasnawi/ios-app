@@ -4,9 +4,9 @@
         Title="دفتر مطابقة الحساب" Height="700" Width="1100" MinWidth="850" MinHeight="500"
         WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" Background="#F1F4F6">
   <Grid Margin="24">
-    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock FontSize="24" FontWeight="Bold" Text="دفتر مطابقة الحساب"/>
-    <TextBlock Grid.Row="1" Foreground="#A76716" TextWrapping="Wrap" Margin="0,12" Text="البيانات من نسخة الآيفون المحفوظة، للعرض فقط. لا تُحتسب حركة التمويل الجديدة تلقائياً في الفترة السابقة؛ راجع ترتيب حركات يوم التمويل."/>
+    <TextBlock Grid.Row="1" Foreground="#A76716" TextWrapping="Wrap" Margin="0,12" Text="تُحفظ تعديلات المطابقة على هذا الجهاز مرتبطة بالنسخة المفتوحة. لتضمينها في نسخة احتياطية استخدم زر حفظ النسخة أدناه. استيراد نسخة أخرى لا يدمج هذه التعديلات تلقائياً؛ راجع حركات يوم التمويل."/>
     <StackPanel Grid.Row="2">
       <ComboBox x:Name="Periods" Height="38" SelectionChanged="PeriodChanged" DisplayMemberPath="Label"/>
       <TextBlock x:Name="Summary" TextWrapping="Wrap" Margin="0,12" FontWeight="SemiBold"/>
@@ -21,5 +21,11 @@
         <DataGridTextColumn Header="الحالة" Binding="{Binding Status}" Width="*"/>
       </DataGrid.Columns>
     </DataGrid>
+    <WrapPanel Grid.Row="4" Margin="0,12,0,0">
+      <Button Content="فترة جديدة" Click="AddPeriod" Padding="12,8" Margin="0,0,8,0"/><Button Content="تعديل الفترة" Click="EditPeriod" Padding="12,8" Margin="0,0,8,0"/>
+      <Button Content="إضافة حركة" Click="AddMovement" Padding="12,8" Margin="0,0,8,0"/><Button Content="تعديل الحركة" Click="EditMovement" Padding="12,8" Margin="0,0,8,0"/>
+      <Button Content="تأكيد / إلغاء المطابقة" Click="ToggleMatched" Padding="12,8" Margin="0,0,8,0"/><Button Content="حذف الحركة" Click="DeleteMovement" Padding="12,8"/>
+      <Button x:Name="ExportButton" Content="حفظ نسخة تشمل المطابقة" Click="ExportBackup" Padding="12,8" Margin="8,0,0,0"/>
+    </WrapPanel>
   </Grid>
 </Window>
