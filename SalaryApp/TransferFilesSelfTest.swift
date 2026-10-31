@@ -16,6 +16,33 @@ import CryptoKit
             throw Failure(errorDescription: "invalid header font accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid header font accepted") }
         catch { }
+        let date = Date(timeIntervalSince1970: 1_790_899_200)
+        let laterDate = date.addingTimeInterval(86_400)
+        var statement = BankReconciliation.Period(month: "تشرين الاول 2026", start: date, end: laterDate)
+        let incoming = BankReconciliation.Movement(date: date, description: "تمويل تجريبي", amount: 1_000_000, direction: .credit, sourceID: "funding")
+        let outgoing = BankReconciliation.Movement(date: laterDate, description: "تحويل تجريبي", amount: 1_000_000, direction: .debit, sourceID: "group:example")
+        statement.movements = [outgoing, incoming]
+        let calculated = try BankReconciliation.calculate(statement)
+        try check(calculated.credits == 1_000_000 && calculated.debits == 1_000_000 && calculated.balance == 0 && calculated.lines.first?.balance == 1_000_000, "bank reconciliation running balance")
+        var duplicate = statement
+        duplicate.movements.append(outgoing)
+        do { _ = try BankReconciliation.calculate(duplicate); throw Failure(errorDescription: "duplicate movement accepted") }
+        catch is Failure { throw Failure(errorDescription: "duplicate movement accepted") } catch { }
+        var edited = outgoing; edited.matched = true
+        var editedMovement = edited; editedMovement.amount = 999_999
+        try check(!BankReconciliation.replacing(edited, with: editedMovement).matched, "changed movement requires new reconciliation")
+        var refundStatement = BankReconciliation.Period(month: "تشرين الاول 2026", start: date, end: laterDate)
+        let refundCredit = BankReconciliation.Movement(date: date, description: "استرجاع تجريبي", amount: 500_000, direction: .credit)
+        let repayment = BankReconciliation.Movement(date: laterDate, description: "إعادة تجريبية", amount: 300_000, direction: .debit, refundOf: refundCredit.id)
+        refundStatement.movements = [refundCredit, repayment]
+        try check(try BankReconciliation.calculate(refundStatement).balance == 200_000, "linked refund balance")
+        var excessiveRefund = repayment; excessiveRefund.id = UUID(); excessiveRefund.amount = 200_001
+        refundStatement.movements.append(excessiveRefund)
+        do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
+        catch is Failure { throw Failure(errorDescription: "excess refund accepted") } catch { }
+        let ledger = BankReconciliation.Ledger(periods: [statement])
+        let restoredLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
+        try check(restoredLedger.periods == [statement], "bank reconciliation storage roundtrip")
         let issuanceNames = TransferIssuance.bookNames
         try check(issuanceNames.count == 11 && Set(issuanceNames).count == 11 &&
                   issuanceNames.contains(TransferCategory.rafidain.title) && issuanceNames.contains(TransferCategory.otherBanks.title), "issuance names match transfer groups")
