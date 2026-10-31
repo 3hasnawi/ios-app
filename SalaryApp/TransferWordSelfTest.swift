@@ -197,7 +197,7 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let xml = try content(result.letter)
             try check(xml.contains(payer) && xml.contains(beneficiary) && xml.contains("عضو وهمي أول"), "Word payroll \(id)")
-            if id == "cash_salary" { try check(xml.contains("موظف وهمي"), "Word cash list") }
+            if id == "cash_salary" { try check(!xml.contains("موظف وهمي"), "Word cash letter excludes the list") }
             if id == "food_tax" {
                 let embedded = try Archive(url: result.letter, accessMode: .read)
                 try check(embedded["word/fonts/sakkal-bold.ttf"] != nil, "Word draft embedded font")
@@ -216,7 +216,7 @@ import CryptoKit
                 accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: custom,
                 sakkalBold: syntheticFont, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
-            try check(PDFDocument(url: pdf.letter)?.pageCount == (id == "cash_salary" ? 2 : 1), "Adaptive PDF payroll \(id)")
+            try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF payroll \(id)")
             generated += 1
         }
         do {
@@ -308,7 +308,7 @@ import CryptoKit
                 individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
                 payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
-            try check(PDFDocument(url: pdf.letter)?.pageCount == (id == "water" ? 1 : 2), "Adaptive PDF entity \(id)")
+            try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF entity \(id)")
             generated += 1
         }
         try check(generated == 11, "Word draft count")

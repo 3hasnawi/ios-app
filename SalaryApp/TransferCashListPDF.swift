@@ -73,7 +73,7 @@ nonisolated enum TransferCashListPDF {
             guard !list.employees.isEmpty else { throw Failure.empty }
             guard !list.month.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   list.total.isFinite, list.total >= 0, list.total <= 9_007_199_254_740_991,
-                  list.employees.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.amount.isFinite && $0.amount >= 0 && $0.amount.rounded() == $0.amount }) else { throw Failure.invalid }
+                  list.employees.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.amount.isFinite && $0.amount > 0 && $0.amount.rounded() == $0.amount }) else { throw Failure.invalid }
             let font = ReportFont.regular(9.5)
             guard lineCount("قائمة رواتب الكاش · \(list.month)", font: ReportFont.bold(12), width: 531) == 1,
                   lineCount(money(list.total), font: ReportFont.bold(10), width: columns[3] - 8) == 1,

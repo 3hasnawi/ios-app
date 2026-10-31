@@ -57,10 +57,10 @@ nonisolated enum TransferWordDraftGenerator {
                 foodContractReference: customization.foodContractReference, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
                 var checks = [plan.payerIBAN, plan.beneficiaryIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.amount)]
-                if let table = plan.table { for row in table.rows { checks.append(contentsOf: row.filter { !$0.isEmpty && $0.allSatisfy(\.isNumber) }) } }
+                if bookID != "cash_salary", let table = plan.table { for row in table.rows { checks.append(contentsOf: row.filter { !$0.isEmpty && $0.allSatisfy(\.isNumber) }) } }
                 try TransferAdaptivePDF.verify(letter, required: checks)
             } else { try TransferWordVerification.verify(url: letter, month: plan.month, amount: plan.amount, payerIBAN: plan.payerIBAN,
-                text: text, table: plan.table, beneficiaryName: plan.beneficiaryName, beneficiaryAccount: plan.beneficiaryIBAN,
+                text: text, table: bookID == "cash_salary" ? nil : plan.table, beneficiaryName: plan.beneficiaryName, beneficiaryAccount: plan.beneficiaryIBAN,
                 bank: "مصرف الرافدين / فرع الأنبار",
                 contractReference: bookID == "food_company" || bookID == "food_tax" ? customization.foodContractReference : nil) }
         case "ramadi", "housing", "water", "rafidain_anbar":
@@ -73,10 +73,9 @@ nonisolated enum TransferWordDraftGenerator {
             if adaptivePDF {
                 var checks = [plan.payerIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.amount)]
                 if let account = plan.beneficiaryAccount { checks.append(account) }
-                if let table = plan.table { for row in table.rows { checks.append(contentsOf: row.filter { !$0.isEmpty && $0.allSatisfy(\.isNumber) }) } }
                 try TransferAdaptivePDF.verify(letter, required: checks)
             } else { try TransferWordVerification.verify(url: letter, month: plan.month, amount: plan.amount, payerIBAN: plan.payerIBAN,
-                text: text, table: plan.table, beneficiaryName: bookID == "rafidain_anbar" ? nil : plan.beneficiaryName,
+                text: text, table: nil, beneficiaryName: bookID == "rafidain_anbar" ? nil : plan.beneficiaryName,
                 beneficiaryAccount: plan.beneficiaryAccount, bank: bookID == "rafidain_anbar" ? nil : plan.bank,
                 personName: plan.personName, personRank: plan.personRank) }
         default: throw Failure.incomplete

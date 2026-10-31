@@ -32,7 +32,7 @@ nonisolated enum TransferWordTables {
               !list.employees.isEmpty, list.employees.count < 50_000,
               list.employees.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                   !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                  !$0.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && valid($0.amount) }),
+                  !$0.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && valid($0.amount) && $0.amount > 0 }),
               valid(list.total), list.total == expected else { throw Failure.incomplete }
         var rows: [[String]] = []
         rows.reserveCapacity(list.employees.count + 1)

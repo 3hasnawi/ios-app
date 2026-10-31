@@ -179,6 +179,7 @@ actor TransferCashListEngine {
             guard let net = employee.netSalary, net.isFinite, net >= 0, net.rounded() == net else {
                 throw TransferLetterFigureError.invalidAmount(tr("صافي الراتب", "net pay"))
             }
+            if net == 0 { continue }
             let payment = ArabicText.normalize(employee.details["طريقة الدفع"] ?? "")
             let cash = payment.contains("كاش") || payment.contains("نقد")
             let card = payment.contains("بطاق") || payment.contains("كارت") || payment.contains("ماستر")

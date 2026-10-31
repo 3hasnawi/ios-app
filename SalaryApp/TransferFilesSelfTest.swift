@@ -459,8 +459,10 @@ import CryptoKit
         let actual = try await engine.figures(month: group.month)
         let individualItems = TransferIssuance.payrollLines(actual)
         try check(Set(individualItems.map(\.id)).count == individualItems.count && individualItems.allSatisfy { $0.amount > 0 }, "individual payroll items are distinct")
+        context.insert(Employee(month: group.month, name: "صفر وهمي", rank: "موظف", workplace: "قسم وهمي", netSalary: 0, details: ["طريقة الدفع": "كاش"]))
+        try context.save()
         let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
-        try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1, "payroll data integration")
+        try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1 && cashList.employees.allSatisfy({ $0.amount > 0 }), "payroll data integration")
         let syntheticRows = (1...80).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
         let syntheticList = TransferCashList(month: group.month, employees: syntheticRows)
         let cashPDF = try await TransferCashListPDF.make(syntheticList)
@@ -472,6 +474,12 @@ import CryptoKit
             _ = try await TransferCashListPDF.make(incompleteList)
             throw Failure(errorDescription: "cash list missing rank accepted")
         } catch is Failure { throw Failure(errorDescription: "cash list missing rank accepted") }
+        catch { }
+        let zeroCashList = TransferCashList(month: group.month, employees: [TransferCashEmployee(id: 1, name: "منتسب وهمي", rank: "موظف", workplace: "قسم وهمي", amount: 0)])
+        do {
+            _ = try await TransferCashListPDF.make(zeroCashList)
+            throw Failure(errorDescription: "zero cash row accepted")
+        } catch is Failure { throw Failure(errorDescription: "zero cash row accepted") }
         catch { }
         let fakeLetterURL = FileManager.default.temporaryDirectory.appendingPathComponent("cash-letter-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: fakeLetterURL) }

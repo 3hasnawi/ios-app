@@ -29,7 +29,7 @@ nonisolated enum TransferWordEntityDraft {
         let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? text.bodyTemplate : nil, values: fields)
         let signatures = TransferWordDocument.Table(headers: [], rows: [TransferWordGroupDraft.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)],
             font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
-        var blocks: [TransferWordDocument.Block] = [
+        let blocks: [TransferWordDocument.Block] = [
             .paragraph(.init(text: text.header, font: adaptivePDF ? "Times New Roman" : "Sakkal Majalla", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
             .paragraph(.init(text: "العدد: \(letterNumber)\nالتاريخ: \(signatureDate)", font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
@@ -38,11 +38,6 @@ nonisolated enum TransferWordEntityDraft {
             .table(signatures),
             .paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF))
         ]
-        if let table = plan.table {
-            blocks.append(.pageBreak)
-            blocks.append(.paragraph(.init(text: "قائمة استقطاعات \(plan.beneficiaryName) · \(monthName) / \(year)", halfPoints: 28, bold: true, centered: true)))
-            blocks.append(.table(table))
-        }
         if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }

@@ -732,8 +732,8 @@ private struct TransferCategoryView: View {
         } header: { Text(tr("الكتب المنفردة", "Individual letters")) } footer: { Text(tr("المبالغ حسب بيانات الشهر. اختر جهة الاستقطاع للكتب المرتبطة بها، وراجع الحساب والمبلغ قبل اعتماد أي كتاب. المعاينات قيد التحقق.", "Amounts come from this month. Select the deduction entity for linked letters and review accounts and amounts. Previews are under verification.")) }
         Section {
             NavigationLink {
-                TransferCashListView(month: month, sourceKey: sourceKey)
-            } label: { Label(tr("قائمة رواتب الكاش", "Cash salary list"), systemImage: "person.text.rectangle") }
+                TransferListsView(month: month, sourceKey: sourceKey, entities: context.entities)
+            } label: { Label(tr("القوائم", "Lists"), systemImage: "list.bullet.rectangle") }
         }
     }
     @ViewBuilder private func bookSource(_ kind: TransferLetterDraftKind, figures: TransferLetterFigures) -> some View {
