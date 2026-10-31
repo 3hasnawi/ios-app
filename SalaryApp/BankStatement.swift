@@ -199,6 +199,13 @@ struct BankStatementView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
+                    Section {
+                        NavigationLink {
+                            BankReconciliationPicker(currentMonth: month?.name ?? "", months: months.map(\.name))
+                        } label: {
+                            Label(tr("مطابقة حساب المصرف", "Bank account reconciliation"), systemImage: "checklist")
+                        }
+                    } footer: { Text(tr("مطابقة تمويل الشهر السابق وحركاته مع كشف المصرف الورقي.", "Reconcile the previous month's funding and movements against the paper statement.")) }
                     Section(tr("صافي الرواتب", "Net payroll")) {
                         copyAmountRow(tr("كاش", "Cash"), amount: summary.cashNet)
                         copyAmountRow(tr("بطاقة", "Card"), amount: summary.cardNet)

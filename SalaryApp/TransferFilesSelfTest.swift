@@ -16,26 +16,39 @@ import CryptoKit
             throw Failure(errorDescription: "invalid header font accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid header font accepted") }
         catch { }
+        try check(BankReconciliation.previousMonthKey("تشرين الاول 2026") == 202609, "reconciliation previous calendar month")
+        try check(BankReconciliation.previousMonthKey("كانون الثاني 2026") == 202512, "reconciliation previous year")
         let date = Date(timeIntervalSince1970: 1_790_899_200)
         let laterDate = date.addingTimeInterval(86_400)
         var statement = BankReconciliation.Period(month: "تشرين الاول 2026", start: date, end: laterDate)
-        let incoming = BankReconciliation.Movement(date: date, description: "تمويل تجريبي", amount: 1_000_000, direction: .credit, sourceID: "funding")
+        let incoming = BankReconciliation.Movement(date: date, description: "تمويل تجريبي", amount: 1_000_000, direction: .credit, sourceID: "funding", isFunding: true)
         let outgoing = BankReconciliation.Movement(date: laterDate, description: "تحويل تجريبي", amount: 1_000_000, direction: .debit, sourceID: "group:example")
         statement.movements = [outgoing, incoming]
         let calculated = try BankReconciliation.calculate(statement)
-        try check(calculated.credits == 1_000_000 && calculated.debits == 1_000_000 && calculated.balance == 0 && calculated.lines.first?.balance == 1_000_000, "bank reconciliation running balance")
+        try check(calculated.funding == 1_000_000 && calculated.credits == 1_000_000 && calculated.debits == 1_000_000 && calculated.balance == 0 && calculated.lines.first?.balance == 1_000_000, "bank reconciliation running balance")
         var duplicate = statement
         duplicate.movements.append(outgoing)
         do { _ = try BankReconciliation.calculate(duplicate); throw Failure(errorDescription: "duplicate movement accepted") }
         catch is Failure { throw Failure(errorDescription: "duplicate movement accepted") } catch { }
+        var duplicateSource = outgoing; duplicateSource.id = UUID()
+        var sameSource = statement; sameSource.movements.append(duplicateSource)
+        do { _ = try BankReconciliation.calculate(sameSource); throw Failure(errorDescription: "duplicate source accepted") }
+        catch is Failure { throw Failure(errorDescription: "duplicate source accepted") } catch { }
+        var overlap = statement
+        var firstCovered = outgoing; firstCovered.sourceLineIDs = ["source-example"]
+        var secondCovered = outgoing; secondCovered.id = UUID(); secondCovered.sourceID = "second-example"; secondCovered.sourceLineIDs = ["source-example"]
+        overlap.movements = [incoming, firstCovered, secondCovered]
+        do { _ = try BankReconciliation.calculate(overlap); throw Failure(errorDescription: "overlapping source lines accepted") }
+        catch is Failure { throw Failure(errorDescription: "overlapping source lines accepted") } catch { }
         var edited = outgoing; edited.matched = true
         var editedMovement = edited; editedMovement.amount = 999_999
         try check(!BankReconciliation.replacing(edited, with: editedMovement).matched, "changed movement requires new reconciliation")
         var refundStatement = BankReconciliation.Period(month: "تشرين الاول 2026", start: date, end: laterDate)
-        let refundCredit = BankReconciliation.Movement(date: date, description: "استرجاع تجريبي", amount: 500_000, direction: .credit)
+        let refundCredit = BankReconciliation.Movement(date: date, description: "استرجاع تجريبي", amount: 500_000, direction: .credit, isRefund: true)
         let repayment = BankReconciliation.Movement(date: laterDate, description: "إعادة تجريبية", amount: 300_000, direction: .debit, refundOf: refundCredit.id)
         refundStatement.movements = [refundCredit, repayment]
-        try check(try BankReconciliation.calculate(refundStatement).balance == 200_000, "linked refund balance")
+        let refundTotals = try BankReconciliation.calculate(refundStatement)
+        try check(refundTotals.balance == 200_000 && refundTotals.outstandingRefunds.first?.remaining == 200_000, "linked refund balance")
         var excessiveRefund = repayment; excessiveRefund.id = UUID(); excessiveRefund.amount = 200_001
         refundStatement.movements.append(excessiveRefund)
         do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
@@ -45,6 +58,13 @@ import CryptoKit
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
+        var longStatement = statement
+        longStatement.movements = (1...60).map { index in
+            BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)
+        }
+        let longStatementPDF = try await BankReconciliationPDF.make(longStatement)
+        defer { try? FileManager.default.removeItem(at: longStatementPDF) }
+        try check((PDFDocument(url: longStatementPDF)?.pageCount ?? 0) > 1, "reconciliation PDF paginates without losing rows")
         let ledger = BankReconciliation.Ledger(periods: [statement])
         let restoredLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
         try check(restoredLedger.periods == [statement], "bank reconciliation storage roundtrip")
@@ -253,6 +273,8 @@ import CryptoKit
         let backupAccount = BackupFormat.AccountRecord(entity: localOnly.entity, iban: localOnly.iban, branch: localOnly.branch, swift: localOnly.swift, localAccount: localOnly.localAccount)
         try check(try JSONDecoder().decode(BackupFormat.AccountRecord.self, from: JSONEncoder().encode(backupAccount)).localAccount == localOnly.localAccount, "local account backup roundtrip")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
+        let resolvedEntities = TransferEntityResolution.make(groups: [group], missing: [:], figures: nil, accounts: [account], categories: [:], payrollLinks: [:], linksValid: true)
+        try check(resolvedEntities.count == 1 && resolvedEntities.first?.category == .rafidain && resolvedEntities.first?.account?.key == account.key, "shared transfer entity classification")
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)
         let letterLink = TransferLetterEntityLinks.Link(item)
         let nextMonth = ReportGroup(kind: .deductions, month: "كانون الأول 2026", title: group.title, count: 1, total: 1500, byEntity: false)

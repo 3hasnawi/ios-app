@@ -25,6 +25,7 @@ nonisolated enum BankReconciliationPDF {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
         formatter.dateFormat = "yyyy/MM/dd"
         return formatter.string(from: value)
     }
@@ -39,7 +40,7 @@ nonisolated enum BankReconciliationPDF {
         }
         return max(1, count)
     }
-    static func make(_ period: BankReconciliation.Period) async throws -> URL {
+    static func make(_ period: BankReconciliation.Period, complete: Bool = false) async throws -> URL {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
@@ -64,6 +65,8 @@ nonisolated enum BankReconciliationPDF {
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("bank-reconciliation-\(UUID().uuidString).pdf")
             var done = false
             defer { if !done { try? FileManager.default.removeItem(at: destination) } }
+            var placements: [(Int, CGRect, String, Int)] = []
+            var pageCount = 0
             let renderer = UIGraphicsPDFRenderer(bounds: page)
             try renderer.writePDF(to: destination) { context in
                 let cg = context.cgContext
@@ -72,6 +75,7 @@ nonisolated enum BankReconciliationPDF {
                     context.beginPage()
                     PDFText.draw("كشف مطابقة حساب المصرف", in: CGRect(x: margin, y: 20, width: 531, height: 28), font: ReportFont.bold(16))
                     PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 52, width: 531, height: 20), font: font)
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 65, width: 531, height: 15), font: bold, color: .darkGray) }
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
@@ -89,26 +93,42 @@ nonisolated enum BankReconciliationPDF {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                             PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 1 ? .right : .center, wrap: true)
+                            if values[i] != "—" && !values[i].isEmpty { placements.append((pageCount, cell, values[i], i)) }
                         }
                         y += height; index += 1
                     }
                     if index == rows.count {
-                        if y + 24 > 665 { continue }
+                        if y + 24 > 665 { pageCount += 1; continue }
                         for i in totalRow.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: 24)
                             UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                             PDFText.draw(totalRow[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
+                            if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i)) }
                         }
                         PDFText.draw("عضو اللجنة الأول\n\(period.memberFirst)", in: CGRect(x: 315, y: 705, width: 225, height: 60), font: bold, wrap: true)
                         PDFText.draw("عضو اللجنة الثاني\n\(period.memberSecond)", in: CGRect(x: 55, y: 705, width: 225, height: 60), font: bold, wrap: true)
                         finalDrawn = true
                     }
+                    pageCount += 1
                 } while !finalDrawn
             }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
-            guard let pdf = PDFDocument(url: destination), pdf.pageCount > 0, !pdf.isLocked,
-                  (0..<pdf.pageCount).allSatisfy({ pdf.page(at: $0)?.string != nil }) else { throw Failure.damaged }
+            guard let pdf = PDFDocument(url: destination), pdf.pageCount == pageCount, !pdf.isLocked else { throw Failure.damaged }
+            func identity(_ value: String) -> String {
+                let normalized = ArabicText.normalize(ArabicText.latinDigits(value.precomposedStringWithCompatibilityMapping))
+                var scalars = String.UnicodeScalarView()
+                for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format { scalars.append(scalar) }
+                return String(scalars)
+            }
+            for (pageIndex, rect, expected, column) in placements {
+                guard let output = pdf.page(at: pageIndex) else { throw Failure.damaged }
+                let box = CGRect(x: rect.minX + 0.2, y: page.height - rect.maxY + 0.2, width: rect.width - 0.4, height: rect.height - 0.4)
+                let actual = identity(output.selection(for: box)?.string ?? "")
+                let wanted = identity(expected)
+                let matches = column == 1 ? TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted) : actual == wanted
+                guard matches else { throw Failure.damaged }
+            }
             done = true
             return destination
         }
