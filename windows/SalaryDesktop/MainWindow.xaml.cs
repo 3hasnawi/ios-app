@@ -267,7 +267,7 @@ public partial class MainWindow : Window
     private void OpenReconciliation(object sender, RoutedEventArgs e)
     {
         if (snapshot is null) return;
-        try { new ReconciliationWindow(BankReconciliation.ReadFromBackup(snapshot)) { Owner = this }.ShowDialog(); }
+        try { new ReconciliationWindow(BankReconciliation.ReadFromBackup(snapshot), SelectedMonth) { Owner = this }.ShowDialog(); }
         catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر فتح دفتر المطابقة المحفوظ. لم تُغيّر البيانات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }

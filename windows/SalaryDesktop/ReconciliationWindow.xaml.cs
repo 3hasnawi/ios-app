@@ -10,12 +10,15 @@ public partial class ReconciliationWindow : Window
     private sealed record PeriodChoice(BankPeriod Period, string Label);
     private sealed record MovementRow(string Date, string Description, string Credit, string Debit, string Balance, string Status);
     private static string Number(long value) => value.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
-    public ReconciliationWindow(IReadOnlyList<BankPeriod> periods)
+    public ReconciliationWindow(IReadOnlyList<BankPeriod> periods, string selectedMonth)
     {
         InitializeComponent();
-        Periods.ItemsSource = periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
-        if (periods.Count > 0) Periods.SelectedIndex = 0;
-        else Summary.Text = "لا توجد فترات مطابقة محفوظة في النسخة المفتوحة.";
+        var choices = periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
+        Periods.ItemsSource = choices;
+        var previous = MonthNames.Previous(selectedMonth);
+        var matches = choices.Where(c => previous is not null && MonthNames.SortKey(c.Period.Month) == previous).ToArray();
+        if (matches.Length == 1) Periods.SelectedItem = matches[0];
+        else Summary.Text = periods.Count == 0 ? "لا توجد فترات مطابقة محفوظة في النسخة المفتوحة." : "اختر فترة المطابقة من القائمة؛ لم يُحدد الشهر السابق تلقائياً.";
     }
     private void PeriodChanged(object sender, SelectionChangedEventArgs e)
     {
