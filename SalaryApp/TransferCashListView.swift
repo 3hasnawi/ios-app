@@ -33,12 +33,17 @@ struct TransferCashListView: View {
                     if list.employees.isEmpty {
                         Text(tr("لا توجد رواتب كاش لهذا الشهر.", "No cash salaries for this month.")).foregroundStyle(.secondary)
                     }
-                    ForEach(list.employees) { employee in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(employee.name).font(.body.weight(.semibold))
-                            Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(Money.format(employee.amount)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    ForEach(list.employees.indices, id: \.self) { index in
+                        let employee = list.employees[index]
+                        HStack(alignment: .top, spacing: 12) {
+                            Text(Num.format(index + 1)).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                                .frame(minWidth: 28)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(employee.name).font(.body.weight(.semibold)).privacySensitive()
+                                Text([employee.rank, employee.workplace].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(Money.format(employee.amount)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                            }
                         }.padding(.vertical, 4)
                     }
                 }

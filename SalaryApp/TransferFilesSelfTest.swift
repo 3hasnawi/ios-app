@@ -89,7 +89,7 @@ import CryptoKit
         } catch is Failure { throw Failure(errorDescription: "missing attachment list accepted") }
         catch { }
         let cashRows = try TransferWordTables.cash(wordCashList, figures: wordFigures).rows
-        try check(cashRows.count == 2 && cashRows[0][3] == "23" && cashRows[1][3] == "23", "Word cash list and total")
+        try check(cashRows.count == 2 && cashRows[0][0] == "1" && cashRows[0][4] == "23" && cashRows[1][4] == "23", "Word cash list and total")
         do {
             let wrongCash = TransferCashList(month: wordFigures.month, employees: [
                 .init(id: 1, name: "موظف وهمي", rank: "رتبة وهمية", workplace: "قسم وهمي", amount: 22)
@@ -501,6 +501,15 @@ import CryptoKit
         try context.save()
         let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
         try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1 && cashList.employees.allSatisfy({ $0.amount > 0 }), "payroll data integration")
+        let compactRows = (1...36).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
+        let compactList = TransferCashList(month: group.month, employees: compactRows)
+        let compactPDF = try await TransferCashListPDF.make(compactList)
+        defer { try? FileManager.default.removeItem(at: compactPDF.deletingLastPathComponent()) }
+        try check(PDFDocument(url: compactPDF)?.pageCount == 1 && compactList.total == 36000, "compact cash list fits one page")
+        let longRow = TransferCashEmployee(id: 1, name: "اسم منتسب وهمي طويل لاختبار التفاف النص بالكامل", rank: "موظف", workplace: "دائرة وهمية طويلة لاختبار التفاف محل العمل داخل الجدول", amount: 1000)
+        let longPDF = try await TransferCashListPDF.make(TransferCashList(month: group.month, employees: [longRow]))
+        defer { try? FileManager.default.removeItem(at: longPDF.deletingLastPathComponent()) }
+        try check(PDFDocument(url: longPDF)?.pageCount == 1, "long cash list cells")
         let syntheticRows = (1...80).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
         let syntheticList = TransferCashList(month: group.month, employees: syntheticRows)
         let cashPDF = try await TransferCashListPDF.make(syntheticList)

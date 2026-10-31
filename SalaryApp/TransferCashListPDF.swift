@@ -2,7 +2,7 @@ import UIKit
 import CoreText
 import PDFKit
 
-/// قائمة مرفقة بكتاب أمانات الرواتب؛ تنمو على صفحات A4 دون قص الأسماء.
+/// قائمة رواتب الكاش مستقلة؛ تقيس النصوص وتمنع قص السجلات.
 nonisolated enum TransferCashListPDF {
     enum Failure: LocalizedError {
         case empty, invalid, rowTooTall, tableMismatch
@@ -20,7 +20,7 @@ nonisolated enum TransferCashListPDF {
     }
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
     private static let margin: CGFloat = 28
-    private static let columns: [CGFloat] = [150, 80, 190, 119]
+    private static let columns: [CGFloat] = [40, 155, 70, 164, 110]
     private static let tableTop: CGFloat = 112
     private static let bottom: CGFloat = 806
     private static let headerHeight: CGFloat = 24
@@ -52,18 +52,21 @@ nonisolated enum TransferCashListPDF {
         var start = 0, lines = 0
         while start < value.length {
             let proposed = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
-            guard proposed > 0 else { return Int.max }
+            guard proposed > 0, proposed <= value.length - start else { return Int.max }
+            let line = CTTypesetterCreateLine(typesetter, CFRange(location: start, length: proposed))
+            let measured = CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line)
+            guard measured <= Double(width) + 0.5 else { return Int.max }
             start += proposed
             lines += 1
         }
         return max(1, lines)
     }
 
-    private static func rowHeight(_ row: TransferCashEmployee, font: UIFont) throws -> CGFloat {
-        let values = [row.name, row.rank, row.workplace, money(row.amount)]
+    private static func rowHeight(_ row: TransferCashEmployee, index: Int, font: UIFont) throws -> CGFloat {
+        let values = [String(index + 1), row.name, row.rank, row.workplace, money(row.amount)]
         let counts = zip(values, columns).map { lineCount($0.0, font: font, width: $0.1 - 8) }
         guard let maxLines = counts.max(), maxLines != Int.max else { throw Failure.rowTooTall }
-        let height = max(20, ceil(CGFloat(maxLines) * font.lineHeight + 8))
+        let height = max(16, ceil(CGFloat(maxLines) * font.lineHeight + 6))
         guard height <= bottom - tableTop - headerHeight - totalHeight else { throw Failure.rowTooTall }
         return height
     }
@@ -74,11 +77,56 @@ nonisolated enum TransferCashListPDF {
             guard !list.month.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   list.total.isFinite, list.total >= 0, list.total <= 9_007_199_254_740_991,
                   list.employees.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !$0.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.amount.isFinite && $0.amount > 0 && $0.amount.rounded() == $0.amount }) else { throw Failure.invalid }
-            let font = ReportFont.regular(9.5)
+            let labels = ["ت", "الاسم", "الرتبة", "محل العمل", "صافي الراتب"]
             guard lineCount("قائمة رواتب الكاش · \(list.month)", font: ReportFont.bold(12), width: 531) == 1,
-                  lineCount(money(list.total), font: ReportFont.bold(10), width: columns[3] - 8) == 1,
-                  list.employees.allSatisfy({ lineCount(money($0.amount), font: font, width: columns[3] - 8) == 1 }) else { throw Failure.rowTooTall }
-            let heights = try list.employees.map { try rowHeight($0, font: font) }
+                  zip(labels, columns).allSatisfy({ lineCount($0.0, font: ReportFont.bold(10), width: $0.1 - 8) == 1 }) else { throw Failure.rowTooTall }
+            let totalFont = stride(from: 10.0, through: 8.0, by: -0.5).map { ReportFont.bold(CGFloat($0)) }
+                .first { lineCount(money(list.total), font: $0, width: columns[4] - 8) == 1 }
+            guard let totalFont else { throw Failure.rowTooTall }
+            // نختار أكبر خط واضح يتسع معه كامل الجدول في صفحة واحدة، وإلا نستخدم صفحات إضافية.
+            let budget = bottom - tableTop - headerHeight - totalHeight
+            let sizes = stride(from: 9.5, through: 8.0, by: -0.5).map { CGFloat($0) }
+            var font = ReportFont.regular(9.5)
+            var singlePageHeights: [CGFloat]?
+            for size in sizes {
+                try Task.checkCancellation()
+                let candidate = ReportFont.regular(size)
+                var measured: [CGFloat] = []
+                var total: CGFloat = 0
+                for (index, row) in list.employees.enumerated() {
+                    if index.isMultiple(of: 256) { try Task.checkCancellation() }
+                    guard lineCount(String(index + 1), font: candidate, width: columns[0] - 8) == 1,
+                          lineCount(money(row.amount), font: candidate, width: columns[4] - 8) == 1 else { break }
+                    let height: CGFloat
+                    do { height = try rowHeight(row, index: index, font: candidate) }
+                    catch Failure.rowTooTall { break }
+                    total += height
+                    if total > budget { break }
+                    measured.append(height)
+                }
+                if measured.count == list.employees.count { font = candidate; singlePageHeights = measured; break }
+            }
+            let heights: [CGFloat]
+            if let singlePageHeights { heights = singlePageHeights }
+            else {
+                var selected: (UIFont, [CGFloat])?
+                for size in sizes {
+                    try Task.checkCancellation()
+                    let candidate = ReportFont.regular(size)
+                    var measured: [CGFloat] = []
+                    measured.reserveCapacity(list.employees.count)
+                    for (index, row) in list.employees.enumerated() {
+                        if index.isMultiple(of: 256) { try Task.checkCancellation() }
+                        guard lineCount(String(index + 1), font: candidate, width: columns[0] - 8) == 1,
+                              lineCount(money(row.amount), font: candidate, width: columns[4] - 8) == 1 else { break }
+                        do { measured.append(try rowHeight(row, index: index, font: candidate)) }
+                        catch Failure.rowTooTall { break }
+                    }
+                    if measured.count == list.employees.count { selected = (candidate, measured); break }
+                }
+                guard let selected else { throw Failure.rowTooTall }
+                font = selected.0; heights = selected.1
+            }
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cash-list-\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let url = folder.appendingPathComponent("قائمة رواتب كاش.pdf")
@@ -99,7 +147,6 @@ nonisolated enum TransferCashListPDF {
                     var x = page.width - margin
                     var positions: [CGFloat] = []
                     for width in columns { x -= width; positions.append(x) }
-                    let labels = ["الاسم", "الرتبة", "محل العمل", "صافي الراتب"]
                     for i in labels.indices {
                         let cell = CGRect(x: positions[i], y: tableTop, width: columns[i], height: headerHeight)
                         UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(cell)
@@ -110,21 +157,22 @@ nonisolated enum TransferCashListPDF {
                     while index < list.employees.count, y + heights[index] <= bottom {
                         let row = list.employees[index], height = heights[index]
                         placements.append((pageCount, index, y, height))
-                        let values = [row.name, row.rank, row.workplace, money(row.amount)]
+                        let values = [String(index + 1), row.name, row.rank, row.workplace, money(row.amount)]
                         for i in values.indices {
                             let cell = CGRect(x: positions[i], y: y, width: columns[i], height: height)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
-                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 3 ? .center : .right, wrap: true)
+                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 0 || i == 4 ? .center : .right, wrap: true)
                         }
                         y += height; index += 1
                     }
                     if index == list.employees.count && y + totalHeight <= bottom {
-                        let amountCell = CGRect(x: positions[3], y: y, width: columns[3], height: totalHeight)
-                        let titleCell = CGRect(x: positions[2], y: y, width: columns[0] + columns[1] + columns[2], height: totalHeight)
+                        let amountCell = CGRect(x: positions[4], y: y, width: columns[4], height: totalHeight)
+                        let titleWidth = columns[0] + columns[1] + columns[2] + columns[3]
+                        let titleCell = CGRect(x: positions[3], y: y, width: titleWidth, height: totalHeight)
                         UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(amountCell); cg.fill(titleCell)
                         UIColor.darkGray.setStroke(); cg.stroke(amountCell, width: 0.5); cg.stroke(titleCell, width: 0.5)
                         PDFText.draw("المجموع · \(list.employees.count) راتب", in: titleCell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10), align: .right)
-                        PDFText.draw(money(list.total), in: amountCell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10))
+                        PDFText.draw(money(list.total), in: amountCell.insetBy(dx: 4, dy: 0), font: totalFont)
                         totalPlacement = (pageCount, y)
                         needsTotal = false
                     }
@@ -153,16 +201,16 @@ nonisolated enum TransferCashListPDF {
             for (expectedIndex, placement) in placements.enumerated() {
                 guard placement.index == expectedIndex else { throw Failure.tableMismatch }
                 let row = list.employees[expectedIndex]
-                let values = [row.name, row.rank, row.workplace, money(row.amount)]
+                let values = [String(expectedIndex + 1), row.name, row.rank, row.workplace, money(row.amount)]
                 for column in values.indices {
                     let rect = CGRect(x: positions[column], y: placement.y, width: columns[column], height: placement.height)
                     let read = identity(text(pageIndex: placement.page, rect: rect))
                     let expected = identity(values[column])
-                    let matches = column == 3 ? read == expected : TransferAnbarTablePDF.matchesExtractedCell(read, expected: expected)
+                    let matches = column == 0 || column == 4 ? read == expected : TransferAnbarTablePDF.matchesExtractedCell(read, expected: expected)
                     guard matches else { throw Failure.cellMismatch(row: expectedIndex + 1, column: column + 1, readCount: read.count, expectedCount: expected.count) }
                 }
             }
-            let amountRect = CGRect(x: positions[3], y: totalPlacement.y, width: columns[3], height: totalHeight)
+            let amountRect = CGRect(x: positions[4], y: totalPlacement.y, width: columns[4], height: totalHeight)
             guard identity(text(pageIndex: totalPlacement.page, rect: amountRect)) == identity(money(list.total)) else { throw Failure.tableMismatch }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
             complete = true

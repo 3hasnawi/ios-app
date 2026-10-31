@@ -44,10 +44,10 @@ nonisolated enum TransferWordTables {
         rows.reserveCapacity(list.employees.count + 1)
         for (index, employee) in list.employees.enumerated() {
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
-            rows.append([employee.name, employee.rank, employee.workplace, number(employee.amount)])
+            rows.append([String(index + 1), employee.name, employee.rank, employee.workplace, number(employee.amount)])
         }
-        rows.append(["", "", "المجموع", number(expected)])
-        return .init(headers: ["الاسم", "الرتبة", "محل العمل", "صافي الراتب"], rows: rows, columnWeights: [150, 80, 190, 119], boldLastRow: true)
+        rows.append(["", "", "", "المجموع", number(expected)])
+        return .init(headers: ["ت", "الاسم", "الرتبة", "محل العمل", "صافي الراتب"], rows: rows, columnWeights: [40, 155, 70, 164, 110], boldLastRow: true)
     }
     /// قائمة مرفقة للجهات التي يذكر كتابها وجود قائمة أسماء.
     static func individual(_ plan: TransferIndividualPlan) throws -> TransferWordDocument.Table {
