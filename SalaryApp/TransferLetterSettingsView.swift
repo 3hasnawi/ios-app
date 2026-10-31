@@ -156,7 +156,7 @@ struct TransferLetterSettingsView: View {
                         guard size > 0, size <= 1_000_000 else { throw TransferWordDefaults.Failure.invalid }
                         let package = try TransferWordDefaults.decode(Data(contentsOf: url))
                         try TransferWordDefaults.verifyReferences(package, data: referenceSnapshot)
-                        return package.defaults
+                        return package
                     }.value
                     await FilePicker.waitUntilSettled()
                     guard referenceData == referenceSnapshot else {
@@ -165,7 +165,8 @@ struct TransferLetterSettingsView: View {
                     guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
                         throw NSError(domain: "WordDefaults", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("انتظر انتهاء العملية الحالية ثم أعد الاستيراد.", "Wait for the current operation and import again.")])
                     }
-                    let merged = TransferWordDefaults.merging(imported, preserving: try readStore())
+                    var merged = TransferWordDefaults.merging(imported.defaults, preserving: try readStore())
+                    merged.wordReferenceHashes = imported.referenceHashes
                     storedData = try JSONEncoder().encode(merged)
                     BackupManager.shared.markChanged(); loadTarget(); saved = true
                 } catch { self.error = error.localizedDescription }

@@ -274,9 +274,11 @@ struct TransferLetterDraftView: View {
     private func prepareWord() {
         guard current, !working else { return }
         let customization: TransferLetterCustomization
+        let referenceHashes: [String: String]?
         do {
             let store = try (sourceCustomization.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: sourceCustomization))
             customization = store.effective(for: kind.rawValue)
+            referenceHashes = store.wordReferenceHashes
         } catch { self.error = tr("تعذّر قراءة التخصيصات المحفوظة.", "Could not read saved customizations."); return }
         let entity = selectedEntity
         working = true; error = nil; countNotice = nil
@@ -327,7 +329,8 @@ struct TransferLetterDraftView: View {
                 let snapshotLinks = sourceLinks, snapshotPayer = payerName, snapshotPayerIBAN = payerIBAN
                 let snapshotBoldFont = boldFont
                 let worker = Task.detached(priority: .userInitiated) {
-                    try TransferWordDraftGenerator.make(bookID: bookID, figures: snapshotFigures, entities: snapshotEntities,
+                    if let referenceHashes { try TransferWordDefaults.verifyHashes(referenceHashes, data: snapshotReferences) }
+                    return try TransferWordDraftGenerator.make(bookID: bookID, figures: snapshotFigures, entities: snapshotEntities,
                         entity: entity, individualPlan: plan, cashList: list, references: snapshotReferences,
                         accountLinks: snapshotLinks, payerName: snapshotPayer, payerIBAN: snapshotPayerIBAN,
                         customization: customization, sakkalBold: snapshotBoldFont.isEmpty ? nil : snapshotBoldFont)

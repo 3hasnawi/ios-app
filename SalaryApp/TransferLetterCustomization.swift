@@ -27,6 +27,8 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
     static let settingsKey = "transferLetterCustomizations"
     var common = TransferLetterCustomization()
     var individual: [String: TransferLetterCustomization] = [:]
+    /// بصمات المراجع التي استُخرجت منها الإعدادات؛ تحفظ مع النسخة الاحتياطية.
+    var wordReferenceHashes: [String: String]? = nil
 
     func effective(for id: String) -> TransferLetterCustomization {
         var result = (individual[id] ?? TransferLetterCustomization()).applying(over: common)

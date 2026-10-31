@@ -103,9 +103,11 @@ struct TransferCompanyLetterView: View {
         let snapshot = currentCustomization
         let boldSnapshot = currentBoldFont
         let customization: TransferLetterCustomization
+        let referenceHashes: [String: String]?
         do {
             let store = try (snapshot.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: snapshot))
             customization = store.effective(for: "food_company")
+            referenceHashes = store.wordReferenceHashes
         } catch { self.error = tr("تعذّر قراءة تخصيص الكتاب.", "Could not read letter customization."); return }
         let snapshotFigures = figures, snapshotReferences = references, snapshotPayer = payerIBAN
         working = true; error = nil
@@ -113,7 +115,8 @@ struct TransferCompanyLetterView: View {
             defer { working = false }
             do {
                 let worker = Task.detached(priority: .userInitiated) {
-                    try TransferWordDraftGenerator.make(bookID: "food_company", figures: snapshotFigures, entities: [],
+                    if let referenceHashes { try TransferWordDefaults.verifyHashes(referenceHashes, data: snapshotReferences) }
+                    return try TransferWordDraftGenerator.make(bookID: "food_company", figures: snapshotFigures, entities: [],
                         entity: nil, individualPlan: nil, cashList: nil, references: snapshotReferences,
                         accountLinks: Data(), payerName: "", payerIBAN: snapshotPayer, customization: customization,
                         sakkalBold: boldSnapshot.isEmpty ? nil : boldSnapshot)

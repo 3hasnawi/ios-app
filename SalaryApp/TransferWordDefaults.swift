@@ -40,9 +40,13 @@ nonisolated enum TransferWordDefaults {
         return package
     }
     static func verifyReferences(_ package: Package, data: Data) throws {
+        try verifyHashes(package.referenceHashes, data: data)
+    }
+    static func verifyHashes(_ hashes: [String: String], data: Data) throws {
+        guard Set(hashes.keys) == Set(TransferReferencePack.expected.keys) else { throw Failure.invalid }
         let manifest = try TransferReferencePack.validateData(data)
         for template in manifest.templates where TransferReferencePack.expected[template.id] != nil {
-            guard package.referenceHashes[template.id] == template.sha256.lowercased() else { throw Failure.invalid }
+            guard hashes[template.id] == template.sha256.lowercased() else { throw Failure.invalid }
         }
     }
     static func merging(_ imported: TransferLetterCustomizationStore,
