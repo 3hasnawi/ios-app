@@ -70,6 +70,23 @@ jobs:
           cat "$DATA/Documents/import-report.txt" | tee ci-output/word-preview-report.txt
           grep -q '^wordPreview=loaded' ci-output/word-preview-report.txt
           xcrun simctl io "$UDID" screenshot ci-output/word-preview.png
+      - name: Verify transfer file reconciliation
+        run: |
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
+          xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -transferFilesTest YES
+          for i in $(seq 1 120); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/transfer-files-report.txt
+          grep -q '^transferFiles=ok ' ci-output/transfer-files-report.txt
+      - name: Capture fictional preview for review
+        if: always()
+        run: |
+          if [ -s ci-output/word-preview.png ]; then
+            python3 -c 'import base64; print("SYNTHETIC_PREVIEW=" + base64.b64encode(open("ci-output/word-preview.png", "rb").read()).decode())'
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

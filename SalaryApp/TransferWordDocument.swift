@@ -83,7 +83,7 @@ nonisolated enum TransferWordDocument {
             return try row(values, header: false, bold: t.boldLastRow && index == t.rows.count - 1)
         }.joined()
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
-        return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"10206\" w:type=\"dxa\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"
+        return "<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>\(borders)</w:tblBorders></w:tblPr><w:tblGrid>\(grid)</w:tblGrid>\(headers)\(rows)</w:tbl>"
     }
     static func write(blocks: [Block], destination: URL, sakkalBold: Data? = nil) throws {
         guard !blocks.isEmpty, blocks.count <= 1000 else { throw Failure.invalidContent }

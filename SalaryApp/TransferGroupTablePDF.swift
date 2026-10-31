@@ -6,12 +6,15 @@ nonisolated enum TransferGroupTablePDF {
     struct Checked: Sendable { let url: URL; let lines: [TransferReconcileLine] }
     enum Failure: LocalizedError {
         case invalidData, invalidTotal, missingFont, tableMismatch
+        case cellMismatch(row: Int, column: Int, readCount: Int, expectedCount: Int)
         var errorDescription: String? {
             switch self {
             case .invalidData: tr("بيانات جهات التحويل غير مكتملة أو مكررة.", "Transfer entities are incomplete or duplicated.")
             case .invalidTotal: tr("تعذّر التأكد من مجموع جهات التحويل.", "Could not verify the transfer entity total.")
             case .missingFont: tr("خط جدول التحويل غير متوفر على الجهاز.", "The transfer table font is unavailable.")
             case .tableMismatch: tr("تعذّر مطابقة الأسماء والحسابات والمبالغ المرسومة في جدول التحويل مع بياناته.", "Could not reconcile the rendered transfer table names, accounts, and amounts with its source.")
+            case .cellMismatch(let row, let column, let readCount, let expectedCount):
+                tr("تعذّر تدقيق جدول التحويل في الصف \(row) والعمود \(column) (طول المقروء \(readCount)، المتوقع \(expectedCount)).", "Transfer table verification failed at row \(row), column \(column) (read length \(readCount), expected \(expectedCount)).")
             }
         }
     }
@@ -109,10 +112,12 @@ nonisolated enum TransferGroupTablePDF {
             var verified: [TransferReconcileLine] = []
             for (index, pair) in zip(rows, fitting.rowHeights).enumerated() {
                 let (row, height) = pair
-                guard extracted(0, y, height) == row[0], extracted(2, y, height) == row[2],
-                      extracted(4, y, height) == row[4],
-                      identity(text(1, y, height)) == identity(row[1]),
-                      identity(text(3, y, height)) == identity(row[3]) else { throw Failure.tableMismatch }
+                for column in row.indices {
+                    let read = [0, 2, 4].contains(column) ? extracted(column, y, height) : identity(text(column, y, height))
+                    let expected = [0, 2, 4].contains(column) ? row[column] : identity(row[column])
+                    let equal = [0, 2, 4].contains(column) ? read == expected : TransferAnbarTablePDF.matchesExtractedCell(read, expected: expected)
+                    guard equal else { throw Failure.cellMismatch(row: index + 1, column: column + 1, readCount: read.count, expectedCount: expected.count) }
+                }
                 guard let amount = Int64(extracted(4, y, height)) else { throw Failure.tableMismatch }
                 verified.append(TransferReconcileLine(sourceID: entities[index].id, title: entities[index].group.title, amount: amount))
                 y += height
