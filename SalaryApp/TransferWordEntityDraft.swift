@@ -7,7 +7,7 @@ nonisolated enum TransferWordEntityDraft {
         var errorDescription: String? { tr("بيانات الجهة أو التوقيعات غير مكتملة.", "The entity or signature details are incomplete.") }
     }
     static func write(plan: TransferWordEntityPlan, text: TransferWordGroupDraft.LetterText,
-                      destination: URL, sakkalBold: Data? = nil) throws {
+                      destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard TransferRules.validIBAN(plan.payerIBAN), nonempty(text.header), nonempty(text.fixedNumber),
               text.committee.count == 3, text.committee.allSatisfy(nonempty),
@@ -53,6 +53,7 @@ nonisolated enum TransferWordEntityDraft {
             blocks.append(.paragraph(.init(text: "قائمة استقطاعات \(plan.beneficiaryName) · \(monthName) / \(year)", halfPoints: 28, bold: true, centered: true)))
             blocks.append(.table(table))
         }
-        try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold)
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false) }
+        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }

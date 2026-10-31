@@ -63,7 +63,6 @@ struct TransferLetterDraftView: View {
     @State private var showPreview = false
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
-    @State private var wordPreviewFailed = false
     @State private var wordCSVText: String?
     @State private var wordCSVError: String?
     @State private var showWordCSV = false
@@ -120,13 +119,13 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
-                if boldFont.isEmpty && kind != .rafidain && kind != .otherBanks {
-                    Text(tr("خط ساكال العريض غير مستورد؛ قد يختلف شكل الترويسة في Word. يمكن استيراده من تخصيص الكتب.", "Sakkal bold is not imported; the Word header may look different. Import it in letter settings."))
+                if boldFont.isEmpty {
+                    Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد ترويسة PDF.", "Import the bold Sakkal font in letter settings to prepare the PDF header."))
                         .font(.footnote).foregroundStyle(.orange)
                 }
-                Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
+                Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
-            } footer: { Text(tr("معاينة Word تجريبية: اضبط العدد والترويسة واللجنة والهامش من تخصيص الكتب. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "Word preview is experimental: set the reference number, header, committee and footer in letter settings. Sharing remains disabled until verification is complete.")) }
+            } footer: { Text(tr("معاينة PDF تجريبية: راجع البيانات والتواقيع وعدد الصفحات على الآيفون. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "PDF preview is experimental: review the details, signatures and pages on iPhone. Sharing remains disabled until verification is complete.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
         .overlay { if working { ProgressView(tr("إعداد المعاينة", "Preparing preview")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
@@ -205,25 +204,20 @@ struct TransferLetterDraftView: View {
         .sheet(isPresented: $showWordPreview, onDismiss: {
             if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
             wordResult = nil
-            wordPreviewFailed = false
             wordCSVText = nil; wordCSVError = nil; showWordCSV = false
             countNotice = nil
         }) {
             NavigationStack {
                 if let wordResult {
                     VStack(spacing: 0) {
-                        Label(tr("مسودة تجريبية؛ راجع النص والمبالغ والجداول والتواقيع. لم يُتحقق بعد من عدد صفحات Word.", "Experimental draft: review the text, amounts, tables and signatures. Word pagination has not been verified."), systemImage: "exclamationmark.triangle")
+                        Label(tr("مسودة PDF تجريبية؛ راجع النص والمبالغ والحسابات والجداول والتواقيع على الآيفون.", "Experimental PDF: review text, amounts, accounts, tables and signatures on iPhone."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
                         if let countNotice { Text(countNotice).font(.footnote).foregroundStyle(.orange).padding(8) }
                         if !current { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         if let wordCSVError { Text(wordCSVError).font(.footnote).foregroundStyle(.orange).padding(8) }
-                        if wordPreviewFailed {
-                            ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "doc.questionmark", description: Text(tr("تعذّر عرض مسودة Word داخل التطبيق على هذا الجهاز.", "This device could not display the Word draft inside the app.")))
-                        } else {
-                            TransferWordPreview(url: wordResult.letter, loadFailed: $wordPreviewFailed)
-                        }
+                        PDFPreview(url: wordResult.letter)
                     }
-                    .navigationTitle(tr("مسودة Word", "Word draft"))
+                    .navigationTitle(tr("مسودة PDF", "PDF draft"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
@@ -333,7 +327,7 @@ struct TransferLetterDraftView: View {
                     return try TransferWordDraftGenerator.make(bookID: bookID, figures: snapshotFigures, entities: snapshotEntities,
                         entity: entity, individualPlan: plan, cashList: list, references: snapshotReferences,
                         accountLinks: snapshotLinks, payerName: snapshotPayer, payerIBAN: snapshotPayerIBAN,
-                        customization: customization, sakkalBold: snapshotBoldFont.isEmpty ? nil : snapshotBoldFont)
+                        customization: customization, sakkalBold: snapshotBoldFont.isEmpty ? nil : snapshotBoldFont, adaptivePDF: true)
                 }
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 guard !Task.isCancelled, current else { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()); return }

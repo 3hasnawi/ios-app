@@ -19,7 +19,7 @@ nonisolated enum TransferWordGroupDraft {
         return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer)
     }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
-                      text: LetterText, destination: URL, sakkalBold: Data? = nil) throws {
+                      text: LetterText, destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let normalizedPayer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         guard TransferRules.validIBAN(payerIBAN), normalizedPayer == plan.payerIBAN, month == plan.month,
@@ -34,8 +34,8 @@ nonisolated enum TransferWordGroupDraft {
         let signatureCells = text.committee.map { $0 + "\n" + period.signatureDate }
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
-        try TransferWordDocument.write(blocks: [
-            .paragraph(.init(text: text.header, halfPoints: 32, bold: true)),
+        let blocks: [TransferWordDocument.Block] = [
+            .paragraph(.init(text: text.header, font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
             .paragraph(.init(text: "العدد: \(text.fixedNumber)\nالتاريخ: \(period.signatureDate)", halfPoints: 30, bold: true)),
             .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true)),
             .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
@@ -45,6 +45,8 @@ nonisolated enum TransferWordGroupDraft {
             .pageBreak,
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(year))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)
-        ], destination: destination, sakkalBold: sakkalBold)
+        ]
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true) }
+        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }

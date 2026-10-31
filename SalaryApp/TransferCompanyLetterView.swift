@@ -19,7 +19,6 @@ struct TransferCompanyLetterView: View {
     @State private var showPreview = false
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
-    @State private var wordPreviewFailed = false
     @State private var wordCustomizationSnapshot = Data()
     @State private var wordBoldSnapshot = Data()
     @State private var generation: Task<Void, Never>?
@@ -43,12 +42,12 @@ struct TransferCompanyLetterView: View {
                 } label: {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
                 }
-                Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
+                Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!sourceIsCurrent || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working)
                 if references.isEmpty { Text(tr("استورد حزمة مراجع الكتب من صفحة ملفات التحويل.", "Import the letter reference package from transfer files.")).font(.footnote).foregroundStyle(.secondary) }
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
-                if currentBoldFont.isEmpty { Text(tr("خط ساكال العريض غير مستورد؛ قد يختلف شكل الترويسة في Word.", "Sakkal bold is not imported; the Word header may look different.")).font(.footnote).foregroundStyle(.orange) }
+                if currentBoldFont.isEmpty { Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد ترويسة PDF.", "Import the bold Sakkal font in letter settings to prepare the PDF header.")).font(.footnote).foregroundStyle(.orange) }
                 Text(tr("اضبط العدد والترويسة واللجنة والهامش ورقم عقد الإطعام من تخصيص الكتب. المشاركة معطّلة حتى اكتمال التدقيق.", "Set the reference, header, committee, footer and food contract reference in letter settings. Sharing remains disabled until verification is complete.")).font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -76,7 +75,6 @@ struct TransferCompanyLetterView: View {
         .sheet(isPresented: $showWordPreview, onDismiss: {
             if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
             wordResult = nil
-            wordPreviewFailed = false
         }) {
             NavigationStack {
                 if let wordResult {
@@ -84,13 +82,9 @@ struct TransferCompanyLetterView: View {
                         Label(tr("مسودة تجريبية؛ راجع النص والمبلغ والحسابات والتواقيع قبل اعتمادها.", "Experimental draft: review the text, amount, accounts and signatures before approval."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
                         if !sourceIsCurrent || currentCustomization != wordCustomizationSnapshot || currentBoldFont != wordBoldSnapshot { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
-                        if wordPreviewFailed {
-                            ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "doc.questionmark", description: Text(tr("تعذّر عرض مسودة Word داخل التطبيق على هذا الجهاز.", "This device could not display the Word draft inside the app.")))
-                        } else {
-                            TransferWordPreview(url: wordResult.letter, loadFailed: $wordPreviewFailed)
-                        }
+                        PDFPreview(url: wordResult.letter)
                     }
-                    .navigationTitle(tr("مسودة Word", "Word draft"))
+                    .navigationTitle(tr("مسودة PDF", "PDF draft"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } } }
                 }
@@ -119,7 +113,7 @@ struct TransferCompanyLetterView: View {
                     return try TransferWordDraftGenerator.make(bookID: "food_company", figures: snapshotFigures, entities: [],
                         entity: nil, individualPlan: nil, cashList: nil, references: snapshotReferences,
                         accountLinks: Data(), payerName: "", payerIBAN: snapshotPayer, customization: customization,
-                        sakkalBold: boldSnapshot.isEmpty ? nil : boldSnapshot)
+                        sakkalBold: boldSnapshot.isEmpty ? nil : boldSnapshot, adaptivePDF: true)
                 }
                 let result = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 guard !Task.isCancelled, sourceIsCurrent, snapshot == currentCustomization, boldSnapshot == currentBoldFont else {

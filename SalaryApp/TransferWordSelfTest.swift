@@ -180,6 +180,13 @@ import CryptoKit
                 } catch is Failure { throw Failure(errorDescription: "wrong Word amount accepted") }
                 catch { }
             }
+            phase = "adaptive-payroll-\(id)"
+            let pdf = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [], entity: nil,
+                individualPlan: nil, cashList: id == "cash_salary" ? cash : nil, references: references,
+                accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: custom,
+                sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: pdf.letter)?.pageCount == (id == "cash_salary" ? 2 : 1), "Adaptive PDF payroll \(id)")
             generated += 1
         }
         do {
@@ -215,6 +222,12 @@ import CryptoKit
                 throw Failure(errorDescription: "wrong Word table amount accepted")
             } catch is Failure { throw Failure(errorDescription: "wrong Word table amount accepted") }
             catch { }
+            phase = "adaptive-group-\(id)"
+            let pdf = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: groupEntities, entity: nil,
+                individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: pdf.letter)?.pageCount == 2 && pdf.csv != nil, "Adaptive PDF group \(id)")
             generated += 1
         }
         let tooMany = (1...100).map { index -> TransferEntity in
@@ -242,9 +255,29 @@ import CryptoKit
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let xml = try content(result.letter)
             try check(xml.contains(payer) && (id != "water" || xml.contains("موظف وهمي")), "Word entity \(id)")
+            phase = "adaptive-entity-\(id)"
+            let pdf = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [entity], entity: entity,
+                individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: pdf.letter)?.pageCount == (id == "water" ? 1 : 2), "Adaptive PDF entity \(id)")
             generated += 1
         }
         try check(generated == 11, "Word draft count")
+        phase = "adaptive-long-text"
+        let longPDF = documents.appendingPathComponent("adaptive-long-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: longPDF) }
+        let longBody = Array(repeating: "نص تجريبي طويل للتأكد من التفاف الأسطر وانتقال المحتوى.", count: 160).joined(separator: " ")
+        let fixedSignatures = TransferWordDocument.Table(headers: [], rows: [["عضو أول\n2026 / 10 /", "عضو ثان\n2026 / 10 /", "عضو ثالث\n2026 / 10 /"]], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
+        try TransferAdaptivePDF.write(blocks: [
+            .paragraph(.init(text: "ترويسة وهمية", font: "Sakkal Majalla", halfPoints: 36, bold: true)),
+            .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: 2026 / 10 /", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / جهة وهمية")),
+            .paragraph(.init(text: "م / اختبار", centered: true)),
+            .paragraph(.init(text: longBody)), .table(fixedSignatures),
+            .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
+        ], destination: longPDF, sakkalBold: syntheticFont, group: false)
+        try check((PDFDocument(url: longPDF)?.pageCount ?? 0) > 1, "Adaptive PDF long text pagination")
         // معاينة منشأة بالكامل بأسماء وهمية، دون استخدام اسم جهة حقيقية في الصور.
         let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
         try? FileManager.default.removeItem(at: fixture)

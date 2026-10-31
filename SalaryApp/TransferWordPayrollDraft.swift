@@ -7,7 +7,7 @@ nonisolated enum TransferWordPayrollDraft {
         var errorDescription: String? { tr("بيانات الكتاب أو رقم عقد الإطعام أو التوقيعات غير مكتملة.", "The letter, food contract reference, or signatures are incomplete.") }
     }
     static func write(plan: TransferWordPayrollPlan, text: TransferWordGroupDraft.LetterText,
-                      foodContractReference: String? = nil, destination: URL, sakkalBold: Data? = nil) throws {
+                      foodContractReference: String? = nil, destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard TransferRules.validIBAN(plan.payerIBAN), TransferRules.validIBAN(plan.beneficiaryIBAN),
               nonempty(text.header), nonempty(text.fixedNumber), text.committee.count == 3,
@@ -50,6 +50,7 @@ nonisolated enum TransferWordPayrollDraft {
             blocks.append(.paragraph(.init(text: "قائمة رواتب الكاش · \(monthName) / \(year)", halfPoints: 28, bold: true, centered: true)))
             blocks.append(.table(table))
         }
-        try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold)
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false) }
+        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }
