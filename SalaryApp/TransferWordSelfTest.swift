@@ -219,6 +219,23 @@ import CryptoKit
             try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF payroll \(id)")
             generated += 1
         }
+        var reviewed = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
+            healthcare: 20, policeFundDonations: 30, sports: 40, incomeTax: 11, socialProtection: 13,
+            contractNominalShare: nil, contractRetirement: 19, payrollCash: 23, missingContractNominal: 1,
+            availableContractNominalShare: 17)
+        do {
+            _ = try TransferWordDraftGenerator.make(bookID: "contracts", figures: reviewed, entities: [], entity: nil,
+                individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
+            throw Failure(errorDescription: "unreviewed missing nominal accepted")
+        } catch is Failure { throw Failure(errorDescription: "unreviewed missing nominal accepted") }
+        catch { }
+        reviewed.contractNominalReviewed = true
+        let reviewedPDF = try TransferWordDraftGenerator.make(bookID: "contracts", figures: reviewed, entities: [], entity: nil,
+            individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+            payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
+        defer { try? FileManager.default.removeItem(at: reviewedPDF.letter.deletingLastPathComponent()) }
+        try check(PDFDocument(url: reviewedPDF.letter)?.pageCount == 1 && reviewed.contractTotal == 36, "reviewed contract PDF")
         do {
             let wrong = try TransferWordDraftGenerator.make(bookID: "food_company", figures: figures, entities: [], entity: nil,
                 individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",

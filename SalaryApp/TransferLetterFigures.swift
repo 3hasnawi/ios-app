@@ -35,8 +35,15 @@ nonisolated struct TransferLetterFigures: Sendable {
     /// لا يُعتمد مبلغ الكاش إذا وُجدت رواتب لم تُعرف طريقة دفعها.
     let payrollCash: Double?
     var treasuryTotal: Double { incomeTax + socialProtection }
-    var contractTotal: Double? { contractNominalShare.map { $0 + contractRetirement } }
+    var effectiveContractNominalShare: Double? {
+        if missingContractNominal > 0 { return contractNominalReviewed ? availableContractNominalShare : nil }
+        return contractNominalShare
+    }
+    var contractTotal: Double? { effectiveContractNominalShare.map { $0 + contractRetirement } }
     var missingContractNominal: Int = 0
+    /// حصة الاسمي الموجود فقط، ولا تُستخدم إلا بعد تأكيد المستخدم لهذا الكتاب.
+    var availableContractNominalShare: Double? = nil
+    var contractNominalReviewed = false
 }
 
 nonisolated enum TransferLetterFigureError: LocalizedError {
@@ -81,7 +88,8 @@ nonisolated enum TransferLetterFigureRules {
             contractRetirement: checked("توقيفات العقود", summary.contractRetirement),
             payrollCash: available.contains("طريقة الدفع") && summary.unclassifiedCount == 0 && summary.missingNet == 0
                 ? checked("الرواتب كاش", summary.cashNet) : nil,
-            missingContractNominal: summary.missingContractNominal)
+            missingContractNominal: summary.missingContractNominal,
+            availableContractNominalShare: checked("حصة اسمي العقود المتوفرة", summary.contractNominalShare))
     }
 }
 

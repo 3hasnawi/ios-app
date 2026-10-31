@@ -701,7 +701,7 @@ private struct TransferCategoryView: View {
                     Label(tr("\(Num.format(context.figures.missingContractNominal)) عقد بلا اسمي مقروء · مراجعة السجلات", "\(context.figures.missingContractNominal) contracts lack readable nominal pay · review records"), systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                 }
-            } footer: { Text(tr("يتوقف كتاب ضمان العقود حتى تُراجع بياناته.", "The contract guarantee letter is unavailable until its data is reviewed.")) }
+            } footer: { Text(tr("يمكن مراجعة المبلغ وتجاوز التنبيه داخل كتاب ضمان العقود.", "You can review the amount and accept the warning inside the contract letter.")) }
         }
         Section {
             NavigationLink {
@@ -748,7 +748,7 @@ private struct TransferCategoryView: View {
             default: nil
             }
             if kind == .contracts && figures.missingContractNominal > 0 {
-                Text(tr("الاسمي ناقص في \(Num.format(figures.missingContractNominal)) عقد؛ راجع السجلات", "Nominal pay is missing for \(figures.missingContractNominal) contracts; review records")).font(.caption).foregroundStyle(.orange)
+                Text(tr("الاسمي ناقص في \(Num.format(figures.missingContractNominal)) عقد؛ راجع المبلغ داخل الكتاب", "Nominal pay is missing for \(figures.missingContractNominal) contracts; review the amount in the letter")).font(.caption).foregroundStyle(.orange)
             } else if let value, value > 0 {
                 Text(tr("من بيانات الرواتب · \(Money.format(value))", "From payroll · \(Money.format(value))")).font(.caption).foregroundStyle(.secondary)
             } else {

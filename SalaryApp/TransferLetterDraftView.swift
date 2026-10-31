@@ -52,6 +52,8 @@ struct TransferLetterDraftView: View {
     @AppStorage(TransferHeaderFont.boldSettingsKey) private var currentBoldFont = Data()
     @AppStorage(TransferHeaderFont.regularSettingsKey) private var currentRegularFont = Data()
     @State private var selectedID = ""
+    @State private var reviewedContractAmount = false
+    @State private var draftUsedNominalReview = false
     @State private var selectingEntity = false
     @State private var selectionNotice: String?
     @State private var working = false
@@ -83,6 +85,12 @@ struct TransferLetterDraftView: View {
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
+    private var preparedFigures: TransferLetterFigures {
+        var result = figures
+        result.contractNominalReviewed = kind == .contracts && reviewedContractAmount && figures.missingContractNominal > 0
+        return result
+    }
+
     private var revision: TransferDraftRevision {
         TransferDraftRevision(sourceKey: sourceKey, accounts: sourceAccounts, categories: sourceCategories,
             payrollLinks: sourceLinks, customization: sourceCustomization, references: references,
@@ -118,7 +126,15 @@ struct TransferLetterDraftView: View {
                     Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
                 }
                 if kind == .contracts && figures.missingContractNominal > 0 {
-                    Text(tr("يتعذر حساب هذا الكتاب: يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. راجع السجلات من صفحة ملفات التحويل.", "This letter cannot be calculated: \(figures.missingContractNominal) contracts lack readable nominal pay. Review the records in transfer files.")).font(.footnote).foregroundStyle(.orange)
+                    Text(tr("يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. مبلغ ١٢٪ أدناه محسوب من الاسمي المتوفر فقط؛ الاسمي المفقود غير محتسب.", "\(Num.format(figures.missingContractNominal)) contracts lack nominal pay. The 12% below uses available nominal pay only; missing amounts are excluded."))
+                        .font(.footnote).foregroundStyle(.orange)
+                    if let nominal = figures.availableContractNominalShare {
+                        LabeledContent(tr("١٢٪ من الاسمي المتوفر", "12% of available nominal pay"), value: Money.format(nominal))
+                        LabeledContent(tr("التوقيفات التقاعدية", "Pension deductions"), value: Money.format(figures.contractRetirement))
+                        LabeledContent(tr("المجموع المتاح", "Available total"), value: Money.format(nominal + figures.contractRetirement))
+                        Toggle(tr("راجعت المبلغ وأتجاوز التنبيه لهذا الكتاب", "I reviewed the amount and accept this warning for this letter"), isOn: $reviewedContractAmount)
+                            .disabled(!current || working)
+                    }
                 }
                 if kind == .housing || kind == .water {
                     Text(tr("يُطابق رقم حساب المستفيد في الكتاب مع حساب الجهة المحفوظ قبل المعاينة.", "The beneficiary account in the letter is checked against the saved entity account before preview."))
@@ -130,8 +146,10 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.orange)
                 }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
-                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
-            } footer: { Text(tr("معاينة PDF تجريبية: راجع البيانات والتواقيع وعدد الصفحات على الآيفون. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "PDF preview is experimental: review the details, signatures and pages on iPhone. Sharing remains disabled until verification is complete.")) }
+                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && preparedFigures.contractTotal == nil))
+            } footer: { Text(kind == .contracts && reviewedContractAmount
+                ? tr("راجع المبلغ والجدول والتواقيع في المعاينة قبل مشاركة الكتاب.", "Review the amount, table and signatures in the preview before sharing.")
+                : tr("معاينة PDF تجريبية: راجع البيانات والتواقيع وعدد الصفحات على الآيفون. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "PDF preview is experimental: review the details, signatures and pages on iPhone. Sharing remains disabled until verification is complete.")) }
         }
         .navigationTitle(kind.title).navigationBarTitleDisplayMode(.inline)
         .task(id: sourceKey) { await restoreEntity() }
@@ -211,6 +229,7 @@ struct TransferLetterDraftView: View {
         .sheet(isPresented: $showWordPreview, onDismiss: {
             if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
             wordResult = nil
+            draftUsedNominalReview = false
             wordCSVText = nil; wordCSVError = nil; showWordCSV = false
             countNotice = nil
         }) {
@@ -219,6 +238,10 @@ struct TransferLetterDraftView: View {
                     VStack(spacing: 0) {
                         Label(tr("مسودة PDF تجريبية؛ راجع النص والمبالغ والحسابات والجداول والتواقيع على الآيفون.", "Experimental PDF: review text, amounts, accounts, tables and signatures on iPhone."), systemImage: "exclamationmark.triangle")
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
+                        if draftUsedNominalReview {
+                            Text(tr("أُعدّ الكتاب بالمبلغ المتوفر بعد تأكيدك؛ الاسمي المفقود غير محتسب.", "This letter uses the available amount you confirmed; missing nominal pay is excluded."))
+                                .font(.footnote).foregroundStyle(.orange).padding(8)
+                        }
                         if let countNotice { Text(countNotice).font(.footnote).foregroundStyle(.orange).padding(8) }
                         if !current { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         if let wordCSVError { Text(wordCSVError).font(.footnote).foregroundStyle(.orange).padding(8) }
@@ -228,6 +251,14 @@ struct TransferLetterDraftView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
+                        if kind == .contracts && draftUsedNominalReview {
+                            ToolbarItem(placement: .primaryAction) {
+                                Button(tr("مشاركة الكتاب", "Share letter"), systemImage: "square.and.arrow.up") {
+                                    guard current else { return }
+                                    ActivityShare.present([wordResult.letter])
+                                }.disabled(!current)
+                            }
+                        }
                         if wordResult.csv != nil {
                             ToolbarItem(placement: .primaryAction) {
                                 Button(tr("معاينة CSV", "Preview CSV")) { prepareWordCSV() }.disabled(!current)
@@ -253,6 +284,7 @@ struct TransferLetterDraftView: View {
                 }
             }
         }
+        .onChange(of: current) { if !current { reviewedContractAmount = false } }
         .onDisappear { generation?.cancel() }
     }
     private func prepareWordCSV() {
@@ -380,7 +412,7 @@ struct TransferLetterDraftView: View {
                     cash = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                 }
                 let plan = individual, list = cash, bookID = kind.rawValue
-                let snapshotFigures = figures, snapshotEntities = entities, snapshotReferences = references
+                let snapshotFigures = preparedFigures, snapshotEntities = entities, snapshotReferences = references
                 let snapshotLinks = sourceLinks, snapshotPayer = payerName, snapshotPayerIBAN = payerIBAN
                 let snapshotBoldFont = boldFont
                 let worker = Task.detached(priority: .userInitiated) {
@@ -405,6 +437,7 @@ struct TransferLetterDraftView: View {
                     if let entity { coverage.record(revision: revision, entityIDs: [entity.id], bookID: kind.rawValue) }
                 default: break
                 }
+                draftUsedNominalReview = snapshotFigures.contractNominalReviewed
                 wordResult = result; generation = nil; showWordPreview = true
             } catch is CancellationError { return }
             catch { guard !Task.isCancelled else { return }; self.error = error.localizedDescription }
@@ -429,7 +462,7 @@ struct TransferLetterDraftView: View {
                 case .taxSocial:
                     url = try await TransferTaxSocialLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                 case .contracts:
-                    url = try await TransferContractsLetter.make(figures: figures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
+                    url = try await TransferContractsLetter.make(figures: preparedFigures, payerIBAN: payerIBAN, references: references, customization: customization, monthFontData: boldFont.isEmpty ? nil : boldFont)
                 case .cash:
                     let container = SharedModel.container
                     let task = Task.detached(priority: .userInitiated) { try await TransferCashListEngine(modelContainer: container).list(month: month) }

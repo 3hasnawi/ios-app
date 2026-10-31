@@ -71,8 +71,8 @@ nonisolated enum TransferContractsLetter {
     }
     static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
-        guard figures.missingContractNominal == 0 else { throw TransferLetterFigureError.missingContractNominal(figures.missingContractNominal) }
-        guard let amountValue = figures.contractTotal, let nominalShare = figures.contractNominalShare else { throw Failure.incomplete }
+        guard figures.missingContractNominal == 0 || figures.contractNominalReviewed else { throw TransferLetterFigureError.missingContractNominal(figures.missingContractNominal) }
+        guard let amountValue = figures.contractTotal, let nominalShare = figures.effectiveContractNominalShare else { throw Failure.incomplete }
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
               amountValue.rounded() == amountValue, amountValue <= 9_007_199_254_740_991 else { throw Failure.incomplete }
         let referenceWork = Task.detached(priority: .userInitiated) {

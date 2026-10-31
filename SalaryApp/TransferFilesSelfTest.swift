@@ -409,6 +409,21 @@ import CryptoKit
         let partialFigures = try TransferLetterFigureRules.make(summary: missingNominal, available: columns)
         try check(partialFigures.contractNominalShare == nil && partialFigures.contractTotal == nil && partialFigures.missingContractNominal == 1, "missing nominal must not become a partial contract total")
         try check(partialFigures.foodCompany == figures.foodCompany && partialFigures.treasuryTotal == figures.treasuryTotal, "missing contract nominal must not block unrelated figures")
+        try check(partialFigures.availableContractNominalShare == 1200, "available nominal share preserved for review")
+        var reviewedContracts = partialFigures
+        reviewedContracts.contractNominalReviewed = true
+        try check(reviewedContracts.contractTotal == 1400 && reviewedContracts.missingContractNominal == 1, "explicit review uses available total and preserves warning")
+        let reviewedTable = try TransferWordTables.contracts(reviewedContracts)
+        try check(reviewedTable.rows == [["200", "1200", "1400"]] && (try TransferWordValues.payrollAmount(bookID: "contracts", figures: reviewedContracts)) == 1400, "reviewed contract table and total")
+        var unavailable = reviewedContracts
+        unavailable.availableContractNominalShare = nil
+        try check(unavailable.contractTotal == nil, "review cannot invent a missing amount")
+        do {
+            _ = try TransferWordTables.contracts(unavailable)
+            throw Failure(errorDescription: "missing reviewed amount accepted")
+        } catch is Failure { throw Failure(errorDescription: "missing reviewed amount accepted") }
+        catch { }
+
         do {
             _ = try await TransferContractsLetter.make(figures: partialFigures, payerIBAN: iban, references: Data())
             throw Failure(errorDescription: "incomplete contract letter accepted")
