@@ -16,7 +16,7 @@ nonisolated enum TransferWordTables {
     static func attachment(for table: TransferWordDocument.Table?) throws -> TransferWordDocument.Paragraph {
         guard let table, table.boldLastRow, table.rows.count > 1 else { throw Failure.incomplete }
         let count = ReportSheet.easternDigits(String(table.rows.count - 1))
-        return .init(text: "المرفقات:\nقائمة أسماء عدد (\(count))", halfPoints: 28, bold: true)
+        return .init(text: "المرفقات:\nقائمة أسماء عدد (\(count))", halfPoints: 24, bold: true)
     }
     static func treasury(_ figures: TransferLetterFigures) throws -> TransferWordDocument.Table {
         guard valid(figures.incomeTax), valid(figures.socialProtection), valid(figures.treasuryTotal) else { throw Failure.incomplete }
