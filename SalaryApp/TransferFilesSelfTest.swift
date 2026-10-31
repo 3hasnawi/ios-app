@@ -584,7 +584,7 @@ import CryptoKit
         let digitRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
         let digitPDF = digitRenderer.pdfData { context in
             context.beginPage()
-            ("0123456789" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 18)])
+            ("0123456789" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 10)])
         }
         let digitGlyphs = try TransferMonthDigits.extract(from: digitPDF)
         try check(digitGlyphs.count == 10 && digitGlyphs.allSatisfy { !$0.png.isEmpty && $0.width > 0 && $0.height > 0 }, "month digit glyphs")
