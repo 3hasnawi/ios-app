@@ -40,6 +40,11 @@ import CryptoKit
         refundStatement.movements.append(excessiveRefund)
         do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
         catch is Failure { throw Failure(errorDescription: "excess refund accepted") } catch { }
+        let statementPDF = try await BankReconciliationPDF.make(statement)
+        defer { try? FileManager.default.removeItem(at: statementPDF) }
+        let statementDocument = PDFDocument(url: statementPDF)
+        let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
+        try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
         let ledger = BankReconciliation.Ledger(periods: [statement])
         let restoredLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
         try check(restoredLedger.periods == [statement], "bank reconciliation storage roundtrip")
