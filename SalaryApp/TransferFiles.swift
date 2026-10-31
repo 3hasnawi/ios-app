@@ -326,10 +326,15 @@ struct TransferFilesView: View {
                 Text(tr("\(Num.format(reviewCount)) جهات تحتاج مراجعة", "\(reviewCount) entities need review"))
                     .font(.caption).foregroundStyle(.orange)
             }
-            let unclassified = entities.filter { $0.category == .unresolved }.count
-            if unclassified > 0 {
-                Text(tr("\(Num.format(unclassified)) جهات لم يُحدد مصرفها بعد", "\(unclassified) entities have no determined bank yet"))
-                    .font(.caption).foregroundStyle(.orange)
+            if category == .unresolved {
+                if figuresError != nil || !linksValid || !categoriesValid {
+                    Text(tr("تعذّر إكمال مراجعة الجهات؛ راجع بيانات الرواتب والروابط.", "Could not complete the entity review; check payroll data and account links."))
+                        .font(.caption).foregroundStyle(.orange)
+                } else {
+                    Text(items.isEmpty ? tr("لا توجد جهات تحتاج تصنيفاً.", "No entities need classification.") :
+                        tr("اربط الحساب أو حدد المجموعة قبل تصدير الملفات.", "Link the account or choose the group before exporting."))
+                        .font(.caption).foregroundStyle(items.isEmpty ? Color.secondary : Color.orange)
+                }
             }
         }.padding(.vertical, 8)
     }
@@ -379,6 +384,9 @@ struct TransferFilesView: View {
                         categoryRow(category)
                     }
                 } header: { Text(month?.name ?? "") }
+                Section {
+                    categoryRow(.unresolved)
+                } header: { Text(tr("مراجعة الجهات", "Entity review")) }
             }
         }
         .navigationTitle(tr("ملفات التحويل", "Transfer files"))
@@ -547,7 +555,7 @@ private struct TransferCategoryView: View {
                     if !payrollComplete { Text(figuresError ?? tr("تعذّر تحميل استقطاعات الرواتب للشهر المختار.", "Could not load payroll deductions for the selected month.")).foregroundStyle(.orange) }
                     if !TransferRules.safeField(payerName) { Text(tr("أدخل اسم الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer name in transfer settings.")).foregroundStyle(.orange) }
                     if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN صالحاً للجهة الدافعة من إعدادات ملفات التحويل.", "Enter a valid payer IBAN in transfer settings.")).foregroundStyle(.orange) }
-                    if unresolvedCount > 0 { Text(tr("\(Num.format(unresolvedCount)) جهة لم يُحدد مصرفها؛ اربطها من القائمة أدناه قبل التصدير.", "\(unresolvedCount) entities have no determined bank; link them below before export.")).foregroundStyle(.orange) }
+                    if unresolvedCount > 0 { Text(tr("\(Num.format(unresolvedCount)) جهة لم يُحدد مصرفها؛ ارجع إلى قسم الجهات غير المصنفة في صفحة ملفات التحويل قبل التصدير.", "\(unresolvedCount) entities have no determined bank; return to the unclassified entities section in transfer files before export.")).foregroundStyle(.orange) }
                 }
             }
             if category == .anbar {
@@ -579,8 +587,11 @@ private struct TransferCategoryView: View {
                     if allIssues > 0 { Text(tr("عالج بيانات الجهات المعلّمة قبل التصدير.", "Resolve flagged entities before exporting.")).font(.footnote).foregroundStyle(.secondary) }
                 }
             }
-            if !unresolved.isEmpty {
+            if category == .unresolved {
                 Section {
+                    if unresolved.isEmpty {
+                        Text(tr("لا توجد جهات تحتاج تصنيفاً.", "No entities need classification.")).foregroundStyle(.secondary)
+                    }
                     ForEach(unresolved) { entity in
                         VStack(alignment: .leading, spacing: 7) {
                             Text(entity.group.title).font(.headline)
@@ -599,9 +610,9 @@ private struct TransferCategoryView: View {
                             ForEach(TransferRules.issues(entity), id: \.self) { issue in Text(issue).font(.caption).foregroundStyle(.orange) }
                         }.padding(.vertical, 5)
                     }
-                } header: { Text(tr("جهات لم يُحدد مصرفها", "Entities without a determined bank")) } footer: { Text(tr("تظهر هذه الجهات للمراجعة في المجموعات الثلاث حتى ربط حسابها أو تحديد مصرفها؛ لا تدخل في المجموع إلى أن يُحدد تصنيفها.", "These entities appear in all three groups until their account or bank is determined; they are not included in a group total until classified.")) }
+                } header: { Text(tr("جهات لم يُحدد مصرفها", "Entities without a determined bank")) } footer: { Text(tr("لا تدخل هذه الجهات في أي مجموعة أو ملف تحويل حتى ربط حسابها وتحديد تصنيفها.", "These entities are not included in a group or transfer file until their account is linked and their category is determined.")) }
             }
-            if !unresolved.isEmpty || allIssues > 0 {
+            if (category == .unresolved && !unresolved.isEmpty) || (category != .unresolved && allIssues > 0) {
                 Section {
                     Button(tr("استيراد ملف حسابات الجهات", "Import beneficiary accounts"), systemImage: "square.and.arrow.down") { importCenter.pickAccounts() }
                         .disabled(importCenter.isBusy || BackupManager.shared.isWorking || StaffImportState.shared.isImporting)
@@ -610,18 +621,19 @@ private struct TransferCategoryView: View {
                     }
                 } footer: { Text(tr("اختر ملف الحسابات الصحيح، ثم راجع نتيجة فحصه قبل الاستيراد.", "Choose the correct accounts file and review it before import.")) }
             }
-            Section {
-                NavigationLink {
-                    entityList
-                } label: {
-                    HStack {
-                        Label(tr("الجهات", "Entities"), systemImage: "building.2")
-                        Spacer()
-                        Text(Num.format(entities.count)).foregroundStyle(.secondary)
+            if category != .unresolved {
+                Section {
+                    NavigationLink {
+                        entityList
+                    } label: {
+                        HStack {
+                            Label(tr("الجهات", "Entities"), systemImage: "building.2")
+                            Spacer()
+                            Text(Num.format(entities.count)).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
-
         }
         .navigationTitle(category.title).navigationBarTitleDisplayMode(.inline)
         .sheet(item: $linkEntity) { entity in
