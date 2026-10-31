@@ -59,6 +59,18 @@ def main():
     defaults = {}
     headers, numbers, contract_references = [], [], []
     with ZipFile(args.pdf_pack) as pack:
+        manifest = json.loads(pack.read("manifest.json"))
+        references = {item["id"]: item for item in manifest["templates"] if item["id"] in BOOKS}
+        if set(references) != set(BOOKS):
+            raise ValueError("PDF reference pack is incomplete")
+        reference_hashes = {}
+        for book_id, item in references.items():
+            if item["path"] != "templates/" + book_id + ".pdf":
+                raise ValueError("unexpected PDF reference path: " + book_id)
+            digest = hashlib.sha256(pack.read(item["path"])).hexdigest()
+            if digest != item["sha256"].lower():
+                raise ValueError("PDF reference digest mismatch: " + book_id)
+            reference_hashes[book_id] = digest
         for book_id, (name, y, y3, x3, w3) in BOOKS.items():
             with ZipFile(source_file(args.source_root, name)) as doc:
                 header = paragraphs(etree.fromstring(doc.read("word/header1.xml")))
@@ -117,7 +129,7 @@ def main():
             print(book_id + ": checked")
     if len(set(headers)) != 1 or len(set(numbers)) != 1 or len(contract_references) != 2 or len(set(contract_references)) != 1:
         raise ValueError("common reference fields do not match")
-    package = {"version": 1, "defaults": {"common": {"header": "\n".join(headers[0]),
+    package = {"version": 1, "referenceHashes": reference_hashes, "defaults": {"common": {"header": "\n".join(headers[0]),
         "fixedNumber": numbers[0], "foodContractReference": contract_references[0]}, "individual": defaults}}
     args.output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     args.output.write_text(json.dumps(package, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

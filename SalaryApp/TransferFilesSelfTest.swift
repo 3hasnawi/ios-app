@@ -58,7 +58,8 @@ import CryptoKit
         let generatedText = String(decoding: generatedXML, as: UTF8.self)
         try check(generatedText.contains("جهة وهمية") && generatedText.contains("123,456") &&
                   generatedText.contains("<w:br/>") && generatedText.contains("<w:tblBorders>") &&
-                  generatedText.contains("<w:gridCol w:w=\"7654\"/>") && generatedText.contains("w:val=\"nil\""), "generated Word contents and table")
+                  generatedText.contains("<w:gridCol w:w=\"7654\"/>") && generatedText.contains("w:val=\"nil\"") &&
+                  generatedText.contains("<w:cantSplit/>"), "generated Word contents and table")
         let wordFigures = TransferLetterFigures(month: "تشرين الاول 2026", foodFund: 3, foodTax: 5,
             foodCompany: 92, healthcare: 20, policeFundDonations: 30, sports: 40,
             incomeTax: 11, socialProtection: 13, contractNominalShare: 17,

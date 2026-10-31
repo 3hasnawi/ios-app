@@ -6,6 +6,7 @@ struct TransferLetterSettingsView: View {
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var storedData = Data()
     @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldData = Data()
     @AppStorage(TransferHeaderFont.regularSettingsKey) private var regularData = Data()
+    @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
     @State private var target = "all"
     @State private var selected = Set<String>()
     @State private var header = ""
@@ -139,6 +140,11 @@ struct TransferLetterSettingsView: View {
     }
     private func importDefaults() {
         guard !busy else { return }
+        guard !referenceData.isEmpty else {
+            error = tr("استورد مراجع الكتب أولاً من صفحة ملفات التحويل.", "Import the letter references from transfer files first.")
+            return
+        }
+        let referenceSnapshot = referenceData
         FilePicker.present(types: [.json], multiple: false) { urls in
             guard let url = urls.first else { return }
             importing = true; error = nil
@@ -148,9 +154,14 @@ struct TransferLetterSettingsView: View {
                     let imported = try await Task.detached(priority: .userInitiated) {
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                         guard size > 0, size <= 1_000_000 else { throw TransferWordDefaults.Failure.invalid }
-                        return try TransferWordDefaults.decode(Data(contentsOf: url))
+                        let package = try TransferWordDefaults.decode(Data(contentsOf: url))
+                        try TransferWordDefaults.verifyReferences(package, data: referenceSnapshot)
+                        return package.defaults
                     }.value
                     await FilePicker.waitUntilSettled()
+                    guard referenceData == referenceSnapshot else {
+                        throw NSError(domain: "WordDefaults", code: 2, userInfo: [NSLocalizedDescriptionKey: tr("تغيّرت مراجع الكتب؛ أعد اختيار ملف الإعدادات.", "The letter references changed; select the settings file again.")])
+                    }
                     guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
                         throw NSError(domain: "WordDefaults", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("انتظر انتهاء العملية الحالية ثم أعد الاستيراد.", "Wait for the current operation and import again.")])
                     }

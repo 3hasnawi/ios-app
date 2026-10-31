@@ -18,6 +18,11 @@ nonisolated enum TransferWordDraftGenerator {
                      references: Data, accountLinks: Data, payerName: String, payerIBAN: String,
                      customization: TransferLetterCustomization, sakkalBold: Data? = nil) throws -> Result {
         let text = try TransferWordGroupDraft.letterText(from: customization)
+        if bookID != "rafidain_group", bookID != "other_banks_group", let sakkalBold {
+            let font = try TransferHeaderFont.make(data: sakkalBold, style: .bold, size: 18)
+            let header = text.header.filter { !$0.isNewline }
+            try TransferHeaderFont.requireSupported(header, font: font)
+        }
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("word-draft-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])

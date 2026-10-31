@@ -64,6 +64,9 @@ struct TransferLetterDraftView: View {
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
     @State private var wordPreviewFailed = false
+    @State private var wordCSVText: String?
+    @State private var wordCSVError: String?
+    @State private var showWordCSV = false
     @State private var generation: Task<Void, Never>?
 
     private var candidates: [TransferEntity] {
@@ -122,8 +125,6 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.orange)
                 }
                 Button(tr("معاينة مسودة Word", "Preview Word draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
-                    .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
-                Button(tr("معاينة تجريبية PDF", "Preview draft PDF"), systemImage: "doc.text.magnifyingglass") { prepare() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && figures.contractTotal == nil))
             } footer: { Text(tr("معاينة Word تجريبية: اضبط العدد والترويسة واللجنة والهامش من تخصيص الكتب. مشاركة الكتب معطّلة حتى اكتمال التحقق.", "Word preview is experimental: set the reference number, header, committee and footer in letter settings. Sharing remains disabled until verification is complete.")) }
         }
@@ -205,6 +206,7 @@ struct TransferLetterDraftView: View {
             if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
             wordResult = nil
             wordPreviewFailed = false
+            wordCSVText = nil; wordCSVError = nil; showWordCSV = false
             countNotice = nil
         }) {
             NavigationStack {
@@ -214,6 +216,7 @@ struct TransferLetterDraftView: View {
                             .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
                         if let countNotice { Text(countNotice).font(.footnote).foregroundStyle(.orange).padding(8) }
                         if !current { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
+                        if let wordCSVError { Text(wordCSVError).font(.footnote).foregroundStyle(.orange).padding(8) }
                         if wordPreviewFailed {
                             ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "doc.questionmark", description: Text(tr("تعذّر عرض مسودة Word داخل التطبيق على هذا الجهاز.", "This device could not display the Word draft inside the app.")))
                         } else {
@@ -222,11 +225,51 @@ struct TransferLetterDraftView: View {
                     }
                     .navigationTitle(tr("مسودة Word", "Word draft"))
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } } }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
+                        if wordResult.csv != nil {
+                            ToolbarItem(placement: .primaryAction) {
+                                Button(tr("معاينة CSV", "Preview CSV")) { prepareWordCSV() }.disabled(!current)
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showWordCSV) {
+                        NavigationStack {
+                            Group {
+                                if current, let wordCSVText {
+                                    ScrollView([.horizontal, .vertical]) {
+                                        Text(wordCSVText).font(.system(.caption, design: .monospaced)).fixedSize(horizontal: true, vertical: false).padding().privacySensitive()
+                                    }.environment(\.layoutDirection, .leftToRight)
+                                } else {
+                                    ContentUnavailableView(tr("تغيّرت البيانات", "Data changed"), systemImage: "exclamationmark.triangle", description: Text(tr("أغلق المعاينة وأعد تحميل الشهر.", "Close the preview and reload the month.")))
+                                }
+                            }
+                            .navigationTitle(tr("معاينة CSV", "CSV preview"))
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordCSV = false } } }
+                        }
+                    }
                 }
             }
         }
         .onDisappear { generation?.cancel() }
+    }
+    private func prepareWordCSV() {
+        guard current, let url = wordResult?.csv else { return }
+        wordCSVError = nil
+        Task {
+            do {
+                let value = try await Task.detached(priority: .userInitiated) {
+                    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    guard size > 0, size <= 1_000_000 else { throw TransferWordDraftGenerator.Failure.changed }
+                    let data = try Data(contentsOf: url)
+                    guard data.count <= 1_000_000, let text = String(data: data, encoding: .utf8) else { throw TransferWordDraftGenerator.Failure.changed }
+                    return text
+                }.value
+                guard current, wordResult?.csv == url else { return }
+                wordCSVText = value; showWordCSV = true
+            } catch { wordCSVError = error.localizedDescription }
+        }
     }
     private func prepareWord() {
         guard current, !working else { return }

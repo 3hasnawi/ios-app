@@ -29,19 +29,20 @@ import CryptoKit
         for id in TransferReferencePack.expected.keys {
             defaults.individual[id] = .init(committeeFirst: "عضو أول", committeeSecond: "عضو ثان", committeeThird: "عضو ثالث", footer: "هامش وهمي")
         }
-        let package = TransferWordDefaults.Package(version: 1, defaults: defaults)
+        let placeholderHashes = Dictionary(uniqueKeysWithValues: TransferReferencePack.expected.keys.map { ($0, String(repeating: "0", count: 64)) })
+        let package = TransferWordDefaults.Package(version: 1, defaults: defaults, referenceHashes: placeholderHashes)
         let decoded = try TransferWordDefaults.decode(JSONEncoder().encode(package))
         var prior = TransferLetterCustomizationStore()
         prior.applyToAll(.init(header: "ترويسة مخصصة"))
         prior.apply(.init(committeeFirst: "عضو مخصص"), to: "food_company")
-        let merged = TransferWordDefaults.merging(decoded, preserving: prior)
+        let merged = TransferWordDefaults.merging(decoded.defaults, preserving: prior)
         try check(merged.effective(for: "food_company").header == "ترويسة مخصصة" &&
                   merged.effective(for: "food_company").committeeFirst == "عضو مخصص" &&
                   merged.effective(for: "food_company").committeeSecond == "عضو ثان", "Word defaults preserve customizations")
         var incompleteDefaults = defaults
         incompleteDefaults.individual.removeValue(forKey: "water")
         do {
-            _ = try TransferWordDefaults.decode(JSONEncoder().encode(TransferWordDefaults.Package(version: 1, defaults: incompleteDefaults)))
+            _ = try TransferWordDefaults.decode(JSONEncoder().encode(TransferWordDefaults.Package(version: 1, defaults: incompleteDefaults, referenceHashes: placeholderHashes)))
             throw Failure(errorDescription: "incomplete Word settings accepted")
         } catch is Failure { throw Failure(errorDescription: "incomplete Word settings accepted") }
         catch { }
@@ -127,6 +128,14 @@ import CryptoKit
             }
         }
         _ = try TransferReferencePack.validateData(references)
+        let matchingHashes = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.sha256) })
+        let matchingPackage = TransferWordDefaults.Package(version: 1, defaults: defaults, referenceHashes: matchingHashes)
+        try TransferWordDefaults.verifyReferences(matchingPackage, data: references)
+        do {
+            try TransferWordDefaults.verifyReferences(package, data: references)
+            throw Failure(errorDescription: "wrong Word reference hashes accepted")
+        } catch is Failure { throw Failure(errorDescription: "wrong Word reference hashes accepted") }
+        catch { }
         let figures = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
             healthcare: 20, policeFundDonations: 30, sports: 40, incomeTax: 11, socialProtection: 13,
             contractNominalShare: 17, contractRetirement: 19, payrollCash: 23)
@@ -146,11 +155,16 @@ import CryptoKit
             phase = "payroll-\(id)"
             let result = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [], entity: nil,
                 individualPlan: nil, cashList: id == "cash_salary" ? cash : nil, references: references,
-                accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: custom)
+                accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: custom,
+                sakkalBold: id == "food_tax" ? syntheticFont : nil)
             defer { try? FileManager.default.removeItem(at: result.letter.deletingLastPathComponent()) }
             let xml = try content(result.letter)
             try check(xml.contains(payer) && xml.contains(beneficiary) && xml.contains("عضو وهمي أول"), "Word payroll \(id)")
             if id == "cash_salary" { try check(xml.contains("موظف وهمي"), "Word cash list") }
+            if id == "food_tax" {
+                let embedded = try Archive(url: result.letter, accessMode: .read)
+                try check(embedded["word/fonts/sakkal-bold.ttf"] != nil, "Word draft embedded font")
+            }
             if id == "food_company" {
                 do {
                     try TransferWordVerification.verify(url: result.letter, month: month, amount: 93, payerIBAN: payer,

@@ -73,7 +73,7 @@ nonisolated enum TransferWordDocument {
             let result = try cells.enumerated().map { index, text in
                 "<w:tc><w:tcPr><w:tcW w:w=\"\(widths[index])\" w:type=\"dxa\"/></w:tcPr>\(try paragraph(Paragraph(text: text, font: t.font, halfPoints: t.halfPoints, bold: header || bold, centered: true)))</w:tc>"
             }.joined()
-            return "<w:tr>\(header ? "<w:trPr><w:tblHeader/></w:trPr>" : "")\(result)</w:tr>"
+            return "<w:tr><w:trPr><w:cantSplit/>\(header ? "<w:tblHeader/>" : "")</w:trPr>\(result)</w:tr>"
         }
         let headers: String
         if t.headers.isEmpty { headers = "" } else { headers = try row(t.headers, header: true) }
