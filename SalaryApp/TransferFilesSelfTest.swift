@@ -466,7 +466,10 @@ import CryptoKit
         catch { }
         let fakeLetterURL = FileManager.default.temporaryDirectory.appendingPathComponent("cash-letter-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: fakeLetterURL) }
-        let fakeLetterPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842)).pdfData { $0.beginPage() }
+        let fakeLetterPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842)).pdfData { context in
+            context.beginPage()
+            ("Synthetic letter" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
+        }
         try fakeLetterPDF.write(to: fakeLetterURL)
         let combined = try await TransferCashLetterPackage.make(letter: fakeLetterURL, list: cashList, figures: actual)
         defer { try? FileManager.default.removeItem(at: combined.deletingLastPathComponent()) }
