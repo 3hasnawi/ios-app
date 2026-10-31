@@ -709,8 +709,7 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: cashLetter.deletingLastPathComponent()) }
         guard let cashLetterDoc = PDFDocument(url: cashLetter), let cashLetterText = cashLetterDoc.page(at: 0)?.string else { throw Failure(errorDescription: "cash letter unreadable") }
         try check(cashLetterDoc.pageCount == 2 && cashLetterText.contains("1,000") && !cashLetterText.contains("100,000"), "cash letter and appendix")
-        let blankRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
-        let blankPDF = blankRenderer.pdfData { context in
+        let blankPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             ("Static heading" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
         }
@@ -740,7 +739,7 @@ import CryptoKit
             throw Failure(errorDescription: "changed merged page accepted")
         } catch is Failure { throw Failure(errorDescription: "changed merged page accepted") }
         catch { }
-        let occupiedPDF = blankRenderer.pdfData { context in
+        let occupiedPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             ("OLD" as NSString).draw(at: CGPoint(x: 55, y: 104), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
         }
