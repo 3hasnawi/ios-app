@@ -560,9 +560,8 @@ import CryptoKit
         try check(String(decoding: linesData, as: UTF8.self).contains("</w:t><w:br/><w:t xml:space=\"preserve\">"), "Word multiline field")
         let referencesDir = root.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: referencesDir, withIntermediateDirectories: true)
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
-        let singlePDF = renderer.pdfData { $0.beginPage() }
-        let groupPDF = renderer.pdfData { $0.beginPage(); $0.beginPage() }
+        let singlePDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { $0.beginPage() }
+        let groupPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { $0.beginPage(); $0.beginPage() }
         var records: [TransferReferenceManifest.Template] = []
         for (id, count) in TransferReferencePack.expected {
             let contents = count == 2 ? groupPDF : singlePDF
@@ -602,7 +601,6 @@ import CryptoKit
         let selectedReferences = try TransferReferencePack.load(["food_company", TransferReferencePack.digitTemplateID], from: Data(contentsOf: secondPackage))
         try check(selectedReferences.count == 2 && selectedReferences[TransferReferencePack.digitTemplateID] == digitPDF, "reference selection")
         // مرجع وهمي بالأبعاد نفسها لاختبار خط الكتاب كاملاً دون استخدام بيانات المالك.
-        let letterRenderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9))
         let numberCases: [(String, CGRect)] = [
             ("food_company", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
             ("tax_social", CGRect(x: 92.5, y: 151.6, width: 51.6, height: 22.2)),
@@ -629,7 +627,7 @@ import CryptoKit
             throw Failure(errorDescription: "unknown number field accepted")
         } catch is Failure { throw Failure(errorDescription: "unknown number field accepted") }
         catch { }
-        let fakeLetter = letterRenderer.pdfData { context in
+        let fakeLetter = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
             let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 16) ?? ReportFont.bold(16)
@@ -646,7 +644,7 @@ import CryptoKit
             PDFText.draw("شهر", in: CGRect(x: 143.31, y: 675.64, width: 25.61, height: 17.67), font: bold, align: .right)
             PDFText.draw(iban, in: CGRect(x: 384, y: 350, width: 175, height: 19), font: ReportFont.regular(10), align: .right)
         }
-        let signaturePDF = letterRenderer.pdfData { context in
+        let signaturePDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             let boxes = [CGRect(x: 452.260, y: 638.770, width: 94.289, height: 17.668), CGRect(x: 295.610, y: 638.770, width: 98.711, height: 17.668), CGRect(x: 86.304, y: 638.666, width: 131.669, height: 17.795)]
             for box in boxes { PDFText.draw("اسم وهمي", in: box, font: ReportFont.bold(14), align: .center) }
@@ -680,7 +678,7 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: companyOutput.deletingLastPathComponent()) }
         guard let companyDoc = PDFDocument(url: companyOutput), let outputText = companyDoc.page(at: 0)?.string else { throw Failure(errorDescription: "company PDF unreadable") }
         try check(companyDoc.pageCount == 1 && outputText.contains("95,254") && !outputText.contains("100,000"), "company PDF source and amount")
-        let fakeCashPDF = letterRenderer.pdfData { context in
+        let fakeCashPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
             let bold = UIFont(name: "TimesNewRomanPS-BoldMT", size: 16) ?? ReportFont.bold(16)
