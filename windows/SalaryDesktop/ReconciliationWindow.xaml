@@ -10,6 +10,7 @@
     <StackPanel Grid.Row="2">
       <ComboBox x:Name="Periods" Height="38" SelectionChanged="PeriodChanged" DisplayMemberPath="Label"/>
       <TextBlock x:Name="Summary" TextWrapping="Wrap" Margin="0,12" FontWeight="SemiBold"/>
+      <TextBlock x:Name="SourceStatus" Foreground="#A76716" TextWrapping="Wrap" Margin="0,0,0,10"/>
     </StackPanel>
     <DataGrid Grid.Row="3" x:Name="Lines" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" RowHeaderWidth="0" HeadersVisibility="Column" Background="White" GridLinesVisibility="Horizontal">
       <DataGrid.Columns>
@@ -24,6 +25,7 @@
     <WrapPanel Grid.Row="4" Margin="0,12,0,0">
       <Button Content="فترة جديدة" Click="AddPeriod" Padding="12,8" Margin="0,0,8,0"/><Button Content="تعديل الفترة" Click="EditPeriod" Padding="12,8" Margin="0,0,8,0"/>
       <Button Content="إضافة حركة" Click="AddMovement" Padding="12,8" Margin="0,0,8,0"/><Button Content="تعديل الحركة" Click="EditMovement" Padding="12,8" Margin="0,0,8,0"/>
+      <Button x:Name="SuggestionsButton" Content="المبالغ المقترحة" Click="OpenSuggestions" Padding="12,8" Margin="0,0,8,0"/>
       <Button Content="تأكيد / إلغاء المطابقة" Click="ToggleMatched" Padding="12,8" Margin="0,0,8,0"/><Button Content="حذف الحركة" Click="DeleteMovement" Padding="12,8"/>
       <Button x:Name="ExportButton" Content="حفظ نسخة تشمل المطابقة" Click="ExportBackup" Padding="12,8" Margin="8,0,0,0"/>
     </WrapPanel>

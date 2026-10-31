@@ -15,6 +15,7 @@ public partial class ReconciliationWindow : Window
     private readonly LocalReconciliationStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private ReconciliationSnapshot state;
     private readonly string suggestedMonth;
+    private int sourceRequest;
     private static string Number(long value) => value.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
     public ReconciliationWindow(BackupSnapshot source, string selectedMonth)
     {
@@ -32,7 +33,7 @@ public partial class ReconciliationWindow : Window
         var choices = state.Periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
         Periods.ItemsSource = choices;
         Periods.SelectedItem = choices.FirstOrDefault(c => c.Period.Id == selected);
-        if (Periods.SelectedItem is null) { Lines.ItemsSource = null; Summary.Text = choices.Length == 0 ? "لا توجد فترات مطابقة؛ أضف فترة جديدة." : "اختر فترة المطابقة من القائمة."; }
+        if (Periods.SelectedItem is null) { ++sourceRequest; Lines.ItemsSource = null; SourceStatus.Text = ""; Summary.Text = choices.Length == 0 ? "لا توجد فترات مطابقة؛ أضف فترة جديدة." : "اختر فترة المطابقة من القائمة."; }
     }
     private void PeriodChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -42,6 +43,41 @@ public partial class ReconciliationWindow : Window
         Lines.ItemsSource = result.Lines.Select(line => new MovementRow(line.Movement.Id, line.Movement.Date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture), line.Movement.Description,
             line.Movement.Direction == MovementDirection.Credit ? Number(line.Movement.Amount) : "—",
             line.Movement.Direction == MovementDirection.Debit ? Number(line.Movement.Amount) : "—", Number(line.Balance), line.Movement.Matched ? "مطابقة" : "غير مؤكدة")).ToArray();
+        ReviewSources(p);
+    }
+    private async void ReviewSources(BankPeriod period)
+    {
+        var ticket = ++sourceRequest;
+        SourceStatus.Text = "جارٍ فحص مصادر الشهر…";
+        try
+        {
+            var data = await Task.Run(() => ReconciliationSuggestions.Prepare(source, period.Month));
+            if (ticket != sourceRequest || Current?.Id != period.Id) return;
+            var changed = ReconciliationSuggestions.Changed(period, data);
+            var notes = data.Warnings.ToList();
+            if (changed.Count > 0) notes.Insert(0, $"تنبيه: تغيّر أو اختفى مصدر {changed.Count} حركة: " + string.Join("، ", changed.Select(m => m.Description)) + ".");
+            var used = period.Movements.Where(m => m.SourceId is not null).Select(m => m.SourceId!).ToHashSet(StringComparer.Ordinal);
+            var missing = data.Items.Count(item => !used.Contains(item.Id));
+            if (missing > 0) notes.Add($"{missing} مبالغ مقترحة لم تُدرج بعد.");
+            SourceStatus.Text = notes.Count == 0 ? "راجع تأشير الحركات وتواريخها مع كشف المصرف." : string.Join(" · ", notes);
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        { if (ticket == sourceRequest && Current?.Id == period.Id) SourceStatus.Text = "تعذّر فحص مصادر الشهر: " + ex.Message; }
+    }
+    private async void OpenSuggestions(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } period) return;
+        var revision = state.Revision; SuggestionsButton.IsEnabled = false;
+        try
+        {
+            var data = await Task.Run(() => ReconciliationSuggestions.Prepare(source, period.Month));
+            if (Current?.Id != period.Id || state.Revision != revision) { MessageBox.Show(this, "تغيّرت الفترة أثناء احتساب المقترحات؛ أعد فتحها.", "المبالغ المقترحة"); return; }
+            var dialog = new ReconciliationSuggestionsWindow(period, data) { Owner = this };
+            if (dialog.ShowDialog() == true && dialog.Result is { } updated) Save(updated);
+        }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر حساب المقترحات.\n" + ex.Message, "المبالغ المقترحة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { SuggestionsButton.IsEnabled = true; }
     }
     private void Save(BankPeriod updated)
     {
