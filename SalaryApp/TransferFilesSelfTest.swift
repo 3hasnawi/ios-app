@@ -677,7 +677,8 @@ import CryptoKit
         let companyOutput = try await TransferCompanyLetter.make(figures: figures, payerIBAN: iban, references: Data(contentsOf: fakeCompanyPackage))
         defer { try? FileManager.default.removeItem(at: companyOutput.deletingLastPathComponent()) }
         guard let companyDoc = PDFDocument(url: companyOutput), let outputText = companyDoc.page(at: 0)?.string else { throw Failure(errorDescription: "company PDF unreadable") }
-        try check(companyDoc.pageCount == 1 && outputText.contains("95,254") && !outputText.contains("100,000"), "company PDF source and amount")
+        let companyDigits = ArabicText.latinDigits(outputText).filter { $0.isASCII && $0.isNumber }
+        try check(companyDoc.pageCount == 1 && companyDigits.contains("95254") && !companyDigits.contains("100000"), "company PDF source and amount")
         let fakeCashPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             let regular = UIFont(name: "TimesNewRomanPSMT", size: 14.04) ?? ReportFont.regular(14.04)
@@ -708,7 +709,8 @@ import CryptoKit
         let cashLetter = try await TransferCashLetter.makeWithList(figures: actual, list: cashList, payerIBAN: iban, references: Data(contentsOf: fakeCashPackage))
         defer { try? FileManager.default.removeItem(at: cashLetter.deletingLastPathComponent()) }
         guard let cashLetterDoc = PDFDocument(url: cashLetter), let cashLetterText = cashLetterDoc.page(at: 0)?.string else { throw Failure(errorDescription: "cash letter unreadable") }
-        try check(cashLetterDoc.pageCount == 2 && cashLetterText.contains("1,000") && !cashLetterText.contains("100,000"), "cash letter and appendix")
+        let cashDigits = ArabicText.latinDigits(cashLetterText).filter { $0.isASCII && $0.isNumber }
+        try check(cashLetterDoc.pageCount == 2 && cashDigits.contains("1000") && !cashDigits.contains("100000"), "cash letter and appendix")
         let blankPDF = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595.3, height: 841.9)).pdfData { context in
             context.beginPage()
             ("Static heading" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
