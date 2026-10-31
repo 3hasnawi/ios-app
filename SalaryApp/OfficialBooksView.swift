@@ -94,7 +94,7 @@ struct OfficialBooksView: View {
             }
         }
         .searchable(text: $search, prompt: tr("ابحث عن كتاب أو جهة أو شهر", "Search documents, entities or months"))
-        .navigationTitle(tr("الكتب الرسمية", "Official documents"))
+        .navigationTitle(tr("الأرشيف", "Archive"))
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard selectedMonth.isEmpty else { return }
@@ -132,7 +132,7 @@ struct OfficialBooksView: View {
             Text(tr("سيُحذف ملف PDF من هذا الجهاز ومن النسخة الاحتياطية التالية.",
                     "The PDF will be removed from this device and the next backup."))
         }
-        .alert(tr("الكتب الرسمية", "Official documents"), isPresented: Binding(
+        .alert(tr("الأرشيف", "Archive"), isPresented: Binding(
             get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }

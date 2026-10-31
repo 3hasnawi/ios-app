@@ -107,7 +107,7 @@ struct ContentView: View {
                     OfficialBookEditor(months: months.map(\.name), initialMonth: scannedBookMonth,
                                        images: draft.images, existing: nil)
                 }
-                .alert(tr("الكتب الرسمية", "Official documents"), isPresented: Binding(
+                .alert(tr("الأرشيف", "Archive"), isPresented: Binding(
                     get: { scanError != nil }, set: { if !$0 { scanError = nil } })) {
                     Button(tr("حسناً", "OK"), role: .cancel) {}
                 } message: { Text(scanError ?? "") }

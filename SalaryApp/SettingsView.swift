@@ -264,7 +264,7 @@ struct SavedDataView: View {
                 NavigationLink {
                     OfficialBooksView()
                 } label: {
-                    SettingRow(title: tr("الكتب الرسمية", "Official documents"), systemImage: "doc.viewfinder", color: .indigo) {
+                    SettingRow(title: tr("الأرشيف", "Archive"), systemImage: "doc.viewfinder", color: .indigo) {
                         Text(Num.format(OfficialBookStore.shared.books.count)).foregroundStyle(.secondary)
                     }
                 }
@@ -386,7 +386,7 @@ struct SavedDataView: View {
             )
         }
         if bookBytes > 0 {
-            result.append(StorageSegment(name: tr("الكتب الرسمية", "Official documents"), bytes: bookBytes, color: .brown))
+            result.append(StorageSegment(name: tr("الأرشيف", "Archive"), bytes: bookBytes, color: .brown))
         }
         return result
     }

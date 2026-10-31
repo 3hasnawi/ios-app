@@ -187,7 +187,7 @@ struct UnifiedSearchView: View {
                     }
                     if smart {
                         if !smartResults.books.isEmpty {
-                            Section(tr("الكتب الرسمية", "Official documents")) {
+                            Section(tr("الأرشيف", "Archive")) {
                                 ForEach(smartResults.books) { book in
                                     NavigationLink {
                                         OfficialBookDetailView(id: book.id)
