@@ -1,6 +1,11 @@
 name: Reconciliation simulator check
 on:
   workflow_dispatch:
+    inputs:
+      ui_only:
+        description: Run only the reports interface test
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -22,6 +27,7 @@ jobs:
         run: |
           xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Debug -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build CODE_SIGNING_ALLOWED=NO build > /tmp/reconciliation-build.log 2>&1 || { grep -E 'error:' /tmp/reconciliation-build.log | sort -u | head -40; exit 1; }
       - name: Test fictional reconciliation data
+        if: ${{ !inputs.ui_only }}
         run: |
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
