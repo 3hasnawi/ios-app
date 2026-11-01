@@ -9,6 +9,21 @@ namespace SalaryDesktop.Core;
 
 public static class ReconciliationBackupExport
 {
+    private static bool SameEmployee(Employee a, Employee b) => a.Month == b.Month && a.Name == b.Name && a.Rank == b.Rank && a.Workplace == b.Workplace && a.Net == b.Net &&
+        SameBytes(a.Items, b.Items) && SameBytes(a.Details, b.Details) && SameBytes(a.RawColumns, b.RawColumns);
+    private static bool SameBytes(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
+    private static bool SameEmployees(IReadOnlyList<Employee> a, IReadOnlyList<Employee> b) => a.Count == b.Count && a.Zip(b).All(p => SameEmployee(p.First, p.Second));
+    private static byte[] Summary(IEnumerable<Employee> employees)
+    {
+        var result = new Dictionary<string, (int Count, decimal Total)>(StringComparer.Ordinal);
+        foreach (var employee in employees)
+        {
+            if (employee.Items is null) continue;
+            var items = JsonSerializer.Deserialize<Dictionary<string, decimal>>(employee.Items) ?? throw new InvalidDataException("بنود الراتب غير صالحة.");
+            foreach (var (title, amount) in items) { var old = result.GetValueOrDefault(title); result[title] = (checked(old.Count + 1), checked(old.Total + amount)); }
+        }
+        return JsonSerializer.SerializeToUtf8Bytes(result.ToDictionary(p => p.Key, p => new { count = p.Value.Count, total = p.Value.Total }, StringComparer.Ordinal));
+    }
     private static double IosDate(DateOnly date)
     {
         var zone = TimeZoneInfo.TryFindSystemTimeZoneById("Asia/Baghdad", out var iraq) ? iraq :
@@ -44,6 +59,11 @@ public static class ReconciliationBackupExport
             var original = BackupReader.Read(source.SourcePath);
             if (original.SourceDigest != source.SourceDigest) throw new InvalidDataException("تغيّرت نسخة المصدر؛ لم يُحفظ الملف.");
             var changedAccounts = !original.Accounts.SequenceEqual(source.Accounts);
+            var changedEmployees = !SameEmployees(original.Employees, source.Employees);
+            var changedDeductions = !original.Deductions.SequenceEqual(source.Deductions);
+            var changedMonths = !original.Months.SequenceEqual(source.Months) || changedEmployees || changedDeductions;
+            if (original.Months.Any(m => !source.Months.Any(n => n.Name == m.Name)) || source.Months.Select(m => m.Name).Distinct(StringComparer.Ordinal).Count() != source.Months.Count)
+                throw new InvalidDataException("لا يمكن حذف شهر أو تكراره عند حفظ النسخة.");
             if (changedAccounts && (original.Version < 2 || source.Accounts.Count < original.Accounts.Count ||
                 !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Take(original.Accounts.Count).Select(a => a.Entity))))
                 throw new InvalidDataException("لا يمكن حفظ الحسابات في صيغة النسخة هذه أو مع تغيير أسمائها.");
@@ -65,11 +85,39 @@ public static class ReconciliationBackupExport
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
                         foreach (var account in source.Accounts) writer.WriteLine(JsonSerializer.Serialize(new { entity = account.Entity, iban = account.Iban, branch = account.Branch, swift = account.Swift, localAccount = account.LocalAccount }));
                     }
-                    else if (changedAccounts && oldEntry.FullName == "manifest.json")
+                    else if (changedMonths && oldEntry.FullName == "months.jsonl")
+                    {
+                        var existing = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+                        using (var oldRows = new StreamReader(oldEntry.Open(), Encoding.UTF8))
+                            while (oldRows.ReadLine() is { } line) { var node = JsonNode.Parse(line)?.AsObject() ?? throw new InvalidDataException("بيانات الأشهر غير صالحة."); existing.Add(node["name"]?.GetValue<string>() ?? throw new InvalidDataException("اسم شهر غير صالح."), node); }
+                        using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
+                        foreach (var month in source.Months)
+                        {
+                            if (!existing.TryGetValue(month.Name, out var node))
+                                node = new JsonObject { ["name"] = month.Name, ["importedAt"] = (DateTime.UtcNow - new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds };
+                            node["employeeCount"] = month.EmployeeCount; node["deductionCount"] = month.DeductionCount;
+                            var currentEmployees = source.Employees.Where(e => e.Month == month.Name).ToArray();
+                            var oldEmployees = original.Employees.Where(e => e.Month == month.Name).ToArray();
+                            if (!SameEmployees(oldEmployees, currentEmployees)) node["summary"] = Convert.ToBase64String(Summary(currentEmployees));
+                            writer.WriteLine(node.ToJsonString());
+                        }
+                    }
+                    else if (changedEmployees && oldEntry.FullName == "employees.jsonl")
+                    {
+                        using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
+                        foreach (var e in source.Employees) writer.WriteLine(JsonSerializer.Serialize(new { month = e.Month, name = e.Name, rank = e.Rank, workplace = e.Workplace, net = e.Net, items = e.Items, details = e.Details, rawColumns = e.RawColumns }));
+                    }
+                    else if (changedDeductions && oldEntry.FullName == "deductions.jsonl")
+                    {
+                        using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
+                        foreach (var d in source.Deductions) writer.WriteLine(JsonSerializer.Serialize(new { month = d.Month, name = d.Name, title = d.Title, amount = d.Amount, note = d.Note, rank = d.Rank }));
+                    }
+                    else if ((changedAccounts || changedMonths) && oldEntry.FullName == "manifest.json")
                     {
                         using var originalManifest = oldEntry.Open();
                         var manifest = JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
                         manifest["accounts"] = source.Accounts.Count;
+                        if (changedMonths) { manifest["months"] = new JsonArray(source.Months.Select(m => (JsonNode?)JsonValue.Create(m.Name)).ToArray()); manifest["employees"] = source.Employees.Count; manifest["deductions"] = source.Deductions.Count; }
                         JsonSerializer.Serialize(outStream, manifest);
                     }
                     else { using var inStream = oldEntry.Open(); inStream.CopyTo(outStream); }
@@ -77,12 +125,14 @@ public static class ReconciliationBackupExport
             }
             var restored = BackupReader.Read(temp);
             if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
+            if (!restored.Months.SequenceEqual(source.Months) || !SameEmployees(restored.Employees, source.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
+                throw new InvalidDataException("تعذّر التحقق من بيانات الأشهر في النسخة الجديدة.");
             var readPeriods = BankReconciliation.ReadFromBackup(restored);
             if (!LedgerPlist(readPeriods).AsSpan().SequenceEqual(LedgerPlist(periods))) throw new InvalidDataException("تعذّر التحقق من دفتر المطابقة في النسخة الجديدة.");
             using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))
             using (var newZip = ZipFile.OpenRead(temp))
             {
-                foreach (var oldEntry in oldZip.Entries.Where(e => e.FullName != "settings.json" && !(changedAccounts && (e.FullName == "accounts.jsonl" || e.FullName == "manifest.json"))))
+                foreach (var oldEntry in oldZip.Entries.Where(e => e.FullName != "settings.json" && !(changedAccounts && e.FullName == "accounts.jsonl") && !((changedAccounts || changedMonths) && e.FullName == "manifest.json") && !(changedMonths && e.FullName == "months.jsonl") && !(changedEmployees && e.FullName == "employees.jsonl") && !(changedDeductions && e.FullName == "deductions.jsonl")))
                 {
                     var copy = newZip.GetEntry(oldEntry.FullName) ?? throw new InvalidDataException("ملف مفقود في النسخة الجديدة.");
                     using var a = oldEntry.Open(); using var b = copy.Open();

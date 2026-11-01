@@ -12,14 +12,15 @@ public partial class ReconciliationWindow : Window
     private sealed record PeriodChoice(BankPeriod Period, string Label);
     private sealed record MovementRow(Guid Id, string Date, string Description, string Credit, string Debit, string Balance, string Status);
     private readonly BackupSnapshot source;
+    private readonly Func<bool> sourceIsCurrent;
     private readonly LocalReconciliationStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private ReconciliationSnapshot state;
     private readonly string suggestedMonth;
     private int sourceRequest;
     private static string Number(long value) => value.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
-    public ReconciliationWindow(BackupSnapshot source, string selectedMonth)
+    public ReconciliationWindow(BackupSnapshot source, string selectedMonth, Func<bool> sourceIsCurrent)
     {
-        InitializeComponent(); this.source = source; state = store.Load(source);
+        InitializeComponent(); this.source = source; this.sourceIsCurrent = sourceIsCurrent; state = store.Load(source);
         var previous = MonthNames.Previous(selectedMonth);
         var matchingMonths = source.Months.Where(m => previous is not null && MonthNames.SortKey(m.Name) == previous).ToArray();
         suggestedMonth = matchingMonths.Length == 1 ? matchingMonths[0].Name : "";
@@ -51,7 +52,7 @@ public partial class ReconciliationWindow : Window
         SourceStatus.Text = "جارٍ فحص مصادر الشهر…";
         try
         {
-            var data = await Task.Run(() => ReconciliationSuggestions.Prepare(source, period.Month));
+            var data = await Task.Run(() => { if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة."); return ReconciliationSuggestions.Prepare(source, period.Month); });
             if (ticket != sourceRequest || Current?.Id != period.Id) return;
             var changed = ReconciliationSuggestions.Changed(period, data);
             var notes = data.Warnings.ToList();
@@ -70,7 +71,7 @@ public partial class ReconciliationWindow : Window
         var revision = state.Revision; SuggestionsButton.IsEnabled = false;
         try
         {
-            var data = await Task.Run(() => ReconciliationSuggestions.Prepare(source, period.Month));
+            var data = await Task.Run(() => { if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة."); return ReconciliationSuggestions.Prepare(source, period.Month); });
             if (Current?.Id != period.Id || state.Revision != revision) { MessageBox.Show(this, "تغيّرت الفترة أثناء احتساب المقترحات؛ أعد فتحها.", "المبالغ المقترحة"); return; }
             var dialog = new ReconciliationSuggestionsWindow(period, data) { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result is { } updated) Save(updated);
@@ -83,6 +84,7 @@ public partial class ReconciliationWindow : Window
     {
         try
         {
+            if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة قبل الحفظ.");
             var all = state.Periods.Where(p => p.Id != updated.Id).Concat([updated]).ToArray();
             state = store.Save(source, state, all); Refresh(updated.Id);
         }
@@ -132,11 +134,13 @@ public partial class ReconciliationWindow : Window
         ExportButton.IsEnabled = false;
         try
         {
-            await Task.Run(() => {
+            var externalChanged = await Task.Run(() => {
                 if (store.Load(source).Revision != captured.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة؛ أعد فتحه قبل تصدير النسخة.");
+                if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة قبل التصدير.");
                 ReconciliationBackupExport.Write(source, captured.Periods, destination);
+                return !sourceIsCurrent() || store.Load(source).Revision != captured.Revision;
             });
-            var changed = state.Revision != captured.Revision;
+            var changed = externalChanged || state.Revision != captured.Revision;
             MessageBox.Show(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
@@ -154,8 +158,8 @@ public partial class ReconciliationWindow : Window
         try
         {
             var font = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
-            await Task.Run(() => ReconciliationPdf.SaveDraft(period, font, destination));
-            var changed = state.Revision != revision || Current?.Id != period.Id;
+            var externalChanged = await Task.Run(() => { if (!sourceIsCurrent() || store.Load(source).Revision != revision) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة قبل التصدير."); ReconciliationPdf.SaveDraft(period, font, destination); return !sourceIsCurrent() || store.Load(source).Revision != revision; });
+            var changed = externalChanged || state.Revision != revision || Current?.Id != period.Id;
             MessageBox.Show(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)

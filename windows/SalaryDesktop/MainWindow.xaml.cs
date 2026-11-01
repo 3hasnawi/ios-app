@@ -16,9 +16,12 @@ public partial class MainWindow : Window
 {
     private BackupSnapshot? snapshot;
     private BackupSnapshot? baseSnapshot;
+    private BackupSnapshot? rootSnapshot;
+    private PayrollImportState? payrollState;
     private TransferLinksSnapshot? linkState;
     private readonly LocalSnapshotStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Backups"));
     private readonly LocalTransferLinks linkStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "TransferLinks"));
+    private readonly LocalPayrollImports payrollStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "PayrollImports"));
     private readonly LocalReconciliationStore reconciliationStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private string page = "home";
     private bool loading;
@@ -48,7 +51,18 @@ public partial class MainWindow : Window
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
         {
-            var loaded = await Task.Run(() => store.Import(selectedPath));
+            string? inspectedDigest = null;
+            if (rootSnapshot is { } previous && snapshot is { } shown)
+            {
+                var inspected = await Task.Run(() => BackupReader.Read(selectedPath));
+                inspectedDigest = inspected.SourceDigest;
+                var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null;
+                if (inspected.SourceDigest != previous.SourceDigest && hasLocalChanges && MessageBox.Show(this,
+                    "توجد تعديلات محلية مرتبطة بالنسخة الحالية. ستبقى محفوظة على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى. احفظ نسخة احتياطية تشمل التعديلات أولاً إذا أردت نقلها. هل تريد فتح النسخة الأخرى؟",
+                    "تغيير النسخة المفتوحة", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return; }
+            }
+            var loaded = await Task.Run(() => store.Import(selectedPath, expectedDigest: inspectedDigest));
             SetSnapshot(loaded);
             SourceMessage.Text = "حُفظت نسخة محلية بعد فحصها؛ ملف الآيفون الأصلي لم يتغير.";
         }
@@ -62,11 +76,17 @@ public partial class MainWindow : Window
 
     private void SetSnapshot(BackupSnapshot loaded)
     {
-        var links = linkStore.Load(loaded);
-        baseSnapshot = loaded; linkState = links; snapshot = links.Snapshot;
+        var payroll = payrollStore.Load(loaded);
+        var links = linkStore.Load(payroll.Snapshot);
+        ApplySources(loaded, payroll, links, null);
+    }
+    private void ApplySources(BackupSnapshot root, PayrollImportState payroll, TransferLinksSnapshot links, string? month)
+    {
+        rootSnapshot = root; payrollState = payroll; baseSnapshot = payroll.Snapshot; linkState = links; snapshot = links.Snapshot;
         OpenReconciliationButton.IsEnabled = true;
-        MonthPicker.ItemsSource = loaded.Months.Select(m => m.Name).ToArray();
-        MonthPicker.SelectedIndex = loaded.Months.Count > 0 ? 0 : -1;
+        MonthPicker.ItemsSource = snapshot.Months.Select(m => m.Name).ToArray();
+        if (month is not null && snapshot.Months.Any(m => m.Name == month)) MonthPicker.SelectedItem = month;
+        else MonthPicker.SelectedIndex = snapshot.Months.Count > 0 ? 0 : -1;
         StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون.";
         RenderPage();
     }
@@ -105,6 +125,7 @@ public partial class MainWindow : Window
         bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive";
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
+        PayrollImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = page switch
         {
@@ -181,13 +202,13 @@ public partial class MainWindow : Window
         }
         if (page == "accounts" && DataTable.SelectedItem is ExecutionAccount account)
         {
-            var original = baseSnapshot; var links = linkState; var active = snapshot;
-            if (original is null || links is null || active is null) return;
+            var original = baseSnapshot; var links = linkState; var active = snapshot; var root = rootSnapshot; var payroll = payrollState;
+            if (original is null || links is null || active is null || root is null || payroll is null) return;
             var dialog = new AccountEditorWindow(account) { Owner = this };
             if (dialog.ShowDialog() != true || dialog.Result is not { } edited) return;
             try
             {
-                var updated = await Task.Run(() => linkStore.SaveAccount(original, links, account, edited));
+                var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة."); return linkStore.SaveAccount(original, links, account, edited); });
                 if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
                 { MessageBox.Show(this, "حُفظ الحساب للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
                 linkState = updated; snapshot = updated.Snapshot; RenderPage();
@@ -214,8 +235,8 @@ public partial class MainWindow : Window
     }
     private async void ImportAccounts(object sender, RoutedEventArgs e)
     {
-        var original = baseSnapshot; var active = snapshot; var links = linkState;
-        if (original is null || active is null || links is null) { MessageBox.Show(this, "افتح نسخة الآيفون أولاً لاستيراد الحسابات إليها.", "استيراد الحسابات"); return; }
+        var original = baseSnapshot; var active = snapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (original is null || active is null || links is null || root is null || payroll is null) { MessageBox.Show(this, "افتح نسخة الآيفون أولاً لاستيراد الحسابات إليها.", "استيراد الحسابات"); return; }
         var dialog = new OpenFileDialog { Title = "اختيار ملف حسابات الجهات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         var path = dialog.FileName; AccountImportButton.IsEnabled = false;
@@ -225,7 +246,7 @@ public partial class MainWindow : Window
             if (!ReferenceEquals(active, snapshot)) { MessageBox.Show(this, "تغيّرت النسخة المفتوحة؛ أعد اختيار ملف الحسابات.", "استيراد الحسابات"); return; }
             var review = new AccountImportReviewWindow(preview) { Owner = this };
             if (review.ShowDialog() != true) return;
-            var updated = await Task.Run(() => linkStore.ImportAccounts(original, links, preview));
+            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة."); return linkStore.ImportAccounts(original, links, preview); });
             if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
             { MessageBox.Show(this, "حُفظت الحسابات للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
@@ -235,11 +256,39 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AccountImportButton.IsEnabled = true; }
     }
+    private async void ImportPayroll(object sender, RoutedEventArgs e)
+    {
+        var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
+        if (root is null || payroll is null || active is null || links is null || original is null)
+        { MessageBox.Show(this, "افتح نسخة الآيفون أولاً لاستيراد بيانات الشهر إليها.", "استيراد الرواتب"); return; }
+        var dialog = new PayrollImportWindow(active, SelectedMonth) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
+        var replace = dialog.ReplaceExisting;
+        if (!ReferenceEquals(active, snapshot)) { MessageBox.Show(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "استيراد الرواتب"); return; }
+        PayrollImportButton.IsEnabled = false;
+        try
+        {
+            var result = await Task.Run(() => {
+                if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة أولاً.");
+                var updatedPayroll = payrollStore.Import(root, payroll, preview, replace);
+                var updatedLinks = linkStore.Load(updatedPayroll.Snapshot);
+                if (updatedLinks.Revision != links.Revision) throw new InvalidDataException("حُفظ الشهر، لكن روابط الحسابات تغيّرت أثناء الحفظ؛ أعد فتح النسخة لمراجعتها.");
+                return (updatedPayroll, updatedLinks);
+            });
+            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot))
+            { MessageBox.Show(this, "حُفظت بيانات الشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            ApplySources(root, result.updatedPayroll, result.updatedLinks, preview.Month);
+            MessageBox.Show(this, "حُفظت بيانات الشهر محلياً؛ راجع التقارير والمبالغ، ثم احفظ نسخة احتياطية تشمل التغييرات.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر إكمال تحديث العرض. أعد فتح النسخة للتحقق مما حُفظ.\n" + ex.Message, "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { PayrollImportButton.IsEnabled = true; }
+    }
 
     private async void ExportBackup(object sender, RoutedEventArgs e)
     {
-        var source = snapshot; var original = baseSnapshot; var links = linkState;
-        if (source is null || original is null || links is null) return;
+        var source = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (source is null || original is null || links is null || root is null || payroll is null) return;
         var dialog = new SaveFileDialog { Title = "حفظ نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
         var destination = dialog.FileName;
@@ -248,9 +297,10 @@ public partial class MainWindow : Window
         {
             var changed = await Task.Run(() => {
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
+                if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة قبل التصدير.");
                 var ledger = reconciliationStore.Load(source);
                 ReconciliationBackupExport.Write(source, ledger.Periods, destination);
-                return linkStore.Load(original).Revision != links.Revision || reconciliationStore.Load(source).Revision != ledger.Revision;
+                return linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision;
             });
             MessageBox.Show(this, changed || !ReferenceEquals(source, snapshot) ? "حُفظت لقطة سابقة؛ تغيّرت البيانات أثناء التصدير، لذا أعد حفظ النسخة. اختبر الاستعادة على الآيفون." : "حُفظت النسخة مع الروابط ودفتر المطابقة بعد فحصها. اختبر استعادتها على الآيفون قبل الاعتماد.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
@@ -298,15 +348,15 @@ public partial class MainWindow : Window
     }
     private async void LinkTransferAccount(object sender, RoutedEventArgs e)
     {
-        var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot;
-        if (original is null || selected is null || links is null || active is null || !ReferenceEquals(active, preparedSource))
+        var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot; var root = rootSnapshot; var payroll = payrollState;
+        if (original is null || selected is null || links is null || active is null || root is null || payroll is null || !ReferenceEquals(active, preparedSource))
         { MessageBox.Show(this, "اختر جهة من الجدول أولاً بعد اكتمال تحميلها.", "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new AccountLinkWindow(selected.Entry, active.Accounts) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.SelectedAccount is not { } account) return;
         if (!ReferenceEquals(active, snapshot) || SelectedMonth != selected.Entry.Month) { MessageBox.Show(this, "تغيّرت البيانات؛ أعد اختيار الجهة.", "ربط حساب الجهة"); return; }
         try
         {
-            var updated = await Task.Run(() => linkStore.SaveLink(original, links, selected.Entry, account));
+            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة."); return linkStore.SaveLink(original, links, selected.Entry, account); });
             if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
             { MessageBox.Show(this, "حُفظ الربط للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
@@ -317,8 +367,8 @@ public partial class MainWindow : Window
     }
     private async void ClassifyTransfer(object sender, RoutedEventArgs e)
     {
-        var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot;
-        if (original is null || selected is null || links is null || active is null || !ReferenceEquals(active, preparedSource))
+        var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot; var root = rootSnapshot; var payroll = payrollState;
+        if (original is null || selected is null || links is null || active is null || root is null || payroll is null || !ReferenceEquals(active, preparedSource))
         { MessageBox.Show(this, "اختر جهة من الجدول أولاً بعد اكتمال تحميلها.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         var dialog = new TransferCategoryWindow(selected.Entry) { Owner = this };
         if (dialog.ShowDialog() != true) return;
@@ -326,7 +376,7 @@ public partial class MainWindow : Window
         if (!ReferenceEquals(active, snapshot) || SelectedMonth != selected.Entry.Month) { MessageBox.Show(this, "تغيّرت البيانات؛ أعد اختيار الجهة.", "تصنيف الجهة"); return; }
         try
         {
-            var updated = await Task.Run(() => linkStore.SaveCategory(original, links, selected.Entry, category));
+            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة."); return linkStore.SaveCategory(original, links, selected.Entry, category); });
             if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
             { MessageBox.Show(this, "حُفظ التصنيف للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
@@ -338,8 +388,8 @@ public partial class MainWindow : Window
     private async void ExportTransfer(object sender, RoutedEventArgs e)
     {
         var plan = preparedTransfer; var source = preparedSource; var group = CurrentTransferGroup;
-        var original = baseSnapshot; var links = linkState;
-        if (plan is null || source is null || original is null || links is null || !ReferenceEquals(source, snapshot) || plan.Month != SelectedMonth || page != "transfer") return;
+        var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (plan is null || source is null || original is null || links is null || root is null || payroll is null || !ReferenceEquals(source, snapshot) || plan.Month != SelectedMonth || page != "transfer") return;
         var dialog = new SaveFileDialog { Title = "حفظ ملف التحويل", Filter = "ملف CSV (*.csv)|*.csv", FileName = group == TransferGroup.Rafidain ? "Rafidain.csv" : "OtherBanks.csv", AddExtension = true, DefaultExt = ".csv", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
         if (!string.Equals(Path.GetExtension(dialog.FileName), ".csv", StringComparison.OrdinalIgnoreCase)) { MessageBox.Show(this, "اختر اسماً ينتهي بالامتداد CSV.", "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
@@ -350,8 +400,9 @@ public partial class MainWindow : Window
             var date = DateOnly.FromDateTime(DateTime.Now);
             var changed = await Task.Run(() => {
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
+                if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة قبل التصدير.");
                 TransferFileSave.Write(source, plan, group, date, destination);
-                return linkStore.Load(original).Revision != links.Revision;
+                return linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision;
             });
             if (changed || !ReferenceEquals(source, snapshot) || plan.Month != SelectedMonth || page != "transfer" || group != CurrentTransferGroup)
                 MessageBox.Show(this, "حُفظ ملف لقطة الشهر السابقة؛ تغيّر العرض أثناء الحفظ. راجع الملف قبل استخدامه.", "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -365,8 +416,9 @@ public partial class MainWindow : Window
     private sealed record BankRow(string Title, string Value);
     private void OpenReconciliation(object sender, RoutedEventArgs e)
     {
-        if (snapshot is null) return;
-        try { new ReconciliationWindow(snapshot, SelectedMonth) { Owner = this }.ShowDialog(); }
+        if (snapshot is null || rootSnapshot is not { } root || baseSnapshot is not { } original || payrollState is not { } payroll || linkState is not { } links) return;
+        bool IsCurrent() => payrollStore.Load(root).Revision == payroll.Revision && linkStore.Load(original).Revision == links.Revision;
+        try { new ReconciliationWindow(snapshot, SelectedMonth, IsCurrent) { Owner = this }.ShowDialog(); }
         catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر فتح دفتر المطابقة المحفوظ. لم تُغيّر البيانات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }

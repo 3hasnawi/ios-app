@@ -29,6 +29,16 @@ static void MakeAccountXlsx(string path, string iban, bool numeric = false, bool
     var row3 = duplicate ? $"<row r=\"3\">{Cell("A3", "جهة جديدة وهمية")}{Cell("B3", iban)}</row>" : "";
     Entry(zip, "xl/worksheets/sheet1.xml", $"<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\">{Cell("A1", "جهة التنفيذ")}{Cell("B1", "IBAN")}{Cell("C1", "الفرع")}{Cell("D1", "SWIFT")}</row>{row2}{row3}</sheetData></worksheet>");
 }
+static void MakeMonthlyXlsx(string path, string[] headers, string[][] rows)
+{
+    using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+    Entry(zip, "[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>");
+    Entry(zip, "_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+    Entry(zip, "xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"بيانات تجريبية\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+    Entry(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
+    string Row(string[] cells, int n) => $"<row r=\"{n}\">" + string.Concat(cells.Select((s, i) => $"<c r=\"{(char)('A' + i)}{n}\" t=\"inlineStr\"><is><t>{System.Security.SecurityElement.Escape(s)}</t></is></c>")) + "</row>";
+    Entry(zip, "xl/worksheets/sheet1.xml", "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>" + Row(headers, 1) + string.Concat(rows.Select((r, i) => Row(r, i + 2))) + "</sheetData></worksheet>");
+}
 static void MakeBackup(string path, bool wrongCount = false, bool duplicate = false, bool omitPdf = false, bool omitRecentMonth = false, bool brokenLedger = false)
 {
     using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -81,6 +91,59 @@ try
     catch (IOException) { }
     Check(File.ReadAllText(existing) == "existing", "existing file preserved");
     var month = PayrollAnalysis.Summarize(snapshot, "أيلول 2026");
+    var salaryXlsx = Path.Combine(root, "salary-fake.xlsx");
+    MakeMonthlyXlsx(salaryXlsx, ["Name_m", "الرتبة", "NO_markaz", "صافي الراتب", "الرعاية الصحية", "طريقة الدفع", "الاسمي", "مجموع استقطاعات المصارف", "اسم الاستقطاع", "مبلغ الاستقطاع"],
+        [["منتسب تجريبي", "شرطي", "قسم وهمي", "١٬٠٠٠", "50", "بطاقة", "700", "500", "شركة عراق الجوال", "100"]]);
+    var salaryPreview = PayrollSpreadsheet.Read(salaryXlsx, "تشرين الثاني 2026");
+    Check(salaryPreview.Problems.Count == 0 && salaryPreview.Employees.Single().Net == 1000m && JsonSerializer.Deserialize<Dictionary<string, decimal>>(salaryPreview.Employees.Single().Items!)!["شركة عراق الجوال"] == 100m,
+        "payroll workbook retains salary and named deduction");
+    var invalidSalary = Path.Combine(root, "invalid-salary.xlsx");
+    MakeMonthlyXlsx(invalidSalary, ["الاسم", "صافي الراتب"], [["منتسب تجريبي", "1,2"]]);
+    Check(PayrollSpreadsheet.Read(invalidSalary, "تشرين الثاني 2026").Problems.Count == 1, "malformed grouped amount is rejected instead of guessed");
+    var deductionXlsx = Path.Combine(root, "deductions-fake.xlsx");
+    MakeMonthlyXlsx(deductionXlsx, ["الاسم", "جهة التنفيذ", "المبلغ", "الملاحظات"], [["منتسب تجريبي", "جهة وهمية", "500", ""]]);
+    var deductionPreview = PayrollSpreadsheet.Read(deductionXlsx, "تشرين الثاني 2026");
+    Check(deductionPreview.Problems.Count == 0 && deductionPreview.Deductions.Single().Amount == 500m, "deduction workbook parsed for selected month");
+    var inactiveXlsx = Path.Combine(root, "inactive-fake.xlsx");
+    MakeMonthlyXlsx(inactiveXlsx, ["الاسم", "جهة التنفيذ", "المبلغ"], [["منتسب تجريبي", "جهة وهمية", "موقوف"]]);
+    Check(PayrollSpreadsheet.Read(inactiveXlsx, "تشرين الثاني 2026").Deductions.Single() is { Amount: null } inactive && PayrollAnalysis.IsInactive(inactive), "inactive deduction status is retained without counting as amount");
+    var annualXlsx = Path.Combine(root, "annual-fake.xlsx");
+    MakeMonthlyXlsx(annualXlsx, ["الاسم", "جهة التنفيذ", "المبلغ", "الشهر"], [["منتسب تجريبي", "جهة وهمية", "500", "1"]]);
+    Check(PayrollSpreadsheet.Read(annualXlsx, "تشرين الثاني 2026").Problems.Any(p => p.Message.Contains("متعدد الأشهر", StringComparison.Ordinal)), "annual deduction file is rejected rather than assigned to one month");
+    var payrollStore = new LocalPayrollImports(Path.Combine(root, "payroll-data")); var originalPayroll = payrollStore.Load(snapshot);
+    var salaryState = payrollStore.Import(snapshot, originalPayroll, salaryPreview, false);
+    var combinedPayroll = payrollStore.Import(snapshot, salaryState, deductionPreview, false);
+    Check(combinedPayroll.Snapshot.Employees.Count == snapshot.Employees.Count + 1 && combinedPayroll.Snapshot.Deductions.Count == snapshot.Deductions.Count + 1 && payrollStore.Load(snapshot).Snapshot.Months.Count == snapshot.Months.Count + 1, "new month imports and persists both workbook types");
+    try { _ = payrollStore.Import(snapshot, originalPayroll, salaryPreview, true); throw new InvalidOperationException("stale payroll import accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = payrollStore.Import(snapshot, combinedPayroll, salaryPreview, false); throw new InvalidOperationException("unreviewed salary replacement accepted"); }
+    catch (InvalidDataException) { }
+    Check(payrollStore.Load(snapshot).Revision == combinedPayroll.Revision, "stale and unreviewed imports preserve existing data");
+    try { _ = payrollStore.Import(snapshot, combinedPayroll, PayrollSpreadsheet.Read(invalidSalary, "تشرين الثاني 2026"), true); throw new InvalidOperationException("invalid payroll import accepted"); }
+    catch (InvalidDataException) { }
+    Check(payrollStore.Load(snapshot).Revision == combinedPayroll.Revision, "invalid payroll import preserves previous data");
+    var replacement = salaryPreview with { Employees = [salaryPreview.Employees.Single() with { Net = 1001m }] };
+    var replacedPayroll = payrollStore.Import(snapshot, combinedPayroll, replacement, true);
+    Check(Directory.GetFiles(Path.Combine(root, "payroll-data", snapshot.SourceDigest), "*.json").Length >= 4 && replacedPayroll.Snapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m && replacedPayroll.Snapshot.Deductions.Any(d => d.Month == replacement.Month), "reviewed salary replacement preserves deduction records and earlier versions");
+    var salaryBackup = Path.Combine(root, "salary-import-backup.zip"); ReconciliationBackupExport.Write(combinedPayroll.Snapshot, [], salaryBackup);
+    var restoredSalary = BackupReader.Read(salaryBackup);
+    Check(restoredSalary.Months.Any(m => m.Name == "تشرين الثاني 2026" && m.EmployeeCount == 1 && m.DeductionCount == 1) &&
+          restoredSalary.Employees.Single(e => e.Month == "تشرين الثاني 2026").Net == 1000m && restoredSalary.Deductions.Single(d => d.Month == "تشرين الثاني 2026").Amount == 500m,
+        "imported payroll and deductions restore from backup");
+    using (var zip = ZipFile.OpenRead(salaryBackup))
+    using (var reader = new StreamReader(zip.GetEntry("months.jsonl")!.Open()))
+    {
+        var nodes = new List<JsonElement>(); while (reader.ReadLine() is { } line) nodes.Add(JsonSerializer.Deserialize<JsonElement>(line));
+        var summary = nodes.Single(n => n.GetProperty("name").GetString() == "تشرين الثاني 2026").GetProperty("summary").GetBytesFromBase64();
+        Check(JsonSerializer.Deserialize<JsonElement>(summary).GetProperty("شركة عراق الجوال").GetProperty("total").GetDecimal() == 100m, "backup updates payroll summary for imported month");
+    }
+    var priorMonthPreview = salaryPreview with { Month = "أيلول 2026", Employees = [salaryPreview.Employees.Single() with { Month = "أيلول 2026" }] };
+    try { _ = payrollStore.Import(snapshot, replacedPayroll, priorMonthPreview, false); throw new InvalidOperationException("existing month replaced without review"); }
+    catch (InvalidDataException) { }
+    var replacedExisting = payrollStore.Import(snapshot, replacedPayroll, priorMonthPreview, true);
+    Check(replacedExisting.Snapshot.Employees.Count(e => e.Month == "أيلول 2026") == 1 && replacedExisting.Snapshot.Deductions.Count(d => d.Month == "أيلول 2026") == snapshot.Deductions.Count(d => d.Month == "أيلول 2026"), "reviewed existing month replacement preserves deductions");
+    var replacedBackup = Path.Combine(root, "replaced-payroll.zip"); ReconciliationBackupExport.Write(replacedExisting.Snapshot, [], replacedBackup);
+    Check(BackupReader.Read(replacedBackup).Employees.Count(e => e.Month == "أيلول 2026") == 1 && snapshot.Employees.Count(e => e.Month == "أيلول 2026") == 2, "replacement backup preserves source and records");
     Check(month.Employees == 2 && month.NetTotal == 1250000m && month.MissingNet == 1 && month.Deductions == 2 && month.MissingAmounts == 1, "monthly totals and missing values");
     var bank = BankStatementCalculator.Calculate(snapshot, "أيلول 2026");
     Check(bank.Card == 1250000m && bank.Cash == 0m && bank.BankDeductions == 2500m && bank.Breakdown["شركة عراق الجوال"] == 5000m, "bank payroll sources");
@@ -169,6 +232,14 @@ try
     var invalidBank = BankStatementCalculator.Calculate(snapshot with { Employees = new[] { incompleteContract with { RawColumns = invalidRaw } } }, "أيلول 2026");
     Check(invalidBank.TransferWarnings.Any(w => w.Contains("غير صالحة", StringComparison.Ordinal)), "invalid original payroll source blocks transfer");
     const string fakePayer = "IQ06TEST123000000000001", fakeReceiver = "IQ76TEST123000000000002";
+    var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
+    var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
+    var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
+    var composedLinks = composedLinksStore.SaveAccount(combinedPayroll.Snapshot, composedInitial, composedInitial.Snapshot.Accounts.Single(), fakeUpdatedAccount);
+    var composedBackupPath = Path.Combine(root, "composed-backup.zip"); ReconciliationBackupExport.Write(composedLinks.Snapshot, [period], composedBackupPath);
+    var composed = BackupReader.Read(composedBackupPath);
+    Check(composed.Employees.Any(e => e.Month == "تشرين الثاني 2026" && e.Net == 1000m) && composed.Deductions.Any(d => d.Month == "تشرين الثاني 2026" && d.Amount == 500m) &&
+          composed.Accounts.Single().Iban == fakeReceiver && BankReconciliation.ReadFromBackup(composed).Single().Id == period.Id, "backup combines imported month, edited account and reconciliation");
     var xlsx = Path.Combine(root, "accounts.xlsx"); MakeAccountXlsx(xlsx, fakeReceiver);
     var accountPreview = AccountSpreadsheet.Read(xlsx);
     Check(accountPreview.Problems.Count == 0 && accountPreview.Accounts.Single().Iban == fakeReceiver, "text IBAN spreadsheet read");
@@ -211,6 +282,9 @@ try
     Check(local.LoadCurrent() is null, "empty local store");
     var localSnapshot = local.Import(valid);
     Check(localSnapshot.SourcePath != snapshot.SourcePath && local.LoadCurrent()?.SourceDigest == snapshot.SourceDigest, "local validated import");
+    try { _ = local.Import(valid, expectedDigest: new string('A', 64)); throw new InvalidOperationException("changed reviewed backup accepted"); }
+    catch (InvalidDataException) { }
+    Check(local.LoadCurrent()?.SourceDigest == snapshot.SourceDigest, "mismatched reviewed backup preserves current pointer");
     try { _ = local.Import(wrong); throw new InvalidOperationException("invalid local import accepted"); }
     catch (InvalidDataException) { }
     Check(local.LoadCurrent()?.SourceDigest == snapshot.SourceDigest && before.SequenceEqual(SHA256.HashData(File.ReadAllBytes(valid))), "failed local import preserves previous data and source");

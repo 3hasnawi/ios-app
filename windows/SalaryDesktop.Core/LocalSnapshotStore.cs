@@ -55,9 +55,10 @@ public sealed class LocalSnapshotStore(string directory)
         _ = BankReconciliation.ReadFromBackup(snapshot);
         return snapshot;
     }
-    public BackupSnapshot Import(string path, CancellationToken cancellation = default)
+    public BackupSnapshot Import(string path, CancellationToken cancellation = default, string? expectedDigest = null)
     {
         var original = BackupReader.Read(path, cancellation);
+        if (expectedDigest is not null && original.SourceDigest != expectedDigest) throw new InvalidDataException("تغيّرت النسخة بعد مراجعتها؛ لم تُستبدل البيانات.");
         Directory.CreateDirectory(root);
         using var storeLock = new FileStream(Path.Combine(root, ".store.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var previous = LoadCurrent();

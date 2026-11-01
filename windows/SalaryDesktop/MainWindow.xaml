@@ -57,6 +57,7 @@
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBox x:Name="SearchBox" Height="38" Padding="10,7" TextChanged="SearchChanged" ToolTip="ابحث بالاسم أو الجهة"/>
             <Button x:Name="AccountImportButton" Grid.Column="1" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
+            <Button x:Name="PayrollImportButton" Grid.Column="1" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
           </Grid>
           <TextBlock x:Name="TableStatus" Grid.Row="1" Foreground="#718481" Margin="0,10,0,10" TextWrapping="Wrap"/>
           <DataGrid x:Name="DataTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Background="White" BorderBrush="#E1E7E8" GridLinesVisibility="Horizontal" RowHeaderWidth="0" HeadersVisibility="Column" SelectionMode="Single" MouseDoubleClick="OpenArchiveBook"/>
@@ -103,7 +104,7 @@
             <TextBlock Text="النسخة المحلية" FontSize="18" FontWeight="SemiBold"/>
             <TextBlock Text="يحفظ البرنامج نسخة محلية بعد فحصها ولا يعدّل ملف الآيفون. تبقى النسخ السابقة على الجهاز عند استيراد نسخة جديدة." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,12"/>
             <Button x:Name="BackupExport" Style="{StaticResource ActionButton}" Content="حفظ نسخة تشمل التعديلات المحلية" Click="ExportBackup" HorizontalAlignment="Right" IsEnabled="False"/>
-            <TextBlock Text="تشمل النسخة روابط الحسابات وتصنيف الجهات ودفتر المطابقة المحليين. ملفات CSV المحفوظة منفصلة لا تُضاف إليها. اختبر استعادتها على الآيفون قبل الاعتماد." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>
+            <TextBlock Text="تشمل النسخة الأشهر المستوردة والحسابات وروابطها وتصنيف الجهات ودفتر المطابقة. ملفات CSV المحفوظة منفصلة لا تُضاف إليها. اختبر استعادتها على الآيفون قبل الاعتماد." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>
           </StackPanel></Border><Border Style="{StaticResource Card}"><StackPanel>
             <TextBlock Text="البيانات المحفوظة" FontSize="18" FontWeight="SemiBold"/>
             <TextBlock Text="عرض الرواتب وحسابات الجهات والأرشيف متاح من القائمة الجانبية. إعداد المزامنة والنسخ الدوري قيد التطوير." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>
