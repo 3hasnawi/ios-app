@@ -56,7 +56,12 @@ public static class AccountSpreadsheet
                         swift = Find(["swift", "رمز السويفت"], true, used); if (swift < 0) swift = Find(["swift", "رمز السويفت"], false, used);
                         found = true; continue;
                     }
-                    var name = Cell(entity); if (name.Length == 0) continue;
+                    var name = Cell(entity);
+                    if (name.Length == 0)
+                    {
+                        if (Cell(iban).Length > 0 || Cell(branch).Length > 0 || Cell(swift).Length > 0) problems.Add(new(sheet, row, "توجد بيانات حساب دون اسم جهة."));
+                        continue;
+                    }
                     if (!seen.Add(PayrollAnalysis.Normalize(name))) { problems.Add(new(sheet, row, "اسم الجهة مكرر في الملف.")); continue; }
                     if (reader.GetValue(iban) is not string) { problems.Add(new(sheet, row, "احفظ خانة الحساب كنص؛ القيمة الرقمية قد تفقد أصفاراً.")); continue; }
                     var entered = TransferPreparation.NormalizeAccount(Cell(iban)); var bank = Cell(branch); var bic = Cell(swift).ToUpperInvariant();

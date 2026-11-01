@@ -16,7 +16,7 @@ static void Entry(ZipArchive zip, string name, string text)
     writer.Write(text);
 }
 static string Lines<T>(IEnumerable<T> values) => string.Concat(values.Select(v => JsonSerializer.Serialize(v) + "\n"));
-static void MakeAccountXlsx(string path, string iban, bool numeric = false, bool duplicate = false)
+static void MakeAccountXlsx(string path, string iban, bool numeric = false, bool duplicate = false, bool missingName = false)
 {
     using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
     Entry(zip, "[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>");
@@ -25,7 +25,7 @@ static void MakeAccountXlsx(string path, string iban, bool numeric = false, bool
     Entry(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
     string Cell(string reference, string value) => $"<c r=\"{reference}\" t=\"inlineStr\"><is><t>{System.Security.SecurityElement.Escape(value)}</t></is></c>";
     var valueCell = numeric ? $"<c r=\"B2\"><v>{iban}</v></c>" : Cell("B2", iban);
-    var row2 = $"<row r=\"2\">{Cell("A2", "جهة جديدة وهمية")}{valueCell}{Cell("C2", "الرشيد فرع وهمي")}{Cell("D2", "TESTIQBAAAA")}</row>";
+    var row2 = $"<row r=\"2\">{Cell("A2", missingName ? "" : "جهة جديدة وهمية")}{valueCell}{Cell("C2", "الرشيد فرع وهمي")}{Cell("D2", "TESTIQBAAAA")}</row>";
     var row3 = duplicate ? $"<row r=\"3\">{Cell("A3", "جهة جديدة وهمية")}{Cell("B3", iban)}</row>" : "";
     Entry(zip, "xl/worksheets/sheet1.xml", $"<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\">{Cell("A1", "جهة التنفيذ")}{Cell("B1", "IBAN")}{Cell("C1", "الفرع")}{Cell("D1", "SWIFT")}</row>{row2}{row3}</sheetData></worksheet>");
 }
@@ -176,6 +176,8 @@ try
     Check(AccountSpreadsheet.Read(numericXlsx).Problems.Single().Message.Contains("كنص", StringComparison.Ordinal), "numeric account cell is not guessed");
     var duplicateXlsx = Path.Combine(root, "duplicate-accounts.xlsx"); MakeAccountXlsx(duplicateXlsx, fakeReceiver, duplicate: true);
     Check(AccountSpreadsheet.Read(duplicateXlsx).Problems.Any(p => p.Message.Contains("مكرر", StringComparison.Ordinal)), "duplicate account rows reported");
+    var missingNameXlsx = Path.Combine(root, "missing-name.xlsx"); MakeAccountXlsx(missingNameXlsx, fakeReceiver, missingName: true);
+    Check(AccountSpreadsheet.Read(missingNameXlsx).Problems.Any(p => p.Message.Contains("دون اسم", StringComparison.Ordinal)), "account with missing entity is not silently skipped");
     var importStore = new LocalTransferLinks(Path.Combine(root, "xlsx-import")); var beforeImport = importStore.Load(snapshot);
     var importedAccounts = importStore.ImportAccounts(snapshot, beforeImport, accountPreview);
     Check(importedAccounts.Snapshot.Accounts.Count == snapshot.Accounts.Count + 1 && importStore.Load(snapshot).Snapshot.Accounts.Last().Iban == fakeReceiver, "spreadsheet accounts merge and persist");
