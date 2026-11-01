@@ -49,7 +49,7 @@ static byte[] MakeReferenceArchive(string fontPath, string payer, string benefic
         using (var face = SKTypeface.FromFile(fontPath))
         using (var paint = new SKPaint { Typeface = face, TextSize = 10, Color = SKColors.Black })
         {
-            for (int i = 0; i < pages; i++) { var canvas = pdf.BeginPage(595.3f, 841.9f); canvas.Clear(SKColors.White); if (i == 0 && id == "food_company") { canvas.DrawText(payer, 386, 364, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id.EndsWith("group", StringComparison.Ordinal)) canvas.DrawText(payer, 387, 350, paint); pdf.EndPage(); }
+            for (int i = 0; i < pages; i++) { var canvas = pdf.BeginPage(595.3f, 841.9f); canvas.Clear(SKColors.White); if (i == 0 && id == "food_company") { canvas.DrawText(payer, 386, 364, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id == "contracts") { canvas.DrawText(payer, 127, 347, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id.EndsWith("group", StringComparison.Ordinal)) canvas.DrawText(payer, 387, 350, paint); pdf.EndPage(); }
             pdf.Close();
         }
         return file.ToArray();
@@ -266,6 +266,12 @@ try
     catch (InvalidDataException) { }
     try { _ = LetterReferencePack.ReadArchive(MakeReferenceArchive(font, fakePayer, fakeReceiver, damaged: true)); throw new InvalidOperationException("damaged reference accepted"); }
     catch (InvalidDataException) { }
+    var foodPlan = IndividualLetterPreparation.Payroll("food_company", incompleteBank with { Breakdown = new Dictionary<string, decimal>(incompleteBank.Breakdown) { ["شركة عراق الجوال"] = 100000 } }, "دافع وهمي", fakePayer, references);
+    Check(foodPlan.Total == 95254 && foodPlan.BeneficiaryAccount == fakeReceiver, "food company amount and checked beneficiary");
+    try { _ = IndividualLetterPreparation.Payroll("contracts", incompleteBank, "دافع وهمي", fakePayer, references); throw new InvalidOperationException("missing nominal accepted without review"); }
+    catch (InvalidDataException) { }
+    var acceptedContract = IndividualLetterPreparation.Payroll("contracts", incompleteBank, "دافع وهمي", fakePayer, references, true);
+    Check(acceptedContract.Total == 75 && acceptedContract.Notices.Count == 1, "explicit contract warning review remains recorded");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
