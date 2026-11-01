@@ -31,7 +31,8 @@ public partial class MainWindow
         if (!force && !changedInMemory && DateTime.UtcNow - backupChecked < TimeSpan.FromSeconds(3)) return;
         backupChecked = DateTime.UtcNow;
         var ticket = ++backupRequest; var source = snapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState;
-        if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; return; }
+        RefreshBackupSetupNotice();
+        if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; AuditNoticeCard.Visibility = Visibility.Collapsed; return; }
         string? ledger;
         try { ledger = await Task.Run(() => reconciliationStore.Load(source).Revision); }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException) { ledger = null; }

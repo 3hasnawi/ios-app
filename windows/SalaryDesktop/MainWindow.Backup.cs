@@ -86,7 +86,7 @@ public partial class MainWindow
         };
         if (dialog.ShowDialog(this) != true) return false;
         UiPreferences.Current.BackupPath = dialog.FileName; UiPreferences.Current.BackupError = null;
-        SaveSettings("ملف النسخة");
+        SaveSettings("ملف النسخة"); RefreshBackupSetupNotice();
         if (snapshot is null) { ShowBackupSettings(); return false; }
         return await BackupToFile(true);
     }
@@ -133,6 +133,6 @@ public partial class MainWindow
             if (manual) Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
-        finally { backingUp = false; RefreshBackupReminder(true); if (page == "settings") ShowBackupSettings(); }
+        finally { backingUp = false; RefreshBackupReminder(true); RefreshBackupSetupNotice(); if (page == "settings") ShowBackupSettings(); }
     }
 }

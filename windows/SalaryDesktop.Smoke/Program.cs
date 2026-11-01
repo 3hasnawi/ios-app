@@ -267,7 +267,13 @@ static class Program
                     ((TextBlock)main.FindName("BackupReminderText")).Text = "أشهر مستوردة، حسابات وروابط على هذا الجهاز فقط · آخر نسخة شاملة: قبل يومين";
                     ((FrameworkElement)main.FindName("UpdateCard")).Visibility = Visibility.Visible;
                     ((TextBlock)main.FindName("UpdateTitle")).Text = "إصدار أحدث متاح · 1.0.99";
-                    await Task.Delay(200); Shot(main, "29-backup-reminder");
+                    // جرس الإشعارات: عدّاد أحمر على الجرس، ثم اللوحة مفتوحة بكل التنبيهات.
+                    await Task.Delay(1000);
+                    Check(((FrameworkElement)main.FindName("BellBadge")).Visibility == Visibility.Visible && ((TextBlock)main.FindName("BellCount")).Text != "0", "notification bell badge was not shown");
+                    Shot(main, "29-bell");
+                    ((FrameworkElement)main.FindName("NotificationPanel")).Visibility = Visibility.Visible;
+                    await Task.Delay(300); Shot(main, "29-backup-reminder");
+                    ((FrameworkElement)main.FindName("NotificationPanel")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)main.FindName("UpdateCard")).Visibility = Visibility.Collapsed;
                     // القفل: طبقة تغطي النوافذ المفتوحة وتعطّل محتواها حتى إدخال كلمة السر.
                     Locker.Enable("1234"); Locker.Lock(); await Task.Delay(400);

@@ -50,7 +50,7 @@ public partial class MainWindow : Window
         VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
         Loaded += async (_, _) =>
         {
-            ShowTheme(); Locker.Start(); StartBackupTimer();
+            ShowTheme(); Locker.Start(); StartBackupTimer(); HookNotifications();
             await LoadStoredSnapshot(); RestorePage(); RenderPage();
             if (!App.Unattended) await FindUpdate(false);
         };
@@ -178,6 +178,7 @@ public partial class MainWindow : Window
     private void WindowKeyDown(object sender, KeyEventArgs e)
     {
         if (Locker.IsLocked) return;
+        if (e.Key == Key.Escape && NotificationPanel.Visibility == Visibility.Visible) { NotificationPanel.Visibility = Visibility.Collapsed; e.Handled = true; return; }
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (e.Key == Key.L) { e.Handled = true; LockNow(this, new RoutedEventArgs()); return; }
@@ -926,6 +927,8 @@ public partial class MainWindow : Window
             else DeltaPanel.Visibility = Visibility.Collapsed;
             HomeAlerts.ItemsSource = overview.Alerts.Take(7).Select(a => new AlertChip(a.Kind, a.Count, SevereKinds.Contains(a.Kind))).ToArray();
             var severe = overview.Alerts.Any(a => SevereKinds.Contains(a.Kind));
+            var severeAlerts = overview.Alerts.Where(a => SevereKinds.Contains(a.Kind)).ToArray();
+            ShowAuditNotice(month, severeAlerts.Sum(a => a.Count), severeAlerts.Select(a => $"{a.Kind} ({a.Count:N0})"));
             AlertTitle.Text = overview.AlertError is { } error ? "تعذّر التدقيق: " + error : overview.Alerts.Count == 0 ? "لا توجد ملاحظات في فحوص هذا الشهر" : severe ? "يحتاج انتباهك" : "تغيّرات الشهر";
             AlertIcon.Text = overview.Alerts.Count == 0 && overview.AlertError is null ? "\uE73E" : "\uE7BA";
             AlertIcon.SetResourceReference(TextBlock.ForegroundProperty, overview.Alerts.Count == 0 && overview.AlertError is null ? "Primary" : severe ? "Warn" : "Accent");
