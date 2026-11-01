@@ -329,6 +329,7 @@
       <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource TbgEDF1F2}"/>
       <Setter Property="MinRowHeight" Value="34"/>
       <Setter Property="AlternationCount" Value="2"/>
+      <Setter Property="RowBackground" Value="{DynamicResource TbgFFFFFF}"/>
       <Setter Property="AlternatingRowBackground" Value="{DynamicResource TbgFAFCFC}"/>
       <Setter Property="CanUserResizeRows" Value="False"/>
       <Setter Property="EnableRowVirtualization" Value="True"/>
@@ -468,6 +469,7 @@
 
     <!-- التبويبات في النوافذ. -->
     <Style TargetType="TabControl">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
       <Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/>
       <Setter Property="Padding" Value="0"/>
@@ -475,6 +477,7 @@
     <!-- لون العنوان ووزنه على عنوان التبويب فقط؛ لو وُضعا على TabItem لورثهما محتوى التبويب كله. -->
     <Style TargetType="TabItem">
       <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
