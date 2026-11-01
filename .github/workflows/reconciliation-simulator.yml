@@ -36,3 +36,6 @@ jobs:
           done
           cat "$DATA/Documents/import-report.txt"
           grep -q '^transferFiles=ok ' "$DATA/Documents/import-report.txt"
+      - name: Test reports back gestures
+        run: |
+          xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Debug -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build CODE_SIGNING_ALLOWED=NO -only-testing:SalaryAppUITests/NavigationTests/testReportsBackGestures test > /tmp/reports-ui-test.log 2>&1 || { tail -100 /tmp/reports-ui-test.log; exit 1; }

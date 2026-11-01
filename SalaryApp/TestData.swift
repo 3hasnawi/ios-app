@@ -58,6 +58,18 @@ enum TestData {
 
     @MainActor
     static func prepareIfRequested() async {
+        #if targetEnvironment(simulator)
+        if UserDefaults.standard.bool(forKey: "seedReportNavigation") {
+            let context = SharedModel.container.mainContext
+            if (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) == 0 {
+                let month = "أيلول 2026"
+                context.insert(PayrollMonth(name: month, employeeCount: 1, deductionCount: 1))
+                context.insert(Employee(month: month, name: "اسم تجريبي", rank: "شرطي", workplace: "قسم تجريبي", netSalary: 1000))
+                context.insert(Deduction(month: month, employeeName: "اسم تجريبي", title: "جهة تجريبية", amount: 100, note: "", rank: "شرطي"))
+                try? context.save()
+            }
+        }
+        #endif
         let count = UserDefaults.standard.integer(forKey: "fakeStaff")
         guard count > 0, StaffInfo.count == 0 else { return }
         let container = SharedModel.container

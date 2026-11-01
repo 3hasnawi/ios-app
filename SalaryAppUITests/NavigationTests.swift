@@ -20,6 +20,26 @@ final class NavigationTests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
     }
 
+    func testReportsBackGestures() {
+        app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES"]
+        app.launch()
+        let home = element("homeReportsEntry")
+        XCTAssertTrue(home.waitForExistence(timeout: 40)); home.tap()
+        let entities = element("entitiesCard")
+        XCTAssertTrue(entities.waitForExistence(timeout: 20)); entities.tap()
+        let group = element("reportGroup")
+        XCTAssertTrue(group.waitForExistence(timeout: 30)); group.tap()
+        XCTAssertTrue(element("previewReport").waitForExistence(timeout: 20))
+        func swipeBack() {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+            start.press(forDuration: 0.1, thenDragTo: end)
+        }
+        swipeBack(); XCTAssertTrue(group.waitForExistence(timeout: 10))
+        swipeBack(); XCTAssertTrue(entities.waitForExistence(timeout: 10))
+        swipeBack(); XCTAssertTrue(home.waitForExistence(timeout: 10))
+    }
+
     func testDeductionComparison() {
         app.launchArguments += ["-tab", "reports", "-compareDeductions", "YES"]
         app.launch()
