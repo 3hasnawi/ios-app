@@ -60,11 +60,35 @@ jobs:
           finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }
-      - name: Upload portable trial
+      # ملف تثبيت واحد (Inno Setup) بدل مجلد بعدة ملفات.
+      - name: Build single-file installer
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          choco install innosetup -y --no-progress | Out-Null
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup was not installed.' }
+          & $iscc /Q "/DAppVersion=1.0.${{ github.run_number }}" "/DSourceDir=$env:RUNNER_TEMP\SalaryDesktop-trial" "/DOutputDir=$env:RUNNER_TEMP\installer" windows/installer/SalaryDesktop.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe" | Format-List Name, Length
+      - name: Check silent install and uninstall
+        shell: pwsh
+        run: |
+          $setup = "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe"
+          Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TASKS=' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\SalaryDesktop\SalaryDesktop.exe'
+          if (-not (Test-Path $exe)) { throw "Installer did not place SalaryDesktop.exe at $exe" }
+          $version = (Get-Item $exe).VersionInfo.ProductVersion
+          Write-Host "Installed $exe ($version)"
+          $uninstaller = Get-ChildItem (Split-Path $exe) -Filter 'unins*.exe' | Select-Object -First 1
+          Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path $exe) { throw 'Uninstaller left SalaryDesktop.exe behind.' }
+          Write-Host 'Silent install and uninstall passed.'
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: SalaryDesktop-trial-win-x64
-          path: ${{ runner.temp }}/SalaryDesktop-trial/
+          name: SalaryDesktop-Setup
+          path: ${{ runner.temp }}/installer/SalaryDesktop-Setup.exe
           if-no-files-found: error
           retention-days: 7
       # رابط تنزيل مباشر ثابت في صفحة الإصدارات (الوسم windows-latest)، ومنه يعرف البرنامج وجود إصدار أحدث.
@@ -75,15 +99,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = "1.0.${{ github.run_number }}"
-          $zip = Join-Path $env:RUNNER_TEMP 'SalaryDesktop-win-x64.zip'
-          Compress-Archive -Path "$env:RUNNER_TEMP/SalaryDesktop-trial/*" -DestinationPath $zip -Force
+          $setup = Join-Path $env:RUNNER_TEMP 'installer/SalaryDesktop-Setup.exe'
           git tag -f windows-latest $env:GITHUB_SHA
           git push -f origin refs/tags/windows-latest
           $title = "تطبيق الرواتب لويندوز $version"
-          $notes = "الإصدار $version من الالتزام $($env:GITHUB_SHA.Substring(0,7)).`n`nالتنزيل المباشر: https://github.com/$env:GITHUB_REPOSITORY/releases/download/windows-latest/SalaryDesktop-win-x64.zip`n`nفك الضغط وشغّل SalaryDesktop.exe؛ البيانات المحلية في مجلد حساب ويندوز ولا تتأثر بالتحديث. نسخة تجريبية؛ راجع النتائج مع الآيفون قبل الاعتماد."
+          $notes = "الإصدار $version من الالتزام $($env:GITHUB_SHA.Substring(0,7)).`n`nالتنزيل المباشر (ملف تثبيت واحد): https://github.com/$env:GITHUB_REPOSITORY/releases/download/windows-latest/SalaryDesktop-Setup.exe`n`nشغّل الملف واتبع الخطوات؛ لا يحتاج صلاحيات مسؤول، ويحدّث النسخة المثبتة دون المساس بالبيانات المحلية. إن ظهر تحذير ويندوز (SmartScreen) اختر «مزيد من المعلومات» ثم «تشغيل على أي حال». نسخة تجريبية؛ راجع النتائج مع الآيفون قبل الاعتماد."
           gh release view windows-latest *> $null
           if ($LASTEXITCODE -eq 0) { gh release edit windows-latest --title $title --notes $notes --prerelease --latest=false }
           else { gh release create windows-latest --title $title --notes $notes --prerelease --latest=false --verify-tag }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release upload windows-latest $zip --clobber
+          gh release upload windows-latest $setup --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # ملف واحد في الإصدار: يُحذف ملف المجلد المضغوط القديم إن وُجد.
+          gh release delete-asset windows-latest SalaryDesktop-win-x64.zip -y 2>$null
+          exit 0

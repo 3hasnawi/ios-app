@@ -10,7 +10,7 @@ namespace SalaryDesktop;
 public static class Updates
 {
     public const string Page = "https://github.com/3hasnawi/ios-app/releases/tag/windows-latest";
-    public const string Download = "https://github.com/3hasnawi/ios-app/releases/download/windows-latest/SalaryDesktop-win-x64.zip";
+    public const string Download = "https://github.com/3hasnawi/ios-app/releases/download/windows-latest/SalaryDesktop-Setup.exe";
     private const string Api = "https://api.github.com/repos/3hasnawi/ios-app/releases/tags/windows-latest";
 
     public static Version Current

@@ -23,7 +23,7 @@
           <Border x:Name="UpdateCard" Background="{DynamicResource AccentSoft}" CornerRadius="10" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
             <StackPanel>
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE896;" Foreground="{DynamicResource Accent}" FontSize="14" Margin="0,0,7,0"/><TextBlock x:Name="UpdateTitle" Text="إصدار أحدث متاح" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" FontSize="12.5"/></StackPanel>
-              <TextBlock Text="تنزيل الملف ثم استبدال مجلد البرنامج؛ البيانات المحلية لا تتأثر." FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
+              <TextBlock Text="نزّل ملف التثبيت وشغّله؛ يُحدّث البرنامج ولا تتأثر البيانات المحلية." FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
               <Button Style="{StaticResource ActionButton}" Content="تنزيل التحديث" Click="DownloadUpdate" Padding="12,6"/>
             </StackPanel>
           </Border>
