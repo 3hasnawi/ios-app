@@ -947,6 +947,14 @@ try
         var overview = HomeOverviews.Build(reportSnapshot, "أيلول 2026", null);
         Check(overview.Categories.Select(c => c.Count).SequenceEqual([12, 6, 6, 6]) && overview.PreviousMonth == "آب 2026" && overview.NetChange == 300000m && overview.PeopleChange == 0 && overview.AlertError is null, "home overview categories and comparison");
         Check(overview.Alerts.Any(a => a.Kind == "تغيّر الصافي" && a.Count == 30), "home overview groups review notes");
+        var copiesRoot = Path.Combine(root, "copies"); Directory.CreateDirectory(copiesRoot);
+        var copyDigests = Enumerable.Range(0, 7).Select(i => new string((char)('A' + i), 64)).ToArray();
+        for (int i = 0; i < copyDigests.Length; i++) { var file = Path.Combine(copiesRoot, copyDigests[i] + ".zip"); File.WriteAllBytes(file, new byte[100 + i]); File.SetLastWriteTimeUtc(file, new DateTime(2026, 1, 1).AddDays(i)); }
+        File.WriteAllText(Path.Combine(copiesRoot, "current.json"), JsonSerializer.Serialize(new { Version = 1, Digest = copyDigests[0] }));
+        var copyStore = new LocalSnapshotStore(copiesRoot);
+        Check(copyStore.Copies().Count == 7 && copyStore.Copies()[0].Current && copyStore.Copies()[1].Digest == copyDigests[6], "local copies listed newest first with the open copy");
+        var pruned = copyStore.Prune(5, digest => digest == copyDigests[1]);
+        Check(pruned.Deleted == 1 && pruned.Protected == 1 && pruned.Freed == 102 && !File.Exists(Path.Combine(copiesRoot, copyDigests[2] + ".zip")) && File.Exists(Path.Combine(copiesRoot, copyDigests[0] + ".zip")) && copyStore.Copies().Count == 6, "pruning keeps the open copy, the newest five and protected copies");
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");

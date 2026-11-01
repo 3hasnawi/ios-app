@@ -512,6 +512,7 @@
       <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
     </Style>
     <!-- عناصر بلا قالب خاص: ألوانها من المظهر الحالي بدل ألوان ويندوز الثابتة. -->
+    <Style TargetType="PasswordBox"><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/><Setter Property="BorderBrush" Value="{DynamicResource TbgCFD9DA}"/><Setter Property="Padding" Value="8,4"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="CaretBrush" Value="{DynamicResource Ink}"/></Style>
     <Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource Ink}"/></Style>
     <Style TargetType="ListBox"><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/><Setter Property="BorderBrush" Value="{DynamicResource Line}"/></Style>
     <Style TargetType="DatePicker"><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/><Setter Property="BorderBrush" Value="{DynamicResource TbgCFD9DA}"/></Style>

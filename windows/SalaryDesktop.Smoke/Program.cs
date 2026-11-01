@@ -242,7 +242,19 @@ static class Program
                     // معاينة تصميم تذكير الحفظ فقط (النسخة الوهمية بلا تعديلات محلية فعلية).
                     ((FrameworkElement)main.FindName("BackupReminder")).Visibility = Visibility.Visible;
                     ((TextBlock)main.FindName("BackupReminderText")).Text = "أشهر مستوردة، حسابات وروابط على هذا الجهاز فقط · آخر نسخة شاملة: قبل يومين";
+                    ((FrameworkElement)main.FindName("UpdateCard")).Visibility = Visibility.Visible;
+                    ((TextBlock)main.FindName("UpdateTitle")).Text = "إصدار أحدث متاح · 1.0.99";
                     await Task.Delay(200); Shot(main, "29-backup-reminder");
+                    ((FrameworkElement)main.FindName("UpdateCard")).Visibility = Visibility.Collapsed;
+                    // القفل: طبقة تغطي النوافذ المفتوحة وتعطّل محتواها حتى إدخال كلمة السر.
+                    Locker.Enable("1234"); Locker.Lock(); await Task.Delay(400);
+                    Check(Locker.IsLocked && !((UIElement)main.Content).IsEnabled, "lock did not cover the main window");
+                    Shot(main, "30-lock");
+                    Check(!Locker.TryUnlock("0000", out _) && Locker.IsLocked, "wrong password unlocked the application");
+                    Check(Locker.TryUnlock("1234", out _) && !Locker.IsLocked && ((UIElement)main.Content).IsEnabled, "correct password did not unlock");
+                    Locker.Disable();
+                    await Navigate("settings"); await Task.Delay(500);
+                    ((FrameworkElement)main.FindName("LockEnabledBox")).BringIntoView(); await Task.Delay(400); Shot(main, "31-settings-security");
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }

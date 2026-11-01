@@ -12,19 +12,25 @@
       <DockPanel Margin="14,20,14,16">
         <Grid DockPanel.Dock="Top" Margin="4,0,0,8">
           <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Border Width="38" Height="38" CornerRadius="10" Background="{DynamicResource Primary}">
-            <TextBlock Style="{StaticResource Icon}" Text="&#xE8C7;" Foreground="White" FontSize="18" HorizontalAlignment="Center"/>
-          </Border>
+          <Image Source="pack://application:,,,/SalaryDesktop;component/Assets/AppIcon.png" Width="38" Height="38" RenderOptions.BitmapScalingMode="HighQuality"/>
           <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
             <TextBlock FontSize="16.5" FontWeight="SemiBold" Foreground="{DynamicResource Primary}" Text="تطبيق الرواتب"/>
-            <TextBlock FontSize="11.5" Foreground="{DynamicResource Muted}" Text="نسخة ويندوز · قيد التطوير"/>
+            <TextBlock FontSize="11.5" Foreground="{DynamicResource Muted}" Text="نسخة ويندوز · قيد التطوير" x:Name="VersionText"/>
           </StackPanel>
         </Grid>
         <StackPanel DockPanel.Dock="Bottom">
+          <!-- تنبيه الإصدار الأحدث من صفحة الإصدارات. -->
+          <Border x:Name="UpdateCard" Background="{DynamicResource AccentSoft}" CornerRadius="10" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
+            <StackPanel>
+              <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE896;" Foreground="{DynamicResource Accent}" FontSize="14" Margin="0,0,7,0"/><TextBlock x:Name="UpdateTitle" Text="إصدار أحدث متاح" FontWeight="SemiBold" Foreground="{DynamicResource Accent}" FontSize="12.5"/></StackPanel>
+              <TextBlock Text="تنزيل الملف ثم استبدال مجلد البرنامج؛ البيانات المحلية لا تتأثر." FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
+              <Button Style="{StaticResource ActionButton}" Content="تنزيل التحديث" Click="DownloadUpdate" Padding="12,6"/>
+            </StackPanel>
+          </Border>
           <!-- تذكير الحفظ: يظهر عند وجود تعديلات محلية لم تدخل نسخة شاملة بعد. -->
           <Border x:Name="BackupReminder" Background="{DynamicResource WarnSoft}" BorderBrush="{DynamicResource WarnLine}" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
             <StackPanel>
-              <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="{DynamicResource Warn}" FontSize="14" Margin="0,0,7,0"/><TextBlock Text="تعديلات غير محفوظة في نسخة" FontWeight="SemiBold" Foreground="{DynamicResource Warn}" FontSize="12.5"/></StackPanel>
+              <DockPanel><TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="{DynamicResource Warn}" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock x:Name="BackupReminderTitle" Text="تعديلات غير محفوظة في نسخة" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource Warn}" FontSize="12.5"/></DockPanel>
               <TextBlock x:Name="BackupReminderText" FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
               <Button x:Name="BackupNowButton" Style="{StaticResource ActionButton}" Content="حفظ نسخة الآن" Click="ExportBackup" Padding="12,6" ToolTip="حفظ نسخة احتياطية شاملة تتضمن التعديلات المحلية"/>
             </StackPanel>
@@ -435,6 +441,42 @@
             </Border>
             <Border Style="{StaticResource Card}" Margin="0,0,0,14">
               <StackPanel>
+                <TextBlock Style="{StaticResource CardTitle}" Text="الأمان"/>
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,10" Text="البيانات أسماء وأرقام حسابات؛ إذا كان الجهاز مشتركاً فاقفل البرنامج بكلمة سر وشفّر ملفاته لحساب ويندوز."/>
+                <CheckBox x:Name="LockEnabledBox" Content="قفل البرنامج بكلمة سر عند الفتح وبعد عدم الاستخدام" Click="LockEnabledClicked" Margin="0,0,0,8"/>
+                <StackPanel x:Name="LockOptions" Margin="24,0,0,0">
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="القفل التلقائي بعد" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="LockMinutesBox" Width="150" SelectionChanged="LockMinutesChanged">
+                      <ComboBoxItem Tag="5" Content="5 دقائق"/><ComboBoxItem Tag="10" Content="10 دقائق"/><ComboBoxItem Tag="15" Content="15 دقيقة"/><ComboBoxItem Tag="30" Content="30 دقيقة"/><ComboBoxItem Tag="60" Content="ساعة"/><ComboBoxItem Tag="0" Content="عند الفتح فقط"/>
+                    </ComboBox>
+                  </StackPanel>
+                  <CheckBox x:Name="LockHelloBox" Content="السماح بالفتح بـ Windows Hello (البصمة أو الوجه أو رمز PIN)" Click="LockHelloClicked" Margin="0,0,0,8"/>
+                  <WrapPanel><Button Content="تغيير كلمة السر" Click="ChangePassword" Margin="0,0,8,0"/><Button Content="قفل الآن (Ctrl+L)" Click="LockNow"/></WrapPanel>
+                </StackPanel>
+                <Border Height="1" Background="{DynamicResource Line}" Margin="0,14"/>
+                <TextBlock x:Name="EncryptStatus" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <WrapPanel><Button x:Name="EncryptButton" Content="تشفير بيانات البرنامج لحساب ويندوز" Click="EncryptData"/></WrapPanel>
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,8,0,0" Text="يستعمل تشفير ملفات ويندوز (EFS): تُفتح الملفات من حسابك فقط. غير متاح في ويندوز Home. احتفظ بنسخة احتياطية شاملة؛ إعادة تعيين كلمة سر حساب ويندوز من المسؤول قد تمنع فتح الملفات المشفّرة."/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+              <StackPanel>
+                <TextBlock Style="{StaticResource CardTitle}" Text="النسخ المحلية"/>
+                <TextBlock x:Name="CopiesText" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,10" Text="—"/>
+                <WrapPanel><Button x:Name="PruneButton" Content="حذف النسخ الأقدم (يبقى آخر 5)" Click="PruneCopies"/></WrapPanel>
+                <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,8,0,0" Text="كل نسخة آيفون تُفتح تُحفظ نسخة منها هنا. لا تُحذف النسخة المفتوحة ولا أي نسخة مرتبطة بتعديلات محلية."/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+              <StackPanel>
+                <TextBlock Style="{StaticResource CardTitle}" Text="الإصدار والتحديث"/>
+                <TextBlock x:Name="VersionStatus" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,10"/>
+                <WrapPanel><Button x:Name="CheckUpdateButton" Content="التحقق من وجود تحديث" Click="CheckUpdate" Margin="0,0,8,0"/><Button Content="صفحة التنزيل" Click="OpenReleasePage"/></WrapPanel>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+              <StackPanel>
                 <TextBlock Style="{StaticResource CardTitle}" Text="المظهر"/>
                 <TextBlock Style="{StaticResource Hint}" Text="الوضع الداكن يريح العين في الإضاءة الخافتة؛ «حسب ويندوز» يتبع إعداد النظام. الكشوف المطبوعة لا تتأثر." Margin="0,6,0,10" TextWrapping="Wrap"/>
 <Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2" HorizontalAlignment="Left">
@@ -457,6 +499,7 @@
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث الشامل عن منتسب أو جهة أو قسم" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+C" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="نسخ الصفوف المحددة للصقها في Excel" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح نسخة الآيفون" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+L" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="قفل البرنامج (عند تفعيل القفل)" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="F5" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="إعادة تحميل الصفحة" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Enter" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح الصف المختار" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Esc" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="مسح البحث" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>

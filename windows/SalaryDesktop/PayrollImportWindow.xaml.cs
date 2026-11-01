@@ -10,8 +10,17 @@ public partial class PayrollImportWindow : Window
     private PayrollImportPreview? preview;
     public PayrollImportPreview? Result { get; private set; }
     public bool ReplaceExisting { get; private set; }
-    public PayrollImportWindow(BackupSnapshot? source, string month)
-    { InitializeComponent(); this.source = source; MonthText.Text = month; }
+    private string? dropped;
+    /// path: ملف سُحب إلى النافذة الرئيسية؛ يُقرأ مباشرة إذا كان الشهر صالحاً، وإلا عند الضغط على «اختيار».
+    public PayrollImportWindow(BackupSnapshot? source, string month, string? path = null)
+    {
+        InitializeComponent(); this.source = source; MonthText.Text = month; dropped = path;
+        if (path is not null) Loaded += (_, _) =>
+        {
+            if (MonthNames.SortKey(MonthText.Text.Trim()) != 0) ChooseFile(this, new RoutedEventArgs());
+            else Notice.Text = "اكتب الشهر والسنة ثم اضغط «اختيار» لقراءة الملف المسحوب: " + Path.GetFileName(path);
+        };
+    }
     private void MonthChanged(object sender, TextChangedEventArgs e)
     { if (SaveButton is not null) { preview = null; SaveButton.IsEnabled = false; if (Employees is not null) { Employees.ItemsSource = null; Deductions.ItemsSource = null; Problems.ItemsSource = null; } } }
     private async void ChooseFile(object sender, RoutedEventArgs e)
@@ -21,9 +30,15 @@ public partial class PayrollImportWindow : Window
         var existing = source?.Months.Where(m => MonthNames.SortKey(m.Name) == key).ToArray() ?? [];
         if (existing.Length > 1) { Ui.Message(this, "هناك أكثر من اسم محفوظ للشهر نفسه؛ راجع الأشهر قبل الاستيراد.", "الشهر"); return; }
         if (existing.Length == 1) { month = existing[0].Name; MonthText.Text = month; }
-        var dialog = new OpenFileDialog { Title = "اختيار ملف الرواتب والاستقطاعات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
-        if (dialog.ShowDialog(this) != true) return;
-        var path = dialog.FileName; Choose.IsEnabled = false; SaveButton.IsEnabled = false; preview = null; Notice.Text = "جارٍ قراءة الملف وفحصه…";
+        string path;
+        if (dropped is not null) { path = dropped; dropped = null; }
+        else
+        {
+            var dialog = new OpenFileDialog { Title = "اختيار ملف الرواتب والاستقطاعات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
+            if (dialog.ShowDialog(this) != true) return;
+            path = dialog.FileName;
+        }
+        Choose.IsEnabled = false; SaveButton.IsEnabled = false; preview = null; Notice.Text = "جارٍ قراءة الملف وفحصه…";
         try
         {
             var result = await Task.Run(() => PayrollSpreadsheet.Read(path, month));

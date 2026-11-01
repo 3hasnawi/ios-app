@@ -47,15 +47,22 @@ public partial class MainWindow : Window
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
         RestorePlacement();
-        Loaded += async (_, _) => { ShowTheme(); await LoadStoredSnapshot(); RestorePage(); RenderPage(); };
+        VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
+        Loaded += async (_, _) =>
+        {
+            ShowTheme(); Locker.Start();
+            await LoadStoredSnapshot(); RestorePage(); RenderPage();
+            if (!App.Unattended) await FindUpdate(false);
+        };
         Closing += (_, _) => SavePlacement();
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
-    private async void StartFromExcel(object sender, RoutedEventArgs e)
+    private async void StartFromExcel(object sender, RoutedEventArgs e) => await StartFromExcelFile(null);
+    private async Task StartFromExcelFile(string? path)
     {
         if (loading || snapshot is not null) return;
-        var dialog = new PayrollImportWindow(null, "") { Owner = this };
+        var dialog = new PayrollImportWindow(null, "", path) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
         if (snapshot is not null) { Ui.Message(this, "فُتحت بيانات أخرى؛ لم تُنشأ قاعدة جديدة.", "بدء البيانات"); return; }
         loading = true; StartFromExcelButton.IsEnabled = false; SourceMessage.Text = "جارٍ إنشاء البيانات والتحقق منها محلياً…";
@@ -91,10 +98,21 @@ public partial class MainWindow : Window
                 var inspected = await Task.Run(() => BackupReader.Read(selectedPath));
                 inspectedDigest = inspected.SourceDigest;
                 var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null;
-                if (inspected.SourceDigest != previous.SourceDigest && hasLocalChanges && Ui.Message(this,
-                    "توجد تعديلات محلية مرتبطة بالنسخة الحالية. ستبقى محفوظة على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى. احفظ نسخة احتياطية تشمل التعديلات أولاً إذا أردت نقلها. هل تريد فتح النسخة الأخرى؟",
-                    "تغيير النسخة المفتوحة", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-                { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return; }
+                if (inspected.SourceDigest != previous.SourceDigest && hasLocalChanges)
+                {
+                    // التعديلات المحلية لا تندمج مع النسخة الأخرى؛ يُعرض حفظها في نسخة شاملة قبل الانتقال حتى لا يضيع عمل ويندوز.
+                    var choice = Ui.Message(this,
+                        "توجد تعديلات محلية مرتبطة بالنسخة الحالية (أشهر مستوردة أو حسابات أو دفتر مطابقة). تبقى على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى.\n\nنعم: احفظ نسخة شاملة بالتعديلات أولاً ثم افتح الأخرى.\nلا: افتح الأخرى دون حفظ.\nإلغاء: ابقَ على النسخة الحالية.",
+                        "تغيير النسخة المفتوحة", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                    if (choice == MessageBoxResult.Cancel || choice == MessageBoxResult.None) { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return; }
+                    if (choice == MessageBoxResult.Yes)
+                    {
+                        loading = false;
+                        var saved = await SaveFullBackup();
+                        loading = true;
+                        if (!saved) { SourceMessage.Text = "لم تُحفظ النسخة الشاملة؛ لم تتغير النسخة المفتوحة."; return; }
+                    }
+                }
             }
             var loaded = await Task.Run(() => store.Import(selectedPath, expectedDigest: inspectedDigest));
             SetSnapshot(loaded);
@@ -157,8 +175,10 @@ public partial class MainWindow : Window
     private void HideBanner(object sender, RoutedEventArgs e) => SourceBanner.Visibility = Visibility.Collapsed;
     private void WindowKeyDown(object sender, KeyEventArgs e)
     {
+        if (Locker.IsLocked) return;
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
+            if (e.Key == Key.L) { e.Handled = true; LockNow(this, new RoutedEventArgs()); return; }
             var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
             if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
@@ -245,7 +265,7 @@ public partial class MainWindow : Window
         if (page == "home") { RenderHome(); return; }
         if (page == "bank") { RenderBank(); return; }
         if (page == "transfer") { RenderTransfers(); return; }
-        if (page == "settings") { BackupExport.IsEnabled = snapshot is not null; return; }
+        if (page == "settings") { BackupExport.IsEnabled = snapshot is not null; ShowSettings(); return; }
         if (!available)
         {
             UnavailableTitle.Text = PageTitle.Text;
@@ -462,12 +482,14 @@ public partial class MainWindow : Window
         { Ui.Message(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AnnualImportButton.IsEnabled = true; }
     }
-    private async void ImportPayroll(object sender, RoutedEventArgs e)
+    private async void ImportPayroll(object sender, RoutedEventArgs e) => await ImportPayrollFrom(null);
+    /// استيراد ملف رواتب شهري؛ path من سحب ملف Excel إلى النافذة، وإلا يُختار من النافذة.
+    private async Task ImportPayrollFrom(string? path)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
         if (root is null || payroll is null || active is null || links is null || original is null)
         { Ui.Message(this, "افتح نسخة الآيفون أولاً لاستيراد بيانات الشهر إليها.", "استيراد الرواتب"); return; }
-        var dialog = new PayrollImportWindow(active, SelectedMonth) { Owner = this };
+        var dialog = new PayrollImportWindow(active, SelectedMonth, path) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
         var replace = dialog.ReplaceExisting;
         if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "استيراد الرواتب"); return; }
@@ -491,12 +513,14 @@ public partial class MainWindow : Window
         finally { PayrollImportButton.IsEnabled = true; }
     }
 
-    private async void ExportBackup(object sender, RoutedEventArgs e)
+    private async void ExportBackup(object sender, RoutedEventArgs e) => await SaveFullBackup();
+    /// يحفظ نسخة شاملة بالتعديلات المحلية؛ يعيد true عند نجاح الحفظ دون تغيّر البيانات أثناءه.
+    private async Task<bool> SaveFullBackup()
     {
         var source = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
-        if (source is null || original is null || links is null || root is null || payroll is null) return;
-        var dialog = new SaveFileDialog { Title = "حفظ نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
-        if (dialog.ShowDialog(this) != true) return;
+        if (source is null || original is null || links is null || root is null || payroll is null) return false;
+        var dialog = new SaveFileDialog { Title = "حفظ نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = $"نسخة الرواتب {DateTime.Now:yyyy-MM-dd}.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
+        if (dialog.ShowDialog(this) != true) return false;
         var destination = dialog.FileName;
         BackupExport.IsEnabled = false;
         try
@@ -511,9 +535,10 @@ public partial class MainWindow : Window
             var changed = saved.Changed;
             if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);
             Ui.Message(this, changed || !ReferenceEquals(source, snapshot) ? "حُفظت لقطة سابقة؛ تغيّرت البيانات أثناء التصدير، لذا أعد حفظ النسخة. اختبر الاستعادة على الآيفون." : "حُفظت النسخة مع الروابط ودفتر المطابقة بعد فحصها. اختبر استعادتها على الآيفون قبل الاعتماد.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            return !changed && ReferenceEquals(source, snapshot);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
-        { Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
         finally { if (page == "settings") BackupExport.IsEnabled = snapshot is not null; RefreshBackupReminder(true); }
     }
 

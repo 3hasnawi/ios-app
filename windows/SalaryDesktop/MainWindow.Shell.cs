@@ -20,12 +20,15 @@ public partial class MainWindow
     private void RememberBackup(BackupSnapshot root, string? payroll, string? links, string? ledger)
     {
         UiPreferences.Current.Backups![root.SourceDigest] = new BackupMark(Fingerprint(payroll, links, ledger), DateTime.Now);
+        UiPreferences.Current.Pending![root.SourceDigest] = new PendingChanges(payroll, links, ledger, 0);
         if (UiPreferences.Save() is { } error) StatusBar.Text = "حُفظت النسخة، لكن تعذّر تسجيل وقتها: " + error;
     }
 
     private async void RefreshBackupReminder(bool force = false)
     {
-        if (!force && DateTime.UtcNow - backupChecked < TimeSpan.FromSeconds(3)) return;
+        var seen = rootSnapshot is { } r ? UiPreferences.Current.Pending!.GetValueOrDefault(r.SourceDigest) : null;
+        var changedInMemory = seen is null || seen.Payroll != payrollState?.Revision || seen.Links != linkState?.Revision;
+        if (!force && !changedInMemory && DateTime.UtcNow - backupChecked < TimeSpan.FromSeconds(3)) return;
         backupChecked = DateTime.UtcNow;
         var ticket = ++backupRequest; var source = snapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState;
         if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; return; }
@@ -39,8 +42,25 @@ public partial class MainWindow
         if (ledger is not null) parts.Add("دفتر المطابقة");
         var mark = UiPreferences.Current.Backups!.GetValueOrDefault(root.SourceDigest);
         var pending = parts.Count > 0 && mark?.Fingerprint != Fingerprint(payroll?.Revision, links?.Revision, ledger);
+        // عدد التعديلات: كل تغيّر في بصمة جزء (أشهر، روابط، مطابقة) منذ آخر نسخة شاملة يُعدّ تعديلاً.
+        var last = UiPreferences.Current.Pending!.GetValueOrDefault(root.SourceDigest);
+        var count = last?.Count ?? 0;
+        if (last is null) count = pending ? parts.Count : 0;
+        else
+        {
+            if (payroll?.Revision is not null && payroll.Revision != last.Payroll) count++;
+            if (links?.Revision is not null && links.Revision != last.Links) count++;
+            if (ledger is not null && ledger != last.Ledger) count++;
+        }
+        if (!pending) count = 0;
+        var next = new PendingChanges(payroll?.Revision, links?.Revision, ledger, count);
+        if (next != last) { UiPreferences.Current.Pending![root.SourceDigest] = next; UiPreferences.Save(); }
         BackupReminder.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
-        if (pending) BackupReminderText.Text = string.Join("، ", parts) + " على هذا الجهاز فقط · " + (mark is null ? "لم تُحفظ نسخة شاملة بعد" : "آخر نسخة شاملة: " + Ago(mark.At));
+        if (pending)
+        {
+            BackupReminderTitle.Text = count == 1 ? "تعديل واحد غير محفوظ في نسخة" : count == 2 ? "تعديلان غير محفوظين في نسخة" : $"{count:N0} تعديلات غير محفوظة في نسخة";
+            BackupReminderText.Text = string.Join("، ", parts) + " على هذا الجهاز فقط · " + (mark is null ? "لم تُحفظ نسخة شاملة بعد" : "آخر نسخة شاملة: " + Ago(mark.At));
+        }
     }
 
     private static string Ago(DateTime at)
@@ -79,16 +99,20 @@ public partial class MainWindow
         e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } files ? files[0] : null;
     private void WindowDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = DroppedFile(e) is { } path && string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase) && !loading ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = DroppedFile(e) is { } path && Path.GetExtension(path).ToLowerInvariant() is ".zip" or ".xlsx" && !loading && !Locker.IsLocked ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
     private async void WindowDrop(object sender, DragEventArgs e)
     {
-        if (DroppedFile(e) is not { } path) return;
+        if (DroppedFile(e) is not { } path || Locker.IsLocked) return;
         e.Handled = true;
-        if (!string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
-        { Ui.Message(this, "اسحب نسخة الآيفون الاحتياطية (ملف ZIP). ملفات Excel تُستورد من أزرار الاستيراد في صفحتي الرواتب والاستقطاعات.", "فتح النسخة"); return; }
-        await OpenBackupFile(path);
+        switch (Path.GetExtension(path).ToLowerInvariant())
+        {
+            case ".zip": await OpenBackupFile(path); break;
+            // ملف Excel: استيراد رواتب واستقطاعات شهر، أو بدء البيانات منه إن لم تُفتح نسخة بعد.
+            case ".xlsx": if (snapshot is null) await StartFromExcelFile(path); else await ImportPayrollFrom(path); break;
+            default: Ui.Message(this, "اسحب نسخة الآيفون الاحتياطية (ZIP) أو ملف رواتب شهري (Excel).", "سحب ملف"); break;
+        }
     }
 
     // ——— حجم النافذة وآخر قسم ———
@@ -105,7 +129,9 @@ public partial class MainWindow
     }
     private void RestorePage()
     {
-        if (App.Unattended || UiPreferences.Current.Page is not { } last || last == "home") return;
+        if (App.Unattended) return;
+        if (UiPreferences.Current.Month is { } month && MonthPicker.Items.Contains(month)) MonthPicker.SelectedItem = month;
+        if (UiPreferences.Current.Page is not { } last || last == "home") return;
         if (NavItems.FirstOrDefault(item => Equals(item.Tag, last)) is { } radio) radio.IsChecked = true;
     }
     private void SavePlacement()
@@ -115,6 +141,7 @@ public partial class MainWindow
         UiPreferences.Current.Window = [bounds.Left, bounds.Top, bounds.Width, bounds.Height];
         UiPreferences.Current.Maximized = WindowState == WindowState.Maximized;
         UiPreferences.Current.Page = page;
+        if (SelectedMonth.Length > 0) UiPreferences.Current.Month = SelectedMonth;
         UiPreferences.Save();
     }
 }

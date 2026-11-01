@@ -13,7 +13,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Build Windows desktop solution
-        run: dotnet build windows/SalaryDesktop.sln -c Release --nologo
+        run: dotnet build windows/SalaryDesktop.sln -c Release --nologo -p:Version=1.0.${{ github.run_number }}
       - name: Test backup, bank calculations and transfer files with fictional data
         run: dotnet run --project windows/SalaryDesktop.Tests/SalaryDesktop.Tests.csproj -c Release --no-build --no-launch-profile
       - name: Use a desktop-sized screen for design screenshots
@@ -43,7 +43,7 @@ jobs:
       - name: Publish portable Windows trial
         shell: pwsh
         run: |
-          dotnet publish windows/SalaryDesktop/SalaryDesktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/SalaryDesktop-trial" --nologo
+          dotnet publish windows/SalaryDesktop/SalaryDesktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/SalaryDesktop-trial" --nologo -p:Version=1.0.${{ github.run_number }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item windows/README.md "$env:RUNNER_TEMP/SalaryDesktop-trial/اقرأني.md"
       - name: Check desktop startup
@@ -67,3 +67,23 @@ jobs:
           path: ${{ runner.temp }}/SalaryDesktop-trial/
           if-no-files-found: error
           retention-days: 7
+      # رابط تنزيل مباشر ثابت في صفحة الإصدارات (الوسم windows-latest)، ومنه يعرف البرنامج وجود إصدار أحدث.
+      # الإصدار يُعلَّم «تجريبي» وليس «الأحدث» حتى لا يتأثر مصدر AltStore لإصدارات الآيفون.
+      - name: Publish direct download on the releases page
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "1.0.${{ github.run_number }}"
+          $zip = Join-Path $env:RUNNER_TEMP 'SalaryDesktop-win-x64.zip'
+          Compress-Archive -Path "$env:RUNNER_TEMP/SalaryDesktop-trial/*" -DestinationPath $zip -Force
+          git tag -f windows-latest $env:GITHUB_SHA
+          git push -f origin refs/tags/windows-latest
+          $title = "تطبيق الرواتب لويندوز $version"
+          $notes = "الإصدار $version من الالتزام $($env:GITHUB_SHA.Substring(0,7)).`n`nالتنزيل المباشر: https://github.com/$env:GITHUB_REPOSITORY/releases/download/windows-latest/SalaryDesktop-win-x64.zip`n`nفك الضغط وشغّل SalaryDesktop.exe؛ البيانات المحلية في مجلد حساب ويندوز ولا تتأثر بالتحديث. نسخة تجريبية؛ راجع النتائج مع الآيفون قبل الاعتماد."
+          gh release view windows-latest *> $null
+          if ($LASTEXITCODE -eq 0) { gh release edit windows-latest --title $title --notes $notes --prerelease --latest=false }
+          else { gh release create windows-latest --title $title --notes $notes --prerelease --latest=false --verify-tag }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release upload windows-latest $zip --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

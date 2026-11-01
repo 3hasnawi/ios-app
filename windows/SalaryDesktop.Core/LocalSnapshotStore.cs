@@ -43,6 +43,42 @@ public sealed class LocalSnapshotStore(string directory)
         }
         finally { if (created) { try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } } }
     }
+    public sealed record LocalCopy(string Digest, long Size, DateTime Modified, bool Current);
+    public sealed record PruneResult(int Deleted, long Freed, int Protected);
+
+    private string? CurrentDigest()
+    {
+        try { return File.Exists(PointerPath) && JsonSerializer.Deserialize<Pointer>(File.ReadAllBytes(PointerPath)) is { Version: 1, Digest: { } digest } && ValidDigest(digest) ? digest : null; }
+        catch (JsonException) { return null; }
+    }
+
+    /// النسخ المحلية المحفوظة (كل نسخة آيفون فُتحت تبقى ملفاً مستقلاً)، الأحدث أولاً.
+    public IReadOnlyList<LocalCopy> Copies()
+    {
+        if (!Directory.Exists(root)) return [];
+        var current = CurrentDigest();
+        return Directory.GetFiles(root, "*.zip").Select(path => new FileInfo(path))
+            .Where(file => ValidDigest(Path.GetFileNameWithoutExtension(file.Name)))
+            .Select(file => new LocalCopy(Path.GetFileNameWithoutExtension(file.Name), file.Length, file.LastWriteTimeUtc, Path.GetFileNameWithoutExtension(file.Name) == current))
+            .OrderByDescending(copy => copy.Current).ThenByDescending(copy => copy.Modified).ToArray();
+    }
+
+    /// يحذف النسخ الأقدم ويبقي آخر keep نسخ (منها المفتوحة دائماً). النسخة المرتبطة بتعديلات محلية (isProtected) لا تُحذف أبداً.
+    public PruneResult Prune(int keep, Func<string, bool> isProtected)
+    {
+        if (keep < 1) throw new InvalidDataException("يجب إبقاء نسخة واحدة على الأقل.");
+        if (!Directory.Exists(root)) return new(0, 0, 0);
+        using var storeLock = new FileStream(Path.Combine(root, ".store.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        int deleted = 0, kept = 0; long freed = 0;
+        foreach (var copy in Copies().Skip(keep))
+        {
+            if (copy.Current || isProtected(copy.Digest)) { kept++; continue; }
+            try { File.Delete(FileFor(copy.Digest)); deleted++; freed += copy.Size; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { kept++; }
+        }
+        return new(deleted, freed, kept);
+    }
+
     public BackupSnapshot? LoadCurrent()
     {
         if (!File.Exists(PointerPath)) return null;
