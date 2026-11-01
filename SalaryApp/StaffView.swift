@@ -150,7 +150,10 @@ struct RootView: View {
             guard phase != .inactive else { return }
             Task {
                 if phase == .active { try? await Task.sleep(for: .seconds(3)) }
-                if phase == .active { await BackupManager.shared.refreshIntegrityWarning() }
+                if phase == .active {
+                    await BackupManager.shared.refreshIntegrityWarning()
+                    await BackupManager.shared.checkServerNotification()
+                }
                 await BackupManager.shared.autoBackupIfNeeded()
             }
         }

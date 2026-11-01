@@ -12,7 +12,7 @@ struct SalaryApp: App {
         // قياس السلاسة يعمل في اختبار المحاكي فقط (-perfLog YES).
         PerfLog.startIfEnabled()
         // النسخ التلقائي مفعّل افتراضياً (إلى مجلد iCloud بعد اختياره).
-        UserDefaults.standard.register(defaults: [BackupManager.autoKey: true])
+        UserDefaults.standard.register(defaults: [BackupManager.autoKey: true, BackupServerConfig.notifyKey: true])
         BackupBackground.register()
         BackupBackground.schedule()
         AuditNotifications.registerDefaults()

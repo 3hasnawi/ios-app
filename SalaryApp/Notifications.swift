@@ -116,7 +116,7 @@ enum AuditNotifications {
     fileprivate static func open(route: String) {
         let router = AppRouter.shared
         switch route {
-        case "import":
+        case "import", "backup":
             router.tab = .settings
         case "salary":
             router.tab = .payroll

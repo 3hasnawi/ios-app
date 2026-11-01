@@ -16,6 +16,7 @@ enum BackupBackground {
                 return
             }
             let work = Task { @MainActor in
+                await BackupManager.shared.checkServerNotification()
                 await BackupManager.shared.autoBackupIfNeeded()
                 schedule()
                 if !Task.isCancelled { task.setTaskCompleted(success: true) }
@@ -31,14 +32,18 @@ enum BackupBackground {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
         guard !BackupManager.manualOnly else { return }
         let raw = UserDefaults.standard.string(forKey: scheduleKey) ?? ""
-        guard let interval = BackupSchedule(rawValue: raw)?.interval,
-              (BackupServerConfig.ready || UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil) else { return }
+        let interval = BackupSchedule(rawValue: raw)?.interval
+        let hasDestination = BackupServerConfig.ready || UserDefaults.standard.data(forKey: fileKey) != nil || UserDefaults.standard.data(forKey: folderKey) != nil
+        let monitorServer = BackupServerConfig.ready && UserDefaults.standard.bool(forKey: BackupServerConfig.notifyKey)
+        guard (interval != nil && hasDestination) || monitorServer else { return }
         let request = BGProcessingTaskRequest(identifier: identifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
         let last = UserDefaults.standard.object(forKey: lastKey) as? Date
-        request.earliestBeginDate = max(last?.addingTimeInterval(interval) ?? .now,
-                                        Date().addingTimeInterval(15 * 60))
+        let backupDue = interval.map { last?.addingTimeInterval($0) ?? .now }
+        let monitorDue = monitorServer ? Date().addingTimeInterval(15 * 60) : nil
+        let due = [backupDue, monitorDue].compactMap { $0 }.min() ?? .now
+        request.earliestBeginDate = max(due, Date().addingTimeInterval(15 * 60))
         try? BGTaskScheduler.shared.submit(request)
     }
 }
