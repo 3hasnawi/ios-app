@@ -55,6 +55,19 @@ nonisolated enum BankReconciliationPDF {
         guard let left = parts(actual), let right = parts(expected) else { return false }
         return left == right || left == Array(right.reversed())
     }
+    /// قد تنقل قراءة PDF السنة من آخر البيان العربي إلى أوله لاتجاه النص.
+    static func matchesDescription(_ actual: String, expected: String) -> Bool {
+        if TransferAnbarTablePDF.matchesExtractedCell(actual, expected: expected) { return true }
+        func trailingDigits(_ value: String) -> (String, String)? {
+            let suffix = value.reversed().prefix { $0.isASCII && $0.isNumber }
+            guard !suffix.isEmpty else { return nil }
+            let digits = String(suffix.reversed())
+            return (String(value.dropLast(digits.count)), digits)
+        }
+        guard let (text, digits) = trailingDigits(expected), !text.isEmpty, actual.hasPrefix(digits) else { return false }
+        let readText = String(actual.dropFirst(digits.count))
+        return TransferAnbarTablePDF.matchesExtractedCell(readText, expected: text)
+    }
     /// سياق المطبوع يستخدم إحداثيات UIKit؛ تعكس الصورة كي يظهر الشعار باتجاهه الصحيح.
     private static func drawImage(_ image: CGImage, in rect: CGRect, alpha: CGFloat, context: CGContext) {
         context.saveGState()
@@ -175,7 +188,8 @@ nonisolated enum BankReconciliationPDF {
                 let wanted = identity(expected)
                 let isDate = column == 0 || column == 6
                 let matches = actual == wanted || (isDate && matchesDate(actual, expected: wanted)) ||
-                    ((column == 1 || column == 5) && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
+                    (column == 1 && matchesDescription(actual, expected: wanted)) ||
+                    (column == 5 && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
                 guard matches else {
                     let area = column >= 5 ? tr("التوقيع", "signature") : [tr("التاريخ", "date"), tr("البيان", "description"), tr("الدائن", "credit"), tr("المدين", "debit"), tr("الرصيد", "balance")][column]
                     throw Failure.verification(page: pageIndex + 1, area: area, row: row)

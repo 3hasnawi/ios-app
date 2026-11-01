@@ -67,6 +67,14 @@ import CryptoKit
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/٢٧", expected: "27/10/2026"), "reconciliation date extraction accepts reversed components")
         try check(!BankReconciliationPDF.matchesDate("٢٠٢٦/١١/٢٧", expected: "27/10/2026"), "reconciliation date extraction rejects changed dates")
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/", expected: "/ ١٠ / ٢٠٢٦"), "signature date extraction")
+        try check(BankReconciliationPDF.matchesDescription("2026تمويلرواتبشهرايلول", expected: "تمويلرواتبشهرايلول2026"), "reconciliation mixed-direction description")
+        try check(!BankReconciliationPDF.matchesDescription("2025تمويلرواتبشهرايلول", expected: "تمويلرواتبشهرايلول2026"), "reconciliation description rejects changed year")
+        try check(!BankReconciliationPDF.matchesDescription("2026تمويلرواتبشهرتشرين", expected: "تمويلرواتبشهرايلول2026"), "reconciliation description rejects changed text")
+        var mixedStatement = statement
+        mixedStatement.movements[1].description = "تمويل رواتب شهر ايلول 2026"
+        let mixedStatementPDF = try await BankReconciliationPDF.make(mixedStatement)
+        defer { try? FileManager.default.removeItem(at: mixedStatementPDF) }
+        try check(PDFDocument(url: mixedStatementPDF) != nil, "reconciliation PDF mixed Arabic and year")
         let statementPDF = try await BankReconciliationPDF.make(statement)
         defer { try? FileManager.default.removeItem(at: statementPDF) }
         let statementDocument = PDFDocument(url: statementPDF)
