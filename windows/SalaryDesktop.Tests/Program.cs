@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Claunia.PropertyList;
+using SkiaSharp;
 using SalaryDesktop.Core;
 
 static void Check(bool condition, string message)
@@ -38,6 +39,31 @@ static void MakeMonthlyXlsx(string path, string[] headers, string[][] rows)
     Entry(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
     string Row(string[] cells, int n) => $"<row r=\"{n}\">" + string.Concat(cells.Select((s, i) => $"<c r=\"{(char)('A' + i)}{n}\" t=\"inlineStr\"><is><t>{System.Security.SecurityElement.Escape(s)}</t></is></c>")) + "</row>";
     Entry(zip, "xl/worksheets/sheet1.xml", "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>" + Row(headers, 1) + string.Concat(rows.Select((r, i) => Row(r, i + 2))) + "</sheetData></worksheet>");
+}
+static byte[] MakeReferenceArchive(string fontPath, string payer, string beneficiary, bool damaged = false)
+{
+    byte[] Pdf(int pages, string id)
+    {
+        using var file = new MemoryStream();
+        using (var pdf = SKDocument.CreatePdf(file))
+        using (var face = SKTypeface.FromFile(fontPath))
+        using (var paint = new SKPaint { Typeface = face, TextSize = 10, Color = SKColors.Black })
+        {
+            for (int i = 0; i < pages; i++) { var canvas = pdf.BeginPage(595.3f, 841.9f); canvas.Clear(SKColors.White); if (i == 0 && id == "food_company") { canvas.DrawText(payer, 386, 364, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id.EndsWith("group", StringComparison.Ordinal)) canvas.DrawText(payer, 387, 350, paint); pdf.EndPage(); }
+            pdf.Close();
+        }
+        return file.ToArray();
+    }
+    string[] ids = ["rafidain_group", "other_banks_group", "cash_salary", "food_company", "food_tax", "tax_social", "contracts", "water", "housing", "rafidain_anbar", "ramadi"];
+    var records = ids.Select(id => { var pages = id.EndsWith("group", StringComparison.Ordinal) ? 2 : 1; var content = Pdf(pages, id); return (id, pages, content); }).ToArray();
+    var manifest = new { version = 1, templates = records.Select((r, i) => new { id = r.id, path = $"templates/{r.id}.pdf", sha256 = damaged && i == 0 ? new string('0', 64) : Convert.ToHexString(SHA256.HashData(r.content)).ToLowerInvariant(), pages = r.pages }).ToArray() };
+    using var output = new MemoryStream();
+    using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
+    {
+        Entry(zip, "manifest.json", JsonSerializer.Serialize(manifest));
+        foreach (var record in records) { var entry = zip.CreateEntry($"templates/{record.id}.pdf"); using var stream = entry.Open(); stream.Write(record.content); }
+    }
+    return output.ToArray();
 }
 static void MakeBackup(string path, bool wrongCount = false, bool duplicate = false, bool omitPdf = false, bool omitRecentMonth = false, bool brokenLedger = false)
 {
@@ -232,6 +258,14 @@ try
     var invalidBank = BankStatementCalculator.Calculate(snapshot with { Employees = new[] { incompleteContract with { RawColumns = invalidRaw } } }, "أيلول 2026");
     Check(invalidBank.TransferWarnings.Any(w => w.Contains("غير صالحة", StringComparison.Ordinal)), "invalid original payroll source blocks transfer");
     const string fakePayer = "IQ06TEST123000000000001", fakeReceiver = "IQ76TEST123000000000002";
+    var referencesArchive = MakeReferenceArchive(font, fakePayer, fakeReceiver);
+    var references = LetterReferencePack.ReadArchive(referencesArchive);
+    Check(references.Count == 11 && LetterReferencePack.IndividualAccount(references, "food_company", fakePayer) == fakeReceiver, "reference pack validates PDF and extracts the checked beneficiary");
+    Check(LetterReferencePack.IndividualAccount(references, "rafidain_group", fakePayer) is null, "group payer matches reference without guessing beneficiary");
+    try { _ = LetterReferencePack.IndividualAccount(references, "food_company", fakeReceiver); throw new InvalidOperationException("mismatched payer accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = LetterReferencePack.ReadArchive(MakeReferenceArchive(font, fakePayer, fakeReceiver, damaged: true)); throw new InvalidOperationException("damaged reference accepted"); }
+    catch (InvalidDataException) { }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
@@ -284,19 +318,7 @@ try
     var fontBytes = File.ReadAllBytes(font); var logoBytes = File.ReadAllBytes(logoPath);
     try { GroupLetterFont.Validate(fontBytes); throw new InvalidOperationException("wrong letter font accepted"); }
     catch (InvalidDataException) { }
-    byte[] groupPdf;
-    try { groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes); }
-    catch (InvalidDataException) when (OperatingSystem.IsWindows())
-    {
-        foreach (var name in new[] { "times.ttf", "tahoma.ttf", "segoeui.ttf" })
-        {
-            var alternative = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), name);
-            if (!File.Exists(alternative)) { Console.WriteLine("Synthetic font diagnostic: " + name + " unavailable"); continue; }
-            try { _ = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, File.ReadAllBytes(alternative), logoBytes); Console.WriteLine("Synthetic font diagnostic: " + name + " passed"); }
-            catch (InvalidDataException ex) { Console.WriteLine("Synthetic font diagnostic: " + name + " " + ex.Message); }
-        }
-        throw;
-    }
+    var groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes);
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
     var changedBodyMonthPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { BodyMonth = "كانون الأول 2025", OutgoingMonth = 11 }, fontBytes, fontBytes, logoBytes);
     using (var monthDocument = UglyToad.PdfPig.PdfDocument.Open(changedBodyMonthPdf))

@@ -421,6 +421,8 @@ public partial class MainWindow : Window
         {
             var letter = await Task.Run(() => {
                 if (payrollStore.Load(root).Revision != payroll.Revision || linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت بيانات التحويل؛ أعد فتح النسخة.");
+                var references = LetterReferencePack.Read(active);
+                _ = LetterReferencePack.IndividualAccount(references, group == TransferGroup.Rafidain ? "rafidain_group" : "other_banks_group", plan.PayerAccount);
                 return GroupLetterPreparation.Prepare(plan, group, DateOnly.FromDateTime(DateTime.Now));
             });
             if (!ReferenceEquals(active, snapshot) || plan.Month != SelectedMonth || group != CurrentTransferGroup) { MessageBox.Show(this, "تغيّر الشهر أو المجموعة؛ أعد فتح الكتاب.", "كتاب المجموعة"); return; }

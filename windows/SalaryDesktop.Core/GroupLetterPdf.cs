@@ -99,13 +99,13 @@ public static class GroupLetterPdf
             for (float size = 10.5f; size >= 6.5f; size -= .5f)
             {
                 paint.TextSize = size;
-                wrapped = cells.Select(row => row.Select((cell, i) => i is 0 or 2 or 4 ? new List<string> { cell } : Wrap(cell, tableShaper, paint, X[i + 1] - X[i] - 6)).ToArray()).ToArray();
+                wrapped = cells.Select(row => row.Select((cell, i) => i is 0 or 2 or 4 ? new List<string> { cell } : ArabicPresentation.Wrap(cell, paint, X[i + 1] - X[i] - 6)).ToArray()).ToArray();
                 heights = wrapped.Select(row => Math.Max(11, row.Max(lines2 => lines2.Count) * (size + 2) + 4)).ToArray();
                 if (heights.Sum() <= 710 - 22 - 22) { fits = true; break; }
             }
             if (!fits) throw new InvalidDataException("جدول المجموعة لا يتسع في صفحة واحدة بخط مقروء.");
             var headings = new[] { "المبلغ", "الفرع", "رقم الآيبان", "الجهة", "ت" }; float top = 80; const float headerHeight = 22;
-            for (int i = 0; i < 5; i++) { canvas.DrawRect(X[i], top, X[i+1]-X[i], headerHeight, stroke); ReconciliationPdf.Fit(canvas, tableShaper, paint, headings[i], X[i], X[i+1], top + 15); }
+            for (int i = 0; i < 5; i++) { canvas.DrawRect(X[i], top, X[i+1]-X[i], headerHeight, stroke); ArabicPresentation.Fit(canvas, paint, headings[i], X[i], X[i+1], top + 15); }
             top += headerHeight;
             var boxes = new List<(float Y, float Height)>();
             for (int row = 0; row < cells.Length; row++)
@@ -114,13 +114,13 @@ public static class GroupLetterPdf
                 for (int col = 0; col < 5; col++)
                 {
                     canvas.DrawRect(X[col], top, X[col+1]-X[col], h, stroke);
-                    for (int j = 0; j < wrapped[row][col].Count; j++) ReconciliationPdf.Fit(canvas, tableShaper, paint, wrapped[row][col][j], X[col], X[col+1], top + paint.TextSize + 2 + j * (paint.TextSize + 2), col is 1 or 3);
+                    for (int j = 0; j < wrapped[row][col].Count; j++) ArabicPresentation.Fit(canvas, paint, wrapped[row][col][j], X[col], X[col+1], top + paint.TextSize + 2 + j * (paint.TextSize + 2), col is 1 or 3);
                 }
                 top += h;
             }
             for (int i = 0; i < 5; i++) canvas.DrawRect(X[i], top, X[i+1]-X[i], 22, stroke);
-            ReconciliationPdf.Fit(canvas, tableShaper, paint, Eastern(Group(plan.Total)), X[0], X[1], top + 15);
-            ReconciliationPdf.Fit(canvas, tableShaper, paint, "المجموع", X[3], X[4], top + 15);
+            ArabicPresentation.Fit(canvas, paint, Eastern(Group(plan.Total)), X[0], X[1], top + 15);
+            ArabicPresentation.Fit(canvas, paint, "المجموع", X[3], X[4], top + 15);
             pdf.EndPage(); pdf.Close();
             var bytes = memory.ToArray();
             using var read = PdfDocument.Open(bytes);
