@@ -1,0 +1,84 @@
+<Window x:Class="SalaryDesktop.SalaryTrustWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="أمانات الرواتب" Width="1200" Height="800" MinWidth="940" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+  <Grid Margin="22">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <!-- الرأس وبطاقة المتبقي المؤكد (مثل بطاقة الأمانات في الآيفون). -->
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Border Width="52" Height="52" CornerRadius="13" Background="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource Icon}" Text="&#xE8C7;" FontSize="22" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/></Border>
+      <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="أمانات الرواتب" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock Text="رواتب الكاش غير المستلمة · الدفتر المشترك مع الآيفون" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
+      </StackPanel>
+      <Border Grid.Column="2" CornerRadius="14" Padding="22,12" MinWidth="290">
+        <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush></Border.Background>
+        <StackPanel>
+          <TextBlock Text="المتبقي المؤكد" Foreground="#CFE8DF" FontSize="12.5"/>
+          <TextBlock x:Name="OutstandingText" Text="—" Foreground="White" FontSize="26" FontWeight="SemiBold"/>
+          <TextBlock x:Name="CountsText" Foreground="#CFE8DF" FontSize="12.5"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <!-- الإجراءات: الافتتاح، كاش الشهر، الربط بكتاب؛ والكشف يساراً. -->
+    <DockPanel Grid.Row="1" Margin="0,16,0,0">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button Click="PreviewReport" Margin="0,0,8,0" ToolTip="معاينة كشف القيود المعروضة بعد المرشحات"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="معاينة"/></StackPanel></Button>
+        <Button Click="PrintReport" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
+        <Button Click="ExportExcel" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE9F9;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="Excel"/></StackPanel></Button>
+        <Button Style="{StaticResource ActionButton}" Click="ExportPdf"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="PDF"/></StackPanel></Button>
+      </StackPanel>
+      <WrapPanel>
+        <Button x:Name="ImportButton" Click="ImportOpening" Margin="0,0,8,0" ToolTip="ملف الأمانات الافتتاحي حتى أيلول 2026؛ يُستورد مرة واحدة على جهاز واحد"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8B5;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="استيراد الملف الافتتاحي"/></StackPanel></Button>
+        <Button Click="AddCash" Margin="0,0,8,0" ToolTip="إضافة رواتب الكاش لشهر بعد أيلول 2026 (تُضاف تلقائياً عند استيراد الرواتب)"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE710;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="مراجعة كاش شهر"/></StackPanel></Button>
+        <Button x:Name="LinkButton" Click="LinkArchive" ToolTip="ربط القيود المحددة بكتاب من الأرشيف؛ لا يسجّل صرفاً"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE71B;" FontSize="13" Margin="0,0,7,0"/><TextBlock x:Name="LinkText" Text="ربط المحدد بكتاب"/></StackPanel></Button>
+      </WrapPanel>
+    </DockPanel>
+
+    <!-- المرشحات: تنطبق على الجدول والكشف PDF وExcel. -->
+    <Grid Grid.Row="2" Margin="0,12,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBox x:Name="SearchBox" Height="38" Tag="ابحث بالاسم أو الحالة…" TextChanged="FiltersChanged" MaxWidth="420" HorizontalAlignment="Left" Width="420"/>
+      <ComboBox x:Name="MonthPicker" Grid.Column="1" Width="190" Height="38" Margin="10,0,0,0" DisplayMemberPath="Label" SelectionChanged="FiltersChanged" ToolTip="الشهر"/>
+      <ComboBox x:Name="StatusPicker" Grid.Column="2" Width="170" Height="38" Margin="10,0,0,0" DisplayMemberPath="Title" SelectionChanged="FiltersChanged" ToolTip="حالة الصرف"/>
+    </Grid>
+
+    <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Padding="0">
+      <Grid>
+        <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
+            <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/>
+            <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="1.1*" SortMemberPath="Period"/>
+            <DataGridTextColumn Header="الأمانة" Binding="{Binding Amount}" Width="*" SortMemberPath="AmountValue"/>
+            <DataGridTextColumn Header="المصروف" Binding="{Binding Paid}" Width="*"/>
+            <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="*" SortMemberPath="RemainingValue"/>
+            <DataGridTextColumn Header="الحالة" Binding="{Binding CaseStatus}" Width="1.6*"/>
+            <DataGridTemplateColumn Header="الصرف" Width="1.1*" SortMemberPath="Status">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <Border x:Name="Chip" CornerRadius="9" Padding="8,2" HorizontalAlignment="Left" Background="{DynamicResource TbgF1F5F4}">
+                    <TextBlock x:Name="ChipText" Text="{Binding Status}" FontSize="12"/>
+                  </Border>
+                  <DataTemplate.Triggers>
+                    <DataTrigger Binding="{Binding Kind}" Value="paid"><Setter TargetName="Chip" Property="Background" Value="{DynamicResource PrimarySoft}"/><Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource Primary}"/></DataTrigger>
+                    <DataTrigger Binding="{Binding Kind}" Value="partial"><Setter TargetName="Chip" Property="Background" Value="{DynamicResource AccentSoft}"/><Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource Accent}"/></DataTrigger>
+                    <DataTrigger Binding="{Binding Kind}" Value="review"><Setter TargetName="Chip" Property="Background" Value="{DynamicResource WarnSoft}"/><Setter TargetName="ChipText" Property="Foreground" Value="{DynamicResource Warn}"/></DataTrigger>
+                  </DataTemplate.Triggers>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTextColumn Header="كتب" Binding="{Binding Documents}" Width="0.5*"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <TextBlock x:Name="EmptyText" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="460" Visibility="Collapsed"/>
+      </Grid>
+    </Border>
+
+    <DockPanel Grid.Row="4" Margin="0,12,0,0">
+      <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>
+      <TextBlock x:Name="ShownText" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
+    </DockPanel>
+  </Grid>
+</Window>

@@ -1,0 +1,92 @@
+<Window x:Class="SalaryDesktop.SalaryTrustEntryWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="تفاصيل الأمانة" Width="760" Height="820" MinWidth="620" MinHeight="560" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+  <DockPanel Margin="22">
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+      <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>
+      <TextBlock Text="ربط الكتاب أو إزالته لا يسجّل صرفاً ولا يغيّر الرصيد." Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+    </DockPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="0,0,6,0">
+        <TextBlock x:Name="NameText" FontSize="21" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock x:Name="IdentityText" Foreground="{DynamicResource Muted}" Margin="0,2,0,12" TextWrapping="Wrap"/>
+        <!-- الأمانة والمصروف والمتبقي. -->
+        <UniformGrid Columns="3" Margin="0,0,0,12">
+          <Border Style="{StaticResource Card}" Margin="0,0,8,0" Padding="14,10"><StackPanel><TextBlock Text="مبلغ الأمانة" Style="{StaticResource Hint}"/><TextBlock x:Name="AmountText" FontSize="20" FontWeight="SemiBold"/></StackPanel></Border>
+          <Border Style="{StaticResource Card}" Margin="0,0,8,0" Padding="14,10"><StackPanel><TextBlock Text="المصروف" Style="{StaticResource Hint}"/><TextBlock x:Name="PaidText" FontSize="20" FontWeight="SemiBold"/></StackPanel></Border>
+          <Border CornerRadius="12" Padding="14,10">
+            <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush></Border.Background>
+            <StackPanel><TextBlock x:Name="RemainingLabel" Text="المتبقي" Foreground="#CFE8DF" FontSize="12.5"/><TextBlock x:Name="RemainingText" FontSize="20" FontWeight="SemiBold" Foreground="White"/></StackPanel>
+          </Border>
+        </UniformGrid>
+
+        <!-- الحالة وملاحظات القيد. -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Style="{StaticResource CardTitle}" Text="الحالة والملاحظات"/>
+            <TextBlock Text="الحالة (من عمود الملاحظات بعد صافي الراتب)" Style="{StaticResource SectionLabel}"/>
+            <TextBox x:Name="CaseStatusBox" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ImportedText" Style="{StaticResource Hint}" Margin="2,6,0,0" Visibility="Collapsed"/>
+            <TextBlock Text="ملاحظات القيد" Style="{StaticResource SectionLabel}"/>
+            <TextBox x:Name="NoteBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" VerticalContentAlignment="Top"/>
+            <Button Content="حفظ الحالة والملاحظات" Click="SaveNotes" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- كتب الصرف المرتبطة. -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <DockPanel>
+              <Button DockPanel.Dock="Right" Click="LinkBook"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE71B;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="ربط بكتاب من الأرشيف"/></StackPanel></Button>
+              <TextBlock Style="{StaticResource CardTitle}" Text="كتب الصرف المرتبطة" VerticalAlignment="Center"/>
+            </DockPanel>
+            <StackPanel x:Name="BooksPanel" Margin="0,8,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- قيد للمراجعة: يحدد المستخدم مصيره. -->
+        <Border x:Name="ReviewCard" Background="{DynamicResource WarnSoft}" BorderBrush="{DynamicResource WarnLine}" BorderThickness="1" CornerRadius="12" Padding="16,12" Margin="0,0,0,12" Visibility="Collapsed">
+          <StackPanel>
+            <TextBlock Text="قيد للمراجعة" FontWeight="SemiBold" Foreground="{DynamicResource Warn}"/>
+            <TextBlock Text="هذا القيد مستبعد من الرصيد حتى تحدد حالته (مثل «قطع علاقة تقاعد»). لا يُفترض أنه مصروف أو غير مصروف." TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,4,0,10"/>
+            <WrapPanel>
+              <Button Content="اعتمادها غير مصروفة" Click="ResolveOutstanding" Margin="0,0,8,0"/>
+              <Button Content="اعتمادها مصروفة بالكامل" Click="ResolvePaid"/>
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- دفعات الصرف. -->
+        <Border x:Name="PaymentsCard" Style="{StaticResource Card}" Margin="0,0,0,12">
+          <StackPanel>
+            <TextBlock Style="{StaticResource CardTitle}" Text="دفعات الصرف"/>
+            <StackPanel x:Name="PaymentsPanel" Margin="0,8,0,0"/>
+          </StackPanel>
+        </Border>
+
+        <!-- تسجيل صرف: المبلغ إلزامي، ورقم الكتاب وتاريخه والملاحظة اختيارية. -->
+        <Border x:Name="PaymentCard" Style="{StaticResource Card}">
+          <StackPanel>
+            <TextBlock Style="{StaticResource CardTitle}" Text="تسجيل صرف"/>
+            <Grid Margin="0,8,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="مبلغ الصرف" Style="{StaticResource SectionLabel}"/>
+                <TextBox x:Name="AmountBox" Height="36" FlowDirection="LeftToRight" TextAlignment="Right"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="رقم الكتاب (اختياري)" Style="{StaticResource SectionLabel}"/>
+                <TextBox x:Name="BookNumberBox" Height="36"/>
+              </StackPanel>
+            </Grid>
+            <CheckBox x:Name="HasDateBox" Content="إضافة تاريخ الكتاب (اختياري)" Margin="0,12,0,6" Click="DateToggled"/>
+            <DatePicker x:Name="DateBox" Width="200" HorizontalAlignment="Left" IsEnabled="False"/>
+            <TextBlock Text="ملاحظات الصرف (اختياري)" Style="{StaticResource SectionLabel}"/>
+            <TextBox x:Name="PaymentNoteBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="50" VerticalContentAlignment="Top"/>
+            <Button Style="{StaticResource ActionButton}" Content="حفظ الصرف" Click="SavePayment" HorizontalAlignment="Left" Margin="0,12,0,0"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

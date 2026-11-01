@@ -1075,6 +1075,70 @@ try
     var trustRead = SalaryTrust.ReadFromBackup(BackupReader.Read(trustBackup));
     Check(trustRead.Entries.Count == 2 && trustRead.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية" &&
           Guid.Parse(trustRead.Entries[0].BookIds!.Single()) == fictionalBook.Id, "trust ledger and archived document link survive shared backup");
+    var trustAssets = ReportAssets.Load(Path.GetFullPath("SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png"));
+    var trustStamp = new DateTime(2026, 11, 2, 9, 0, 0);
+    // رقم كتاب الصرف وتاريخه اختياريان ومستقلان كما في الآيفون؛ التاريخ غير الفارغ يجب أن يكون صحيحاً.
+    SalaryTrustPayment Pay(long amount, string number, string date) => new(Guid.NewGuid().ToString(), amount, number, date, "");
+    foreach (var (number, date) in new[] { ("", ""), ("كتاب 7", ""), ("", "2026-10-05"), ("كتاب 8", "2026-10-06") })
+        SalaryTrust.Validate(trustLedger with { Entries = [trustEntry with { Payments = [Pay(100, number, date), Pay(200, "", "")] }] });
+    foreach (var date in new[] { "2026-13-01", "26-10-05", "2026-1-5", "1899-12-31", "2026/10/05" })
+    {
+        try { SalaryTrust.Validate(trustLedger with { Entries = [trustEntry with { Payments = [Pay(10, "", date)] }] }); throw new InvalidOperationException("invalid optional book date accepted: " + date); }
+        catch (InvalidDataException) { }
+    }
+    try { SalaryTrust.Validate(trustLedger with { Entries = [trustEntry with { Payments = [Pay(600, "", ""), Pay(500, "", "")] }] }); throw new InvalidOperationException("partial payments above the deposit accepted"); }
+    catch (InvalidDataException) { }
+    // دفتر بصيغة الآيفون: معرفات بأحرف كبيرة، بلا bookIds، ودفعة بلا رقم ولا تاريخ.
+    var iphoneId = Guid.NewGuid().ToString().ToUpperInvariant(); var iphonePayment = Guid.NewGuid().ToString().ToUpperInvariant();
+    var iphoneLedger = SalaryTrust.Decode(Encoding.UTF8.GetBytes("{\"entries\":[{\"amount\":900,\"caseStatus\":\"\",\"id\":\"" + iphoneId + "\",\"importedStatus\":\"\",\"legacyPaid\":false,\"month\":10,\"name\":\"منتسب آيفون وهمي\",\"note\":\"\",\"payments\":[{\"amount\":400,\"bookDate\":\"\",\"bookNumber\":\"\",\"id\":\"" + iphonePayment + "\",\"note\":\"\"}],\"rank\":\"\",\"reviewPending\":false,\"workplace\":\"\",\"year\":2026}],\"openingImported\":true,\"version\":1}"));
+    Check(iphoneLedger.Entries.Single().Payments.Single().BookNumber == "" && SalaryTrust.Remaining(iphoneLedger.Entries.Single()) == 500 && iphoneLedger.Entries.Single().BookIds is null, "iPhone ledger with empty book number and date opens on Windows");
+    var iphoneBackup = Path.Combine(root, "trust-iphone-format.zip");
+    ReconciliationBackupExport.Write(snapshot, [], iphoneBackup, iphoneLedger);
+    Check(SalaryTrust.ReadFromBackup(BackupReader.Read(iphoneBackup)).Entries.Single().Payments.Single().BookDate == "", "empty book fields survive the shared backup");
+    // المرشحات والمتبقي المؤكد والكشف (مطابق للآيفون).
+    var paidEntry = trustEntry with { Id = Guid.NewGuid().ToString(), Name = "منتسب مصروف وهمي", Payments = [Pay(1000, "", "")] };
+    var unpaidEntry = trustEntry with { Id = Guid.NewGuid().ToString(), Name = "منتسب غير مصروف وهمي", Payments = [] };
+    var filterLedger = new SalaryTrustLedger(1, [trustEntry, reviewEntry, paidEntry, unpaidEntry], true);
+    int Matches(SalaryTrustFilter filter) => filterLedger.Entries.Count(e => SalaryTrust.Includes(filter, e));
+    Check(Matches(SalaryTrustFilter.All) == 4 && Matches(SalaryTrustFilter.Review) == 1 && Matches(SalaryTrustFilter.Paid) == 1 && Matches(SalaryTrustFilter.Partial) == 1 &&
+          Matches(SalaryTrustFilter.Unpaid) == 1 && Matches(SalaryTrustFilter.Unfinished) == 2 && SalaryTrust.Outstanding(filterLedger.Entries) == 1700, "trust filters and confirmed outstanding exclude review entries");
+    var trustSheet = SalaryTrustReports.Sheet(filterLedger, filterLedger.Entries, ReportSheet.DefaultHeader, "كل الأشهر", "كل الحالات", "");
+    Check(trustSheet.Rows.Count == 5 && trustSheet.Rows[^1][1] == "المتبقي المؤكد" && trustSheet.Rows[^1][7] == "1,700" && trustSheet.Rows[^1][3].StartsWith("للمراجعة", StringComparison.Ordinal) && trustSheet.Rows[1][7] == "—", "trust report rows and confirmed outstanding line");
+    var trustPdf = SalaryTrustReports.Pdf(trustSheet, trustAssets, trustStamp);
+    using (var read = UglyToad.PdfPig.PdfDocument.Open(trustPdf)) Check(read.NumberOfPages == 1, "trust report PDF");
+    var trustExcel = Path.Combine(root, "trust-report.xlsx"); ReportFiles.Save(SalaryTrustReports.Excel(trustSheet, filterLedger.Entries), trustExcel, ".xlsx");
+    using (var stream = File.OpenRead(trustExcel)) using (var reader = ExcelDataReader.ExcelReaderFactory.CreateOpenXmlReader(stream))
+    {
+        reader.Read(); reader.Read(); reader.Read(); reader.Read();
+        Check(Convert.ToDouble(reader.GetValue(5)) == 1000 && Convert.ToDouble(reader.GetValue(7)) == 700, "trust Excel keeps amounts as numbers");
+    }
+    try { _ = SalaryTrustReports.Sheet(filterLedger, [trustEntry with { Amount = 5 }], ReportSheet.DefaultHeader, "", "", ""); throw new InvalidOperationException("stale trust report accepted"); }
+    catch (InvalidDataException) { }
+    var longStatus = filterLedger with { Entries = [unpaidEntry with { CaseStatus = string.Concat(Enumerable.Repeat("حالة طويلة جداً لا تتسع ", 12)) }] };
+    try { _ = SalaryTrustReports.Pdf(SalaryTrustReports.Sheet(longStatus, longStatus.Entries, ReportSheet.DefaultHeader, "", "", ""), trustAssets, trustStamp); throw new InvalidOperationException("truncated trust PDF accepted"); }
+    catch (InvalidDataException) { }
+    // الملف الافتتاحي: مبالغ بأرقام عربية وصف غير صالح يوقف الاستيراد كله.
+    var arabicDigits = Path.Combine(root, "trust-arabic-digits.xlsx");
+    MakeMonthlyXlsx(arabicDigits, ["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "الحالة"], [["منتسب وهمي", "١٬٠٠٠", "أيلول", "2026", ""]]);
+    Check(SalaryTrustSpreadsheet.Read(arabicDigits).Entries.Single().Amount == 1000, "opening trust amounts with Arabic digits");
+    var badOpening = Path.Combine(root, "trust-bad.xlsx");
+    MakeMonthlyXlsx(badOpening, ["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "الحالة"], [["منتسب وهمي", "1000", "أيلول", "2026", ""], ["منتسب آخر", "1000", "تشرين الأول", "2026", ""]]);
+    try { _ = SalaryTrustSpreadsheet.Read(badOpening); throw new InvalidOperationException("opening entry after the cutoff accepted"); }
+    catch (InvalidDataException) { }
+    // دفتر الجهاز وكاش الأشهر بعد الافتتاح: إضافة مرة واحدة، ورفض تغيّر الحالة أو حفظ قديم.
+    var cashMonth = "تشرين الأول 2026";
+    var cashSource = snapshot with { Months = snapshot.Months.Append(new PayrollMonth(cashMonth, 1, 0)).ToArray(), Employees = [contractPerson with { Month = cashMonth, RawColumns = statusColumns }] };
+    var localTrust = new LocalSalaryTrustStore(Path.Combine(root, "salary-trust"));
+    var emptyTrust = localTrust.Load(cashSource);
+    var savedTrust = localTrust.Save(cashSource, emptyTrust, openingTrust);
+    var withCash = localTrust.AddCash(cashSource, cashMonth);
+    Check(withCash.Ledger.Entries.Count == 4 && withCash.Ledger.Entries[^1].Amount == 500 && withCash.Ledger.Entries[^1].CaseStatus == "حالة تجريبية" && withCash.Ledger.Entries[^1].Month == 10, "cash salaries after the opening are added as deposits");
+    Check(localTrust.AddCash(cashSource, cashMonth).Revision == withCash.Revision, "adding the same cash month twice changes nothing");
+    var changedStatus = cashSource with { Employees = [contractPerson with { Month = cashMonth, RawColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "صافي الراتب", "الملاحظات4" }, values = new[] { "500", "حالة أخرى" } }) }] };
+    try { _ = localTrust.AddCash(changedStatus, cashMonth); throw new InvalidOperationException("changed cash status accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = localTrust.Save(cashSource, savedTrust, openingTrust); throw new InvalidOperationException("stale trust save accepted"); }
+    catch (InvalidDataException) { }
     Console.WriteLine("Salary trust ledger checked with fictional data.");
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");
 }

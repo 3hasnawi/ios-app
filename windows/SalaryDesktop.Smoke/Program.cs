@@ -254,6 +254,19 @@ static class Program
                     var statementWindow = Fit(new EmployeeDeductionWindow(rich, new DeductionPerson(PersonProfiles.Key(sampleDeduction.Name), sampleDeduction.Name, sampleDeduction.Rank), sampleDeduction.Title) { Owner = main }, 1120, 780);
                     statementWindow.Show(); await Task.Delay(1800);
                     Check(((ItemsControl)statementWindow.FindName("Rows")).Items.Count > 0, "employee deduction statement rows were not shown"); Shot(statementWindow, "41-employee-deductions"); statementWindow.Close();
+                    // أمانات الرواتب ببيانات وهمية: الجدول بالمرشحات، وقيد بدفعة جزئية بلا رقم كتاب ولا تاريخ.
+                    var trustStore = new LocalSalaryTrustStore(Path.Combine(directory, "salary-trust"));
+                    SalaryTrustPayment Pay(long amount, string number, string date, string note) => new(Guid.NewGuid().ToString(), amount, number, date, note);
+                    SalaryTrustEntry Trust(string name, int month, long amount, string status, bool legacy = false, bool review = false, params SalaryTrustPayment[] payments) =>
+                        new(Guid.NewGuid().ToString(), name, "شرطي", "قسم وهمي", 2026, month, amount, status, "", legacy ? "صرف" : review ? "قطع علاقة تقاعد" : "", legacy, review, payments);
+                    var partialTrust = Trust("منتسب وهمي أول", 10, 750000, "لم يراجع", false, false, Pay(250000, "", "", "صرف جزئي بلا كتاب"), Pay(100000, "كتاب 15", "2026-10-20", ""));
+                    var fictionalTrust = new SalaryTrustLedger(1, [partialTrust, Trust("منتسب وهمي ثان", 10, 820000, "إجازة"), Trust("منتسب وهمي ثالث", 9, 640000, "", true),
+                        Trust("منتسب وهمي رابع", 8, 910000, "قطع علاقة", false, true), Trust("منتسب وهمي خامس", 9, 560000, "سفر", false, false, Pay(560000, "كتاب 9", "", ""))], true);
+                    trustStore.Save(rich, trustStore.Load(rich), fictionalTrust);
+                    var trustWindow = Fit(new SalaryTrustWindow(rich, trustStore, () => true) { Owner = main }, 1200, 800); trustWindow.Show(); await Task.Delay(800);
+                    Check(((DataGrid)trustWindow.FindName("Table")).Items.Count == 5, "salary trust rows were not shown"); Shot(trustWindow, "43-salary-trust");
+                    var trustEntryWindow = Fit(new SalaryTrustEntryWindow(trustWindow, trustWindow.Latest(partialTrust.Id)!, rich.Books) { Owner = trustWindow }, 760, 820); trustEntryWindow.Show(); await Task.Delay(600);
+                    Shot(trustEntryWindow, "44-salary-trust-entry"); trustEntryWindow.Close(); trustWindow.Close();
                     // الرئيسية: شريط التدقيق والفئات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
                     Check(((FrameworkElement)main.FindName("AlertStrip")).Visibility == Visibility.Visible && ((ItemsControl)main.FindName("HomeAlerts")).Items.Count > 0, "home audit strip was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");

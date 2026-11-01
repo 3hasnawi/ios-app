@@ -10,6 +10,7 @@ public sealed record SalaryTrustPayment(string Id, long Amount, string BookNumbe
 public sealed record SalaryTrustEntry(string Id, string Name, string Rank, string Workplace, int Year, int Month,
     long Amount, string CaseStatus, string Note, string ImportedStatus, bool LegacyPaid, bool ReviewPending, IReadOnlyList<SalaryTrustPayment> Payments, IReadOnlyList<string>? BookIds = null);
 public sealed record SalaryTrustLedger(int Version, IReadOnlyList<SalaryTrustEntry> Entries, bool OpeningImported);
+public enum SalaryTrustFilter { All, Unfinished, Unpaid, Partial, Paid, Review }
 
 public static class SalaryTrust
 {
@@ -38,9 +39,10 @@ public static class SalaryTrust
             long paid = 0;
             foreach (var p in e.Payments)
             {
+                // رقم الكتاب وتاريخه اختياريان ومستقلان (مثل الآيفون): السلسلة الفارغة تعني أن المعلومة غير متوفرة.
                 if (!Guid.TryParse(p.Id, out var paymentId) || !payments.Add(paymentId) || p.Amount <= 0 || p.Amount > e.Amount ||
-                    string.IsNullOrWhiteSpace(p.BookNumber) || p.BookNumber.Length > 150 || p.Note is null || p.Note.Length > 2000 ||
-                    !DateOnly.TryParseExact(p.BookDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) || paid > e.Amount - p.Amount)
+                    p.BookNumber is null || p.BookNumber.Length > 150 || p.Note is null || p.Note.Length > 2000 ||
+                    p.BookDate is null || !(p.BookDate.Length == 0 || ValidDate(p.BookDate)) || paid > e.Amount - p.Amount)
                     throw new InvalidDataException("دفعة الصرف غير صالحة أو تتجاوز الرصيد.");
                 paid += p.Amount;
             }
@@ -48,6 +50,34 @@ public static class SalaryTrust
             total += e.Amount;
         }
     }
+    /// تاريخ ميلادي مدني yyyy-MM-dd بين 1900 و2200 (مطابق لـ validDate في الآيفون).
+    public static bool ValidDate(string text) =>
+        text.Length == 10 && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) && date.Year is >= 1900 and <= 2200;
+
+    /// مرشح حالة الصرف (مطابق لـ PaymentFilter في الآيفون).
+    public static readonly (SalaryTrustFilter Filter, string Title)[] Filters =
+        [(SalaryTrustFilter.All, "كل الحالات"), (SalaryTrustFilter.Unfinished, "غير مكتمل"), (SalaryTrustFilter.Unpaid, "غير مصروف"),
+         (SalaryTrustFilter.Partial, "مصروف جزئياً"), (SalaryTrustFilter.Paid, "مصروف بالكامل"), (SalaryTrustFilter.Review, "للمراجعة")];
+    public static string FilterTitle(SalaryTrustFilter filter) => Filters.First(f => f.Filter == filter).Title;
+    public static bool Includes(SalaryTrustFilter filter, SalaryTrustEntry e)
+    {
+        if (filter == SalaryTrustFilter.All) return true;
+        if (e.ReviewPending) return filter == SalaryTrustFilter.Review;
+        return filter switch
+        {
+            SalaryTrustFilter.Unfinished => Remaining(e) > 0,
+            SalaryTrustFilter.Unpaid => Paid(e) == 0,
+            SalaryTrustFilter.Partial => Paid(e) > 0 && Remaining(e) > 0,
+            SalaryTrustFilter.Paid => Remaining(e) == 0,
+            _ => false,
+        };
+    }
+    public static string PaymentStatus(SalaryTrustEntry e) =>
+        e.ReviewPending ? "للمراجعة" : Remaining(e) == 0 ? "مصروف بالكامل" : Paid(e) > 0 ? "مصروف جزئياً" : "غير مصروف";
+    /// المتبقي المؤكد: يستبعد قيود المراجعة.
+    public static long Outstanding(IEnumerable<SalaryTrustEntry> entries) => entries.Where(e => !e.ReviewPending).Sum(Remaining);
+    public static string MonthLabel(int year, int month) => month is >= 1 and <= 12 ? $"{EmployeeDeductions.MonthTitles[month - 1]} {year.ToString(CultureInfo.InvariantCulture)}" : "—";
+
     /// ربط مجموعة بكتاب واحد لا يسجل صرفاً؛ يُرفض الطلب كله عند غياب أي قيد.
     public static SalaryTrustLedger Link(SalaryTrustLedger ledger, Guid bookId, IReadOnlySet<string> ids)
     {

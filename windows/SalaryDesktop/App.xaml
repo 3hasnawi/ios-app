@@ -137,6 +137,26 @@
     </Style>
 
     <!-- عناصر القائمة الجانبية: اختيار واحد مع علامة للصفحة الحالية. -->
+    <!-- عنصر في القائمة الجانبية يفتح نافذة (مثل أمانات الرواتب) بنفس شكل عناصر الأقسام. -->
+    <Style x:Key="NavButton" TargetType="Button">
+      <Setter Property="Foreground" Value="{DynamicResource Tfg2F4744}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="0,1"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Pill" CornerRadius="8" Background="Transparent" Padding="12,9"><ContentPresenter VerticalAlignment="Center"/></Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="NavItem" TargetType="RadioButton">
       <Setter Property="GroupName" Value="nav"/>
       <Setter Property="Foreground" Value="{DynamicResource Tfg2F4744}"/>

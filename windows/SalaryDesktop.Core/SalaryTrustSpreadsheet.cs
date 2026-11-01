@@ -48,7 +48,7 @@ public static class SalaryTrustSpreadsheet
                     var key = MonthNames.SortKey(monthText + " " + yearText); var state = Cell(status); var stateKey = PayrollAnalysis.Normalize(state);
                     var paid = stateKey == PayrollAnalysis.Normalize("صرف"); var review = stateKey == PayrollAnalysis.Normalize("قطع علاقة تقاعد");
                     if (employee.Length == 0 || key == 0 || key > SalaryTrust.OpeningCutoff ||
-                        !decimal.TryParse(amountText, NumberStyles.Number, CultureInfo.InvariantCulture, out var net) ||
+                        PersonProfiles.Amount(amountText) is not { } net ||
                         net <= 0 || net > SalaryTrust.Maximum || net != decimal.Truncate(net) || !(state.Length == 0 || paid || review))
                         throw new InvalidDataException($"صف {row}: تحقق من الاسم والشهر والمبلغ والحالة.");
                     var notes = Cell(note2);
