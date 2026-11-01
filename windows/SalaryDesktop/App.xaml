@@ -167,7 +167,7 @@
       <Setter Property="Margin" Value="2,12,0,6"/>
     </Style>
 
-    <!-- مربعات النص: حواف مستديرة، ونص إرشادي من Tag عند خلوّها. -->
+    <!-- مربعات النص: حواف مستديرة، ونص إرشادي من Tag عند خلوّها. TextBox يطبّق Padding على النص بنفسه، فلا يُكرر على PART_ContentHost (يقص السطر). -->
     <Style TargetType="TextBox">
       <Setter Property="Background" Value="White"/>
       <Setter Property="BorderBrush" Value="#CFD9DA"/>
@@ -180,7 +180,7 @@
           <ControlTemplate TargetType="TextBox">
             <Border x:Name="Box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" SnapsToDevicePixels="True">
               <Grid>
-                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
                 <TextBlock x:Name="Placeholder" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}" Padding="3,0" Foreground="#98A7A5" IsHitTestVisible="False" Visibility="Collapsed" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
               </Grid>
             </Border>

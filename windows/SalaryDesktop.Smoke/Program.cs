@@ -97,9 +97,9 @@ static class Program
         if (string.IsNullOrEmpty(folder)) return;
         Directory.CreateDirectory(folder);
         window.UpdateLayout();
-        var root = (FrameworkElement)window.Content;
-        int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
-        // النافذة نفسها تحمل تحويل اتجاه اليمين لليسار، فتُرسم هي لا محتواها.
+        // أول عنصر في قالب النافذة بحجم منطقة العرض؛ والنافذة نفسها تحمل تحويل اتجاه اليمين لليسار، فتُرسم هي لا محتواها.
+        var client = (FrameworkElement)VisualTreeHelper.GetChild(window, 0);
+        int width = (int)Math.Ceiling(client.ActualWidth), height = (int)Math.Ceiling(client.ActualHeight);
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));

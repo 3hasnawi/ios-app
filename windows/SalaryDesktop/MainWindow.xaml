@@ -101,7 +101,7 @@
 
       <Grid Grid.Row="2">
         <!-- الرئيسية -->
-        <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel>
             <Border CornerRadius="16" Padding="26,22" Margin="0,0,0,14">
               <Border.Background>
@@ -197,7 +197,7 @@
         </Grid>
 
         <!-- كشف البنك -->
-        <ScrollViewer x:Name="BankPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="BankPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
             <Border Style="{StaticResource Card}" Margin="0,0,14,14" VerticalAlignment="Top">
@@ -276,7 +276,7 @@
                   <StackPanel>
                     <TextBlock Style="{StaticResource SectionLabel}" Text="المجموعة المصرفية"/>
                     <Button x:Name="TransferExport" Style="{StaticResource PanelAction}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
-                    <Button Style="{StaticResource PanelButton}" Content="كتاب المجموعة · مسودة PDF" Click="OpenGroupLetter"/>
+                    <Button Style="{StaticResource PanelButton}" Content="كتاب المجموعة (مسودة)" Click="OpenGroupLetter" ToolTip="مسودة PDF لكتاب المجموعة المختارة"/>
                     <Button Style="{StaticResource PanelButton}" Content="تدقيق إصدار المجموعة" Click="OpenGroupIssuance"/>
                   </StackPanel>
                 </Border>
@@ -308,7 +308,7 @@
         </Grid>
 
         <!-- الإعدادات -->
-        <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel MaxWidth="860" HorizontalAlignment="Left">
             <Border Style="{StaticResource Card}">
               <StackPanel>
