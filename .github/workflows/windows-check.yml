@@ -24,22 +24,6 @@ jobs:
         env:
           SCREENSHOT_DIR: ${{ runner.temp }}/windows-screenshots
         run: dotnet run --project windows/SalaryDesktop.Smoke/SalaryDesktop.Smoke.csproj -c Release --no-launch-profile
-      - name: Publish design screenshots to 'windows-screenshots' branch
-        if: always()
-        shell: bash
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHOTS: ${{ runner.temp }}/windows-screenshots
-        run: |
-          SHOTS=$(cygpath -u "$SHOTS")
-          [ -d "$SHOTS" ] && ls "$SHOTS"/*.png >/dev/null 2>&1 || { echo "No screenshots"; exit 0; }
-          cd "$SHOTS"
-          git init -q -b windows-screenshots
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -qm "Windows screens for ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" windows-screenshots
       - name: Publish portable Windows trial
         shell: pwsh
         run: |
@@ -89,20 +73,13 @@ jobs:
         continue-on-error: true
         run: |
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $dir = "$env:RUNNER_TEMP\installer-screens"; New-Item -ItemType Directory -Force $dir | Out-Null
+          $dir = "$env:RUNNER_TEMP\windows-screenshots"; New-Item -ItemType Directory -Force $dir | Out-Null
           function Shot($name) { $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); $bmp.Save("$dir\$name.png"); $g.Dispose(); $bmp.Dispose() }
           $p = Start-Process "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe" -ArgumentList '/CURRENTUSER' -PassThru
-          Start-Sleep -Seconds 8; Shot 'setup-1'
+          Start-Sleep -Seconds 8; Shot '40-setup-1'
           $ws = New-Object -ComObject WScript.Shell
-          foreach ($i in 2..3) { $null = $ws.AppActivate('تطبيق الرواتب'); Start-Sleep -Milliseconds 600; $ws.SendKeys('{ENTER}'); Start-Sleep -Seconds 3; Shot "setup-$i" }
+          foreach ($i in 2..3) { $null = $ws.AppActivate('تطبيق الرواتب'); Start-Sleep -Milliseconds 600; $ws.SendKeys('{ENTER}'); Start-Sleep -Seconds 3; Shot "40-setup-$i" }
           Get-Process | Where-Object { $_.ProcessName -like 'SalaryDesktop-Setup*' } | Stop-Process -Force
-      - name: Upload installer screens
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: installer-screens
-          path: ${{ runner.temp }}/installer-screens/
-          retention-days: 3
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
@@ -110,6 +87,22 @@ jobs:
           path: ${{ runner.temp }}/installer/SalaryDesktop-Setup.exe
           if-no-files-found: error
           retention-days: 7
+      - name: Publish design screenshots to 'windows-screenshots' branch
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHOTS: ${{ runner.temp }}/windows-screenshots
+        run: |
+          SHOTS=$(cygpath -u "$SHOTS")
+          [ -d "$SHOTS" ] && ls "$SHOTS"/*.png >/dev/null 2>&1 || { echo "No screenshots"; exit 0; }
+          cd "$SHOTS"
+          git init -q -b windows-screenshots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Windows screens for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" windows-screenshots
       # رابط تنزيل مباشر ثابت في صفحة الإصدارات (الوسم windows-latest)، ومنه يعرف البرنامج وجود إصدار أحدث.
       # الإصدار يُعلَّم «تجريبي» وليس «الأحدث» حتى لا يتأثر مصدر AltStore لإصدارات الآيفون.
       - name: Publish direct download on the releases page
