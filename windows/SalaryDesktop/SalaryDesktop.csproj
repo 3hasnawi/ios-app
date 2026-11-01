@@ -3,4 +3,5 @@
   <ItemGroup><ProjectReference Include="../SalaryDesktop.Core/SalaryDesktop.Core.csproj" /></ItemGroup>
   <ItemGroup><Content Include="../../SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png" Link="Assets/IraqEmblem.png" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png" Link="Assets/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../SalaryApp/Assets.xcassets/HomeLogo.imageset/HomeLogo.png" Link="Assets/HomeLogo.png" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Resource Include="Assets\AppIcon.png" /><Resource Include="Assets\AppIcon.ico" /><Resource Include="Fonts\*.ttf" /><None Update="Fonts\OFL-*.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Docnet.Core" Version="2.6.0" /></ItemGroup>
 </Project>

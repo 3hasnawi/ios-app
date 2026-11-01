@@ -27,7 +27,16 @@ jobs:
       - name: Exercise desktop screens with fictional data
         env:
           SCREENSHOT_DIR: ${{ runner.temp }}/windows-screenshots
-        run: dotnet run --project windows/SalaryDesktop.Smoke/SalaryDesktop.Smoke.csproj -c Release --no-launch-profile
+        shell: pwsh
+        run: |
+          dotnet run --project windows/SalaryDesktop.Smoke/SalaryDesktop.Smoke.csproj -c Release --no-launch-profile
+          $code = $LASTEXITCODE
+          Write-Host "Smoke process exit code: $code"
+          if ($code -ne 0) {
+            # تشخيص: أخطاء التطبيقات الأخيرة في سجل ويندوز (انهيار عند الإغلاق مثلاً).
+            Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Application Error|\.NET Runtime|Windows Error Reporting' } | Select-Object -First 6 | Format-List TimeCreated, ProviderName, Message
+            exit $code
+          }
       - name: Publish portable Windows trial
         shell: pwsh
         run: |

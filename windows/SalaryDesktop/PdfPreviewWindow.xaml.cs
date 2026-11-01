@@ -8,7 +8,6 @@ using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using SalaryDesktop.Core;
-using Windows.Storage.Streams;
 
 namespace SalaryDesktop;
 
@@ -45,30 +44,33 @@ public partial class PdfPreviewWindow : Window
         Loaded += async (_, _) => await Render();
     }
 
-    /// يحوّل كل صفحة إلى صورة بدقة مضاعفة لتبقى واضحة عند التكبير.
-    private static async Task<List<PageView>> RenderPages(byte[] bytes)
+    /// يحوّل كل صفحة إلى صورة بدقة مضاعفة لتبقى واضحة عند التكبير، بمكتبة PDFium (Docnet) دون كائنات ويندوز WinRT
+    /// (كانت تُبقي العملية معلّقة ثم تنهيها بخطأ بعد الإغلاق).
+    private static List<PageView> RenderPages(byte[] bytes)
     {
-        using var input = new InMemoryRandomAccessStream();
-        using (var writer = new DataWriter(input.GetOutputStreamAt(0)))
-        {
-            writer.WriteBytes(bytes); await writer.StoreAsync(); await writer.FlushAsync(); writer.DetachStream();
-        }
-        var document = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(input);
+        const double scale = 2.2 * 96 / 72;   // نقاط PDF ← بكسل بدقة مضاعفة
         var result = new List<PageView>();
-        for (uint i = 0; i < document.PageCount; i++)
+        lock (Docnet.Core.DocLib.Instance)
         {
-            using var page = document.GetPage(i);
-            double width = page.Size.Width, height = page.Size.Height;
-            using var output = new InMemoryRandomAccessStream();
-            await page.RenderToStreamAsync(output, new Windows.Data.Pdf.PdfPageRenderOptions { DestinationWidth = (uint)Math.Max(1, Math.Round(width * 2.2)) });
-            var buffer = new byte[output.Size];
-            using (var reader = new DataReader(output.GetInputStreamAt(0)))
+            using var document = Docnet.Core.DocLib.Instance.GetDocReader(bytes, new Docnet.Core.Models.PageDimensions(scale));
+            var count = document.GetPageCount();
+            for (int i = 0; i < count; i++)
             {
-                await reader.LoadAsync((uint)output.Size); reader.ReadBytes(buffer); reader.DetachStream();
+                using var page = document.GetPageReader(i);
+                int width = page.GetPageWidth(), height = page.GetPageHeight();
+                var raw = page.GetImage();
+                // خلفية بيضاء: المكتبة تترك المساحات الفارغة شفافة.
+                for (int p = 0; p + 3 < raw.Length; p += 4)
+                {
+                    var alpha = raw[p + 3];
+                    if (alpha == 255) continue;
+                    for (int c = 0; c < 3; c++) raw[p + c] = (byte)((raw[p + c] * alpha + 255 * (255 - alpha)) / 255);
+                    raw[p + 3] = 255;
+                }
+                var image = BitmapSource.Create(width, height, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, raw, width * 4);
+                image.Freeze();
+                result.Add(new PageView(image, width / 2.2, height / 2.2, $"صفحة {i + 1:N0} من {count:N0}"));
             }
-            var image = new BitmapImage();
-            image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad; image.StreamSource = new MemoryStream(buffer); image.EndInit(); image.Freeze();
-            result.Add(new PageView(image, width, height, $"صفحة {i + 1:N0} من {document.PageCount:N0}"));
         }
         return result;
     }
