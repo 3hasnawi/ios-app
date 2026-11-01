@@ -99,11 +99,11 @@ nonisolated enum BankReconciliationPDF {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
             let bold = ReportFont.bold(9)
-            let signatureFont = ReportFont.bold(18)
-            let headingFont = ReportFont.bold(18)
-            let organizationFont = ReportFont.bold(14)
-            let metadataFont = ReportFont.regular(12)
-            let periodFont = ReportFont.bold(12)
+            let signatureFont = ReportFont.bold(14)
+            let headingFont = ReportFont.bold(14)
+            let organizationFont = ReportFont.bold(12)
+            let metadataFont = ReportFont.regular(10)
+            let periodFont = ReportFont.bold(10)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
             guard let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
