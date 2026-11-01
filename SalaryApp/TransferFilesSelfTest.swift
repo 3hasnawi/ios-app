@@ -70,6 +70,11 @@ import CryptoKit
         let reconciliationSignaturePDF = try await BankReconciliationPDF.make(customSignatures, complete: true)
         defer { try? FileManager.default.removeItem(at: reconciliationSignaturePDF) }
         try check(PDFDocument(url: reconciliationSignaturePDF)?.pageCount == 1, "reconciliation custom signatures PDF")
+        var wrappedSignatures = customSignatures
+        wrappedSignatures.firstPosition = "مدير قسم تجريبي للتدقيق والرقابة والمتابعة"
+        let wrappedSignaturePDF = try await BankReconciliationPDF.make(wrappedSignatures, complete: true)
+        defer { try? FileManager.default.removeItem(at: wrappedSignaturePDF) }
+        try check(PDFDocument(url: wrappedSignaturePDF)?.pageCount == 1, "reconciliation long signature wraps")
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/٢٧", expected: "27/10/2026"), "reconciliation date extraction accepts reversed components")
         try check(!BankReconciliationPDF.matchesDate("٢٠٢٦/١١/٢٧", expected: "27/10/2026"), "reconciliation date extraction rejects changed dates")
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/", expected: "/ ١٠ / ٢٠٢٦"), "signature date extraction")
@@ -98,7 +103,7 @@ import CryptoKit
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
-        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 200, y: 842 - 70, width: 195, height: 24))?.string ?? ""
+        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 32, y: 842 - 156, width: 531, height: 28))?.string ?? ""
         try check(!statementTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "reconciliation PDF title")
         var compactStatement = statement
         compactStatement.movements = (1...22).map { index in
@@ -120,7 +125,7 @@ import CryptoKit
         }
         let tallerCompactPDF = try await BankReconciliationPDF.make(tallerCompactStatement)
         defer { try? FileManager.default.removeItem(at: tallerCompactPDF) }
-        try check(PDFDocument(url: tallerCompactPDF)?.pageCount == 1, "raised heading fits 29 short movements")
+        try check((PDFDocument(url: tallerCompactPDF)?.pageCount ?? 0) > 1, "large signature layout paginates 29 movements safely")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)
