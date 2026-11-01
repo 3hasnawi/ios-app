@@ -38,10 +38,28 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
-        Loaded += async (_, _) => await LoadStoredSnapshot();
+        Loaded += async (_, _) => { await LoadStoredSnapshot(); RenderPage(); };
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
+    private async void StartFromExcel(object sender, RoutedEventArgs e)
+    {
+        if (loading || snapshot is not null) return;
+        var dialog = new PayrollImportWindow(null, "") { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
+        if (snapshot is not null) { MessageBox.Show(this, "فُتحت بيانات أخرى؛ لم تُنشأ قاعدة جديدة.", "بدء البيانات"); return; }
+        loading = true; StartFromExcelButton.IsEnabled = false; SourceMessage.Text = "جارٍ إنشاء البيانات والتحقق منها محلياً…";
+        var temporary = Path.Combine(Path.GetTempPath(), "salary-initial-" + Guid.NewGuid().ToString("N") + ".zip");
+        try
+        {
+            var loaded = await Task.Run(() => { var created = InitialDataset.Create(preview, temporary); return store.Import(temporary, expectedDigest: created.SourceDigest, requireEmptyStore: true); });
+            SetSnapshot(loaded); SourceMessage.Text = "أُنشئت البيانات من ملف Excel وحُفظت محلياً دون تعديل الملف الأصلي.";
+            MessageBox.Show(this, "حُفظ الشهر الأول. استورد بقية الملفات والحسابات، واحفظ نسخة احتياطية بعد المراجعة.", "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { SourceMessage.Text = "لم تُنشأ البيانات؛ لم يُعدّل ملف Excel."; MessageBox.Show(this, "تعذّر إنشاء البيانات.\n" + ex.Message, "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { loading = false; StartFromExcelButton.IsEnabled = true; try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
     private async void OpenBackup(object sender, RoutedEventArgs e)
     {
         if (loading) return;
@@ -517,6 +535,42 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AuditHomeButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
+    private async void ImportSakkalFont(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || original is null || links is null || root is null || payroll is null) { MessageBox.Show(this, "افتح البيانات أولاً.", "خط الكتب"); return; }
+        var dialog = new OpenFileDialog { Title = "اختيار خط ساكال العريض", Filter = "خط TrueType (*.ttf)|*.ttf", CheckFileExists = true, Multiselect = false };
+        if (dialog.ShowDialog(this) != true) return;
+        try
+        {
+            var updated = await Task.Run(() => {
+                if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد اختيار الخط.");
+                var info = new FileInfo(dialog.FileName); if (info.Length is <= 0 or > 3_000_000) throw new InvalidDataException("حجم ملف الخط غير صالح.");
+                return linkStore.SaveGroupFont(original, links, File.ReadAllBytes(dialog.FileName));
+            });
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) { MessageBox.Show(this, "حُفظ الخط للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "خط الكتب"); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage();
+            MessageBox.Show(this, "حُفظ خط ساكال العريض محلياً. احفظ نسخة احتياطية لتضمينه.", "خط الكتب", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
+        { MessageBox.Show(this, "تعذّر حفظ الخط.\n" + ex.Message, "خط الكتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+    private async void ImportReferences(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || original is null || links is null || root is null || payroll is null) { MessageBox.Show(this, "افتح البيانات أولاً.", "مراجع الكتب"); return; }
+        var dialog = new ReferenceImportWindow() { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } archive) return;
+        try
+        {
+            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح المراجع."); return linkStore.SaveReferences(original, links, archive); });
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) { MessageBox.Show(this, "حُفظت المراجع للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "مراجع الكتب"); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage();
+            MessageBox.Show(this, "حُفظت المراجع محلياً. راجع حسابات الكتب واحفظ نسخة احتياطية لتضمينها.", "مراجع الكتب", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر حفظ المراجع.\n" + ex.Message, "مراجع الكتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void OpenIndividualEntity(object sender, RoutedEventArgs e)
     {
         var active = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;
@@ -648,10 +702,11 @@ public partial class MainWindow : Window
 
     private void RenderHome()
     {
+        StartFromExcelButton.Visibility = snapshot is null ? Visibility.Visible : Visibility.Collapsed;
         if (snapshot is null || SelectedMonth.Length == 0)
         {
             NetLabel.Text = "صافي الرواتب للشهر المختار"; NetAmount.Text = "—"; PayrollCount.Text = "لا توجد بيانات مفتوحة"; DataWarning.Text = "";
-            SnapshotSummary.Text = "اختر نسخة احتياطية للبدء."; return;
+            SnapshotSummary.Text = "افتح نسخة الآيفون أو ابدأ بملف رواتب أو استقطاعات."; return;
         }
         var totals = PayrollAnalysis.Summarize(snapshot, SelectedMonth);
         NetLabel.Text = totals.MissingNet > 0 ? "صافي الرواتب المتاح · بيانات ناقصة" : "صافي الرواتب للشهر المختار";

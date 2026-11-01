@@ -55,13 +55,14 @@ public sealed class LocalSnapshotStore(string directory)
         _ = BankReconciliation.ReadFromBackup(snapshot);
         return snapshot;
     }
-    public BackupSnapshot Import(string path, CancellationToken cancellation = default, string? expectedDigest = null)
+    public BackupSnapshot Import(string path, CancellationToken cancellation = default, string? expectedDigest = null, bool requireEmptyStore = false)
     {
         var original = BackupReader.Read(path, cancellation);
         if (expectedDigest is not null && original.SourceDigest != expectedDigest) throw new InvalidDataException("تغيّرت النسخة بعد مراجعتها؛ لم تُستبدل البيانات.");
         Directory.CreateDirectory(root);
         using var storeLock = new FileStream(Path.Combine(root, ".store.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var previous = LoadCurrent();
+        if (requireEmptyStore && previous is not null) throw new InvalidDataException("توجد بيانات محلية بالفعل؛ لم تُنشأ قاعدة جديدة ولم تُستبدل البيانات.");
         if (previous is not null)
         {
             var months = original.Months.Select(month => month.Name).ToHashSet(StringComparer.Ordinal);

@@ -528,6 +528,48 @@ try
     catch (InvalidDataException) { }
     try { _ = SalaryItemReports.Groups(itemSource with { Employees = [contractPerson with { Items = Encoding.UTF8.GetBytes("{") }] }, "أيلول 2026"); throw new InvalidOperationException("invalid payroll items accepted"); }
     catch (InvalidDataException) { }
+    var initialPath = Path.Combine(root, "new-dataset.zip");
+    var initialPreview = new PayrollImportPreview("أيلول 2026", [contractPerson], [personRow], []);
+    var initialSnapshot = InitialDataset.Create(initialPreview, initialPath);
+    Check(initialSnapshot.Months.Count == 1 && initialSnapshot.Employees.Count == 1 && initialSnapshot.Deductions.Count == 1 && initialSnapshot.Accounts.Count == 0, "initial dataset contains only reviewed records");
+    using (var initialZip = ZipFile.OpenRead(initialPath))
+    {
+        using var monthReader = new StreamReader(initialZip.GetEntry("months.jsonl")!.Open(), Encoding.UTF8);
+        using var monthJson = JsonDocument.Parse(monthReader.ReadLine()!);
+        Check(monthJson.RootElement.TryGetProperty("importedAt", out var importedAt) && importedAt.ValueKind == JsonValueKind.Number && monthJson.RootElement.TryGetProperty("summary", out var summaryValue) && summaryValue.ValueKind == JsonValueKind.String, "initial backup includes iPhone month date and item summary");
+    }
+    var standaloneStore = new LocalSnapshotStore(Path.Combine(root, "new-dataset-local")); var standalone = standaloneStore.Import(initialPath, expectedDigest: initialSnapshot.SourceDigest, requireEmptyStore: true);
+    var initialBackup = Path.Combine(root, "new-dataset-export.zip"); ReconciliationBackupExport.Write(standalone, [], initialBackup);
+    Check(BackupReader.Read(initialBackup).Employees.Count == 1, "initial dataset can be exported as a verified backup");
+    try { _ = standaloneStore.Import(initialPath, requireEmptyStore: true); throw new InvalidOperationException("initial creation overwrote an existing local store"); }
+    catch (InvalidDataException) { }
+    try { _ = InitialDataset.Create(new PayrollImportPreview("أيلول 2026", [], [], []), Path.Combine(root, "empty-dataset.zip")); throw new InvalidOperationException("empty initial dataset accepted"); }
+    catch (InvalidDataException) { }
+    var initialHash = SHA256.HashData(File.ReadAllBytes(initialPath));
+    try { _ = InitialDataset.Create(initialPreview, initialPath); throw new InvalidOperationException("initial dataset overwrote existing file"); }
+    catch (IOException) { }
+    Check(initialHash.SequenceEqual(SHA256.HashData(File.ReadAllBytes(initialPath))), "existing initial dataset is preserved");
+    var referenceFolder = Path.Combine(root, "reference-folder"); Directory.CreateDirectory(referenceFolder);
+    using (var referenceZip = new ZipArchive(new MemoryStream(referencesArchive), ZipArchiveMode.Read))
+        foreach (var file in referenceZip.Entries.Where(e => e.FullName.StartsWith("templates/", StringComparison.Ordinal)))
+        { using var input = file.Open(); using var output = File.Create(Path.Combine(referenceFolder, Path.GetFileName(file.FullName))); input.CopyTo(output); }
+    var rebuiltReferences = ReferenceArchiveBuilder.Create(referenceFolder);
+    Check(LetterReferencePack.ReadArchive(rebuiltReferences).Count == 11, "reference folder packs and validates every required PDF");
+    var standaloneLinks = new LocalTransferLinks(Path.Combine(root, "standalone-reference-links")); var beforeReferences = standaloneLinks.Load(standalone);
+    var withReferences = standaloneLinks.SaveReferences(standalone, beforeReferences, rebuiltReferences);
+    var afterReferencesAndBank = standaloneLinks.SaveBankDetails(standalone, withReferences, "أيلول 2026", "دافع وهمي", fakePayer, new BankManualAmounts(1, 2, 3));
+    Check(LetterReferencePack.Read(afterReferencesAndBank.Snapshot).Count == 11 && BankStatementCalculator.Manual(afterReferencesAndBank.Snapshot, "أيلول 2026").Total == 6, "imported references survive bank settings change");
+    var referenceBackup = Path.Combine(root, "reference-import-backup.zip"); ReconciliationBackupExport.Write(afterReferencesAndBank.Snapshot, [], referenceBackup);
+    Check(LetterReferencePack.Read(BackupReader.Read(referenceBackup)).Count == 11, "imported references survive backup export");
+    File.Copy(Path.Combine(referenceFolder, "rafidain_group.pdf"), Path.Combine(referenceFolder, "مجموعة مصارف الرافدين.pdf"));
+    try { _ = ReferenceArchiveBuilder.Create(referenceFolder); throw new InvalidOperationException("ambiguous reference files accepted"); }
+    catch (InvalidDataException) { }
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_REFERENCE_DIR") is { Length: > 0 } privateReferenceDir)
+    {
+        var packed = ReferenceArchiveBuilder.Create(privateReferenceDir);
+        Check(LetterReferencePack.ReadArchive(packed).Count == 12, "private local reference pack validates all required PDFs and numeral reference");
+        Console.WriteLine("Local reference validation: 12 PDFs accepted.");
+    }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

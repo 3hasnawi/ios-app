@@ -51,8 +51,11 @@ static class Program
             {
                 await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 main = application.MainWindow as MainWindow ?? throw new InvalidOperationException("application did not create its main window");
+                await Task.Delay(300);
+                Check(((Button)main.FindName("StartFromExcelButton")).Visibility == Visibility.Visible, "standalone start was not visible on empty data");
                 typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);
                 await Task.Delay(500);
+                Check(((Button)main.FindName("StartFromExcelButton")).Visibility != Visibility.Visible, "standalone start remained visible over existing data");
                 async Task Navigate(string tag)
                 {
                     var button = Children<Button>(main).Single(b => Equals(b.Tag, tag)); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(800);
@@ -78,6 +81,8 @@ static class Program
                 var staff = new StaffDetailsWindow(StaffRecords.Read(snapshot)[0]) { Owner = main }; staff.Show(); Check(((DataGrid)staff.FindName("Fields")).Items.Count == 1, "staff details were not displayed"); staff.Close();
                 var names = NameLists.Prepare(snapshot, TransferPreparation.Prepare(snapshot, "أيلول 2026"));
                 var lists = new NameListsWindow("أيلول 2026", names, () => true) { Owner = main }; lists.Show(); Check(((ComboBox)lists.FindName("ListPicker")).Items.Count == 1, "name list page did not open"); lists.Close();
+                var initial = new PayrollImportWindow(null, "") { Owner = main }; initial.Show(); Check(initial.FindName("Choose") is Button, "standalone monthly import did not open"); initial.Close();
+                var refImport = new ReferenceImportWindow() { Owner = main }; refImport.Show(); Check(refImport.FindName("Choose") is Button, "reference import did not open"); refImport.Close();
                 var annual = new AnnualImportWindow(snapshot) { Owner = main }; annual.Show(); Check(annual.FindName("Choose") is Button, "annual import page did not open"); annual.Close();
                 var bank = new BankDetailsWindow("أيلول 2026", "دافع وهمي", "IQ06TEST123000000000001", new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
                 var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("KindPicker") is ComboBox, "salary review page did not open"); audit.Close();

@@ -6,11 +6,11 @@ using SalaryDesktop.Core;
 namespace SalaryDesktop;
 public partial class PayrollImportWindow : Window
 {
-    private readonly BackupSnapshot source;
+    private readonly BackupSnapshot? source;
     private PayrollImportPreview? preview;
     public PayrollImportPreview? Result { get; private set; }
     public bool ReplaceExisting { get; private set; }
-    public PayrollImportWindow(BackupSnapshot source, string month)
+    public PayrollImportWindow(BackupSnapshot? source, string month)
     { InitializeComponent(); this.source = source; MonthText.Text = month; }
     private void MonthChanged(object sender, TextChangedEventArgs e)
     { if (SaveButton is not null) { preview = null; SaveButton.IsEnabled = false; if (Employees is not null) { Employees.ItemsSource = null; Deductions.ItemsSource = null; Problems.ItemsSource = null; } } }
@@ -18,7 +18,7 @@ public partial class PayrollImportWindow : Window
     {
         var month = MonthText.Text.Trim(); var key = MonthNames.SortKey(month);
         if (key == 0) { MessageBox.Show(this, "اكتب الشهر والسنة، مثل أيلول 2026.", "الشهر"); return; }
-        var existing = source.Months.Where(m => MonthNames.SortKey(m.Name) == key).ToArray();
+        var existing = source?.Months.Where(m => MonthNames.SortKey(m.Name) == key).ToArray() ?? [];
         if (existing.Length > 1) { MessageBox.Show(this, "هناك أكثر من اسم محفوظ للشهر نفسه؛ راجع الأشهر قبل الاستيراد.", "الشهر"); return; }
         if (existing.Length == 1) { month = existing[0].Name; MonthText.Text = month; }
         var dialog = new OpenFileDialog { Title = "اختيار ملف الرواتب والاستقطاعات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
@@ -39,8 +39,8 @@ public partial class PayrollImportWindow : Window
     private void Save(object sender, RoutedEventArgs e)
     {
         if (preview is null || preview.Month != MonthText.Text.Trim() || preview.Problems.Count != 0) return;
-        var salaries = preview.Employees.Count > 0 ? source.Employees.Count(e => e.Month == preview.Month) : 0;
-        var deductions = preview.Deductions.Count > 0 ? source.Deductions.Count(d => d.Month == preview.Month) : 0;
+        var salaries = preview.Employees.Count > 0 ? (source?.Employees.Count(e => e.Month == preview.Month) ?? 0) : 0;
+        var deductions = preview.Deductions.Count > 0 ? (source?.Deductions.Count(d => d.Month == preview.Month) ?? 0) : 0;
         if (salaries > 0 || deductions > 0)
         {
             var answer = MessageBox.Show(this, $"سيُستبدل في شهر {preview.Month} ما يخص الملفات المستوردة: {salaries:N0} راتب و{deductions:N0} استقطاع محفوظ. ستبقى نسخة البيانات السابقة محفوظة على الجهاز. هل تريد الحفظ؟", "مراجعة الاستبدال", MessageBoxButton.YesNo, MessageBoxImage.Warning);
