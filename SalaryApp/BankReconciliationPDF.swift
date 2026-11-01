@@ -172,8 +172,6 @@ nonisolated enum BankReconciliationPDF {
                     for (index, value) in organization.enumerated() {
                         PDFText.draw(value, in: CGRect(x: 432, y: 27 + CGFloat(index) * 13, width: 130, height: 13), font: organizationFont, align: .center)
                     }
-                    let headingBox = CGRect(x: 165, y: 39, width: 265, height: 50)
-                    UIColor.darkGray.setStroke(); cg.stroke(headingBox, width: 0.7)
                     for (index, value) in headingLines.enumerated() {
                         PDFText.draw(value, in: CGRect(x: 169, y: 46 + CGFloat(index) * 18, width: 257, height: 18), font: headingFont)
                     }
