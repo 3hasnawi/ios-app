@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private TransferSnapshot? preparedTransfer;
     private BackupSnapshot? preparedSource;
     private string? previewFolder;
+    private IReadOnlyList<StaffMember>? staff; private string? staffDigest; private string? staffLoadingDigest; private string? staffError;
     private readonly DispatcherTimer searchDelay = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private static readonly CultureInfo Numbers = CultureInfo.GetCultureInfo("en-US");
 
@@ -122,8 +123,9 @@ public partial class MainWindow : Window
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
-        bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive";
+        bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive" or "staff";
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        StaffReloadButton.Visibility = page == "staff" ? Visibility.Visible : Visibility.Collapsed;
         AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         PayrollImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         AnnualImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
@@ -131,7 +133,7 @@ public partial class MainWindow : Window
         PageTitle.Text = page switch
         {
             "payroll" => "الرواتب", "deductions" => "الاستقطاعات", "groups" => "جهات التنفيذ",
-            "accounts" => "حسابات جهات التنفيذ", "archive" => "الأرشيف", "bank" => "كشف حساب البنك",
+            "accounts" => "حسابات جهات التنفيذ", "staff" => "الملاك", "archive" => "الأرشيف", "bank" => "كشف حساب البنك",
             "transfer" => "ملفات التحويل", "settings" => "الإعدادات", _ => "الرئيسية"
         };
         if (page == "home") { RenderHome(); return; }
@@ -184,6 +186,16 @@ public partial class MainWindow : Window
                 DataTable.ItemsSource = accounts;
                 TableStatus.Text = $"{accounts.Length:N0} حساب · انقر نقراً مزدوجاً لتعديل بيانات الحساب المحفوظ.";
                 break;
+            case "staff":
+                Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("الرقم الموحد", "Unified", 1); Column("الحالة", "Status", 1); Column("محل العمل", "Workplace", 2);
+                if (staffDigest != snapshot.SourceDigest || staff is null)
+                {
+                    DataTable.ItemsSource = null; TableStatus.Text = staffDigest == snapshot.SourceDigest && staffError is not null ? staffError : "جارٍ قراءة الملاك من النسخة المحلية…";
+                    if (staffLoadingDigest != snapshot.SourceDigest && !(staffDigest == snapshot.SourceDigest && staffError is not null)) LoadStaff(snapshot);
+                    break;
+                }
+                var staffRows = staff.Where(v => Matches(v.Name, v.Mother, v.Unified, v.Stat, v.Rank, v.Workplace, v.Status)).ToArray();
+                DataTable.ItemsSource = staffRows; TableStatus.Text = $"{staffRows.Length:N0} سجل · انقر نقراً مزدوجاً لعرض تفاصيل المنتسب."; break;
             case "archive":
                 Column("عنوان الكتاب", "Title", 3); Column("الشهر", "Month", 1); Column("الجهة", "Entity", 2); Column("الصفحات", "Pages", 1, true);
                 var books = snapshot.Books.Where(v => Matches(v.Title, v.Month, v.Entity)).ToArray();
@@ -193,8 +205,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ReloadStaff(object sender, RoutedEventArgs e)
+    {
+        if (snapshot is null || staffLoadingDigest is not null) return;
+        staff = null; staffError = null; staffDigest = null; RenderPage();
+    }
+    private async void LoadStaff(BackupSnapshot source)
+    {
+        var digest = source.SourceDigest; staffLoadingDigest = digest;
+        try
+        {
+            var loaded = await Task.Run(() => StaffRecords.Read(source));
+            if (snapshot?.SourceDigest != digest) return;
+            staff = loaded; staffDigest = digest; staffError = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { if (snapshot?.SourceDigest == digest) { staff = null; staffDigest = digest; staffError = "تعذّر قراءة الملاك: " + ex.Message; } }
+        finally { if (staffLoadingDigest == digest) staffLoadingDigest = null; if (page == "staff" && snapshot?.SourceDigest == digest) RenderPage(); }
+    }
     private async void OpenArchiveBook(object sender, MouseButtonEventArgs e)
     {
+        if (page == "staff" && DataTable.SelectedItem is StaffMember member)
+        { new StaffDetailsWindow(member) { Owner = this }.ShowDialog(); return; }
         if (page == "payroll" && DataTable.SelectedItem is Employee employee)
         {
             var detail = new EmployeeDetailsWindow(employee) { Owner = this };
@@ -445,7 +477,7 @@ public partial class MainWindow : Window
         AuditHomeButton.IsEnabled = false; StatusBar.Text = "جارٍ تدقيق الرواتب ومقارنة الشهر السابق…";
         try
         {
-            var result = await Task.Run(() => SalaryReview.Prepare(source, month));
+            var result = await Task.Run(() => SalaryReview.Prepare(source, month, source.StaffCount > 0 ? StaffRecords.Read(source) : []));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
             new SalaryReviewWindow(result) { Owner = this }.ShowDialog();
         }

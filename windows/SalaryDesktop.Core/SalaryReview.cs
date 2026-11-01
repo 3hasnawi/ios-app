@@ -43,7 +43,7 @@ public static class SalaryReview
         foreach (var (word, digit) in new[] { ("الاول", "1"), ("اول", "1"), ("الثاني", "2"), ("ثاني", "2"), ("الثالث", "3"), ("ثالث", "3"), ("الرابع", "4"), ("رابع", "4"), ("الخامس", "5"), ("خامس", "5") }) s = s.Replace(word, digit, StringComparison.Ordinal);
         return new string(s.Where(c => !char.IsWhiteSpace(c) && c is not ('.' or '/' or '-')).ToArray());
     }
-    public static SalaryReviewResult Prepare(BackupSnapshot source, string month)
+    public static SalaryReviewResult Prepare(BackupSnapshot source, string month, IReadOnlyList<StaffMember>? staff = null)
     {
         var key = MonthNames.SortKey(month);
         if (key == 0 || !source.Months.Any(m => m.Name == month)) throw new InvalidDataException("اختر شهراً محفوظاً صالحاً للتدقيق.");
@@ -122,7 +122,47 @@ public static class SalaryReview
                 if (ambiguous > 0) notes.Add($"استُبعد {ambiguous} اسم مكرر من مقارنة الشهرين حتى لا تُربط هويات مختلفة خطأً.");
             }
         }
-        notes.Add("هذه فحوص أولية؛ مطابقة الملاك والتفاصيل الأخرى لم تكتمل بعد.");
+        if (staff is not null && staff.Count != source.StaffCount) throw new InvalidDataException("عدد سجلات الملاك لا يطابق النسخة؛ لم تُجرَ المطابقة.");
+        if (staff is null || staff.Count == 0) notes.Add("لا توجد سجلات ملاك متاحة؛ لم تُجرَ مطابقة الملاك.");
+        else
+        {
+            var indexed = staff.Select((member, index) => (member, index)).ToArray();
+            var staffNames = indexed.GroupBy(x => Key(x.member.Name)).ToDictionary(g => g.Key, g => g.Select(x => x.index).ToArray(), StringComparer.Ordinal);
+            var staffIds = indexed.Where(x => Identifier(x.member.Unified).Length > 0).GroupBy(x => Identifier(x.member.Unified)).ToDictionary(g => g.Key, g => g.Select(x => x.index).ToArray(), StringComparer.Ordinal);
+            var payrollIds = details.Select(x => (x.Employee, Id: Identifier(x.Data.GetValueOrDefault("الرقم الموحد") ?? ""))).Where(x => x.Id.Length > 0).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+            var uncertain = staffNames.Where(p => p.Key.Length == 0 || p.Value.Length > 1).Select(p => p.Value).Concat(staffIds.Values.Where(v => v.Length > 1)).SelectMany(v => v).ToHashSet();
+            var candidates = new List<(Employee Employee, int StaffIndex)>(); int skipped = 0;
+            foreach (var (employee, info) in details)
+            {
+                var personKey = Key(employee.Name); var unified = Identifier(info.GetValueOrDefault("الرقم الموحد") ?? "");
+                var byName = staffNames.GetValueOrDefault(personKey) ?? []; var byId = unified.Length == 0 ? [] : staffIds.GetValueOrDefault(unified) ?? [];
+                if (currentGroups[personKey].Length > 1 || (unified.Length > 0 && payrollIds.GetValueOrDefault(unified) > 1) || byId.Length > 1 || (byId.Length == 0 && byName.Length > 1))
+                { foreach (var index in byName.Concat(byId)) uncertain.Add(index); skipped++; continue; }
+                var match = byId.Length == 1 ? byId[0] : byName.Length == 1 ? byName[0] : -1;
+                if (match < 0) { rows.Add(new("راتب بلا ملاك", employee.Name, employee.Workplace, null, employee.Net)); continue; }
+                var staffId = Identifier(staff[match].Unified);
+                if (byId.Length == 0 && unified.Length > 0 && staffId.Length > 0 && unified != staffId)
+                { uncertain.Add(match); rows.Add(new("اختلاف الرقم الموحد", employee.Name, "الرقم الموحد في الرواتب لا يطابق سجل الملاك؛ راجع الهوية.", null, employee.Net)); continue; }
+                if (uncertain.Contains(match)) { skipped++; continue; }
+                candidates.Add((employee, match));
+            }
+            var matched = new HashSet<int>();
+            foreach (var group in candidates.GroupBy(c => c.StaffIndex))
+            {
+                if (group.Count() > 1) { uncertain.Add(group.Key); skipped += group.Count(); continue; }
+                var employee = group.Single().Employee; var member = staff[group.Key]; matched.Add(group.Key);
+                if (!string.IsNullOrWhiteSpace(employee.Rank) && !string.IsNullOrWhiteSpace(member.Rank) && Rank(employee.Rank) != Rank(member.Rank))
+                    rows.Add(new("رتبة مختلفة عن الملاك", employee.Name, "الرواتب: " + employee.Rank + " · الملاك: " + member.Rank, null, employee.Net));
+            }
+            string[] inactive = ["تقاعد", "احاله", "وفاه", "متوفي", "شهيد", "استشهد", "فصل", "مفصول", "استقاله", "مستقيل", "ترقين", "طي قيد", "منقول", "نقل خارج", "انهاء خدمه", "منتهي"];
+            foreach (var (member, index) in indexed)
+            {
+                var status = PayrollAnalysis.Normalize(member.Status);
+                if (!matched.Contains(index) && !uncertain.Contains(index) && !inactive.Any(status.Contains)) rows.Add(new("ملاك بلا راتب", member.Name, string.Join(" · ", new[] { member.Rank, member.Status, member.Workplace }.Where(x => !string.IsNullOrWhiteSpace(x))), null, null));
+            }
+            if (skipped > 0 || uncertain.Count > 0) notes.Add($"توجد {skipped:N0} مطابقة راتب و{uncertain.Count:N0} سجل ملاك غير محسوم بسبب تكرار الاسم أو الرقم؛ راجع الهوية يدوياً.");
+        }
+        notes.Add("هذه فحوص أولية؛ بعض تفاصيل التدقيق لم تكتمل بعد.");
         return new(month, previous, current.Length, ambiguous, rows.OrderBy(r => r.Kind, StringComparer.Ordinal).ThenBy(r => r.Name, StringComparer.Ordinal).ToArray(), notes);
     }
 }

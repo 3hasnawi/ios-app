@@ -473,6 +473,35 @@ try
         Check(AnnualDeductionSpreadsheet.Read(Path.Combine(annualFixtureDir, "annual-invalid.xlsx"), snapshot).Problems.Count > 0 && AnnualDeductionSpreadsheet.Read(Path.Combine(annualFixtureDir, "annual-2025.xlsx"), snapshot).Problems.Count > 0, "existing annual fixtures reject invalid status and conflicting years");
     }
 
+    var staffBackup = Path.Combine(root, "staff-fixture.zip"); MakeBackup(staffBackup);
+    using (var archive = ZipFile.Open(staffBackup, ZipArchiveMode.Update))
+    {
+        archive.GetEntry("manifest.json")!.Delete();
+        Entry(archive, "manifest.json", JsonSerializer.Serialize(new { version = 5, months = new[] { "تشرين الاول 2026", "أيلول 2026" }, employees = 2, deductions = 3, staff = 2, accounts = 1, books = 1 }));
+        archive.GetEntry("staff.jsonl")!.Delete();
+        var sections = JsonSerializer.SerializeToUtf8Bytes(new[] { new { title = "قسم تجريبي", fields = new[] { new { label = "حقل وهمي", value = "قيمة وهمية" } } } });
+        Entry(archive, "staff.jsonl", Lines(new[] { new { name = "موظف ملاك وهمي", mother = "أم وهمية", stat = "10", unified = "20", rank = "موظف", status = "مستمر", workplace = "قسم وهمي", details = sections }, new { name = "موظف آخر وهمي", mother = "", stat = "11", unified = "21", rank = "موظف", status = "متقاعد", workplace = "قسم وهمي", details = sections } }));
+    }
+    var staffSource = BackupReader.Read(staffBackup); var staffMembers = StaffRecords.Read(staffSource);
+    Check(staffMembers.Count == 2 && staffMembers[0].Unified == "20" && StaffRecords.Sections(staffMembers[0]).Single().Fields.Single().Value == "قيمة وهمية", "staff data and structured details are read from verified backup");
+    using (var changed = new FileStream(staffBackup, FileMode.Append, FileAccess.Write, FileShare.None)) changed.WriteByte(0);
+    try { _ = StaffRecords.Read(staffSource); throw new InvalidOperationException("changed backup used for staff"); }
+    catch (InvalidDataException) { }
+    var roster = new[] {
+        new StaffMember("اسم ملاك وهمي", "", "", "20", "ملازم", "مستمر", "قسم وهمي", null),
+        new StaffMember("ملاك بلا راتب وهمي", "", "", "40", "موظف", "مستمر", "قسم وهمي", null),
+        new StaffMember("متقاعد وهمي", "", "", "41", "موظف", "متقاعد", "قسم وهمي", null),
+        new StaffMember("اسم ملتبس وهمي", "", "", "42", "موظف", "مستمر", "قسم وهمي", null),
+        new StaffMember("اسم ملتبس وهمي", "", "", "43", "موظف", "مستمر", "قسم وهمي", null) };
+    var rosterPayroll = new[] {
+        contractPerson with { Month = reviewMonth, Name = "اسم راتب وهمي", Rank = "نقيب", Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["الرقم الموحد"] = "٢٠" }) },
+        contractPerson with { Month = reviewMonth, Name = "راتب بلا ملاك وهمي", Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش" }) },
+        contractPerson with { Month = reviewMonth, Name = "اسم ملتبس وهمي", Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش" }) } };
+    var rosterAudit = SalaryReview.Prepare(snapshot with { StaffCount = roster.Length, Employees = rosterPayroll }, reviewMonth, roster);
+    Check(rosterAudit.Rows.Any(r => r.Kind == "رتبة مختلفة عن الملاك" && r.Name == "اسم راتب وهمي") && rosterAudit.Rows.Any(r => r.Kind == "راتب بلا ملاك" && r.Name == "راتب بلا ملاك وهمي") && rosterAudit.Rows.Any(r => r.Kind == "ملاك بلا راتب" && r.Name == "ملاك بلا راتب وهمي"), "staff audit matches unique unified identifiers and reports missing records");
+    Check(!rosterAudit.Rows.Any(r => r.Kind == "ملاك بلا راتب" && (r.Name == "متقاعد وهمي" || r.Name == "اسم ملتبس وهمي")) && rosterAudit.Notes.Any(n => n.Contains("غير محسوم", StringComparison.Ordinal)), "retired and ambiguous staff are not reported as missing salaries");
+    try { _ = SalaryReview.Prepare(snapshot with { StaffCount = 1, Employees = rosterPayroll }, reviewMonth, roster); throw new InvalidOperationException("incomplete staff dataset accepted"); }
+    catch (InvalidDataException) { }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

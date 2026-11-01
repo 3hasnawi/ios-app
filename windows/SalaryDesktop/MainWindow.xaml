@@ -15,6 +15,7 @@
           <Button Style="{StaticResource NavButton}" Tag="deductions" Click="Navigate" Content="▦    الاستقطاعات"/>
           <Button Style="{StaticResource NavButton}" Tag="groups" Click="Navigate" Content="▥    جهات التنفيذ"/>
           <Button Style="{StaticResource NavButton}" Tag="accounts" Click="Navigate" Content="▣    حسابات الجهات"/>
+          <Button Style="{StaticResource NavButton}" Tag="staff" Click="Navigate" Content="▤    الملاك"/>
           <Button Style="{StaticResource NavButton}" Tag="archive" Click="Navigate" Content="▧    الأرشيف"/>
           <Button Style="{StaticResource NavButton}" Tag="bank" Click="Navigate" Content="◫    كشف البنك"/>
           <Button Style="{StaticResource NavButton}" Tag="transfer" Click="Navigate" Content="⇄    ملفات التحويل"/>
@@ -56,7 +57,7 @@
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBox x:Name="SearchBox" Height="38" Padding="10,7" TextChanged="SearchChanged" ToolTip="ابحث بالاسم أو الجهة"/>
-            <WrapPanel Grid.Column="1"><Button x:Name="AccountImportButton" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
+            <WrapPanel Grid.Column="1"><Button x:Name="StaffReloadButton" Content="إعادة قراءة الملاك" Click="ReloadStaff" Padding="16,9" Margin="12,0,0,0" Visibility="Collapsed"/><Button x:Name="AccountImportButton" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
             <Button x:Name="PayrollImportButton" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
             <Button x:Name="AnnualImportButton" Content="استيراد الاستقطاعات السنوية" Click="ImportAnnual" Padding="16,9" Margin="12,0,0,0" Visibility="Collapsed"/></WrapPanel>
           </Grid>
