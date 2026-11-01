@@ -91,7 +91,7 @@
           <ComboBox x:Name="TransferGroupPicker" Height="38" SelectedIndex="0" SelectionChanged="TransferGroupChanged" VerticalContentAlignment="Center">
             <ComboBoxItem Tag="rafidain" Content="الرافدين · عدا فرع الأنبار"/><ComboBoxItem Tag="other" Content="مجموعة رشيد ومصارف أخرى"/><ComboBoxItem Tag="anbar" Content="الكتب المنفردة · فرع الأنبار"/><ComboBoxItem Tag="unresolved" Content="جهات تحتاج تصنيفاً"/>
           </ComboBox>
-          <TextBlock x:Name="TransferNotice" Grid.Row="1" Foreground="#BD741B" TextWrapping="Wrap" Margin="0,10,0,10"/>
+          <StackPanel Grid.Row="1" Margin="0,10,0,10"><TextBlock x:Name="TransferNotice" Foreground="#BD741B" TextWrapping="Wrap"/><TextBlock x:Name="IssuanceNotice" Foreground="#A76716" TextWrapping="Wrap" Margin="0,5,0,0"/></StackPanel>
           <DataGrid x:Name="TransferTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" RowHeaderWidth="0" HeadersVisibility="Column" Background="White" EnableRowVirtualization="True" GridLinesVisibility="Horizontal">
             <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="2*"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="2*"/></DataGrid.Columns>
           </DataGrid>
@@ -100,6 +100,7 @@
             <Button Content="ربط حساب الجهة المختارة" Click="LinkTransferAccount" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="تحديد مجموعة الجهة" Click="ClassifyTransfer" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="كتاب المجموعة · مسودة PDF" Click="OpenGroupLetter" Padding="16,10" Margin="12,0,0,0"/>
+            <Button Content="تدقيق إصدار المجموعة" Click="OpenGroupIssuance" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="قوائم الأسماء" Click="OpenNameLists" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="كتب الرواتب المنفردة" Click="OpenIndividualPayroll" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="كتب الجهات المنفردة" Click="OpenIndividualEntity" Padding="16,10" Margin="12,0,0,0"/>

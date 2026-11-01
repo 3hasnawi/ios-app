@@ -415,12 +415,18 @@ public partial class MainWindow : Window
     private async void RenderTransfers()
     {
         var ticket = ++transferRequest; var source = snapshot; var month = SelectedMonth; var group = CurrentTransferGroup;
-        preparedTransfer = null; preparedSource = null; TransferExport.IsEnabled = false; TransferTable.ItemsSource = null;
+        preparedTransfer = null; preparedSource = null; TransferExport.IsEnabled = false; TransferTable.ItemsSource = null; IssuanceNotice.Text = "";
         if (source is null || month.Length == 0) { TransferNotice.Text = "افتح نسخة الآيفون واختر الشهر أولاً."; return; }
         TransferNotice.Text = "جارٍ مراجعة بيانات التحويل محلياً…";
         try
         {
-            var result = await Task.Run(() => TransferPreparation.Prepare(source, month));
+            var prepared = await Task.Run(() => {
+                var transfer = TransferPreparation.Prepare(source, month);
+                if (group is not (TransferGroup.Rafidain or TransferGroup.OtherBanks)) return (transfer, review: (GroupIssuanceReview?)null, error: (string?)null);
+                try { return (transfer, review: GroupIssuance.Review(source, transfer, group), error: (string?)null); }
+                catch (InvalidDataException ex) { return (transfer, review: (GroupIssuanceReview?)null, error: (string?)ex.Message); }
+            });
+            var result = prepared.transfer;
             if (ticket != transferRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth || page != "transfer" || group != CurrentTransferGroup) return;
             var entries = result.Entries.Where(x => x.Group == group).ToArray();
             TransferTable.ItemsSource = entries.Select(x => new TransferRow(x, x.Title, Amount(x.Amount), x.Account?.Branch ?? "—", x.Account?.Iban ?? "—", string.Join(" · ", TransferPreparation.Issues(x)))).ToArray();
@@ -431,6 +437,8 @@ public partial class MainWindow : Window
             if (issues > 0) warnings.Add($"{issues:N0} جهة تحتاج مراجعة الحساب أو المبلغ.");
             if (!TransferPreparation.ValidIban(result.PayerAccount) || string.IsNullOrWhiteSpace(result.Payer)) warnings.Add("اسم الجهة الدافعة أو حسابها غير صالح في النسخة.");
             TransferNotice.Text = $"{entries.Length:N0} جهة · {Amount(entries.Sum(x => x.Amount))}" + (warnings.Count == 0 ? " · راجع البيانات قبل التصدير." : " · " + string.Join(" · ", warnings));
+            if (prepared.review is { } issuance) IssuanceNotice.Text = issuance.BaselineMonth is null ? "لا يوجد إقرار سابق لهذه المجموعة." : issuance.Changes.Count == 0 ? "المجموعة تطابق آخر إقرار محفوظ." : $"تنبيه: {issuance.Changes.Count:N0} تغيير مقارنة بإقرار {issuance.BaselineMonth}؛ افتح تدقيق إصدار المجموعة لمراجعة التفاصيل.";
+            else if (prepared.error is not null) IssuanceNotice.Text = "تعذّر تدقيق إصدار المجموعة: " + prepared.error;
             preparedTransfer = result; preparedSource = source;
             TransferExport.IsEnabled = group is TransferGroup.Rafidain or TransferGroup.OtherBanks && entries.Length > 0 && warnings.Count == 0;
         }
@@ -626,6 +634,24 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر إعداد القوائم.\n" + ex.Message, "قوائم الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+    private async void OpenGroupIssuance(object sender, RoutedEventArgs e)
+    {
+        var transfer = preparedTransfer; var active = snapshot; var original = baseSnapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState; var group = CurrentTransferGroup;
+        if (transfer is null || active is null || original is null || root is null || payroll is null || links is null || !ReferenceEquals(active, preparedSource) || transfer.Month != SelectedMonth || group is not (TransferGroup.Rafidain or TransferGroup.OtherBanks))
+        { MessageBox.Show(this, "اختر مجموعة الرافدين أو رشيد وانتظر اكتمال مراجعتها.", "تدقيق المجموعة"); return; }
+        try
+        {
+            bool PayrollCurrent() => payrollStore.Load(root).Revision == payroll.Revision;
+            var review = await Task.Run(() => { if (!PayrollCurrent() || linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد تدقيق المجموعة."); return GroupIssuance.Review(active, transfer, group); });
+            if (!ReferenceEquals(active, snapshot) || transfer.Month != SelectedMonth || group != CurrentTransferGroup) throw new InvalidDataException("تغيّر الشهر أو المجموعة؛ أعد التدقيق.");
+            var window = new GroupIssuanceWindow(original, links, linkStore, review, PayrollCurrent) { Owner = this }; window.ShowDialog();
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) return;
+            if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
+            var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر تدقيق إصدار المجموعة.\n" + ex.Message, "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenGroupLetter(object sender, RoutedEventArgs e)
     {

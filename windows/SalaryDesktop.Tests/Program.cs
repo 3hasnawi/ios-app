@@ -570,6 +570,35 @@ try
         Check(LetterReferencePack.ReadArchive(packed).Count == 12, "private local reference pack validates all required PDFs and numeral reference");
         Console.WriteLine("Local reference validation: 12 PDFs accepted.");
     }
+    var issuanceSource = bookSource with { Employees = [incompleteContract with { Items = null }], Accounts = [anbarAccount with { Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" }] };
+    var issuanceStore = new LocalTransferLinks(Path.Combine(root, "issuance-review")); var issuanceInitial = issuanceStore.Load(issuanceSource);
+    var issuanceTransfer = TransferPreparation.Prepare(issuanceInitial.Snapshot, "أيلول 2026");
+    var issuanceReview = GroupIssuance.Review(issuanceInitial.Snapshot, issuanceTransfer, TransferGroup.Rafidain);
+    Check(issuanceReview.Lines.Count == 1 && issuanceReview.Changes.Count == 0 && issuanceReview.BaselineMonth is null, "first group issuance prepares one checked entity");
+    var issuanceSaved = issuanceStore.ConfirmGroup(issuanceSource, issuanceInitial, issuanceReview, "مراجعة تجريبية");
+    var sameReview = GroupIssuance.Review(issuanceSaved.Snapshot, TransferPreparation.Prepare(issuanceSaved.Snapshot, "أيلول 2026"), TransferGroup.Rafidain);
+    Check(sameReview.Changes.Count == 0 && sameReview.BaselineMonth == "أيلول 2026", "unchanged group matches its saved confirmation");
+    var changedNamesSource = issuanceSaved.Snapshot with { Deductions = [personRow with { Name = "اسم مختلف وهمي" }] };
+    var changedNames = GroupIssuance.Review(changedNamesSource, TransferPreparation.Prepare(changedNamesSource, "أيلول 2026"), TransferGroup.Rafidain);
+    Check(changedNames.Changes.Any(c => c.Contains("الأسماء", StringComparison.Ordinal)), "changed names are flagged even when total and count stay unchanged");
+    var increasedEmployee = incompleteContract with { Items = null, Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["توقيفات تقاعدية"] = "75", ["مجموع استقطاعات المصارف"] = "3000" }) };
+    var increasedSource = issuanceSaved.Snapshot with { Employees = [increasedEmployee], Deductions = [personRow with { Amount = 3000m }] };
+    var increasedReview = GroupIssuance.Review(increasedSource, TransferPreparation.Prepare(increasedSource, "أيلول 2026"), TransferGroup.Rafidain);
+    Check(increasedReview.Changes.Any(c => c.Contains("2,500", StringComparison.Ordinal) && c.Contains("3,000", StringComparison.Ordinal)), "group issuance describes old and new amounts");
+    var rawLedger = (NSData)PropertyListParser.Parse(issuanceSaved.Snapshot.SettingsPlists[GroupIssuance.SettingsKey]);
+    var ledgerNode = System.Text.Json.Nodes.JsonNode.Parse(rawLedger.Bytes)!.AsObject();
+    var firstLine = ledgerNode["records"]![0]!["lines"]![0]!.AsObject(); firstLine.Remove("windowsDetailHash"); firstLine["detailHash"] = "iphone-fingerprint";
+    using var oldLedgerPlist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(ledgerNode)), oldLedgerPlist);
+    var oldSettings = issuanceSaved.Snapshot.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal); oldSettings[GroupIssuance.SettingsKey] = oldLedgerPlist.ToArray();
+    var iosLedgerSource = issuanceSaved.Snapshot with { SettingsPlists = oldSettings };
+    var iosReview = GroupIssuance.Review(iosLedgerSource, TransferPreparation.Prepare(iosLedgerSource, "أيلول 2026"), TransferGroup.Rafidain);
+    Check(iosReview.Changes.Any(c => c.Contains("بصمة الأسماء", StringComparison.Ordinal)), "iPhone-only fingerprint triggers explicit review on Windows");
+    Check(!Encoding.UTF8.GetString(rawLedger.Bytes).Contains(personRow.Name, StringComparison.Ordinal), "issuance ledger stores no employee names");
+    try { _ = issuanceStore.ConfirmGroup(issuanceSource, issuanceInitial, issuanceReview, "قديم"); throw new InvalidOperationException("stale group confirmation accepted"); }
+    catch (InvalidDataException) { }
+    var issuanceBackupPath = Path.Combine(root, "issuance-backup.zip"); ReconciliationBackupExport.Write(issuanceSaved.Snapshot, [], issuanceBackupPath);
+    var issuanceRestored = BackupReader.Read(issuanceBackupPath); GroupIssuance.Validate(issuanceRestored);
+    Check(GroupIssuance.Review(issuanceRestored, TransferPreparation.Prepare(issuanceRestored, "أيلول 2026"), TransferGroup.Rafidain).Changes.Count == 0, "group issuance and details fingerprint survive backup export");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
