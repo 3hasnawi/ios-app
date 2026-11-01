@@ -53,7 +53,7 @@ public static class IndividualLetterPreparation
 
 public sealed record IndividualEntityPerson(string Name, string Rank, long Amount);
 public sealed record IndividualEntityPlan(string Id, string Month, string Entity, string Payer, string PayerAccount,
-    string? BeneficiaryAccount, string? Bank, long Total, string Words, IReadOnlyList<IndividualEntityPerson> Rows, int People);
+    string? BeneficiaryAccount, string? BeneficiaryName, string? Bank, long Total, string Words, IReadOnlyList<IndividualEntityPerson> Rows, int People);
 
 /// <summary>يطابق قيود الجهة مع المجموع والحساب قبل السماح بتجهيز كتابها.</summary>
 public static class IndividualEntityPreparation
@@ -69,6 +69,7 @@ public static class IndividualEntityPreparation
         if (entry.Month != transfer.Month || entry.Group != TransferGroup.Anbar || !entry.Id.StartsWith("deduction|", StringComparison.Ordinal) ||
             TransferPreparation.Issues(entry).Count != 0 || string.IsNullOrWhiteSpace(transfer.Payer))
             throw new InvalidDataException("راجع بيانات جهة الكتاب ومبلغها وتصنيفها.");
+        GroupLetterSettingsReader.EnsureAccountNotCustomized(source, id);
         var reference = LetterReferencePack.IndividualAccount(references, id, transfer.PayerAccount);
         string? account = null;
         if (id == "rafidain_anbar")
@@ -81,7 +82,7 @@ public static class IndividualEntityPreparation
         {
             if (entry.Account is null) throw new InvalidDataException("اربط الجهة بحسابها أولاً.");
             account = id == "ramadi" ? TransferPreparation.NormalizeAccount(entry.Account.Iban) : TransferPreparation.LocalAccount(entry.Account);
-            if (account is null || (id == "ramadi" && !TransferPreparation.ValidIban(account)) || account != reference)
+            if (account is null || (id == "ramadi" && (!TransferPreparation.ValidIban(account) || account == TransferPreparation.NormalizeAccount(transfer.PayerAccount))) || account != reference)
                 throw new InvalidDataException("حساب الجهة لا يطابق مرجع الكتاب؛ راجع الحساب والربط قبل الإصدار.");
         }
         var deductions = source.Deductions.Where(d => d.Month == transfer.Month && d.Title == entry.Title && !PayrollAnalysis.IsInactive(d)).ToArray();
@@ -90,11 +91,11 @@ public static class IndividualEntityPreparation
         var people = deductions.Select(d => PayrollAnalysis.Normalize(d.Name).Replace(" ", "", StringComparison.Ordinal)).Distinct(StringComparer.Ordinal).Count();
         if (people != entry.People || deductions.Sum(d => d.Amount!.Value) != entry.Amount)
             throw new InvalidDataException("عدد الأسماء أو مجموع استقطاعات الجهة لا يطابق الكتاب.");
-        if (id == "water" && (people != 1 || deductions.Any(d => string.IsNullOrWhiteSpace(d.Rank))))
+        if (id == "water" && (people != 1 || deductions.Any(d => string.IsNullOrWhiteSpace(d.Rank)) || deductions.Select(d => PayrollAnalysis.Normalize(d.Rank)).Distinct(StringComparer.Ordinal).Count() != 1))
             throw new InvalidDataException("كتاب الموارد المائية يتطلب منتسباً واحداً ورتبته.");
         var total = checked((long)entry.Amount);
         var rows = deductions.Select(d => new IndividualEntityPerson(d.Name, d.Rank, checked((long)d.Amount!.Value))).ToArray();
         return new(id, transfer.Month, entry.Title, transfer.Payer, TransferPreparation.NormalizeAccount(transfer.PayerAccount),
-            account, entry.Account?.Branch, total, ArabicAmountWords.Dinars(total), rows, people);
+            account, entry.Account?.Entity ?? entry.Title, entry.Account?.Branch, total, ArabicAmountWords.Dinars(total), rows, people);
     }
 }

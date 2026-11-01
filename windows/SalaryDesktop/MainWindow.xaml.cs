@@ -412,6 +412,25 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
+    private async void OpenIndividualEntity(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;
+        var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || transfer is null || original is null || links is null || root is null || payroll is null || !ReferenceEquals(active, preparedSource) || transfer.Month != month)
+        { MessageBox.Show(this, "اختر الشهر وانتظر تحميل التحويلات.", "كتب الجهات"); return; }
+        try
+        {
+            bool PayrollCurrent() => payrollStore.Load(root).Revision == payroll.Revision;
+            var references = await Task.Run(() => { if (!PayrollCurrent() || linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتب."); return LetterReferencePack.Read(active); });
+            if (!ReferenceEquals(active, snapshot) || month != SelectedMonth) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتب.");
+            var window = new IndividualEntityWindow(original, links, transfer, linkStore, references, PayrollCurrent) { Owner = this }; window.ShowDialog();
+            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot)) return;
+            if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
+            var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر فتح كتب الجهات.\n" + ex.Message, "كتب الجهات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void OpenIndividualPayroll(object sender, RoutedEventArgs e)
     {
         var active = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;

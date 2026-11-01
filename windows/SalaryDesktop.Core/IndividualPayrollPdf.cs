@@ -40,6 +40,8 @@ public static class IndividualPayrollPdf
         using var logo = SKBitmap.Decode(logoBytes) ?? throw new InvalidDataException("تعذّر فتح الشعار.");
         using var shaper = new SKShaper(face); using var paint = new SKPaint { Typeface = face, TextSize = 13, IsAntialias = true, Color = SKColors.Black };
         using var stroke = new SKPaint { Color = new SKColor(55, 55, 55), Style = SKPaintStyle.Stroke, StrokeWidth = .6f, IsAntialias = true };
+        var requiredText = body + settings.Header + settings.Number + settings.First + settings.Second + settings.Third + settings.Footer;
+        if (!paint.ContainsGlyphs(requiredText.Replace("\n", "", StringComparison.Ordinal))) throw new InvalidDataException("خط الكتاب لا يدعم بعض الحروف؛ راجع الخط والبيانات.");
         using var output = new MemoryStream(); using (var pdf = SKDocument.CreatePdf(output) ?? throw new InvalidDataException("تعذّر إنشاء الكتاب."))
         {
             var canvas = pdf.BeginPage(W, H); canvas.Clear(SKColors.White); canvas.DrawBitmap(logo, new SKRect(267, 30, 338, 125));

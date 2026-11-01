@@ -9,7 +9,7 @@ public sealed record TransferLinksSnapshot(BackupSnapshot Snapshot, IReadOnlyDic
 /// روابط أسماء الاستقطاعات إلى الحسابات المحفوظة؛ تحفظ مستقلة عن ملف الآيفون.
 public sealed class LocalTransferLinks(string directory)
 {
-    private sealed record LinkData(int Version, string SourceDigest, Dictionary<string, string> Links, Dictionary<string, string>? Categories = null, List<ExecutionAccount>? Accounts = null, byte[]? Customizations = null, byte[]? BoldFont = null);
+    private sealed record LinkData(int Version, string SourceDigest, Dictionary<string, string> Links, Dictionary<string, string>? Categories = null, List<ExecutionAccount>? Accounts = null, byte[]? Customizations = null, byte[]? BoldFont = null, byte[]? BookLinks = null);
     private readonly string root = Path.GetFullPath(directory);
     private static string Digest(string value) => value.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F') ? value : throw new InvalidDataException("بصمة النسخة غير صالحة.");
     private string FileFor(BackupSnapshot source) => Path.Combine(root, Digest(source.SourceDigest) + ".json");
@@ -30,7 +30,7 @@ public sealed class LocalTransferLinks(string directory)
         catch (Exception e) when (e is JsonException or ArgumentException or IndexOutOfRangeException or OverflowException)
         { throw new InvalidDataException("تعذّر قراءة روابط الحسابات من النسخة.", e); }
     }
-    private static BackupSnapshot WithLinks(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont)
+    private static BackupSnapshot WithLinks(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks)
     {
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(links)), plist);
         var settings = source.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
@@ -39,6 +39,7 @@ public sealed class LocalTransferLinks(string directory)
         settings["transferEntityCategories"] = categoryPlist.ToArray();
         if (customizations is not null) settings["transferLetterCustomizations"] = customizations;
         if (boldFont is not null) settings["transferHeaderBoldFont"] = boldFont;
+        if (bookLinks is not null) settings["transferLetterEntityLinks"] = bookLinks;
         return source with { SettingsPlists = settings, Accounts = accounts };
     }
     public TransferLinksSnapshot Load(BackupSnapshot source)
@@ -55,7 +56,9 @@ public sealed class LocalTransferLinks(string directory)
             Validate(data.Links); Validate(categories); ValidateAccounts(source, accounts);
             var custom = data.Customizations ?? source.SettingsPlists.GetValueOrDefault("transferLetterCustomizations");
             var bold = data.BoldFont ?? source.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont");
-            var snapshot = WithLinks(source, data.Links, categories, accounts, custom, bold);
+            var bookLinks = data.BookLinks ?? source.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks");
+            var snapshot = WithLinks(source, data.Links, categories, accounts, custom, bold, bookLinks);
+            _ = IndividualLetterLinks.Read(snapshot);
             return new(snapshot, data.Links, Hash(bytes), categories);
         }
         catch (Exception e) when (e is JsonException or ArgumentException or NullReferenceException or OverflowException)
@@ -76,7 +79,7 @@ public sealed class LocalTransferLinks(string directory)
         if (actual is null || actual.Amount != entry.Amount || actual.MissingAmounts != entry.MissingAmounts) throw new InvalidDataException("تغيّرت بيانات الجهة؛ أعد تحميلها قبل الربط.");
         var links = current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         links[key] = PayrollAnalysis.Normalize(account.Entity); Validate(links);
-        return Write(source, links, current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"));
+        return Write(source, links, current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
     }
     public TransferLinksSnapshot SaveCategory(BackupSnapshot source, TransferLinksSnapshot expected, TransferEntry entry, TransferGroup category)
     {
@@ -90,7 +93,7 @@ public sealed class LocalTransferLinks(string directory)
         var key = $"{PayrollAnalysis.Normalize(actual.Title)}|{actual.Account?.Iban ?? ""}|{PayrollAnalysis.Normalize(actual.Account?.Branch ?? "")}";
         var categories = current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         categories[key] = value; Validate(categories);
-        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), categories, current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"));
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), categories, current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
     }
     private static void ValidateAccounts(BackupSnapshot source, IReadOnlyList<ExecutionAccount> accounts)
     {
@@ -122,7 +125,7 @@ public sealed class LocalTransferLinks(string directory)
         var current = Load(source);
         if (current.Revision != expected.Revision || !current.Snapshot.Accounts.Contains(old)) throw new InvalidDataException("تغيّرت بيانات الحساب؛ أعد تحميل القائمة قبل الحفظ.");
         var accounts = current.Snapshot.Accounts.Select(a => a == old ? normalized : a).ToArray(); ValidateAccounts(source, accounts);
-        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"));
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
     }
     public TransferLinksSnapshot ImportAccounts(BackupSnapshot source, TransferLinksSnapshot expected, AccountImportPreview preview)
     {
@@ -146,7 +149,7 @@ public sealed class LocalTransferLinks(string directory)
                 LocalAccount = account.LocalAccount ?? old.LocalAccount });
         }
         ValidateAccounts(source, accounts);
-        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"));
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
     }
     public TransferLinksSnapshot SaveGroupSettings(BackupSnapshot source, TransferLinksSnapshot expected, TransferGroup group, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null)
     {
@@ -191,7 +194,21 @@ public sealed class LocalTransferLinks(string directory)
             foreach (var (key, field) in fields.Where(p => selectedFields.Contains(p.Key))) item[key] = field?.DeepClone();
         }
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(data)), plist);
-        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"));
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
+    }
+    public TransferLinksSnapshot SaveBookLink(BackupSnapshot source, TransferLinksSnapshot expected, TransferEntry entry, string id)
+    {
+        Directory.CreateDirectory(root);
+        using var guard = new FileStream(Path.Combine(root, ".links.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var current = Load(source);
+        if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت بيانات الجهات؛ أعد فتح الكتاب.");
+        var transfer = TransferPreparation.Prepare(current.Snapshot, entry.Month);
+        var actual = transfer.Entries.SingleOrDefault(e => e.Id == entry.Id && e.Title == entry.Title);
+        if (actual != entry) throw new InvalidDataException("تغيّرت جهة الكتاب؛ أعد فتحها.");
+        _ = IndividualEntityPreparation.Prepare(current.Snapshot, transfer, id, entry.Id, LetterReferencePack.Read(current.Snapshot));
+        var links = IndividualLetterLinks.Read(current.Snapshot); links[id] = IndividualLetterLinks.FromEntry(actual);
+        var saved = IndividualLetterLinks.Encode(links);
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), saved);
     }
     public TransferLinksSnapshot SaveGroupFont(BackupSnapshot source, TransferLinksSnapshot expected, byte[] font)
     {
@@ -200,18 +217,18 @@ public sealed class LocalTransferLinks(string directory)
         var current = Load(source);
         if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت بيانات الكتب؛ أعد فتح الكتاب قبل حفظ الخط.");
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(font), plist);
-        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), plist.ToArray());
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));
     }
-    private TransferLinksSnapshot Write(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont)
+    private TransferLinksSnapshot Write(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new LinkData(1, source.SourceDigest, links, categories, accounts.ToList(), customizations, boldFont));
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new LinkData(1, source.SourceDigest, links, categories, accounts.ToList(), customizations, boldFont, bookLinks));
         var temp = Path.Combine(root, ".links-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { output.Write(bytes); output.Flush(true); }
             using (var input = File.OpenRead(temp)) if (!SHA256.HashData(input).AsSpan().SequenceEqual(SHA256.HashData(bytes))) throw new InvalidDataException("تعذّر التحقق من روابط الحسابات.");
             File.Move(temp, FileFor(source), true);
-            return new(WithLinks(source, links, categories, accounts, customizations, boldFont), links, Hash(bytes), categories);
+            return new(WithLinks(source, links, categories, accounts, customizations, boldFont, bookLinks), links, Hash(bytes), categories);
         }
         finally { try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }

@@ -313,6 +313,12 @@ try
     PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { header = "ترويسة عامة", fixedNumber = "ح/1", committeeFirst = "عضو عام", foodContractReference = "عقد تجريبي" }, individual = new Dictionary<string, object> { ["food_company"] = new { committeeFirst = "عضو خاص" } } })), individualSettingsPlist);
     var individualSettingsSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = individualSettingsPlist.ToArray() } };
     Check(GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_company").First == "عضو خاص" && GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_tax").First == "عضو عام" && GroupLetterSettingsReader.FoodContract(individualSettingsSnapshot) == "عقد تجريبي", "individual letter settings inherit and preserve contract reference");
+    using var overrideSettingsPlist = new MemoryStream();
+    PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { }, individual = new Dictionary<string, object> { ["food_company"] = new { beneficiaryAccount = fakeReceiver } } })), overrideSettingsPlist);
+    var overrideSettingsSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = overrideSettingsPlist.ToArray() } };
+    try { GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_company"); throw new InvalidOperationException("custom beneficiary silently ignored"); }
+    catch (InvalidDataException) { }
+    GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_tax");
     var individualSettings = new GroupLetterSettings("ترويسة تجريبية\nقسم حسابات وهمي", "ح/1/22/", "عضو تجريبي أول", "عضو تجريبي ثان", "عضو تجريبي ثالث", "نسخة تجريبية", null, 10, 0, null);
     var individualFont = File.ReadAllBytes(font); var individualLogo = File.ReadAllBytes(Path.GetFullPath("SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png"));
     IndividualLetterPlan SampleIndividual(string id, params IndividualLetterLine[] values) { var sum = values.Sum(v => v.Amount); return new(id, "أيلول 2026", "دافع وهمي", fakePayer, fakeReceiver, sum, ArabicAmountWords.Dinars(sum), values, null, null, []); }
@@ -334,6 +340,33 @@ try
     catch (InvalidDataException) { }
     try { _ = IndividualPayrollPdf.Generate(singlePlans.Last(), individualSettings, individualFont, individualFont, individualLogo, null, cashList with { Total = 501 }); throw new InvalidOperationException("incorrect cash list accepted"); }
     catch (InvalidDataException) { }
+    foreach (var entityId in new[] { "ramadi", "housing", "water", "rafidain_anbar" })
+    {
+        var entityPlan = entityId == "rafidain_anbar" ? direct : IndividualEntityPreparation.Prepare(entitySource, entityTransfer, entityId, entity.Id, references);
+        var pdf = IndividualEntityPdf.Generate(entityPlan, individualSettings, individualFont, individualLogo);
+        Check(pdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "individual entity PDF checked: " + entityId);
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_MAJALLA") is { Length: > 0 } sakkalFile)
+        {
+            var sakkalPdf = IndividualEntityPdf.Generate(entityPlan, individualSettings, File.ReadAllBytes(sakkalFile), individualLogo);
+            if (Environment.GetEnvironmentVariable("SALARY_TEST_INDIVIDUAL_DIR") is { Length: > 0 } saveDir) File.WriteAllBytes(Path.Combine(saveDir, entityId + "-sakkal.pdf"), sakkalPdf);
+        }
+    }
+    byte[] Plist(NSObject value) { using var buffer = new MemoryStream(); PropertyListParser.SaveAsBinary(value, buffer); return buffer.ToArray(); }
+    var bookSource = snapshot with { Employees = [incompleteContract], Deductions = [personRow], Accounts = [anbarAccount], Months = snapshot.Months.Select(m => m.Name == "أيلول 2026" ? new PayrollMonth(m.Name, 1, 1) : m).ToArray(), SettingsPlists = new Dictionary<string, byte[]> {
+        ["bankStatementAccountName"] = Plist(new NSString("دافع وهمي")), ["bankStatementIBAN"] = Plist(new NSString(fakePayer)), ["transferReferenceArchiveData"] = Plist(new NSData(referencesArchive)) } };
+    var bookLinkStore = new LocalTransferLinks(Path.Combine(root, "individual-book-links")); var originalBookState = bookLinkStore.Load(bookSource);
+    var preparedBookTransfer = TransferPreparation.Prepare(originalBookState.Snapshot, "أيلول 2026"); var preparedEntity = preparedBookTransfer.Entries.Single(e => e.Title == "جهة وهمية");
+    var savedBookLink = bookLinkStore.SaveBookLink(bookSource, originalBookState, preparedEntity, "ramadi");
+    Check(IndividualLetterLinks.Resolve(bookLinkStore.Load(bookSource).Snapshot, "ramadi", preparedBookTransfer.Entries)?.Id == preparedEntity.Id, "individual book choice persists across reopening");
+    try { _ = bookLinkStore.SaveBookLink(bookSource, originalBookState, preparedEntity, "ramadi"); throw new InvalidOperationException("stale book link accepted"); }
+    catch (InvalidDataException) { }
+    var fakeSettings = new GroupLetterSettings("ترويسة تجريبية", "ح/1", "عضو أول", "عضو ثان", "عضو ثالث", "", null, null, 0, null);
+    var afterBookSettings = bookLinkStore.SaveGroupSettings(bookSource, savedBookLink, TransferGroup.Rafidain, fakeSettings, false);
+    Check(IndividualLetterLinks.Resolve(afterBookSettings.Snapshot, "ramadi", preparedBookTransfer.Entries)?.Id == preparedEntity.Id, "book choice survives unrelated settings changes");
+    var changedCandidate = preparedEntity with { Account = preparedEntity.Account! with { Iban = fakePayer } };
+    Check(IndividualLetterLinks.Resolve(afterBookSettings.Snapshot, "ramadi", [changedCandidate]) is null, "changed account does not silently reuse a book choice");
+    var savedBookBackup = Path.Combine(root, "individual-links-backup.zip"); ReconciliationBackupExport.Write(afterBookSettings.Snapshot, [], savedBookBackup);
+    Check(IndividualLetterLinks.Resolve(BackupReader.Read(savedBookBackup), "ramadi", preparedBookTransfer.Entries)?.Id == preparedEntity.Id, "individual book choice survives backup export");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

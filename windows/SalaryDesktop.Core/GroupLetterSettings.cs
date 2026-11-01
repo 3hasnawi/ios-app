@@ -51,4 +51,19 @@ public static class GroupLetterSettingsReader
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException)
         { throw new InvalidDataException("تعذّر قراءة رقم عقد الإطعام.", ex); }
     }
+    public static void EnsureAccountNotCustomized(BackupSnapshot snapshot, string id)
+    {
+        if (!snapshot.SettingsPlists.TryGetValue("transferLetterCustomizations", out var plist)) return;
+        try
+        {
+            if (PropertyListParser.Parse(plist) is not NSData data) throw new InvalidDataException("صيغة تخصيص الكتب غير صالحة.");
+            if (data.Bytes.Length == 0) return;
+            using var doc = JsonDocument.Parse(data.Bytes);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("individual", out var all) && all.TryGetProperty(id, out var item) && item.TryGetProperty("beneficiaryAccount", out var value) && value.ValueKind != JsonValueKind.Null && !string.IsNullOrWhiteSpace(value.GetString()))
+                throw new InvalidDataException("هذا الكتاب يحتوي حساب مستفيد مخصصاً من الآيفون؛ دعمه لم يكتمل على ويندوز، لذا لا يمكن إصدار المسودة بأمان.");
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException)
+        { throw new InvalidDataException("تعذّر التحقق من تخصيص حساب المستفيد.", ex); }
+    }
 }

@@ -30,6 +30,7 @@ public partial class IndividualPayrollWindow : Window
         {
             var result = await Task.Run(() => {
                 if (!current()) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتب.");
+                GroupLetterSettingsReader.EnsureAccountNotCustomized(source, choice.Id);
                 var prepared = IndividualLetterPreparation.Payroll(choice.Id, summary, payer, payerAccount, references, acceptMissingContractNominal: true);
                 var list = choice.Id == "cash_salary" ? CashSalaryListPreparation.Prepare(source, summary.Month) : null;
                 return (prepared, list);
