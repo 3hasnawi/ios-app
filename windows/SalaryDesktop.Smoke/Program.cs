@@ -305,6 +305,9 @@ static class Program
         };
         application.Run();
         try { Directory.Delete(directory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        // ينهي العملية بالنتيجة مباشرة حتى لا يغيّرها تنظيف كائنات ويندوز (معاينة PDF) بعد إغلاق الواجهة.
+        Console.WriteLine($"Smoke exit code: {exit}"); Console.Out.Flush();
+        Environment.Exit(exit);
         return exit;
     }
 }

@@ -77,7 +77,9 @@ public partial class PdfPreviewWindow : Window
     {
         try
         {
-            pages = await RenderPages(pdf);
+            // الرسم بكائنات ويندوز في خيط خلفي، فلا ترتبط بخيط الواجهة ولا تؤخره؛ الصور مجمّدة فتُعرض من أي خيط.
+            var bytes = pdf;
+            pages = await Task.Run(() => RenderPages(bytes));
             Rendering.Visibility = Visibility.Collapsed;
             Pages.ItemsSource = pages;
             InfoText.Text = $"{pages.Count:N0} صفحة · {pdf.Length / 1024.0:N0} كيلوبايت · معاينة داخل البرنامج";

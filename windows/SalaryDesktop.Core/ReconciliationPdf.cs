@@ -16,7 +16,7 @@ public static class ReconciliationPdf
     private static string[] Runs(string text)
     {
         if (!text.Any(c => c is >= '\u0600' and <= '\u08ff')) return [text];
-        return Regex.Split(text, @"([A-Za-z0-9٠-٩۰-۹]+(?:[ .,/:-]+[A-Za-z0-9٠-٩۰-۹]+)*)").Where(part => part.Length > 0).ToArray();
+        return Regex.Split(text, @"([A-Za-z0-9٠-٩۰-۹]+(?:[ .,/:\u066B\u066C-]+[A-Za-z0-9٠-٩۰-۹]+)*)").Where(part => part.Length > 0).ToArray();
     }
     private static string ShapeRun(string run) => run.Any(c => c is >= '٠' and <= '٩' or >= '۰' and <= '۹') && !run.Any(char.IsAsciiLetter)
         ? string.Concat(run.EnumerateRunes().Reverse()) : run;
