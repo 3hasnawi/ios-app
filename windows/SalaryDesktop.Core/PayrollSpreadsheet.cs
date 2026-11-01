@@ -34,6 +34,7 @@ public static class PayrollSpreadsheet
         }
         return decimal.TryParse(s.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value is >= 0 and <= 9_007_199_254_740_991m ? value : null;
     }
+    public static decimal? ParseMoney(string value) => Number(value);
     internal static int Find(string[] headers, IEnumerable<string> names, HashSet<int> used, bool exactOnly = false)
     {
         foreach (bool exact in exactOnly ? new[] { true } : new[] { true, false })

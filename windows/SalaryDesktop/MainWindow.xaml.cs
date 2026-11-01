@@ -289,6 +289,23 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AccountImportButton.IsEnabled = true; }
     }
+    private async void EditBankDetails(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var month = SelectedMonth; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || original is null || links is null || root is null || payroll is null || month.Length == 0) { MessageBox.Show(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "بيانات الحساب"); return; }
+        try
+        {
+            var payer = TransferPreparation.Payer(active); var manual = BankStatementCalculator.Manual(active, month);
+            var dialog = new BankDetailsWindow(month, payer.Name, payer.Iban, manual) { Owner = this };
+            if (dialog.ShowDialog() != true || dialog.Result is not { } input) return;
+            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النافذة."); return linkStore.SaveBankDetails(original, links, month, input.Name, input.Iban, input.Amounts); });
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) { MessageBox.Show(this, "حُفظت البيانات للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "بيانات الحساب"); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage();
+            MessageBox.Show(this, "حُفظت بيانات الحساب ومبالغ الشهر. احفظ نسخة احتياطية لتضمين التغييرات.", "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر حفظ بيانات الحساب.\n" + ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void ImportAnnual(object sender, RoutedEventArgs e)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;

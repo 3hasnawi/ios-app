@@ -73,6 +73,7 @@
             </StackPanel></Border>
             <Border Style="{StaticResource Card}"><StackPanel>
               <TextBlock Text="تفاصيل المبالغ" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,10"/>
+              <Button Content="تعديل بيانات الحساب والمبالغ اليدوية" Click="EditBankDetails" Padding="16,9" HorizontalAlignment="Right" Margin="0,0,0,12"/>
               <ItemsControl x:Name="BankRows"><ItemsControl.ItemTemplate><DataTemplate>
                 <Grid Margin="0,5"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Title}"/><TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold"/></Grid>
               </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>

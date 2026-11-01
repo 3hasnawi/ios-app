@@ -106,6 +106,7 @@ public static class TransferPreparation
     {
         null => "", NSString value => value.Content, _ => throw new InvalidDataException($"صيغة إعداد {key} غير صالحة.")
     };
+    public static (string Name, string Iban) Payer(BackupSnapshot snapshot) => (SettingString(snapshot, "bankStatementAccountName"), SettingString(snapshot, "bankStatementIBAN"));
     private static Dictionary<string, string> SettingDictionary(BackupSnapshot snapshot, string key)
     {
         var value = ReadSetting(snapshot, key);

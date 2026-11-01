@@ -502,6 +502,25 @@ try
     Check(!rosterAudit.Rows.Any(r => r.Kind == "ملاك بلا راتب" && (r.Name == "متقاعد وهمي" || r.Name == "اسم ملتبس وهمي")) && rosterAudit.Notes.Any(n => n.Contains("غير محسوم", StringComparison.Ordinal)), "retired and ambiguous staff are not reported as missing salaries");
     try { _ = SalaryReview.Prepare(snapshot with { StaffCount = 1, Employees = rosterPayroll }, reviewMonth, roster); throw new InvalidOperationException("incomplete staff dataset accepted"); }
     catch (InvalidDataException) { }
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_STAFF_LARGE") == "1")
+    {
+        const int count = 42_000;
+        var largeEmployees = Enumerable.Range(1, count).Select(n => contractPerson with { Month = reviewMonth, Name = "منتسب تجريبي " + n, Rank = "موظف", Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["الرقم الموحد"] = n.ToString(System.Globalization.CultureInfo.InvariantCulture) }) }).ToArray();
+        var largeStaff = Enumerable.Range(1, count).Select(n => new StaffMember("منتسب تجريبي " + n, "", "", n.ToString(System.Globalization.CultureInfo.InvariantCulture), "موظف", "مستمر", "قسم تجريبي", null)).ToArray();
+        var result = SalaryReview.Prepare(snapshot with { StaffCount = count, Employees = largeEmployees, Deductions = [] }, reviewMonth, largeStaff);
+        Check(!result.Rows.Any(r => r.Kind is "راتب بلا ملاك" or "ملاك بلا راتب" or "رتبة مختلفة عن الملاك") && result.EmployeeCount == count, "large staff and payroll comparison matches all synthetic records");
+        Console.WriteLine("Synthetic staff review: 42000 records matched.");
+    }
+    var bankDetailState = bookLinkStore.SaveBankDetails(bookSource, changedAccountState, "أيلول 2026", "دافع تجريبي محدّث", fakePayer, new BankManualAmounts(1000, 2000, 3000));
+    var bankOtherMonth = bookLinkStore.SaveBankDetails(bookSource, bankDetailState, "تشرين الاول 2026", "دافع تجريبي محدّث", fakePayer, new BankManualAmounts(4, 5, 6));
+    Check(BankStatementCalculator.Manual(bankOtherMonth.Snapshot, "أيلول 2026").Total == 6000 && BankStatementCalculator.Manual(bankOtherMonth.Snapshot, "تشرين الاول 2026").Total == 15, "bank manual values stay separate by month");
+    Check(TransferPreparation.Prepare(bankOtherMonth.Snapshot, "أيلول 2026").Payer == "دافع تجريبي محدّث" && IndividualAccountCustomization.Read(bankOtherMonth.Snapshot, "ramadi")?.Value == fakeAlternate, "bank settings preserve individual account links and customization");
+    var bankUpdatedBackup = Path.Combine(root, "bank-details-backup.zip"); ReconciliationBackupExport.Write(bankOtherMonth.Snapshot, [], bankUpdatedBackup);
+    var restoredBankDetails = BackupReader.Read(bankUpdatedBackup);
+    Check(BankStatementCalculator.Manual(restoredBankDetails, "أيلول 2026").Total == 6000 && TransferPreparation.Prepare(restoredBankDetails, "أيلول 2026").Payer == "دافع تجريبي محدّث", "bank settings survive backup export");
+    try { _ = bookLinkStore.SaveBankDetails(bookSource, bankOtherMonth, "أيلول 2026", "دافع وهمي", fakePayer, new BankManualAmounts(-1, 0, 0)); throw new InvalidOperationException("negative manual amount accepted"); }
+    catch (InvalidDataException) { }
+    Check(bookLinkStore.Load(bookSource).Revision == bankOtherMonth.Revision, "invalid bank settings preserve prior state");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
