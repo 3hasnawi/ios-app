@@ -54,9 +54,20 @@ nonisolated enum SalaryTrustSelfTest {
     /// يكشف اقتطاع النص وتغيير المبالغ في كشف وهمي متعدد الصفحات عند تشغيل المحاكي لاحقاً.
     static func pdf() async -> Bool {
         do {
-            let entries = (1...90).map { index in
-                SalaryTrust.Entry(id: UUID().uuidString, name: "منتسب تجريبي باسم طويل للاختبار رقم \(index)", rank: "رتبة", workplace: "قسم", year: 2026, month: index <= 45 ? 9 : 10,
-                    amount: Int64(100_000 + index), caseStatus: "حالة تجريبية طويلة للفحص دون اقتطاع المحتوى", note: "", importedStatus: "", legacyPaid: false, reviewPending: index == 90, payments: index == 89 ? [SalaryTrust.Payment(id: UUID().uuidString, amount: 40_000, bookNumber: "", bookDate: "", note: "")] : [])
+            var entries: [SalaryTrust.Entry] = []
+            for index in 1...90 {
+                var payments: [SalaryTrust.Payment] = []
+                if index == 89 {
+                    payments.append(SalaryTrust.Payment(id: UUID().uuidString, amount: 40_000,
+                        bookNumber: "", bookDate: "", note: ""))
+                }
+                let month = index <= 45 ? 9 : 10
+                let entry = SalaryTrust.Entry(id: UUID().uuidString,
+                    name: "منتسب تجريبي باسم طويل للاختبار رقم \(index)",
+                    rank: "رتبة", workplace: "قسم", year: 2026, month: month,
+                    amount: Int64(100_000 + index), caseStatus: "حالة تجريبية طويلة للفحص دون اقتطاع المحتوى",
+                    note: "", importedStatus: "", legacyPaid: false, reviewPending: index == 90, payments: payments)
+                entries.append(entry)
             }
             let ledger = SalaryTrust.Ledger(entries: entries, openingImported: true)
             let filtered = SalaryTrust.filtered(entries, month: 202610, status: .all, search: "")
@@ -66,7 +77,8 @@ nonisolated enum SalaryTrustSelfTest {
             guard sheet.rows.count == 46, SalaryTrust.outstanding(filtered) == filtered.filter({ !$0.reviewPending }).reduce(0, { $0 + $1.remaining }) else { return false }
             let url = try await SalaryTrustReport.makePDF(request)
             defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-            return ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+            let values = try url.resourceValues(forKeys: Set([URLResourceKey.fileSizeKey]))
+            return (values.fileSize ?? 0) > 0
         } catch { return false }
     }
 
