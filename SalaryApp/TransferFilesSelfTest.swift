@@ -89,7 +89,7 @@ import CryptoKit
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
-        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 50, y: 842 - 150, width: 495, height: 35))?.string ?? ""
+        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 114, y: 842 - 89, width: 280, height: 50))?.string ?? ""
         try check(!statementTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "reconciliation PDF title")
         var compactStatement = statement
         compactStatement.movements = (1...22).map { index in
@@ -105,6 +105,13 @@ import CryptoKit
         let compactLargePDF = try await BankReconciliationPDF.make(compactLargeStatement)
         defer { try? FileManager.default.removeItem(at: compactLargePDF) }
         try check(PDFDocument(url: compactLargePDF)?.pageCount == 1, "reconciliation fits 26 short movements on one A4 page")
+        var tallerCompactStatement = compactLargeStatement
+        tallerCompactStatement.movements = (1...29).map { index in
+            BankReconciliation.Movement(date: date, description: "حركة \(index)", amount: 1_000_000, direction: .credit)
+        }
+        let tallerCompactPDF = try await BankReconciliationPDF.make(tallerCompactStatement)
+        defer { try? FileManager.default.removeItem(at: tallerCompactPDF) }
+        try check(PDFDocument(url: tallerCompactPDF)?.pageCount == 1, "raised heading fits 29 short movements")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)

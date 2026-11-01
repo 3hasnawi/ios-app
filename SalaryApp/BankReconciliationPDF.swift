@@ -28,6 +28,10 @@ nonisolated enum BankReconciliationPDF {
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
     private static let widths: [CGFloat] = [78, 189, 88, 88, 88]
     private static let margin: CGFloat = 32
+    private static let tableTop: CGFloat = 145
+    private static let rowTop: CGFloat = 169
+    private static let tableBottom: CGFloat = 665
+    private static let totalHeight: CGFloat = 24
     private static func number(_ value: Int64) throws -> String {
         let prefix = value < 0 ? "−" : ""
         return prefix + (try TransferWordValues.groupedAmount(Double(abs(value))))
@@ -98,11 +102,13 @@ nonisolated enum BankReconciliationPDF {
             guard !totals.lines.isEmpty else { throw Failure.empty }
             let bold = ReportFont.bold(9)
             let signatureFont = ReportFont.bold(10.5)
-            let headingFont = ReportFont.bold(13)
-            let heading = "كشف مطابقة حساب البنك لقيادة شرطة محافظة الانبار"
+            let headingFont = ReportFont.bold(10.5)
+            let headingLines = ["كشف مطابقة حساب البنك", "لقيادة شرطة محافظة الانبار"]
+            let organization = ["جمهورية العراق", "وزارة الداخلية", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
             guard let logo = UIImage(named: "HomeLogo")?.cgImage,
                   let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
-            guard lines(heading, font: headingFont, width: 487) == 1 else { throw Failure.tooLong }
+            guard headingLines.allSatisfy({ lines($0, font: headingFont, width: 272) == 1 }),
+                  organization.allSatisfy({ lines($0, font: bold, width: 150) == 1 }) else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var valuesByRow: [[String]] = []
             if period.openingBalance != 0 {
@@ -123,7 +129,7 @@ nonisolated enum BankReconciliationPDF {
                     guard counts.allSatisfy({ $0 != Int.max && $0 <= 5 }), counts[0] == 1,
                           counts[2] == 1, counts[3] == 1, counts[4] == 1 else { return nil }
                     let height = max(minimumHeight, ceil(CGFloat(counts.max() ?? 1) * candidate.lineHeight + 4))
-                    guard height <= 424 else { return nil }
+                    guard height <= tableBottom - rowTop - totalHeight else { return nil }
                     result.append((values, height))
                 }
                 return result
@@ -135,7 +141,7 @@ nonisolated enum BankReconciliationPDF {
                 guard let rows = layout(size: size, minimumHeight: height) else { continue }
                 let candidate = (ReportFont.regular(size), rows)
                 if firstValid == nil { firstValid = candidate }
-                if rows.reduce(CGFloat(0), { $0 + $1.height }) + 24 <= 448 {
+                if rows.reduce(CGFloat(0), { $0 + $1.height }) + totalHeight <= tableBottom - rowTop {
                     singlePage = candidate
                     break
                 }
@@ -161,26 +167,28 @@ nonisolated enum BankReconciliationPDF {
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
                     drawImage(logo, in: CGRect(x: 36, y: 27, width: 72, height: 72), alpha: 1, context: cg)
-                    for (index, value) in ["جمهورية العراق", "وزارة الداخلية", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"].enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 320, y: 27 + CGFloat(index) * 15, width: 235, height: 15), font: bold, align: .right)
+                    for (index, value) in organization.enumerated() {
+                        PDFText.draw(value, in: CGRect(x: 405, y: 27 + CGFloat(index) * 15, width: 150, height: 15), font: bold, align: .right)
                     }
-                    let headingBox = CGRect(x: 50, y: 115, width: 495, height: 35)
+                    let headingBox = CGRect(x: 114, y: 39, width: 280, height: 50)
                     UIColor.darkGray.setStroke(); cg.stroke(headingBox, width: 0.7)
-                    PDFText.draw(heading, in: headingBox.insetBy(dx: 4, dy: 2), font: headingFont)
-                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 157, width: 531, height: 20), font: font)
-                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 176, width: 531, height: 13), font: bold, color: .darkGray) }
+                    for (index, value) in headingLines.enumerated() {
+                        PDFText.draw(value, in: CGRect(x: 118, y: 46 + CGFloat(index) * 18, width: 272, height: 18), font: headingFont)
+                    }
+                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 104, width: 531, height: 20), font: font)
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 126, width: 531, height: 13), font: bold, color: .darkGray) }
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
                         x -= width
-                        let cell = CGRect(x: x, y: 193, width: width, height: 24)
+                        let cell = CGRect(x: x, y: tableTop, width: width, height: 24)
                         rects.append(cell)
                         UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                         UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                         PDFText.draw(labels[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                     }
-                    var y: CGFloat = 217
-                    while index < rows.count, y + rows[index].1 <= 665 {
+                    var y = rowTop
+                    while index < rows.count, y + rows[index].1 <= tableBottom {
                         let (values, height) = rows[index]
                         for i in values.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
@@ -191,7 +199,7 @@ nonisolated enum BankReconciliationPDF {
                         y += height; index += 1
                     }
                     if index == rows.count {
-                        if y + 24 > 665 { pageCount += 1; continue }
+                        if y + totalHeight > tableBottom { pageCount += 1; continue }
                         for i in totalRow.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: 24)
                             UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
