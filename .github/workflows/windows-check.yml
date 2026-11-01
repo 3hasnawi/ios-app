@@ -15,6 +15,10 @@ jobs:
       - name: Build Windows desktop solution
         run: dotnet build windows/SalaryDesktop.sln -c Release --nologo -p:Version=1.0.${{ github.run_number }}
       - name: Test backup, bank calculations and transfer files with fictional data
+        env:
+          # نماذج كتب التحويل ببيانات وهمية تُنشر مع الصور لمقارنتها بمسودة الآيفون.
+          SALARY_TEST_INDIVIDUAL_DIR: ${{ runner.temp }}/windows-screenshots/letters
+          SALARY_TEST_GROUP_PDF: ${{ runner.temp }}/windows-screenshots/letters/group.pdf
         run: dotnet run --project windows/SalaryDesktop.Tests/SalaryDesktop.Tests.csproj -c Release --no-build --no-launch-profile
       - name: Use a desktop-sized screen for design screenshots
         shell: pwsh

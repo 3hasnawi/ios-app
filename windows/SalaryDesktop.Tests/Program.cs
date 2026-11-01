@@ -358,6 +358,7 @@ try
         var entityPlan = entityId == "rafidain_anbar" ? direct : IndividualEntityPreparation.Prepare(entitySource, entityTransfer, entityId, entity.Id, references);
         var pdf = IndividualEntityPdf.Generate(entityPlan, individualSettings, individualFont, individualLogo);
         Check(pdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "individual entity PDF checked: " + entityId);
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_INDIVIDUAL_DIR") is { Length: > 0 } entityDir) { Directory.CreateDirectory(entityDir); File.WriteAllBytes(Path.Combine(entityDir, entityId + ".pdf"), pdf); }
         if (Environment.GetEnvironmentVariable("SALARY_TEST_MAJALLA") is { Length: > 0 } sakkalFile)
         {
             var sakkalPdf = IndividualEntityPdf.Generate(entityPlan, individualSettings, File.ReadAllBytes(sakkalFile), individualLogo);
