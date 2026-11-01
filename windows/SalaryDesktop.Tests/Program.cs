@@ -951,6 +951,29 @@ try
         using (var read = UglyToad.PdfPig.PdfDocument.Open(salaryReportPdf)) Check(read.NumberOfPages == 1, "salary report PDF is one A4 page");
         try { _ = SalaryReports.Make(person.Months[0] with { Employees = [] }, false, false); throw new InvalidOperationException("salary report without payroll accepted"); }
         catch (InvalidDataException) { }
+        // كشف استقطاعات موظف لجهة واحدة عبر الأشهر (بيانات وهمية): شهر بقيد، شهر بلا ملف استقطاعات، وشهر بحالة «موقوف».
+        var statementDeductions = new List<Deduction>
+        {
+            new("تموز 2026", "منتسب تجريبي", "جهة أ", 15000m, "", "عريف"), new("تموز 2026", "شخص آخر", "جهة أ", 1000m, "", ""),
+            new("أيلول 2026", "منتسب  تجريبي", "جهة أ", null, "⟦حالة الاستقطاع:موقوف⟧", ""), new("أيلول 2026", "منتسب تجريبي", "جهة ب", 2000m, "", ""),
+        };
+        var statementSnapshot = new BackupSnapshot(Path.Combine(root, "fictional-statement.zip"), new string('B', 64), 5,
+            [new PayrollMonth("تموز 2026", 1, 2), new PayrollMonth("آب 2026", 1, 0), new PayrollMonth("أيلول 2026", 1, 2)],
+            [new Employee("أيلول 2026", "منتسب تجريبي", "عريف", "قسم وهمي", 500000m, null, null, null)], statementDeductions, 0, [], [], new Dictionary<string, byte[]>());
+        var statementPerson = EmployeeDeductions.Search(EmployeeDeductions.People(statementSnapshot), "منتسب تجريبي").Single();
+        Check(EmployeeDeductions.Entities(statementSnapshot, statementPerson.Key).SequenceEqual(["جهة أ", "جهة ب"]), "deduction statement entities");
+        Check(EmployeeDeductions.AvailableMonths(statementSnapshot, statementPerson.Key, "جهة أ").Keys.SequenceEqual([202607, 202609]), "deduction statement available months");
+        var statement = EmployeeDeductions.Statement(statementSnapshot, statementPerson, "جهة أ", 202607, 202609);
+        Check(statement.Rows.Count == 3 && statement.Rows[0].Amount == 15000m && statement.Rows[1].IsUnavailable && statement.Rows[2].Kind == DeductionPeriodKind.Status && statement.Rows[2].Statuses![0] == "موقوف"
+            && statement.Total == 15000m && statement.Incomplete && statement.Rank == "عريف", "deduction statement rows, statuses and unavailable months");
+        var statementPdf = EmployeeDeductionPdf.Generate(statement, reportAssets, null, stamp);
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(statementPdf)) Check(read.NumberOfPages == 1, "deduction statement PDF is one page for one year");
+        var longStatement = EmployeeDeductions.Statement(statementSnapshot, statementPerson, "جهة أ", 202301, 202609);
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(EmployeeDeductionPdf.Generate(longStatement, reportAssets, null, stamp))) Check(read.NumberOfPages == 2, "deduction statement fits three years per page");
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_INDIVIDUAL_DIR") is { Length: > 0 } statementDir)
+        { Directory.CreateDirectory(statementDir); File.WriteAllBytes(Path.Combine(statementDir, "employee-deductions.pdf"), EmployeeDeductionPdf.Generate(longStatement, reportAssets, File.ReadAllBytes(Path.GetFullPath("SalaryApp/Assets.xcassets/HomeLogo.imageset/HomeLogo.png")), stamp)); }
+        try { _ = EmployeeDeductions.Statement(statementSnapshot with { Deductions = [.. statementDeductions, new Deduction("تموز 2026", "منتسب تجريبي", "جهة أ", -5m, "", "")] }, statementPerson, "جهة أ", 202607, 202609); throw new InvalidOperationException("negative deduction accepted"); }
+        catch (InvalidDataException) { }
         var payrollRows = PayrollRows.Build(reportEmployees.Where(e => e.Month == "أيلول 2026"));
         Check(payrollRows.Length == 30 && payrollRows[0].Payment == "بطاقة" && payrollRows[0].Gross == 800000m && payrollRows[0].TotalDeductions == 100000m && payrollRows[0].Iban.StartsWith("IQ00", StringComparison.Ordinal), "payroll rows read detail fields");
         var brokenRow = PayrollRows.Row(reportEmployees[0] with { Details = Encoding.UTF8.GetBytes("{broken") });

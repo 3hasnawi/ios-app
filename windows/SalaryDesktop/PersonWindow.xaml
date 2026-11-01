@@ -32,6 +32,9 @@
         <Button Click="CopySummary" ToolTip="نسخ ملخص القسيمة" Margin="0,0,8,0">
           <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="نسخ"/></StackPanel>
         </Button>
+        <Button x:Name="DeductionStatementButton" Click="OpenDeductionStatement" ToolTip="كشف استقطاعات جهة واحدة عبر الأشهر (PDF بالشكل المعتمد)" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8A1;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="كشف الاستقطاعات"/></StackPanel>
+        </Button>
         <Button x:Name="ReportButton" Click="OpenReportMenu" ToolTip="تقرير راتب الشهر المعروض بشكل «برنامج الرواتب الالكتروني الموحد»" Margin="0,0,8,0">
           <Button.ContextMenu>
             <ContextMenu x:Name="ReportMenu">

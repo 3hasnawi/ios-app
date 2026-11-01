@@ -53,6 +53,14 @@ public partial class PersonWindow : Window
     }
 
     private void CloseWindow(object sender, RoutedEventArgs e) => Close();
+    /// كشف استقطاعات المنتسب: الجهة المحددة في جدول الاستقطاعات عبر الأشهر، أو جهة الشهر المعروض إن كانت واحدة.
+    private void OpenDeductionStatement(object sender, RoutedEventArgs e)
+    {
+        var entity = (HistoryTable.SelectedItem as DeductionHistoryRow)?.Title
+            ?? (Current?.Deductions.Select(d => d.Title).Distinct().ToArray() is [var only] ? only : null);
+        var detail = string.Join(" · ", new[] { Current?.Employee?.Rank, Current?.Employee?.Workplace }.Where(v => !string.IsNullOrWhiteSpace(v)));
+        new EmployeeDeductionWindow(source, new DeductionPerson(profile.Key, profile.Name, detail), entity) { Owner = this }.ShowDialog();
+    }
     private ProfileMonth? Current => profile.Months.FirstOrDefault(m => m.Month == MonthPicker.SelectedItem as string);
     private void MonthChanged(object sender, SelectionChangedEventArgs e) => Render();
 
@@ -176,7 +184,7 @@ public partial class PersonWindow : Window
         }
         catch (InvalidDataException ex) { Notice.Text = ex.Message; return null; }
     }
-    private static byte[]? HeaderLogo()
+    internal static byte[]? HeaderLogo()
     {
         var path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
         try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }

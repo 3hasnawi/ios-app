@@ -667,6 +667,11 @@ public partial class MainWindow : Window
         finally { if (page == "transfer") RenderTransfers(); }
     }
     private async void OpenSalaryItems(object sender, RoutedEventArgs e) => await ShowSalaryItems(null);
+    private void OpenEmployeeDeductions(object sender, RoutedEventArgs e)
+    {
+        if (snapshot is not { } source) { Ui.Message(this, "افتح نسخة الآيفون أو استورد ملفات الاستقطاعات أولاً.", "كشف استقطاعات موظف"); return; }
+        new EmployeeDeductionWindow(source) { Owner = this }.ShowDialog();
+    }
     private async Task ShowSalaryItems(string? special)
     {
         var source = snapshot; var month = SelectedMonth;

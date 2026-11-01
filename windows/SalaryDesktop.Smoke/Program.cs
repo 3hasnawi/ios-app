@@ -249,6 +249,11 @@ static class Program
                     var previewBytes = SalaryReportPdf.Generate([SalaryReports.Make(month, false, false)], assets, File.Exists(homeLogo) ? File.ReadAllBytes(homeLogo) : null, stamp);
                     var preview = Fit(new PdfPreviewWindow("تقرير راتب - " + month.Employee.Name, previewBytes, "تقرير راتب") { Owner = main }, 980, 860); preview.Show(); await Task.Delay(2500);
                     Check(((ItemsControl)preview.FindName("Pages")).Items.Count == 1, "in-app PDF preview did not render the page"); Shot(preview, "38-pdf-preview"); preview.Close();
+                    // كشف استقطاعات موظف لجهة واحدة عبر الأشهر.
+                    var sampleDeduction = rich.Deductions.First(d => d.Amount is not null);
+                    var statementWindow = Fit(new EmployeeDeductionWindow(rich, new DeductionPerson(PersonProfiles.Key(sampleDeduction.Name), sampleDeduction.Name, sampleDeduction.Rank), sampleDeduction.Title) { Owner = main }, 1120, 780);
+                    statementWindow.Show(); await Task.Delay(1800);
+                    Check(((ItemsControl)statementWindow.FindName("Rows")).Items.Count > 0, "employee deduction statement rows were not shown"); Shot(statementWindow, "41-employee-deductions"); statementWindow.Close();
                     // الرئيسية: شريط التدقيق والفئات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
                     Check(((FrameworkElement)main.FindName("AlertStrip")).Visibility == Visibility.Visible && ((ItemsControl)main.FindName("HomeAlerts")).Items.Count > 0, "home audit strip was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");

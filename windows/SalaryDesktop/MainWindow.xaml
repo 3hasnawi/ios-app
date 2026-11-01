@@ -187,7 +187,7 @@
                   <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="9" Background="{DynamicResource AccentSoft}" HorizontalAlignment="Left"><TextBlock Style="{StaticResource Icon}" Text="&#xE8F1;" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center"/></Border>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="التقارير وجهات التنفيذ" Margin="0,12,0,0"/>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="مبالغ الاستقطاع لكل جهة وقوائمها المعتمدة، وبنود الرواتب" TextWrapping="Wrap" Margin="0,4,0,14"/>
-                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" Margin="0,0,8,6"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب" Margin="0,0,0,6"/></WrapPanel>
+                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" Margin="0,0,8,6"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب" Margin="0,0,8,6"/><Button Click="OpenEmployeeDeductions" Content="كشف استقطاعات موظف" Margin="0,0,0,6" ToolTip="استقطاع جهة واحدة لموظف عبر الأشهر"/></WrapPanel>
                 </DockPanel>
               </Border>
               <Border Style="{StaticResource Card}" Margin="14,0,0,14">
