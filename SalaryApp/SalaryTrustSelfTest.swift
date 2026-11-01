@@ -25,6 +25,9 @@ nonisolated enum SalaryTrustSelfTest {
             let report = SalaryTrustReportRequest(entries: ledger.entries, month: "كل الأشهر", status: "كل الحالات", query: "", ledgerData: try SalaryTrust.encode(ledger), preview: true)
             let sheet = try SalaryTrustReport.sheet(report)
             guard sheet.rows.count == 3, sheet.rows[0][7] == "700", sheet.rows[1][7] == "—", sheet.rows[2][7] == "700" else { return false }
+            guard SalaryTrust.filtered(ledger.entries, month: 202610, status: .partial, search: "").map(\.id) == [entry.id],
+                  SalaryTrust.filtered(ledger.entries, month: 202609, status: .partial, search: "").isEmpty,
+                  SalaryTrust.filtered(ledger.entries, month: 0, status: .review, search: "").map(\.id) == [review.id] else { return false }
             let bookID = UUID()
             let ids: Set<String> = [entry.id, review.id]
             let linked = try SalaryTrust.linking(ledger, bookID: bookID, entries: ids)
@@ -48,4 +51,23 @@ nonisolated enum SalaryTrustSelfTest {
             return true
         } catch { return false }
     }
+    /// يكشف اقتطاع النص وتغيير المبالغ في كشف وهمي متعدد الصفحات عند تشغيل المحاكي لاحقاً.
+    static func pdf() async -> Bool {
+        do {
+            let entries = (1...90).map { index in
+                SalaryTrust.Entry(id: UUID().uuidString, name: "منتسب تجريبي باسم طويل للاختبار رقم \(index)", rank: "رتبة", workplace: "قسم", year: 2026, month: index <= 45 ? 9 : 10,
+                    amount: Int64(100_000 + index), caseStatus: "حالة تجريبية طويلة للفحص دون اقتطاع المحتوى", note: "", importedStatus: "", legacyPaid: false, reviewPending: index == 90, payments: index == 89 ? [SalaryTrust.Payment(id: UUID().uuidString, amount: 40_000, bookNumber: "", bookDate: "", note: "")] : [])
+            }
+            let ledger = SalaryTrust.Ledger(entries: entries, openingImported: true)
+            let filtered = SalaryTrust.filtered(entries, month: 202610, status: .all, search: "")
+            guard filtered.count == 45 else { return false }
+            let request = SalaryTrustReportRequest(entries: filtered, month: "تشرين الأول 2026", status: "كل الحالات", query: "", ledgerData: try SalaryTrust.encode(ledger), preview: true)
+            let sheet = try SalaryTrustReport.sheet(request)
+            guard sheet.rows.count == 46, SalaryTrust.outstanding(filtered) == filtered.filter({ !$0.reviewPending }).reduce(0, { $0 + $1.remaining }) else { return false }
+            let url = try await SalaryTrustReport.makePDF(request)
+            defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+            return ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+        } catch { return false }
+    }
+
 }

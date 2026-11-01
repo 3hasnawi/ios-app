@@ -45,6 +45,13 @@ nonisolated enum SalaryTrust {
         guard (0..<12).contains(index) else { return "—" }
         return "\(AppSettings.isEnglish ? english[index] : arabic[index]) \(Num.digits(String(key / 100)))"
     }
+    static func filtered(_ entries: [Entry], month: Int, status: PaymentFilter, search: String) -> [Entry] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return entries.filter { entry in
+            (month == 0 || entry.year * 100 + entry.month == month) && status.includes(entry) &&
+            (query.isEmpty || ArabicText.matchKey(entry.name).contains(ArabicText.matchKey(query)))
+        }.sorted { ($0.year, $0.month, $0.name) > ($1.year, $1.month, $1.name) }
+    }
     static func outstanding(_ entries: [Entry]) -> Int64 {
         entries.filter { !$0.reviewPending }.reduce(0) { $0 + $1.remaining }
     }

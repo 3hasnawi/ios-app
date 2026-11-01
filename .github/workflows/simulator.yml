@@ -654,6 +654,7 @@ jobs:
         if: inputs.quick != true || inputs.backup_only == true
         run: |
           grep -q "trust=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust self-test failed"; exit 1; }
+          grep -q "trustPDF=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust PDF test failed"; exit 1; }
 
       - name: Enforce navigation test result
         if: inputs.backup_only != true

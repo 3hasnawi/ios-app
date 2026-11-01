@@ -70,7 +70,7 @@ struct SalaryTrustView: View {
     @AppStorage(SalaryTrust.settingsKey) private var stored = Data()
     @State private var search = ""
     @State private var filterMonth = 0
-    @State private var filterStatus = SalaryTrust.PaymentFilter.all
+    @State private var filterStatus: SalaryTrust.PaymentFilter
     @State private var reportRequest: SalaryTrustReportRequest?
     @State private var problem: String?
     @State private var preview: SalaryTrust.Ledger?
@@ -81,13 +81,13 @@ struct SalaryTrustView: View {
     @State private var selectingBooks = false
     @State private var selectedIDs = Set<String>()
     @State private var showBookPicker = false
+    init(initialStatus: SalaryTrust.PaymentFilter = .all) {
+        _filterStatus = State(initialValue: initialStatus)
+    }
     private var ledger: SalaryTrust.Ledger? { try? SalaryTrust.decode(stored) }
     private var availableMonths: [Int] { Array(Set((ledger?.entries ?? []).map { $0.year * 100 + $0.month })).sorted(by: >) }
     private var visible: [SalaryTrust.Entry] {
-        (ledger?.entries ?? []).filter { e in
-            (filterMonth == 0 || e.year * 100 + e.month == filterMonth) && filterStatus.includes(e) &&
-            (search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || ArabicText.matchKey(e.name).contains(ArabicText.matchKey(search)))
-        }.sorted { ($0.year, $0.month, $0.name) > ($1.year, $1.month, $1.name) }
+        SalaryTrust.filtered(ledger?.entries ?? [], month: filterMonth, status: filterStatus, search: search)
     }
     var body: some View {
         List {
@@ -95,23 +95,11 @@ struct SalaryTrustView: View {
                 Section {
                     LabeledContent(tr("المتبقي حسب الفلاتر", "Outstanding for current filters"), value: Money.format(Double(SalaryTrust.outstanding(visible))))
                     LabeledContent(tr("القيود الظاهرة", "Visible entries"), value: Num.format(visible.count))
+                    Text("\(filterMonth == 0 ? tr("كل الأشهر", "All months") : SalaryTrust.monthLabel(filterMonth)) · \(filterStatus.title)")
+                        .font(.caption).foregroundStyle(.secondary)
                     let unresolved = visible.filter(\.reviewPending).count
                     if unresolved > 0 { Text(tr("\(Num.format(unresolved)) قيد للمراجعة مستبعد من المتبقي.", "\(unresolved) entries needing review are excluded from the balance.")).font(.caption).foregroundStyle(.orange) }
                 }
-                Section {
-                    Picker(tr("الشهر", "Month"), selection: $filterMonth) {
-                        Text(tr("كل الأشهر", "All months")).tag(0)
-                        ForEach(availableMonths, id: \.self) { month in Text(SalaryTrust.monthLabel(month)).tag(month) }
-                    }
-                    Picker(tr("حالة الصرف", "Payment status"), selection: $filterStatus) {
-                        ForEach(SalaryTrust.PaymentFilter.allCases) { status in Text(status.title).tag(status) }
-                    }
-                    HStack {
-                        Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { prepareReport(preview: true) }
-                        Spacer()
-                        Button(tr("تصدير", "Export"), systemImage: "square.and.arrow.up") { prepareReport(preview: false) }
-                    }.disabled(visible.isEmpty)
-                } header: { Text(tr("الفلترة والكشف", "Filters and report")) }
                 if !ledger.openingImported {
                     Section { Button(tr("استيراد ملف الأمانات الافتتاحي", "Import opening trust spreadsheet"), systemImage: "square.and.arrow.down") { pickOpening() }.disabled(loading) }
                 }
@@ -141,6 +129,15 @@ struct SalaryTrustView: View {
                             }
                             }
                         }
+                        .contextMenu {
+                            Button(tr("فتح التفاصيل", "Open details"), systemImage: "doc.text") { selected = e }
+                            Button(tr("تحديد للربط بكتاب", "Select for document linking"), systemImage: "checkmark.circle") {
+                                selectingBooks = true; selectedIDs.insert(e.id)
+                            }
+                            Button(tr("ربط بكتاب", "Link a document"), systemImage: "link") {
+                                selectedIDs = [e.id]; selectingBooks = true; showBookPicker = true
+                            }
+                        }
                     }
                 }
             } else { Text(tr("تعذّر قراءة دفتر الأمانات؛ لم تتغير البيانات.", "Could not read the trust ledger; data was not changed.")).foregroundStyle(.red) }
@@ -155,10 +152,30 @@ struct SalaryTrustView: View {
             else { SalaryTrustExportSheet(request: request) }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(selectingBooks ? tr("إلغاء التحديد", "Cancel selection") : tr("تحديد للربط", "Select to link")) {
-                    selectingBooks.toggle(); selectedIDs.removeAll()
-                }.disabled(ledger?.entries.isEmpty != false)
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Picker(tr("الشهر", "Month"), selection: $filterMonth) {
+                        Text(tr("كل الأشهر", "All months")).tag(0)
+                        ForEach(availableMonths, id: \.self) { month in Text(SalaryTrust.monthLabel(month)).tag(month) }
+                    }
+                    Picker(tr("حالة الصرف", "Payment status"), selection: $filterStatus) {
+                        ForEach(SalaryTrust.PaymentFilter.allCases) { status in Text(status.title).tag(status) }
+                    }
+                    if filterMonth != 0 || filterStatus != .all {
+                        Button(tr("مسح الفلاتر", "Clear filters"), systemImage: "xmark.circle") { filterMonth = 0; filterStatus = .all }
+                    }
+                } label: {
+                    Image(systemName: filterMonth != 0 || filterStatus != .all ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityLabel(tr("فلترة الشهر وحالة الصرف", "Filter month and payment status"))
+                Menu {
+                    Button(tr("معاينة الكشف", "Preview report"), systemImage: "doc.text.magnifyingglass") { prepareReport(preview: true) }.disabled(visible.isEmpty)
+                    Button(tr("تصدير الكشف", "Export report"), systemImage: "square.and.arrow.up") { prepareReport(preview: false) }.disabled(visible.isEmpty)
+                    Button(selectingBooks ? tr("إلغاء التحديد", "Cancel selection") : tr("تحديد للربط بكتاب", "Select for document linking"), systemImage: selectingBooks ? "xmark.circle" : "checkmark.circle") {
+                        selectingBooks.toggle(); selectedIDs.removeAll()
+                    }.disabled(ledger?.entries.isEmpty != false)
+                } label: { Image(systemName: "ellipsis").rotationEffect(.degrees(90)) }
+                .accessibilityLabel(tr("خيارات الأمانات", "Trust options"))
             }
         }
         .sheet(isPresented: $showBookPicker) {

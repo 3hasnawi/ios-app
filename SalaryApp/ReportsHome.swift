@@ -12,6 +12,7 @@ enum ReportsRoute: Hashable {
     case deductionComparison
     case employeeDeductions
     case salaryAudit
+    case salaryTrust(SalaryTrust.PaymentFilter)
     case group(ReportGroup)
 }
 
@@ -72,6 +73,7 @@ struct ReportsView: View {
         case .employeeDeductions: EmployeeDeductionsView()
         case .salaryAudit: SalaryAuditView(months: months.map(\.name))
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
+        case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
         case .group(let group): ReportDetailView(group: group)
         }
@@ -79,15 +81,18 @@ struct ReportsView: View {
     private var reportsContent: some View {
             ScrollView {
                 if months.isEmpty {
-                    ContentUnavailableView(tr("لا توجد بيانات", "No data"), systemImage: "chart.bar.doc.horizontal",
-                                           description: Text(tr("استورد ملفات الرواتب والاستقطاعات أولاً.", "Import payroll and deduction files first.")))
-                        .padding(.top, 80)
+                    VStack(spacing: 16) {
+                        ContentUnavailableView(tr("لا توجد بيانات", "No data"), systemImage: "chart.bar.doc.horizontal",
+                                               description: Text(tr("استورد ملفات الرواتب والاستقطاعات أولاً.", "Import payroll and deduction files first.")))
+                        salaryTrustCard
+                    }.padding(.horizontal, 16).padding(.top, 32)
                 } else {
                     VStack(spacing: 12) {
                         summaryCard
                         auditCard
                         employeeDeductionsCard
                         entitiesCard
+                        salaryTrustCard
                         specialCards
                     }
                     .padding(.horizontal, 16)
@@ -332,6 +337,47 @@ struct ReportsView: View {
             Button(tr("قائمة الجهات", "Entities list"), systemImage: "list.bullet") { open(.entities) }
             Button(tr("تصدير…", "Export…"), systemImage: "square.and.arrow.up") { showExport = true }
                 .disabled(deductionGroups.isEmpty)
+        }
+    }
+
+    @AppStorage(SalaryTrust.settingsKey) private var trustData = Data()
+    @State private var trustNoticeIndex = 0
+    private var salaryTrustCard: some View {
+        let ledger = try? SalaryTrust.decode(trustData)
+        let entries = ledger?.entries ?? []
+        let notices = [
+            tr("\(Num.format(entries.filter(\.reviewPending).count)) قيد للمراجعة", "\(entries.filter(\.reviewPending).count) entries to review"),
+            tr("\(Num.format(entries.filter { !$0.reviewPending && $0.paid > 0 && $0.remaining > 0 }.count)) قيد مصروف جزئياً", "\(entries.filter { !$0.reviewPending && $0.paid > 0 && $0.remaining > 0 }.count) partially paid entries")
+        ]
+        return Button { open(.salaryTrust(.all)) } label: {
+            HStack(spacing: 12) {
+                CardIcon(systemImage: "banknote.fill", color: .teal)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(tr("أمانات الرواتب", "Salary trust")).font(.headline).foregroundStyle(.primary)
+                    Text(tr("الرصيد غير المصروف · كل الأشهر", "Outstanding · all months"))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text(ledger?.openingImported == true ? Money.format(Double(SalaryTrust.outstanding(ledger?.entries ?? []))) : "—")
+                        .font(.title3.weight(.bold).monospacedDigit()).foregroundStyle(.teal).lineLimit(1).minimumScaleFactor(0.7)
+                    if ledger?.openingImported == true {
+                        Text(notices[trustNoticeIndex % notices.count]).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(tr("فتح الأمانات", "Open trust"), systemImage: "list.bullet") { open(.salaryTrust(.all)) }
+            Button(tr("الأمانات غير المكتملة", "Outstanding trust"), systemImage: "line.3.horizontal.decrease.circle") { open(.salaryTrust(.unfinished)) }
+            Button(tr("القيود للمراجعة", "Entries for review"), systemImage: "exclamationmark.circle") { open(.salaryTrust(.review)) }
+        }
+        .accessibilityIdentifier("reportsSalaryTrustCard")
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            trustNoticeIndex = (trustNoticeIndex + 1) % notices.count
         }
     }
 

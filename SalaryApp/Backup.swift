@@ -870,9 +870,10 @@ final class BackupManager {
         else { UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenKey) }
         let serverDatesOK = serverDate != nil && noSeenIsNewer && !sameIsNewer && laterIsNewer
         let trustOK = SalaryTrustSelfTest.run()
+        let trustPDFOK = await SalaryTrustSelfTest.pdf()
         let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
-            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK
-        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
+            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK && trustPDFOK
+        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) trustPDF=\(trustPDFOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
     }
 
     // MARK: - الاسترجاع

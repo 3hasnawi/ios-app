@@ -50,36 +50,8 @@ nonisolated enum SalaryTrustReport {
             rows: rows, amounts: Array(repeating: 0, count: rows.count), showTotal: false)
     }
 
-    /// يرفض أي خلية لا تتسع كاملة، بدل تصدير كشف محاسبي مبتور.
-    private static func ensureFits(_ sheet: ReportSheet) throws {
-        let pageWidth: CGFloat = sheet.landscape ? 842 : 595
-        let widths = PDFReportWriter.columnWidths(sheet, tableWidth: pageWidth - 56)
-        func fits(_ text: String, width: CGFloat, font: UIFont) -> Bool {
-            guard !text.contains("\n"), width > 8 else { return false }
-            let attributes: [NSAttributedString.Key: Any] = [.font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): PDFText.rtl]
-            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
-            return CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line) <= Double(width - 8) + 0.2
-        }
-        guard fits(sheet.header, width: pageWidth - 56, font: ReportFont.bold(14)),
-              fits(sheet.title, width: pageWidth - 56, font: ReportFont.bold(14)),
-              sheet.columns.indices.allSatisfy({ fits(sheet.columns[$0].title, width: widths[$0], font: ReportFont.bold(10.5)) }) else {
-            throw SalaryTrust.invalid(tr("عنوان الكشف طويل ولا يتسع كاملاً في PDF؛ اختصر البحث أو صدّر Excel.", "The report title is too long for PDF; shorten the search or export Excel."))
-        }
-        for row in sheet.rows {
-            guard row.count == widths.count, row.indices.allSatisfy({ fits(row[$0], width: widths[$0], font: ReportFont.regular(10)) }) else {
-                throw SalaryTrust.invalid(tr("بعض بيانات الكشف طويلة ولا تتسع كاملة في PDF؛ صدّر Excel لتجنب اقتطاع البيانات.", "Some cells do not fit in PDF; export Excel to preserve all data."))
-            }
-        }
-    }
     static func makePDF(_ request: SalaryTrustReportRequest) async throws -> URL {
-        try await PDFWork.run {
-            let report = try sheet(request); try ensureFits(report)
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("trust-report-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let file = folder.appendingPathComponent("كشف أمانات الرواتب.pdf")
-            do { try PDFReportWriter.write(report, to: file); try PDFDecor.apply(to: file); return file }
-            catch { try? FileManager.default.removeItem(at: folder); throw error }
-        }
+        try await PDFWork.run { try SalaryTrustPDF.write(sheet(request)) }
     }
     static func makeExcel(_ request: SalaryTrustReportRequest) async throws -> URL {
         try await PDFWork.run {
