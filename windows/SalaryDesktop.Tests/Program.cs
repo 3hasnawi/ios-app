@@ -185,6 +185,10 @@ try
     Check(BackupReader.Read(replacedBackup).Employees.Count(e => e.Month == "أيلول 2026") == 1 && snapshot.Employees.Count(e => e.Month == "أيلول 2026") == 2, "replacement backup preserves source and records");
     Check(month.Employees == 2 && month.NetTotal == 1250000m && month.MissingNet == 1 && month.Deductions == 2 && month.MissingAmounts == 1, "monthly totals and missing values");
     var bank = BankStatementCalculator.Calculate(snapshot, "أيلول 2026");
+    // الاحتساب محفوظ لنفس البيانات والشهر، وأي تعديل (نسخة بيانات جديدة) يعيد الحساب.
+    Check(ReferenceEquals(bank, BankStatementCalculator.Calculate(snapshot, "أيلول 2026")) && !ReferenceEquals(bank, BankStatementCalculator.Calculate(snapshot with { }, "أيلول 2026")) &&
+          BankStatementCalculator.Calculate(snapshot with { }, "أيلول 2026").BankTotal == bank.BankTotal, "bank statement result is reused for the same data and recomputed for changed data");
+    Check(ReferenceEquals(TransferPreparation.Prepare(snapshot, "أيلول 2026"), TransferPreparation.Prepare(snapshot, "أيلول 2026")), "transfer preparation is reused when returning to the page");
     Check(bank.Card == 1250000m && bank.Cash == 0m && bank.BankDeductions == 2500m && bank.Breakdown["شركة عراق الجوال"] == 5000m, "bank payroll sources");
     Check(bank.Manual.Total == 1500m && bank.BankTotal == 1259000m && !bank.ExecutionMatched && bank.MissingExecutionAmounts == 1, "bank manual amounts and reconciliation");
     var emptySettings = snapshot with { SettingsPlists = new Dictionary<string, byte[]>() };

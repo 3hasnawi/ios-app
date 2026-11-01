@@ -78,6 +78,7 @@ public partial class PdfPreviewWindow : Window
         try
         {
             pages = await RenderPages(pdf);
+            Rendering.Visibility = Visibility.Collapsed;
             Pages.ItemsSource = pages;
             InfoText.Text = $"{pages.Count:N0} صفحة · {pdf.Length / 1024.0:N0} كيلوبايت · معاينة داخل البرنامج";
             SaveButton.IsEnabled = PrintButton.IsEnabled = pages.Count > 0;
@@ -86,7 +87,7 @@ public partial class PdfPreviewWindow : Window
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            InfoText.Text = "تعذّرت المعاينة: " + ex.Message;
+            InfoText.Text = "تعذّرت المعاينة: " + ex.Message; Rendering.Visibility = Visibility.Collapsed;
             SaveButton.IsEnabled = true;
         }
     }

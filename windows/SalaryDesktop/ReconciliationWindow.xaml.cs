@@ -34,7 +34,7 @@ public partial class ReconciliationWindow : Window
         var choices = state.Periods.OrderByDescending(p => p.Start).Select(p => new PeriodChoice(p, $"{p.Month} · {p.Start:yyyy/MM/dd} — {p.End:yyyy/MM/dd}")).ToArray();
         Periods.ItemsSource = choices;
         Periods.SelectedItem = choices.FirstOrDefault(c => c.Period.Id == selected);
-        if (Periods.SelectedItem is null) { ++sourceRequest; Lines.ItemsSource = null; SourceStatus.Text = ""; Summary.Text = choices.Length == 0 ? "لا توجد فترات مطابقة؛ أضف فترة جديدة." : "اختر فترة المطابقة من القائمة."; }
+        if (Periods.SelectedItem is null) { ++sourceRequest; SourceLoading.Visibility = Visibility.Collapsed; Lines.ItemsSource = null; SourceStatus.Text = ""; Summary.Text = choices.Length == 0 ? "لا توجد فترات مطابقة؛ أضف فترة جديدة." : "اختر فترة المطابقة من القائمة."; }
     }
     private void PeriodChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -50,6 +50,10 @@ public partial class ReconciliationWindow : Window
     {
         var ticket = ++sourceRequest;
         SourceStatus.Text = "جارٍ فحص مصادر الشهر…";
+        // دائرة التحميل بعد ربع ثانية فقط، حتى لا تومض عندما تكون النتيجة محفوظة.
+        var delay = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        delay.Tick += (_, _) => { delay.Stop(); if (ticket == sourceRequest) SourceLoading.Visibility = Visibility.Visible; };
+        delay.Start();
         try
         {
             var data = await Task.Run(() => { if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة."); return ReconciliationSuggestions.Prepare(source, period.Month); });
@@ -64,6 +68,7 @@ public partial class ReconciliationWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         { if (ticket == sourceRequest && Current?.Id == period.Id) SourceStatus.Text = "تعذّر فحص مصادر الشهر: " + ex.Message; }
+        finally { delay.Stop(); if (ticket == sourceRequest) SourceLoading.Visibility = Visibility.Collapsed; }
     }
     private async void OpenSuggestions(object sender, RoutedEventArgs e)
     {

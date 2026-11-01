@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Claunia.PropertyList;
@@ -121,7 +123,10 @@ public static class TransferPreparation
         }
         catch (JsonException ex) { throw new InvalidDataException($"تعذرت قراءة إعداد {key}.", ex); }
     }
-    public static TransferSnapshot Prepare(BackupSnapshot snapshot, string month)
+    /// التجهيز محفوظ لكل نسخة بيانات وشهر (مثل كشف البنك): الرجوع إلى قسم التحويل لا يعيد الحساب، وأي تعديل ينشئ نسخة جديدة.
+    private static readonly ConditionalWeakTable<BackupSnapshot, ConcurrentDictionary<string, TransferSnapshot>> Prepared = new();
+    public static TransferSnapshot Prepare(BackupSnapshot snapshot, string month) => Prepared.GetOrCreateValue(snapshot).GetOrAdd(month, m => Build(snapshot, m));
+    private static TransferSnapshot Build(BackupSnapshot snapshot, string month)
     {
         var bank = BankStatementCalculator.Calculate(snapshot, month);
         var accounts = new Dictionary<string, ExecutionAccount>(StringComparer.Ordinal);

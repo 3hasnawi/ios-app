@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Claunia.PropertyList;
@@ -35,6 +37,24 @@ public static class BankStatementCalculator
         (["الضريبة", "ضريبة"], "الضريبة"),
         (["حماية الاجتماعية", "الحماية الاجتماعية"], "الحماية الاجتماعية")];
 
+    // الأداء: كانت أسماء الأعمدة الثابتة تُوحَّد ملايين المرات لعشرات آلاف الموظفين؛ تُوحَّد الآن مرة واحدة،
+    // وأسماء الأعمدة والرتب وطرق الدفع المتكررة تُحفظ موحّدة في ذاكرة مؤقتة.
+    private static readonly ConcurrentDictionary<string, string> KeyCache = new(StringComparer.Ordinal);
+    private static string Key(string text)
+    {
+        if (KeyCache.TryGetValue(text, out var cached)) return cached;
+        var value = PayrollAnalysis.Normalize(text);
+        if (KeyCache.Count < 50_000) KeyCache[text] = value;
+        return value;
+    }
+    private static readonly string BankKey = PayrollAnalysis.Normalize("مجموع استقطاعات المصارف"), NominalKey = PayrollAnalysis.Normalize("الاسمي"),
+        RetirementKey = PayrollAnalysis.Normalize("توقيفات تقاعدية"), RetirementAltKey = PayrollAnalysis.Normalize("التوقيفات التقاعدية"),
+        FoodKey = PayrollAnalysis.Normalize("الجوال"), ContractsKey = PayrollAnalysis.Normalize("عقود");
+    private static readonly HashSet<string> SourceKeys = Sources.SelectMany(s => s.Keys).Select(PayrollAnalysis.Normalize).ToHashSet(StringComparer.Ordinal);
+    private static bool Tracked(string key) => key.Contains(FoodKey, StringComparison.Ordinal) || SourceKeys.Contains(key) || key == NominalKey || key == RetirementKey || key == RetirementAltKey || key == BankKey;
+    /// النتيجة محفوظة لكل نسخة بيانات وشهر: أي تعديل ينشئ نسخة بيانات جديدة فيُعاد الحساب، والعودة إلى القسم لا تعيده.
+    private static readonly ConditionalWeakTable<BackupSnapshot, ConcurrentDictionary<string, BankSummary>> Results = new();
+
     private static Dictionary<string, T> ReadObject<T>(byte[]? bytes, string name)
     {
         if (bytes is null) return new(StringComparer.Ordinal);
@@ -59,9 +79,9 @@ public static class BankStatementCalculator
         {
             if (details.TryGetValue(key, out var text) && ParseAmount(text) is { } direct) return direct;
             if (items.TryGetValue(key, out var value)) return value;
-            var normalized = PayrollAnalysis.Normalize(key);
-            foreach (var pair in details) if (PayrollAnalysis.Normalize(pair.Key) == normalized && ParseAmount(pair.Value) is { } parsed) return parsed;
-            foreach (var pair in items) if (PayrollAnalysis.Normalize(pair.Key) == normalized) return pair.Value;
+            var normalized = Key(key);
+            foreach (var pair in details) if (Key(pair.Key) == normalized && ParseAmount(pair.Value) is { } parsed) return parsed;
+            foreach (var pair in items) if (Key(pair.Key) == normalized) return pair.Value;
         }
         return null;
     }
@@ -78,7 +98,8 @@ public static class BankStatementCalculator
         }
         catch (Exception ex) when (ex is not InvalidDataException) { throw new InvalidDataException("تعذّر قراءة المبالغ اليدوية؛ لم تُفترض صفراً.", ex); }
     }
-    public static BankSummary Calculate(BackupSnapshot snapshot, string month)
+    public static BankSummary Calculate(BackupSnapshot snapshot, string month) => Results.GetOrCreateValue(snapshot).GetOrAdd(month, m => Compute(snapshot, m));
+    private static BankSummary Compute(BackupSnapshot snapshot, string month)
     {
         if (!snapshot.Months.Any(m => m.Name == month)) throw new InvalidDataException("الشهر غير موجود في النسخة.");
         var breakdown = Labels.ToDictionary(x => x, _ => 0m, StringComparer.Ordinal);
@@ -94,7 +115,8 @@ public static class BankStatementCalculator
             var details = ReadObject<string>(employee.Details, "تفاصيل الراتب");
             var items = ReadObject<decimal>(employee.Items, "بنود الراتب");
             if (details.Any(p => p.Value is null)) throw new InvalidDataException("تحتوي تفاصيل الراتب على قيمة غير صالحة.");
-            foreach (var key in details.Keys.Concat(items.Keys)) observed.Add(PayrollAnalysis.Normalize(key));
+            foreach (var key in details.Keys) observed.Add(Key(key));
+            foreach (var key in items.Keys) observed.Add(Key(key));
             if (employee.RawColumns is { } rawBytes)
             {
                 RawColumns raw;
@@ -104,14 +126,10 @@ public static class BankStatementCalculator
                     raw.Headers.Any(x => x is null) || raw.Values.Any(x => x is null)) throw new InvalidDataException("أعمدة الراتب الأصلية غير صالحة.");
                 for (int i = 0; i < raw.Headers.Length; i++)
                 {
-                    var key = PayrollAnalysis.Normalize(raw.Headers[i]);
+                    var key = Key(raw.Headers[i]);
                     observed.Add(key);
-                    bool food = key.Contains(PayrollAnalysis.Normalize("الجوال"), StringComparison.Ordinal);
-                    foodObserved |= food;
-                    bool tracked = food || Sources.Any(source => source.Keys.Any(name => PayrollAnalysis.Normalize(name) == key)) ||
-                        key == PayrollAnalysis.Normalize("الاسمي") || key == PayrollAnalysis.Normalize("توقيفات تقاعدية") ||
-                        key == PayrollAnalysis.Normalize("التوقيفات التقاعدية") || key == PayrollAnalysis.Normalize("مجموع استقطاعات المصارف");
-                    if (tracked && !string.IsNullOrWhiteSpace(raw.Values[i]))
+                    foodObserved |= key.Contains(FoodKey, StringComparison.Ordinal);
+                    if (Tracked(key) && !string.IsNullOrWhiteSpace(raw.Values[i]))
                     {
                         var number = ParseAmount(raw.Values[i]);
                         if (number is null || number < 0 || number != decimal.Truncate(number.Value)) invalid.Add(raw.Headers[i]);
@@ -120,11 +138,8 @@ public static class BankStatementCalculator
             }
             foreach (var pair in details.Where(p => !string.IsNullOrWhiteSpace(p.Value)))
             {
-                var label = PayrollAnalysis.Normalize(pair.Key);
-                if ((Sources.Any(s => s.Keys.Any(k => PayrollAnalysis.Normalize(k) == label)) ||
-                     label == PayrollAnalysis.Normalize("مجموع استقطاعات المصارف") ||
-                     label == PayrollAnalysis.Normalize("الاسمي") || label == PayrollAnalysis.Normalize("توقيفات تقاعدية") ||
-                     label == PayrollAnalysis.Normalize("التوقيفات التقاعدية")))
+                var label = Key(pair.Key);
+                if (SourceKeys.Contains(label) || label == BankKey || label == NominalKey || label == RetirementKey || label == RetirementAltKey)
                 {
                     var number = ParseAmount(pair.Value);
                     if (number is null || number < 0 || number != decimal.Truncate(number.Value)) invalid.Add(pair.Key);
@@ -132,14 +147,14 @@ public static class BankStatementCalculator
             }
             if (employee.Net is { } net)
             {
-                var payment = PayrollAnalysis.Normalize(details.GetValueOrDefault("طريقة الدفع", ""));
+                var payment = Key(details.GetValueOrDefault("طريقة الدفع", ""));
                 if (payment.Contains("بطاق", StringComparison.Ordinal) || payment.Contains("كارت", StringComparison.Ordinal) || payment.Contains("ماستر", StringComparison.Ordinal)) card += net;
                 else if (payment.Contains("كاش", StringComparison.Ordinal) || payment.Contains("نقد", StringComparison.Ordinal)) cash += net;
                 else { unclassified += net; unclassifiedCount++; }
             }
             else missingNet++;
             bank += FindAmount(details, items, ["مجموع استقطاعات المصارف"]) ?? 0m;
-            if (PayrollAnalysis.Normalize(employee.Rank) == PayrollAnalysis.Normalize("عقود"))
+            if (Key(employee.Rank) == ContractsKey)
             {
                 contractCount++;
                 var value = FindAmount(details, items, ["الاسمي"]);
@@ -149,15 +164,10 @@ public static class BankStatementCalculator
             foreach (var (keys, label) in Sources) breakdown[label] += FindAmount(details, items, keys) ?? 0m;
             foreach (var item in items)
             {
-                var key = PayrollAnalysis.Normalize(item.Key);
-                bool tracked = key.Contains(PayrollAnalysis.Normalize("الجوال"), StringComparison.Ordinal) ||
-                    Sources.Any(source => source.Keys.Any(name => PayrollAnalysis.Normalize(name) == key)) ||
-                    key == PayrollAnalysis.Normalize("الاسمي") || key == PayrollAnalysis.Normalize("توقيفات تقاعدية") ||
-                    key == PayrollAnalysis.Normalize("التوقيفات التقاعدية") || key == PayrollAnalysis.Normalize("مجموع استقطاعات المصارف");
-                if (tracked && (item.Value < 0 || item.Value != decimal.Truncate(item.Value))) invalid.Add(item.Key);
+                var key = Key(item.Key);
+                if (Tracked(key) && (item.Value < 0 || item.Value != decimal.Truncate(item.Value))) invalid.Add(item.Key);
+                if (key.Contains(FoodKey, StringComparison.Ordinal)) { foodObserved = true; breakdown["شركة عراق الجوال"] += item.Value; }
             }
-            foreach (var item in items.Where(p => PayrollAnalysis.Normalize(p.Key).Contains(PayrollAnalysis.Normalize("الجوال"), StringComparison.Ordinal)))
-            { foodObserved = true; breakdown["شركة عراق الجوال"] += item.Value; }
         }
         foreach (var entry in snapshot.Deductions.Where(d => d.Month == month && !PayrollAnalysis.IsInactive(d)))
         {

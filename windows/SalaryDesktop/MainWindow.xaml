@@ -1,6 +1,7 @@
 <Window x:Class="SalaryDesktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SalaryDesktop"
         Title="تطبيق الرواتب — ويندوز" Height="840" Width="1460" MinHeight="660" MinWidth="1080"
         Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
         WindowStartupLocation="CenterScreen" AllowDrop="True" DragOver="WindowDragOver" Drop="WindowDrop" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" PreviewKeyDown="WindowKeyDown">
@@ -576,6 +577,8 @@
             </Border>
           </StackPanel>
         </ScrollViewer>
+        <!-- دائرة التحميل في وسط الصفحة أثناء احتساب كشف البنك والتحويل والجداول وفتح النسخ. -->
+        <Border x:Name="LoadingOverlay" Background="{DynamicResource Page}" Visibility="Collapsed" Panel.ZIndex="50"><local:LoadingSpinner x:Name="LoadingView"/></Border>
         <Border x:Name="UnavailablePanel" Visibility="Collapsed" Style="{StaticResource Card}" VerticalAlignment="Top"><StackPanel><TextBlock x:Name="UnavailableTitle" FontSize="20" FontWeight="SemiBold"/><TextBlock x:Name="UnavailableMessage" Margin="0,10,0,0" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontSize="14"/></StackPanel></Border>
       </Grid>
       <DockPanel Grid.Row="3" Margin="0,10,0,0">

@@ -87,7 +87,7 @@ public partial class MainWindow : Window
     private async Task<bool> OpenBackupFile(string selectedPath)
     {
         if (loading) return false;
-        loading = true;
+        loading = true; BeginLoading("*", "جارٍ فتح النسخة والتحقق منها…");
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
         {
@@ -125,7 +125,7 @@ public partial class MainWindow : Window
             Ui.Message(this, $"تعذّر قراءة النسخة والتحقق منها.\n{ex.Message}", "فتح النسخة", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;
         }
-        finally { loading = false; }
+        finally { loading = false; EndLoading("*"); }
     }
 
     private void SetSnapshot(BackupSnapshot loaded)
@@ -149,7 +149,7 @@ public partial class MainWindow : Window
     private async Task LoadStoredSnapshot()
     {
         if (loading || snapshot is not null) return;
-        loading = true;
+        loading = true; BeginLoading("*", "جارٍ فتح البيانات المحفوظة…");
         try
         {
             var loaded = await Task.Run(store.LoadCurrent);
@@ -157,7 +157,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
         { SourceMessage.Text = "تعذّر فتح النسخة المحلية. لم تُستبدل؛ اختر نسخة احتياطية صالحة. " + ex.Message; }
-        finally { loading = false; }
+        finally { loading = false; EndLoading("*"); }
     }
     private RadioButton[] NavItems => [NavHome, NavPayroll, NavDeductions, NavStaff, NavArchive, NavGroups, NavBank, NavTransfer, NavAccounts, NavSettings];
     /// القائمة الجانبية تختار الصفحة؛ أزرار البطاقات تختار عنصر القائمة المقابل حتى تبقى العلامة صحيحة.
@@ -226,7 +226,7 @@ public partial class MainWindow : Window
     private void RenderPage()
     {
         if (!IsInitialized || HomePanel is null || DataTable is null) return;
-        RefreshBackupReminder();
+        RefreshBackupReminder(); UpdateLoading(false);
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
@@ -294,6 +294,7 @@ public partial class MainWindow : Window
             return;
         }
         var staffRows = staff;
+        BeginLoading(current, "جارٍ تحميل البيانات…");
         try
         {
             var result = await Task.Run(() => Query(current, source, staffRows, month, tokens, filters));
@@ -315,6 +316,7 @@ public partial class MainWindow : Window
             if (ticket != tableRequest || current != page) return;
             DataTable.ItemsSource = null; UpdateTotals(); TableStatus.Text = "تعذّر عرض البيانات: " + ex.Message;
         }
+        finally { if (ticket == tableRequest) EndLoading(current); }
     }
 
     private sealed class RowIndex<T>(IReadOnlyList<T> source, string?[] months, string[] keys)
@@ -358,6 +360,7 @@ public partial class MainWindow : Window
     private async void LoadStaff(BackupSnapshot source)
     {
         var digest = source.SourceDigest; staffLoadingDigest = digest;
+        BeginLoading("staff", "جارٍ قراءة الملاك…");
         try
         {
             var loaded = await Task.Run(() => StaffRecords.Read(source));
@@ -366,7 +369,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (snapshot?.SourceDigest == digest) { staff = null; staffDigest = digest; staffError = "تعذّر قراءة الملاك: " + ex.Message; } }
-        finally { if (staffLoadingDigest == digest) staffLoadingDigest = null; if (page == "staff" && snapshot?.SourceDigest == digest) RenderPage(); }
+        finally { if (staffLoadingDigest == digest) { staffLoadingDigest = null; EndLoading("staff"); } if (page == "staff" && snapshot?.SourceDigest == digest) RenderPage(); }
     }
     /// النقر المزدوج على شريط التمرير أو العناوين لا يفتح الصف المختار سابقاً.
     private void OpenArchiveBook(object sender, MouseButtonEventArgs e)
@@ -565,6 +568,7 @@ public partial class MainWindow : Window
         preparedTransfer = null; preparedSource = null; TransferExport.IsEnabled = false; TransferTable.ItemsSource = null; IssuanceNotice.Text = "";
         if (source is null || month.Length == 0) { TransferNotice.Text = "افتح نسخة الآيفون واختر الشهر أولاً."; return; }
         TransferNotice.Text = "جارٍ مراجعة بيانات التحويل محلياً…";
+        BeginLoading("transfer", "جارٍ تجهيز ملفات التحويل…");
         try
         {
             var prepared = await Task.Run(() => {
@@ -593,6 +597,7 @@ public partial class MainWindow : Window
         {
             if (ticket == transferRequest && ReferenceEquals(source, snapshot) && month == SelectedMonth && page == "transfer") TransferNotice.Text = "تعذّر تجهيز التحويل: " + ex.Message;
         }
+        finally { if (ticket == transferRequest) EndLoading("transfer"); }
     }
     private async void LinkTransferAccount(object sender, RoutedEventArgs e)
     {
@@ -844,6 +849,7 @@ public partial class MainWindow : Window
         BankRows.ItemsSource = null; BankTotalText.Text = "—"; BankReconcileText.Text = "";
         if (source is null || month.Length == 0) { BankNotice.Text = "افتح نسخة الآيفون واختر الشهر أولاً."; return; }
         BankNotice.Text = "جارٍ احتساب بيانات الشهر محلياً…";
+        BeginLoading("bank", "جارٍ احتساب كشف البنك…");
         try
         {
             var result = await Task.Run(() => BankStatementCalculator.Calculate(source, month));
@@ -873,6 +879,7 @@ public partial class MainWindow : Window
             if (ticket == bankRequest && ReferenceEquals(source, snapshot) && month == SelectedMonth && page == "bank")
                 BankNotice.Text = "تعذّر احتساب كشف البنك: " + ex.Message;
         }
+        finally { if (ticket == bankRequest) EndLoading("bank"); }
     }
 
     private sealed record CategoryTile(string Name, int Count);
@@ -891,9 +898,11 @@ public partial class MainWindow : Window
         }
         SnapshotSummary.Text = $"{source.Months.Count:N0} شهر · {source.StaffCount:N0} سجل في الملاك · {source.Accounts.Count:N0} حساب جهة · {source.Books.Count:N0} كتاب في الأرشيف";
         var people = staffDigest == source.SourceDigest ? staff : null;
+        var cached = homeCache is { } hit && ReferenceEquals(hit.Source, source) && hit.Month == month && ReferenceEquals(hit.People, people) ? hit : ((BackupSnapshot, string, IReadOnlyList<StaffMember>?, MonthSummary, HomeOverview)?)null;
+        if (cached is null) BeginLoading("home", "جارٍ احتساب ملخص الشهر…");
         try
         {
-            var totals = await Task.Run(() => PayrollAnalysis.Summarize(source, month));
+            var totals = cached?.Item4 ?? await Task.Run(() => PayrollAnalysis.Summarize(source, month));
             if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
             NetLabel.Text = totals.MissingNet > 0 ? $"صافي الرواتب المتاح · {month} · بيانات ناقصة" : $"صافي الرواتب · {month}";
             NetAmount.Text = totals.Employees == 0 || totals.MissingNet == totals.Employees ? "غير متاح" : Amount(totals.NetTotal);
@@ -901,8 +910,9 @@ public partial class MainWindow : Window
             DataWarning.Text = totals.MissingNet > 0 || totals.MissingAmounts > 0
                 ? $"تنبيه: {totals.MissingNet:N0} راتب بلا صافي و{totals.MissingAmounts:N0} قيد بلا مبلغ؛ المجاميع أولية."
                 : "النتائج للعرض والمراجعة؛ قارنها مع نسخة الآيفون قبل الاعتماد.";
-            var overview = await Task.Run(() => HomeOverviews.Build(source, month, people));
+            var overview = cached?.Item5 ?? await Task.Run(() => HomeOverviews.Build(source, month, people));
             if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
+            homeCache = (source, month, people, totals, overview);
             HomeCategories.ItemsSource = overview.Categories.Select(c => new CategoryTile(c.Name, c.Count)).ToArray();
             if (overview.PreviousMonth is { } previous)
             {
@@ -922,6 +932,7 @@ public partial class MainWindow : Window
         {
             if (ticket == homeRequest) { NetAmount.Text = "غير متاح"; DataWarning.Text = "تعذّر حساب الملخص: " + ex.Message; }
         }
+        finally { if (ticket == homeRequest) EndLoading("home"); }
     }
     private void OpenAlert(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) OpenSalaryReview(kind); }
     private async void OpenSpecialReport(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) await ShowSalaryItems(kind); }
