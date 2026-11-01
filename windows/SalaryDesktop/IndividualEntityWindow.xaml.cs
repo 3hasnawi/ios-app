@@ -10,7 +10,7 @@ namespace SalaryDesktop;
 public partial class IndividualEntityWindow : Window
 {
     private sealed record Choice(string Id, string Title);
-    private sealed record Candidate(TransferEntry Entry, IndividualEntityPlan Plan) { public string Title => Entry.Title; }
+    private sealed record Candidate(TransferEntry Entry, IndividualEntityPlan? Plan, string? Problem) { public string Title => Entry.Title + (Plan is null ? " · يحتاج مراجعة" : ""); }
     private readonly BackupSnapshot source; private readonly TransferSnapshot transfer; private readonly LocalTransferLinks store;
     private readonly IReadOnlyDictionary<string, byte[]> references; private readonly Func<bool> payrollCurrent;
     private bool working; private bool suppress; private IndividualEntityPlan? plan;
@@ -33,20 +33,21 @@ public partial class IndividualEntityWindow : Window
             var state = State;
             var candidates = await Task.Run(() => {
                 if (!payrollCurrent() || store.Load(source).Revision != state.Revision) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتاب.");
-                GroupLetterSettingsReader.EnsureAccountNotCustomized(state.Snapshot, choice.Id);
                 if (transfer.SourceWarnings.Count > 0) throw new InvalidDataException(string.Join("\n", transfer.SourceWarnings));
                 _ = LetterReferencePack.IndividualAccount(references, choice.Id, transfer.PayerAccount);
                 var result = new List<Candidate>();
                 foreach (var entry in transfer.Entries.Where(e => e.Group == TransferGroup.Anbar && e.Id.StartsWith("deduction|", StringComparison.Ordinal)))
-                    try { result.Add(new(entry, IndividualEntityPreparation.Prepare(state.Snapshot, transfer, choice.Id, entry.Id, references))); } catch (InvalidDataException) { }
+                    try { result.Add(new(entry, IndividualEntityPreparation.Prepare(state.Snapshot, transfer, choice.Id, entry.Id, references), null)); }
+                    catch (InvalidDataException ex) { result.Add(new(entry, null, ex.Message)); }
                 return result;
             });
             suppress = true; EntityPicker.ItemsSource = candidates;
             var hasSaved = IndividualLetterLinks.Read(State.Snapshot).ContainsKey(choice.Id);
-            var saved = IndividualLetterLinks.Resolve(State.Snapshot, choice.Id, candidates.Select(c => c.Entry).ToArray());
-            var selected = saved is null ? (!hasSaved && candidates.Count == 1 ? candidates[0] : null) : candidates.SingleOrDefault(c => c.Entry == saved);
+            var valid = candidates.Where(c => c.Plan is not null).ToArray();
+            var saved = IndividualLetterLinks.Resolve(State.Snapshot, choice.Id, valid.Select(c => c.Entry).ToArray());
+            var selected = saved is null ? (!hasSaved && valid.Length == 1 ? valid[0] : null) : valid.SingleOrDefault(c => c.Entry == saved);
             EntityPicker.SelectedItem = selected; suppress = false;
-            if (selected is null) Status.Text = candidates.Count == 0 ? "لا توجد جهة مطابقة للمرجع ببيانات مكتملة. راجع الحساب والقيود من التحويلات." : hasSaved ? "تغيّرت الجهة أو حسابها منذ الربط السابق؛ راجعها واخترها من جديد." : "اختر الجهة المطابقة من القائمة.";
+            if (selected is null) Status.Text = candidates.Count == 0 ? "لا توجد جهات لفرع الأنبار في الشهر." : hasSaved ? "تغيّرت الجهة أو حسابها منذ الربط السابق؛ راجعها واخترها من جديد." : "اختر جهة الكتاب؛ الجهات التي تحتاج مراجعة موضحة في القائمة.";
             else { Busy(false); await Select(selected, choice); return; }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
@@ -60,7 +61,14 @@ public partial class IndividualEntityWindow : Window
     }
     private async Task Select(Candidate selected, Choice choice)
     {
-        plan = null; Busy(true); Status.Text = "جارٍ حفظ ربط الجهة والتحقق من قيودها…";
+        plan = null;
+        if (selected.Plan is null)
+        {
+            AmountText.Text = selected.Entry.Amount.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
+            AccountText.Text = selected.Entry.Account?.Iban ?? "—";
+            Status.Text = (selected.Problem ?? "راجع جهة الكتاب.") + " يمكن مراجعة حساب المستفيد من تخصيص الكتاب."; Busy(false); return;
+        }
+        Busy(true); Status.Text = "جارٍ حفظ ربط الجهة والتحقق من قيودها…";
         try
         {
             var state = State;
@@ -81,9 +89,13 @@ public partial class IndividualEntityWindow : Window
         try
         {
             if (!payrollCurrent() || store.Load(source).Revision != State.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب.");
-            var window = new IndividualSettingsWindow(source, State, store, choice.Id, payrollCurrent) { Owner = this };
+            var selected = EntityPicker.SelectedItem as Candidate;
+            var displayed = plan?.BeneficiaryAccount;
+            if (displayed is null && selected?.Entry.Account is { } account)
+                displayed = choice.Id == "ramadi" ? account.Iban : choice.Id is "housing" or "water" ? TransferPreparation.LocalAccount(account) : null;
+            var window = new IndividualSettingsWindow(source, State, store, choice.Id, payrollCurrent, transfer.Month, selected?.Entry.Id, displayed, selected is { Plan: null } && displayed is not null) { Owner = this };
             window.ShowDialog(); State = window.State;
-            Status.Text = "أُغلق تخصيص الكتاب. احفظ نسخة احتياطية إذا عدّلت التخصيصات.";
+            BookChanged(BookPicker, null!);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }

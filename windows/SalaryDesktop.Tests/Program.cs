@@ -313,18 +313,25 @@ try
     PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { header = "ترويسة عامة", fixedNumber = "ح/1", committeeFirst = "عضو عام", foodContractReference = "عقد تجريبي" }, individual = new Dictionary<string, object> { ["food_company"] = new { committeeFirst = "عضو خاص" } } })), individualSettingsPlist);
     var individualSettingsSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = individualSettingsPlist.ToArray() } };
     Check(GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_company").First == "عضو خاص" && GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_tax").First == "عضو عام" && GroupLetterSettingsReader.FoodContract(individualSettingsSnapshot) == "عقد تجريبي", "individual letter settings inherit and preserve contract reference");
-    using var overrideSettingsPlist = new MemoryStream();
-    PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { }, individual = new Dictionary<string, object> { ["food_company"] = new { beneficiaryAccount = fakeReceiver } } })), overrideSettingsPlist);
-    var overrideSettingsSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = overrideSettingsPlist.ToArray() } };
-    try { GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_company"); throw new InvalidOperationException("custom beneficiary silently ignored"); }
+    const string fakeAlternate = "IQ49TEST123000000000003";
+    Check(TransferPreparation.ValidIban(fakeAlternate), "synthetic alternate IBAN valid");
+    byte[] CustomAccount(string id, string origin, string chosen, string prior, string reference)
+    {
+        using var buffer = new MemoryStream();
+        PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { }, individual = new Dictionary<string, object> { [id] = new { beneficiaryAccount = chosen, beneficiarySource = origin, beneficiaryOriginal = prior, beneficiaryReference = reference } } })), buffer); return buffer.ToArray();
+    }
+    var payrollCustom = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = CustomAccount("food_company", "food_company", fakeAlternate, fakeReceiver, fakeReceiver) } };
+    var customFood = IndividualLetterPreparation.Payroll("food_company", incompleteBank with { Breakdown = new Dictionary<string, decimal>(incompleteBank.Breakdown) { ["شركة عراق الجوال"] = 100000 } }, "دافع وهمي", fakePayer, references, customization: payrollCustom);
+    Check(customFood.BeneficiaryAccount == fakeAlternate, "pinned payroll beneficiary override is honored");
+    var entityCustom = entitySource with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = CustomAccount("ramadi", entity.Title, fakeAlternate, fakeReceiver, fakeReceiver) } };
+    try { _ = IndividualEntityPreparation.Prepare(entityCustom, entityTransfer, "ramadi", entity.Id, references); throw new InvalidOperationException("book account changed before account list"); }
     catch (InvalidDataException) { }
-    GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_tax");
-    using var commonOverridePlist = new MemoryStream();
-    PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { beneficiaryAccount = fakeReceiver }, individual = new Dictionary<string, object> { ["food_tax"] = new { beneficiaryAccount = "" } } })), commonOverridePlist);
-    var commonOverrideSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = commonOverridePlist.ToArray() } };
-    try { GroupLetterSettingsReader.EnsureAccountNotCustomized(commonOverrideSnapshot, "food_company"); throw new InvalidOperationException("common beneficiary override ignored"); }
+    var updatedEntity = entity with { Account = anbarAccount with { Iban = fakeAlternate } };
+    var updatedPlan = IndividualEntityPreparation.Prepare(entityCustom, entityTransfer with { Entries = [updatedEntity] }, "ramadi", updatedEntity.Id, references);
+    Check(updatedPlan.BeneficiaryAccount == fakeAlternate, "updated entity account and pinned override agree");
+    var staleReference = entitySource with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = CustomAccount("ramadi", entity.Title, fakeAlternate, fakeReceiver, fakePayer) } };
+    try { _ = IndividualEntityPreparation.Prepare(staleReference, entityTransfer with { Entries = [updatedEntity] }, "ramadi", updatedEntity.Id, references); throw new InvalidOperationException("stale account reference accepted"); }
     catch (InvalidDataException) { }
-    GroupLetterSettingsReader.EnsureAccountNotCustomized(commonOverrideSnapshot, "food_tax");
     var individualSettings = new GroupLetterSettings("ترويسة تجريبية\nقسم حسابات وهمي", "ح/1/22/", "عضو تجريبي أول", "عضو تجريبي ثان", "عضو تجريبي ثالث", "نسخة تجريبية", null, 10, 0, null);
     var individualFont = File.ReadAllBytes(font); var individualLogo = File.ReadAllBytes(Path.GetFullPath("SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png"));
     IndividualLetterPlan SampleIndividual(string id, params IndividualLetterLine[] values) { var sum = values.Sum(v => v.Amount); return new(id, "أيلول 2026", "دافع وهمي", fakePayer, fakeReceiver, sum, ArabicAmountWords.Dinars(sum), values, null, null, []); }
@@ -407,6 +414,33 @@ try
     var detailedAudit = SalaryReview.Prepare(snapshot with { Employees = auditEmployees, Deductions = [personRow with { Month = reviewMonth }] }, reviewMonth);
     Check(detailedAudit.Rows.Any(r => r.Kind == "حساب الصافي" && r.Before == 500 && r.After == 499) && detailedAudit.Rows.Any(r => r.Kind == "الرعاية الصحية") && detailedAudit.Rows.Count(r => r.Kind == "رقم مكرر") == 2, "salary review checks arithmetic, healthcare, and repeated identifiers");
     Check(detailedAudit.Rows.Any(r => r.Kind == "استقطاع بلا راتب") && detailedAudit.Rows.Any(r => r.Kind == "مجموع الاستقطاعات"), "salary review checks deduction orphans and totals");
+    var afterAccount = bookLinkStore.SaveIndividualSettings(bookSource, afterFood, "ramadi", bodySettings, false, new HashSet<string> { "beneficiaryAccount" }, "أيلول 2026", preparedEntity.Id, fakeAlternate);
+    Check(IndividualAccountCustomization.Read(afterAccount.Snapshot, "ramadi")?.Value == fakeAlternate, "individual account customization saved with its reference");
+    var beforeUpdate = TransferPreparation.Prepare(afterAccount.Snapshot, "أيلول 2026");
+    try { _ = IndividualEntityPreparation.Prepare(afterAccount.Snapshot, beforeUpdate, "ramadi", preparedEntity.Id, references); throw new InvalidOperationException("changed book account accepted before account list updated"); }
+    catch (InvalidDataException) { }
+    var changedAccountState = bookLinkStore.SaveAccount(bookSource, afterAccount, anbarAccount, anbarAccount with { Iban = fakeAlternate });
+    var afterUpdate = TransferPreparation.Prepare(changedAccountState.Snapshot, "أيلول 2026");
+    Check(IndividualEntityPreparation.Prepare(changedAccountState.Snapshot, afterUpdate, "ramadi", preparedEntity.Id, references).BeneficiaryAccount == fakeAlternate, "updated list unlocks chosen book account");
+    var individualAccountBackup = Path.Combine(root, "individual-account-backup.zip"); ReconciliationBackupExport.Write(changedAccountState.Snapshot, [], individualAccountBackup);
+    Check(IndividualAccountCustomization.Read(BackupReader.Read(individualAccountBackup), "ramadi")?.Value == fakeAlternate, "book account customization survives backup");
+    try { _ = bookLinkStore.SaveIndividualSettings(bookSource, changedAccountState, "ramadi", bodySettings, false, new HashSet<string> { "beneficiaryAccount", "bodyTemplate" }, "أيلول 2026", preparedEntity.Id, fakePayer); throw new InvalidOperationException("payer accepted as beneficiary"); }
+    catch (InvalidDataException) { }
+    Check(bookLinkStore.Load(bookSource).Revision == changedAccountState.Revision, "invalid account cannot partially save other fields");
+    var alternateOrderStore = new LocalTransferLinks(Path.Combine(root, "individual-account-updated-first"));
+    var alternateInitial = alternateOrderStore.Load(bookSource);
+    var listUpdatedFirst = alternateOrderStore.SaveAccount(bookSource, alternateInitial, anbarAccount, anbarAccount with { Iban = fakeAlternate });
+    var linkedAfterUpdate = alternateOrderStore.SaveIndividualSettings(bookSource, listUpdatedFirst, "ramadi", fakeSettings, false, new HashSet<string> { "beneficiaryAccount" }, "أيلول 2026", preparedEntity.Id, fakeAlternate);
+    var transferAfterFirst = TransferPreparation.Prepare(linkedAfterUpdate.Snapshot, "أيلول 2026");
+    Check(IndividualEntityPreparation.Prepare(linkedAfterUpdate.Snapshot, transferAfterFirst, "ramadi", preparedEntity.Id, references).BeneficiaryAccount == fakeAlternate, "book customization works when the account list was updated first");
+    try { _ = alternateOrderStore.SaveIndividualSettings(bookSource, linkedAfterUpdate, "ramadi", fakeSettings, true, new HashSet<string> { "beneficiaryAccount" }, "أيلول 2026", preparedEntity.Id, fakeAlternate); throw new InvalidOperationException("beneficiary account applied to all books"); }
+    catch (InvalidDataException) { }
+    var payrollAccountStore = new LocalTransferLinks(Path.Combine(root, "payroll-account-custom"));
+    var payrollAccountInitial = payrollAccountStore.Load(bookSource);
+    var payrollAccountSaved = payrollAccountStore.SaveIndividualSettings(bookSource, payrollAccountInitial, "food_company", fakeSettings, false, new HashSet<string> { "beneficiaryAccount" }, "أيلول 2026", null, fakeAlternate);
+    var payrollAccountPlan = IndividualLetterPreparation.Payroll("food_company", incompleteBank with { Breakdown = new Dictionary<string, decimal>(incompleteBank.Breakdown) { ["شركة عراق الجوال"] = 100000 } }, "دافع وهمي", fakePayer, references, customization: payrollAccountSaved.Snapshot);
+    Check(payrollAccountPlan.BeneficiaryAccount == fakeAlternate && payrollAccountSaved.Snapshot.Accounts.SequenceEqual(bookSource.Accounts), "payroll beneficiary customization does not alter saved transfer accounts");
+    Check(IndividualPayrollPdf.Generate(payrollAccountPlan, individualSettings, individualFont, individualFont, individualLogo, "٣ / ٢٠٢٢").Length > 0, "custom payroll beneficiary appears in verified PDF");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

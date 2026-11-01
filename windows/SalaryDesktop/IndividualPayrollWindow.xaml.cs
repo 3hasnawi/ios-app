@@ -32,8 +32,7 @@ public partial class IndividualPayrollWindow : Window
         {
             var result = await Task.Run(() => {
                 if (!Current()) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتب.");
-                GroupLetterSettingsReader.EnsureAccountNotCustomized(source, choice.Id);
-                var prepared = IndividualLetterPreparation.Payroll(choice.Id, summary, payer, payerAccount, references, acceptMissingContractNominal: true);
+                var prepared = IndividualLetterPreparation.Payroll(choice.Id, summary, payer, payerAccount, references, acceptMissingContractNominal: true, customization: source);
                 var list = choice.Id == "cash_salary" ? CashSalaryListPreparation.Prepare(source, summary.Month) : null;
                 return (prepared, list);
             });
@@ -53,9 +52,9 @@ public partial class IndividualPayrollWindow : Window
         try
         {
             if (!Current()) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب.");
-            var window = new IndividualSettingsWindow(original, State, store, choice.Id, payrollCurrent) { Owner = this };
+            var window = new IndividualSettingsWindow(original, State, store, choice.Id, payrollCurrent, summary.Month, null, plan?.BeneficiaryAccount) { Owner = this };
             window.ShowDialog(); State = window.State; source = State.Snapshot; ContractText.Text = GroupLetterSettingsReader.FoodContract(source) ?? "";
-            Status.Text = "تمت مراجعة التخصيصات. احفظ نسخة احتياطية لتضمين التعديلات.";
+            BookChanged(BookPicker, null!);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }

@@ -7,13 +7,16 @@ namespace SalaryDesktop;
 
 public partial class IndividualSettingsWindow : Window
 {
-    private readonly BackupSnapshot source; private readonly LocalTransferLinks store; private readonly string id; private readonly Func<bool> payrollCurrent;
+    private readonly BackupSnapshot source; private readonly LocalTransferLinks store; private readonly string id; private readonly Func<bool> payrollCurrent; private readonly string month; private readonly string? entryId; private string initialAccount;
     private GroupLetterSettings initial;
     public TransferLinksSnapshot State { get; private set; }
-    public IndividualSettingsWindow(BackupSnapshot source, TransferLinksSnapshot state, LocalTransferLinks store, string id, Func<bool> payrollCurrent)
+    public IndividualSettingsWindow(BackupSnapshot source, TransferLinksSnapshot state, LocalTransferLinks store, string id, Func<bool> payrollCurrent, string month, string? entryId, string? displayedAccount, bool accountNeedsConfirm = false)
     {
-        InitializeComponent(); this.source = source; State = state; this.store = store; this.id = id; this.payrollCurrent = payrollCurrent;
+        InitializeComponent(); this.source = source; State = state; this.store = store; this.id = id; this.payrollCurrent = payrollCurrent; this.month = month; this.entryId = entryId;
         initial = GroupLetterSettingsReader.Read(state.Snapshot, id);
+        var accountDisplay = accountNeedsConfirm ? displayedAccount ?? "" : IndividualAccountCustomization.Read(state.Snapshot, id)?.Value ?? displayedAccount ?? "";
+        initialAccount = accountNeedsConfirm ? "" : accountDisplay;
+        AccountText.Text = accountDisplay; AccountSection.Visibility = id == "rafidain_anbar" ? Visibility.Collapsed : Visibility.Visible;
         Heading.Text = "تخصيص الكتاب"; Notice.Text = "تسري التغييرات المحفوظة على الأشهر القادمة. حقل العدد وعقد الإطعام موحدان لجميع الكتب.";
         HeaderText.Text = initial.Header; NumberText.Text = initial.Number; FoodContractText.Text = initial.FoodContractReference ?? "";
         FirstText.Text = initial.First; SecondText.Text = initial.Second; ThirdText.Text = initial.Third; FooterText.Text = initial.Footer;
@@ -37,7 +40,8 @@ public partial class IndividualSettingsWindow : Window
         Add(value.Second != initial.Second, "committeeSecond"); Add(value.Third != initial.Third, "committeeThird"); Add(value.Footer != initial.Footer, "footer");
         Add((value.BodyMonth ?? "") != (initial.BodyMonth ?? ""), "bodyMonth"); Add(value.OutgoingMonth != initial.OutgoingMonth, "outgoingMonth");
         Add(value.SignatureOffset != initial.SignatureOffset, "signatureOffset"); Add(value.BodyTemplate != (initial.BodyTemplate ?? IndividualLetterBody.Default(id)), "bodyTemplate");
-        Add((value.FoodContractReference ?? "") != (initial.FoodContractReference ?? ""), "foodContractReference"); return fields;
+        Add((value.FoodContractReference ?? "") != (initial.FoodContractReference ?? ""), "foodContractReference");
+        if (id != "rafidain_anbar") Add(Clean(AccountText.Text) != initialAccount, "beneficiaryAccount"); return fields;
     }
     private void SaveSettings(object sender, RoutedEventArgs e)
     {
@@ -45,7 +49,8 @@ public partial class IndividualSettingsWindow : Window
         {
             if (!payrollCurrent() || store.Load(source).Revision != State.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح التخصيص.");
             var value = Fields(); var changes = Changes(value);
-            if (changes.Count > 0) { State = store.SaveIndividualSettings(source, State, id, value, Scope.SelectedIndex == 1, changes); initial = GroupLetterSettingsReader.Read(State.Snapshot, id); }
+            if (changes.Count > 0) { State = store.SaveIndividualSettings(source, State, id, value, Scope.SelectedIndex == 1, changes, month, entryId, Clean(AccountText.Text)); initial = GroupLetterSettingsReader.Read(State.Snapshot, id);
+                if (changes.Contains("beneficiaryAccount")) { initialAccount = IndividualAccountCustomization.Read(State.Snapshot, id)?.Value ?? ""; AccountText.Text = initialAccount; } }
             Notice.Text = "حُفظت التغييرات. احفظ نسخة احتياطية لتضمين التخصيصات.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)

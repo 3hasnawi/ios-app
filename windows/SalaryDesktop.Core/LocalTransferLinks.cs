@@ -154,22 +154,23 @@ public sealed class LocalTransferLinks(string directory)
     public TransferLinksSnapshot SaveGroupSettings(BackupSnapshot source, TransferLinksSnapshot expected, TransferGroup group, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null)
     {
         var id = group switch { TransferGroup.Rafidain => "rafidain_group", TransferGroup.OtherBanks => "other_banks_group", _ => throw new InvalidDataException("نوع الكتاب غير صالح.") };
-        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields);
+        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields, null, null, null);
     }
-    public TransferLinksSnapshot SaveIndividualSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null)
+    public TransferLinksSnapshot SaveIndividualSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null, string? accountMonth = null, string? accountEntryId = null, string? accountValue = null)
     {
         if (id is not ("food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary" or "ramadi" or "housing" or "water" or "rafidain_anbar")) throw new InvalidDataException("نوع الكتاب غير صالح.");
-        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields);
+        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields, accountMonth, accountEntryId, accountValue);
     }
-    private TransferLinksSnapshot SaveLetterSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields)
+    private TransferLinksSnapshot SaveLetterSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields, string? accountMonth, string? accountEntryId, string? accountValue)
     {
         if (new[] { value.Header, value.Number, value.First, value.Second, value.Third }.Any(string.IsNullOrWhiteSpace) || value.Header.Length > 2000 || value.Number.Length > 200 ||
             new[] { value.First, value.Second, value.Third }.Any(s => s.Length > 200 || s.Any(char.IsControl)) || value.Footer.Length > 4000 ||
             value.Header.Any(c => char.IsControl(c) && c != '\n') || value.Footer.Any(c => char.IsControl(c) && c != '\n') || value.Number.Any(char.IsControl) ||
             value.OutgoingMonth is < 1 or > 12 || value.SignatureOffset is < -60 or > 60) throw new InvalidDataException("راجع الترويسة والعدد والأسماء وشهر الصادر وموضع اللجنة.");
-        var supported = new HashSet<string>(["header", "fixedNumber", "committeeFirst", "committeeSecond", "committeeThird", "footer", "outgoingMonth", "signatureOffset", "bodyMonth", "bodyTemplate", "foodContractReference"], StringComparer.Ordinal);
-        selectedFields ??= supported.Where(f => f != "foodContractReference" && (!applyToAll || f != "bodyTemplate")).ToHashSet(StringComparer.Ordinal);
+        var supported = new HashSet<string>(["header", "fixedNumber", "committeeFirst", "committeeSecond", "committeeThird", "footer", "outgoingMonth", "signatureOffset", "bodyMonth", "bodyTemplate", "foodContractReference", "beneficiaryAccount"], StringComparer.Ordinal);
+        selectedFields ??= supported.Where(f => f != "foodContractReference" && f != "beneficiaryAccount" && (!applyToAll || f != "bodyTemplate")).ToHashSet(StringComparer.Ordinal);
         if (selectedFields.Count == 0 || selectedFields.Any(f => !supported.Contains(f))) throw new InvalidDataException("اختر حقلاً صالحاً للتخصيص.");
+        if (selectedFields.Contains("beneficiaryAccount") && (applyToAll || id is "rafidain_group" or "other_banks_group" or "rafidain_anbar")) throw new InvalidDataException("حساب المستفيد يخصص لكتاب منفرد واحد فقط.");
         if (selectedFields.Contains("bodyMonth") && !string.IsNullOrWhiteSpace(value.BodyMonth) && MonthNames.SortKey(value.BodyMonth) == 0) throw new InvalidDataException("شهر متن الكتاب غير صالح.");
         var defaultBody = id is "rafidain_group" or "other_banks_group" ? GroupLetterPdf.DefaultBodyTemplate : IndividualLetterBody.Default(id);
         if (selectedFields.Contains("bodyTemplate"))
@@ -212,6 +213,35 @@ public sealed class LocalTransferLinks(string directory)
         {
             var item = individual[id] as JsonObject ?? new JsonObject(); individual[id] = item.DeepClone(); item = (JsonObject)individual[id]!;
             foreach (var (key, field) in fields.Where(p => selectedFields.Contains(p.Key))) item[key] = field?.DeepClone();
+        }
+        if (selectedFields.Contains("beneficiaryAccount"))
+        {
+            var item = individual[id] as JsonObject ?? new JsonObject(); individual[id] = item.DeepClone(); item = (JsonObject)individual[id]!;
+            var chosen = (accountValue ?? "").Trim();
+            if (chosen.Length > 128 || chosen.Any(char.IsControl)) throw new InvalidDataException("حساب المستفيد غير صالح.");
+            if (chosen.Length == 0)
+            {
+                item["beneficiaryAccount"] = ""; item.Remove("beneficiarySource"); item.Remove("beneficiaryOriginal"); item.Remove("beneficiaryReference");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(accountMonth)) throw new InvalidDataException("اختر شهر الكتاب قبل تعديل الحساب.");
+                var transfer = TransferPreparation.Prepare(current.Snapshot, accountMonth);
+                var reference = LetterReferencePack.IndividualAccount(LetterReferencePack.Read(current.Snapshot), id, transfer.PayerAccount) ?? throw new InvalidDataException("مرجع حساب المستفيد غير موجود.");
+                string origin, originalAccount;
+                if (id is "ramadi" or "housing" or "water")
+                {
+                    var entry = transfer.Entries.SingleOrDefault(e => e.Id == accountEntryId && e.Group == TransferGroup.Anbar) ?? throw new InvalidDataException("اختر جهة الكتاب أولاً.");
+                    if (entry.Account is null || TransferPreparation.Issues(entry).Count > 0) throw new InvalidDataException("راجع حساب جهة الكتاب أولاً.");
+                    origin = entry.Title; originalAccount = id == "ramadi" ? TransferPreparation.NormalizeAccount(entry.Account.Iban) : TransferPreparation.LocalAccount(entry.Account) ?? throw new InvalidDataException("الحساب المحلي للجهة غير صالح.");
+                }
+                else { origin = id; originalAccount = reference; }
+                item["beneficiaryAccount"] = TransferPreparation.NormalizeAccount(chosen); item["beneficiarySource"] = origin; item["beneficiaryOriginal"] = originalAccount; item["beneficiaryReference"] = reference;
+                using var checkPlist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(data)), checkPlist);
+                var checkSettings = current.Snapshot.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal); checkSettings["transferLetterCustomizations"] = checkPlist.ToArray();
+                var checkedAccount = IndividualAccountCustomization.Resolve(current.Snapshot with { SettingsPlists = checkSettings }, id, origin, originalAccount, reference, requireAccountListMatch: false);
+                if (checkedAccount == TransferPreparation.NormalizeAccount(transfer.PayerAccount)) throw new InvalidDataException("حساب المستفيد يطابق حساب الدفع.");
+            }
         }
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(data)), plist);
         return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"));

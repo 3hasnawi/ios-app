@@ -16,12 +16,14 @@ public static class IndividualLetterPreparation
         return (long)value;
     }
     public static IndividualLetterPlan Payroll(string id, BankSummary summary, string payer, string payerAccount,
-        IReadOnlyDictionary<string, byte[]> references, bool acceptMissingContractNominal = false)
+        IReadOnlyDictionary<string, byte[]> references, bool acceptMissingContractNominal = false, BackupSnapshot? customization = null)
     {
         if (id is not ("food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary"))
             throw new InvalidDataException("نوع الكتاب غير مرتبط بمبالغ الرواتب.");
         if (summary.TransferWarnings.Count != 0) throw new InvalidDataException("مصادر الرواتب غير مكتملة؛ راجع بيانات الشهر قبل إعداد الكتاب.");
-        var account = LetterReferencePack.IndividualAccount(references, id, payerAccount);
+        var reference = LetterReferencePack.IndividualAccount(references, id, payerAccount) ?? throw new InvalidDataException("حساب المستفيد غير موجود في المرجع.");
+        var account = customization is null ? reference : IndividualAccountCustomization.Resolve(customization, id, id, reference, reference) ?? reference;
+        if (account == TransferPreparation.NormalizeAccount(payerAccount)) throw new InvalidDataException("حساب المستفيد يطابق حساب الدفع.");
         var lines = new List<IndividualLetterLine>(); var notices = new List<string>();
         switch (id)
         {
@@ -69,12 +71,12 @@ public static class IndividualEntityPreparation
         if (entry.Month != transfer.Month || entry.Group != TransferGroup.Anbar || !entry.Id.StartsWith("deduction|", StringComparison.Ordinal) ||
             TransferPreparation.Issues(entry).Count != 0 || string.IsNullOrWhiteSpace(transfer.Payer))
             throw new InvalidDataException("راجع بيانات جهة الكتاب ومبلغها وتصنيفها.");
-        GroupLetterSettingsReader.EnsureAccountNotCustomized(source, id);
         var reference = LetterReferencePack.IndividualAccount(references, id, transfer.PayerAccount);
         string? account = null;
         if (id == "rafidain_anbar")
         {
             var title = string.Join(' ', PayrollAnalysis.Normalize(entry.Title).Replace('/', ' ').Replace('-', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            if (IndividualAccountCustomization.Read(source, id) is not null) throw new InvalidDataException("كتاب فرع الأنبار لا يقبل تخصيص حساب المستفيد.");
             if (title != PayrollAnalysis.Normalize("مصرف الرافدين فرع الانبار") || reference is not null)
                 throw new InvalidDataException("اختر استقطاع مصرف الرافدين فرع الأنبار للكتاب.");
         }
@@ -82,8 +84,11 @@ public static class IndividualEntityPreparation
         {
             if (entry.Account is null) throw new InvalidDataException("اربط الجهة بحسابها أولاً.");
             account = id == "ramadi" ? TransferPreparation.NormalizeAccount(entry.Account.Iban) : TransferPreparation.LocalAccount(entry.Account);
-            if (account is null || (id == "ramadi" && (!TransferPreparation.ValidIban(account) || account == TransferPreparation.NormalizeAccount(transfer.PayerAccount))) || account != reference)
-                throw new InvalidDataException("حساب الجهة لا يطابق مرجع الكتاب؛ راجع الحساب والربط قبل الإصدار.");
+            if (account is null || reference is null || (id == "ramadi" && (!TransferPreparation.ValidIban(account) || account == TransferPreparation.NormalizeAccount(transfer.PayerAccount))))
+                throw new InvalidDataException("حساب الجهة غير صالح؛ راجع الحساب والربط قبل الإصدار.");
+            var chosen = IndividualAccountCustomization.Resolve(source, id, entry.Title, account, reference);
+            if (chosen is null && account != reference) throw new InvalidDataException("حساب الجهة لا يطابق مرجع الكتاب؛ راجع الحساب والربط قبل الإصدار.");
+            account = chosen ?? account;
         }
         var deductions = source.Deductions.Where(d => d.Month == transfer.Month && d.Title == entry.Title && !PayrollAnalysis.IsInactive(d)).ToArray();
         if (deductions.Length == 0 || deductions.Any(d => string.IsNullOrWhiteSpace(d.Name) || d.Amount is null or < 0 || d.Amount != decimal.Truncate(d.Amount.Value) || d.Amount > 9_007_199_254_740_991m))
