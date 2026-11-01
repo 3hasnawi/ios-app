@@ -319,6 +319,12 @@ try
     try { GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_company"); throw new InvalidOperationException("custom beneficiary silently ignored"); }
     catch (InvalidDataException) { }
     GroupLetterSettingsReader.EnsureAccountNotCustomized(overrideSettingsSnapshot, "food_tax");
+    using var commonOverridePlist = new MemoryStream();
+    PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { beneficiaryAccount = fakeReceiver }, individual = new Dictionary<string, object> { ["food_tax"] = new { beneficiaryAccount = "" } } })), commonOverridePlist);
+    var commonOverrideSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = commonOverridePlist.ToArray() } };
+    try { GroupLetterSettingsReader.EnsureAccountNotCustomized(commonOverrideSnapshot, "food_company"); throw new InvalidOperationException("common beneficiary override ignored"); }
+    catch (InvalidDataException) { }
+    GroupLetterSettingsReader.EnsureAccountNotCustomized(commonOverrideSnapshot, "food_tax");
     var individualSettings = new GroupLetterSettings("ترويسة تجريبية\nقسم حسابات وهمي", "ح/1/22/", "عضو تجريبي أول", "عضو تجريبي ثان", "عضو تجريبي ثالث", "نسخة تجريبية", null, 10, 0, null);
     var individualFont = File.ReadAllBytes(font); var individualLogo = File.ReadAllBytes(Path.GetFullPath("SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png"));
     IndividualLetterPlan SampleIndividual(string id, params IndividualLetterLine[] values) { var sum = values.Sum(v => v.Amount); return new(id, "أيلول 2026", "دافع وهمي", fakePayer, fakeReceiver, sum, ArabicAmountWords.Dinars(sum), values, null, null, []); }
@@ -367,6 +373,25 @@ try
     Check(IndividualLetterLinks.Resolve(afterBookSettings.Snapshot, "ramadi", [changedCandidate]) is null, "changed account does not silently reuse a book choice");
     var savedBookBackup = Path.Combine(root, "individual-links-backup.zip"); ReconciliationBackupExport.Write(afterBookSettings.Snapshot, [], savedBookBackup);
     Check(IndividualLetterLinks.Resolve(BackupReader.Read(savedBookBackup), "ramadi", preparedBookTransfer.Entries)?.Id == preparedEntity.Id, "individual book choice survives backup export");
+    var modifiedBody = IndividualLetterBody.Default("food_company").Replace("نرجو تحويل", "نرجو التفضل بتحويل", StringComparison.Ordinal);
+    Check(IndividualPayrollPdf.Generate(foodPlan, individualSettings with { BodyTemplate = modifiedBody }, individualFont, individualFont, individualLogo, "٣ / ٢٠٢٢").Length > 0, "custom individual body retains mandatory placeholders");
+    try { IndividualLetterBody.Validate("food_company", modifiedBody.Replace("{{حساب المستفيد}}", "", StringComparison.Ordinal)); throw new InvalidOperationException("custom body without beneficiary accepted"); }
+    catch (InvalidDataException) { }
+    try { IndividualLetterBody.Validate("water", IndividualLetterBody.Default("water").Replace("{{الاسم}}", "{{الاسم}} {{الاسم}}", StringComparison.Ordinal)); throw new InvalidOperationException("duplicate body placeholder accepted"); }
+    catch (InvalidDataException) { }
+    var bodySettings = fakeSettings with { BodyTemplate = IndividualLetterBody.Default("ramadi").Replace("نرجو تحويل", "نرجو التفضل بتحويل", StringComparison.Ordinal) };
+    var afterBody = bookLinkStore.SaveIndividualSettings(bookSource, afterBookSettings, "ramadi", bodySettings, false, new HashSet<string> { "bodyTemplate" });
+    Check(GroupLetterSettingsReader.Read(afterBody.Snapshot, "ramadi").BodyTemplate == bodySettings.BodyTemplate && IndividualLetterLinks.Resolve(afterBody.Snapshot, "ramadi", preparedBookTransfer.Entries)?.Id == preparedEntity.Id, "individual body saves without losing entity link");
+    try { _ = bookLinkStore.SaveIndividualSettings(bookSource, afterBody, "ramadi", bodySettings with { BodyTemplate = "نص ناقص" }, false, new HashSet<string> { "bodyTemplate" }); throw new InvalidOperationException("invalid individual body saved"); }
+    catch (InvalidDataException) { }
+    Check(bookLinkStore.Load(bookSource).Revision == afterBody.Revision, "invalid body does not overwrite saved customization");
+    var foodRefSettings = bodySettings with { FoodContractReference = "٣ / ٢٠٢٢" };
+    var afterFood = bookLinkStore.SaveIndividualSettings(bookSource, afterBody, "food_company", foodRefSettings, false, new HashSet<string> { "foodContractReference" });
+    Check(GroupLetterSettingsReader.FoodContract(afterFood.Snapshot) == "٣ / ٢٠٢٢" && GroupLetterSettingsReader.Read(afterFood.Snapshot, "ramadi").BodyTemplate == bodySettings.BodyTemplate, "food contract reference is common and preserves individual body");
+    var foodBackup = Path.Combine(root, "individual-food-settings-backup.zip"); ReconciliationBackupExport.Write(afterFood.Snapshot, [], foodBackup);
+    Check(GroupLetterSettingsReader.FoodContract(BackupReader.Read(foodBackup)) == "٣ / ٢٠٢٢", "food contract reference survives backup export");
+    try { _ = bookLinkStore.SaveIndividualSettings(bookSource, afterFood, "ramadi", bodySettings, true, new HashSet<string> { "bodyTemplate" }); throw new InvalidOperationException("individual body applied to all books"); }
+    catch (InvalidDataException) { }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

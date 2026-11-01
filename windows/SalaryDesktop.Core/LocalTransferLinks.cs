@@ -154,15 +154,30 @@ public sealed class LocalTransferLinks(string directory)
     public TransferLinksSnapshot SaveGroupSettings(BackupSnapshot source, TransferLinksSnapshot expected, TransferGroup group, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null)
     {
         var id = group switch { TransferGroup.Rafidain => "rafidain_group", TransferGroup.OtherBanks => "other_banks_group", _ => throw new InvalidDataException("نوع الكتاب غير صالح.") };
+        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields);
+    }
+    public TransferLinksSnapshot SaveIndividualSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields = null)
+    {
+        if (id is not ("food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary" or "ramadi" or "housing" or "water" or "rafidain_anbar")) throw new InvalidDataException("نوع الكتاب غير صالح.");
+        return SaveLetterSettings(source, expected, id, value, applyToAll, selectedFields);
+    }
+    private TransferLinksSnapshot SaveLetterSettings(BackupSnapshot source, TransferLinksSnapshot expected, string id, GroupLetterSettings value, bool applyToAll, IReadOnlySet<string>? selectedFields)
+    {
         if (new[] { value.Header, value.Number, value.First, value.Second, value.Third }.Any(string.IsNullOrWhiteSpace) || value.Header.Length > 2000 || value.Number.Length > 200 ||
             new[] { value.First, value.Second, value.Third }.Any(s => s.Length > 200 || s.Any(char.IsControl)) || value.Footer.Length > 4000 ||
             value.Header.Any(c => char.IsControl(c) && c != '\n') || value.Footer.Any(c => char.IsControl(c) && c != '\n') || value.Number.Any(char.IsControl) ||
             value.OutgoingMonth is < 1 or > 12 || value.SignatureOffset is < -60 or > 60) throw new InvalidDataException("راجع الترويسة والعدد والأسماء وشهر الصادر وموضع اللجنة.");
-        var supported = new HashSet<string>(["header", "fixedNumber", "committeeFirst", "committeeSecond", "committeeThird", "footer", "outgoingMonth", "signatureOffset", "bodyMonth", "bodyTemplate"], StringComparer.Ordinal);
-        selectedFields ??= applyToAll ? supported.Where(f => f != "bodyTemplate").ToHashSet(StringComparer.Ordinal) : supported;
+        var supported = new HashSet<string>(["header", "fixedNumber", "committeeFirst", "committeeSecond", "committeeThird", "footer", "outgoingMonth", "signatureOffset", "bodyMonth", "bodyTemplate", "foodContractReference"], StringComparer.Ordinal);
+        selectedFields ??= supported.Where(f => f != "foodContractReference" && (!applyToAll || f != "bodyTemplate")).ToHashSet(StringComparer.Ordinal);
         if (selectedFields.Count == 0 || selectedFields.Any(f => !supported.Contains(f))) throw new InvalidDataException("اختر حقلاً صالحاً للتخصيص.");
         if (selectedFields.Contains("bodyMonth") && !string.IsNullOrWhiteSpace(value.BodyMonth) && MonthNames.SortKey(value.BodyMonth) == 0) throw new InvalidDataException("شهر متن الكتاب غير صالح.");
-        if (selectedFields.Contains("bodyTemplate")) { if (applyToAll) throw new InvalidDataException("متن كتاب المجموعة يختلف عن الكتب الأخرى؛ احفظ تعديله لهذا الكتاب فقط."); GroupLetterPdf.ValidateBodyTemplate(value.BodyTemplate ?? GroupLetterPdf.DefaultBodyTemplate); }
+        var defaultBody = id is "rafidain_group" or "other_banks_group" ? GroupLetterPdf.DefaultBodyTemplate : IndividualLetterBody.Default(id);
+        if (selectedFields.Contains("bodyTemplate"))
+        {
+            if (applyToAll) throw new InvalidDataException("متن الكتاب يختلف عن الكتب الأخرى؛ احفظ تعديله لهذا الكتاب فقط.");
+            if (id is "rafidain_group" or "other_banks_group") GroupLetterPdf.ValidateBodyTemplate(value.BodyTemplate ?? defaultBody);
+            else IndividualLetterBody.Validate(id, value.BodyTemplate ?? defaultBody);
+        }
         Directory.CreateDirectory(root);
         using var guard = new FileStream(Path.Combine(root, ".links.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var current = Load(source);
@@ -179,9 +194,14 @@ public sealed class LocalTransferLinks(string directory)
         var fields = new Dictionary<string, JsonNode?> {
             ["header"] = JsonValue.Create(value.Header), ["committeeFirst"] = JsonValue.Create(value.First), ["committeeSecond"] = JsonValue.Create(value.Second),
             ["committeeThird"] = JsonValue.Create(value.Third), ["footer"] = JsonValue.Create(value.Footer), ["outgoingMonth"] = JsonValue.Create(value.OutgoingMonth?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? ""),
-            ["signatureOffset"] = JsonValue.Create(value.SignatureOffset), ["bodyMonth"] = JsonValue.Create(value.BodyMonth ?? ""), ["bodyTemplate"] = JsonValue.Create(value.BodyTemplate ?? GroupLetterPdf.DefaultBodyTemplate)
+            ["signatureOffset"] = JsonValue.Create(value.SignatureOffset), ["bodyMonth"] = JsonValue.Create(value.BodyMonth ?? ""), ["bodyTemplate"] = JsonValue.Create(value.BodyTemplate ?? defaultBody)
         };
         if (selectedFields.Contains("fixedNumber")) common["fixedNumber"] = value.Number;
+        if (selectedFields.Contains("foodContractReference"))
+        {
+            if ((value.FoodContractReference?.Length ?? 0) > 200 || (value.FoodContractReference?.Any(char.IsControl) ?? false)) throw new InvalidDataException("رقم عقد الإطعام غير صالح.");
+            common["foodContractReference"] = value.FoodContractReference ?? "";
+        }
         if (applyToAll)
         {
             foreach (var (key, item) in fields.Where(p => selectedFields.Contains(p.Key))) common[key] = item?.DeepClone();

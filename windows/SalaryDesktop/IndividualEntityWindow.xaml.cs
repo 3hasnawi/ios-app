@@ -23,7 +23,7 @@ public partial class IndividualEntityWindow : Window
         BookPicker.ItemsSource = new[] { new Choice("ramadi", "تنفيذ الرمادي"), new Choice("housing", "صندوق الإسكان"), new Choice("water", "الموارد المائية"), new Choice("rafidain_anbar", "مصرف الرافدين فرع الأنبار") };
         BookPicker.SelectedIndex = 0;
     }
-    private void Busy(bool value) { working = value; BookPicker.IsEnabled = !value; EntityPicker.IsEnabled = !value; ExportButton.IsEnabled = !value && plan is not null; }
+    private void Busy(bool value) { working = value; BookPicker.IsEnabled = !value; EntityPicker.IsEnabled = !value; SettingsButton.IsEnabled = !value; ExportButton.IsEnabled = !value && plan is not null; }
     private async void BookChanged(object sender, SelectionChangedEventArgs e)
     {
         if (BookPicker.SelectedItem is not Choice choice || EntityPicker is null) return;
@@ -74,6 +74,19 @@ public partial class IndividualEntityWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Status.Text = "تعذّر حفظ الربط: " + ex.Message; }
         finally { Busy(false); }
+    }
+    private void OpenSettings(object sender, RoutedEventArgs e)
+    {
+        if (working || BookPicker.SelectedItem is not Choice choice) return;
+        try
+        {
+            if (!payrollCurrent() || store.Load(source).Revision != State.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب.");
+            var window = new IndividualSettingsWindow(source, State, store, choice.Id, payrollCurrent) { Owner = this };
+            window.ShowDialog(); State = window.State;
+            Status.Text = "أُغلق تخصيص الكتاب. احفظ نسخة احتياطية إذا عدّلت التخصيصات.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
     {

@@ -23,13 +23,16 @@ public static class IndividualEntityPdf
         if (plan.Id == "ramadi" && (!TransferPreparation.ValidIban(plan.BeneficiaryAccount!) || plan.PayerAccount == plan.BeneficiaryAccount)) throw new InvalidDataException("حساب المستفيد غير صالح.");
         if (plan.Id is "water" or "housing" && (plan.BeneficiaryAccount!.Length != 15 || plan.BeneficiaryAccount.Any(c => !char.IsAsciiDigit(c)))) throw new InvalidDataException("حساب المستفيد المحلي غير صالح.");
         if (plan.Id == "water" && (plan.People != 1 || plan.Rows.Any(r => string.IsNullOrWhiteSpace(r.Rank)) || plan.Rows.Select(r => PayrollAnalysis.Normalize(r.Rank)).Distinct().Count() != 1)) throw new InvalidDataException("كتاب الموارد المائية يحتاج منتسباً واحداً ورتبة موحدة.");
-        if (settings.BodyTemplate is not null && settings.BodyTemplate.Length != 0) throw new InvalidDataException("متن هذا الكتاب مخصص؛ يلزم دعم تخصيصه قبل إصدار المسودة.");
         var key = MonthNames.SortKey(plan.Month); var bodyKey = string.IsNullOrWhiteSpace(settings.BodyMonth) ? key : MonthNames.SortKey(settings.BodyMonth);
         if (key == 0 || bodyKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60 || new[] { settings.Header, settings.Number, settings.First, settings.Second, settings.Third }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
         if (fontBytes.Length is 0 or > 3_000_000 || logoBytes.Length is 0 or > 5_000_000) throw new InvalidDataException("خط الكتاب أو الشعار غير صالح.");
-        var target = plan.Id == "rafidain_anbar" ? "إلى حساب مصرفكم (مصرف الرافدين / فرع الأنبار)" : $"إلى حساب ({plan.BeneficiaryName}) المرقم ({plan.BeneficiaryAccount}) والمفتوح لدى ({plan.Bank})";
-        var reason = plan.Id switch { "ramadi" => "وذلك عن المبالغ المستقطعة والمحسومة من منتسبي قيادة شرطة الأنبار وحسب القوائم المرفقة طياً", "housing" => "وذلك عن مبالغ السلف والقروض المستقطعة والمحسومة من منتسبي قيادة شرطة الأنبار المدرجة أسماؤهم في القائمة المرفقة طياً", "water" => $"وذلك عن مبالغ استقطاع منسوبنا {plan.Rows[0].Rank} ({plan.Rows[0].Name})", _ => "وذلك عن مبالغ السلف والقروض المستقطعة والمحسومة من منتسبينا المدرجة أسماؤهم في القائمة المرفقة" };
-        var body = $"نرجو تحويل مبلغ قدره ({Number(plan.Total)}) ({plan.Words}) لا غيرها من حسابنا المرقم ({plan.PayerAccount}) المفتوح لديكم {target} {reason} لشهر ({Months[bodyKey % 100 - 1]} / {Eastern((bodyKey / 100).ToString(CultureInfo.InvariantCulture))}) وتزويدنا بالإشعار اللازم بذلك.";
+        var bodyValues = new Dictionary<string, string> { ["المبلغ"] = Number(plan.Total), ["المبلغ كتابة"] = plan.Words, ["حسابنا"] = plan.PayerAccount,
+            ["الشهر"] = Months[bodyKey % 100 - 1], ["السنة"] = Eastern((bodyKey / 100).ToString(CultureInfo.InvariantCulture)) };
+        if (plan.BeneficiaryName is not null) bodyValues["المستفيد"] = plan.BeneficiaryName;
+        if (plan.BeneficiaryAccount is not null) bodyValues["حساب المستفيد"] = plan.BeneficiaryAccount;
+        if (plan.Bank is not null) bodyValues["المصرف"] = plan.Bank;
+        if (plan.Id == "water") { bodyValues["الرتبة"] = plan.Rows[0].Rank; bodyValues["الاسم"] = plan.Rows[0].Name; }
+        var body = IndividualLetterBody.Render(plan.Id, settings.BodyTemplate, bodyValues);
         using var data = SKData.CreateCopy(fontBytes); using var face = SKTypeface.FromData(data) ?? throw new InvalidDataException("تعذّر فتح خط الكتاب."); using var logo = SKBitmap.Decode(logoBytes) ?? throw new InvalidDataException("تعذّر فتح الشعار.");
         using var shaper = new SKShaper(face); using var paint = new SKPaint { Typeface = face, TextSize = 13, IsAntialias = true, Color = SKColors.Black };
         var requiredText = body + settings.Header + settings.Number + settings.First + settings.Second + settings.Third + settings.Footer;

@@ -442,7 +442,11 @@ public partial class MainWindow : Window
             bool Current() => linkStore.Load(original).Revision == links.Revision && payrollStore.Load(root).Revision == payroll.Revision;
             var prepared = await Task.Run(() => { if (!Current()) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتب."); return (summary: BankStatementCalculator.Calculate(active, month), references: LetterReferencePack.Read(active)); });
             if (!ReferenceEquals(active, snapshot) || month != SelectedMonth) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتب.");
-            new IndividualPayrollWindow(active, prepared.summary, transfer.Payer, transfer.PayerAccount, prepared.references, Current) { Owner = this }.ShowDialog();
+            bool PayrollCurrent() => payrollStore.Load(root).Revision == payroll.Revision;
+            var window = new IndividualPayrollWindow(original, links, linkStore, prepared.summary, transfer.Payer, transfer.PayerAccount, prepared.references, PayrollCurrent) { Owner = this }; window.ShowDialog();
+            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot)) return;
+            if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
+            var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر فتح الكتب المنفردة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }

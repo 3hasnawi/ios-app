@@ -3,7 +3,7 @@ using Claunia.PropertyList;
 
 namespace SalaryDesktop.Core;
 
-public sealed record GroupLetterSettings(string Header, string Number, string First, string Second, string Third, string Footer, string? BodyMonth, int? OutgoingMonth, int SignatureOffset, string? BodyTemplate);
+public sealed record GroupLetterSettings(string Header, string Number, string First, string Second, string Third, string Footer, string? BodyMonth, int? OutgoingMonth, int SignatureOffset, string? BodyTemplate, string? FoodContractReference = null);
 public static class GroupLetterSettingsReader
 {
     public static GroupLetterSettings Read(BackupSnapshot snapshot, TransferGroup group)
@@ -32,7 +32,7 @@ public static class GroupLetterSettingsReader
                 if (!int.TryParse(digits, out var n) || n is < 1 or > 12) throw new InvalidDataException("شهر الصادر المحفوظ غير صالح.");
                 parsed = n;
             }
-            return new(Effective("header") ?? "", Value(common, "fixedNumber") ?? "", Effective("committeeFirst") ?? "", Effective("committeeSecond") ?? "", Effective("committeeThird") ?? "", Effective("footer") ?? "", Effective("bodyMonth"), parsed, offset ?? 0, Effective("bodyTemplate"));
+            return new(Effective("header") ?? "", Value(common, "fixedNumber") ?? "", Effective("committeeFirst") ?? "", Effective("committeeSecond") ?? "", Effective("committeeThird") ?? "", Effective("footer") ?? "", Effective("bodyMonth"), parsed, offset ?? 0, Effective("bodyTemplate"), Value(common, "foodContractReference"));
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException or FormatException)
         { throw new InvalidDataException("تعذّر قراءة تخصيصات الكتب من النسخة.", ex); }
@@ -60,8 +60,11 @@ public static class GroupLetterSettingsReader
             if (data.Bytes.Length == 0) return;
             using var doc = JsonDocument.Parse(data.Bytes);
             var root = doc.RootElement;
-            if (root.TryGetProperty("individual", out var all) && all.TryGetProperty(id, out var item) && item.TryGetProperty("beneficiaryAccount", out var value) && value.ValueKind != JsonValueKind.Null && !string.IsNullOrWhiteSpace(value.GetString()))
-                throw new InvalidDataException("هذا الكتاب يحتوي حساب مستفيد مخصصاً من الآيفون؛ دعمه لم يكتمل على ويندوز، لذا لا يمكن إصدار المسودة بأمان.");
+            string? account = null; var overridden = false;
+            if (root.TryGetProperty("individual", out var all) && all.TryGetProperty(id, out var item) && item.TryGetProperty("beneficiaryAccount", out var value) && value.ValueKind != JsonValueKind.Null)
+            { account = value.GetString(); overridden = true; }
+            if (!overridden && root.TryGetProperty("common", out var common) && common.TryGetProperty("beneficiaryAccount", out var shared) && shared.ValueKind != JsonValueKind.Null) account = shared.GetString();
+            if (!string.IsNullOrWhiteSpace(account)) throw new InvalidDataException("هذا الكتاب يحتوي حساب مستفيد مخصصاً من الآيفون؛ دعمه لم يكتمل على ويندوز، لذا لا يمكن إصدار المسودة بأمان.");
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException)
         { throw new InvalidDataException("تعذّر التحقق من تخصيص حساب المستفيد.", ex); }

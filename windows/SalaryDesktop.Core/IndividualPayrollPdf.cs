@@ -19,7 +19,6 @@ public static class IndividualPayrollPdf
     {
         if (plan.Id is not ("food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary") || plan.Total <= 0 || plan.Total != plan.Lines.Sum(l => l.Amount) || plan.Words != ArabicAmountWords.Dinars(plan.Total) || !TransferPreparation.ValidIban(plan.PayerAccount) || plan.BeneficiaryAccount is null || !TransferPreparation.ValidIban(plan.BeneficiaryAccount) || plan.PayerAccount == plan.BeneficiaryAccount)
             throw new InvalidDataException("المبلغ أو حسابا الكتاب غير صالحين.");
-        if (settings.BodyTemplate is not null && settings.BodyTemplate.Length != 0) throw new InvalidDataException("متن هذا الكتاب مخصص؛ يلزم دعم تخصيصه قبل إصدار المسودة.");
         var key = MonthNames.SortKey(plan.Month); var bodyKey = string.IsNullOrWhiteSpace(settings.BodyMonth) ? key : MonthNames.SortKey(settings.BodyMonth);
         if (key == 0 || bodyKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60 ||
             new[] { settings.Header, settings.Number, settings.First, settings.Second, settings.Third }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
@@ -27,14 +26,10 @@ public static class IndividualPayrollPdf
         if (plan.Id == "cash_salary" && (cashList is null || cashList.Month != plan.Month || cashList.Total != plan.Total || cashList.Rows.Count == 0 || cashList.Rows.Sum(r => (decimal)r.Net) != plan.Total)) throw new InvalidDataException("قائمة الكاش غير مطابقة للمبلغ؛ راجع الرواتب.");
         if (fontBytes.Length is 0 or > 3_000_000 || tableFontBytes.Length is 0 or > 3_000_000 || logoBytes.Length is 0 or > 5_000_000) throw new InvalidDataException("الخط أو الشعار غير صالح.");
         var recipient = plan.Id == "food_company" ? "شركة عراق الجوال للتجارة والنقل والمقاولات والتجهيزات الغذائية المحدودة" : plan.Id == "contracts" ? "قسم التقاعد والضمان الاجتماعي للعمال في محافظة الأنبار" : "مديرية خزينة الأنبار";
-        var reason = plan.Id switch {
-            "food_company" => "عن مستحقات الشركة عقد تجهيز الأرزاق الجافة والطرية المرقم (" + Eastern(foodContract!) + ")",
-            "food_tax" => "وذلك عن أمانات ضريبة عقد تجهيز الأرزاق الجافة والطرية المرقم (" + Eastern(foodContract!) + ")",
-            "tax_social" => "وذلك عن مبالغ رسوم الضريبة والحماية الاجتماعية لرواتب قيادة شرطة الأنبار المبينة تفاصيلها أدناه",
-            "contracts" => "وذلك عن المساهمات التقاعدية بنسبة ١٧٪ الخاصة بالمتعاقدين بصفة رجل أمن ضمن تشكيلات قيادتنا حسب الجدول أدناه",
-            _ => "وذلك عن أمانات رواتب منتسبي قيادتنا المبينة تفاصيلها بالقائمة المرفقة"
-        };
-        var body = $"نرجو تحويل مبلغ قدره ({Number(plan.Total)}) ({plan.Words}) لا غيرها من حسابنا المرقم ({plan.PayerAccount}) المفتوح لديكم إلى حساب ({recipient}) المرقم ({plan.BeneficiaryAccount}) (مصرف الرافدين / فرع الأنبار) {reason} لشهر ({Months[bodyKey % 100 - 1]} / {Eastern((bodyKey / 100).ToString(CultureInfo.InvariantCulture))}) وتزويدنا بالإشعار اللازم بذلك.";
+        var bodyValues = new Dictionary<string, string> { ["المبلغ"] = Number(plan.Total), ["المبلغ كتابة"] = plan.Words, ["حسابنا"] = plan.PayerAccount,
+            ["المستفيد"] = recipient, ["حساب المستفيد"] = plan.BeneficiaryAccount, ["الشهر"] = Months[bodyKey % 100 - 1], ["السنة"] = Eastern((bodyKey / 100).ToString(CultureInfo.InvariantCulture)) };
+        if (foodContract is not null) bodyValues["عقد الإطعام"] = Eastern(foodContract);
+        var body = IndividualLetterBody.Render(plan.Id, settings.BodyTemplate, bodyValues);
         using var fontData = SKData.CreateCopy(fontBytes); using var face = SKTypeface.FromData(fontData) ?? throw new InvalidDataException("تعذّر فتح خط الكتاب.");
         using var tableData = SKData.CreateCopy(tableFontBytes); using var tableFace = SKTypeface.FromData(tableData) ?? throw new InvalidDataException("تعذّر فتح خط الجدول.");
         using var logo = SKBitmap.Decode(logoBytes) ?? throw new InvalidDataException("تعذّر فتح الشعار.");
