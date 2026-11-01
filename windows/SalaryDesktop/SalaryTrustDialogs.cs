@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SalaryDesktop.Core;
 
 namespace SalaryDesktop;
@@ -52,7 +53,8 @@ internal static class TrustDialogs
         DockPanel.SetDock(heading, Dock.Top); panel.Children.Add(heading);
         var search = new TextBox { Height = 36, Tag = "ابحث بعنوان الكتاب أو الشهر أو الجهة…", Margin = new Thickness(0, 0, 0, 8) };
         DockPanel.SetDock(search, Dock.Top); panel.Children.Add(search);
-        var list = new ListBox { BorderThickness = new Thickness(1), ScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        var list = new ListBox { BorderThickness = new Thickness(1) };
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
         list.SetResourceReference(Control.BorderBrushProperty, "Line");
         var template = new DataTemplate();
         var stack = new FrameworkElementFactory(typeof(StackPanel)); stack.SetValue(FrameworkElement.MarginProperty, new Thickness(2, 3, 2, 3));

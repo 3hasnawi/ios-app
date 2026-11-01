@@ -48,7 +48,7 @@ public static class PersonProfiles
         return new PersonProfile(key, display, months, member);
     }
 
-    internal static decimal? Amount(string value)
+    public static decimal? Amount(string value)
     {
         var digits = string.Concat(value.Trim().Select(c => c is >= '٠' and <= '٩' ? (char)('0' + c - '٠') : c is '٬' or ',' ? '\0' : c is '٫' ? '.' : c).Where(c => c != '\0'));
         return decimal.TryParse(digits, NumberStyles.Number, CultureInfo.InvariantCulture, out var amount) ? amount : null;
