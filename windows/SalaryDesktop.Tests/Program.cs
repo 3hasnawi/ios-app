@@ -392,6 +392,15 @@ try
     Check(GroupLetterSettingsReader.FoodContract(BackupReader.Read(foodBackup)) == "٣ / ٢٠٢٢", "food contract reference survives backup export");
     try { _ = bookLinkStore.SaveIndividualSettings(bookSource, afterFood, "ramadi", bodySettings, true, new HashSet<string> { "bodyTemplate" }); throw new InvalidOperationException("individual body applied to all books"); }
     catch (InvalidDataException) { }
+    var reviewMonth = "تشرين الاول 2026"; var reviewOld = contractPerson with { Name = "اسم مقارنة وهمي", Month = "أيلول 2026", Net = 1000, Rank = "ملازم اول", Workplace = "قسم أول" };
+    var reviewNew = reviewOld with { Month = reviewMonth, Net = 1200, Rank = "نقيب", Workplace = "قسم ثان" };
+    var duplicateOld = reviewOld with { Name = "اسم مكرر وهمي" }; var duplicateNew = duplicateOld with { Month = reviewMonth };
+    var reviewSource = snapshot with { Employees = [reviewOld, duplicateOld, reviewNew, duplicateNew, duplicateNew] };
+    var review = SalaryReview.Prepare(reviewSource, reviewMonth);
+    Check(review.PreviousMonth == "أيلول 2026" && review.Rows.Any(r => r.Kind == "تغيّر الصافي" && r.Name == reviewNew.Name && r.Before == 1000 && r.After == 1200) && review.Rows.Any(r => r.Kind == "تغيّرت الرتبة") && review.Rows.Any(r => r.Kind == "تغيّر محل العمل"), "salary review compares unique employees to previous month");
+    Check(review.ExcludedAmbiguous == 1 && review.Rows.Any(r => r.Kind == "أسماء مكررة") && !review.Rows.Any(r => r.Kind == "جديد في الرواتب" && r.Name == duplicateNew.Name), "ambiguous duplicate names never cause automatic comparison");
+    var noPrevious = SalaryReview.Prepare(reviewSource with { Months = reviewSource.Months.Where(m => m.Name == reviewMonth).ToArray(), Employees = [reviewNew] }, reviewMonth);
+    Check(noPrevious.PreviousMonth is null && noPrevious.Notes.Any(n => n.Contains("السابق", StringComparison.Ordinal)), "missing prior month is explicit");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

@@ -412,6 +412,21 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
+    private async void OpenSalaryReview(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot; var month = SelectedMonth;
+        if (source is null || month.Length == 0) { MessageBox.Show(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "تدقيق الرواتب"); return; }
+        AuditHomeButton.IsEnabled = false; StatusBar.Text = "جارٍ تدقيق الرواتب ومقارنة الشهر السابق…";
+        try
+        {
+            var result = await Task.Run(() => SalaryReview.Prepare(source, month));
+            if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
+            new SalaryReviewWindow(result) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { AuditHomeButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
+    }
     private async void OpenIndividualEntity(object sender, RoutedEventArgs e)
     {
         var active = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;
