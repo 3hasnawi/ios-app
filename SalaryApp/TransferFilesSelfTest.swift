@@ -53,6 +53,17 @@ import CryptoKit
         refundStatement.movements.append(excessiveRefund)
         do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
         catch is Failure { throw Failure(errorDescription: "excess refund accepted") } catch { }
+        var customSignatures = BankReconciliation.preparedSignatures(statement)
+        customSignatures.memberFirst = "اسم تجريبي أول"; customSignatures.firstRank = "رتبة تجريبية"
+        customSignatures.firstPosition = "منصب تجريبي"; customSignatures.firstDate = " / 6 / 2026"
+        customSignatures.memberSecond = "اسم تجريبي ثان"; customSignatures.secondRank = "رتبة ثانية"
+        customSignatures.secondPosition = "منصب ثان"; customSignatures.secondDate = " / 7 / 2026"
+        let signaturesRoundTrip = try BankReconciliation.decode(JSONEncoder().encode(BankReconciliation.Ledger(periods: [customSignatures])))
+        try check(signaturesRoundTrip.periods == [customSignatures], "reconciliation committee details survive backup")
+        try check(BankReconciliation.signatureLines(customSignatures, first: true) == ["رتبة تجريبية", "اسم تجريبي أول", "منصب تجريبي", " / ٦ / ٢٠٢٦"], "reconciliation editable signature lines")
+        let signaturePDF = try await BankReconciliationPDF.make(customSignatures, complete: true)
+        defer { try? FileManager.default.removeItem(at: signaturePDF) }
+        try check(PDFDocument(url: signaturePDF)?.pageCount == 1, "reconciliation custom signatures PDF")
         let statementPDF = try await BankReconciliationPDF.make(statement)
         defer { try? FileManager.default.removeItem(at: statementPDF) }
         let statementDocument = PDFDocument(url: statementPDF)

@@ -60,8 +60,9 @@ nonisolated enum BankReconciliationPDF {
                 rows.append((values, max(22, CGFloat(counts.max() ?? 1) * font.lineHeight + 8)))
             }
             let totalRow = ["", "المجموع", try number(totals.credits), try number(totals.debits), try number(totals.balance)]
+            let signatures = [BankReconciliation.signatureLines(period, first: true), BankReconciliation.signatureLines(period, first: false)]
             guard zip(totalRow, widths).allSatisfy({ lines($0.0, font: bold, width: $0.1 - 6) == 1 }),
-                  [period.memberFirst, period.memberSecond].allSatisfy({ lines($0, font: bold, width: 217) <= 2 && !$0.unicodeScalars.contains(where: { $0.value < 32 }) }) else { throw Failure.tooLong }
+                  signatures.flatMap({ $0 }).allSatisfy({ lines($0, font: bold, width: 217) == 1 && !$0.unicodeScalars.contains(where: { $0.value < 32 }) }) else { throw Failure.tooLong }
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("bank-reconciliation-\(UUID().uuidString).pdf")
             var done = false
             defer { if !done { try? FileManager.default.removeItem(at: destination) } }
@@ -106,8 +107,14 @@ nonisolated enum BankReconciliationPDF {
                             PDFText.draw(totalRow[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                             if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i)) }
                         }
-                        PDFText.draw("عضو اللجنة الأول\n\(period.memberFirst)", in: CGRect(x: 315, y: 705, width: 225, height: 60), font: bold, wrap: true)
-                        PDFText.draw("عضو اللجنة الثاني\n\(period.memberSecond)", in: CGRect(x: 55, y: 705, width: 225, height: 60), font: bold, wrap: true)
+                        for (column, values) in signatures.enumerated() {
+                            let x: CGFloat = column == 0 ? 315 : 55
+                            for (line, value) in values.enumerated() {
+                                let rect = CGRect(x: x, y: 705 + CGFloat(line) * 15, width: 225, height: 15)
+                                PDFText.draw(value, in: rect, font: bold)
+                                if !value.isEmpty { placements.append((pageCount, rect, value, 1)) }
+                            }
+                        }
                         finalDrawn = true
                     }
                     pageCount += 1

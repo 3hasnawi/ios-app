@@ -47,9 +47,35 @@ nonisolated enum BankReconciliation {
         var openingBalance: Int64 = 0
         var memberFirst: String = ""
         var memberSecond: String = ""
+        var firstRank: String? = nil
+        var firstPosition: String? = nil
+        var firstDate: String? = nil
+        var secondRank: String? = nil
+        var secondPosition: String? = nil
+        var secondDate: String? = nil
+        var signatureDefaultsInitialized: Bool? = nil
         var acceptedContractMissing: Int? = nil
         var acceptedContractAmount: Int64? = nil
         var movements: [Movement] = []
+    }
+    static func preparedSignatures(_ input: Period) -> Period {
+        var value = input
+        if value.signatureDefaultsInitialized == nil {
+            if value.memberFirst.isEmpty { value.memberFirst = "باسم فواز نواف" }
+            if value.memberSecond.isEmpty { value.memberSecond = "حميد زيدان خلف" }
+            value.signatureDefaultsInitialized = true
+        }
+        return value
+    }
+    static func signatureLines(_ period: Period, first: Bool) -> [String] {
+        if first {
+            return [period.firstRank ?? "عقيد الشرطة", period.memberFirst,
+                    period.firstPosition ?? "مدير قسم التدقيق والرقابة الداخلية",
+                    ReportSheet.easternDigits(period.firstDate ?? signatureDate(period.end))]
+        }
+        return [period.secondRank ?? "العميد", period.memberSecond,
+                period.secondPosition ?? "مدير الحسابات",
+                ReportSheet.easternDigits(period.secondDate ?? signatureDate(period.end))]
     }
     struct Ledger: Codable, Sendable {
         var version = 1
@@ -109,6 +135,10 @@ nonisolated enum BankReconciliation {
         return month == 1 ? (year - 1) * 100 + 12 : year * 100 + month - 1
     }
     static func day(_ value: Date) -> Date { dayCalendar.startOfDay(for: value) }
+    static func signatureDate(_ date: Date) -> String {
+        let components = dayCalendar.dateComponents([.month, .year], from: date)
+        return ReportSheet.easternDigits(" / \(components.month ?? 0) / \(components.year ?? 0)")
+    }
     static func contains(_ value: Date, in period: Period) -> Bool {
         let date = day(value)
         return date >= day(period.start) && date <= day(period.end)
@@ -127,6 +157,10 @@ nonisolated enum BankReconciliation {
         guard !period.month.isEmpty, day(period.start) <= day(period.end),
               period.openingBalance >= 0, period.openingBalance <= maximumAmount,
               period.memberFirst.count <= 150, period.memberSecond.count <= 150,
+              [period.firstRank, period.firstPosition, period.firstDate, period.secondRank, period.secondPosition, period.secondDate].allSatisfy({ value in
+                  guard let value else { return true }
+                  return value.count <= 150 && !value.unicodeScalars.contains(where: { $0.value < 32 })
+              }),
               (period.acceptedContractMissing == nil && period.acceptedContractAmount == nil) ||
                   ((period.acceptedContractMissing ?? 0) > 0 && (period.acceptedContractAmount ?? -1) >= 0 && (period.acceptedContractAmount ?? 0) <= maximumAmount),
               period.movements.count <= 20_000, Set(period.movements.map(\.id)).count == period.movements.count else { throw Failure.invalid }

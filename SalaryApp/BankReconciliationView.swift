@@ -28,7 +28,10 @@ struct BankReconciliationView: View {
     init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
         self.month = month; self.summary = summary; self.manual = manual; self.figures = figures; self.figuresFailure = figuresFailure; self.entities = entities
         let now = Date()
-        _period = State(initialValue: .init(month: month, start: now, end: now))
+        var initial = BankReconciliation.Period(month: month, start: now, end: now)
+        initial.memberFirst = "باسم فواز نواف"; initial.memberSecond = "حميد زيدان خلف"
+        initial.signatureDefaultsInitialized = true
+        _period = State(initialValue: initial)
     }
     private var totals: BankReconciliation.Totals? { try? BankReconciliation.calculate(period) }
     private var unmatched: Int { period.movements.filter { !$0.matched }.count }
@@ -147,7 +150,7 @@ struct BankReconciliationView: View {
         Section {
             if savedPeriods.count > 1 {
                 Picker(tr("فترة محفوظة", "Saved period"), selection: Binding(get: { period.id }, set: { id in
-                    if let saved = savedPeriods.first(where: { $0.id == id }) { period = saved }
+                    if let saved = savedPeriods.first(where: { $0.id == id }) { period = BankReconciliation.preparedSignatures(saved) }
                 })) { ForEach(savedPeriods) { value in Text("\(value.start.formatted(date: .numeric, time: .omitted)) – \(value.end.formatted(date: .numeric, time: .omitted))").tag(value.id) } }
             }
             LabeledContent(tr("شهر التمويل والبيانات", "Funding and data month"), value: month)
@@ -156,7 +159,7 @@ struct BankReconciliationView: View {
             BankReconciliationIntegerField(title: tr("الرصيد الافتتاحي", "Opening balance"), amount: $period.openingBalance)
             Button(tr("حفظ الفترة", "Save period"), systemImage: "checkmark.circle") { persist(period) }.disabled(!canEdit)
             if let saved = savedPeriods.first(where: { $0.id == period.id }), saved != period {
-                Button(tr("استعادة الفترة المحفوظة", "Restore saved period"), systemImage: "arrow.uturn.backward") { period = saved }
+                Button(tr("استعادة الفترة المحفوظة", "Restore saved period"), systemImage: "arrow.uturn.backward") { period = BankReconciliation.preparedSignatures(saved) }
             }
         } header: { Text(tr("الفترة", "Period")) } footer: {
             Text(tr("ابدأ بتمويل الشهر السابق وانتهِ قبل التمويل الجديد؛ يمكنك إدخال حركات يوم التمويل الجديد السابقة له. أدخل التمويل كدائن، ولا تضفه إلى الرصيد الافتتاحي مرة أخرى.", "Start at the previous funding and stop before the new funding; earlier movements on the new funding date may be included. Enter funding as a credit and do not count it again in the opening balance."))
@@ -235,10 +238,18 @@ struct BankReconciliationView: View {
         } header: { Text(tr("الحركات", "Movements")) } footer: { Text(tr("اضغط الدائرة بعد التأكد من الحركة في كشف المصرف الورقي. استخدم تعديل لترتيب حركات اليوم نفسه كما ظهرت في الكشف.", "Check the circle after verifying the movement on paper. Use Edit to order movements on the same day as they appear on the statement.")) }
     }
     @ViewBuilder private var finishSection: some View {
-        Section(tr("التواقيع", "Signatures")) {
-            TextField(tr("اسم عضو اللجنة الأول", "First committee member"), text: $period.memberFirst)
-            TextField(tr("اسم عضو اللجنة الثاني", "Second committee member"), text: $period.memberSecond)
-            Button(tr("حفظ الأسماء", "Save names"), systemImage: "checkmark.circle") { persist(period) }.disabled(!canEdit)
+        Section(tr("عضو اللجنة الأول · اليمين", "First committee member · right")) {
+            TextField(tr("الرتبة", "Rank"), text: Binding(get: { period.firstRank ?? "عقيد الشرطة" }, set: { period.firstRank = $0 }))
+            TextField(tr("الاسم", "Name"), text: $period.memberFirst)
+            TextField(tr("المنصب", "Position"), text: Binding(get: { period.firstPosition ?? "مدير قسم التدقيق والرقابة الداخلية" }, set: { period.firstPosition = $0 }))
+            TextField(tr("التاريخ", "Date"), text: Binding(get: { period.firstDate ?? BankReconciliation.signatureDate(period.end) }, set: { period.firstDate = $0 }))
+        }
+        Section(tr("عضو اللجنة الثاني · اليسار", "Second committee member · left")) {
+            TextField(tr("الرتبة", "Rank"), text: Binding(get: { period.secondRank ?? "العميد" }, set: { period.secondRank = $0 }))
+            TextField(tr("الاسم", "Name"), text: $period.memberSecond)
+            TextField(tr("المنصب", "Position"), text: Binding(get: { period.secondPosition ?? "مدير الحسابات" }, set: { period.secondPosition = $0 }))
+            TextField(tr("التاريخ", "Date"), text: Binding(get: { period.secondDate ?? BankReconciliation.signatureDate(period.end) }, set: { period.secondDate = $0 }))
+            Button(tr("حفظ بيانات اللجنة", "Save committee details"), systemImage: "checkmark.circle") { persist(period) }.disabled(!canEdit)
         }
         Section {
             if !period.movements.isEmpty && !isComplete {
@@ -312,7 +323,9 @@ struct BankReconciliationView: View {
     private func load() {
         do {
             let data = try BankReconciliation.decode(stored)
-            if let value = data.periods.last(where: { $0.month == month }) { period = value }
+            if let value = data.periods.last(where: { $0.month == month }) {
+                period = BankReconciliation.preparedSignatures(value)
+            }
             isLoaded = true
         } catch { self.error = error.localizedDescription; isLoaded = false }
     }
