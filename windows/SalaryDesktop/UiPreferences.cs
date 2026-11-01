@@ -45,6 +45,8 @@ internal sealed class UiPreferences
     public string? ServerToken { get; set; }
     /// أول نسخة إلى السيرفر بعد تفعيله أو تغيير عنوانه أو رمزه.
     public bool ServerPending { get; set; }
+    /// تاريخ نسخة السيرفر التي رفعها هذا الجهاز أو استرجعها آخر مرة؛ نسخة أحدث منه تعني أن جهازاً آخر (الآيفون) رفع بعده.
+    public DateTimeOffset? ServerSeen { get; set; }
     public string? BackupPlace { get; set; }
 
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");
