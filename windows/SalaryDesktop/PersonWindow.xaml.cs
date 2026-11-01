@@ -132,15 +132,23 @@ public partial class PersonWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or System.Runtime.InteropServices.COMException) { Notice.Text = "تعذّر النسخ: " + ex.Message; }
     }
 
-    private async void ExportPayslip(object sender, RoutedEventArgs e)
+    private void OpenPayslipMenu(object sender, RoutedEventArgs e)
     {
-        var month = Current; var employee = month?.Employee; if (month is null || employee is null) return;
+        PayslipMenu.PlacementTarget = PdfButton; PayslipMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom; PayslipMenu.IsOpen = true;
+    }
+    /// اسم ملف القسيمة ومنشئها للشهر المعروض؛ null إذا لم يوجد راتب أو تعذرت قراءة تفاصيله.
+    private (string Name, Func<ReportAssets, byte[]> Make)? PayslipFile()
+    {
+        var month = Current; var employee = month?.Employee; if (month is null || employee is null) return null;
         Payslip slip;
         try { slip = PersonProfiles.Payslip(month); }
-        catch (InvalidDataException ex) { Notice.Text = ex.Message; return; }
-        await Exports.SavePdf(this, ReportSheet.FileName($"قسيمة {profile.Name} - {month.Month}"),
-            assets => PayslipPdf.Generate(ReportSheet.HeaderFor(source), profile.Name, employee.Rank, employee.Workplace, month.Month, slip, assets, DateTime.Now));
+        catch (InvalidDataException ex) { Notice.Text = ex.Message; return null; }
+        var header = ReportSheet.HeaderFor(source);
+        return (ReportSheet.FileName($"قسيمة {profile.Name} - {month.Month}"), assets => PayslipPdf.Generate(header, profile.Name, employee.Rank, employee.Workplace, month.Month, slip, assets, DateTime.Now));
     }
+    private async void PreviewPayslip(object sender, RoutedEventArgs e) { if (PayslipFile() is { } f) await Exports.Preview(this, f.Name, f.Make); }
+    private async void ExportPayslip(object sender, RoutedEventArgs e) { if (PayslipFile() is { } f) await Exports.SavePdf(this, f.Name, f.Make); }
+    private async void PrintPayslip(object sender, RoutedEventArgs e) { if (PayslipFile() is { } f) await Exports.Print(this, f.Name, f.Make); }
 
     // ——— تقرير الراتب (نقل من الآيفون) ———
 
@@ -173,6 +181,12 @@ public partial class PersonWindow : Window
         var path = Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
         try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+    private async void PreviewSalaryReport(object sender, RoutedEventArgs e)
+    {
+        if (BuildReport() is not { } report) return;
+        var logo = HeaderLogo();
+        await Exports.Preview(this, SalaryReports.FileName(report.Name, report.Month), assets => SalaryReportPdf.Generate([report], assets, logo, DateTime.Now));
     }
     private async void SaveSalaryReport(object sender, RoutedEventArgs e)
     {

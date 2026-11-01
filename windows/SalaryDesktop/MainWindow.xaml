@@ -32,7 +32,7 @@
             <StackPanel>
               <DockPanel><TextBlock Style="{StaticResource Icon}" Text="&#xE7BA;" Foreground="{DynamicResource Warn}" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Top" DockPanel.Dock="Left"/><TextBlock x:Name="BackupReminderTitle" Text="تعديلات غير محفوظة في نسخة" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource Warn}" FontSize="12.5"/></DockPanel>
               <TextBlock x:Name="BackupReminderText" FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
-              <Button x:Name="BackupNowButton" Style="{StaticResource ActionButton}" Content="حفظ نسخة الآن" Click="ExportBackup" Padding="12,6" ToolTip="حفظ نسخة احتياطية شاملة تتضمن التعديلات المحلية"/>
+              <Button x:Name="BackupNowButton" Style="{StaticResource ActionButton}" Content="نسخ الآن" Click="BackupNow" Padding="12,6" ToolTip="حفظ نسخة احتياطية شاملة تتضمن التعديلات المحلية"/>
             </StackPanel>
           </Border>
           <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="settings" Checked="Navigate" ToolTip="Ctrl+0">
@@ -109,15 +109,12 @@
         <Button x:Name="ThemeToggle" Grid.Column="3" Click="ToggleTheme" Padding="0" Width="38" Height="38" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="الوضع الداكن / الفاتح">
           <TextBlock x:Name="ThemeIcon" Style="{StaticResource Icon}" Text="&#xE708;" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/>
         </Button>
-        <Button Grid.Column="4" Click="OpenBackup" ToolTip="فتح نسخة احتياطية من الآيفون (Ctrl+O)" Padding="14,8">
-          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8E5;" Foreground="{DynamicResource Accent}" Margin="0,0,8,0"/><TextBlock Text="فتح نسخة الآيفون"/></StackPanel>
-        </Button>
       </Grid>
       <Border x:Name="SourceBanner" Grid.Row="1" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource TbgCFE2F8}" BorderThickness="1" CornerRadius="9" Padding="12,8" Margin="0,0,0,14">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <TextBlock Style="{StaticResource Icon}" Text="&#xE946;" Foreground="{DynamicResource Tfg2C6FB4}" Margin="0,0,10,0"/>
-          <TextBlock x:Name="SourceMessage" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Tfg2F5873}" Text="افتح نسخة احتياطية من الآيفون أو ابدأ من ملف Excel. تُحفظ البيانات محلياً دون تعديل الملف الأصلي."/>
+          <TextBlock x:Name="SourceMessage" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Tfg2F5873}" Text="استورد نسخة احتياطية أو ملفات Excel من الإعدادات ← استيراد الملفات، أو اسحبها إلى النافذة. تُحفظ البيانات محلياً دون تعديل الملف الأصلي."/>
           <Button Grid.Column="2" Style="{StaticResource QuietButton}" Click="HideBanner" ToolTip="إخفاء" Padding="6,2" MinHeight="24" Margin="8,0,0,0">
             <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="11" Foreground="{DynamicResource Tfg4F7491}"/>
           </Button>
@@ -222,7 +219,7 @@
                   <TextBlock x:Name="SnapshotSummary" Style="{StaticResource Hint}" Text="اختر نسخة احتياطية للبدء." Margin="0,6,0,0"/>
                 </StackPanel>
                 <WrapPanel Grid.Column="1" VerticalAlignment="Center">
-                  <Button x:Name="StartFromExcelButton" Content="بدء بيانات جديدة من Excel" Click="StartFromExcel" Style="{StaticResource ActionButton}" Margin="0,0,8,0" Visibility="Collapsed"/>
+                  <Button x:Name="StartFromExcelButton" Content="استيراد الملفات" Click="ImportFiles" Style="{StaticResource ActionButton}" Margin="0,0,8,0" Visibility="Collapsed" ToolTip="نسخة احتياطية أو ملف رواتب Excel (Ctrl+O)"/>
                   <Button Tag="settings" Click="Navigate" Content="النسخ الاحتياطي"/>
                 </WrapPanel>
               </Grid>
@@ -248,6 +245,7 @@
                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="تصدير وطباعة"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="10" Foreground="{DynamicResource Tfg7A8D8A}" Margin="8,0,0,0"/></StackPanel>
                 <Button.ContextMenu>
                   <ContextMenu x:Name="ExportMenu">
+                    <MenuItem Header="معاينة الكشف" Click="PreviewTable"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE7B3;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
                     <MenuItem Header="Excel بالشكل المعتمد" Click="ExportTableExcel"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
                     <MenuItem Header="PDF بالشكل المعتمد" Click="ExportTablePdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
                     <MenuItem Header="طباعة" Click="PrintTable"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
@@ -255,6 +253,7 @@
                     <MenuItem x:Name="ExportCopyMenu" Header="نسخ الصفوف المحددة للصقها في Excel" InputGestureText="Ctrl+C" Click="CopyRows"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;"/></MenuItem.Icon></MenuItem>
                     <Separator x:Name="EntityExportSeparator"/>
                     <MenuItem x:Name="EntityExportMenu" Header="قائمة استقطاعات الجهة المعتمدة">
+                      <MenuItem Header="معاينة" Click="PreviewEntity"/>
                       <MenuItem Header="Excel" Click="ExportEntityExcel"/>
                       <MenuItem Header="PDF" Click="ExportEntityPdf"/>
                       <MenuItem Header="طباعة" Click="PrintEntity"/>
@@ -263,9 +262,6 @@
                 </Button.ContextMenu>
               </Button>
               <Button x:Name="StaffReloadButton" Content="إعادة قراءة الملاك" Click="ReloadStaff" Margin="10,0,0,0" Visibility="Collapsed"/>
-              <Button x:Name="AccountImportButton" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="10,0,0,0" Visibility="Collapsed"/>
-              <Button x:Name="PayrollImportButton" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="10,0,0,0" Visibility="Collapsed"/>
-              <Button x:Name="AnnualImportButton" Content="الاستقطاعات السنوية" Click="ImportAnnual" Margin="10,0,0,0" Visibility="Collapsed" ToolTip="استيراد ملف استقطاعات سنوي يُقسّم إلى أشهر"/>
             </WrapPanel>
           </Grid>
           <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,10,0,0" Visibility="Collapsed">
@@ -425,16 +421,55 @@
         <!-- الإعدادات -->
         <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel MaxWidth="860" HorizontalAlignment="Left">
+            <!-- الاستيراد الموحّد (مثل الآيفون): يتعرف على نوع كل ملف ويفرزه. -->
             <Border Style="{StaticResource Card}">
-              <StackPanel>
-                <TextBlock Style="{StaticResource CardTitle}" Text="النسخة الاحتياطية"/>
-                <TextBlock Style="{StaticResource Hint}" Text="يحفظ البرنامج نسخة محلية بعد فحصها ولا يعدّل ملف الآيفون. تبقى النسخ السابقة على الجهاز عند استيراد نسخة جديدة." Margin="0,8,0,14"/>
-                <WrapPanel>
-                  <Button x:Name="BackupExport" Style="{StaticResource ActionButton}" Content="حفظ نسخة تشمل التعديلات المحلية" Click="ExportBackup" IsEnabled="False" Margin="0,0,8,0"/>
-                  <Button Content="فتح نسخة الآيفون" Click="OpenBackup"/>
-                </WrapPanel>
-                <TextBlock Style="{StaticResource Hint}" FontSize="12.5" Text="تشمل النسخة الأشهر المستوردة والحسابات وروابطها وتصنيف الجهات ودفتر المطابقة. ملفات CSV المحفوظة منفصلة لا تُضاف إليها. اختبر استعادتها على الآيفون قبل الاعتماد." Margin="0,12,0,0"/>
-              </StackPanel>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Width="44" Height="44" CornerRadius="11" Background="{DynamicResource PrimarySoft}" VerticalAlignment="Top"><TextBlock Style="{StaticResource Icon}" Text="&#xE8B5;" FontSize="18" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/></Border>
+                <StackPanel Grid.Column="1" Margin="14,0,0,0">
+                  <TextBlock Style="{StaticResource CardTitle}" Text="استيراد الملفات"/>
+                  <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,12" Text="اختر ملفاً أو أكثر معاً، أو اسحبها إلى نافذة البرنامج. يتعرف البرنامج على نوع كل ملف ويفرزه، ثم يُراجع كل ملف قبل حفظه. الملفات الأصلية لا تتغير."/>
+                  <WrapPanel Margin="0,0,0,12">
+                    <Border Background="{DynamicResource AccentSoft}" CornerRadius="8" Padding="10,4" Margin="0,0,6,6"><TextBlock Text="نسخة احتياطية ZIP" Foreground="{DynamicResource Accent}" FontSize="12.5"/></Border>
+                    <Border Background="{DynamicResource PrimarySoft}" CornerRadius="8" Padding="10,4" Margin="0,0,6,6"><TextBlock Text="رواتب واستقطاعات شهر" Foreground="{DynamicResource Primary}" FontSize="12.5"/></Border>
+                    <Border Background="{DynamicResource PrimarySoft}" CornerRadius="8" Padding="10,4" Margin="0,0,6,6"><TextBlock Text="استقطاعات سنوية" Foreground="{DynamicResource Primary}" FontSize="12.5"/></Border>
+                    <Border Background="{DynamicResource PrimarySoft}" CornerRadius="8" Padding="10,4" Margin="0,0,6,6"><TextBlock Text="حسابات جهات التنفيذ" Foreground="{DynamicResource Primary}" FontSize="12.5"/></Border>
+                  </WrapPanel>
+                  <WrapPanel><Button x:Name="ImportFilesButton" Style="{StaticResource ActionButton}" Click="ImportFiles" ToolTip="Ctrl+O"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8E5;" Foreground="White" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="استيراد ملفات…"/></StackPanel></Button></WrapPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <!-- النسخ الاحتياطي (مثل الآيفون): ملف واحد يُكتب فوقه بعد كل استيراد أو دورياً، مع الحفظ اليدوي والاسترجاع. -->
+            <Border Style="{StaticResource Card}">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Width="44" Height="44" CornerRadius="11" Background="{DynamicResource AccentSoft}" VerticalAlignment="Top"><TextBlock Style="{StaticResource Icon}" Text="&#xE753;" FontSize="18" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center"/></Border>
+                <StackPanel Grid.Column="1" Margin="14,0,0,0">
+                  <TextBlock Style="{StaticResource CardTitle}" Text="النسخ الاحتياطي"/>
+                  <TextBlock x:Name="BackupStatus" FontWeight="Medium" Margin="0,6,0,2" TextWrapping="Wrap"/>
+                  <TextBlock x:Name="BackupFileText" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                  <WrapPanel Margin="0,0,0,12">
+                    <Button x:Name="BackupNowButton2" Style="{StaticResource ActionButton}" Click="BackupNow" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE74E;" Foreground="White" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="نسخ الآن"/></StackPanel></Button>
+                    <Button Content="اختيار ملف النسخة…" Click="ChooseBackupFile" Margin="0,0,8,0"/>
+                    <Button x:Name="BackupExport" Content="حفظ نسخة في مكان آخر…" Click="ExportBackup" IsEnabled="False"/>
+                  </WrapPanel>
+                  <CheckBox x:Name="BackupAutoBox" Content="نسخ تلقائي بعد كل استيراد" Click="BackupOptionChanged" Margin="0,0,0,10"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                    <TextBlock Text="نسخ دوري" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2">
+                      <ListBox x:Name="BackupSchedulePicker" SelectionChanged="BackupScheduleChanged" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Segment}">
+                        <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                        <ListBoxItem Tag="off" Content="متوقف"/>
+                        <ListBoxItem Tag="hourly" Content="كل ساعة"/>
+                        <ListBoxItem Tag="daily" Content="كل يوم"/>
+                      </ListBox>
+                    </Border>
+                  </StackPanel>
+                  <Border Height="1" Background="{DynamicResource Line}" Margin="0,0,0,12"/>
+                  <WrapPanel><Button Click="OpenBackup"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE777;" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="استرجاع من نسخة…"/></StackPanel></Button></WrapPanel>
+                  <TextBlock Style="{StaticResource Hint}" FontSize="12.5" TextWrapping="Wrap" Margin="0,10,0,0" Text="يُكتب الملف المختار في مكانه بعد كل استيراد أو حسب الجدول، ولا يُستبدل بنسخة فقدت أشهراً أو بيانات. اختر مجلداً متزامناً (OneDrive أو Google Drive) لتصل النسخة إلى الآيفون، واسترجعها هناك من «استرجاع من نسخة». النسخة تشمل الأشهر المستوردة والحسابات وروابطها ودفتر المطابقة."/>
+                </StackPanel>
+              </Grid>
             </Border>
             <Border Style="{StaticResource Card}">
               <StackPanel>
@@ -531,7 +566,7 @@
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث في الجدول" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث الشامل عن منتسب أو جهة أو قسم" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+C" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="نسخ الصفوف المحددة للصقها في Excel" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
-                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح نسخة الآيفون" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="استيراد الملفات (نسخة احتياطية أو Excel)" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+L" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="قفل البرنامج (عند تفعيل القفل)" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="F5" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="إعادة تحميل الصفحة" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Enter" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح الصف المختار" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>

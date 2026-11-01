@@ -23,8 +23,15 @@ public partial class NameListsWindow : Window
         if (ListPicker.SelectedItem is not NameList list) { Rows.ItemsSource = null; Summary.Text = ""; Notice.Text = "لا توجد قائمة متاحة."; return; }
         Rows.ItemsSource = list.Rows.Select(row => new Row(row.Number, row.Name, row.Rank, row.Workplace, row.Amount.ToString("N0", CultureInfo.GetCultureInfo("en-US")))).ToArray();
         Notice.Text = list.Problem ?? "قائمة للمراجعة؛ طابق الأسماء والمبالغ قبل اعتمادها.";
-        ExportButton.IsEnabled = list.Problem is null && list.Rows.Count > 0;
+        ExportButton.IsEnabled = PreviewButton.IsEnabled = list.Problem is null && list.Rows.Count > 0;
         Summary.Text = list.Problem is null ? $"عدد القيود: {list.Rows.Count:N0}   ·   المجموع: {list.Total:N0}" : "تعذّر إعداد القائمة.";
+    }
+    /// معاينة القائمة داخل البرنامج قبل حفظها.
+    private async void Preview(object sender, RoutedEventArgs e)
+    {
+        if (working || ListPicker.SelectedItem is not NameList list || list.Problem is not null) return;
+        var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
+        await Exports.PreviewPdf(this, "قائمة أسماء", () => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); return NameListPdf.Generate(list, File.ReadAllBytes(fontPath)); });
     }
     private async void Export(object sender, RoutedEventArgs e)
     {

@@ -6,6 +6,6 @@
     <DataGrid x:Name="Rows" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0" Background="{DynamicResource TbgFFFFFF}" GridLinesVisibility="Horizontal" EnableRowVirtualization="True">
       <DataGrid.Columns><DataGridTextColumn Header="ت" Binding="{Binding Number}" Width="50"/><DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/><DataGridTextColumn Header="محل العمل" Binding="{Binding Workplace}" Width="*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/></DataGrid.Columns>
     </DataGrid>
-    <DockPanel Grid.Row="4" Margin="0,12,0,0"><Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,8"/><Button x:Name="ExportButton" DockPanel.Dock="Left" Content="تصدير قائمة PDF" Click="Export" Style="{StaticResource ActionButton}" Margin="8,0"/><TextBlock x:Name="Summary" VerticalAlignment="Center" FontWeight="SemiBold"/></DockPanel>
+    <DockPanel Grid.Row="4" Margin="0,12,0,0"><Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,8"/><Button x:Name="ExportButton" DockPanel.Dock="Left" Content="تصدير قائمة PDF" Click="Export" Style="{StaticResource ActionButton}" Margin="8,0"/><Button x:Name="PreviewButton" DockPanel.Dock="Left" Content="معاينة" Click="Preview" Padding="16,8" Margin="0,0,8,0"/><TextBlock x:Name="Summary" VerticalAlignment="Center" FontWeight="SemiBold"/></DockPanel>
   </Grid>
 </Window>

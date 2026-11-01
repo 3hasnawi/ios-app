@@ -140,6 +140,12 @@ try
     var annualXlsx = Path.Combine(root, "annual-fake.xlsx");
     MakeMonthlyXlsx(annualXlsx, ["الاسم", "جهة التنفيذ", "المبلغ", "الشهر"], [["منتسب تجريبي", "جهة وهمية", "500", "1"]]);
     Check(PayrollSpreadsheet.Read(annualXlsx, "تشرين الثاني 2026").Problems.Any(p => p.Message.Contains("متعدد الأشهر", StringComparison.Ordinal)), "annual deduction file is rejected rather than assigned to one month");
+    // الاستيراد الموحّد: التعرّف على نوع الملف من أعمدته، والشهر من اسم الملف.
+    Check(ImportDetector.Detect(salaryXlsx, snapshot).Kind == ImportKind.Payroll && ImportDetector.Detect(deductionXlsx, snapshot).Kind == ImportKind.Payroll &&
+          ImportDetector.Detect(annualXlsx, snapshot).Kind == ImportKind.Annual && ImportDetector.Detect(invalidSalary, snapshot).Kind == ImportKind.Payroll, "smart import recognizes payroll, deduction and annual workbooks");
+    Check(ImportDetector.Detect(Path.Combine(root, "x.zip"), snapshot).Kind == ImportKind.Backup && ImportDetector.Detect(Path.Combine(root, "notes.docx"), snapshot).Kind == ImportKind.Unknown, "smart import sorts backups and rejects unsupported files");
+    Check(ImportDetector.SuggestedMonth(Path.Combine(root, "رواتب أيلول 2026.xlsx"), snapshot) == "أيلول 2026" && ImportDetector.SuggestedMonth(Path.Combine(root, "ملف.xlsx"), snapshot) is null, "smart import reads the month from the file name");
+    Check(ImportDetector.Order([new ImportCandidate("b.xlsx", ImportKind.Payroll, "تشرين الأول 2026", ""), new ImportCandidate("a.zip", ImportKind.Backup, null, ""), new ImportCandidate("c.xlsx", ImportKind.Payroll, "أيلول 2026", "")]).Select(c => c.Path).SequenceEqual(["a.zip", "c.xlsx", "b.xlsx"]), "smart import opens the backup first then months in order");
     var payrollStore = new LocalPayrollImports(Path.Combine(root, "payroll-data")); var originalPayroll = payrollStore.Load(snapshot);
     var salaryState = payrollStore.Import(snapshot, originalPayroll, salaryPreview, false);
     var combinedPayroll = payrollStore.Import(snapshot, salaryState, deductionPreview, false);
@@ -156,6 +162,9 @@ try
     var replacedPayroll = payrollStore.Import(snapshot, combinedPayroll, replacement, true);
     Check(Directory.GetFiles(Path.Combine(root, "payroll-data", snapshot.SourceDigest), "*.json").Length >= 4 && replacedPayroll.Snapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m && replacedPayroll.Snapshot.Deductions.Any(d => d.Month == replacement.Month), "reviewed salary replacement preserves deduction records and earlier versions");
     var salaryBackup = Path.Combine(root, "salary-import-backup.zip"); ReconciliationBackupExport.Write(combinedPayroll.Snapshot, [], salaryBackup);
+    BackupDestination.Guard(salaryBackup, combinedPayroll.Snapshot); BackupDestination.Guard(Path.Combine(root, "not-yet.zip"), snapshot);
+    try { BackupDestination.Guard(salaryBackup, snapshot); throw new InvalidOperationException("backup file overwritten by a copy missing a month"); }
+    catch (InvalidDataException) { }
     var restoredSalary = BackupReader.Read(salaryBackup);
     Check(restoredSalary.Months.Any(m => m.Name == "تشرين الثاني 2026" && m.EmployeeCount == 1 && m.DeductionCount == 1) &&
           restoredSalary.Employees.Single(e => e.Month == "تشرين الثاني 2026").Net == 1000m && restoredSalary.Deductions.Single(d => d.Month == "تشرين الثاني 2026").Amount == 500m,
@@ -611,6 +620,7 @@ try
     var xlsx = Path.Combine(root, "accounts.xlsx"); MakeAccountXlsx(xlsx, fakeReceiver);
     var accountPreview = AccountSpreadsheet.Read(xlsx);
     Check(accountPreview.Problems.Count == 0 && accountPreview.Accounts.Single().Iban == fakeReceiver, "text IBAN spreadsheet read");
+    Check(ImportDetector.Detect(xlsx, snapshot).Kind == ImportKind.Accounts, "smart import recognizes the accounts workbook");
     var numericXlsx = Path.Combine(root, "numeric.xlsx"); MakeAccountXlsx(numericXlsx, "123456789012345", numeric: true);
     Check(AccountSpreadsheet.Read(numericXlsx).Problems.Single().Message.Contains("كنص", StringComparison.Ordinal), "numeric account cell is not guessed");
     var localXlsx = Path.Combine(root, "local.xlsx"); MakeAccountXlsx(localXlsx, "123456789012345", numeric: true, name: "صندوق الإسكان فرع الأنبار", branch: "الرافدين فرع الأنبار");

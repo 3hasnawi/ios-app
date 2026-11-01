@@ -8,11 +8,13 @@
   <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,8"/>
   <WrapPanel Margin="14,0,0,0">
    <TextBlock Text="قائمة البند:" VerticalAlignment="Center" Foreground="{DynamicResource Tfg4B625F}" FontWeight="SemiBold" Margin="0,0,8,6"/>
+   <Button x:Name="ListPreview" Content="معاينة" Click="PreviewList" IsEnabled="False" Margin="0,0,6,6" ToolTip="معاينة قائمة البند داخل البرنامج"/>
    <Button x:Name="ListExcel" Content="Excel" Click="ExportListExcel" IsEnabled="False" Margin="0,0,6,6" ToolTip="قائمة البند بالشكل المعتمد"/>
    <Button x:Name="ListPdf" Content="PDF" Click="ExportListPdf" IsEnabled="False" Margin="0,0,6,6"/>
    <Button x:Name="ListPrint" Content="طباعة" Click="PrintList" IsEnabled="False" Margin="0,0,18,6"/>
    <StackPanel x:Name="SpecialPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,6">
     <TextBlock x:Name="SpecialTitle" VerticalAlignment="Center" Foreground="{DynamicResource Tfg135148}" FontWeight="SemiBold" Margin="0,0,8,0"/>
+    <Button Content="معاينة" Click="PreviewSpecial" Margin="0,0,6,0"/>
     <Button Content="Excel" Click="ExportSpecialExcel" Style="{StaticResource ActionButton}" Margin="0,0,6,0"/>
     <Button Content="PDF" Click="ExportSpecialPdf" Style="{StaticResource ActionButton}" Margin="0,0,6,0"/>
     <Button Content="طباعة" Click="PrintSpecial"/>

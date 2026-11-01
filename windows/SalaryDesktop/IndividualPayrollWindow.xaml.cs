@@ -27,7 +27,7 @@ public partial class IndividualPayrollWindow : Window
     private async void BookChanged(object sender, SelectionChangedEventArgs e)
     {
         if (BookPicker.SelectedItem is not Choice choice || ExportButton is null) return;
-        var request = ++ticket; plan = null; cash = null; ExportButton.IsEnabled = false; SettingsButton.IsEnabled = false; AmountText.Text = "—"; AccountText.Text = "—"; Status.Text = "جارٍ فحص مبلغ الكتاب وحسابه…";
+        var request = ++ticket; plan = null; cash = null; ExportButton.IsEnabled = PreviewButton.IsEnabled = false; SettingsButton.IsEnabled = false; AmountText.Text = "—"; AccountText.Text = "—"; Status.Text = "جارٍ فحص مبلغ الكتاب وحسابه…";
         try
         {
             var result = await Task.Run(() => {
@@ -40,7 +40,7 @@ public partial class IndividualPayrollWindow : Window
             plan = result.prepared; cash = result.list;
             AmountText.Text = plan.Total.ToString("N0", CultureInfo.GetCultureInfo("en-US")); AccountText.Text = plan.BeneficiaryAccount ?? "—";
             Status.Text = plan.Notices.Count > 0 ? string.Join("\n", plan.Notices) + " يجب تأكيد مراجعة المبلغ قبل التصدير." : "راجع المبلغ والحساب وتنسيق المسودة قبل اعتمادها.";
-            ExportButton.IsEnabled = true;
+            ExportButton.IsEnabled = PreviewButton.IsEnabled = true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (request == ticket) Status.Text = "تعذّر إعداد الكتاب: " + ex.Message; }
@@ -59,25 +59,41 @@ public partial class IndividualPayrollWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
-    private async void Export(object sender, RoutedEventArgs e)
+    private async void Preview(object sender, RoutedEventArgs e) => await Produce(true);
+    private async void Export(object sender, RoutedEventArgs e) => await Produce(false);
+    /// preview: يُنشأ الكتاب في الذاكرة ويُعرض داخل البرنامج؛ وإلا يُحفظ في ملف يختاره المستخدم.
+    private async Task Produce(bool preview)
     {
         if (working || plan is null || BookPicker.SelectedItem is not Choice choice || choice.Id != plan.Id) return;
         var captured = plan; var capturedCash = cash;
         if (captured.Notices.Count > 0 && Ui.Message(this, "يوجد عقد بلا راتب اسمي. هل راجعت المبلغ وتريد تجاوز التنبيه لهذه المسودة؟", "مراجعة ضمان العقود", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        var dialog = new SaveFileDialog { Title = "حفظ مسودة الكتاب", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة " + choice.Title + ".pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
-        if (dialog.ShowDialog(this) != true) return;
-        working = true; BookPicker.IsEnabled = false; ExportButton.IsEnabled = false; ContractText.IsEnabled = false; SettingsButton.IsEnabled = false;
+        string? destination = null;
+        if (!preview)
+        {
+            var dialog = new SaveFileDialog { Title = "حفظ مسودة الكتاب", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة " + choice.Title + ".pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
+            if (dialog.ShowDialog(this) != true) return;
+            destination = dialog.FileName;
+        }
+        working = true; BookPicker.IsEnabled = false; ExportButton.IsEnabled = false; PreviewButton.IsEnabled = false; ContractText.IsEnabled = false; SettingsButton.IsEnabled = false;
         try
         {
             var settings = GroupLetterSettingsReader.Read(source, captured.Id);
             var font = GroupLetterFont.Read(source) ?? throw new InvalidDataException("خط ساكال العريض غير محفوظ؛ استورده من تخصيص كتاب المجموعة أو افتح نسخة تتضمنه.");
             var tableFont = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf"); var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png"); var reference = ContractText.Text.Trim();
             if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && Ui.Message(this, "شهر متن الكتاب يختلف عن شهر مبالغ الرواتب. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-            var changed = await Task.Run(() => { if (!Current()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتاب."); IndividualPayrollPdf.Save(captured, settings, font, File.ReadAllBytes(tableFont), File.ReadAllBytes(logo), reference, capturedCash, dialog.FileName); return !Current(); });
+            var (changed, bytes) = await Task.Run(() =>
+            {
+                if (!Current()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتاب.");
+                byte[]? made = null;
+                if (destination is null) made = IndividualPayrollPdf.Generate(captured, settings, font, File.ReadAllBytes(tableFont), File.ReadAllBytes(logo), reference, capturedCash);
+                else IndividualPayrollPdf.Save(captured, settings, font, File.ReadAllBytes(tableFont), File.ReadAllBytes(logo), reference, capturedCash, destination);
+                return (!Current(), made);
+            });
+            if (bytes is not null && !changed) { Exports.ShowBytes(this, "مسودة " + choice.Title, bytes); return; }
             Ui.Message(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
         { Ui.Message(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { working = false; BookPicker.IsEnabled = true; ExportButton.IsEnabled = plan is not null; ContractText.IsEnabled = true; SettingsButton.IsEnabled = true; }
+        finally { working = false; BookPicker.IsEnabled = true; ExportButton.IsEnabled = PreviewButton.IsEnabled = plan is not null; ContractText.IsEnabled = true; SettingsButton.IsEnabled = true; }
     }
 }

@@ -27,7 +27,7 @@ public partial class MainWindow
         finally { syncingSettings = false; }
         EncryptStatus.Text = Locker.DataEncrypted ? "✓ بيانات البرنامج مشفّرة لحساب ويندوز الحالي." : "بيانات البرنامج غير مشفّرة.";
         EncryptButton.IsEnabled = !Locker.DataEncrypted;
-        ShowCopies();
+        ShowCopies(); ShowBackupSettings();
         VersionStatus.Text = $"الإصدار الحالي {Updates.Current}. التحديثات تُنشر في صفحة الإصدارات على GitHub.";
     }
 

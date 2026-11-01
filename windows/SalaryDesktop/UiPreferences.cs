@@ -31,6 +31,12 @@ internal sealed class UiPreferences
     /// خيارا تقرير الراتب (مثل الآيفون): إخفاء البنود الصفرية، وإخفاء IBAN والأرقام الشخصية.
     public bool ReportHideZeros { get; set; }
     public bool ReportHidePersonal { get; set; }
+    /// النسخ الاحتياطي (مثل الآيفون): ملف واحد يُكتب فوقه، ونسخ تلقائي بعد الاستيراد ودوري (off/hourly/daily).
+    public string? BackupPath { get; set; }
+    public bool BackupAuto { get; set; } = true;
+    public string? BackupSchedule { get; set; }
+    public DateTime? BackupLast { get; set; }
+    public string? BackupError { get; set; }
 
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");
     private static UiPreferences? current;

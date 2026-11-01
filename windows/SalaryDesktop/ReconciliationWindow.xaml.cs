@@ -147,6 +147,14 @@ public partial class ReconciliationWindow : Window
         { Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportButton.IsEnabled = true; }
     }
+    /// معاينة مسودة الكشف داخل البرنامج قبل حفظها.
+    private async void PreviewPdf(object sender, RoutedEventArgs e)
+    {
+        if (Current is not { } period) return;
+        var revision = state.Revision;
+        var font = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
+        await Exports.PreviewPdf(this, "مسودة مطابقة الحساب", () => { if (!sourceIsCurrent() || store.Load(source).Revision != revision) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة."); return ReconciliationPdf.Generate(period, font); });
+    }
     private async void ExportPdf(object sender, RoutedEventArgs e)
     {
         if (Current is not { } period) return;

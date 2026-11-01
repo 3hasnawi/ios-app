@@ -61,6 +61,7 @@ public partial class MainWindow
             BackupReminderTitle.Text = count == 1 ? "تعديل واحد غير محفوظ في نسخة" : count == 2 ? "تعديلان غير محفوظين في نسخة" : $"{count:N0} تعديلات غير محفوظة في نسخة";
             BackupReminderText.Text = string.Join("، ", parts) + " على هذا الجهاز فقط · " + (mark is null ? "لم تُحفظ نسخة شاملة بعد" : "آخر نسخة شاملة: " + Ago(mark.At));
         }
+        if (page == "settings") ShowBackupSettings();
     }
 
     private static string Ago(DateTime at)
@@ -95,24 +96,20 @@ public partial class MainWindow
 
     // ——— سحب النسخة إلى البرنامج ———
 
-    private static string? DroppedFile(DragEventArgs e) =>
-        e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: 1 } files ? files[0] : null;
+    private static string[] DroppedFiles(DragEventArgs e) =>
+        e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 and <= 50 } files ? files : [];
     private void WindowDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = DroppedFile(e) is { } path && Path.GetExtension(path).ToLowerInvariant() is ".zip" or ".xlsx" && !loading && !Locker.IsLocked ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = DroppedFiles(e).Any(p => Path.GetExtension(p).ToLowerInvariant() is ".zip" or ".xlsx") && !loading && !Locker.IsLocked ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
+    /// الملفات المسحوبة تمر بالاستيراد الموحّد نفسه: يتعرف على النسخة وملفات الرواتب والاستقطاعات السنوية والحسابات.
     private async void WindowDrop(object sender, DragEventArgs e)
     {
-        if (DroppedFile(e) is not { } path || Locker.IsLocked) return;
+        var files = DroppedFiles(e);
+        if (files.Length == 0 || Locker.IsLocked) return;
         e.Handled = true;
-        switch (Path.GetExtension(path).ToLowerInvariant())
-        {
-            case ".zip": await OpenBackupFile(path); break;
-            // ملف Excel: استيراد رواتب واستقطاعات شهر، أو بدء البيانات منه إن لم تُفتح نسخة بعد.
-            case ".xlsx": if (snapshot is null) await StartFromExcelFile(path); else await ImportPayrollFrom(path); break;
-            default: Ui.Message(this, "اسحب نسخة الآيفون الاحتياطية (ZIP) أو ملف رواتب شهري (Excel).", "سحب ملف"); break;
-        }
+        await ImportPaths(files);
     }
 
     // ——— حجم النافذة وآخر قسم ———

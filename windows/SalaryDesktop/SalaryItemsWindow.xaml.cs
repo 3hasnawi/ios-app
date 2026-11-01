@@ -21,13 +21,13 @@ public partial class SalaryItemsWindow : Window
     {
         if (Groups.SelectedItem is not SalaryItemGroup group || Rows is null) return;
         var ticket = ++request; Rows.ItemsSource = null; Status.Text = "جارٍ مراجعة تفاصيل البند…";
-        selected = null; ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = false; SpecialPanel.Visibility = Visibility.Collapsed;
+        selected = null; ListPreview.IsEnabled = ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = false; SpecialPanel.Visibility = Visibility.Collapsed;
         try
         {
             var rows = await Task.Run(() => SalaryItemReports.Rows(source, month, group));
             if (closed || request != ticket) return;
             Rows.ItemsSource = rows; Status.Text = $"{rows.Count:N0} سجل · المجموع يطابق ملخص البند.";
-            selected = group; ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = true;
+            selected = group; ListPreview.IsEnabled = ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = true;
             var special = Special(group.Title);
             SpecialPanel.Visibility = special is null ? Visibility.Collapsed : Visibility.Visible;
             SpecialTitle.Text = special switch { "fund" => "كشف صندوق الشهداء حسب الفئة:", "food" => "كشف عقد الإطعام:", "health" => "اشتراكات الرعاية الصحية:", _ => "" };
@@ -39,6 +39,7 @@ public partial class SalaryItemsWindow : Window
     /// الكشوف الخاصة بأشكالها المعتمدة حسب اسم البند (مثل الآيفون).
     private static string? Special(string title) => FundReport.Applies(title) ? "fund" : FoodContractReport.Applies(title) ? "food" : HealthCareReport.Applies(title) ? "health" : null;
     private string ListName => selected is null ? "" : $"قائمة {selected.Title} - {month}";
+    private async void PreviewList(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.Preview(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
     private async void ExportListExcel(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.SaveExcel(this, ListName, () => XlsxReport.Generate(StandardReports.ItemList(source, month, g.Title))); }
     private async void ExportListPdf(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.SavePdf(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
     private async void PrintList(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.Print(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
@@ -57,6 +58,7 @@ public partial class SalaryItemsWindow : Window
             _ => null
         };
     }
+    private async void PreviewSpecial(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.Preview(this, f.Name, f.Pdf); }
     private async void ExportSpecialExcel(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.SaveExcel(this, f.Name, f.Excel); }
     private async void ExportSpecialPdf(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.SavePdf(this, f.Name, f.Pdf); }
     private async void PrintSpecial(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.Print(this, f.Name, f.Pdf); }

@@ -231,6 +231,17 @@ static class Program
                     File.WriteAllBytes(Path.Combine(folder, "24-payslip.pdf"), PayslipPdf.Generate(ReportSheet.HeaderFor(rich), month.Employee!.Name, month.Employee.Rank, month.Employee.Workplace, month.Month, PersonProfiles.Payslip(month), assets, stamp));
                     var homeLogo = Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
                     File.WriteAllBytes(Path.Combine(folder, "24-salary-report.pdf"), SalaryReportPdf.Generate([SalaryReports.Make(month, false, false)], assets, File.Exists(homeLogo) ? File.ReadAllBytes(homeLogo) : null, stamp));
+                    // الاستيراد الموحّد ومعاينة PDF داخل البرنامج (ملفات وهمية).
+                    var candidates = ImportDetector.Order([
+                        new ImportCandidate(@"C:\بيانات\نسخة الرواتب.zip", ImportKind.Backup, null, "يُفحص فهرسها قبل فتحها؛ ملف الآيفون الأصلي لا يتغير."),
+                        new ImportCandidate(@"C:\بيانات\رواتب أيلول 2026.xlsx", ImportKind.Payroll, "أيلول 2026", "رواتب واستقطاعات · الشهر من اسم الملف: أيلول 2026"),
+                        new ImportCandidate(@"C:\بيانات\استقطاعات 2026.xlsx", ImportKind.Annual, null, "يُقسّم إلى أشهر حسب عمود الشهر وسنة اسم الملف."),
+                        new ImportCandidate(@"C:\بيانات\حسابات الجهات.xlsx", ImportKind.Accounts, null, "يُضاف الجديد ويُحدّث الموجود دون حذف الجهات الغائبة."),
+                        new ImportCandidate(@"C:\بيانات\ملاحظات.docx", ImportKind.Unknown, null, "الامتداد غير مدعوم؛ الملفات المقبولة: نسخة ZIP أو ملف Excel ‏(xlsx).")]);
+                    var center = Fit(new ImportCenterWindow(candidates, true) { Owner = main }); center.Show(); await Task.Delay(500); Shot(center, "37-import-center"); center.Close();
+                    var previewBytes = SalaryReportPdf.Generate([SalaryReports.Make(month, false, false)], assets, File.Exists(homeLogo) ? File.ReadAllBytes(homeLogo) : null, stamp);
+                    var preview = Fit(new PdfPreviewWindow("تقرير راتب - " + month.Employee.Name, previewBytes, "تقرير راتب") { Owner = main }, 980, 860); preview.Show(); await Task.Delay(2500);
+                    Check(((ItemsControl)preview.FindName("Pages")).Items.Count == 1, "in-app PDF preview did not render the page"); Shot(preview, "38-pdf-preview"); preview.Close();
                     // الرئيسية: شريط التدقيق والفئات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
                     Check(((FrameworkElement)main.FindName("AlertStrip")).Visibility == Visibility.Visible && ((ItemsControl)main.FindName("HomeAlerts")).Items.Count > 0, "home audit strip was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");

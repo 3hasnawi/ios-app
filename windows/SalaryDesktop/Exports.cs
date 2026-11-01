@@ -26,30 +26,40 @@ internal static class Exports
         {
             await Task.Run(() => ReportFiles.Save(make(), destination, extension));
             owner.Cursor = cursor;
-            if (Ui.Message(owner, $"حُفظ الكشف:\n{destination}\n\nهل تريد فتحه الآن؟", "تصدير", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes) Open(owner, destination, false);
+            if (Ui.Message(owner, $"حُفظ الكشف:\n{destination}\n\nهل تريد فتحه الآن؟", "تصدير", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
+            {
+                // PDF يُعرض داخل البرنامج، وExcel يُفتح في برنامجه.
+                if (extension == ".pdf") ShowBytes(owner, Path.GetFileNameWithoutExtension(destination), await File.ReadAllBytesAsync(destination));
+                else Open(owner, destination, false);
+            }
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
         { owner.Cursor = cursor; Ui.Message(owner, "تعذّر إنشاء الكشف.\n" + ex.Message, "تصدير", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { owner.Cursor = cursor; }
     }
 
-    /// الطباعة: ملف PDF مؤقت يُرسل إلى الطابعة الافتراضية عبر عارض PDF، أو يُفتح للطباعة منه إن لم يدعم العارض الطباعة المباشرة.
-    public static async Task Print(Window owner, string name, Func<ReportAssets, byte[]> make)
+    /// المعاينة داخل البرنامج: يُنشأ الكشف في الخلفية ويُعرض في نافذة فيها الحفظ والطباعة.
+    public static Task Preview(Window owner, string name, Func<ReportAssets, byte[]> make) => Show(owner, name, () => make(Assets()), false);
+    /// الطباعة: نفس نافذة المعاينة ثم نافذة الطباعة مباشرة، دون عارض PDF خارجي.
+    public static Task Print(Window owner, string name, Func<ReportAssets, byte[]> make) => Show(owner, name, () => make(Assets()), true);
+    /// معاينة ملف PDF جاهز (مسودات الكتب والقوائم والأرشيف).
+    public static Task PreviewPdf(Window owner, string name, Func<byte[]> make) => Show(owner, name, make, false);
+
+    private static async Task Show(Window owner, string name, Func<byte[]> make, bool print)
     {
         var cursor = owner.Cursor; owner.Cursor = System.Windows.Input.Cursors.Wait;
         try
         {
-            var folder = Path.Combine(Path.GetTempPath(), "salary-print"); Directory.CreateDirectory(folder);
-            foreach (var old in Directory.GetFiles(folder, "*.pdf").Where(f => File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-1))) { try { File.Delete(old); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
-            var path = Path.Combine(folder, ReportSheet.FileName(name) + " " + DateTime.Now.ToString("HHmmss") + ".pdf");
-            await Task.Run(() => ReportFiles.Save(make(Assets()), path, ".pdf"));
+            var bytes = await Task.Run(make);
             owner.Cursor = cursor;
-            Open(owner, path, true);
+            ShowBytes(owner, name, bytes, print);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
-        { owner.Cursor = cursor; Ui.Message(owner, "تعذّر تجهيز الكشف للطباعة.\n" + ex.Message, "طباعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { owner.Cursor = cursor; Ui.Message(owner, "تعذّر تجهيز المعاينة.\n" + ex.Message, "معاينة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { owner.Cursor = cursor; }
     }
+    public static void ShowBytes(Window owner, string name, byte[] bytes, bool print = false) =>
+        new PdfPreviewWindow(name, bytes, name, print) { Owner = owner }.Show();
 
     private static void Open(Window owner, string path, bool print)
     {

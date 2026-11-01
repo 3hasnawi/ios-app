@@ -15,7 +15,7 @@ public static class PayrollSpreadsheet
     internal static readonly string[] Names = ["الاسم", "اسم الموظف", "الاسم الكامل", "الاسم الثلاثي", "الاسم الرباعي", "Name_m", "name"];
     internal static readonly string[] Ranks = ["الرتبة", "الرتبه", "rank"];
     private static readonly string[] Workplaces = ["محل العمل", "مكان العمل", "جهة العمل", "NO_markaz", "المركز", "القسم", "الوحدة", "الدائرة", "اسم المديرية", "workplace"];
-    private static readonly string[] Nets = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"];
+    internal static readonly string[] Nets = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"];
     internal static readonly string[] Amounts = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"];
     internal static readonly string[] Titles = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"];
     private static readonly string[] Keywords = ["صندوق", "شهداء", "رعاية", "نشاط", "نادي", "تامين", "ضريبة", "توقيفات", "تقاعد", "حماية", "تضمين", "ايراد", "رسم", "جوال", "اتصالات", "استقطاعات المصارف", "مجموع الاستقطاعات"];

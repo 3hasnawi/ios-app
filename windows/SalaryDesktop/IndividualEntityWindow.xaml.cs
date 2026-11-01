@@ -23,7 +23,7 @@ public partial class IndividualEntityWindow : Window
         BookPicker.ItemsSource = new[] { new Choice("ramadi", "تنفيذ الرمادي"), new Choice("housing", "صندوق الإسكان"), new Choice("water", "الموارد المائية"), new Choice("rafidain_anbar", "مصرف الرافدين فرع الأنبار") };
         BookPicker.SelectedIndex = 0;
     }
-    private void Busy(bool value) { working = value; BookPicker.IsEnabled = !value; EntityPicker.IsEnabled = !value; SettingsButton.IsEnabled = !value; ExportButton.IsEnabled = !value && plan is not null; }
+    private void Busy(bool value) { working = value; BookPicker.IsEnabled = !value; EntityPicker.IsEnabled = !value; SettingsButton.IsEnabled = !value; ExportButton.IsEnabled = PreviewButton.IsEnabled = !value && plan is not null; }
     private async void BookChanged(object sender, SelectionChangedEventArgs e)
     {
         if (BookPicker.SelectedItem is not Choice choice || EntityPicker is null) return;
@@ -100,12 +100,20 @@ public partial class IndividualEntityWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
-    private async void Export(object sender, RoutedEventArgs e)
+    private async void Preview(object sender, RoutedEventArgs e) => await Produce(true);
+    private async void Export(object sender, RoutedEventArgs e) => await Produce(false);
+    /// preview: يُنشأ الكتاب في الذاكرة ويُعرض داخل البرنامج؛ وإلا يُحفظ في ملف يختاره المستخدم.
+    private async Task Produce(bool preview)
     {
         if (working || plan is null || BookPicker.SelectedItem is not Choice choice || choice.Id != plan.Id) return;
         var captured = plan; var state = State;
-        var dialog = new SaveFileDialog { Title = "حفظ مسودة الكتاب", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة " + choice.Title + ".pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
-        if (dialog.ShowDialog(this) != true) return;
+        string? destination = null;
+        if (!preview)
+        {
+            var dialog = new SaveFileDialog { Title = "حفظ مسودة الكتاب", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة " + choice.Title + ".pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
+            if (dialog.ShowDialog(this) != true) return;
+            destination = dialog.FileName;
+        }
         Busy(true);
         try
         {
@@ -113,7 +121,15 @@ public partial class IndividualEntityWindow : Window
             var font = GroupLetterFont.Read(state.Snapshot) ?? throw new InvalidDataException("خط ساكال العريض غير محفوظ؛ استورده من تخصيص كتاب المجموعة أو افتح نسخة تتضمنه.");
             if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && Ui.Message(this, "شهر متن الكتاب يختلف عن شهر الاستقطاعات. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png");
-            var changed = await Task.Run(() => { if (!payrollCurrent() || store.Load(source).Revision != state.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب."); IndividualEntityPdf.Save(captured, settings, font, File.ReadAllBytes(logo), dialog.FileName); return !payrollCurrent() || store.Load(source).Revision != state.Revision; });
+            var (changed, bytes) = await Task.Run(() =>
+            {
+                if (!payrollCurrent() || store.Load(source).Revision != state.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب.");
+                byte[]? made = null;
+                if (destination is null) made = IndividualEntityPdf.Generate(captured, settings, font, File.ReadAllBytes(logo));
+                else IndividualEntityPdf.Save(captured, settings, font, File.ReadAllBytes(logo), destination);
+                return (!payrollCurrent() || store.Load(source).Revision != state.Revision, made);
+            });
+            if (bytes is not null && !changed) { Exports.ShowBytes(this, "مسودة " + choice.Title, bytes); return; }
             Ui.Message(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع وقائمة الأسماء قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)

@@ -50,7 +50,7 @@ public partial class MainWindow : Window
         VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
         Loaded += async (_, _) =>
         {
-            ShowTheme(); Locker.Start();
+            ShowTheme(); Locker.Start(); StartBackupTimer();
             await LoadStoredSnapshot(); RestorePage(); RenderPage();
             if (!App.Unattended) await FindUpdate(false);
         };
@@ -58,36 +58,35 @@ public partial class MainWindow : Window
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
-    private async void StartFromExcel(object sender, RoutedEventArgs e) => await StartFromExcelFile(null);
-    private async Task StartFromExcelFile(string? path)
+    private async Task<bool> StartFromExcelFile(string? path, string? month = null)
     {
-        if (loading || snapshot is not null) return;
-        var dialog = new PayrollImportWindow(null, "", path) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
-        if (snapshot is not null) { Ui.Message(this, "فُتحت بيانات أخرى؛ لم تُنشأ قاعدة جديدة.", "بدء البيانات"); return; }
+        if (loading || snapshot is not null) return false;
+        var dialog = new PayrollImportWindow(null, month ?? "", path) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return false;
+        if (snapshot is not null) { Ui.Message(this, "فُتحت بيانات أخرى؛ لم تُنشأ قاعدة جديدة.", "بدء البيانات"); return false; }
         loading = true; StartFromExcelButton.IsEnabled = false; SourceMessage.Text = "جارٍ إنشاء البيانات والتحقق منها محلياً…";
         var temporary = Path.Combine(Path.GetTempPath(), "salary-initial-" + Guid.NewGuid().ToString("N") + ".zip");
         try
         {
             var loaded = await Task.Run(() => { var created = InitialDataset.Create(preview, temporary); return store.Import(temporary, expectedDigest: created.SourceDigest, requireEmptyStore: true); });
             SetSnapshot(loaded); SourceMessage.Text = "أُنشئت البيانات من ملف Excel وحُفظت محلياً دون تعديل الملف الأصلي.";
-            Ui.Message(this, "حُفظ الشهر الأول. استورد بقية الملفات والحسابات، واحفظ نسخة احتياطية بعد المراجعة.", "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Information);
+            return true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { SourceMessage.Text = "لم تُنشأ البيانات؛ لم يُعدّل ملف Excel."; Ui.Message(this, "تعذّر إنشاء البيانات.\n" + ex.Message, "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { SourceMessage.Text = "لم تُنشأ البيانات؛ لم يُعدّل ملف Excel."; Ui.Message(this, "تعذّر إنشاء البيانات.\n" + ex.Message, "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
         finally { loading = false; StartFromExcelButton.IsEnabled = true; try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
     private async void OpenBackup(object sender, RoutedEventArgs e)
     {
         if (loading) return;
-        var dialog = new OpenFileDialog { Title = "اختيار نسخة الآيفون الاحتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", CheckFileExists = true, Multiselect = false };
+        var dialog = new OpenFileDialog { Title = "استرجاع من نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", CheckFileExists = true, Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         await OpenBackupFile(dialog.FileName);
     }
     /// فتح نسخة من مسار (من نافذة الاختيار أو بسحب الملف إلى البرنامج).
-    private async Task OpenBackupFile(string selectedPath)
+    private async Task<bool> OpenBackupFile(string selectedPath)
     {
-        if (loading) return;
+        if (loading) return false;
         loading = true;
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
@@ -104,24 +103,27 @@ public partial class MainWindow : Window
                     var choice = Ui.Message(this,
                         "توجد تعديلات محلية مرتبطة بالنسخة الحالية (أشهر مستوردة أو حسابات أو دفتر مطابقة). تبقى على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى.\n\nنعم: احفظ نسخة شاملة بالتعديلات أولاً ثم افتح الأخرى.\nلا: افتح الأخرى دون حفظ.\nإلغاء: ابقَ على النسخة الحالية.",
                         "تغيير النسخة المفتوحة", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
-                    if (choice == MessageBoxResult.Cancel || choice == MessageBoxResult.None) { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return; }
+                    if (choice == MessageBoxResult.Cancel || choice == MessageBoxResult.None) { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return false; }
                     if (choice == MessageBoxResult.Yes)
                     {
                         loading = false;
-                        var saved = await SaveFullBackup();
+                        // يُحفظ في ملف النسخ المختار إن وُجد، وإلا يُطلب مكان الحفظ.
+                        var saved = UiPreferences.Current.BackupPath is not null ? await BackupToFile(true) : await SaveFullBackup();
                         loading = true;
-                        if (!saved) { SourceMessage.Text = "لم تُحفظ النسخة الشاملة؛ لم تتغير النسخة المفتوحة."; return; }
+                        if (!saved) { SourceMessage.Text = "لم تُحفظ النسخة الشاملة؛ لم تتغير النسخة المفتوحة."; return false; }
                     }
                 }
             }
             var loaded = await Task.Run(() => store.Import(selectedPath, expectedDigest: inspectedDigest));
             SetSnapshot(loaded);
             SourceMessage.Text = "حُفظت نسخة محلية بعد فحصها؛ ملف الآيفون الأصلي لم يتغير.";
+            return true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
         {
             SourceMessage.Text = snapshot is null ? "لم تُفتح نسخة احتياطية." : "تعذّر فتح النسخة الجديدة؛ ما زالت البيانات السابقة معروضة.";
             Ui.Message(this, $"تعذّر قراءة النسخة والتحقق منها.\n{ex.Message}", "فتح النسخة", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
         }
         finally { loading = false; }
     }
@@ -183,7 +185,7 @@ public partial class MainWindow : Window
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
             if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
             if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
-            else if (e.Key == Key.O) { e.Handled = true; OpenBackup(this, new RoutedEventArgs()); }
+            else if (e.Key == Key.O) { e.Handled = true; ImportFiles(this, new RoutedEventArgs()); }
         }
         else if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
@@ -232,9 +234,6 @@ public partial class MainWindow : Window
         bool available = DataPages.Contains(page);
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         StaffReloadButton.Visibility = page == "staff" ? Visibility.Visible : Visibility.Collapsed;
-        AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
-        PayrollImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
-        AnnualImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
         var month = SelectedMonth;
         PageTitle.Text = page switch
@@ -405,40 +404,39 @@ public partial class MainWindow : Window
         if (page != "archive" || snapshot is null || DataTable.SelectedItem is not ArchiveBook book) return;
         try
         {
+            // يُعرض الكتاب داخل البرنامج (نافذة المعاينة فيها الحفظ والطباعة)، لا في عارض خارجي.
             previewFolder ??= Path.Combine(Path.GetTempPath(), "salary-desktop-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(previewFolder);
             var destination = Path.Combine(previewFolder, Guid.NewGuid().ToString("N") + ".pdf");
             var source = snapshot;
-            await Task.Run(() => BackupReader.CopyBook(source, book, destination));
-            Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
+            var bytes = await Task.Run(() => { BackupReader.CopyBook(source, book, destination); try { return File.ReadAllBytes(destination); } finally { File.Delete(destination); } });
+            Exports.ShowBytes(this, book.Title, bytes);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or Win32Exception)
         {
             Ui.Message(this, $"تعذّر فتح الكتاب.\n{ex.Message}", "الأرشيف", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
-    private async void ImportAccounts(object sender, RoutedEventArgs e)
+    /// استيراد ملف حسابات الجهات (من الاستيراد الموحّد)؛ quiet يكتفي بالملخص النهائي بدل رسالة نجاح لكل ملف.
+    private async Task<bool> ImportAccountsFrom(string path, bool quiet = false)
     {
         var original = baseSnapshot; var active = snapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
-        if (original is null || active is null || links is null || root is null || payroll is null) { Ui.Message(this, "افتح نسخة الآيفون أولاً لاستيراد الحسابات إليها.", "استيراد الحسابات"); return; }
-        var dialog = new OpenFileDialog { Title = "اختيار ملف حسابات الجهات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
-        if (dialog.ShowDialog(this) != true) return;
-        var path = dialog.FileName; AccountImportButton.IsEnabled = false;
+        if (original is null || active is null || links is null || root is null || payroll is null) { Ui.Message(this, "افتح نسخة احتياطية أو ابدأ البيانات أولاً لاستيراد الحسابات إليها.", "استيراد الحسابات"); return false; }
         try
         {
             var preview = await Task.Run(() => AccountSpreadsheet.Read(path));
-            if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد اختيار ملف الحسابات.", "استيراد الحسابات"); return; }
+            if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد اختيار ملف الحسابات.", "استيراد الحسابات"); return false; }
             var review = new AccountImportReviewWindow(preview) { Owner = this };
-            if (review.ShowDialog() != true) return;
+            if (review.ShowDialog() != true) return false;
             var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة."); return linkStore.ImportAccounts(original, links, preview); });
             if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
-            { Ui.Message(this, "حُفظت الحسابات للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            { Ui.Message(this, "حُفظت الحسابات للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
-            Ui.Message(this, "حُفظت الحسابات محلياً بعد فحصها. راجع تصنيف الجهات واحفظ نسخة احتياطية تشمل التعديلات.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!quiet) Ui.Message(this, "حُفظت الحسابات محلياً بعد فحصها. راجع تصنيف الجهات.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Information);
+            return true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
-        { Ui.Message(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { AccountImportButton.IsEnabled = true; }
+        { Ui.Message(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
     private async void EditBankDetails(object sender, RoutedEventArgs e)
     {
@@ -457,14 +455,13 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر حفظ بيانات الحساب.\n" + ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
-    private async void ImportAnnual(object sender, RoutedEventArgs e)
+    private async Task<bool> ImportAnnualFrom(string path, bool quiet = false)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
-        if (root is null || payroll is null || active is null || links is null || original is null) { Ui.Message(this, "افتح نسخة الآيفون أولاً.", "استيراد الاستقطاعات السنوية"); return; }
-        var dialog = new AnnualImportWindow(active) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Result is not { } preview || preview.Problems.Count != 0) return;
-        if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "الاستيراد السنوي"); return; }
-        AnnualImportButton.IsEnabled = false;
+        if (root is null || payroll is null || active is null || links is null || original is null) { Ui.Message(this, "افتح نسخة احتياطية أو ابدأ البيانات أولاً.", "استيراد الاستقطاعات السنوية"); return false; }
+        var dialog = new AnnualImportWindow(active, path) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview || preview.Problems.Count != 0) return false;
+        if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "الاستيراد السنوي"); return false; }
         try
         {
             var result = await Task.Run(() => {
@@ -474,26 +471,24 @@ public partial class MainWindow : Window
                 if (updatedLinks.Revision != links.Revision) throw new InvalidDataException("حُفظت الأشهر، لكن روابط الحسابات تغيّرت أثناء الحفظ؛ أعد فتح النسخة.");
                 return (updated, updatedLinks);
             });
-            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot)) { Ui.Message(this, "حُفظت الأشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "الاستيراد السنوي"); return; }
+            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot)) { Ui.Message(this, "حُفظت الأشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "الاستيراد السنوي"); return false; }
             ApplySources(root, result.updated, result.updatedLinks, preview.Months[0].Month);
-            Ui.Message(this, "حُفظت الأشهر معاً محلياً. راجع الاستقطاعات ثم احفظ نسخة احتياطية تشمل التغييرات.", "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!quiet) Ui.Message(this, "حُفظت الأشهر معاً محلياً. راجع الاستقطاعات.", "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Information);
+            return true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
-        { Ui.Message(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { AnnualImportButton.IsEnabled = true; }
+        { Ui.Message(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
-    private async void ImportPayroll(object sender, RoutedEventArgs e) => await ImportPayrollFrom(null);
-    /// استيراد ملف رواتب شهري؛ path من سحب ملف Excel إلى النافذة، وإلا يُختار من النافذة.
-    private async Task ImportPayrollFrom(string? path)
+    /// استيراد ملف رواتب أو استقطاعات شهر؛ الشهر من اسم الملف إن عُرف، وإلا يكتبه المستخدم في نافذة المراجعة.
+    private async Task<bool> ImportPayrollFrom(string path, string? month = null, bool quiet = false)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
         if (root is null || payroll is null || active is null || links is null || original is null)
-        { Ui.Message(this, "افتح نسخة الآيفون أولاً لاستيراد بيانات الشهر إليها.", "استيراد الرواتب"); return; }
-        var dialog = new PayrollImportWindow(active, SelectedMonth, path) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return;
+        { Ui.Message(this, "افتح نسخة احتياطية أو ابدأ البيانات أولاً لاستيراد بيانات الشهر إليها.", "استيراد الرواتب"); return false; }
+        var dialog = new PayrollImportWindow(active, month ?? SelectedMonth, path) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview) return false;
         var replace = dialog.ReplaceExisting;
-        if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "استيراد الرواتب"); return; }
-        PayrollImportButton.IsEnabled = false;
+        if (!ReferenceEquals(active, snapshot)) { Ui.Message(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "استيراد الرواتب"); return false; }
         try
         {
             var result = await Task.Run(() => {
@@ -504,13 +499,13 @@ public partial class MainWindow : Window
                 return (updatedPayroll, updatedLinks);
             });
             if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot))
-            { Ui.Message(this, "حُفظت بيانات الشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            { Ui.Message(this, "حُفظت بيانات الشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
             ApplySources(root, result.updatedPayroll, result.updatedLinks, preview.Month);
-            Ui.Message(this, "حُفظت بيانات الشهر محلياً؛ راجع التقارير والمبالغ، ثم احفظ نسخة احتياطية تشمل التغييرات.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!quiet) Ui.Message(this, "حُفظت بيانات الشهر محلياً؛ راجع التقارير والمبالغ.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Information);
+            return true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
-        { Ui.Message(this, "تعذّر إكمال تحديث العرض. أعد فتح النسخة للتحقق مما حُفظ.\n" + ex.Message, "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { PayrollImportButton.IsEnabled = true; }
+        { Ui.Message(this, "تعذّر إكمال تحديث العرض. أعد فتح النسخة للتحقق مما حُفظ.\n" + ex.Message, "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
 
     private async void ExportBackup(object sender, RoutedEventArgs e) => await SaveFullBackup();

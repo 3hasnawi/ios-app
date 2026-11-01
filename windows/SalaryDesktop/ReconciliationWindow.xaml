@@ -28,6 +28,7 @@
       <Button x:Name="SuggestionsButton" Content="المبالغ المقترحة" Click="OpenSuggestions" Padding="12,8" Margin="0,0,8,0"/>
       <Button Content="تأكيد / إلغاء المطابقة" Click="ToggleMatched" Padding="12,8" Margin="0,0,8,0"/><Button Content="حذف الحركة" Click="DeleteMovement" Padding="12,8"/>
       <Button x:Name="ExportButton" Content="حفظ نسخة تشمل المطابقة" Click="ExportBackup" Padding="12,8" Margin="8,0,0,0"/>
+      <Button Content="معاينة الكشف" Click="PreviewPdf" Padding="12,8" Margin="8,0,0,0"/>
       <Button x:Name="ExportPdfButton" Content="تصدير مسودة الكشف PDF" Click="ExportPdf" Padding="12,8" Margin="8,0,0,0"/>
     </WrapPanel>
   </Grid>

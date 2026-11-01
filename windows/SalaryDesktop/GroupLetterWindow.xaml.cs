@@ -14,7 +14,6 @@ public partial class GroupLetterWindow : Window
     private readonly Func<bool> payrollCurrent;
     private GroupLetterSettings initial;
     private bool working;
-    private string? previewDirectory;
     public TransferLinksSnapshot State { get; private set; }
     public GroupLetterWindow(BackupSnapshot source, TransferLinksSnapshot state, LocalTransferLinks store, GroupLetterPlan plan, Func<bool> payrollCurrent)
     {
@@ -26,7 +25,6 @@ public partial class GroupLetterWindow : Window
         OffsetText.Text = initial.SignatureOffset.ToString(CultureInfo.InvariantCulture); BodyText.Text = initial.BodyTemplate ?? GroupLetterPdf.DefaultBodyTemplate;
         Notice.Text = "مسودة للمراجعة. يتحقق التطبيق من جدول الجهات وحساباتها ومبالغها مع بيانات ملف التحويل؛ راجع التنسيق والتوقيعات قبل الاعتماد.";
         Closing += (_, e) => { if (working) e.Cancel = true; };
-        Closed += (_, _) => { if (previewDirectory is not null) { try { Directory.Delete(previewDirectory, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
     private static string Clean(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
     private static string Latin(string text) => string.Concat(text.Trim().Select(c => c switch { >= '٠' and <= '٩' => (char)('0' + c - '٠'), >= '۰' and <= '۹' => (char)('0' + c - '۰'), _ => c }));
@@ -78,17 +76,14 @@ public partial class GroupLetterWindow : Window
         { Ui.Message(this, ex.Message, "استيراد الخط", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void Busy(bool value) { working = value; EditorScroll.IsEnabled = !value; SaveButton.IsEnabled = !value; FontButton.IsEnabled = !value; PreviewButton.IsEnabled = !value; ExportButton.IsEnabled = !value; CloseButton.IsEnabled = !value; }
-    private async void Preview(object sender, RoutedEventArgs e)
-    {
-        try { previewDirectory ??= Path.Combine(Path.GetTempPath(), "salary-group-preview-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(previewDirectory); await Generate(Path.Combine(previewDirectory, Guid.NewGuid().ToString("N") + ".pdf"), true); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { Ui.Message(this, "تعذّر إنشاء مجلد المعاينة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
-    }
+    /// المعاينة داخل البرنامج: يُنشأ الكتاب في الذاكرة ويُعرض في نافذة المعاينة (منها الحفظ والطباعة).
+    private async void Preview(object sender, RoutedEventArgs e) => await Generate(null, true);
     private async void Export(object sender, RoutedEventArgs e)
     {
         var dialog = new SaveFileDialog { Title = "حفظ مسودة كتاب المجموعة", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة كتاب المجموعة.pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
         if (dialog.ShowDialog(this) == true) await Generate(dialog.FileName, false);
     }
-    private async Task Generate(string destination, bool open)
+    private async Task Generate(string? destination, bool open)
     {
         Busy(true);
         try
@@ -98,13 +93,15 @@ public partial class GroupLetterWindow : Window
                 Ui.Message(this, $"مبالغ الكتاب وملف التحويل من شهر {plan.Month}، لكن الشهر المكتوب في المتن هو {fields.BodyMonth}. هل تريد متابعة المسودة؟", "اختلاف شهر المتن", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
             var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png");
-            var changed = await Task.Run(() => {
+            var (changed, bytes) = await Task.Run(() => {
                 if (!payrollCurrent() || store.Load(source).Revision != captured.Revision) throw new InvalidDataException("تغيّرت بيانات التحويل؛ أعد فتح الكتاب.");
-                GroupLetterPdf.SaveDraft(plan, fields, font, File.ReadAllBytes(fontPath), File.ReadAllBytes(logoPath), destination);
-                return !payrollCurrent() || store.Load(source).Revision != captured.Revision;
+                byte[]? made = null;
+                if (destination is null) made = GroupLetterPdf.Generate(plan, fields, font, File.ReadAllBytes(fontPath), File.ReadAllBytes(logoPath));
+                else GroupLetterPdf.SaveDraft(plan, fields, font, File.ReadAllBytes(fontPath), File.ReadAllBytes(logoPath), destination);
+                return (!payrollCurrent() || store.Load(source).Revision != captured.Revision, made);
             });
-            if (changed) { Ui.Message(this, "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الإعداد؛ أعد فتح الكتاب وتصديره.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            if (open) Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
+            if (changed) { Ui.Message(this, "تغيّرت البيانات أثناء إعداد المسودة؛ أعد فتح الكتاب.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (open && bytes is not null) Exports.ShowBytes(this, "مسودة كتاب المجموعة", bytes);
             else Ui.Message(this, "حُفظت المسودة بعد فحص جدولها. راجع النص والتنسيق والتوقيعات على ويندوز قبل الاعتماد.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException or System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException)

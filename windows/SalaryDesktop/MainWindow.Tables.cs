@@ -360,6 +360,7 @@ public partial class MainWindow
         }
         catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "تصدير الجدول", MessageBoxButton.OK, MessageBoxImage.Information); return null; }
     }
+    private async void PreviewTable(object sender, RoutedEventArgs e) { if (TableSheet() is { } report) await Exports.Preview(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }
     private async void ExportTableExcel(object sender, RoutedEventArgs e) { if (TableSheet() is { } report) await Exports.SaveExcel(this, report.Name, () => XlsxReport.Generate(report.Sheet)); }
     private async void ExportTablePdf(object sender, RoutedEventArgs e) { if (TableSheet() is { } report) await Exports.SavePdf(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }
     private async void PrintTable(object sender, RoutedEventArgs e) { if (TableSheet() is { } report) await Exports.Print(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }
@@ -398,6 +399,7 @@ public partial class MainWindow
         try { var sheet = StandardReports.EntityDeductions(source, month, entity); return (sheet, sheet.Title); }
         catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "قائمة الجهة", MessageBoxButton.OK, MessageBoxImage.Information); return null; }
     }
+    private async void PreviewEntity(object sender, RoutedEventArgs e) { if (EntitySheet() is { } report) await Exports.Preview(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }
     private async void ExportEntityExcel(object sender, RoutedEventArgs e) { if (EntitySheet() is { } report) await Exports.SaveExcel(this, report.Name, () => XlsxReport.Generate(report.Sheet)); }
     private async void ExportEntityPdf(object sender, RoutedEventArgs e) { if (EntitySheet() is { } report) await Exports.SavePdf(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }
     private async void PrintEntity(object sender, RoutedEventArgs e) { if (EntitySheet() is { } report) await Exports.Print(this, report.Name, assets => ReportPdf.Generate([report.Sheet], assets, DateTime.Now)); }

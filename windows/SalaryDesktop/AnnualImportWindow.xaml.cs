@@ -10,16 +10,29 @@ public partial class AnnualImportWindow : Window
     private readonly BackupSnapshot source; private AnnualDeductionPreview? preview; private bool working;
     public AnnualDeductionPreview? Result { get; private set; }
     public bool ReplaceExisting { get; private set; }
-    public AnnualImportWindow(BackupSnapshot source) { InitializeComponent(); this.source = source; Closing += (_, e) => { if (working) e.Cancel = true; }; }
+    private string? pending;
+    /// path: ملف من الاستيراد الموحّد يُقرأ عند فتح النافذة مباشرة.
+    public AnnualImportWindow(BackupSnapshot source, string? path = null)
+    {
+        InitializeComponent(); this.source = source; pending = path;
+        Closing += (_, e) => { if (working) e.Cancel = true; };
+        if (path is not null) Loaded += (_, _) => ChooseFile(this, new RoutedEventArgs());
+    }
     private async void ChooseFile(object sender, RoutedEventArgs e)
     {
         if (working) return;
-        var dialog = new OpenFileDialog { Title = "اختيار ملف استقطاعات سنوي", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
-        if (dialog.ShowDialog(this) != true) return;
+        string path;
+        if (pending is not null) { path = pending; pending = null; }
+        else
+        {
+            var dialog = new OpenFileDialog { Title = "اختيار ملف استقطاعات سنوي", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
+            if (dialog.ShowDialog(this) != true) return;
+            path = dialog.FileName;
+        }
         working = true; Choose.IsEnabled = false; SaveButton.IsEnabled = false; preview = null; MonthsGrid.ItemsSource = null; Rows.ItemsSource = null; Problems.ItemsSource = null; Notice.Text = "جارٍ فحص الملف وتقسيمه إلى أشهر…";
         try
         {
-            var result = await Task.Run(() => AnnualDeductionSpreadsheet.Read(dialog.FileName, source)); preview = result;
+            var result = await Task.Run(() => AnnualDeductionSpreadsheet.Read(path, source)); preview = result;
             MonthsGrid.ItemsSource = result.Months.Select(m => new MonthRow(m.Month, m.Deductions.Count, m.Deductions.Count(PayrollAnalysis.IsInactive), source.Deductions.Count(d => d.Month == m.Month))).ToArray();
             Rows.ItemsSource = result.Months.SelectMany(m => m.Deductions).ToArray(); Problems.ItemsSource = result.Problems;
             Notice.Text = $"{result.Months.Count:N0} شهر · {result.Months.Sum(m => m.Deductions.Count):N0} استقطاع · {result.Problems.Count:N0} مشكلة. " + (result.Problems.Count == 0 ? "راجع الأشهر قبل الحفظ." : "صحح الملف وأعد اختياره؛ لن يحفظ أي شهر مع وجود خطأ.");
