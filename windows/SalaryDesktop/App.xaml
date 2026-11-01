@@ -416,21 +416,21 @@
       <Setter Property="Background" Value="White"/>
       <Setter Property="Padding" Value="0"/>
     </Style>
+    <!-- لون العنوان ووزنه على عنوان التبويب فقط؛ لو وُضعا على TabItem لورثهما محتوى التبويب كله. -->
     <Style TargetType="TabItem">
-      <Setter Property="Foreground" Value="#3A524F"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
             <Border x:Name="Tab" Padding="16,8" Margin="0,0,4,0" Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent" SnapsToDevicePixels="True">
-              <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" RecognizesAccessKey="True"/>
+              <ContentPresenter x:Name="Head" ContentSource="Header" HorizontalAlignment="Center" RecognizesAccessKey="True" TextElement.Foreground="#3A524F"/>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tab" Property="Background" Value="#EEF3F2"/></Trigger>
               <Trigger Property="IsSelected" Value="True">
                 <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Accent}"/>
-                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter TargetName="Head" Property="TextElement.Foreground" Value="{StaticResource Accent}"/>
+                <Setter TargetName="Head" Property="TextElement.FontWeight" Value="SemiBold"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>

@@ -56,9 +56,18 @@ static class Program
             for (int i = 0; i < 64; i++)
             {
                 var name = $"{first[i % first.Length]} {second[(i / 3) % second.Length]} {third[(i / 7) % third.Length]}";
-                var rank = ranks[i % ranks.Length]; var net = 650_000m + (i * 37_500m % 900_000m) + m * 5_000m;
-                var items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["صندوق الشهداء"] = rank == "عقود" ? 2000 : 4000, ["الرعاية الصحية"] = 3500 * (1 + i % 4), ["الضريبة"] = 12_000 + i * 150 });
-                var details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = i % 5 == 0 ? "كاش" : "بطاقة", ["الاسمي"] = (430_000 + i * 2_500).ToString(), ["الرقم الموحد"] = (90_000 + i).ToString() });
+                var rank = ranks[i % ranks.Length];
+                // مبالغ وهمية متسقة: الاستحقاق = الاسمي + المخصصات، والصافي = الاستحقاق − الاستقطاعات.
+                decimal nominal = 430_000 + i * 2_500, risk = 100_000, married = i % 3 == 0 ? 50_000 : 0, extra = m * 5_000, gross = nominal + risk + married + extra;
+                decimal pension = nominal / 10, fund = rank == "عقود" ? 2000 : 4000, health = 3500 * (1 + i % 4), tax = 12_000 + i * 150, totalDeductions = pension + fund + health + tax, net = gross - totalDeductions;
+                var items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["صندوق الشهداء"] = fund, ["الرعاية الصحية"] = health, ["الضريبة"] = tax });
+                var detailMap = new Dictionary<string, string> { ["طريقة الدفع"] = i % 5 == 0 ? "كاش" : "بطاقة", ["الاسمي"] = nominal.ToString("0"), ["الخطورة"] = risk.ToString("0"), ["الرقم الموحد"] = (90_000 + i).ToString(),
+                    ["الاستحقاق"] = gross.ToString("0"), ["توقيفات تقاعدية"] = pension.ToString("0"), ["صندوق الشهداء"] = fund.ToString("0"), ["الرعاية الصحية"] = health.ToString("0"), ["الضريبة"] = tax.ToString("0"),
+                    ["مجموع الاستقطاعات"] = totalDeductions.ToString("0"), ["الدرجة الوظيفية"] = $"{1 + i % 9}/{1 + i % 5}" };
+                if (married > 0) detailMap["الزوجية"] = married.ToString("0");
+                if (extra > 0) detailMap["اضافية"] = extra.ToString("0");
+                if (i % 5 != 0) { detailMap["IBAN"] = $"IQ00TEST{i:D3}0000000000000"; detailMap["توطين المصرف"] = i % 2 == 0 ? "الرافدين فرع الرمادي" : "الرشيد فرع الأنبار"; }
+                var details = JsonSerializer.SerializeToUtf8Bytes(detailMap);
                 employees.Add(new { month = months[m], name, rank, workplace = places[i % places.Length], net, items, details, rawColumns = (byte[]?)null });
                 if (i % 3 != 2) deductions.Add(new { month = months[m], name, title = entities[i % entities.Length], amount = 25_000m + (i % 6) * 12_500m, note = $"اضبارة {1200 + i} في 2026/{1 + i % 9}/5", rank });
                 if (m == 0)
@@ -181,7 +190,9 @@ static class Program
                     var detail = Fit(new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }); detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
                     var import = Fit(new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }); import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
                     var richReview = Fit(new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }); richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
-                    var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", SalaryItemReports.Groups(rich, "أيلول 2026")) { Owner = main }); richItems.Show(); await Task.Delay(500); Shot(richItems, "15-salary-items"); richItems.Close();
+                    var richGroups = SalaryItemReports.Groups(rich, "أيلول 2026"); var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", richGroups) { Owner = main }); richItems.Show(); await Task.Delay(300);
+                    ((DataGrid)richItems.FindName("Groups")).SelectedItem = richGroups.First(g => g.Title == "صندوق الشهداء"); await Task.Delay(900);
+                    Check(((FrameworkElement)richItems.FindName("SpecialPanel")).Visibility == Visibility.Visible, "fund report buttons were not offered"); Shot(richItems, "15-salary-items"); richItems.Close();
                     // البحث الشامل، ملف المنتسب، التصفية والمجاميع، وكشوف PDF/Excel المعتمدة للمراجعة البصرية.
                     var richStaff = StaffRecords.Read(rich);
                     var richSearch = Fit(new SearchWindow(rich, Task.FromResult<IReadOnlyList<StaffMember>?>(richStaff)) { Owner = main }); richSearch.Show(); await Task.Delay(900);

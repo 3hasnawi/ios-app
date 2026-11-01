@@ -52,6 +52,7 @@ public partial class PersonWindow : Window
         Trend.SizeChanged += (_, _) => DrawTrend();
     }
 
+    private void CloseWindow(object sender, RoutedEventArgs e) => Close();
     private ProfileMonth? Current => profile.Months.FirstOrDefault(m => m.Month == MonthPicker.SelectedItem as string);
     private void MonthChanged(object sender, SelectionChangedEventArgs e) => Render();
 

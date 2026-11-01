@@ -12,7 +12,7 @@ public static class PayslipPdf
     {
         using var canvas = new ReportCanvas(assets, stamp);
         var pages = 1; var page = 1;
-        var leftCount = Math.Max(slip.Allowances.Count + (slip.Gross is null ? 0 : 1), slip.Deductions.Count + (slip.TotalDeductions is null ? 0 : 1));
+        var leftCount = Math.Max(1, Math.Max(slip.Allowances.Count + (slip.Gross is null ? 0 : 1), slip.Deductions.Count + (slip.TotalDeductions is null ? 0 : 1)));
         var infoRows = (int)Math.Ceiling((3 + slip.Info.Count) / 2.0);
         var used = Margin + 24 + 30 + 10 + infoRows * Row + 14 + Row + leftCount * Row + 14 + Row * 1.6f + 14;
         var entityHeight = slip.EntityDeductions.Count == 0 ? 0 : Row * (slip.EntityDeductions.Count + 2) + 14;
@@ -50,6 +50,11 @@ public static class PayslipPdf
             var head = SKRect.Create(x - half, top, half, Row); canvas.Fill(head, Light); canvas.Stroke(head, Line, .5f);
             canvas.Text(bold, heading, head.Left, head.Right, top + 13.5f, ReportCanvas.Align.Center);
             var yy = top + Row;
+            if (lines.Count == 0 && total is null)
+            {
+                var empty = SKRect.Create(x - half, yy, half, Row); canvas.Stroke(empty, Line, .5f);
+                canvas.Text(text, "لا توجد بنود في تفاصيل الراتب", empty.Left, empty.Right, yy + 13.5f, ReportCanvas.Align.Center);
+            }
             foreach (var line in lines)
             {
                 var label = SKRect.Create(x - half * .62f, yy, half * .62f, Row); var value = SKRect.Create(x - half, yy, half * .38f, Row);

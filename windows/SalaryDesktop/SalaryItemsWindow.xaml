@@ -6,7 +6,7 @@
  <DataGrid x:Name="Rows" Grid.Row="4" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0" Background="White" GridLinesVisibility="Horizontal" EnableRowVirtualization="True"><DataGrid.Columns><DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2*"/><DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/><DataGridTextColumn Header="محل العمل" Binding="{Binding Workplace}" Width="2*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:N0}}" Width="*"/></DataGrid.Columns></DataGrid>
  <DockPanel Grid.Row="5" Margin="0,12,0,0">
   <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,8"/>
-  <WrapPanel>
+  <WrapPanel Margin="14,0,0,0">
    <TextBlock Text="قائمة البند:" VerticalAlignment="Center" Foreground="#4B625F" FontWeight="SemiBold" Margin="0,0,8,6"/>
    <Button x:Name="ListExcel" Content="Excel" Click="ExportListExcel" IsEnabled="False" Margin="0,0,6,6" ToolTip="قائمة البند بالشكل المعتمد"/>
    <Button x:Name="ListPdf" Content="PDF" Click="ExportListPdf" IsEnabled="False" Margin="0,0,6,6"/>
