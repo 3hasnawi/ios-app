@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="تطبيق الرواتب — ويندوز" Height="840" Width="1460" MinHeight="660" MinWidth="1080"
         Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" FlowDirection="RightToLeft" FontFamily="{StaticResource AppFont}" FontSize="13.5"
-        WindowStartupLocation="CenterScreen" AllowDrop="True" DragOver="WindowDragOver" Drop="WindowDrop" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" PreviewKeyDown="WindowKeyDown">
+        WindowStartupLocation="CenterScreen" AllowDrop="True" DragOver="WindowDragOver" Drop="WindowDrop" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" PreviewKeyDown="WindowKeyDown">
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition Width="236"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
