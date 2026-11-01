@@ -178,7 +178,7 @@ public partial class PersonWindow : Window
     }
     private static byte[]? HeaderLogo()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
+        var path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
         try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
