@@ -229,6 +229,8 @@ static class Program
                     File.WriteAllBytes(Path.Combine(folder, "23-entity-list.pdf"), ReportPdf.Generate([entitySheet], assets, stamp));
                     var month = PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff).Months.First(m => m.Month == "أيلول 2026");
                     File.WriteAllBytes(Path.Combine(folder, "24-payslip.pdf"), PayslipPdf.Generate(ReportSheet.HeaderFor(rich), month.Employee!.Name, month.Employee.Rank, month.Employee.Workplace, month.Month, PersonProfiles.Payslip(month), assets, stamp));
+                    var homeLogo = Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
+                    File.WriteAllBytes(Path.Combine(folder, "24-salary-report.pdf"), SalaryReportPdf.Generate([SalaryReports.Make(month, false, false)], assets, File.Exists(homeLogo) ? File.ReadAllBytes(homeLogo) : null, stamp));
                     // الرئيسية: شريط التدقيق والفئات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
                     Check(((FrameworkElement)main.FindName("AlertStrip")).Visibility == Visibility.Visible && ((ItemsControl)main.FindName("HomeAlerts")).Items.Count > 0, "home audit strip was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");

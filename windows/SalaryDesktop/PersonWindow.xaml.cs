@@ -59,7 +59,7 @@ public partial class PersonWindow : Window
     private void Render()
     {
         var month = Current;
-        PdfButton.IsEnabled = month?.Employee is not null;
+        PdfButton.IsEnabled = ReportButton.IsEnabled = month?.Employee is not null;
         if (month is null)
         {
             Notice.Text = "لا توجد رواتب أو استقطاعات بهذا الاسم في الأشهر المحفوظة.";
@@ -140,5 +140,50 @@ public partial class PersonWindow : Window
         catch (InvalidDataException ex) { Notice.Text = ex.Message; return; }
         await Exports.SavePdf(this, ReportSheet.FileName($"قسيمة {profile.Name} - {month.Month}"),
             assets => PayslipPdf.Generate(ReportSheet.HeaderFor(source), profile.Name, employee.Rank, employee.Workplace, month.Month, slip, assets, DateTime.Now));
+    }
+
+    // ——— تقرير الراتب (نقل من الآيفون) ———
+
+    private void OpenReportMenu(object sender, RoutedEventArgs e)
+    {
+        HideZerosItem.IsChecked = UiPreferences.Current.ReportHideZeros;
+        HidePersonalItem.IsChecked = UiPreferences.Current.ReportHidePersonal;
+        ReportMenu.PlacementTarget = ReportButton; ReportMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom; ReportMenu.IsOpen = true;
+    }
+    private void ReportOptionChanged(object sender, RoutedEventArgs e)
+    {
+        UiPreferences.Current.ReportHideZeros = HideZerosItem.IsChecked;
+        UiPreferences.Current.ReportHidePersonal = HidePersonalItem.IsChecked;
+        if (UiPreferences.Save() is { } error) Notice.Text = "تعذّر حفظ خيارات التقرير: " + error;
+    }
+    private SalaryReportData? BuildReport()
+    {
+        var month = Current; if (month?.Employee is null) return null;
+        try
+        {
+            var report = SalaryReports.Make(month, UiPreferences.Current.ReportHideZeros, UiPreferences.Current.ReportHidePersonal);
+            // تنبيه مثل الآيفون عند عدم تطابق المجاميع، دون منع التقرير.
+            Notice.Text = report.Mismatches.Count > 0 ? string.Join("\n", report.Mismatches) : report.MissingDetails ? "هذا الشهر مستورد قبل حفظ تفاصيل الراتب؛ أعد استيراد ملف رواتبه لإظهار المخصصات." : "";
+            return report;
+        }
+        catch (InvalidDataException ex) { Notice.Text = ex.Message; return null; }
+    }
+    private static byte[]? HeaderLogo()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "HomeLogo.png");
+        try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+    private async void SaveSalaryReport(object sender, RoutedEventArgs e)
+    {
+        if (BuildReport() is not { } report) return;
+        var logo = HeaderLogo();
+        await Exports.SavePdf(this, SalaryReports.FileName(report.Name, report.Month), assets => SalaryReportPdf.Generate([report], assets, logo, DateTime.Now));
+    }
+    private async void PrintSalaryReport(object sender, RoutedEventArgs e)
+    {
+        if (BuildReport() is not { } report) return;
+        var logo = HeaderLogo();
+        await Exports.Print(this, SalaryReports.FileName(report.Name, report.Month), assets => SalaryReportPdf.Generate([report], assets, logo, DateTime.Now));
     }
 }

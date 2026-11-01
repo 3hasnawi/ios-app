@@ -32,6 +32,18 @@
         <Button Click="CopySummary" ToolTip="نسخ ملخص القسيمة" Margin="0,0,8,0">
           <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="نسخ"/></StackPanel>
         </Button>
+        <Button x:Name="ReportButton" Click="OpenReportMenu" ToolTip="تقرير راتب الشهر المعروض بشكل «برنامج الرواتب الالكتروني الموحد»" Margin="0,0,8,0">
+          <Button.ContextMenu>
+            <ContextMenu x:Name="ReportMenu">
+              <MenuItem x:Name="HideZerosItem" Header="إخفاء البنود الصفرية" IsCheckable="True" Click="ReportOptionChanged"/>
+              <MenuItem x:Name="HidePersonalItem" Header="إخفاء IBAN والأرقام الشخصية" IsCheckable="True" Click="ReportOptionChanged"/>
+              <Separator/>
+              <MenuItem Header="حفظ تقرير الراتب PDF…" Click="SaveSalaryReport"/>
+              <MenuItem Header="طباعة تقرير الراتب" Click="PrintSalaryReport"/>
+            </ContextMenu>
+          </Button.ContextMenu>
+          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="تقرير الراتب"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="9" Margin="7,1,0,0"/></StackPanel>
+        </Button>
         <Button x:Name="PdfButton" Style="{StaticResource ActionButton}" Click="ExportPayslip" ToolTip="قسيمة الشهر المعروض بصيغة PDF">
           <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="القسيمة PDF"/></StackPanel>
         </Button>

@@ -28,6 +28,9 @@ internal sealed class UiPreferences
     public string? LockSalt { get; set; }
     public int LockMinutes { get; set; } = 10;
     public bool LockHello { get; set; }
+    /// خيارا تقرير الراتب (مثل الآيفون): إخفاء البنود الصفرية، وإخفاء IBAN والأرقام الشخصية.
+    public bool ReportHideZeros { get; set; }
+    public bool ReportHidePersonal { get; set; }
 
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");
     private static UiPreferences? current;

@@ -929,6 +929,14 @@ try
         Check(PersonProfiles.SearchIndex(reportSnapshot, null).Count == 30, "search index keeps one entry per person");
         var payslipPdf = PayslipPdf.Generate(ReportSheet.DefaultHeader, person.Name, "ملازم", "قسم وهمي", "أيلول 2026", slip, reportAssets, stamp);
         using (var read = UglyToad.PdfPig.PdfDocument.Open(payslipPdf)) Check(read.NumberOfPages == 1, "payslip PDF pages");
+        var salaryReport = SalaryReports.Make(person.Months[0], false, false);
+        Check(salaryReport.Net == 700002m && salaryReport.EntitlementTotal == 800000m && salaryReport.Entitlements.Count == 16 && salaryReport.Deductions.Count == 16 && salaryReport.Banks.Count == 1 && !salaryReport.MissingDetails, "salary report sections follow the iPhone order");
+        var hiddenReport = SalaryReports.Make(person.Months[0], true, true);
+        Check(hiddenReport.Entitlements.All(l => l.Value != 0) && hiddenReport.Info.First(i => i.Label == "IBAN").Value.StartsWith("•••• ", StringComparison.Ordinal), "salary report hides zero items and personal numbers");
+        var salaryReportPdf = SalaryReportPdf.Generate([salaryReport], reportAssets, null, stamp);
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(salaryReportPdf)) Check(read.NumberOfPages == 1, "salary report PDF is one A4 page");
+        try { _ = SalaryReports.Make(person.Months[0] with { Employees = [] }, false, false); throw new InvalidOperationException("salary report without payroll accepted"); }
+        catch (InvalidDataException) { }
         var payrollRows = PayrollRows.Build(reportEmployees.Where(e => e.Month == "أيلول 2026"));
         Check(payrollRows.Length == 30 && payrollRows[0].Payment == "بطاقة" && payrollRows[0].Gross == 800000m && payrollRows[0].TotalDeductions == 100000m && payrollRows[0].Iban.StartsWith("IQ00", StringComparison.Ordinal), "payroll rows read detail fields");
         var brokenRow = PayrollRows.Row(reportEmployees[0] with { Details = Encoding.UTF8.GetBytes("{broken") });
