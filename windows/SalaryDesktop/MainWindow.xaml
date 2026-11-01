@@ -395,19 +395,19 @@
                     <Button Style="{StaticResource PanelButton}" Content="تدقيق إصدار المجموعة" Click="OpenGroupIssuance"/>
                   </StackPanel>
                 </Border>
-                <Border Style="{StaticResource Card}" Padding="14,4,14,10" Margin="0,0,0,10">
-                  <StackPanel>
-                    <TextBlock Style="{StaticResource SectionLabel}" Text="الجهة المختارة في الجدول"/>
-                    <Button Style="{StaticResource PanelButton}" Content="ربط حساب الجهة" Click="LinkTransferAccount"/>
-                    <Button Style="{StaticResource PanelButton}" Content="تحديد مجموعة الجهة" Click="ClassifyTransfer"/>
-                  </StackPanel>
-                </Border>
                 <Border x:Name="IndividualCard" Style="{StaticResource Card}" Padding="14,4,14,10" Margin="0,0,0,10">
                   <StackPanel>
                     <TextBlock Style="{StaticResource SectionLabel}" Text="الكتب المنفردة والقوائم"/>
                     <Button Style="{StaticResource PanelButton}" Content="كتب الرواتب المنفردة" Click="OpenIndividualPayroll"/>
                     <Button Style="{StaticResource PanelButton}" Content="كتب الجهات المنفردة" Click="OpenIndividualEntity"/>
                     <Button Style="{StaticResource PanelButton}" Content="قوائم الأسماء" Click="OpenNameLists"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Padding="14,4,14,10" Margin="0,0,0,10">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="الجهة المختارة في الجدول"/>
+                    <Button Style="{StaticResource PanelButton}" Content="ربط حساب الجهة" Click="LinkTransferAccount"/>
+                    <Button Style="{StaticResource PanelButton}" Content="تحديد مجموعة الجهة" Click="ClassifyTransfer"/>
                   </StackPanel>
                 </Border>
                 <Border x:Name="ReferencesCard" Style="{StaticResource Card}" Padding="14,4,14,10" Margin="0,0,0,0">
