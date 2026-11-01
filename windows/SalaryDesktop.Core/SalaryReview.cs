@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 
 namespace SalaryDesktop.Core;
 
@@ -13,6 +14,28 @@ public static class SalaryReview
     {
         try { return e.Details is null ? new() : JsonSerializer.Deserialize<Dictionary<string, string>>(e.Details) ?? throw new JsonException(); }
         catch (JsonException ex) { throw new InvalidDataException("تعذّر قراءة بيانات أحد الرواتب للتدقيق.", ex); }
+    }
+    private static string Identifier(string value)
+    {
+        var digits = string.Concat(value.Select(c => CharUnicodeInfo.GetDecimalDigitValue(c)).Where(n => n >= 0).Select(n => (char)('0' + n))).TrimStart('0');
+        return digits;
+    }
+    private static Dictionary<string, decimal> Items(Employee e)
+    {
+        try { return e.Items is null ? new() : JsonSerializer.Deserialize<Dictionary<string, decimal>>(e.Items) ?? throw new JsonException(); }
+        catch (JsonException ex) { throw new InvalidDataException("تعذّر قراءة بنود أحد الرواتب للتدقيق.", ex); }
+    }
+    private static decimal? Value(Dictionary<string, string> details, Dictionary<string, decimal> items, string title)
+    {
+        var key = PayrollAnalysis.Normalize(title);
+        foreach (var (name, text) in details)
+        {
+            if (PayrollAnalysis.Normalize(name) != key || string.IsNullOrWhiteSpace(text)) continue;
+            var normalized = TransferPreparation.NormalizeAccount(text).Replace(",", "", StringComparison.Ordinal).Replace("٬", "", StringComparison.Ordinal).Replace('٫', '.');
+            return decimal.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+        }
+        foreach (var (name, value) in items) if (PayrollAnalysis.Normalize(name) == key) return value;
+        return null;
     }
     private static string Rank(string value)
     {
@@ -40,6 +63,38 @@ public static class SalaryReview
         if (withIban.Length > 0 && withIban.Length * 2 >= current.Length)
             foreach (var row in details.Where(x => Iban(x.Data).Length == 0)) rows.Add(new("IBAN فارغ", row.Employee.Name, "رقم الحساب غير موجود في الراتب.", null, row.Employee.Net));
         if (withIban.Length == 0) notes.Add("لا توجد أرقام IBAN ضمن تفاصيل الرواتب؛ لم يُجرَ فحص الحسابات.");
+        foreach (var label in new[] { "الرقم الوظيفي", "الرقم الموحد" })
+        {
+            var shared = details.Select(x => (x.Employee, Number: Identifier(x.Data.GetValueOrDefault(label) ?? ""))).Where(x => x.Number.Length > 0)
+                .GroupBy(x => x.Number).Where(g => g.Select(x => Key(x.Employee.Name)).Distinct(StringComparer.Ordinal).Count() > 1);
+            foreach (var group in shared) foreach (var person in group) rows.Add(new("رقم مكرر", person.Employee.Name, label + " مستخدم لأكثر من اسم؛ راجع الهوية.", null, person.Employee.Net));
+        }
+        var calculations = new List<SalaryReviewRow>(); int calculated = 0, healthFound = 0;
+        foreach (var (employee, data) in details)
+        {
+            var items = Items(employee); var entitlement = Value(data, items, "الاستحقاق"); var deductions = Value(data, items, "مجموع الاستقطاعات");
+            if (entitlement is not null && deductions is not null && employee.Net is not null)
+            {
+                calculated++; var expected = entitlement.Value - deductions.Value;
+                if (Math.Abs(expected - employee.Net.Value) >= 1) calculations.Add(new("حساب الصافي", employee.Name, "الاستحقاق ناقص الاستقطاعات لا يساوي الصافي.", expected, employee.Net));
+            }
+            var health = Value(data, items, "الرعاية الصحية");
+            if (health is not null) { healthFound++; if (health != 0 && health % 3500 != 0) rows.Add(new("الرعاية الصحية", employee.Name, "المبلغ لا يقبل القسمة على ٣٬٥٠٠؛ راجع الاستقطاع.", null, health)); }
+        }
+        if (calculated == 0) notes.Add("لم تتوفر أعمدة كافية لفحص حساب الصافي.");
+        else if ((decimal)calculations.Count / calculated >= .3m) notes.Add("لم يُعتمد فحص حساب الصافي لأن عدداً كبيراً من الصفوف لا يطابق الأعمدة؛ راجع تنسيق الملف.");
+        else rows.AddRange(calculations);
+        if (healthFound == 0) notes.Add("لم يُعثر على بند الرعاية الصحية لفحصه.");
+        var activeDeductions = source.Deductions.Where(d => d.Month == month && !PayrollAnalysis.IsInactive(d)).ToArray();
+        foreach (var deduction in activeDeductions.Where(d => !currentGroups.ContainsKey(Key(d.Name)))) rows.Add(new("استقطاع بلا راتب", deduction.Name, deduction.Title, null, deduction.Amount));
+        if (activeDeductions.Length == 0) notes.Add("لا توجد استقطاعات فعالة لفحص مطابقتها مع الرواتب.");
+        else
+        {
+            var bank = BankStatementCalculator.Calculate(source, month);
+            if (bank.MissingExecutionAmounts > 0) notes.Add("توجد مبالغ استقطاع ناقصة؛ لم تُعتمد مطابقة المجموع.");
+            else if (bank.BankDeductions > 0 && Math.Abs(bank.ExecutionDifference) >= 1) rows.Add(new("مجموع الاستقطاعات", "مجموع الشهر", "مجموع الجهات لا يطابق استقطاعات المصارف في الرواتب.", bank.BankDeductions, bank.ExecutionDeductions));
+            else if (bank.BankDeductions == 0) notes.Add("لم يتوفر مجموع استقطاعات المصارف للمقارنة مع الجهات.");
+        }
         var previousKey = MonthNames.Previous(month); var previousMatches = source.Months.Where(m => MonthNames.SortKey(m.Name) == previousKey).Select(m => m.Name).ToArray();
         string? previous = previousMatches.Length == 1 ? previousMatches[0] : null; int ambiguous = 0;
         if (previous is null) notes.Add(previousMatches.Length > 1 ? "توجد أكثر من تسمية للشهر السابق؛ لم تُجرَ المقارنة." : "الشهر السابق غير محفوظ؛ لم تُجرَ المقارنة بين الشهرين.");
@@ -67,7 +122,7 @@ public static class SalaryReview
                 if (ambiguous > 0) notes.Add($"استُبعد {ambiguous} اسم مكرر من مقارنة الشهرين حتى لا تُربط هويات مختلفة خطأً.");
             }
         }
-        notes.Add("هذه فحوص أولية؛ مطابقة الملاك وفحوص البنود والاستقطاعات التفصيلية لم تكتمل بعد.");
+        notes.Add("هذه فحوص أولية؛ مطابقة الملاك والتفاصيل الأخرى لم تكتمل بعد.");
         return new(month, previous, current.Length, ambiguous, rows.OrderBy(r => r.Kind, StringComparer.Ordinal).ThenBy(r => r.Name, StringComparer.Ordinal).ToArray(), notes);
     }
 }

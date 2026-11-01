@@ -401,6 +401,12 @@ try
     Check(review.ExcludedAmbiguous == 1 && review.Rows.Any(r => r.Kind == "أسماء مكررة") && !review.Rows.Any(r => r.Kind == "جديد في الرواتب" && r.Name == duplicateNew.Name), "ambiguous duplicate names never cause automatic comparison");
     var noPrevious = SalaryReview.Prepare(reviewSource with { Months = reviewSource.Months.Where(m => m.Name == reviewMonth).ToArray(), Employees = [reviewNew] }, reviewMonth);
     Check(noPrevious.PreviousMonth is null && noPrevious.Notes.Any(n => n.Contains("السابق", StringComparison.Ordinal)), "missing prior month is explicit");
+    var auditEmployees = Enumerable.Range(1, 10).Select(n => contractPerson with { Name = "اسم فحص " + n, Month = reviewMonth, Net = n == 1 ? 499m : 500m,
+        Items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["الرعاية الصحية"] = n == 1 ? 3501m : 3500m }),
+        Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["الاستحقاق"] = "١٬٠٠٠", ["مجموع الاستقطاعات"] = "٥٠٠", ["مجموع استقطاعات المصارف"] = "٢٬٥٠٠", ["الرقم الوظيفي"] = n <= 2 ? "١٢٣" : n.ToString(System.Globalization.CultureInfo.InvariantCulture) }) }).ToArray();
+    var detailedAudit = SalaryReview.Prepare(snapshot with { Employees = auditEmployees, Deductions = [personRow with { Month = reviewMonth }] }, reviewMonth);
+    Check(detailedAudit.Rows.Any(r => r.Kind == "حساب الصافي" && r.Before == 500 && r.After == 499) && detailedAudit.Rows.Any(r => r.Kind == "الرعاية الصحية") && detailedAudit.Rows.Count(r => r.Kind == "رقم مكرر") == 2, "salary review checks arithmetic, healthcare, and repeated identifiers");
+    Check(detailedAudit.Rows.Any(r => r.Kind == "استقطاع بلا راتب") && detailedAudit.Rows.Any(r => r.Kind == "مجموع الاستقطاعات"), "salary review checks deduction orphans and totals");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
