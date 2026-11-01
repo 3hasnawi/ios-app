@@ -536,7 +536,7 @@ struct PayrollItemsView: View {
                 Section(tr("\(Num.format(filtered.count)) بند · \(month)", "\(filtered.count) items · \(month)")) {
                     let top = groups.map(\.total).max() ?? 1
                     ForEach(filtered) { group in
-                        NavigationLink(value: ReportsRoute.group(group)) {
+                        NavigationLink { ReportDetailView(group: group) } label: {
                             GroupRow(group: group, share: top > 0 ? group.total / top : 0)
                         }
                         .accessibilityIdentifier("reportGroup")
@@ -705,7 +705,7 @@ struct EntitiesView: View {
                     let accounts = accountsByKey
                     let links = try? TransferAccountLinks.decode(accountLinksData)
                     ForEach(filtered) { group in
-                        NavigationLink(value: ReportsRoute.group(group)) {
+                        NavigationLink { ReportDetailView(group: group) } label: {
                             ExecutionEntityCard(group: group, account: links.flatMap { TransferAccountLinks.resolve(title: group.title, accounts: accounts, links: $0) })
                         }
                         .accessibilityIdentifier("reportGroup")
