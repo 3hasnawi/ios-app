@@ -675,7 +675,10 @@ public partial class MainWindow : Window
         {
             var groups = await Task.Run(() => SalaryItemReports.Groups(source, month));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّر الشهر أو البيانات؛ أعد فتح التقرير.", "بنود الرواتب"); return; }
-            new SalaryItemsWindow(source, month, groups, special) { Owner = this }.ShowDialog();
+            // الكشوف الخاصة تفتح صفحتها مباشرة (الملخص والأسماء والتصدير) كما في الآيفون؛ وإلا تُعرض بنود الرواتب.
+            if (special is not null && groups.FirstOrDefault(g => SalaryItemsWindow.Special(g.Title) == special) is { } item)
+                new SpecialReportWindow(source, month, special, item) { Owner = this }.ShowDialog();
+            else new SalaryItemsWindow(source, month, groups, special) { Owner = this }.ShowDialog();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر حساب بنود الرواتب.\n" + ex.Message, "بنود الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }

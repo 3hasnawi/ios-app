@@ -37,7 +37,7 @@ public partial class SalaryItemsWindow : Window
     }
 
     /// الكشوف الخاصة بأشكالها المعتمدة حسب اسم البند (مثل الآيفون).
-    private static string? Special(string title) => FundReport.Applies(title) ? "fund" : FoodContractReport.Applies(title) ? "food" : HealthCareReport.Applies(title) ? "health" : null;
+    public static string? Special(string title) => FundReport.Applies(title) ? "fund" : FoodContractReport.Applies(title) ? "food" : HealthCareReport.Applies(title) ? "health" : null;
     private string ListName => selected is null ? "" : $"قائمة {selected.Title} - {month}";
     private async void PreviewList(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.Preview(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
     private async void ExportListExcel(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.SaveExcel(this, ListName, () => XlsxReport.Generate(StandardReports.ItemList(source, month, g.Title))); }
@@ -57,6 +57,10 @@ public partial class SalaryItemsWindow : Window
                 assets => HealthCareReport.Pdf(HealthCareReport.Build(source, month, title), HealthCareReport.Title(source, month, false), HealthCareReport.Title(source, month, true), assets, DateTime.Now)),
             _ => null
         };
+    }
+    private void OpenSpecial(object sender, RoutedEventArgs e)
+    {
+        if (selected is { } group && Special(group.Title) is { } kind) new SpecialReportWindow(source, month, kind, group) { Owner = this }.ShowDialog();
     }
     private async void PreviewSpecial(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.Preview(this, f.Name, f.Pdf); }
     private async void ExportSpecialExcel(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.SaveExcel(this, f.Name, f.Excel); }

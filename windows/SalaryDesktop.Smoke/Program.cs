@@ -199,6 +199,13 @@ static class Program
                     var richGroups = SalaryItemReports.Groups(rich, "أيلول 2026"); var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", richGroups) { Owner = main }); richItems.Show(); await Task.Delay(300);
                     ((DataGrid)richItems.FindName("Groups")).SelectedItem = richGroups.First(g => g.Title == "صندوق الشهداء"); await Task.Delay(900);
                     Check(((FrameworkElement)richItems.FindName("SpecialPanel")).Visibility == Visibility.Visible, "fund report buttons were not offered"); Shot(richItems, "15-salary-items"); richItems.Close();
+                    // الكشوف الخاصة بصفحتها (مثل الآيفون): الملخص والأسماء.
+                    foreach (var (kind, shot) in new[] { ("fund", "39-special-fund"), ("food", "39-special-food"), ("health", "39-special-health") })
+                    {
+                        if (richGroups.FirstOrDefault(g => SalaryItemsWindow.Special(g.Title) == kind) is not { } specialGroup) { Console.WriteLine("No fixture item for " + kind); continue; }
+                        var specialWindow = Fit(new SpecialReportWindow(rich, "أيلول 2026", kind, specialGroup) { Owner = main }); specialWindow.Show(); await Task.Delay(1200);
+                        Check(((FrameworkElement)specialWindow.FindName("Actions")).IsEnabled, "special report page did not finish loading: " + kind); Shot(specialWindow, shot); specialWindow.Close();
+                    }
                     // البحث الشامل، ملف المنتسب، التصفية والمجاميع، وكشوف PDF/Excel المعتمدة للمراجعة البصرية.
                     var richStaff = StaffRecords.Read(rich);
                     var richSearch = Fit(new SearchWindow(rich, Task.FromResult<IReadOnlyList<StaffMember>?>(richStaff)) { Owner = main }); richSearch.Show(); await Task.Delay(900);

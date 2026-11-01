@@ -14,6 +14,7 @@
    <Button x:Name="ListPrint" Content="طباعة" Click="PrintList" IsEnabled="False" Margin="0,0,18,6"/>
    <StackPanel x:Name="SpecialPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,6">
     <TextBlock x:Name="SpecialTitle" VerticalAlignment="Center" Foreground="{DynamicResource Tfg135148}" FontWeight="SemiBold" Margin="0,0,8,0"/>
+    <Button Content="عرض الكشف" Click="OpenSpecial" Style="{StaticResource ActionButton}" Margin="0,0,6,0" ToolTip="الملخص والأسماء والتصدير كما في الآيفون"/>
     <Button Content="معاينة" Click="PreviewSpecial" Margin="0,0,6,0"/>
     <Button Content="Excel" Click="ExportSpecialExcel" Style="{StaticResource ActionButton}" Margin="0,0,6,0"/>
     <Button Content="PDF" Click="ExportSpecialPdf" Style="{StaticResource ActionButton}" Margin="0,0,6,0"/>
