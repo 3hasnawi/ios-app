@@ -62,8 +62,8 @@
     <SolidColorBrush x:Key="TfgB5640C" Color="#B5640C"/>
     <!-- نهاية الألوان المشتقة -->
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
-    <!-- خط الواجهة: IBM Plex Sans Arabic مضمّن في البرنامج (Regular للنصوص والقوائم، Medium للأزرار، SemiBold للعناوين). -->
-    <FontFamily x:Key="AppFont">pack://application:,,,/SalaryDesktop;component/Fonts/#IBM Plex Sans Arabic, Segoe UI</FontFamily>
+    <!-- خط الواجهة الافتراضي (يُستبدل من الإعدادات عبر AppFonts): Regular للنصوص والقوائم، Medium للأزرار، SemiBold للعناوين. -->
+    <FontFamily x:Key="AppFont">pack://application:,,,/SalaryDesktop;component/Fonts/#Noto Kufi Arabic, Segoe UI</FontFamily>
 
     <Style x:Key="FocusRing">
       <Setter Property="Control.Template">
@@ -500,7 +500,7 @@
     <Style TargetType="ContextMenu">
       <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
       <Setter Property="FlowDirection" Value="RightToLeft"/>
-      <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+      <Setter Property="FontFamily" Value="{DynamicResource AppFont}"/>
       <Setter Property="FontSize" Value="13.5"/>
       <Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource TbgD3DCDD}"/>

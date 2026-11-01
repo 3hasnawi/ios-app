@@ -18,6 +18,9 @@ internal sealed class UiPreferences
     public bool Maximized { get; set; }
     public string? Page { get; set; }
     public string? Month { get; set; }
+    /// خط الواجهة (مفتاح من AppFonts.Options) وشكل الأرقام: latin أو arabic.
+    public string? Font { get; set; }
+    public string? Digits { get; set; }
     public Dictionary<string, PendingChanges>? Pending { get; set; }
     /// قفل البرنامج: كلمة السر مخزنة بصمةً (PBKDF2) لا نصاً.
     public bool LockEnabled { get; set; }

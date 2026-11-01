@@ -19,6 +19,9 @@ public partial class MainWindow
             LockEnabledBox.IsChecked = Locker.Enabled;
             LockOptions.IsEnabled = Locker.Enabled;
             LockHelloBox.IsChecked = saved.LockHello;
+            if (FontPicker.ItemsSource is null) FontPicker.ItemsSource = AppFonts.Options;
+            FontPicker.SelectedItem = AppFonts.Find(AppFonts.CurrentFont);
+            DigitsPicker.SelectedIndex = AppFonts.EasternDigits ? 1 : 0;
             LockMinutesBox.SelectedItem = LockMinutesBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => Equals(i.Tag, saved.LockMinutes.ToString(Numbers))) ?? LockMinutesBox.Items[1];
         }
         finally { syncingSettings = false; }
@@ -29,6 +32,23 @@ public partial class MainWindow
     }
 
     private void SaveSettings(string what) { if (UiPreferences.Save() is { } error) Ui.Message(this, $"تعذّر حفظ {what}.\n" + error, "الإعدادات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+
+    // ——— الخط والأرقام ———
+
+    private void FontChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (syncingSettings || FontPicker.SelectedItem is not AppFonts.Option option || option.Key == AppFonts.CurrentFont) return;
+        UiPreferences.Current.Font = option.Key;
+        AppFonts.Apply(option.Key, UiPreferences.Current.Digits);
+        SaveSettings("الخط");
+    }
+    private void DigitsChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (syncingSettings || DigitsPicker.SelectedItem is not ListBoxItem { Tag: string digits }) return;
+        UiPreferences.Current.Digits = digits;
+        AppFonts.Apply(AppFonts.CurrentFont, digits);
+        SaveSettings("شكل الأرقام");
+    }
 
     // ——— القفل ———
 

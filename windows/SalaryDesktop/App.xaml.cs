@@ -24,6 +24,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         Themes.Apply(UiPreferences.Current.Theme ?? "light");
+        AppFonts.Apply(UiPreferences.Current.Font, UiPreferences.Current.Digits);
         base.OnStartup(e);
     }
 

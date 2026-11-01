@@ -127,9 +127,12 @@ static class Program
             {
                 await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 main = application.MainWindow as MainWindow ?? throw new InvalidOperationException("application did not create its main window");
-                var plex = Fonts.GetFontFamilies(new Uri("pack://application:,,,/SalaryDesktop;component/Fonts/")).FirstOrDefault(f => f.Source.Contains("IBM Plex Sans Arabic", StringComparison.Ordinal));
-                var weights = plex?.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet() ?? [];
-                Check(weights.SetEquals([400, 500, 600]), "embedded IBM Plex Sans Arabic (Regular, Medium, SemiBold) was not found: " + string.Join(",", weights));
+                var families = Fonts.GetFontFamilies(new Uri("pack://application:,,,/SalaryDesktop;component/Fonts/")).ToArray();
+                foreach (var option in AppFonts.Options)
+                    Check(families.Any(f => f.Source.Contains("#" + option.Family, StringComparison.Ordinal)), "embedded font family missing: " + option.Family);
+                var kufi = families.FirstOrDefault(f => f.Source.EndsWith("#Noto Kufi Arabic", StringComparison.Ordinal)) ?? families.First(f => f.Source.Contains("#Noto Kufi Arabic", StringComparison.Ordinal));
+                var weights = kufi.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet();
+                Check(weights.SetEquals([400, 500, 600]), "Noto Kufi Arabic (Regular, Medium, SemiBold) weights: " + string.Join(",", weights));
                 await Task.Delay(300);
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility == Visibility.Visible, "standalone start was not visible on empty data");
                 typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);
@@ -255,6 +258,13 @@ static class Program
                     Locker.Disable();
                     await Navigate("settings"); await Task.Delay(500);
                     ((FrameworkElement)main.FindName("LockEnabledBox")).BringIntoView(); await Task.Delay(400); Shot(main, "31-settings-security");
+                    // الخط والأرقام من الإعدادات: Cairo مع أرقام هندية ثم العودة إلى الافتراضي.
+                    ((FrameworkElement)main.FindName("FontPicker")).BringIntoView(); await Task.Delay(400); Shot(main, "32-settings-font");
+                    AppFonts.Apply("cairo", "arabic"); await Task.Delay(300);
+                    Check(((FontFamily)Application.Current.Resources["AppFont"]).Source.Contains("#Cairo", StringComparison.Ordinal) && NumberSubstitution.GetSubstitution(main) == NumberSubstitutionMethod.Traditional, "font and digits were not applied");
+                    await Navigate("payroll"); await Task.Delay(700); Shot(main, "33-font-cairo-eastern");
+                    AppFonts.Apply(AppFonts.DefaultFont, "latin"); await Task.Delay(300);
+                    Check(NumberSubstitution.GetSubstitution(main) == NumberSubstitutionMethod.European, "latin digits were not restored");
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }
