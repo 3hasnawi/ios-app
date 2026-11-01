@@ -5,12 +5,16 @@ import CoreText
 /// كشف المطابقة مستقل عن إثبات التحويل، ويحافظ على مسافة التوقيع في آخر صفحة.
 nonisolated enum BankReconciliationPDF {
     enum Failure: LocalizedError {
-        case empty, tooLong, damaged
+        case empty, tooLong, damaged, missingImages
+        case verification(page: Int, area: String, row: Int)
         var errorDescription: String? {
             switch self {
             case .empty: tr("لا توجد حركات لعرضها في الكشف.", "There are no movements to display.")
             case .tooLong: tr("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.", "A movement does not fit clearly; shorten its description and try again.")
-            case .damaged: tr("تعذّر التحقق من كشف المطابقة بعد إنشائه.", "Could not verify the reconciliation statement after generation.")
+            case .damaged: tr("تعذّر فتح ملف كشف المطابقة بعد إنشائه.", "Could not open the generated reconciliation statement.")
+            case .missingImages: tr("تعذّر تحميل شعار الوزارة للكشف.", "Could not load the ministry logo for the statement.")
+            case .verification(let page, let area, let row):
+                tr("تعذّر التحقق من \(area) في الصفحة \(page)، السطر \(row). لم يُصدّر الكشف.", "Could not verify \(area) on page \(page), line \(row). The statement was not exported.")
             }
         }
     }
@@ -40,6 +44,17 @@ nonisolated enum BankReconciliationPDF {
         }
         return max(1, count)
     }
+    /// قد يعيد PDFKit ترتيب أجزاء التاريخ المعروضة باتجاه معاكس دون تغيير أرقامها.
+    static func matchesDate(_ actual: String, expected: String) -> Bool {
+        func parts(_ value: String) -> [String]? {
+            let normalized = ArabicText.latinDigits(value.precomposedStringWithCompatibilityMapping)
+            guard normalized.unicodeScalars.allSatisfy({ CharacterSet.decimalDigits.contains($0) || CharacterSet.whitespacesAndNewlines.contains($0) || $0 == "/" || $0.properties.generalCategory == .format }) else { return nil }
+            let runs = normalized.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            return runs.isEmpty ? nil : runs
+        }
+        guard let left = parts(actual), let right = parts(expected) else { return false }
+        return left == right || left == Array(right.reversed())
+    }
     /// سياق المطبوع يستخدم إحداثيات UIKit؛ تعكس الصورة كي يظهر الشعار باتجاهه الصحيح.
     private static func drawImage(_ image: CGImage, in rect: CGRect, alpha: CGFloat, context: CGContext) {
         context.saveGState()
@@ -58,8 +73,8 @@ nonisolated enum BankReconciliationPDF {
             let headingFont = ReportFont.bold(13)
             let heading = "كشف مطابقة حساب البنك لقيادة شرطة محافظة الانبار"
             guard let logo = UIImage(named: "HomeLogo")?.cgImage,
-                  let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage,
-                  lines(heading, font: headingFont, width: 487) == 1 else { throw Failure.damaged }
+                  let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
+            guard lines(heading, font: headingFont, width: 487) == 1 else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var rows: [([String], CGFloat)] = []
             if period.openingBalance != 0 {
@@ -81,7 +96,7 @@ nonisolated enum BankReconciliationPDF {
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("bank-reconciliation-\(UUID().uuidString).pdf")
             var done = false
             defer { if !done { try? FileManager.default.removeItem(at: destination) } }
-            var placements: [(Int, CGRect, String, Int)] = []
+            var placements: [(Int, CGRect, String, Int, Int)] = []
             var pageCount = 0
             let renderer = UIGraphicsPDFRenderer(bounds: page)
             try renderer.writePDF(to: destination) { context in
@@ -119,7 +134,7 @@ nonisolated enum BankReconciliationPDF {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                             PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 1 ? .right : .center, wrap: true)
-                            if values[i] != "—" && !values[i].isEmpty { placements.append((pageCount, cell, values[i], i)) }
+                            if values[i] != "—" && !values[i].isEmpty { placements.append((pageCount, cell, values[i], i, index + 1)) }
                         }
                         y += height; index += 1
                     }
@@ -130,14 +145,14 @@ nonisolated enum BankReconciliationPDF {
                             UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                             PDFText.draw(totalRow[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
-                            if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i)) }
+                            if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i, rows.count + 1)) }
                         }
                         for (column, values) in signatures.enumerated() {
                             let x: CGFloat = column == 0 ? 315 : 55
                             for (line, value) in values.enumerated() {
-                                let rect = CGRect(x: x, y: 705 + CGFloat(line) * 15, width: 225, height: 15)
+                                let rect = CGRect(x: x, y: 700 + CGFloat(line) * 18, width: 225, height: 18)
                                 PDFText.draw(value, in: rect, font: bold)
-                                if !value.isEmpty { placements.append((pageCount, rect, value, 1)) }
+                                if !value.isEmpty { placements.append((pageCount, rect, value, line == 3 ? 6 : 5, line + 1)) }
                             }
                         }
                         finalDrawn = true
@@ -153,13 +168,18 @@ nonisolated enum BankReconciliationPDF {
                 for scalar in normalized.unicodeScalars where !CharacterSet.whitespacesAndNewlines.contains(scalar) && scalar.properties.generalCategory != .format { scalars.append(scalar) }
                 return String(scalars)
             }
-            for (pageIndex, rect, expected, column) in placements {
+            for (pageIndex, rect, expected, column, row) in placements {
                 guard let output = pdf.page(at: pageIndex) else { throw Failure.damaged }
                 let box = CGRect(x: rect.minX + 0.2, y: page.height - rect.maxY + 0.2, width: rect.width - 0.4, height: rect.height - 0.4)
                 let actual = identity(output.selection(for: box)?.string ?? "")
                 let wanted = identity(expected)
-                let matches = column == 1 ? TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted) : actual == wanted
-                guard matches else { throw Failure.damaged }
+                let isDate = column == 0 || column == 6
+                let matches = actual == wanted || (isDate && matchesDate(actual, expected: wanted)) ||
+                    ((column == 1 || column == 5) && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
+                guard matches else {
+                    let area = column >= 5 ? tr("التوقيع", "signature") : [tr("التاريخ", "date"), tr("البيان", "description"), tr("الدائن", "credit"), tr("المدين", "debit"), tr("الرصيد", "balance")][column]
+                    throw Failure.verification(page: pageIndex + 1, area: area, row: row)
+                }
             }
             done = true
             return destination

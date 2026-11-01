@@ -64,6 +64,9 @@ import CryptoKit
         let signaturePDF = try await BankReconciliationPDF.make(customSignatures, complete: true)
         defer { try? FileManager.default.removeItem(at: signaturePDF) }
         try check(PDFDocument(url: signaturePDF)?.pageCount == 1, "reconciliation custom signatures PDF")
+        try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/٢٧", expected: "27/10/2026"), "reconciliation date extraction accepts reversed components")
+        try check(!BankReconciliationPDF.matchesDate("٢٠٢٦/١١/٢٧", expected: "27/10/2026"), "reconciliation date extraction rejects changed dates")
+        try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/", expected: "/ ١٠ / ٢٠٢٦"), "signature date extraction")
         let statementPDF = try await BankReconciliationPDF.make(statement)
         defer { try? FileManager.default.removeItem(at: statementPDF) }
         let statementDocument = PDFDocument(url: statementPDF)
