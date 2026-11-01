@@ -53,6 +53,12 @@ import CryptoKit
         refundStatement.movements.append(excessiveRefund)
         do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
         catch is Failure { throw Failure(errorDescription: "excess refund accepted") } catch { }
+        var reportedStatement = BankReconciliation.preparedSignatures(statement)
+        reportedStatement.memberFirst = "اسم تجريبي أول"; reportedStatement.memberSecond = "اسم تجريبي ثان"
+        reportedStatement.movements[1].description = "تمويل رواتب شهر ايلول"
+        let reportedPDF = try await BankReconciliationPDF.make(reportedStatement, complete: true)
+        defer { try? FileManager.default.removeItem(at: reportedPDF) }
+        try check(PDFDocument(url: reportedPDF) != nil, "reconciliation PDF Arabic funding description")
         var customSignatures = BankReconciliation.preparedSignatures(statement)
         customSignatures.memberFirst = "اسم تجريبي أول"; customSignatures.firstRank = "رتبة تجريبية"
         customSignatures.firstPosition = "منصب تجريبي"; customSignatures.firstDate = " / 6 / 2026"

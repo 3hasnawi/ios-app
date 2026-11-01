@@ -7,12 +7,19 @@ nonisolated enum BankReconciliationPDF {
     enum Failure: LocalizedError {
         case empty, tooLong, damaged, missingImages
         case verification(page: Int, area: String, row: Int)
+        #if targetEnvironment(simulator)
+        case debugVerification(actual: String, expected: String, column: Int)
+        #endif
         var errorDescription: String? {
             switch self {
             case .empty: tr("لا توجد حركات لعرضها في الكشف.", "There are no movements to display.")
             case .tooLong: tr("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.", "A movement does not fit clearly; shorten its description and try again.")
             case .damaged: tr("تعذّر فتح ملف كشف المطابقة بعد إنشائه.", "Could not open the generated reconciliation statement.")
             case .missingImages: tr("تعذّر تحميل شعار الوزارة للكشف.", "Could not load the ministry logo for the statement.")
+            #if targetEnvironment(simulator)
+            case .debugVerification(let actual, let expected, let column):
+                "PDF verification debug column \(column): actual=[\(actual)] expected=[\(expected)]"
+            #endif
             case .verification(let page, let area, let row):
                 tr("تعذّر التحقق من \(area) في الصفحة \(page)، السطر \(row). لم يُصدّر الكشف.", "Could not verify \(area) on page \(page), line \(row). The statement was not exported.")
             }
@@ -191,6 +198,11 @@ nonisolated enum BankReconciliationPDF {
                     (column == 1 && matchesDescription(actual, expected: wanted)) ||
                     (column == 5 && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
                 guard matches else {
+                    #if targetEnvironment(simulator)
+                    if ProcessInfo.processInfo.arguments.contains("-transferFilesTest") {
+                        throw Failure.debugVerification(actual: actual, expected: wanted, column: column)
+                    }
+                    #endif
                     let area = column >= 5 ? tr("التوقيع", "signature") : [tr("التاريخ", "date"), tr("البيان", "description"), tr("الدائن", "credit"), tr("المدين", "debit"), tr("الرصيد", "balance")][column]
                     throw Failure.verification(page: pageIndex + 1, area: area, row: row)
                 }
