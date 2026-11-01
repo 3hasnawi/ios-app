@@ -75,6 +75,47 @@ public partial class PdfPreviewWindow : Window
         return result;
     }
 
+    /// صفحة واحدة بدقة محددة (نقطة PDF ← بكسل) على خلفية بيضاء؛ للطباعة بدقة الطابعة.
+    private static BitmapSource RenderPage(byte[] bytes, int index, double pixelsPerPoint, double dpi)
+    {
+        lock (Docnet.Core.DocLib.Instance)
+        {
+            using var document = Docnet.Core.DocLib.Instance.GetDocReader(bytes, new Docnet.Core.Models.PageDimensions(pixelsPerPoint));
+            using var page = document.GetPageReader(index);
+            int width = page.GetPageWidth(), height = page.GetPageHeight();
+            var raw = page.GetImage();
+            for (int p = 0; p + 3 < raw.Length; p += 4)
+            {
+                var alpha = raw[p + 3];
+                if (alpha == 255) continue;
+                for (int c = 0; c < 3; c++) raw[p + c] = (byte)((raw[p + c] * alpha + 255 * (255 - alpha)) / 255);
+                raw[p + 3] = 255;
+            }
+            var image = BitmapSource.Create(width, height, dpi, dpi, System.Windows.Media.PixelFormats.Bgra32, null, raw, width * 4);
+            image.Freeze();
+            return image;
+        }
+    }
+
+    /// يرسل الصفحات إلى الطابعة واحدة تلو الأخرى بدقة الطابعة (300–600 نقطة في البوصة)، فتخرج الحروف والخطوط حادة
+    /// كالنسخة الأصلية بدل صورة المعاينة منخفضة الدقة التي تبدو مستنسخة. الرسم عند الطلب يحدّ من استهلاك الذاكرة.
+    private sealed class PrintPaginator(byte[] pdf, IReadOnlyList<PageView> pages, double dpi) : DocumentPaginator
+    {
+        public override DocumentPage GetPage(int pageNumber)
+        {
+            var view = pages[pageNumber];
+            var size = new Size(view.PageWidth, view.PageHeight);
+            var image = RenderPage(pdf, pageNumber, dpi / 72.0, dpi);
+            var visual = new System.Windows.Media.DrawingVisual();
+            using (var context = visual.RenderOpen()) context.DrawImage(image, new Rect(size));
+            return new DocumentPage(visual, size, new Rect(size), new Rect(size));
+        }
+        public override bool IsPageCountValid => true;
+        public override int PageCount => pages.Count;
+        public override Size PageSize { get => new(pages[0].PageWidth, pages[0].PageHeight); set { } }
+        public override IDocumentPaginatorSource Source => null!;
+    }
+
     private async Task Render()
     {
         try
@@ -153,20 +194,18 @@ public partial class PdfPreviewWindow : Window
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Printing.PrintQueueException) { }
         if (dialog.ShowDialog() != true) return;
+        var cursor = Cursor; Cursor = Cursors.Wait;
         try
         {
-            var document = new FixedDocument();
-            foreach (var page in pages)
-            {
-                var fixedPage = new FixedPage { Width = page.PageWidth, Height = page.PageHeight };
-                fixedPage.Children.Add(new Image { Source = page.Image, Width = page.PageWidth, Height = page.PageHeight, Stretch = System.Windows.Media.Stretch.Fill });
-                var content = new PageContent(); ((System.Windows.Markup.IAddChild)content).AddChild(fixedPage);
-                document.Pages.Add(content);
-            }
-            dialog.PrintDocument(document.DocumentPaginator, TitleText.Text);
-            InfoText.Text = "أُرسل الكشف إلى الطابعة.";
+            var resolution = 300.0;
+            try { if (dialog.PrintTicket?.PageResolution?.X is int x && x > 0) resolution = x; }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Printing.PrintQueueException) { }
+            resolution = Math.Clamp(resolution, 300, 600);
+            dialog.PrintDocument(new PrintPaginator(pdf, pages, resolution), TitleText.Text);
+            InfoText.Text = $"أُرسل الكشف إلى الطابعة بدقة {resolution:N0} نقطة في البوصة.";
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.Printing.PrintQueueException or System.Printing.PrintSystemException)
         { Ui.Message(this, "تعذّرت الطباعة.\n" + ex.Message, "طباعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { Cursor = cursor; }
     }
 }
