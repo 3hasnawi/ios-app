@@ -49,8 +49,8 @@
         <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown">
           <DataGrid.Columns>
             <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
-            <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/>
-            <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="1.1*" SortMemberPath="Period"/>
+            <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="0.8*"/>
+            <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="1.5*" MinWidth="130" SortMemberPath="Period"/>
             <DataGridTextColumn Header="الأمانة" Binding="{Binding Amount}" Width="*" SortMemberPath="AmountValue"/>
             <DataGridTextColumn Header="المصروف" Binding="{Binding Paid}" Width="*"/>
             <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="*" SortMemberPath="RemainingValue"/>
