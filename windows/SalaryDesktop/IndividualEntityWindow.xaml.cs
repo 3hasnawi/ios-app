@@ -98,7 +98,7 @@ public partial class IndividualEntityWindow : Window
             BookChanged(BookPicker, null!);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
     {
@@ -111,13 +111,13 @@ public partial class IndividualEntityWindow : Window
         {
             var settings = GroupLetterSettingsReader.Read(state.Snapshot, captured.Id);
             var font = GroupLetterFont.Read(state.Snapshot) ?? throw new InvalidDataException("خط ساكال العريض غير محفوظ؛ استورده من تخصيص كتاب المجموعة أو افتح نسخة تتضمنه.");
-            if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && MessageBox.Show(this, "شهر متن الكتاب يختلف عن شهر الاستقطاعات. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && Ui.Message(this, "شهر متن الكتاب يختلف عن شهر الاستقطاعات. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png");
             var changed = await Task.Run(() => { if (!payrollCurrent() || store.Load(source).Revision != state.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب."); IndividualEntityPdf.Save(captured, settings, font, File.ReadAllBytes(logo), dialog.FileName); return !payrollCurrent() || store.Load(source).Revision != state.Revision; });
-            MessageBox.Show(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع وقائمة الأسماء قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            Ui.Message(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع وقائمة الأسماء قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
-        { MessageBox.Show(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { Busy(false); }
     }
 }

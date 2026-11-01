@@ -72,12 +72,12 @@ public partial class ReconciliationWindow : Window
         try
         {
             var data = await Task.Run(() => { if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة."); return ReconciliationSuggestions.Prepare(source, period.Month); });
-            if (Current?.Id != period.Id || state.Revision != revision) { MessageBox.Show(this, "تغيّرت الفترة أثناء احتساب المقترحات؛ أعد فتحها.", "المبالغ المقترحة"); return; }
+            if (Current?.Id != period.Id || state.Revision != revision) { Ui.Message(this, "تغيّرت الفترة أثناء احتساب المقترحات؛ أعد فتحها.", "المبالغ المقترحة"); return; }
             var dialog = new ReconciliationSuggestionsWindow(period, data) { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result is { } updated) Save(updated);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
-        { MessageBox.Show(this, "تعذّر حساب المقترحات.\n" + ex.Message, "المبالغ المقترحة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر حساب المقترحات.\n" + ex.Message, "المبالغ المقترحة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { SuggestionsButton.IsEnabled = true; }
     }
     private void Save(BankPeriod updated)
@@ -89,7 +89,7 @@ public partial class ReconciliationWindow : Window
             state = store.Save(source, state, all); Refresh(updated.Id);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
-        { MessageBox.Show(this, "لم تُحفظ التغييرات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "لم تُحفظ التغييرات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void AddPeriod(object sender, RoutedEventArgs e)
     {
@@ -122,7 +122,7 @@ public partial class ReconciliationWindow : Window
     private void DeleteMovement(object sender, RoutedEventArgs e)
     {
         if (Current is not { } p || CurrentMovement is not { } m) return;
-        if (MessageBox.Show(this, "حذف الحركة المختارة من هذه الفترة؟", "حذف حركة", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (Ui.Message(this, "حذف الحركة المختارة من هذه الفترة؟", "حذف حركة", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         Save(p with { Movements = p.Movements.Where(x => x.Id != m.Id).ToArray() });
     }
     private async void ExportBackup(object sender, RoutedEventArgs e)
@@ -141,10 +141,10 @@ public partial class ReconciliationWindow : Window
                 return !sourceIsCurrent() || store.Load(source).Revision != captured.Revision;
             });
             var changed = externalChanged || state.Revision != captured.Revision;
-            MessageBox.Show(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            Ui.Message(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
-        { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportButton.IsEnabled = true; }
     }
     private async void ExportPdf(object sender, RoutedEventArgs e)
@@ -160,10 +160,10 @@ public partial class ReconciliationWindow : Window
             var font = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
             var externalChanged = await Task.Run(() => { if (!sourceIsCurrent() || store.Load(source).Revision != revision) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة قبل التصدير."); ReconciliationPdf.SaveDraft(period, font, destination); return !sourceIsCurrent() || store.Load(source).Revision != revision; });
             var changed = externalChanged || state.Revision != revision || Current?.Id != period.Id;
-            MessageBox.Show(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            Ui.Message(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
-        { MessageBox.Show(this, "تعذّر إعداد مسودة الكشف.\n" + ex.Message, "كشف المطابقة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر إعداد مسودة الكشف.\n" + ex.Message, "كشف المطابقة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportPdfButton.IsEnabled = true; }
     }
 }

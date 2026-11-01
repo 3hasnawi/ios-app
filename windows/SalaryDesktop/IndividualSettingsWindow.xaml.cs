@@ -54,6 +54,6 @@ public partial class IndividualSettingsWindow : Window
             Notice.Text = "حُفظت التغييرات. احفظ نسخة احتياطية لتضمين التخصيصات.";
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 }

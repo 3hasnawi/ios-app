@@ -134,7 +134,7 @@
                   <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="9" Background="{StaticResource AccentSoft}" HorizontalAlignment="Left"><TextBlock Style="{StaticResource Icon}" Text="&#xE8F1;" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/></Border>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="التقارير وجهات التنفيذ" Margin="0,12,0,0"/>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="مبالغ الاستقطاع لكل جهة وبنود الرواتب" Margin="0,4,0,14"/>
-                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" Margin="0,0,8,0"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب"/></WrapPanel>
+                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" Margin="0,0,8,6"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب" Margin="0,0,0,6"/></WrapPanel>
                 </DockPanel>
               </Border>
               <Border Style="{StaticResource Card}" Margin="14,0,0,14">
@@ -142,7 +142,7 @@
                   <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="9" Background="#FFF1E3" HorizontalAlignment="Left"><TextBlock Style="{StaticResource Icon}" Text="&#xE9D9;" Foreground="#B5640C" HorizontalAlignment="Center"/></Border>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="تدقيق الرواتب" Margin="0,12,0,0"/>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="فحوص أولية ومقارنة بالشهر السابق" Margin="0,4,0,14"/>
-                  <WrapPanel VerticalAlignment="Bottom"><Button x:Name="AuditHomeButton" Style="{StaticResource ActionButton}" Content="فتح التدقيق" Click="OpenSalaryReview"/></WrapPanel>
+                  <WrapPanel VerticalAlignment="Bottom"><Button x:Name="AuditHomeButton" Style="{StaticResource ActionButton}" Content="فتح التدقيق" Click="OpenSalaryReview" Margin="0,0,0,6"/></WrapPanel>
                 </DockPanel>
               </Border>
               <Border Style="{StaticResource Card}" Margin="14,0,0,14">
@@ -150,7 +150,7 @@
                   <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="9" Background="{StaticResource PrimarySoft}" HorizontalAlignment="Left"><TextBlock Style="{StaticResource Icon}" Text="&#xE8AB;" Foreground="{StaticResource Primary}" HorizontalAlignment="Center"/></Border>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="البنك والتحويلات" Margin="0,12,0,0"/>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="كشف حساب البنك وملفات التحويل والكتب" Margin="0,4,0,14"/>
-                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="bank" Click="Navigate" Content="كشف البنك" Margin="0,0,8,0"/><Button Tag="transfer" Click="Navigate" Content="ملفات التحويل"/></WrapPanel>
+                  <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="bank" Click="Navigate" Content="كشف البنك" Margin="0,0,8,6"/><Button Tag="transfer" Click="Navigate" Content="ملفات التحويل" Margin="0,0,0,6"/></WrapPanel>
                 </DockPanel>
               </Border>
             </UniformGrid>
@@ -257,12 +257,12 @@
             </ListBox>
           </Border>
           <Border Grid.Row="1" Background="{StaticResource WarnSoft}" BorderBrush="#F5DDB8" BorderThickness="1" CornerRadius="9" Padding="12,8" Margin="0,12,0,12">
-            <StackPanel><TextBlock x:Name="TransferNotice" Foreground="{StaticResource Warn}" TextWrapping="Wrap"/><TextBlock x:Name="IssuanceNotice" Foreground="#8F5510" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
+            <ScrollViewer MaxHeight="92" VerticalScrollBarVisibility="Auto"><StackPanel><TextBlock x:Name="TransferNotice" Foreground="{StaticResource Warn}" TextWrapping="Wrap"/><TextBlock x:Name="IssuanceNotice" Foreground="#8F5510" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel></ScrollViewer>
           </Border>
           <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="262"/></Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="236"/></Grid.ColumnDefinitions>
             <DataGrid x:Name="TransferTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single">
-              <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="2*"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="2*"/></DataGrid.Columns>
+              <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*" MinWidth="130"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="Auto" MinWidth="90"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="1.5*" MinWidth="90"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*" MinWidth="120"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="1.5*" MinWidth="90"/></DataGrid.Columns>
               <DataGrid.ContextMenu>
                 <ContextMenu FlowDirection="RightToLeft">
                   <MenuItem Header="ربط حساب الجهة" Click="LinkTransferAccount"/>
@@ -334,7 +334,15 @@
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Style="{StaticResource CardTitle}" Text="اختصارات لوحة المفاتيح"/>
-                <TextBlock Style="{StaticResource Hint}" Margin="0,8,0,0" LineHeight="22" Text="Ctrl+1 … Ctrl+9 للتنقل بين الأقسام، و Ctrl+0 للإعدادات · Ctrl+F للبحث · Ctrl+O لفتح نسخة · F5 لإعادة تحميل الصفحة · Enter لفتح الصف المختار · Esc لمسح البحث"/>
+                <StackPanel Margin="0,8,0,0">
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+1 … Ctrl+9" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="التنقل بين الأقسام بترتيب القائمة" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+0" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="الإعدادات" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث في الجدول" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح نسخة الآيفون" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="F5" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="إعادة تحميل الصفحة" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Enter" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح الصف المختار" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Esc" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="مسح البحث" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                </StackPanel>
               </StackPanel>
             </Border>
           </StackPanel>

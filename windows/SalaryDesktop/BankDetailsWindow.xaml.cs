@@ -27,6 +27,6 @@ public partial class BankDetailsWindow : Window
             if (name.Length == 0 || name.Length > 200 || name.Any(c => char.IsControl(c) || c == '|') || !TransferPreparation.ValidIban(iban)) throw new InvalidDataException("راجع اسم الجهة الدافعة وIBAN العراقي الكامل.");
             Result = new(name, iban, new BankManualAmounts(Amount(LeaveText.Text), Amount(RewardsText.Text), Amount(SingleText.Text))); DialogResult = true;
         }
-        catch (InvalidDataException ex) { MessageBox.Show(this, ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 }

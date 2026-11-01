@@ -57,13 +57,13 @@ public partial class IndividualPayrollWindow : Window
             BookChanged(BookPicker, null!);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
     {
         if (working || plan is null || BookPicker.SelectedItem is not Choice choice || choice.Id != plan.Id) return;
         var captured = plan; var capturedCash = cash;
-        if (captured.Notices.Count > 0 && MessageBox.Show(this, "يوجد عقد بلا راتب اسمي. هل راجعت المبلغ وتريد تجاوز التنبيه لهذه المسودة؟", "مراجعة ضمان العقود", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (captured.Notices.Count > 0 && Ui.Message(this, "يوجد عقد بلا راتب اسمي. هل راجعت المبلغ وتريد تجاوز التنبيه لهذه المسودة؟", "مراجعة ضمان العقود", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         var dialog = new SaveFileDialog { Title = "حفظ مسودة الكتاب", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة " + choice.Title + ".pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
         working = true; BookPicker.IsEnabled = false; ExportButton.IsEnabled = false; ContractText.IsEnabled = false; SettingsButton.IsEnabled = false;
@@ -72,12 +72,12 @@ public partial class IndividualPayrollWindow : Window
             var settings = GroupLetterSettingsReader.Read(source, captured.Id);
             var font = GroupLetterFont.Read(source) ?? throw new InvalidDataException("خط ساكال العريض غير محفوظ؛ استورده من تخصيص كتاب المجموعة أو افتح نسخة تتضمنه.");
             var tableFont = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf"); var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png"); var reference = ContractText.Text.Trim();
-            if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && MessageBox.Show(this, "شهر متن الكتاب يختلف عن شهر مبالغ الرواتب. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            if (!string.IsNullOrWhiteSpace(settings.BodyMonth) && MonthNames.SortKey(settings.BodyMonth) != MonthNames.SortKey(captured.Month) && Ui.Message(this, "شهر متن الكتاب يختلف عن شهر مبالغ الرواتب. هل تريد المتابعة؟", "اختلاف شهر الكتاب", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var changed = await Task.Run(() => { if (!Current()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتاب."); IndividualPayrollPdf.Save(captured, settings, font, File.ReadAllBytes(tableFont), File.ReadAllBytes(logo), reference, capturedCash, dialog.FileName); return !Current(); });
-            MessageBox.Show(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            Ui.Message(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
-        { MessageBox.Show(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; BookPicker.IsEnabled = true; ExportButton.IsEnabled = plan is not null; ContractText.IsEnabled = true; SettingsButton.IsEnabled = true; }
     }
 }

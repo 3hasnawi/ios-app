@@ -64,6 +64,6 @@ public partial class ReconciliationEditor : Window
             }
             DialogResult = true;
         }
-        catch (Exception ex) when (ex is InvalidDataException or OverflowException) { MessageBox.Show(this, ex.Message, "تحقق من البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is InvalidDataException or OverflowException) { Ui.Message(this, ex.Message, "تحقق من البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 }

@@ -78,8 +78,20 @@ static class Program
         Entry(zip, "settings.json", "{}");
     }
 
+    // جهاز الفحص قد تكون شاشته صغيرة؛ النافذة الأكبر منها تُقص، فتُصغّر قبل التصوير.
+    private static T Fit<T>(T window, double width = 0, double height = 0) where T : Window
+    {
+        var area = SystemParameters.WorkArea;
+        if (width > 0) window.Width = width; if (height > 0) window.Height = height;
+        if (!double.IsNaN(window.Width)) window.Width = Math.Min(window.Width, area.Width - 8);
+        if (!double.IsNaN(window.Height)) window.Height = Math.Min(window.Height, area.Height - 8);
+        window.MinWidth = Math.Min(window.MinWidth, area.Width - 8); window.MinHeight = Math.Min(window.MinHeight, area.Height - 8);
+        window.WindowStartupLocation = WindowStartupLocation.Manual; window.Left = area.Left; window.Top = area.Top;
+        return window;
+    }
+
     // صورة لمحتوى النافذة كما تُعرض (يشمل اتجاه اليمين لليسار)، للمراجعة البصرية فقط.
-    private static void Shot(Window window, string name, int mode = 0)
+    private static void Shot(Window window, string name)
     {
         var folder = Environment.GetEnvironmentVariable("SCREENSHOT_DIR");
         if (string.IsNullOrEmpty(folder)) return;
@@ -87,26 +99,9 @@ static class Program
         window.UpdateLayout();
         var root = (FrameworkElement)window.Content;
         int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
+        // النافذة نفسها تحمل تحويل اتجاه اليمين لليسار، فتُرسم هي لا محتواها.
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
-        if (mode == 1)
-        {
-            var flow = window.FlowDirection; window.FlowDirection = FlowDirection.LeftToRight; root.FlowDirection = FlowDirection.RightToLeft; window.UpdateLayout();
-            var visual = new DrawingVisual();
-            using (var dc = visual.RenderOpen()) dc.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
-            bitmap.Render(visual); bitmap.Render(root);
-            root.ClearValue(FrameworkElement.FlowDirectionProperty); window.FlowDirection = flow; window.UpdateLayout();
-        }
-        else if (mode == 2)
-        {
-            var visual = new DrawingVisual();
-            using (var dc = visual.RenderOpen())
-            {
-                dc.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
-                dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0, 0, width, height));
-            }
-            bitmap.Render(visual);
-        }
-        else bitmap.Render(window);
+        bitmap.Render(window);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(Path.Combine(folder, name + ".png")); encoder.Save(file);
     }
@@ -164,19 +159,19 @@ static class Program
                 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCREENSHOT_DIR")))
                 {
                     var richPath = Path.Combine(directory, "rich.zip"); RichFixture(richPath); var rich = BackupReader.Read(richPath);
-                    main.Width = 1460; main.Height = 860; main.WindowState = WindowState.Normal;
+                    main.WindowState = WindowState.Normal; Fit(main, 1460, 860);
+                    Console.WriteLine($"Screen work area: {SystemParameters.WorkArea.Width}x{SystemParameters.WorkArea.Height}");
                     typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [rich]);
                     await Task.Delay(1200);
-                    Shot(main, "00-render-window", 0); Shot(main, "00-render-flipped", 1); Shot(main, "00-render-brush", 2);
                     foreach (var (tag, name) in new[] { ("home", "01-home"), ("payroll", "02-payroll"), ("deductions", "03-deductions"), ("staff", "04-staff"), ("archive", "05-archive"), ("groups", "06-groups"), ("bank", "07-bank"), ("transfer", "08-transfer"), ("accounts", "09-accounts"), ("settings", "10-settings") })
                     {
                         await Navigate(tag); if (tag is "staff" or "bank" or "transfer") await Task.Delay(1200); Shot(main, name);
                     }
                     await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
-                    var detail = new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }; detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
-                    var import = new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }; import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
-                    var richReview = new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }; richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
-                    var richItems = new SalaryItemsWindow(rich, "أيلول 2026", SalaryItemReports.Groups(rich, "أيلول 2026")) { Owner = main }; richItems.Show(); await Task.Delay(500); Shot(richItems, "15-salary-items"); richItems.Close();
+                    var detail = Fit(new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }); detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
+                    var import = Fit(new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }); import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
+                    var richReview = Fit(new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }); richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
+                    var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", SalaryItemReports.Groups(rich, "أيلول 2026")) { Owner = main }); richItems.Show(); await Task.Delay(500); Shot(richItems, "15-salary-items"); richItems.Close();
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }

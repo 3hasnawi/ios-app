@@ -36,7 +36,7 @@ public partial class AnnualImportWindow : Window
         if (existing.Length > 0)
         {
             var details = string.Join("\n", existing.Select(m => $"{m.Month}: {m.Count:N0} استقطاع"));
-            if (MessageBox.Show(this, "ستُستبدل استقطاعات الأشهر التالية، وتبقى الإصدارات السابقة محلياً:\n" + details + "\nهل تريد حفظ الملف كاملاً؟", "مراجعة الاستبدال", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+            if (Ui.Message(this, "ستُستبدل استقطاعات الأشهر التالية، وتبقى الإصدارات السابقة محلياً:\n" + details + "\nهل تريد حفظ الملف كاملاً؟", "مراجعة الاستبدال", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             ReplaceExisting = true;
         }
         Result = preview; DialogResult = true;

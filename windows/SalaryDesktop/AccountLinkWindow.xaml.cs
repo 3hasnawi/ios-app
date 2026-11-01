@@ -23,7 +23,7 @@ public partial class AccountLinkWindow : Window
     }
     private void Choose(object sender, RoutedEventArgs e)
     {
-        if (Accounts.SelectedItem is not ExecutionAccount account) { MessageBox.Show(this, "اختر حساب الجهة أولاً.", "ربط الحساب", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        if (Accounts.SelectedItem is not ExecutionAccount account) { Ui.Message(this, "اختر حساب الجهة أولاً.", "ربط الحساب", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         SelectedAccount = account; DialogResult = true;
     }
 }

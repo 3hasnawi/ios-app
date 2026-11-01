@@ -36,10 +36,10 @@ public partial class NameListsWindow : Window
         {
             var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
             var changed = await Task.Run(() => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); NameListPdf.Save(list, File.ReadAllBytes(fontPath), dialog.FileName); return !dataCurrent(); });
-            MessageBox.Show(this, changed ? "حُفظت قائمة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد تصديرها." : "حُفظت القائمة بعد فحص صفوفها ومجموعها. راجعها قبل الاعتماد.", "قائمة الأسماء", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            Ui.Message(this, changed ? "حُفظت قائمة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد تصديرها." : "حُفظت القائمة بعد فحص صفوفها ومجموعها. راجعها قبل الاعتماد.", "قائمة الأسماء", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
-        { MessageBox.Show(this, "تعذّر تصدير القائمة.\n" + ex.Message, "قائمة الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر تصدير القائمة.\n" + ex.Message, "قائمة الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; ListPicker.IsEnabled = true; ExportButton.IsEnabled = list.Problem is null && list.Rows.Count > 0; }
     }
 }

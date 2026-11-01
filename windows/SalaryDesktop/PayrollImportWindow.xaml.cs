@@ -17,9 +17,9 @@ public partial class PayrollImportWindow : Window
     private async void ChooseFile(object sender, RoutedEventArgs e)
     {
         var month = MonthText.Text.Trim(); var key = MonthNames.SortKey(month);
-        if (key == 0) { MessageBox.Show(this, "اكتب الشهر والسنة، مثل أيلول 2026.", "الشهر"); return; }
+        if (key == 0) { Ui.Message(this, "اكتب الشهر والسنة، مثل أيلول 2026.", "الشهر"); return; }
         var existing = source?.Months.Where(m => MonthNames.SortKey(m.Name) == key).ToArray() ?? [];
-        if (existing.Length > 1) { MessageBox.Show(this, "هناك أكثر من اسم محفوظ للشهر نفسه؛ راجع الأشهر قبل الاستيراد.", "الشهر"); return; }
+        if (existing.Length > 1) { Ui.Message(this, "هناك أكثر من اسم محفوظ للشهر نفسه؛ راجع الأشهر قبل الاستيراد.", "الشهر"); return; }
         if (existing.Length == 1) { month = existing[0].Name; MonthText.Text = month; }
         var dialog = new OpenFileDialog { Title = "اختيار ملف الرواتب والاستقطاعات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
@@ -43,7 +43,7 @@ public partial class PayrollImportWindow : Window
         var deductions = preview.Deductions.Count > 0 ? (source?.Deductions.Count(d => d.Month == preview.Month) ?? 0) : 0;
         if (salaries > 0 || deductions > 0)
         {
-            var answer = MessageBox.Show(this, $"سيُستبدل في شهر {preview.Month} ما يخص الملفات المستوردة: {salaries:N0} راتب و{deductions:N0} استقطاع محفوظ. ستبقى نسخة البيانات السابقة محفوظة على الجهاز. هل تريد الحفظ؟", "مراجعة الاستبدال", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var answer = Ui.Message(this, $"سيُستبدل في شهر {preview.Month} ما يخص الملفات المستوردة: {salaries:N0} راتب و{deductions:N0} استقطاع محفوظ. ستبقى نسخة البيانات السابقة محفوظة على الجهاز. هل تريد الحفظ؟", "مراجعة الاستبدال", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (answer != MessageBoxResult.Yes) return;
             ReplaceExisting = true;
         }

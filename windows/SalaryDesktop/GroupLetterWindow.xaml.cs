@@ -62,7 +62,7 @@ public partial class GroupLetterWindow : Window
     private void SaveSettings(object sender, RoutedEventArgs e)
     {
         try { _ = Persist(); Notice.Text = "حُفظت الحقول المعدلة. احفظ نسخة احتياطية لتضمين التخصيصات."; }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException) { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException) { Ui.Message(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void SelectFont(object sender, RoutedEventArgs e)
     {
@@ -75,13 +75,13 @@ public partial class GroupLetterWindow : Window
             State = store.SaveGroupFont(source, State, File.ReadAllBytes(dialog.FileName)); Notice.Text = "حُفظ خط ساكال العريض مع تخصيصات النسخة المحلية.";
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
-        { MessageBox.Show(this, ex.Message, "استيراد الخط", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, ex.Message, "استيراد الخط", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void Busy(bool value) { working = value; EditorScroll.IsEnabled = !value; SaveButton.IsEnabled = !value; FontButton.IsEnabled = !value; PreviewButton.IsEnabled = !value; ExportButton.IsEnabled = !value; CloseButton.IsEnabled = !value; }
     private async void Preview(object sender, RoutedEventArgs e)
     {
         try { previewDirectory ??= Path.Combine(Path.GetTempPath(), "salary-group-preview-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(previewDirectory); await Generate(Path.Combine(previewDirectory, Guid.NewGuid().ToString("N") + ".pdf"), true); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { MessageBox.Show(this, "تعذّر إنشاء مجلد المعاينة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { Ui.Message(this, "تعذّر إنشاء مجلد المعاينة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
     {
@@ -95,7 +95,7 @@ public partial class GroupLetterWindow : Window
         {
             var fields = Persist(); var captured = State; var font = GroupLetterFont.Read(captured.Snapshot) ?? throw new InvalidDataException("استورد خط ساكال العريض أولاً أو افتح نسخة تتضمنه.");
             if (!string.IsNullOrWhiteSpace(fields.BodyMonth) && MonthNames.SortKey(fields.BodyMonth) != MonthNames.SortKey(plan.Month) &&
-                MessageBox.Show(this, $"مبالغ الكتاب وملف التحويل من شهر {plan.Month}، لكن الشهر المكتوب في المتن هو {fields.BodyMonth}. هل تريد متابعة المسودة؟", "اختلاف شهر المتن", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                Ui.Message(this, $"مبالغ الكتاب وملف التحويل من شهر {plan.Month}، لكن الشهر المكتوب في المتن هو {fields.BodyMonth}. هل تريد متابعة المسودة؟", "اختلاف شهر المتن", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
             var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
             var logoPath = Path.Combine(AppContext.BaseDirectory, "Assets", "IraqEmblem.png");
             var changed = await Task.Run(() => {
@@ -103,12 +103,12 @@ public partial class GroupLetterWindow : Window
                 GroupLetterPdf.SaveDraft(plan, fields, font, File.ReadAllBytes(fontPath), File.ReadAllBytes(logoPath), destination);
                 return !payrollCurrent() || store.Load(source).Revision != captured.Revision;
             });
-            if (changed) { MessageBox.Show(this, "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الإعداد؛ أعد فتح الكتاب وتصديره.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (changed) { Ui.Message(this, "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الإعداد؛ أعد فتح الكتاب وتصديره.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             if (open) Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
-            else MessageBox.Show(this, "حُفظت المسودة بعد فحص جدولها. راجع النص والتنسيق والتوقيعات على ويندوز قبل الاعتماد.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
+            else Ui.Message(this, "حُفظت المسودة بعد فحص جدولها. راجع النص والتنسيق والتوقيعات على ويندوز قبل الاعتماد.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException or System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException)
-        { MessageBox.Show(this, "تعذّر إعداد مسودة الكتاب.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر إعداد مسودة الكتاب.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { Busy(false); }
     }
 }

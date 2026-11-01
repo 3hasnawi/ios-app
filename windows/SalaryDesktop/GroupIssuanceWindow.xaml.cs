@@ -18,7 +18,7 @@ public partial class GroupIssuanceWindow : Window
     private async void Confirm(object sender, RoutedEventArgs e)
     {
         if (working) return;
-        if (review.Changes.Count > 0 && Reviewed.IsChecked != true) { MessageBox.Show(this, "راجع التغييرات ثم ضع علامة التأكيد.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+        if (review.Changes.Count > 0 && Reviewed.IsChecked != true) { Ui.Message(this, "راجع التغييرات ثم ضع علامة التأكيد.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         var note = NoteText.Text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
         working = true; ConfirmButton.IsEnabled = false; NoteText.IsEnabled = false; Reviewed.IsEnabled = false;
         try
@@ -26,12 +26,12 @@ public partial class GroupIssuanceWindow : Window
             var expected = State;
             var next = await Task.Run(() => { if (!payrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد تدقيق المجموعة."); return store.ConfirmGroup(source, expected, review, note); });
             State = next;
-            if (!payrollCurrent()) { MessageBox.Show(this, "حُفظ إقرار البيانات السابقة وتغيّرت بيانات الشهر؛ أعد التدقيق.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
-            else MessageBox.Show(this, "حُفظ تأكيدك للمجموعة. احفظ نسخة احتياطية لتضمين الإقرار.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (!payrollCurrent()) { Ui.Message(this, "حُفظ إقرار البيانات السابقة وتغيّرت بيانات الشهر؛ أعد التدقيق.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            else Ui.Message(this, "حُفظ تأكيدك للمجموعة. احفظ نسخة احتياطية لتضمين الإقرار.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
             working = false; DialogResult = true;
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { MessageBox.Show(this, "تعذّر حفظ الإقرار.\n" + ex.Message, "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(this, "تعذّر حفظ الإقرار.\n" + ex.Message, "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; ConfirmButton.IsEnabled = true; NoteText.IsEnabled = true; Reviewed.IsEnabled = true; }
     }
 }
