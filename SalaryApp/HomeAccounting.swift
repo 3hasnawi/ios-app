@@ -57,6 +57,7 @@ struct HomeAccounting: View {
     let overview: HomeOverview?
     let audit: HomeAudit?
     let openReports: () -> Void
+    let openTrust: () -> Void
     let openRoute: (HomeRoute) -> Void
     let openEntities: () -> Void
 
@@ -78,6 +79,7 @@ struct HomeAccounting: View {
                 actionCard(0)
                 actionCard(1)
             }
+            HomeSalaryTrustCard(action: openTrust)
             reviewStrip
         }
         .animation(.snappy, value: actionsRaw)

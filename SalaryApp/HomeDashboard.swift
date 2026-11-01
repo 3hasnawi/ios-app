@@ -182,7 +182,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup, reports
+    case audit, salary, deductions, backup, reports, salaryTrust
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
     var id: Self { self }
@@ -235,9 +235,13 @@ struct HomeDashboard: View {
                 if let current {
                     HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
                                    openReports: { route = .reports },
+                                   openTrust: { route = .salaryTrust },
                                    openRoute: { route = $0 },
                                    openEntities: { openReports(.entities, month: current) })
-                } else { welcome }
+                } else {
+                    welcome
+                    HomeSalaryTrustCard { route = .salaryTrust }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
@@ -264,6 +268,7 @@ struct HomeDashboard: View {
         }
         .navigationDestination(item: $route) { route in
             switch route {
+            case .salaryTrust: SalaryTrustView()
             case .reports: ReportsView(pushedFromHome: true)
             case .audit: AuditView(months: months.map(\.name))
             case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")

@@ -650,6 +650,11 @@ jobs:
           sleep 6
           xcrun simctl io "$UDID" screenshot ci-output/screenshots/08e3-backup-after-auto.png || true
 
+      - name: Check salary trust filters and optional payment fields
+        if: inputs.quick != true || inputs.backup_only == true
+        run: |
+          grep -q "trust=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust self-test failed"; exit 1; }
+
       - name: Enforce navigation test result
         if: inputs.backup_only != true
         run: |

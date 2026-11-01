@@ -69,6 +69,9 @@ struct SalaryTrustView: View {
     @Query private var months: [PayrollMonth]
     @AppStorage(SalaryTrust.settingsKey) private var stored = Data()
     @State private var search = ""
+    @State private var filterMonth = 0
+    @State private var filterStatus = SalaryTrust.PaymentFilter.all
+    @State private var reportRequest: SalaryTrustReportRequest?
     @State private var problem: String?
     @State private var preview: SalaryTrust.Ledger?
     @State private var previewBase = Data()
@@ -79,17 +82,36 @@ struct SalaryTrustView: View {
     @State private var selectedIDs = Set<String>()
     @State private var showBookPicker = false
     private var ledger: SalaryTrust.Ledger? { try? SalaryTrust.decode(stored) }
+    private var availableMonths: [Int] { Array(Set((ledger?.entries ?? []).map { $0.year * 100 + $0.month })).sorted(by: >) }
     private var visible: [SalaryTrust.Entry] {
-        (ledger?.entries ?? []).filter { search.isEmpty || ArabicText.matchKey($0.name).contains(ArabicText.matchKey(search)) }
-            .sorted { ($0.year, $0.month, $0.name) > ($1.year, $1.month, $1.name) }
+        (ledger?.entries ?? []).filter { e in
+            (filterMonth == 0 || e.year * 100 + e.month == filterMonth) && filterStatus.includes(e) &&
+            (search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || ArabicText.matchKey(e.name).contains(ArabicText.matchKey(search)))
+        }.sorted { ($0.year, $0.month, $0.name) > ($1.year, $1.month, $1.name) }
     }
     var body: some View {
         List {
             if let ledger {
                 Section {
-                    LabeledContent(tr("الأمانات غير المصروفة", "Outstanding trust"), value: Money.format(Double(ledger.entries.filter { !$0.reviewPending }.reduce(Int64(0)) { $0 + $1.remaining })))
-                    LabeledContent(tr("سجلات للمراجعة", "Entries to review"), value: Num.format(ledger.entries.filter(\.reviewPending).count))
+                    LabeledContent(tr("المتبقي حسب الفلاتر", "Outstanding for current filters"), value: Money.format(Double(SalaryTrust.outstanding(visible))))
+                    LabeledContent(tr("القيود الظاهرة", "Visible entries"), value: Num.format(visible.count))
+                    let unresolved = visible.filter(\.reviewPending).count
+                    if unresolved > 0 { Text(tr("\(Num.format(unresolved)) قيد للمراجعة مستبعد من المتبقي.", "\(unresolved) entries needing review are excluded from the balance.")).font(.caption).foregroundStyle(.orange) }
                 }
+                Section {
+                    Picker(tr("الشهر", "Month"), selection: $filterMonth) {
+                        Text(tr("كل الأشهر", "All months")).tag(0)
+                        ForEach(availableMonths, id: \.self) { month in Text(SalaryTrust.monthLabel(month)).tag(month) }
+                    }
+                    Picker(tr("حالة الصرف", "Payment status"), selection: $filterStatus) {
+                        ForEach(SalaryTrust.PaymentFilter.allCases) { status in Text(status.title).tag(status) }
+                    }
+                    HStack {
+                        Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { prepareReport(preview: true) }
+                        Spacer()
+                        Button(tr("تصدير", "Export"), systemImage: "square.and.arrow.up") { prepareReport(preview: false) }
+                    }.disabled(visible.isEmpty)
+                } header: { Text(tr("الفلترة والكشف", "Filters and report")) }
                 if !ledger.openingImported {
                     Section { Button(tr("استيراد ملف الأمانات الافتتاحي", "Import opening trust spreadsheet"), systemImage: "square.and.arrow.down") { pickOpening() }.disabled(loading) }
                 }
@@ -125,6 +147,13 @@ struct SalaryTrustView: View {
         }
         .searchable(text: $search, prompt: tr("البحث بالاسم", "Search by name"))
         .navigationTitle(tr("أمانات الرواتب", "Salary trust"))
+        .onChange(of: filterMonth) { _, _ in selectedIDs.removeAll() }
+        .onChange(of: filterStatus) { _, _ in selectedIDs.removeAll() }
+        .onChange(of: search) { _, _ in selectedIDs.removeAll() }
+        .sheet(item: $reportRequest) { request in
+            if request.preview { SalaryTrustPreviewSheet(request: request) }
+            else { SalaryTrustExportSheet(request: request) }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(selectingBooks ? tr("إلغاء التحديد", "Cancel selection") : tr("تحديد للربط", "Select to link")) {
@@ -166,6 +195,12 @@ struct SalaryTrustView: View {
             Button(tr("حسناً", "OK"), role: .cancel) { problem = nil }
         } message: { Text(problem ?? "") }
     }
+    private func prepareReport(preview: Bool) {
+        guard !visible.isEmpty else { return }
+        let month = filterMonth == 0 ? tr("كل الأشهر", "All months") : SalaryTrust.monthLabel(filterMonth)
+        reportRequest = SalaryTrustReportRequest(entries: visible, month: month, status: filterStatus.title,
+            query: search.trimmingCharacters(in: .whitespacesAndNewlines), ledgerData: stored, preview: preview)
+    }
     private func pickOpening() {
         FilePicker.present(types: [UTType(filenameExtension: "xlsx") ?? .data], multiple: false) { urls in
             guard let file = urls.first else { return }
@@ -196,6 +231,8 @@ private struct SalaryTrustEntryView: View {
     @State private var confirmPaid = false
     @State private var caseStatus = ""
     @State private var date = Date()
+    @State private var hasBookDate = false
+    @State private var editPayment: SalaryTrust.Payment?
     @State private var problem: String?
     init(entry: SalaryTrust.Entry, stored: Binding<Data>) {
         _entry = State(initialValue: entry)
@@ -238,7 +275,8 @@ private struct SalaryTrustEntryView: View {
                     Section(tr("دفعات الصرف", "Payments")) {
                         ForEach(entry.payments) { p in
                             VStack(alignment: .leading) {
-                                Text("\(Money.format(Double(p.amount))) · \(p.bookNumber) · \(p.bookDate)")
+                                Text(([Money.format(Double(p.amount)), p.bookNumber, p.bookDate].filter { !$0.isEmpty }).joined(separator: " · "))
+                                Button(tr("تعديل بيانات الكتاب", "Edit document details")) { editPayment = p }.font(.caption)
                                 if !p.note.isEmpty { Text(p.note).font(.caption).privacySensitive() }
                             }
                         }
@@ -247,15 +285,30 @@ private struct SalaryTrustEntryView: View {
                 if entry.remaining > 0 {
                     Section(tr("تسجيل صرف", "Record payment")) {
                         TextField(tr("المبلغ", "Amount"), text: $amount).keyboardType(.numberPad)
-                        TextField(tr("رقم الكتاب", "Book number"), text: $bookNumber)
+                        TextField(tr("رقم الكتاب (اختياري)", "Book number (optional)"), text: $bookNumber)
+                        Toggle(tr("إضافة تاريخ الكتاب (اختياري)", "Add book date (optional)"), isOn: $hasBookDate)
+                        if hasBookDate { DatePicker(tr("تاريخ الكتاب", "Book date"), selection: $date, displayedComponents: .date).environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current) }
                         TextField(tr("ملاحظات الصرف (اختياري)", "Payment notes (optional)"), text: $paymentNote, axis: .vertical)
-                        DatePicker(tr("تاريخ الكتاب", "Book date"), selection: $date, displayedComponents: .date)
                         Button(tr("حفظ الصرف", "Save payment")) { savePayment() }
                     }
                 }
             }
         }
         .onAppear { entryNote = entry.note; caseStatus = entry.caseStatus }
+        .sheet(item: $editPayment) { payment in
+            SalaryTrustPaymentEditor(payment: payment) { updated in
+                let expected = stored
+                var ledger = try SalaryTrust.decode(expected)
+                guard let index = ledger.entries.firstIndex(where: { $0.id == entry.id }), ledger.entries[index] == entry,
+                      let paymentIndex = ledger.entries[index].payments.firstIndex(where: { $0.id == payment.id }),
+                      ledger.entries[index].payments[paymentIndex] == payment else {
+                    throw SalaryTrust.invalid(tr("تغيّرت الدفعة؛ أعد فتح القيد.", "The payment changed; reopen the entry."))
+                }
+                ledger.entries[index].payments[paymentIndex] = updated
+                try SalaryTrustStore.save(ledger, expected: expected)
+                entry = ledger.entries[index]
+            }
+        }
         .sheet(isPresented: $showBookPicker) {
             SalaryTrustBookPicker(ids: [entry.id], months: Array(Set(months.map(\.name) + ["\(entry.month) \(entry.year)"])).sorted()) {
                 if let updated = try? SalaryTrust.decode(stored).entries.first(where: { $0.id == entry.id }) { entry = updated }
@@ -279,16 +332,66 @@ private struct SalaryTrustEntryView: View {
     private func resolve(paid: Bool) { change { $0.reviewPending = false; $0.legacyPaid = paid; $0.caseStatus = caseStatus; $0.note = entryNote } }
     private func savePayment() {
         guard let number = ArabicText.number(from: amount), number.isFinite, number > 0, number.rounded() == number,
-              number <= Double(entry.remaining), !bookNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            problem = tr("أدخل مبلغاً لا يتجاوز المتبقي ورقم الكتاب.", "Enter an amount no greater than the balance and the book number."); return
+              number <= Double(entry.remaining) else {
+            problem = tr("أدخل مبلغاً لا يتجاوز المتبقي.", "Enter an amount no greater than the balance."); return
         }
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         let stamp = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
-        change { $0.caseStatus = caseStatus; $0.note = entryNote; $0.payments.append(.init(id: UUID().uuidString, amount: Int64(number), bookNumber: bookNumber.trimmingCharacters(in: .whitespacesAndNewlines), bookDate: stamp, note: paymentNote.trimmingCharacters(in: .whitespacesAndNewlines))) }
+        change { $0.caseStatus = caseStatus; $0.note = entryNote; $0.payments.append(.init(id: UUID().uuidString, amount: Int64(number), bookNumber: bookNumber.trimmingCharacters(in: .whitespacesAndNewlines), bookDate: hasBookDate ? stamp : "", note: paymentNote.trimmingCharacters(in: .whitespacesAndNewlines))) }
     }
 }
 
+
+/// تعديل بيانات الكتاب والملاحظة دون تغيير مبلغ الدفعة.
+private struct SalaryTrustPaymentEditor: View {
+    let payment: SalaryTrust.Payment
+    let save: (SalaryTrust.Payment) throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var number: String
+    @State private var note: String
+    @State private var hasDate: Bool
+    @State private var date: Date
+    @State private var error: String?
+    init(payment: SalaryTrust.Payment, save: @escaping (SalaryTrust.Payment) throws -> Void) {
+        self.payment = payment; self.save = save
+        _number = State(initialValue: payment.bookNumber)
+        _note = State(initialValue: payment.note)
+        _hasDate = State(initialValue: !payment.bookDate.isEmpty)
+        let formatter = DateFormatter(); formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(identifier: "Asia/Baghdad")
+        formatter.dateFormat = "yyyy-MM-dd"
+        _date = State(initialValue: formatter.date(from: payment.bookDate) ?? Date())
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                LabeledContent(tr("مبلغ الصرف", "Payment"), value: Money.format(Double(payment.amount)))
+                TextField(tr("رقم الكتاب (اختياري)", "Book number (optional)"), text: $number)
+                Toggle(tr("إضافة تاريخ الكتاب (اختياري)", "Add book date (optional)"), isOn: $hasDate)
+                if hasDate { DatePicker(tr("تاريخ الكتاب", "Book date"), selection: $date, displayedComponents: .date).environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current) }
+                TextField(tr("ملاحظات الصرف (اختياري)", "Payment notes (optional)"), text: $note, axis: .vertical)
+            }
+            .navigationTitle(tr("بيانات كتاب الصرف", "Payment document details"))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { persist() } }
+            }
+            .alert(tr("تعذّر الحفظ", "Could not save"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button(tr("حسناً", "OK"), role: .cancel) { error = nil }
+            } message: { Text(error ?? "") }
+        }
+    }
+    private func persist() {
+        var updated = payment
+        updated.bookNumber = number.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        updated.bookDate = hasDate ? String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0) : ""
+        do { try save(updated); dismiss() } catch { self.error = error.localizedDescription }
+    }
+}
 
 /// الكتاب يبقى نسخة واحدة في الأرشيف؛ الربط بالمجموعة يسجل المعرّف فقط دون أي حركة مالية.
 private struct SalaryTrustBookPicker: View {

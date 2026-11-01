@@ -12,6 +12,19 @@ nonisolated enum SalaryTrustSelfTest {
             let ledger = SalaryTrust.Ledger(entries: [entry, review], openingImported: true)
             let restored = try SalaryTrust.decode(SalaryTrust.encode(ledger))
             guard restored == ledger, restored.entries[0].remaining == 700, restored.entries[1].reviewPending else { return false }
+            guard SalaryTrust.outstanding(restored.entries) == 700,
+                  SalaryTrust.PaymentFilter.partial.includes(entry),
+                  SalaryTrust.PaymentFilter.review.includes(review),
+                  !SalaryTrust.PaymentFilter.unfinished.includes(review) else { return false }
+            for (number, date) in [("", ""), ("123", ""), ("", "2026-11-02"), ("123", "2026-11-02")] {
+                var optional = ledger
+                optional.entries[0].payments[0].bookNumber = number
+                optional.entries[0].payments[0].bookDate = date
+                guard try SalaryTrust.decode(SalaryTrust.encode(optional)) == optional else { return false }
+            }
+            let report = SalaryTrustReportRequest(entries: ledger.entries, month: "كل الأشهر", status: "كل الحالات", query: "", ledgerData: try SalaryTrust.encode(ledger), preview: true)
+            let sheet = try SalaryTrustReport.sheet(report)
+            guard sheet.rows.count == 3, sheet.rows[0][7] == "700", sheet.rows[1][7] == "—", sheet.rows[2][7] == "700" else { return false }
             let bookID = UUID()
             let ids: Set<String> = [entry.id, review.id]
             let linked = try SalaryTrust.linking(ledger, bookID: bookID, entries: ids)

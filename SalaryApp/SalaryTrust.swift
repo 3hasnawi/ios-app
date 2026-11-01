@@ -6,6 +6,49 @@ nonisolated enum SalaryTrust {
     static let maximum: Int64 = 9_007_199_254_740_991
     static let openingCutoff = 202609
 
+    enum PaymentFilter: String, CaseIterable, Identifiable, Sendable {
+        case all, unfinished, unpaid, partial, paid, review
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: tr("كل الحالات", "All statuses")
+            case .unfinished: tr("غير مكتمل", "Not fully paid")
+            case .unpaid: tr("غير مصروف", "Unpaid")
+            case .partial: tr("مصروف جزئياً", "Partially paid")
+            case .paid: tr("مصروف بالكامل", "Paid in full")
+            case .review: tr("للمراجعة", "Needs review")
+            }
+        }
+        func includes(_ entry: Entry) -> Bool {
+            if self == .all { return true }
+            if entry.reviewPending { return self == .review }
+            switch self {
+            case .all: return true
+            case .unfinished: return entry.remaining > 0
+            case .unpaid: return entry.paid == 0
+            case .partial: return entry.paid > 0 && entry.remaining > 0
+            case .paid: return entry.remaining == 0
+            case .review: return false
+            }
+        }
+    }
+    static func paymentStatus(_ entry: Entry) -> String {
+        if entry.reviewPending { return PaymentFilter.review.title }
+        if entry.remaining == 0 { return PaymentFilter.paid.title }
+        if entry.paid > 0 { return PaymentFilter.partial.title }
+        return PaymentFilter.unpaid.title
+    }
+    static func monthLabel(_ key: Int) -> String {
+        let arabic = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
+        let english = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+        let index = key % 100 - 1
+        guard (0..<12).contains(index) else { return "—" }
+        return "\(AppSettings.isEnglish ? english[index] : arabic[index]) \(Num.digits(String(key / 100)))"
+    }
+    static func outstanding(_ entries: [Entry]) -> Int64 {
+        entries.filter { !$0.reviewPending }.reduce(0) { $0 + $1.remaining }
+    }
+
     struct Payment: Codable, Identifiable, Equatable, Sendable {
         var id: String
         var amount: Int64
@@ -78,8 +121,8 @@ nonisolated enum SalaryTrust {
             for p in e.payments {
                 guard UUID(uuidString: p.id) != nil, payments.insert(p.id.lowercased()).inserted,
                       p.amount > 0, p.amount <= e.amount,
-                      !p.bookNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      p.bookNumber.count <= 150, p.note.count <= 2000, validDate(p.bookDate), paid <= e.amount - p.amount else {
+                      p.bookNumber.count <= 150, p.note.count <= 2000,
+                      (p.bookDate.isEmpty || validDate(p.bookDate)), paid <= e.amount - p.amount else {
                     throw invalid(tr("دفعة الصرف غير صالحة أو تتجاوز الرصيد.", "A payment is invalid or exceeds the balance."))
                 }
                 paid += p.amount
