@@ -326,6 +326,9 @@ try
     catch (InvalidDataException) { }
     var groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes);
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
+    var namedEntry = entry with { Title = "صندوق شهداء الشرطة (تبرعات)", Account = transferAccount with { Branch = "مصرف الرافدين فرع 12" } };
+    var namedPlan = GroupLetterPreparation.Prepare(transfer with { Entries = [namedEntry] }, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));
+    Check(GroupLetterPdf.Generate(namedPlan, letterSettings, fontBytes, fontBytes, logoBytes).Length > 0, "Arabic name with parentheses and branch number remains verifiable");
     var changedBodyMonthPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { BodyMonth = "كانون الأول 2025", OutgoingMonth = 11 }, fontBytes, fontBytes, logoBytes);
     using (var monthDocument = UglyToad.PdfPig.PdfDocument.Open(changedBodyMonthPdf))
     {
