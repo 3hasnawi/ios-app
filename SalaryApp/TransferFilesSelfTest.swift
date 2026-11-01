@@ -69,6 +69,11 @@ import CryptoKit
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
+        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 50, y: 842 - 150, width: 495, height: 35))?.string ?? ""
+        func compactStatementTitle(_ value: String) -> String {
+            ArabicText.normalize(value).filter { !$0.isWhitespace }
+        }
+        try check(TransferAnbarTablePDF.matchesExtractedCell(compactStatementTitle(statementTitle), expected: compactStatementTitle("كشف مطابقة حساب البنك لقيادة شرطة محافظة الانبار")), "reconciliation PDF title")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)

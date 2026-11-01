@@ -27,7 +27,7 @@ nonisolated enum BankReconciliationPDF {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
         formatter.dateFormat = "yyyy/MM/dd"
-        return formatter.string(from: value)
+        return ReportSheet.easternDigits(formatter.string(from: value))
     }
     private static func lines(_ value: String, font: UIFont, width: CGFloat) -> Int {
         let text = NSAttributedString(string: value, attributes: [.font: font])
@@ -40,11 +40,26 @@ nonisolated enum BankReconciliationPDF {
         }
         return max(1, count)
     }
+    /// سياق المطبوع يستخدم إحداثيات UIKit؛ تعكس الصورة كي يظهر الشعار باتجاهه الصحيح.
+    private static func drawImage(_ image: CGImage, in rect: CGRect, alpha: CGFloat, context: CGContext) {
+        context.saveGState()
+        context.setAlpha(alpha)
+        context.interpolationQuality = .high
+        context.translateBy(x: 0, y: page.height)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: CGRect(x: rect.minX, y: page.height - rect.maxY, width: rect.width, height: rect.height))
+        context.restoreGState()
+    }
     static func make(_ period: BankReconciliation.Period, complete: Bool = false) async throws -> URL {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
             let font = ReportFont.regular(9), bold = ReportFont.bold(9)
+            let headingFont = ReportFont.bold(13)
+            let heading = "كشف مطابقة حساب البنك لقيادة شرطة محافظة الانبار"
+            guard let logo = UIImage(named: "HomeLogo")?.cgImage,
+                  let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage,
+                  lines(heading, font: headingFont, width: 487) == 1 else { throw Failure.damaged }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var rows: [([String], CGFloat)] = []
             if period.openingBalance != 0 {
@@ -74,20 +89,30 @@ nonisolated enum BankReconciliationPDF {
                 var index = 0, finalDrawn = false
                 repeat {
                     context.beginPage()
-                    PDFText.draw("كشف مطابقة حساب المصرف", in: CGRect(x: margin, y: 20, width: 531, height: 28), font: ReportFont.bold(16))
-                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 52, width: 531, height: 20), font: font)
-                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 65, width: 531, height: 15), font: bold, color: .darkGray) }
+                    // يبقى الشعار خلف الحركات ولا يغيّر بيانات الكشف أو حساباته.
+                    drawImage(watermark, in: CGRect(x: 120, y: 280, width: 355, height: 355), alpha: 0.06, context: cg)
+                    UIColor(white: 0.45, alpha: 1).setStroke()
+                    cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
+                    drawImage(logo, in: CGRect(x: 36, y: 27, width: 72, height: 72), alpha: 1, context: cg)
+                    for (index, value) in ["جمهورية العراق", "وزارة الداخلية", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"].enumerated() {
+                        PDFText.draw(value, in: CGRect(x: 320, y: 27 + CGFloat(index) * 15, width: 235, height: 15), font: bold, align: .right)
+                    }
+                    let headingBox = CGRect(x: 50, y: 115, width: 495, height: 35)
+                    UIColor.darkGray.setStroke(); cg.stroke(headingBox, width: 0.7)
+                    PDFText.draw(heading, in: headingBox.insetBy(dx: 4, dy: 2), font: headingFont)
+                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 157, width: 531, height: 20), font: font)
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 176, width: 531, height: 13), font: bold, color: .darkGray) }
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
                         x -= width
-                        let cell = CGRect(x: x, y: 82, width: width, height: 24)
+                        let cell = CGRect(x: x, y: 193, width: width, height: 24)
                         rects.append(cell)
                         UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                         UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                         PDFText.draw(labels[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                     }
-                    var y: CGFloat = 106
+                    var y: CGFloat = 217
                     while index < rows.count, y + rows[index].1 <= 665 {
                         let (values, height) = rows[index]
                         for i in values.indices {
