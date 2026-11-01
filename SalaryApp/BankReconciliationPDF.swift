@@ -55,6 +55,11 @@ nonisolated enum BankReconciliationPDF {
         }
         return max(1, count)
     }
+    private static func textWidth(_ value: String, font: UIFont) -> CGFloat {
+        let text = NSAttributedString(string: value, attributes: [.font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): PDFText.rtl])
+        let line = CTLineCreateWithAttributedString(text)
+        return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line))
+    }
     /// قد يعيد PDFKit ترتيب أجزاء التاريخ المعروضة باتجاه معاكس دون تغيير أرقامها.
     static func matchesDate(_ actual: String, expected: String) -> Bool {
         func parts(_ value: String) -> [String]? {
@@ -118,18 +123,27 @@ nonisolated enum BankReconciliationPDF {
             guard lines(heading, font: headingFont, width: 223) == 1,
                   organization.allSatisfy({ lines($0, font: organizationFont, width: 150) == 1 }),
                   metadata.allSatisfy({ lines($0.0 + ":", font: metadataFont, width: 80) == 1 }) else { throw Failure.tooLong }
-            var metadataHeights: [CGFloat] = []
-            for item in metadata {
-                let count = lines(item.1, font: metadataFont, width: 188)
-                guard count != Int.max, count <= 2 else { throw Failure.tooLong }
-                metadataHeights.append(max(19, ceil(CGFloat(count) * metadataFont.lineHeight + 4)))
-            }
             let organizationTop: CGFloat = 25
             let headingTop: CGFloat = 25
             let periodTop: CGFloat = 46
-            let metadataTop: CGFloat = 68
+            let metadataTop: CGFloat = 25
             let periodText = "الــفــتــرة مــن \(date(period.start)) إلــى \(date(period.end))"
             guard lines(periodText, font: periodFont, width: 223) == 1 else { throw Failure.tooLong }
+            // يظل العنوان والفترة في المنتصف وتتكيف خانات الحساب مع المساحة المتاحة يسارهما.
+            let metadataRight = min(306, page.midX - max(textWidth(heading, font: headingFont), textWidth(periodText, font: periodFont)) / 2 - 8)
+            var metadataHeights: [CGFloat] = []
+            var metadataLabelWidths: [CGFloat] = []
+            var metadataValueWidths: [CGFloat] = []
+            for item in metadata {
+                let labelWidth = ceil(textWidth(item.0 + ":", font: metadataFont) + 2)
+                let valueWidth = metadataRight - margin - labelWidth - 6
+                guard valueWidth >= 50 else { throw Failure.tooLong }
+                let count = lines(item.1, font: metadataFont, width: valueWidth)
+                guard count != Int.max, count <= 2 else { throw Failure.tooLong }
+                metadataLabelWidths.append(labelWidth)
+                metadataValueWidths.append(valueWidth)
+                metadataHeights.append(max(19, ceil(CGFloat(count) * metadataFont.lineHeight + 4)))
+            }
             let contentBottom = max(metadataTop + metadataHeights.reduce(0, +), organizationTop + 75, periodTop + 16)
             let tableTop = contentBottom + 18
             let rowTop = tableTop + 24
@@ -204,8 +218,9 @@ nonisolated enum BankReconciliationPDF {
                     var metadataY = metadataTop
                     for (index, item) in metadata.enumerated() {
                         let height = metadataHeights[index]
-                        let valueRect = CGRect(x: 32, y: metadataY, width: 188, height: height)
-                        PDFText.draw(item.0 + ":", in: CGRect(x: 226, y: metadataY, width: 80, height: height), font: metadataFont, align: .right)
+                        let valueRect = CGRect(x: margin, y: metadataY, width: metadataValueWidths[index], height: height)
+                        let labelRect = CGRect(x: metadataRight - metadataLabelWidths[index], y: metadataY, width: metadataLabelWidths[index], height: height)
+                        PDFText.draw(item.0 + ":", in: labelRect, font: metadataFont, align: .right)
                         PDFText.draw(item.1, in: valueRect, font: metadataFont, align: .left, wrap: true)
                         if item.1 != "—" { placements.append((pageCount, valueRect, item.1, item.2, index + 1)) }
                         metadataY += height

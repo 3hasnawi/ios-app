@@ -125,7 +125,7 @@ import CryptoKit
         }
         let tallerCompactPDF = try await BankReconciliationPDF.make(tallerCompactStatement)
         defer { try? FileManager.default.removeItem(at: tallerCompactPDF) }
-        try check((PDFDocument(url: tallerCompactPDF)?.pageCount ?? 0) > 1, "large signature layout paginates 29 movements safely")
+        try check(PDFDocument(url: tallerCompactPDF)?.pageCount == 1, "raised account details fit 29 short movements")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)
