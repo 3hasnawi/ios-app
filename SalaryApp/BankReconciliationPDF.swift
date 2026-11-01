@@ -62,6 +62,11 @@ nonisolated enum BankReconciliationPDF {
         guard let left = parts(actual), let right = parts(expected) else { return false }
         return left == right || left == Array(right.reversed())
     }
+    /// قد يشمل تحديد PDFKit شرطة الخانة المجاورة عند ملامسة حدود الخلايا.
+    static func trimAdjacentPlaceholder(_ actual: String, expected: String) -> String {
+        guard !expected.contains("—") else { return actual }
+        return actual.trimmingCharacters(in: CharacterSet(charactersIn: "—"))
+    }
     /// قد تنقل قراءة PDF السنة من آخر البيان العربي إلى أوله لاتجاه النص.
     static func matchesDescription(_ actual: String, expected: String) -> Bool {
         if TransferAnbarTablePDF.matchesExtractedCell(actual, expected: expected) { return true }
@@ -191,8 +196,8 @@ nonisolated enum BankReconciliationPDF {
             for (pageIndex, rect, expected, column, row) in placements {
                 guard let output = pdf.page(at: pageIndex) else { throw Failure.damaged }
                 let box = CGRect(x: rect.minX + 0.2, y: page.height - rect.maxY + 0.2, width: rect.width - 0.4, height: rect.height - 0.4)
-                let actual = identity(output.selection(for: box)?.string ?? "")
                 let wanted = identity(expected)
+                let actual = trimAdjacentPlaceholder(identity(output.selection(for: box)?.string ?? ""), expected: wanted)
                 let isDate = column == 0 || column == 6
                 let matches = actual == wanted || (isDate && matchesDate(actual, expected: wanted)) ||
                     (column == 1 && matchesDescription(actual, expected: wanted)) ||

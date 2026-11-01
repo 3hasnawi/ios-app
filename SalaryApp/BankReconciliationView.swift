@@ -434,14 +434,27 @@ private struct BankReconciliationMovementEditor: View {
 private struct BankReconciliationIntegerField: View {
     let title: String
     @Binding var amount: Int64
-    @State private var text = ""
+    @State private var text: String
+    @FocusState private var focused: Bool
+    init(title: String, amount: Binding<Int64>) {
+        self.title = title; self._amount = amount
+        self._text = State(initialValue: amount.wrappedValue == 0 ? "" : String(amount.wrappedValue))
+    }
     var body: some View {
-        TextField(title, text: $text).keyboardType(.numberPad)
-            .onAppear { text = amount == 0 ? "" : String(amount) }
-            .onChange(of: text) { _, value in
+        TextField(title, text: $text)
+            .keyboardType(.numberPad)
+            .focused($focused)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .simultaneousGesture(TapGesture().onEnded { focused = true })
+            .onChange(of: text) { previous, value in
                 let digits = ArabicText.latinDigits(value)
-                guard !digits.isEmpty, digits.utf8.allSatisfy({ (48...57).contains($0) }), let parsed = Int64(digits), parsed <= BankReconciliation.maximumAmount else { amount = 0; return }
+                if digits.isEmpty { amount = 0; return }
+                guard digits.utf8.allSatisfy({ (48...57).contains($0) }), let parsed = Int64(digits), parsed <= BankReconciliation.maximumAmount else { text = previous; return }
                 amount = parsed
+            }
+            .onChange(of: amount) { _, value in
+                if !focused { text = value == 0 ? "" : String(value) }
             }
     }
 }
