@@ -275,6 +275,70 @@ try
     var transfer = new TransferSnapshot("أيلول 2026", "دافع وهمي", fakePayer, new[] { entry }, Array.Empty<string>());
     var bytes = TransferPreparation.MakeCsv(transfer, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));
     var csv = Encoding.UTF8.GetString(bytes);
+    Check(ArabicAmountWords.Dinars(1) == "دينار واحد" && ArabicAmountWords.Dinars(2) == "ديناران" && ArabicAmountWords.Dinars(3) == "ثلاثة دنانير" &&
+          ArabicAmountWords.Dinars(1000) == "ألف دينار" && ArabicAmountWords.Dinars(1_000_002) == "مليون وديناران", "Arabic amount words preserve unit and scale forms");
+    var groupLetter = GroupLetterPreparation.Prepare(transfer, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));
+    Check(groupLetter.Total == 2500 && groupLetter.Lines.Single().Iban == fakeReceiver && groupLetter.Csv.AsSpan().SequenceEqual(bytes), "group letter plan matches validated transfer CSV");
+    var letterSettings = new GroupLetterSettings("ترويسة تجريبية\nقسم حسابات وهمي", "ح/1/22/", "عضو تجريبي أول", "عضو تجريبي ثان", "عضو تجريبي ثالث", "نسخة تجريبية", null, 10, 0, null);
+    var logoPath = Path.GetFullPath("SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png");
+    var fontBytes = File.ReadAllBytes(font); var logoBytes = File.ReadAllBytes(logoPath);
+    try { GroupLetterFont.Validate(fontBytes); throw new InvalidOperationException("wrong letter font accepted"); }
+    catch (InvalidDataException) { }
+    var groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes);
+    Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
+    var changedBodyMonthPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { BodyMonth = "كانون الأول 2025", OutgoingMonth = 11 }, fontBytes, fontBytes, logoBytes);
+    using (var monthDocument = UglyToad.PdfPig.PdfDocument.Open(changedBodyMonthPdf))
+    {
+        var tableText = TransferPreparation.NormalizeAccount(string.Concat(monthDocument.GetPage(2).Letters.Select(l => l.Value)));
+        Check(tableText.Contains("2026", StringComparison.Ordinal) && !tableText.Contains("2025", StringComparison.Ordinal), "changing body month does not change group table month");
+    }
+    var groupOutput = Path.Combine(root, "group-letter.pdf"); File.WriteAllText(groupOutput, "existing");
+    try { GroupLetterPdf.SaveDraft(groupLetter, letterSettings with { First = "" }, fontBytes, fontBytes, logoBytes, groupOutput); throw new InvalidOperationException("invalid letter overwrote file"); }
+    catch (InvalidDataException) { }
+    Check(File.ReadAllText(groupOutput) == "existing", "failed group PDF preserves existing file");
+    var changedLetter = groupLetter with { Lines = [groupLetter.Lines.Single() with { Amount = 2501 }], Total = 2501, Words = ArabicAmountWords.Dinars(2501) };
+    try { _ = GroupLetterPdf.Generate(changedLetter, letterSettings, fontBytes, fontBytes, logoBytes); throw new InvalidOperationException("letter with mismatched CSV accepted"); }
+    catch (InvalidDataException) { }
+    var mismatchedCsv = groupLetter with { Csv = Encoding.UTF8.GetBytes(csv.Replace("|2500|", "|2501|", StringComparison.Ordinal)) };
+    try { _ = GroupLetterPdf.Generate(mismatchedCsv, letterSettings, fontBytes, fontBytes, logoBytes); throw new InvalidOperationException("letter with changed CSV accepted"); }
+    catch (InvalidDataException) { }
+    var manyEntries = Enumerable.Range(1, 40).Select(i => entry with { Id = "fake-" + i, Title = "جهة وهمية " + i, Beneficiary = "جهة وهمية " + i }).ToArray();
+    var manyPlan = GroupLetterPreparation.Prepare(transfer with { Entries = manyEntries }, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));
+    var manyPdf = GroupLetterPdf.Generate(manyPlan, letterSettings, fontBytes, fontBytes, logoBytes);
+    Check(System.Text.RegularExpressions.Regex.Matches(Encoding.Latin1.GetString(manyPdf), @"/Type\s*/Page\b").Count == 2, "group letter and many-row table fit on exactly two pages");
+    var tooManyEntries = Enumerable.Range(1, 250).Select(i => entry with { Id = "fake-" + i, Title = "جهة وهمية " + i, Beneficiary = "جهة وهمية " + i }).ToArray();
+    var tooManyPlan = GroupLetterPreparation.Prepare(transfer with { Entries = tooManyEntries }, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));
+    try { _ = GroupLetterPdf.Generate(tooManyPlan, letterSettings, fontBytes, fontBytes, logoBytes); throw new InvalidOperationException("overflowing group table accepted"); }
+    catch (InvalidDataException) { }
+    var settingsStore = new LocalTransferLinks(Path.Combine(root, "letter-settings"));
+    var settingsInitial = settingsStore.Load(snapshot);
+    var commonSettings = settingsStore.SaveGroupSettings(snapshot, settingsInitial, TransferGroup.Rafidain, letterSettings, true);
+    Check(GroupLetterSettingsReader.Read(commonSettings.Snapshot, TransferGroup.OtherBanks).First == letterSettings.First, "apply letter settings to all books");
+    var otherSettings = letterSettings with { First = "اسم آخر تجريبي", Header = "ترويسة أخرى تجريبية" };
+    var specificSettings = settingsStore.SaveGroupSettings(snapshot, commonSettings, TransferGroup.OtherBanks, otherSettings, false);
+    Check(GroupLetterSettingsReader.Read(specificSettings.Snapshot, TransferGroup.Rafidain).First == letterSettings.First && GroupLetterSettingsReader.Read(specificSettings.Snapshot, TransferGroup.OtherBanks).First == otherSettings.First, "specific letter settings preserve other group");
+    var selectionUpdate = settingsStore.SaveGroupSettings(snapshot, specificSettings, TransferGroup.Rafidain, letterSettings with { First = "عضو جديد تجريبي" }, true, new HashSet<string> { "committeeFirst" });
+    Check(GroupLetterSettingsReader.Read(selectionUpdate.Snapshot, TransferGroup.OtherBanks).First == "عضو جديد تجريبي" && GroupLetterSettingsReader.Read(selectionUpdate.Snapshot, TransferGroup.OtherBanks).Header == otherSettings.Header, "apply only changed field across books");
+    try { _ = settingsStore.SaveGroupSettings(snapshot, selectionUpdate, TransferGroup.Rafidain, letterSettings with { BodyTemplate = "نص ناقص" }, false, new HashSet<string> { "bodyTemplate" }); throw new InvalidOperationException("invalid letter body accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = settingsStore.SaveGroupSettings(snapshot, selectionUpdate, TransferGroup.Rafidain, letterSettings with { BodyTemplate = GroupLetterPdf.DefaultBodyTemplate }, true, new HashSet<string> { "bodyTemplate" }); throw new InvalidOperationException("group body applied to all individual letters"); }
+    catch (InvalidDataException) { }
+    var settingsBackupPath = Path.Combine(root, "letter-settings-backup.zip"); ReconciliationBackupExport.Write(specificSettings.Snapshot, [], settingsBackupPath);
+    Check(GroupLetterSettingsReader.Read(BackupReader.Read(settingsBackupPath), TransferGroup.OtherBanks).First == otherSettings.First, "letter settings included in backup");
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_GROUP_PDF") is { Length: > 0 } groupPath) File.WriteAllBytes(groupPath, groupPdf);
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_MAJALLA") is { Length: > 0 } majallaPath)
+    {
+        var majalla = File.ReadAllBytes(majallaPath); GroupLetterFont.Validate(majalla);
+        Check(GroupLetterPdf.Generate(manyPlan, letterSettings, majalla, fontBytes, logoBytes).Length > 1000, "Sakkal group letter with 40 verified table rows");
+        var customFont = settingsStore.SaveGroupFont(snapshot, selectionUpdate, majalla);
+        Check(GroupLetterFont.Read(settingsStore.Load(snapshot).Snapshot)!.AsSpan().SequenceEqual(majalla), "Sakkal font persists with settings");
+        var afterFontSettings = settingsStore.SaveGroupSettings(snapshot, customFont, TransferGroup.Rafidain, letterSettings with { First = "عضو خط تجريبي" }, false, new HashSet<string> { "committeeFirst" });
+        var fontBackup = Path.Combine(root, "font-backup.zip"); ReconciliationBackupExport.Write(afterFontSettings.Snapshot, [], fontBackup);
+        Check(GroupLetterFont.Read(BackupReader.Read(fontBackup))!.AsSpan().SequenceEqual(majalla), "Sakkal font is preserved after settings change and backup");
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_MAJALLA_PDF") is { Length: > 0 } majallaPdf) File.WriteAllBytes(majallaPdf, GroupLetterPdf.Generate(groupLetter, GroupLetterSettingsReader.Read(customFont.Snapshot, TransferGroup.Rafidain), majalla, fontBytes, logoBytes));
+    }
+    try { _ = GroupLetterPreparation.Prepare(transfer with { Entries = [entry with { MissingAmounts = 1 }] }, TransferGroup.Rafidain, new DateOnly(2026, 10, 31)); throw new InvalidOperationException("invalid group letter accepted"); }
+    catch (InvalidDataException) { }
     Check(!bytes.AsSpan().StartsWith(new byte[] { 0xef, 0xbb, 0xbf }) && !csv.EndsWith('\n') &&
           csv.Contains("20261031300001|20261031|دافع وهمي|IQ06TEST123000000000001|2500|IQD|TESTIQBAAAA|جهة تحويل وهمية|IQ76TEST123000000000002|استقطاعات أيلول 2026|SLEV", StringComparison.Ordinal), "Rafidain CSV format");
     var localDirectory = Path.Combine(root, "local-data");

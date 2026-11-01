@@ -412,6 +412,28 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
+    private async void OpenGroupLetter(object sender, RoutedEventArgs e)
+    {
+        var plan = preparedTransfer; var active = snapshot; var original = baseSnapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState; var group = CurrentTransferGroup;
+        if (plan is null || active is null || original is null || root is null || payroll is null || links is null || !ReferenceEquals(active, preparedSource) || plan.Month != SelectedMonth || group is not (TransferGroup.Rafidain or TransferGroup.OtherBanks))
+        { MessageBox.Show(this, "اختر مجموعة الرافدين أو رشيد وانتظر اكتمال مراجعة بياناتها.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        try
+        {
+            var letter = await Task.Run(() => {
+                if (payrollStore.Load(root).Revision != payroll.Revision || linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت بيانات التحويل؛ أعد فتح النسخة.");
+                return GroupLetterPreparation.Prepare(plan, group, DateOnly.FromDateTime(DateTime.Now));
+            });
+            if (!ReferenceEquals(active, snapshot) || plan.Month != SelectedMonth || group != CurrentTransferGroup) { MessageBox.Show(this, "تغيّر الشهر أو المجموعة؛ أعد فتح الكتاب.", "كتاب المجموعة"); return; }
+            bool PayrollCurrent() => payrollStore.Load(root).Revision == payroll.Revision;
+            var window = new GroupLetterWindow(original, links, linkStore, letter, PayrollCurrent) { Owner = this };
+            window.ShowDialog();
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) return;
+            if (!PayrollCurrent()) { MessageBox.Show(this, "تغيّرت بيانات الأشهر؛ أعد فتح النسخة لمراجعتها.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException or DllNotFoundException or TypeInitializationException)
+        { MessageBox.Show(this, "تعذّر إعداد كتاب المجموعة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
 
     private sealed record BankRow(string Title, string Value);
     private void OpenReconciliation(object sender, RoutedEventArgs e)

@@ -96,7 +96,7 @@
             <Button x:Name="TransferExport" Style="{StaticResource ActionButton}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
             <Button Content="ربط حساب الجهة المختارة" Click="LinkTransferAccount" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="تحديد مجموعة الجهة" Click="ClassifyTransfer" Padding="16,10" Margin="12,0,0,0"/>
-            <Button Content="كتاب المجموعة · قيد التطوير" IsEnabled="False" Padding="16,10" Margin="12,0,0,0"/>
+            <Button Content="كتاب المجموعة · مسودة PDF" Click="OpenGroupLetter" Padding="16,10" Margin="12,0,0,0"/>
           </StackPanel>
         </Grid>
         <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">

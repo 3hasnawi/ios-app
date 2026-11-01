@@ -16,14 +16,16 @@ public static class ReconciliationPdf
     private static string[] Runs(string text)
     {
         if (!text.Any(c => c is >= '\u0600' and <= '\u08ff')) return [text];
-        return Regex.Split(text, @"([A-Za-z0-9]+(?:[ .,/:-]+[A-Za-z0-9]+)*)").Where(part => part.Length > 0).ToArray();
+        return Regex.Split(text, @"([A-Za-z0-9٠-٩۰-۹]+(?:[ .,/:-]+[A-Za-z0-9٠-٩۰-۹]+)*)").Where(part => part.Length > 0).ToArray();
     }
-    private static float Width(string text, SKShaper shaper, SKPaint paint) => Runs(text).Sum(run => shaper.Shape(run, paint).Width);
-    private static void DrawRight(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float right, float y)
+    private static string ShapeRun(string run) => run.Any(c => c is >= '٠' and <= '٩' or >= '۰' and <= '۹') && !run.Any(char.IsAsciiLetter)
+        ? string.Concat(run.EnumerateRunes().Reverse()) : run;
+    internal static float Width(string text, SKShaper shaper, SKPaint paint) => Runs(text).Sum(run => shaper.Shape(ShapeRun(run), paint).Width);
+    internal static void DrawRight(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float right, float y)
     {
-        foreach (var run in Runs(text)) { var width = shaper.Shape(run, paint).Width; canvas.DrawShapedText(shaper, run, right - width, y, paint); right -= width; }
+        foreach (var run in Runs(text)) { var value = ShapeRun(run); var width = shaper.Shape(value, paint).Width; canvas.DrawShapedText(shaper, value, right - width, y, paint); right -= width; }
     }
-    private static List<string> Wrap(string value, SKShaper shaper, SKPaint paint, float width)
+    internal static List<string> Wrap(string value, SKShaper shaper, SKPaint paint, float width)
     {
         var result = new List<string>(); var line = "";
         foreach (var word in value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -43,7 +45,7 @@ public static class ReconciliationPdf
         if (line.Length > 0) result.Add(line);
         return result.Count == 0 ? [""] : result;
     }
-    private static void Fit(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float left, float right, float baseline, bool rightAlign = false)
+    internal static void Fit(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float left, float right, float baseline, bool rightAlign = false)
     {
         var size = paint.TextSize;
         while (Width(text, shaper, paint) > right - left - 6 && paint.TextSize > 7) paint.TextSize -= 0.5f;
