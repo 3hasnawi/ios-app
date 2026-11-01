@@ -47,6 +47,10 @@ internal sealed class UiPreferences
     public bool ServerPending { get; set; }
     /// تاريخ نسخة السيرفر التي رفعها هذا الجهاز أو استرجعها آخر مرة؛ نسخة أحدث منه تعني أن جهازاً آخر (الآيفون) رفع بعده.
     public DateTimeOffset? ServerSeen { get; set; }
+    /// تنبيه «نسخة أحدث على السيرفر» (مثل إشعار الآيفون): فحص دوري كل ربع ساعة، وحالته ونصه للجرس.
+    public bool ServerNotify { get; set; } = true;
+    public bool ServerNewer { get; set; }
+    public string? ServerNewerText { get; set; }
     public string? BackupPlace { get; set; }
 
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");

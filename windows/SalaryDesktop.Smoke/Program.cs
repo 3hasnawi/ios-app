@@ -276,8 +276,11 @@ static class Program
                     await Task.Delay(1000);
                     Check(((FrameworkElement)main.FindName("BellBadge")).Visibility == Visibility.Visible && ((TextBlock)main.FindName("BellCount")).Text != "0", "notification bell badge was not shown");
                     Shot(main, "29-bell");
+                    ((TextBlock)main.FindName("ServerNewerText")).Text = "رفع جهاز آخر نسخة جديدة اليوم 21:15 (14.2 ميغابايت). استرجعها قبل النسخ من ويندوز.";
+                    ((FrameworkElement)main.FindName("ServerNewerCard")).Visibility = Visibility.Visible;
                     ((FrameworkElement)main.FindName("NotificationPanel")).Visibility = Visibility.Visible;
                     await Task.Delay(300); Shot(main, "29-backup-reminder");
+                    ((FrameworkElement)main.FindName("ServerNewerCard")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)main.FindName("NotificationPanel")).Visibility = Visibility.Collapsed;
                     ((FrameworkElement)main.FindName("UpdateCard")).Visibility = Visibility.Collapsed;
                     // القفل: طبقة تغطي النوافذ المفتوحة وتعطّل محتواها حتى إدخال كلمة السر.

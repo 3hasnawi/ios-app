@@ -14,7 +14,7 @@ public partial class MainWindow
     private int shownNotifications;
     private bool notificationsHooked;
 
-    private Border[] NotificationCards => [BackupReminder, BackupSetupCard, UpdateCard, AuditNoticeCard];
+    private Border[] NotificationCards => [ServerNewerCard, BackupReminder, BackupSetupCard, UpdateCard, AuditNoticeCard];
 
     private void HookNotifications()
     {
@@ -37,7 +37,7 @@ public partial class MainWindow
     {
         if (BellBadge is null) return;
         var count = NotificationCards.Count(c => c.Visibility == Visibility.Visible);
-        var warning = BackupReminder.Visibility == Visibility.Visible || BackupSetupCard.Visibility == Visibility.Visible;
+        var warning = ServerNewerCard.Visibility == Visibility.Visible || BackupReminder.Visibility == Visibility.Visible || BackupSetupCard.Visibility == Visibility.Visible;
         NoNotifications.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
         BellBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         BellCount.Text = count.ToString(Numbers);
@@ -63,6 +63,11 @@ public partial class MainWindow
     {
         if (BackupSetupCard is null) return;
         var saved = UiPreferences.Current;
+        // نسخة أحدث على السيرفر: بطاقة مستقلة مع زر الاسترجاع، وتُغني عن بطاقة «فشل آخر نسخ».
+        var newer = saved.ServerNewer && ServerReady;
+        ServerNewerText.Text = saved.ServerNewerText ?? "رفع جهاز آخر نسخة جديدة. استرجعها قبل النسخ من ويندوز.";
+        ServerNewerCard.Visibility = newer ? Visibility.Visible : Visibility.Collapsed;
+        if (newer) { BackupSetupCard.Visibility = Visibility.Collapsed; return; }
         if (snapshot is null) { BackupSetupCard.Visibility = Visibility.Collapsed; return; }
         if (saved.BackupError is { } error)
         {

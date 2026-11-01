@@ -53,6 +53,7 @@ public partial class MainWindow
             if (!ServerAddressBox.IsKeyboardFocusWithin) ServerAddressBox.Text = saved.ServerAddress ?? "";
             if (!ServerTokenBox.IsKeyboardFocusWithin && ServerTokenBox.Password.Length == 0) ServerTokenBox.Password = ServerToken;
             ServerEnabledBox.IsChecked = saved.ServerEnabled;
+            ServerNotifyBox.IsChecked = saved.ServerNotify;
         }
         finally { syncingServer = false; }
         RestoreServerButton.IsEnabled = ServerConfigured && !loading;
@@ -63,7 +64,7 @@ public partial class MainWindow
         if (syncingServer || BackupServicePicker.SelectedItem is not ListBoxItem { Tag: string service }) return;
         UiPreferences.Current.BackupService = service;
         // اختيار الملف يوقف السيرفر كما في الآيفون؛ واختيار السيرفر لا يفعّله حتى تُحفظ إعداداته.
-        if (service == "file") UiPreferences.Current.ServerEnabled = false;
+        if (service == "file") { UiPreferences.Current.ServerEnabled = false; UiPreferences.Current.ServerNewer = false; }
         SaveSettings("خدمة النسخ"); ShowBackupSettings(); RefreshBackupSetupNotice();
     }
 
@@ -76,7 +77,7 @@ public partial class MainWindow
         { Ui.Message(this, "أدخل رمز الوصول نفسه المضبوط في إضافة Home Assistant (٣٢ حرفاً إنجليزياً على الأقل بلا مسافات).", "سيرفر النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         var saved = UiPreferences.Current; var previousToken = ServerToken;
         if (!SaveServerToken(token)) { Ui.Message(this, "تعذّر حفظ رمز الوصول بشكل آمن على هذا الجهاز.", "سيرفر النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-        if (saved.ServerAddress != (address.Length > 0 ? address : null) || previousToken != token) saved.ServerSeen = null;
+        if (saved.ServerAddress != (address.Length > 0 ? address : null) || previousToken != token) { saved.ServerSeen = null; saved.ServerNewer = false; }
         if (enabled && (!saved.ServerEnabled || saved.ServerAddress != address || previousToken != token)) saved.ServerPending = true;
         saved.ServerAddress = address.Length > 0 ? address : null; saved.ServerEnabled = enabled; saved.BackupService = "server";
         if (enabled) saved.BackupError = null;
@@ -92,10 +93,7 @@ public partial class MainWindow
         if (url is null) return;
         BackupServerStatus status;
         try { status = await BackupServer.Status(ServerHttp, url, token); }
-        catch (InvalidDataException ex) { Ui.Message(this, "حُفظت الإعدادات، لكن تعذّر الاتصال بالسيرفر الآن.
-" + ex.Message + "
-
-لن يُرفع شيء قبل التحقق من نسخة السيرفر.", "سيرفر النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+        catch (InvalidDataException ex) { Ui.Message(this, "حُفظت الإعدادات، لكن تعذّر الاتصال بالسيرفر الآن.\n" + ex.Message + "\n\nلن يُرفع شيء قبل التحقق من نسخة السيرفر.", "سيرفر النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         if (status.Latest is not { } latest)
         {
             if (snapshot is not null) await BackupToFile(true);
@@ -104,13 +102,67 @@ public partial class MainWindow
         UiPreferences.Current.ServerPending = false; UiPreferences.Save();
         if (UiPreferences.Current.ServerSeen is { } seen && latest <= seen.AddSeconds(2)) return;
         var answer = Ui.Message(this,
-            $"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)})، غالباً من الآيفون. لم يُرفع شيء فوقها.
-
-نعم: نزّلها وافتحها هنا الآن (يُنصح بها إذا كانت نسخة الآيفون أحدث).
-لا: أبقِ بيانات ويندوز؛ لن يُرفع إلى السيرفر تلقائياً حتى تسترجع نسخته أو تؤكد الاستبدال من «نسخ الآن».",
+            $"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)})، غالباً من الآيفون. لم يُرفع شيء فوقها.\n\nنعم: نزّلها وافتحها هنا الآن (يُنصح بها إذا كانت نسخة الآيفون أحدث).\nلا: أبقِ بيانات ويندوز؛ لن يُرفع إلى السيرفر تلقائياً حتى تسترجع نسخته أو تؤكد الاستبدال من «نسخ الآن».",
             "نسخة موجودة على السيرفر", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Yes) await RestoreServerCopy();
+        else MarkServerNewer($"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)}). لم يُرفع شيء فوقها؛ استرجعها أولاً.");
     }
+
+    // ——— «نسخة أحدث على السيرفر» (مطابق للآيفون) ———
+    private static bool IsNewer(BackupServerStatus status) =>
+        status.Latest is { } latest && (UiPreferences.Current.ServerSeen is not { } seen || latest > seen.AddSeconds(2));
+    private string When(BackupServerStatus status) => status.Latest is { } latest ? $"{Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)})" : "";
+
+    private void MarkServerNewer(string text)
+    {
+        var saved = UiPreferences.Current;
+        saved.ServerNewer = true; saved.ServerNewerText = text; UiPreferences.Save();
+        RefreshBackupSetupNotice();
+    }
+    private void ClearServerNewer()
+    {
+        UiPreferences.Current.ServerNewer = false; UiPreferences.Current.ServerNewerText = null;
+    }
+
+    /// أول ربط لم يُحسم بعد والسيرفر فيه نسخة: لا رفع فوقها (البند ٣ في AGENTS.md ٨.١).
+    private bool FirstLinkBlocked(BackupServerStatus status)
+    {
+        if (!UiPreferences.Current.ServerPending || status.Count == 0) return false;
+        UiPreferences.Current.ServerPending = false;
+        MarkServerNewer($"على السيرفر نسخة رُفعت {When(status)}. لم يُرفع شيء فوقها؛ استرجعها أولاً.");
+        return true;
+    }
+
+    /// فحص دوري (كل ربع ساعة أثناء تشغيل البرنامج) لنسخة رفعها جهاز آخر؛ النتيجة تظهر في جرس الإشعارات.
+    private DateTime? serverChecked;
+    private async Task CheckServerNewer(bool force = false)
+    {
+        var saved = UiPreferences.Current;
+        if (!ServerReady || !saved.ServerNotify || saved.ServerPending || backingUp || App.Unattended) return;
+        if (!force && serverChecked is { } last && DateTime.Now - last < TimeSpan.FromMinutes(15)) return;
+        serverChecked = DateTime.Now;
+        var url = BackupServer.Url(saved.ServerAddress); var token = ServerToken; var address = saved.ServerAddress;
+        if (url is null) return;
+        try
+        {
+            var status = await BackupServer.Status(ServerHttp, url, token);
+            // تغيّرت الإعدادات أو بدأ نسخ أثناء الفحص: تُهمل النتيجة.
+            if (backingUp || !ServerReady || UiPreferences.Current.ServerAddress != address || ServerToken != token) return;
+            if (IsNewer(status)) { if (!saved.ServerNewer) MarkServerNewer($"رفع جهاز آخر نسخة جديدة {When(status)}. استرجعها قبل النسخ من ويندوز."); }
+            else if (saved.ServerNewer) { ClearServerNewer(); UiPreferences.Save(); RefreshBackupSetupNotice(); }
+        }
+        catch (InvalidDataException) { /* انقطاع السيرفر لا يُنشئ تنبيهاً كاذباً. */ }
+    }
+
+    private void ServerNotifyChanged(object sender, RoutedEventArgs e)
+    {
+        if (syncingServer) return;
+        UiPreferences.Current.ServerNotify = ServerNotifyBox.IsChecked == true;
+        if (!UiPreferences.Current.ServerNotify) ClearServerNewer();
+        SaveSettings("إشعار النسخة الأحدث"); RefreshBackupSetupNotice();
+        if (UiPreferences.Current.ServerNotify) _ = CheckServerNewer(true);
+    }
+    private async void RestoreFromNotification(object sender, RoutedEventArgs e) { NotificationPanel.Visibility = Visibility.Collapsed; await RestoreServerCopy(); }
 
     private async void TestServer(object sender, RoutedEventArgs e)
     {
@@ -142,18 +194,18 @@ public partial class MainWindow
             await BackupServer.CheckReachability(ServerHttp, url);
             // لا تُستبدل نسخة رفعها جهاز آخر بعد آخر رفع أو استرجاع من هذا الجهاز دون علمك.
             var current = await BackupServer.Status(ServerHttp, url, token);
-            if (current.Latest is { } latest && (UiPreferences.Current.ServerSeen is not { } seen || latest > seen.AddSeconds(2)))
+            if (FirstLinkBlocked(current)) throw new InvalidDataException(UiPreferences.Current.ServerNewerText!);
+            DateTimeOffset? approved = null;
+            if (IsNewer(current))
             {
-                var when = $"{Ago(latest.LocalDateTime)} ({SizeText(current.Bytes)})";
-                if (!manual) throw new InvalidDataException($"على السيرفر نسخة أحدث من جهاز آخر (الآيفون غالباً) رُفعت {when}؛ استرجعها من «استرجاع من السيرفر» قبل رفع نسخة ويندوز.");
+                var when = When(current);
+                var reason = $"على السيرفر نسخة أحدث من جهاز آخر (الآيفون غالباً) رُفعت {when}؛ استرجعها من «استرجاع من السيرفر» قبل رفع نسخة ويندوز.";
+                if (!manual) { MarkServerNewer(reason); throw new InvalidDataException(reason); }
                 var replace = Ui.Message(this,
-                    $"على السيرفر نسخة رُفعت {when} من جهاز آخر (الآيفون غالباً) بعد آخر نسخة رفعها أو استرجعها هذا الجهاز.
-استبدالها بنسخة ويندوز قد يُضيّع تعديلات الآيفون.
-
-نعم: استبدلها بنسخة ويندوز.
-لا: إلغاء، ثم «استرجاع من السيرفر» (موصى به).",
+                    $"على السيرفر نسخة رُفعت {when} من جهاز آخر (الآيفون غالباً) بعد آخر نسخة رفعها أو استرجعها هذا الجهاز.\nاستبدالها بنسخة ويندوز قد يُضيّع تعديلات الآيفون.\n\nنعم: استبدلها بنسخة ويندوز.\nلا: إلغاء، ثم «استرجاع من السيرفر» (موصى به).",
                     "نسخة أحدث على السيرفر", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (replace != MessageBoxResult.Yes) { StatusBar.Text = "لم يُرفع شيء؛ نسخة السيرفر أحدث. استرجعها من الإعدادات ← النسخ الاحتياطي."; return false; }
+                if (replace != MessageBoxResult.Yes) { MarkServerNewer(reason); StatusBar.Text = "لم يُرفع شيء؛ نسخة السيرفر أحدث. استرجعها من الإعدادات ← النسخ الاحتياطي."; return false; }
+                approved = current.Latest;
             }
             var prepared = await Task.Run(() =>
             {
@@ -165,12 +217,20 @@ public partial class MainWindow
                 if (source.Months.Any(m => !written.Months.Any(w => w.Name == m.Name))) throw new InvalidDataException("تعذّر التحقق من النسخة بعد تجهيزها.");
                 return (Ledger: ledger.Revision, Size: new FileInfo(temporary).Length);
             });
+            // فحص ثانٍ بعد تجهيز الملف (مثل الآيفون): التأكيد اليدوي لا يشمل نسخة رُفعت أثناء التجهيز.
+            var beforeUpload = await BackupServer.Status(ServerHttp, url, token);
+            if (FirstLinkBlocked(beforeUpload)) throw new InvalidDataException(UiPreferences.Current.ServerNewerText!);
+            if (IsNewer(beforeUpload) && beforeUpload.Latest != approved)
+            {
+                var reason = $"رُفعت إلى السيرفر نسخة أحدث من جهاز آخر {When(beforeUpload)} أثناء تجهيز نسخة ويندوز؛ لم يُرفع شيء. استرجعها أولاً.";
+                MarkServerNewer(reason); throw new InvalidDataException(reason);
+            }
             var size = await BackupServer.Upload(ServerHttp, url, token, temporary);
             if (size != prepared.Size) throw new InvalidDataException("حجم النسخة على السيرفر لا يطابق الملف المرفوع؛ أعد المحاولة.");
             var changed = await Task.Run(() => linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != prepared.Ledger);
             if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, prepared.Ledger);
             var saved = UiPreferences.Current;
-            saved.BackupLast = DateTime.Now; saved.BackupError = null; saved.ServerPending = false; saved.BackupPlace = BackupServer.Place;
+            saved.BackupLast = DateTime.Now; saved.BackupError = null; saved.ServerPending = false; saved.BackupPlace = BackupServer.Place; ClearServerNewer();
             try { saved.ServerSeen = (await BackupServer.Status(ServerHttp, url, token)).Latest ?? DateTimeOffset.UtcNow; }
             catch (InvalidDataException) { saved.ServerSeen = DateTimeOffset.UtcNow; }
             UiPreferences.Save();
@@ -202,11 +262,17 @@ public partial class MainWindow
         RestoreServerButton.IsEnabled = false; BeginLoading("*", "جارٍ تنزيل النسخة من السيرفر…");
         try
         {
-            var latest = (await BackupServer.Status(ServerHttp, url, token)).Latest;
+            var latest = (await BackupServer.Status(ServerHttp, url, token)).Latest ?? throw new InvalidDataException("لا توجد نسخة على السيرفر بعد.");
             await BackupServer.DownloadLatest(ServerHttp, url, token, temporary);
+            // لا يُنسب التنزيل إلى تاريخ نسخة تغيّرت أثناء النقل (مثل الآيفون).
+            if ((await BackupServer.Status(ServerHttp, url, token)).Latest != latest) throw new InvalidDataException("تغيّرت نسخة السيرفر أثناء التنزيل؛ أعد المحاولة.");
             EndLoading("*");
             // بعد فتحها هنا يصبح هذا الجهاز على آخر نسخة، فيُسمح بالرفع بعد ذلك.
-            if (await OpenBackupFile(temporary)) { UiPreferences.Current.ServerSeen = latest ?? DateTimeOffset.UtcNow; UiPreferences.Current.BackupError = null; UiPreferences.Save(); RefreshBackupSetupNotice(); }
+            if (await OpenBackupFile(temporary))
+            {
+                var saved = UiPreferences.Current;
+                saved.ServerSeen = latest; saved.BackupError = null; saved.ServerPending = false; ClearServerNewer(); UiPreferences.Save(); RefreshBackupSetupNotice();
+            }
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         { Ui.Message(this, "تعذّر تنزيل النسخة من السيرفر.\n" + ex.Message, "استرجاع من السيرفر", MessageBoxButton.OK, MessageBoxImage.Warning); }

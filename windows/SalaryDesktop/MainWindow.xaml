@@ -466,7 +466,8 @@
                         <TextBlock Grid.Row="2" Text="رمز الوصول" VerticalAlignment="Center"/>
                         <PasswordBox x:Name="ServerTokenBox" Grid.Row="2" Grid.Column="1" Height="34" VerticalContentAlignment="Center" FlowDirection="LeftToRight" MaxWidth="360" HorizontalAlignment="Left" Width="360" ToolTip="الرمز نفسه في إعدادات إضافة Home Assistant وفي الآيفون (٣٢ حرفاً على الأقل)"/>
                       </Grid>
-                      <CheckBox x:Name="ServerEnabledBox" Content="تفعيل النسخ إلى السيرفر" Margin="0,12,0,10"/>
+                      <CheckBox x:Name="ServerEnabledBox" Content="تفعيل النسخ إلى السيرفر" Margin="0,12,0,6"/>
+                      <CheckBox x:Name="ServerNotifyBox" Content="إشعار عند وجود نسخة أحدث على السيرفر (يظهر في جرس الإشعارات)" Click="ServerNotifyChanged" Margin="0,0,0,10"/>
                       <WrapPanel>
                         <Button Style="{StaticResource ActionButton}" Content="حفظ إعدادات السيرفر" Click="SaveServerSettings" Margin="0,0,8,0"/>
                         <Button x:Name="TestServerButton" Content="اختبار الاتصال" Click="TestServer"/>
@@ -618,6 +619,14 @@
           </DockPanel>
           <ScrollViewer MaxHeight="520" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+          <!-- نسخة أحدث على السيرفر رفعها جهاز آخر (الآيفون). -->
+          <Border x:Name="ServerNewerCard" Background="{DynamicResource WarnSoft}" BorderBrush="{DynamicResource WarnLine}" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
+            <StackPanel>
+              <DockPanel><TextBlock Style="{StaticResource Icon}" Text="&#xE895;" Foreground="{DynamicResource Warn}" FontSize="14" Margin="0,0,7,0" DockPanel.Dock="Left"/><TextBlock Text="نسخة أحدث على السيرفر" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource Warn}" FontSize="12.5"/></DockPanel>
+              <TextBlock x:Name="ServerNewerText" FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,8"/>
+              <Button Style="{StaticResource ActionButton}" Content="استرجاع من السيرفر" Click="RestoreFromNotification" Padding="12,6"/>
+            </StackPanel>
+          </Border>
           <!-- تنبيه الإصدار الأحدث من صفحة الإصدارات. -->
           <Border x:Name="UpdateCard" Background="{DynamicResource AccentSoft}" CornerRadius="10" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
             <StackPanel>

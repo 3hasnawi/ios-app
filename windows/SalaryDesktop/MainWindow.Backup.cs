@@ -21,6 +21,7 @@ public partial class MainWindow
         backupTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
         backupTimer.Tick += async (_, _) =>
         {
+            await CheckServerNewer();
             var saved = UiPreferences.Current;
             var interval = saved.BackupSchedule switch { "hourly" => TimeSpan.FromHours(1), "daily" => TimeSpan.FromDays(1), _ => (TimeSpan?)null };
             if (!HasBackupDestination || snapshot is null || loading || importing || backingUp) return;
