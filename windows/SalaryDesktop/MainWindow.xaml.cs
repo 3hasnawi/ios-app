@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive";
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = page switch
         {
@@ -210,6 +211,29 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(this, $"تعذّر فتح الكتاب.\n{ex.Message}", "الأرشيف", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+    private async void ImportAccounts(object sender, RoutedEventArgs e)
+    {
+        var original = baseSnapshot; var active = snapshot; var links = linkState;
+        if (original is null || active is null || links is null) { MessageBox.Show(this, "افتح نسخة الآيفون أولاً لاستيراد الحسابات إليها.", "استيراد الحسابات"); return; }
+        var dialog = new OpenFileDialog { Title = "اختيار ملف حسابات الجهات", Filter = "ملف Excel (*.xlsx)|*.xlsx", CheckFileExists = true, Multiselect = false };
+        if (dialog.ShowDialog(this) != true) return;
+        var path = dialog.FileName; AccountImportButton.IsEnabled = false;
+        try
+        {
+            var preview = await Task.Run(() => AccountSpreadsheet.Read(path));
+            if (!ReferenceEquals(active, snapshot)) { MessageBox.Show(this, "تغيّرت النسخة المفتوحة؛ أعد اختيار ملف الحسابات.", "استيراد الحسابات"); return; }
+            var review = new AccountImportReviewWindow(preview) { Owner = this };
+            if (review.ShowDialog() != true) return;
+            var updated = await Task.Run(() => linkStore.ImportAccounts(original, links, preview));
+            if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
+            { MessageBox.Show(this, "حُفظت الحسابات للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage();
+            MessageBox.Show(this, "حُفظت الحسابات محلياً بعد فحصها. راجع تصنيف الجهات واحفظ نسخة احتياطية تشمل التعديلات.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { AccountImportButton.IsEnabled = true; }
     }
 
     private async void ExportBackup(object sender, RoutedEventArgs e)

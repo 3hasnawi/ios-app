@@ -16,6 +16,19 @@ static void Entry(ZipArchive zip, string name, string text)
     writer.Write(text);
 }
 static string Lines<T>(IEnumerable<T> values) => string.Concat(values.Select(v => JsonSerializer.Serialize(v) + "\n"));
+static void MakeAccountXlsx(string path, string iban, bool numeric = false, bool duplicate = false)
+{
+    using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+    Entry(zip, "[Content_Types].xml", "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>");
+    Entry(zip, "_rels/.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+    Entry(zip, "xl/workbook.xml", "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"حسابات تجريبية\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+    Entry(zip, "xl/_rels/workbook.xml.rels", "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>");
+    string Cell(string reference, string value) => $"<c r=\"{reference}\" t=\"inlineStr\"><is><t>{System.Security.SecurityElement.Escape(value)}</t></is></c>";
+    var valueCell = numeric ? $"<c r=\"B2\"><v>{iban}</v></c>" : Cell("B2", iban);
+    var row2 = $"<row r=\"2\">{Cell("A2", "جهة جديدة وهمية")}{valueCell}{Cell("C2", "الرشيد فرع وهمي")}{Cell("D2", "TESTIQBAAAA")}</row>";
+    var row3 = duplicate ? $"<row r=\"3\">{Cell("A3", "جهة جديدة وهمية")}{Cell("B3", iban)}</row>" : "";
+    Entry(zip, "xl/worksheets/sheet1.xml", $"<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData><row r=\"1\">{Cell("A1", "جهة التنفيذ")}{Cell("B1", "IBAN")}{Cell("C1", "الفرع")}{Cell("D1", "SWIFT")}</row>{row2}{row3}</sheetData></worksheet>");
+}
 static void MakeBackup(string path, bool wrongCount = false, bool duplicate = false, bool omitPdf = false, bool omitRecentMonth = false, bool brokenLedger = false)
 {
     using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -156,6 +169,26 @@ try
     var invalidBank = BankStatementCalculator.Calculate(snapshot with { Employees = new[] { incompleteContract with { RawColumns = invalidRaw } } }, "أيلول 2026");
     Check(invalidBank.TransferWarnings.Any(w => w.Contains("غير صالحة", StringComparison.Ordinal)), "invalid original payroll source blocks transfer");
     const string fakePayer = "IQ06TEST123000000000001", fakeReceiver = "IQ76TEST123000000000002";
+    var xlsx = Path.Combine(root, "accounts.xlsx"); MakeAccountXlsx(xlsx, fakeReceiver);
+    var accountPreview = AccountSpreadsheet.Read(xlsx);
+    Check(accountPreview.Problems.Count == 0 && accountPreview.Accounts.Single().Iban == fakeReceiver, "text IBAN spreadsheet read");
+    var numericXlsx = Path.Combine(root, "numeric.xlsx"); MakeAccountXlsx(numericXlsx, "123456789012345", numeric: true);
+    Check(AccountSpreadsheet.Read(numericXlsx).Problems.Single().Message.Contains("كنص", StringComparison.Ordinal), "numeric account cell is not guessed");
+    var duplicateXlsx = Path.Combine(root, "duplicate-accounts.xlsx"); MakeAccountXlsx(duplicateXlsx, fakeReceiver, duplicate: true);
+    Check(AccountSpreadsheet.Read(duplicateXlsx).Problems.Any(p => p.Message.Contains("مكرر", StringComparison.Ordinal)), "duplicate account rows reported");
+    var importStore = new LocalTransferLinks(Path.Combine(root, "xlsx-import")); var beforeImport = importStore.Load(snapshot);
+    var importedAccounts = importStore.ImportAccounts(snapshot, beforeImport, accountPreview);
+    Check(importedAccounts.Snapshot.Accounts.Count == snapshot.Accounts.Count + 1 && importStore.Load(snapshot).Snapshot.Accounts.Last().Iban == fakeReceiver, "spreadsheet accounts merge and persist");
+    var importedLinkEntry = TransferPreparation.Prepare(importedAccounts.Snapshot, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية");
+    var importedLinked = importStore.SaveLink(snapshot, importedAccounts, importedLinkEntry, importedAccounts.Snapshot.Accounts.Last());
+    Check(TransferPreparation.Prepare(importedLinked.Snapshot, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية") is { Group: TransferGroup.OtherBanks, Account.Iban: fakeReceiver }, "imported account links to deduction and changes group");
+    try { _ = importStore.ImportAccounts(snapshot, importedLinked, AccountSpreadsheet.Read(numericXlsx)); throw new InvalidOperationException("invalid account import accepted"); }
+    catch (InvalidDataException) { }
+    Check(importStore.Load(snapshot).Revision == importedLinked.Revision, "failed spreadsheet import preserves accounts");
+    var importBackupPath = Path.Combine(root, "imported-accounts.zip"); ReconciliationBackupExport.Write(importedLinked.Snapshot, [], importBackupPath);
+    var importRestored = BackupReader.Read(importBackupPath);
+    Check(importRestored.Accounts.Last().Iban == fakeReceiver && importRestored.Accounts.Count == snapshot.Accounts.Count + 1 &&
+          TransferPreparation.Prepare(importRestored, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية").Account?.Iban == fakeReceiver, "imported account and link survive backup export");
     var transferAccount = new ExecutionAccount("جهة تحويل وهمية", fakeReceiver, "مصرف الرافدين فرع تجريبي", "TESTIQBAAAA", null);
     Check(TransferPreparation.ValidIban(fakePayer) && TransferPreparation.ValidIban(fakeReceiver) && !TransferPreparation.ValidIban("IQ00") && TransferPreparation.ValidSwift("TESTIQBAAAA"), "transfer IBAN and BIC checks");
     Check(TransferPreparation.Classify(transferAccount) == TransferGroup.Rafidain &&

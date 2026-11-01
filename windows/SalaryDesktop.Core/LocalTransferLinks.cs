@@ -88,14 +88,15 @@ public sealed class LocalTransferLinks(string directory)
     }
     private static void ValidateAccounts(BackupSnapshot source, IReadOnlyList<ExecutionAccount> accounts)
     {
-        if (accounts.Count != source.Accounts.Count || accounts.Select(a => PayrollAnalysis.Normalize(a.Entity)).Distinct(StringComparer.Ordinal).Count() != accounts.Count ||
-            !accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Select(a => a.Entity)) || accounts.Any(a => a.Entity is null || a.Iban is null || a.Branch is null || a.Swift is null))
+        if (accounts.Any(a => a is null || a.Entity is null || a.Iban is null || a.Branch is null || a.Swift is null) || accounts.Count < source.Accounts.Count ||
+            accounts.Count > 100_000 || accounts.Select(a => PayrollAnalysis.Normalize(a.Entity)).Distinct(StringComparer.Ordinal).Count() != accounts.Count ||
+            !accounts.Take(source.Accounts.Count).Select(a => a.Entity).SequenceEqual(source.Accounts.Select(a => a.Entity)))
             throw new InvalidDataException("قائمة الحسابات المحلية غير صالحة؛ لم تُستبدل البيانات.");
     }
-    public TransferLinksSnapshot SaveAccount(BackupSnapshot source, TransferLinksSnapshot expected, ExecutionAccount old, ExecutionAccount updated)
+    private static ExecutionAccount NormalizeAndValidate(ExecutionAccount updated)
     {
-        if (source.Version < 2) throw new InvalidDataException("إصدار النسخة لا يدعم حفظ الحسابات؛ استورد نسخة أحدث أولاً.");
-        if (old.Entity != updated.Entity) throw new InvalidDataException("لا يمكن تغيير اسم الحساب هنا؛ أعد استيراد قائمة الحسابات لتغيير الأسماء.");
+        if (string.IsNullOrWhiteSpace(updated.Entity) || updated.Entity.Length > 1000 || updated.Branch.Length > 1000 || updated.Entity.Any(char.IsControl) || updated.Branch.Any(char.IsControl))
+            throw new InvalidDataException("اسم الحساب أو المصرف غير صالح.");
         var iban = TransferPreparation.NormalizeAccount(updated.Iban);
         var local = updated.LocalAccount is null || updated.LocalAccount.Length == 0 ? null : TransferPreparation.NormalizeAccount(updated.LocalAccount);
         var normalized = updated with { Iban = iban, LocalAccount = local, Branch = updated.Branch.Trim(), Swift = updated.Swift.Trim().ToUpperInvariant() };
@@ -103,11 +104,42 @@ public sealed class LocalTransferLinks(string directory)
         if (!TransferPreparation.ValidIban(iban) && !(iban.Length == 0 && directLocal && TransferPreparation.LocalAccount(normalized) is not null)) throw new InvalidDataException("IBAN غير صالح، أو الحساب المحلي غير متاح لهذه الجهة.");
         if (normalized.Swift.Length > 0 && !TransferPreparation.ValidSwift(normalized.Swift)) throw new InvalidDataException("رمز SWIFT غير صالح.");
         if (local is not null && TransferPreparation.LocalAccount(normalized) is null) throw new InvalidDataException("الحساب المحلي لا يطابق IBAN أو ليس 15 رقماً.");
+        return normalized;
+    }
+    public TransferLinksSnapshot SaveAccount(BackupSnapshot source, TransferLinksSnapshot expected, ExecutionAccount old, ExecutionAccount updated)
+    {
+        if (source.Version < 2) throw new InvalidDataException("إصدار النسخة لا يدعم حفظ الحسابات؛ استورد نسخة أحدث أولاً.");
+        if (old.Entity != updated.Entity) throw new InvalidDataException("لا يمكن تغيير اسم الحساب هنا؛ أعد استيراد قائمة الحسابات لتغيير الأسماء.");
+        var normalized = NormalizeAndValidate(updated);
         Directory.CreateDirectory(root);
         using var guard = new FileStream(Path.Combine(root, ".links.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var current = Load(source);
         if (current.Revision != expected.Revision || !current.Snapshot.Accounts.Contains(old)) throw new InvalidDataException("تغيّرت بيانات الحساب؛ أعد تحميل القائمة قبل الحفظ.");
         var accounts = current.Snapshot.Accounts.Select(a => a == old ? normalized : a).ToArray(); ValidateAccounts(source, accounts);
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts);
+    }
+    public TransferLinksSnapshot ImportAccounts(BackupSnapshot source, TransferLinksSnapshot expected, AccountImportPreview preview)
+    {
+        if (source.Version < 2 || preview.Problems.Count > 0 || preview.Accounts.Count == 0) throw new InvalidDataException("راجع أخطاء ملف الحسابات قبل الحفظ، وتأكد من استخدام نسخة تدعم الحسابات.");
+        var imported = preview.Accounts.Select(NormalizeAndValidate).ToArray();
+        if (imported.Select(a => PayrollAnalysis.Normalize(a.Entity)).Distinct(StringComparer.Ordinal).Count() != imported.Length) throw new InvalidDataException("توجد حسابات مكررة في الملف.");
+        Directory.CreateDirectory(root);
+        using var guard = new FileStream(Path.Combine(root, ".links.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var current = Load(source);
+        if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت الحسابات في نافذة أخرى؛ أعد فتح الملف قبل الاستيراد.");
+        var accounts = current.Snapshot.Accounts.ToList();
+        var positions = accounts.Select((a, i) => (key: PayrollAnalysis.Normalize(a.Entity), index: i)).ToDictionary(x => x.key, x => x.index, StringComparer.Ordinal);
+        foreach (var account in imported)
+        {
+            var key = PayrollAnalysis.Normalize(account.Entity);
+            if (!positions.TryGetValue(key, out var index)) { positions[key] = accounts.Count; accounts.Add(account); continue; }
+            var old = accounts[index];
+            // يحتفظ الاسم القديم بروابط الجهات، والحقول الفارغة لا تمحو ما سبق حفظه.
+            accounts[index] = NormalizeAndValidate(old with { Iban = account.Iban.Length == 0 ? old.Iban : account.Iban,
+                Branch = account.Branch.Length == 0 ? old.Branch : account.Branch, Swift = account.Swift.Length == 0 ? old.Swift : account.Swift,
+                LocalAccount = account.LocalAccount ?? old.LocalAccount });
+        }
+        ValidateAccounts(source, accounts);
         return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), accounts);
     }
     private TransferLinksSnapshot Write(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts)

@@ -44,7 +44,8 @@ public static class ReconciliationBackupExport
             var original = BackupReader.Read(source.SourcePath);
             if (original.SourceDigest != source.SourceDigest) throw new InvalidDataException("تغيّرت نسخة المصدر؛ لم يُحفظ الملف.");
             var changedAccounts = !original.Accounts.SequenceEqual(source.Accounts);
-            if (changedAccounts && (original.Version < 2 || !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Select(a => a.Entity))))
+            if (changedAccounts && (original.Version < 2 || source.Accounts.Count < original.Accounts.Count ||
+                !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Take(original.Accounts.Count).Select(a => a.Entity))))
                 throw new InvalidDataException("لا يمكن حفظ الحسابات في صيغة النسخة هذه أو مع تغيير أسمائها.");
             using var input = new FileStream(source.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (Convert.ToHexString(SHA256.HashData(input)) != source.SourceDigest) throw new InvalidDataException("تغيّرت نسخة المصدر؛ لم يُحفظ الملف.");
