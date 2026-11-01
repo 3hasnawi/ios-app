@@ -67,9 +67,9 @@ import CryptoKit
         let signaturesRoundTrip = try BankReconciliation.decode(JSONEncoder().encode(BankReconciliation.Ledger(periods: [customSignatures])))
         try check(signaturesRoundTrip.periods == [customSignatures], "reconciliation committee details survive backup")
         try check(BankReconciliation.signatureLines(customSignatures, first: true) == ["رتبة تجريبية", "اسم تجريبي أول", "منصب تجريبي", " / ٦ / ٢٠٢٦"], "reconciliation editable signature lines")
-        let signaturePDF = try await BankReconciliationPDF.make(customSignatures, complete: true)
-        defer { try? FileManager.default.removeItem(at: signaturePDF) }
-        try check(PDFDocument(url: signaturePDF)?.pageCount == 1, "reconciliation custom signatures PDF")
+        let reconciliationSignaturePDF = try await BankReconciliationPDF.make(customSignatures, complete: true)
+        defer { try? FileManager.default.removeItem(at: reconciliationSignaturePDF) }
+        try check(PDFDocument(url: reconciliationSignaturePDF)?.pageCount == 1, "reconciliation custom signatures PDF")
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/٢٧", expected: "27/10/2026"), "reconciliation date extraction accepts reversed components")
         try check(!BankReconciliationPDF.matchesDate("٢٠٢٦/١١/٢٧", expected: "27/10/2026"), "reconciliation date extraction rejects changed dates")
         try check(BankReconciliationPDF.matchesDate("٢٠٢٦/١٠/", expected: "/ ١٠ / ٢٠٢٦"), "signature date extraction")
@@ -99,8 +99,8 @@ import CryptoKit
         defer { try? FileManager.default.removeItem(at: longStatementPDF) }
         try check((PDFDocument(url: longStatementPDF)?.pageCount ?? 0) > 1, "reconciliation PDF paginates without losing rows")
         let ledger = BankReconciliation.Ledger(periods: [statement])
-        let restoredLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
-        try check(restoredLedger.periods == [statement], "bank reconciliation storage roundtrip")
+        let reconciliationLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
+        try check(reconciliationLedger.periods == [statement], "bank reconciliation storage roundtrip")
         let issuanceNames = TransferIssuance.bookNames
         try check(issuanceNames.count == 11 && Set(issuanceNames).count == 11 &&
                   issuanceNames.contains(TransferCategory.rafidain.title) && issuanceNames.contains(TransferCategory.otherBanks.title), "issuance names match transfer groups")
