@@ -2,4 +2,5 @@
   <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup><ProjectReference Include="../SalaryDesktop.Core/SalaryDesktop.Core.csproj" /></ItemGroup>
   <ItemGroup><Content Include="../../SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png" Link="Assets/IraqEmblem.png" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png" Link="Assets/WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Resource Include="Fonts\IBMPlexSansArabic-Regular.ttf" /><Resource Include="Fonts\IBMPlexSansArabic-Medium.ttf" /><Resource Include="Fonts\IBMPlexSansArabic-SemiBold.ttf" /><None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

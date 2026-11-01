@@ -1,6 +1,6 @@
-<Window x:Class="SalaryDesktop.NameListsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="قوائم الأسماء" Width="1050" Height="720" MinWidth="750" MinHeight="500" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" Background="#F1F4F6">
+<Window x:Class="SalaryDesktop.NameListsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="قوائم الأسماء" Width="1050" Height="720" MinWidth="750" MinHeight="500" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{StaticResource AppFont}" Background="#F1F4F6">
   <Grid Margin="24"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock x:Name="Heading" Text="قوائم الأسماء" FontSize="24" FontWeight="Bold"/>
+    <TextBlock x:Name="Heading" Text="قوائم الأسماء" FontSize="24" FontWeight="SemiBold"/>
     <ComboBox x:Name="ListPicker" Grid.Row="1" Height="40" Margin="0,14,0,10" DisplayMemberPath="Title" SelectionChanged="ListChanged"/>
     <TextBlock x:Name="Notice" Grid.Row="2" TextWrapping="Wrap" Foreground="#A76716" Margin="0,0,0,10"/>
     <DataGrid x:Name="Rows" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0" Background="White" GridLinesVisibility="Horizontal" EnableRowVirtualization="True">

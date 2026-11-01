@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="دفتر مطابقة الحساب" Height="700" Width="1100" MinWidth="850" MinHeight="500"
-        WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" Background="#F1F4F6">
+        WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{StaticResource AppFont}" Background="#F1F4F6">
   <Grid Margin="24">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-    <TextBlock FontSize="24" FontWeight="Bold" Text="دفتر مطابقة الحساب"/>
+    <TextBlock FontSize="24" FontWeight="SemiBold" Text="دفتر مطابقة الحساب"/>
     <TextBlock Grid.Row="1" Foreground="#A76716" TextWrapping="Wrap" Margin="0,12" Text="تُحفظ تعديلات المطابقة على هذا الجهاز مرتبطة بالنسخة المفتوحة. لتضمينها في نسخة احتياطية استخدم زر حفظ النسخة أدناه. استيراد نسخة أخرى لا يدمج هذه التعديلات تلقائياً؛ راجع حركات يوم التمويل."/>
     <StackPanel Grid.Row="2">
       <ComboBox x:Name="Periods" Height="38" SelectionChanged="PeriodChanged" DisplayMemberPath="Label"/>

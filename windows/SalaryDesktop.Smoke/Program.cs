@@ -127,6 +127,9 @@ static class Program
             {
                 await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 main = application.MainWindow as MainWindow ?? throw new InvalidOperationException("application did not create its main window");
+                var plex = Fonts.GetFontFamilies(new Uri("pack://application:,,,/SalaryDesktop;component/Fonts/")).FirstOrDefault(f => f.Source.Contains("IBM Plex Sans Arabic", StringComparison.Ordinal));
+                var weights = plex?.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet() ?? [];
+                Check(weights.SetEquals([400, 500, 600]), "embedded IBM Plex Sans Arabic (Regular, Medium, SemiBold) was not found: " + string.Join(",", weights));
                 await Task.Delay(300);
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility == Visibility.Visible, "standalone start was not visible on empty data");
                 typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);

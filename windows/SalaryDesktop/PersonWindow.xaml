@@ -1,5 +1,5 @@
 <Window x:Class="SalaryDesktop.PersonWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ملف المنتسب" Width="1180" Height="780" MinWidth="900" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" FontSize="13.5"
+        Title="ملف المنتسب" Width="1180" Height="780" MinWidth="900" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{StaticResource AppFont}" FontSize="13.5"
         Background="{StaticResource Page}" Foreground="{StaticResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
   <Window.Resources>
     <DataTemplate x:Key="LineTemplate">
@@ -16,10 +16,10 @@
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
       <Border Width="54" Height="54" CornerRadius="14" Background="{StaticResource PrimarySoft}">
-        <TextBlock x:Name="Initial" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        <TextBlock x:Name="Initial" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
       </Border>
       <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
-        <TextBlock x:Name="NameText" FontSize="21" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="NameText" FontSize="21" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
         <TextBlock x:Name="IdentityText" Foreground="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
       </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -45,14 +45,14 @@
           <Border Style="{StaticResource Card}" Margin="0,0,12,0">
             <DockPanel>
               <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="المخصصات" Margin="0,0,0,6"/>
-              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="الاستحقاق" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/><TextBlock x:Name="GrossText" HorizontalAlignment="Right" FontWeight="Bold" Foreground="{StaticResource Primary}"/></Grid></Border>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="الاستحقاق" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/><TextBlock x:Name="GrossText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/></Grid></Border>
               <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="AllowanceList" ItemTemplate="{StaticResource LineTemplate}"/></ScrollViewer>
             </DockPanel>
           </Border>
           <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
             <DockPanel>
               <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="الاستقطاعات" Margin="0,0,0,6"/>
-              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="مجموع الاستقطاعات" FontWeight="SemiBold" Foreground="#B4362A"/><TextBlock x:Name="DeductionTotalText" HorizontalAlignment="Right" FontWeight="Bold" Foreground="#B4362A"/></Grid></Border>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="مجموع الاستقطاعات" FontWeight="SemiBold" Foreground="#B4362A"/><TextBlock x:Name="DeductionTotalText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="#B4362A"/></Grid></Border>
               <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                   <ItemsControl x:Name="DeductionList" ItemTemplate="{StaticResource LineTemplate}"/>
@@ -68,7 +68,7 @@
                 <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush></Border.Background>
                 <StackPanel>
                   <TextBlock x:Name="NetLabel" Text="صافي الراتب" Foreground="#CDE6DF"/>
-                  <TextBlock x:Name="NetText" Text="—" FontSize="30" FontWeight="Bold" Foreground="White" Margin="0,4,0,6"/>
+                  <TextBlock x:Name="NetText" Text="—" FontSize="30" FontWeight="SemiBold" Foreground="White" Margin="0,4,0,6"/>
                   <Border x:Name="DeltaChip" Background="#26FFFFFF" CornerRadius="10" Padding="9,3" HorizontalAlignment="Left"><TextBlock x:Name="DeltaText" Foreground="White" FontSize="12"/></Border>
                 </StackPanel>
               </Border>
