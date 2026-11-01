@@ -444,9 +444,40 @@
                   <TextBlock Style="{StaticResource CardTitle}" Text="النسخ الاحتياطي"/>
                   <TextBlock x:Name="BackupStatus" FontWeight="Medium" Margin="0,6,0,2" TextWrapping="Wrap"/>
                   <TextBlock x:Name="BackupFileText" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                  <!-- خدمة النسخ (مثل الآيفون): ملف يُكتب فوقه، أو السيرفر المحلي نفسه الذي يستعمله الآيفون. -->
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <TextBlock Text="خدمة النسخ" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2">
+                      <ListBox x:Name="BackupServicePicker" SelectionChanged="BackupServiceChanged" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Segment}">
+                        <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                        <ListBoxItem Tag="file" Content="ملف (OneDrive · Google Drive · هذا الجهاز)"/>
+                        <ListBoxItem Tag="server" Content="السيرفر المحلي"/>
+                      </ListBox>
+                    </Border>
+                  </StackPanel>
+                  <Border x:Name="ServerPanel" Background="{DynamicResource TbgF1F5F4}" CornerRadius="10" Padding="14,12" Margin="0,0,0,12" Visibility="Collapsed">
+                    <StackPanel>
+                      <TextBlock Text="سيرفر النسخ الاحتياطي" FontWeight="SemiBold"/>
+                      <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="8"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <TextBlock Text="عنوان السيرفر" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ServerAddressBox" Grid.Column="1" Height="34" VerticalContentAlignment="Center" FlowDirection="LeftToRight" MaxWidth="360" HorizontalAlignment="Left" Width="360" ToolTip="مثال: http://192.168.1.10:8765"/>
+                        <TextBlock Grid.Row="2" Text="رمز الوصول" VerticalAlignment="Center"/>
+                        <PasswordBox x:Name="ServerTokenBox" Grid.Row="2" Grid.Column="1" Height="34" VerticalContentAlignment="Center" FlowDirection="LeftToRight" MaxWidth="360" HorizontalAlignment="Left" Width="360" ToolTip="الرمز نفسه في إعدادات إضافة Home Assistant وفي الآيفون (٣٢ حرفاً على الأقل)"/>
+                      </Grid>
+                      <CheckBox x:Name="ServerEnabledBox" Content="تفعيل النسخ إلى السيرفر" Margin="0,12,0,10"/>
+                      <WrapPanel>
+                        <Button Style="{StaticResource ActionButton}" Content="حفظ إعدادات السيرفر" Click="SaveServerSettings" Margin="0,0,8,0"/>
+                        <Button x:Name="TestServerButton" Content="اختبار الاتصال" Click="TestServer"/>
+                      </WrapPanel>
+                      <TextBlock x:Name="ServerTestText" FontSize="12.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                      <TextBlock Style="{StaticResource Hint}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" Text="نفس السيرفر والرمز المستعملين في الآيفون. الاتصال المحلي HTTP غير مشفّر؛ استعمله على شبكة موثوقة فقط. يحتفظ السيرفر بنسخة واحدة حالية، ويرفض استبدالها بنسخة ينقصها شهر أو قسم كامل، فإذا كانت نسخة الآيفون أحدث استرجعها هنا أولاً. يُحفظ الرمز مشفّراً لحساب ويندوز الحالي ولا يدخل في النسخة."/>
+                    </StackPanel>
+                  </Border>
                   <WrapPanel Margin="0,0,0,12">
                     <Button x:Name="BackupNowButton2" Style="{StaticResource ActionButton}" Click="BackupNow" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE74E;" Foreground="White" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="نسخ الآن"/></StackPanel></Button>
-                    <Button Content="اختيار ملف النسخة…" Click="ChooseBackupFile" Margin="0,0,8,0"/>
+                    <Button x:Name="ChooseFileButton" Content="اختيار ملف النسخة…" Click="ChooseBackupFile" Margin="0,0,8,0"/>
                     <Button x:Name="BackupExport" Content="حفظ نسخة في مكان آخر…" Click="ExportBackup" IsEnabled="False"/>
                   </WrapPanel>
                   <CheckBox x:Name="BackupAutoBox" Content="نسخ تلقائي بعد كل استيراد" Click="BackupOptionChanged" Margin="0,0,0,10"/>
@@ -462,7 +493,7 @@
                     </Border>
                   </StackPanel>
                   <Border Height="1" Background="{DynamicResource Line}" Margin="0,0,0,12"/>
-                  <WrapPanel><Button Click="OpenBackup"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE777;" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="استرجاع من نسخة…"/></StackPanel></Button></WrapPanel>
+                  <WrapPanel><Button Click="OpenBackup" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE777;" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="استرجاع من نسخة…"/></StackPanel></Button><Button x:Name="RestoreServerButton" Click="RestoreFromServer" Visibility="Collapsed" ToolTip="تنزيل آخر نسخة من السيرفر وفتحها بعد فحصها"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE896;" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="استرجاع من السيرفر"/></StackPanel></Button></WrapPanel>
                   <TextBlock Style="{StaticResource Hint}" FontSize="12.5" TextWrapping="Wrap" Margin="0,10,0,0" Text="يُكتب الملف المختار في مكانه بعد كل استيراد أو حسب الجدول، ولا يُستبدل بنسخة فقدت أشهراً أو بيانات. اختر مجلداً متزامناً (OneDrive أو Google Drive) لتصل النسخة إلى الآيفون، واسترجعها هناك من «استرجاع من نسخة». النسخة تشمل الأشهر المستوردة والحسابات وروابطها ودفتر المطابقة."/>
                 </StackPanel>
               </Grid>

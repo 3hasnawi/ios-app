@@ -23,7 +23,10 @@ public partial class MainWindow
         {
             var saved = UiPreferences.Current;
             var interval = saved.BackupSchedule switch { "hourly" => TimeSpan.FromHours(1), "daily" => TimeSpan.FromDays(1), _ => (TimeSpan?)null };
-            if (interval is null || saved.BackupPath is null || snapshot is null || loading || importing || backingUp) return;
+            if (!HasBackupDestination || snapshot is null || loading || importing || backingUp) return;
+            // أول نسخة إلى السيرفر بعد تفعيله تُرفع دون انتظار الموعد (مثل الآيفون).
+            if (ServerReady && saved.ServerPending) { await BackupToFile(false); return; }
+            if (interval is null) return;
             // دوري: عند حلول الموعد وعند وجود تعديلات لم تدخل آخر نسخة (أو لم تُؤخذ نسخة بعد).
             var due = saved.BackupLast is not { } last || DateTime.Now - last >= interval.Value;
             if (due && (saved.BackupLast is null || BackupReminder.Visibility == Visibility.Visible)) await BackupToFile(false);
@@ -43,19 +46,23 @@ public partial class MainWindow
             BackupSchedulePicker.SelectedItem = BackupSchedulePicker.Items.OfType<ListBoxItem>().FirstOrDefault(i => Equals(i.Tag, saved.BackupSchedule ?? "off")) ?? BackupSchedulePicker.Items[0];
         }
         finally { syncingBackup = false; }
+        ShowServerSettings();
         var pending = BackupReminder.Visibility == Visibility.Visible;
         var automatic = saved.BackupAuto || (saved.BackupSchedule ?? "off") != "off";
+        var missing = !HasBackupDestination;
         BackupStatus.Text =
-            saved.BackupPath is null ? "⚠ اختر ملف النسخة الاحتياطية لتفعيل النسخ التلقائي" :
+            missing ? (ServerSelected ? "⚠ أكمل إعدادات السيرفر وفعّله لتفعيل النسخ التلقائي" : "⚠ اختر ملف النسخة الاحتياطية لتفعيل النسخ التلقائي") :
             saved.BackupError is { } error ? "⚠ فشل آخر نسخ: " + error :
             pending ? "⚠ تغيّرت البيانات منذ آخر نسخة" :
             !automatic ? (saved.BackupLast is { } offLast ? "متوقف · آخر نسخة " + Ago(offLast) : "متوقف") :
             saved.BackupLast is { } last ? $"{ScheduleText(saved.BackupSchedule)} · آخر نسخة {Ago(last)} ✓" : "تلقائي · لم تُؤخذ نسخة بعد";
-        BackupStatus.SetResourceReference(TextBlock.ForegroundProperty, saved.BackupPath is null || saved.BackupError is not null || pending ? "Warn" : "Primary");
+        BackupStatus.SetResourceReference(TextBlock.ForegroundProperty, missing || saved.BackupError is not null || pending ? "Warn" : "Primary");
         string size = "";
         try { if (saved.BackupPath is { } path && File.Exists(path)) size = " · " + SizeText(new FileInfo(path).Length); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { size = ""; }
-        BackupFileText.Text = saved.BackupPath is { } file ? "ملف النسخة: " + file + size : "لم يُختر ملف بعد. «نسخ الآن» يطلب مكان الحفظ أول مرة ثم يكتب فوق الملف نفسه.";
+        BackupFileText.Text = ServerSelected
+            ? (BackupServer.Url(saved.ServerAddress) is { } server ? $"السيرفر المحلي: {server.Authority}" + (saved.ServerEnabled ? "" : " · غير مفعّل") : "أدخل عنوان السيرفر ورمز الوصول نفسيهما المستعملين في الآيفون.")
+            : saved.BackupPath is { } file ? "ملف النسخة: " + file + size : "لم يُختر ملف بعد. «نسخ الآن» يطلب مكان الحفظ أول مرة ثم يكتب فوق الملف نفسه.";
         BackupNowButton2.IsEnabled = snapshot is not null && !backingUp;
         BackupExport.IsEnabled = snapshot is not null;
     }
@@ -85,7 +92,9 @@ public partial class MainWindow
             InitialDirectory = current is not null && Directory.Exists(Path.GetDirectoryName(current)) ? Path.GetDirectoryName(current) : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         };
         if (dialog.ShowDialog(this) != true) return false;
+        // اختيار ملف يجعل الملف خدمة النسخ ويوقف السيرفر (مثل الآيفون).
         UiPreferences.Current.BackupPath = dialog.FileName; UiPreferences.Current.BackupError = null;
+        UiPreferences.Current.BackupService = "file"; UiPreferences.Current.ServerEnabled = false;
         SaveSettings("ملف النسخة"); RefreshBackupSetupNotice();
         if (snapshot is null) { ShowBackupSettings(); return false; }
         return await BackupToFile(true);
@@ -94,12 +103,15 @@ public partial class MainWindow
     private async void BackupNow(object sender, RoutedEventArgs e)
     {
         if (snapshot is null) { Ui.Message(this, "لا توجد بيانات مفتوحة للنسخ. استورد نسخة احتياطية أو ملفات Excel أولاً.", "النسخ الاحتياطي"); return; }
-        if (UiPreferences.Current.BackupPath is null) await ChooseAndBackup(); else await BackupToFile(true);
+        if (HasBackupDestination) await BackupToFile(true);
+        else if (ServerSelected) Ui.Message(this, "أكمل إعدادات السيرفر (العنوان ورمز الوصول) وفعّله من الإعدادات ← النسخ الاحتياطي.", "النسخ الاحتياطي");
+        else await ChooseAndBackup();
     }
 
     /// يكتب نسخة شاملة فوق ملف النسخة المختار بعد فحصها؛ manual يعرض النتيجة في رسالة، والتلقائي يكتفي بالحالة.
     private async Task<bool> BackupToFile(bool manual)
     {
+        if (ServerReady) return await BackupToServer(manual);
         var source = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
         var destination = UiPreferences.Current.BackupPath;
         if (source is null || original is null || links is null || root is null || payroll is null || destination is null || backingUp) return false;
@@ -121,7 +133,7 @@ public partial class MainWindow
                 return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision, Ledger: ledger.Revision);
             });
             if (!saved.Changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);
-            UiPreferences.Current.BackupLast = DateTime.Now; UiPreferences.Current.BackupError = null; UiPreferences.Save();
+            UiPreferences.Current.BackupLast = DateTime.Now; UiPreferences.Current.BackupError = null; UiPreferences.Current.BackupPlace = Path.GetFileName(destination); UiPreferences.Save();
             StatusBar.Text = $"☁ حُفظت نسخة احتياطية: {Path.GetFileName(destination)} · {DateTime.Now:HH:mm}";
             if (manual) Ui.Message(this, saved.Changed ? "حُفظت النسخة، لكن البيانات تغيّرت أثناء النسخ؛ أعد النسخ." : "حُفظت النسخة الاحتياطية بعد فحصها في:\n" + destination, "النسخ الاحتياطي", MessageBoxButton.OK, saved.Changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
             return !saved.Changed;

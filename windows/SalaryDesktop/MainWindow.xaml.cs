@@ -108,7 +108,7 @@ public partial class MainWindow : Window
                     {
                         loading = false;
                         // يُحفظ في ملف النسخ المختار إن وُجد، وإلا يُطلب مكان الحفظ.
-                        var saved = UiPreferences.Current.BackupPath is not null ? await BackupToFile(true) : await SaveFullBackup();
+                        var saved = HasBackupDestination ? await BackupToFile(true) : await SaveFullBackup();
                         loading = true;
                         if (!saved) { SourceMessage.Text = "لم تُحفظ النسخة الشاملة؛ لم تتغير النسخة المفتوحة."; return false; }
                     }

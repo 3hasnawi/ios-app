@@ -74,8 +74,8 @@ public partial class MainWindow
         string backupLine = "";
         if (imported)
         {
-            if (UiPreferences.Current.BackupAuto && UiPreferences.Current.BackupPath is not null)
-                backupLine = await BackupToFile(false) ? "\n\n☁ حُفظت نسخة احتياطية تلقائياً في ملف النسخة." : "\n\n⚠ تعذّر النسخ التلقائي؛ راجع الإعدادات ← النسخ الاحتياطي.";
+            if (UiPreferences.Current.BackupAuto && HasBackupDestination)
+                backupLine = await BackupToFile(false) ? (ServerReady ? "\n\n☁ حُفظت نسخة احتياطية تلقائياً في السيرفر المحلي." : "\n\n☁ حُفظت نسخة احتياطية تلقائياً في ملف النسخة.") : "\n\n⚠ تعذّر النسخ التلقائي؛ راجع الإعدادات ← النسخ الاحتياطي.";
             else backupLine = "\n\nاحفظ نسخة احتياطية تشمل التغييرات من الإعدادات ← النسخ الاحتياطي.";
         }
         Ui.Message(this, string.Join("\n", results) + backupLine, "نتيجة الاستيراد", MessageBoxButton.OK, results.All(r => r.StartsWith('✓')) ? MessageBoxImage.Information : MessageBoxImage.Warning);

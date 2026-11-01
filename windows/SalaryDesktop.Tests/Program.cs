@@ -1001,8 +1001,38 @@ try
         Check(copyStore.Copies().Count == 7 && copyStore.Copies()[0].Current && copyStore.Copies()[1].Digest == copyDigests[6], "local copies listed newest first with the open copy");
         var pruned = copyStore.Prune(5, digest => digest == copyDigests[1]);
         Check(pruned.Deleted == 1 && pruned.Protected == 1 && pruned.Freed == 102 && !File.Exists(Path.Combine(copiesRoot, copyDigests[2] + ".zip")) && File.Exists(Path.Combine(copiesRoot, copyDigests[0] + ".zip")) && copyStore.Copies().Count == 6, "pruning keeps the open copy, the newest five and protected copies");
+        // سيرفر النسخ المحلي: قواعد العنوان والرمز مثل الآيفون، والرفع والتنزيل مع رد وهمي بلا شبكة.
+        Check(BackupServer.Url("http://192.168.1.10:8765")?.ToString() == "http://192.168.1.10:8765/" && BackupServer.Url("http://10.0.0.5:8765/") is not null && BackupServer.Url("http://172.20.1.1:8765") is not null, "private server addresses accepted");
+        Check(new[] { "https://192.168.1.10:8765", "http://8.8.8.8:8765", "http://172.32.0.1:8765", "http://192.168.1.10:8765/x", "http://u:p@192.168.1.10:8765", "http://nas.local:8765", "http://192.168.1.10:8765?a=1", "" }.All(a => BackupServer.Url(a) is null), "public, encrypted, named or path server addresses rejected");
+        Check(BackupServer.ValidToken(new string('a', 32)) && !BackupServer.ValidToken(new string('a', 31)) && !BackupServer.ValidToken(new string('a', 31) + " ") && !BackupServer.ValidToken(new string('ب', 40)), "server token rules");
+        var serverFile = Path.Combine(root, "server-upload.zip"); File.WriteAllBytes(serverFile, Encoding.UTF8.GetBytes("fictional backup bytes"));
+        var serverDigest = BackupServer.Sha256(serverFile); var serverBase = BackupServer.Url("http://192.168.1.10:8765")!;
+        HttpRequestMessage? sent = null;
+        using (var http = new HttpClient(new StubHandler(r => { sent = r; return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent($"{{\"id\":\"backup-current.zip\",\"size\":22,\"sha256\":\"{serverDigest}\"}}") }; })))
+            Check(await BackupServer.Upload(http, serverBase, new string('k', 40), serverFile) == 22 && sent!.RequestUri!.ToString() == "http://192.168.1.10:8765/v1/backups"
+                && sent.Headers.Authorization?.ToString() == "Bearer " + new string('k', 40) && sent.Headers.GetValues("X-Content-SHA256").Single() == serverDigest, "server upload sends token and checksum and reads the confirmation");
+        foreach (var (status, body) in new[] { (System.Net.HttpStatusCode.Created, "{\"size\":22,\"sha256\":\"0000\"}"), (System.Net.HttpStatusCode.BadRequest, "{}"), (System.Net.HttpStatusCode.Unauthorized, "{}") })
+        {
+            using var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(status) { Content = new StringContent(body) }));
+            try { _ = await BackupServer.Upload(http, serverBase, new string('k', 40), serverFile); throw new InvalidOperationException("unconfirmed server upload accepted: " + status); }
+            catch (InvalidDataException) { }
+        }
+        var restored = Path.Combine(root, "server-restore.zip");
+        using (var http = new HttpClient(new StubHandler(r => r.RequestUri!.AbsolutePath == "/v1/backups/latest" ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(File.ReadAllBytes(serverFile)) } : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound))))
+            await BackupServer.DownloadLatest(http, serverBase, new string('k', 40), restored);
+        Check(BackupServer.Sha256(restored) == serverDigest, "server restore downloads the latest backup");
+        using (var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{\"service\":\"salary-backup\",\"backup_count\":1,\"backup_bytes\":22,\"disk_free\":1000,\"backups\":[{\"id\":\"backup-current.zip\",\"size\":22,\"created_at\":\"2026-11-01T10:00:00+00:00\"}]}") })))
+        {
+            var serverStatus = await BackupServer.Status(http, serverBase, new string('k', 40));
+            Check(serverStatus.Count == 1 && serverStatus.Bytes == 22 && serverStatus.DiskFree == 1000 && serverStatus.Latest?.Year == 2026, "server status for connection test");
+        }
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");
 }
 finally { Directory.Delete(root, true); }
+
+sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => Task.FromResult(respond(request));
+}

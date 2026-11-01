@@ -37,6 +37,15 @@ internal sealed class UiPreferences
     public string? BackupSchedule { get; set; }
     public DateTime? BackupLast { get; set; }
     public string? BackupError { get; set; }
+    /// خدمة النسخ (مثل الآيفون): "file" ملف يُكتب فوقه (مجلد OneDrive أو Google Drive أو هذا الجهاز)، أو "server" السيرفر المحلي.
+    public string? BackupService { get; set; }
+    /// سيرفر النسخ المحلي: العنوان والتفعيل، والرمز مشفّراً بـ DPAPI لحساب ويندوز الحالي (لا يدخل في النسخة الاحتياطية).
+    public string? ServerAddress { get; set; }
+    public bool ServerEnabled { get; set; }
+    public string? ServerToken { get; set; }
+    /// أول نسخة إلى السيرفر بعد تفعيله أو تغيير عنوانه أو رمزه.
+    public bool ServerPending { get; set; }
+    public string? BackupPlace { get; set; }
 
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");
     private static UiPreferences? current;

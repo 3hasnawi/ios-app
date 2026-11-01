@@ -289,6 +289,15 @@ static class Program
                     Locker.Disable();
                     await Navigate("settings"); await Task.Delay(500);
                     ((FrameworkElement)main.FindName("LockEnabledBox")).BringIntoView(); await Task.Delay(400); Shot(main, "31-settings-security");
+                    // سيرفر النسخ المحلي: الرمز يُحفظ مشفّراً (DPAPI) ويُقرأ كما هو، ثم لقطة لوحة الإعدادات بعنوان وهمي.
+                    var fictionalToken = new string('t', 40);
+                    Check(MainWindow.SaveServerToken(fictionalToken) && MainWindow.ServerToken == fictionalToken, "server token was not protected and restored");
+                    var servicePicker = (ListBox)main.FindName("BackupServicePicker");
+                    servicePicker.SelectedIndex = 1; await Task.Delay(300);
+                    Check(((FrameworkElement)main.FindName("ServerPanel")).Visibility == Visibility.Visible, "server settings panel was not shown");
+                    ((TextBox)main.FindName("ServerAddressBox")).Text = "http://192.168.1.50:8765";
+                    ((FrameworkElement)main.FindName("ServerPanel")).BringIntoView(); await Task.Delay(400); Shot(main, "42-settings-server");
+                    servicePicker.SelectedIndex = 0; MainWindow.SaveServerToken(""); await Task.Delay(200);
                     // الخط والأرقام من الإعدادات: Cairo مع أرقام هندية ثم العودة إلى الافتراضي.
                     ((FrameworkElement)main.FindName("FontPicker")).BringIntoView(); await Task.Delay(400); Shot(main, "32-settings-font");
                     AppFonts.Apply("cairo", "arabic"); await Task.Delay(300);

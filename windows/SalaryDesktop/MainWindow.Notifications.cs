@@ -71,7 +71,14 @@ public partial class MainWindow
             BackupSetupButton.Content = "نسخ الآن";
             BackupSetupCard.Visibility = Visibility.Visible;
         }
-        else if (saved.BackupPath is null)
+        else if (ServerSelected && !ServerReady)
+        {
+            BackupSetupTitle.Text = "إعدادات سيرفر النسخ غير مكتملة";
+            BackupSetupText.Text = "أدخل عنوان السيرفر ورمز الوصول نفسيهما المستعملين في الآيفون وفعّل النسخ إلى السيرفر.";
+            BackupSetupButton.Content = "فتح إعدادات النسخ";
+            BackupSetupCard.Visibility = Visibility.Visible;
+        }
+        else if (!ServerSelected && saved.BackupPath is null)
         {
             BackupSetupTitle.Text = "لم يُختر ملف النسخة الاحتياطية";
             BackupSetupText.Text = "اختر ملفاً مرة واحدة (يُفضّل في OneDrive أو Google Drive) ليُكتب فوقه تلقائياً بعد كل استيراد.";
@@ -82,7 +89,8 @@ public partial class MainWindow
     }
     private async void BackupSetupClicked(object sender, RoutedEventArgs e)
     {
-        if (UiPreferences.Current.BackupError is not null && UiPreferences.Current.BackupPath is not null) await BackupToFile(true);
+        if (UiPreferences.Current.BackupError is not null && HasBackupDestination) await BackupToFile(true);
+        else if (ServerSelected) { NotificationPanel.Visibility = Visibility.Collapsed; NavSettings.IsChecked = true; }
         else await ChooseAndBackup();
         RefreshBackupSetupNotice();
     }
