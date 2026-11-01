@@ -126,6 +126,7 @@ public partial class MainWindow : Window
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         PayrollImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
+        AnnualImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = page switch
         {
@@ -255,6 +256,31 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AccountImportButton.IsEnabled = true; }
+    }
+    private async void ImportAnnual(object sender, RoutedEventArgs e)
+    {
+        var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
+        if (root is null || payroll is null || active is null || links is null || original is null) { MessageBox.Show(this, "افتح نسخة الآيفون أولاً.", "استيراد الاستقطاعات السنوية"); return; }
+        var dialog = new AnnualImportWindow(active) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is not { } preview || preview.Problems.Count != 0) return;
+        if (!ReferenceEquals(active, snapshot)) { MessageBox.Show(this, "تغيّرت النسخة المفتوحة؛ أعد مراجعة الملف.", "الاستيراد السنوي"); return; }
+        AnnualImportButton.IsEnabled = false;
+        try
+        {
+            var result = await Task.Run(() => {
+                if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة.");
+                var updated = payrollStore.ImportBatch(root, payroll, preview.Months, dialog.ReplaceExisting);
+                var updatedLinks = linkStore.Load(updated.Snapshot);
+                if (updatedLinks.Revision != links.Revision) throw new InvalidDataException("حُفظت الأشهر، لكن روابط الحسابات تغيّرت أثناء الحفظ؛ أعد فتح النسخة.");
+                return (updated, updatedLinks);
+            });
+            if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot)) { MessageBox.Show(this, "حُفظت الأشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "الاستيراد السنوي"); return; }
+            ApplySources(root, result.updated, result.updatedLinks, preview.Months[0].Month);
+            MessageBox.Show(this, "حُفظت الأشهر معاً محلياً. راجع الاستقطاعات ثم احفظ نسخة احتياطية تشمل التغييرات.", "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { AnnualImportButton.IsEnabled = true; }
     }
     private async void ImportPayroll(object sender, RoutedEventArgs e)
     {

@@ -12,16 +12,16 @@ public sealed record PayrollImportProblem(string Sheet, int Row, string Message)
 public sealed record PayrollImportPreview(string Month, IReadOnlyList<Employee> Employees, IReadOnlyList<Deduction> Deductions, IReadOnlyList<PayrollImportProblem> Problems);
 public static class PayrollSpreadsheet
 {
-    private static readonly string[] Names = ["الاسم", "اسم الموظف", "الاسم الكامل", "الاسم الثلاثي", "الاسم الرباعي", "Name_m", "name"];
-    private static readonly string[] Ranks = ["الرتبة", "الرتبه", "rank"];
+    internal static readonly string[] Names = ["الاسم", "اسم الموظف", "الاسم الكامل", "الاسم الثلاثي", "الاسم الرباعي", "Name_m", "name"];
+    internal static readonly string[] Ranks = ["الرتبة", "الرتبه", "rank"];
     private static readonly string[] Workplaces = ["محل العمل", "مكان العمل", "جهة العمل", "NO_markaz", "المركز", "القسم", "الوحدة", "الدائرة", "اسم المديرية", "workplace"];
     private static readonly string[] Nets = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"];
-    private static readonly string[] Amounts = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"];
-    private static readonly string[] Titles = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"];
+    internal static readonly string[] Amounts = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"];
+    internal static readonly string[] Titles = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف", "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"];
     private static readonly string[] Keywords = ["صندوق", "شهداء", "رعاية", "نشاط", "نادي", "تامين", "ضريبة", "توقيفات", "تقاعد", "حماية", "تضمين", "ايراد", "رسم", "جوال", "اتصالات", "استقطاعات المصارف", "مجموع الاستقطاعات"];
-    private static readonly string[] TotalNames = ["المجموع", "مجموع", "الاجمالي", "اجمالي", "المجموع الكلي", "المجموع العام", "الاجمالي العام"];
+    internal static readonly string[] TotalNames = ["المجموع", "مجموع", "الاجمالي", "اجمالي", "المجموع الكلي", "المجموع العام", "الاجمالي العام"];
     private static readonly string[] Details = ["الدرجة الوظيفية", "اسم الوكالة", "اسم المديرية", "NO_markaz", "الاسمي", "عدد العلاوات", "الخطورة", "الارزاق", "الاستثنائية", "الاطفال", "الزوجية", "الشهادة", "منصب", "مخصصات صنف", "نسبة الصنف", "جامعية", "مخصصات نقل", "مؤقتة", "اضافية", "مخصصات اخرى", "لقب علمي", "نسبة من الاسمي", "الاستحقاق", "توقيفات تقاعدية", "الرعاية الصحية", "صندوق الشهداء", "نشاط صحي", "نشاط رياضي", "الضريبة", "تضمين", "ايراد نهائي", "تامين صحي", "مجموع استقطاعات المصارف", "حماية الاجتماعية", "رسم طابع", "اسم الاستقطاع", "مبلغ الاستقطاع", "2اسم الاستقطاع", "2مبلغ الاستقطاع", "% استقطاع 3", "مجموع الاستقطاعات", "استقطاع مؤقت", "اسم استقطاع المؤقته", "اسم الشهدة", "اسم الشهادة", "اسم المنصب", "اسم الصنف", "اسم المخصصات الاخرى", "اسم اللقب العلمي", "الرقم الوظيفي", "الرقم الموحد", "رقم الضمان الصحي", "طريقة الدفع", "توطين المصرف", "IBAN", "ملاحظات عامه", "ملاحظات"];
-    private static decimal? Number(string text)
+    internal static decimal? Number(string text)
     {
         text = text.Trim(); if (text.Length == 0) return null;
         var compact = string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
@@ -34,7 +34,7 @@ public static class PayrollSpreadsheet
         }
         return decimal.TryParse(s.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && value is >= 0 and <= 9_007_199_254_740_991m ? value : null;
     }
-    private static int Find(string[] headers, IEnumerable<string> names, HashSet<int> used, bool exactOnly = false)
+    internal static int Find(string[] headers, IEnumerable<string> names, HashSet<int> used, bool exactOnly = false)
     {
         foreach (bool exact in exactOnly ? new[] { true } : new[] { true, false })
             foreach (var name in names.Select(PayrollAnalysis.Normalize))

@@ -56,8 +56,9 @@
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBox x:Name="SearchBox" Height="38" Padding="10,7" TextChanged="SearchChanged" ToolTip="ابحث بالاسم أو الجهة"/>
-            <Button x:Name="AccountImportButton" Grid.Column="1" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
-            <Button x:Name="PayrollImportButton" Grid.Column="1" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
+            <WrapPanel Grid.Column="1"><Button x:Name="AccountImportButton" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
+            <Button x:Name="PayrollImportButton" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Visibility="Collapsed"/>
+            <Button x:Name="AnnualImportButton" Content="استيراد الاستقطاعات السنوية" Click="ImportAnnual" Padding="16,9" Margin="12,0,0,0" Visibility="Collapsed"/></WrapPanel>
           </Grid>
           <TextBlock x:Name="TableStatus" Grid.Row="1" Foreground="#718481" Margin="0,10,0,10" TextWrapping="Wrap"/>
           <DataGrid x:Name="DataTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" Background="White" BorderBrush="#E1E7E8" GridLinesVisibility="Horizontal" RowHeaderWidth="0" HeadersVisibility="Column" SelectionMode="Single" MouseDoubleClick="OpenArchiveBook"/>

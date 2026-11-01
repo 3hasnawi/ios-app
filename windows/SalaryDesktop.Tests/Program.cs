@@ -441,6 +441,38 @@ try
     var payrollAccountPlan = IndividualLetterPreparation.Payroll("food_company", incompleteBank with { Breakdown = new Dictionary<string, decimal>(incompleteBank.Breakdown) { ["شركة عراق الجوال"] = 100000 } }, "دافع وهمي", fakePayer, references, customization: payrollAccountSaved.Snapshot);
     Check(payrollAccountPlan.BeneficiaryAccount == fakeAlternate && payrollAccountSaved.Snapshot.Accounts.SequenceEqual(bookSource.Accounts), "payroll beneficiary customization does not alter saved transfer accounts");
     Check(IndividualPayrollPdf.Generate(payrollAccountPlan, individualSettings, individualFont, individualFont, individualLogo, "٣ / ٢٠٢٢").Length > 0, "custom payroll beneficiary appears in verified PDF");
+    var annualPath = Path.Combine(root, "annual-2024.xlsx");
+    string[] annualHeaders = ["الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ", "رقم وتاريخ الاضبارة", "شهر"];
+    string[][] annualRows = [ ["موظف", "اسم وهمي 1", "١٠٠", "جهة وهمية", "", "كانون الثاني"], ["موظف", "اسم وهمي 2", "موقوف", "جهة وهمية", "", "شباط"], ["موظف", "اسم وهمي 3", "٥٠", "جهة وهمية", "", "شباط"], ["موظف", "اسم وهمي 4", "هارب", "جهة وهمية", "", "كانون الأول"] ];
+    MakeMonthlyXlsx(annualPath, annualHeaders, annualRows);
+    var annualPreview = AnnualDeductionSpreadsheet.Read(annualPath, snapshot);
+    Check(annualPreview.Problems.Count == 0 && annualPreview.Months.Count == 3 && annualPreview.Months.Sum(p => p.Deductions.Count) == 4 && annualPreview.Months.SelectMany(p => p.Deductions).Count(PayrollAnalysis.IsInactive) == 2, "annual deductions split by month and preserve inactive statuses");
+    var annualStore = new LocalPayrollImports(Path.Combine(root, "annual-imports")); var annualInitial = annualStore.Load(snapshot);
+    var annualSaved = annualStore.ImportBatch(snapshot, annualInitial, annualPreview.Months, false);
+    Check(annualSaved.Snapshot.Deductions.Count == snapshot.Deductions.Count + 4 && annualSaved.Snapshot.Months.Count == snapshot.Months.Count + 3, "annual months save in a single revision");
+    var annualBackupPath = Path.Combine(root, "annual-import-backup.zip"); ReconciliationBackupExport.Write(annualSaved.Snapshot, [], annualBackupPath);
+    var restoredAnnual = BackupReader.Read(annualBackupPath);
+    Check(restoredAnnual.Deductions.Count == annualSaved.Snapshot.Deductions.Count && restoredAnnual.Months.Count == annualSaved.Snapshot.Months.Count && restoredAnnual.Deductions.Count(PayrollAnalysis.IsInactive) == annualSaved.Snapshot.Deductions.Count(PayrollAnalysis.IsInactive), "annual imports and inactive statuses survive backup export");
+    try { _ = annualStore.ImportBatch(snapshot, annualSaved, annualPreview.Months, false); throw new InvalidOperationException("existing annual deductions replaced without review"); }
+    catch (InvalidDataException) { }
+    Check(annualStore.Load(snapshot).Revision == annualSaved.Revision, "unapproved annual replacement preserves every month");
+    var invalidAnnualPath = Path.Combine(root, "annual-invalid-2024.xlsx"); MakeMonthlyXlsx(invalidAnnualPath, annualHeaders, annualRows.Concat([["موظف", "اسم وهمي", "حالة غامضة", "جهة وهمية", "", "آذار"]]).ToArray());
+    var invalidAnnual = AnnualDeductionSpreadsheet.Read(invalidAnnualPath, snapshot);
+    Check(invalidAnnual.Problems.Count > 0, "invalid annual row reported");
+    try { _ = annualStore.ImportBatch(snapshot, annualSaved, invalidAnnual.Months, true); throw new InvalidOperationException("partial invalid annual import accepted"); }
+    catch (InvalidDataException) { }
+    Check(annualStore.Load(snapshot).Revision == annualSaved.Revision, "invalid annual file preserves all previously saved months");
+    var conflictAnnualPath = Path.Combine(root, "annual-conflict-2024.xlsx"); MakeMonthlyXlsx(conflictAnnualPath, annualHeaders, [["موظف", "اسم وهمي", "١٠", "جهة وهمية", "", "شباط 2025"]]);
+    Check(AnnualDeductionSpreadsheet.Read(conflictAnnualPath, snapshot).Problems.Count > 0, "conflicting annual year is rejected");
+    var noYearAnnualPath = Path.Combine(root, "annual-no-year.xlsx"); MakeMonthlyXlsx(noYearAnnualPath, annualHeaders, annualRows);
+    Check(AnnualDeductionSpreadsheet.Read(noYearAnnualPath, snapshot).Problems.Count > 0, "annual file without a definite year is rejected");
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_ANNUAL_DIR") is { Length: > 0 } annualFixtureDir)
+    {
+        var fixture = AnnualDeductionSpreadsheet.Read(Path.Combine(annualFixtureDir, "annual-fixture.xlsx"), snapshot);
+        Check(fixture.Problems.Count == 0 && fixture.Months.Count == 3 && fixture.Months.Sum(p => p.Deductions.Count) == 5, "existing annual fixture separates three months");
+        Check(AnnualDeductionSpreadsheet.Read(Path.Combine(annualFixtureDir, "annual-invalid.xlsx"), snapshot).Problems.Count > 0 && AnnualDeductionSpreadsheet.Read(Path.Combine(annualFixtureDir, "annual-2025.xlsx"), snapshot).Problems.Count > 0, "existing annual fixtures reject invalid status and conflicting years");
+    }
+
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

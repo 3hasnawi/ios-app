@@ -52,19 +52,25 @@ public sealed class LocalPayrollImports(string directory)
         catch (Exception ex) when (ex is JsonException or ArgumentException or NullReferenceException or OverflowException)
         { throw new InvalidDataException("تعذّر فتح بيانات الرواتب المحلية؛ لم تُستبدل البيانات.", ex); }
     }
-    public PayrollImportState Import(BackupSnapshot source, PayrollImportState expected, PayrollImportPreview preview, bool replaceExisting)
+    public PayrollImportState Import(BackupSnapshot source, PayrollImportState expected, PayrollImportPreview preview, bool replaceExisting) => ImportBatch(source, expected, [preview], replaceExisting);
+    public PayrollImportState ImportBatch(BackupSnapshot source, PayrollImportState expected, IReadOnlyList<PayrollImportPreview> previews, bool replaceExisting)
     {
-        if (preview.Problems.Count > 0 || preview.Employees.Count + preview.Deductions.Count == 0) throw new InvalidDataException("راجع أخطاء الملف قبل حفظ بيانات الشهر.");
+        if (previews.Count is 0 or > 12 || previews.Any(p => p.Problems.Count > 0 || p.Employees.Count + p.Deductions.Count == 0 || MonthNames.SortKey(p.Month) == 0) || previews.Select(p => MonthNames.SortKey(p.Month)).Distinct().Count() != previews.Count)
+            throw new InvalidDataException("راجع أخطاء الملف والأشهر قبل الحفظ.");
         var folder = Folder(source); Directory.CreateDirectory(folder);
         using var guard = new FileStream(Path.Combine(folder, ".payroll.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var current = Load(source);
         if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت بيانات الرواتب في نافذة أخرى؛ أعد فتح الملف.");
-        if (!replaceExisting && (preview.Employees.Count > 0 && current.Snapshot.Employees.Any(e => e.Month == preview.Month) || preview.Deductions.Count > 0 && current.Snapshot.Deductions.Any(d => d.Month == preview.Month)))
-            throw new InvalidDataException("توجد بيانات محفوظة لهذا الشهر؛ يجب مراجعة الاستبدال أولاً.");
-        var existing = current.Imports.FirstOrDefault(m => m.Month == preview.Month);
-        var change = new MonthImport(preview.Month, preview.Employees.Count > 0 ? preview.Employees.ToList() : existing?.Employees,
-            preview.Deductions.Count > 0 ? preview.Deductions.ToList() : existing?.Deductions);
-        var imports = current.Imports.Where(m => m.Month != preview.Month).Concat([change]).ToList();
+        if (!replaceExisting && previews.Any(preview => preview.Employees.Count > 0 && current.Snapshot.Employees.Any(e => e.Month == preview.Month) || preview.Deductions.Count > 0 && current.Snapshot.Deductions.Any(d => d.Month == preview.Month)))
+            throw new InvalidDataException("توجد بيانات محفوظة لأحد الأشهر؛ يجب مراجعة الاستبدال أولاً.");
+        var imports = current.Imports.ToList();
+        foreach (var preview in previews)
+        {
+            var existing = imports.FirstOrDefault(m => m.Month == preview.Month);
+            var change = new MonthImport(preview.Month, preview.Employees.Count > 0 ? preview.Employees.ToList() : existing?.Employees,
+                preview.Deductions.Count > 0 ? preview.Deductions.ToList() : existing?.Deductions);
+            imports.RemoveAll(m => m.Month == preview.Month); imports.Add(change);
+        }
         var updated = Apply(source, imports); var bytes = JsonSerializer.SerializeToUtf8Bytes(new Saved(1, source.SourceDigest, imports));
         var digest = Hash(bytes); var versionPath = Path.Combine(folder, digest + ".json"); var temp = Path.Combine(folder, ".import-" + Guid.NewGuid().ToString("N") + ".tmp");
         var pointerTemp = Path.Combine(folder, ".pointer-" + Guid.NewGuid().ToString("N") + ".tmp");
