@@ -128,12 +128,13 @@ public partial class ReconciliationWindow : Window
         var captured = state;
         var dialog = new SaveFileDialog { Title = "حفظ نسخة تشمل المطابقة", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب والمطابقة.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
+        var destination = dialog.FileName;
         ExportButton.IsEnabled = false;
         try
         {
             await Task.Run(() => {
                 if (store.Load(source).Revision != captured.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة؛ أعد فتحه قبل تصدير النسخة.");
-                ReconciliationBackupExport.Write(source, captured.Periods, dialog.FileName);
+                ReconciliationBackupExport.Write(source, captured.Periods, destination);
             });
             var changed = state.Revision != captured.Revision;
             MessageBox.Show(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
@@ -148,11 +149,12 @@ public partial class ReconciliationWindow : Window
         var revision = state.Revision;
         var dialog = new SaveFileDialog { Title = "حفظ مسودة كشف المطابقة", Filter = "ملف PDF (*.pdf)|*.pdf", FileName = "مسودة مطابقة الحساب.pdf", AddExtension = true, DefaultExt = ".pdf", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
+        var destination = dialog.FileName;
         ExportPdfButton.IsEnabled = false;
         try
         {
             var font = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
-            await Task.Run(() => ReconciliationPdf.SaveDraft(period, font, dialog.FileName));
+            await Task.Run(() => ReconciliationPdf.SaveDraft(period, font, destination));
             var changed = state.Revision != revision || Current?.Id != period.Id;
             MessageBox.Show(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }

@@ -91,6 +91,7 @@
           <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
             <Button x:Name="TransferExport" Style="{StaticResource ActionButton}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
             <Button Content="ربط حساب الجهة المختارة" Click="LinkTransferAccount" Padding="16,10" Margin="12,0,0,0"/>
+            <Button Content="تحديد مجموعة الجهة" Click="ClassifyTransfer" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="كتاب المجموعة · قيد التطوير" IsEnabled="False" Padding="16,10" Margin="12,0,0,0"/>
           </StackPanel>
         </Grid>
@@ -99,7 +100,7 @@
             <TextBlock Text="النسخة المحلية" FontSize="18" FontWeight="SemiBold"/>
             <TextBlock Text="يحفظ البرنامج نسخة محلية بعد فحصها ولا يعدّل ملف الآيفون. تبقى النسخ السابقة على الجهاز عند استيراد نسخة جديدة." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,12"/>
             <Button x:Name="BackupExport" Style="{StaticResource ActionButton}" Content="حفظ نسخة تشمل التعديلات المحلية" Click="ExportBackup" HorizontalAlignment="Right" IsEnabled="False"/>
-            <TextBlock Text="تشمل النسخة روابط الحسابات ودفتر المطابقة المحليين. ملفات CSV المحفوظة منفصلة لا تُضاف إليها. اختبر استعادتها على الآيفون قبل الاعتماد." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>
+            <TextBlock Text="تشمل النسخة روابط الحسابات وتصنيف الجهات ودفتر المطابقة المحليين. ملفات CSV المحفوظة منفصلة لا تُضاف إليها. اختبر استعادتها على الآيفون قبل الاعتماد." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>
           </StackPanel></Border><Border Style="{StaticResource Card}"><StackPanel>
             <TextBlock Text="البيانات المحفوظة" FontSize="18" FontWeight="SemiBold"/>
             <TextBlock Text="عرض الرواتب وحسابات الجهات والأرشيف متاح من القائمة الجانبية. إعداد المزامنة والنسخ الدوري قيد التطوير." TextWrapping="Wrap" Foreground="#718481" Margin="0,10,0,0"/>

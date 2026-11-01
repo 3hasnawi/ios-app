@@ -43,11 +43,12 @@ public partial class MainWindow : Window
         if (loading) return;
         var dialog = new OpenFileDialog { Title = "اختيار نسخة الآيفون الاحتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", CheckFileExists = true, Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
+        var selectedPath = dialog.FileName;
         loading = true;
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
         {
-            var loaded = await Task.Run(() => store.Import(dialog.FileName));
+            var loaded = await Task.Run(() => store.Import(selectedPath));
             SetSnapshot(loaded);
             SourceMessage.Text = "حُفظت نسخة محلية بعد فحصها؛ ملف الآيفون الأصلي لم يتغير.";
         }
@@ -199,13 +200,14 @@ public partial class MainWindow : Window
         if (source is null || original is null || links is null) return;
         var dialog = new SaveFileDialog { Title = "حفظ نسخة احتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", FileName = "نسخة الرواتب.zip", AddExtension = true, DefaultExt = ".zip", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
+        var destination = dialog.FileName;
         BackupExport.IsEnabled = false;
         try
         {
             var changed = await Task.Run(() => {
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
                 var ledger = reconciliationStore.Load(source);
-                ReconciliationBackupExport.Write(source, ledger.Periods, dialog.FileName);
+                ReconciliationBackupExport.Write(source, ledger.Periods, destination);
                 return linkStore.Load(original).Revision != links.Revision || reconciliationStore.Load(source).Revision != ledger.Revision;
             });
             MessageBox.Show(this, changed || !ReferenceEquals(source, snapshot) ? "حُفظت لقطة سابقة؛ تغيّرت البيانات أثناء التصدير، لذا أعد حفظ النسخة. اختبر الاستعادة على الآيفون." : "حُفظت النسخة مع الروابط ودفتر المطابقة بعد فحصها. اختبر استعادتها على الآيفون قبل الاعتماد.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
@@ -271,6 +273,26 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ الربط.\n" + ex.Message, "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
+    private async void ClassifyTransfer(object sender, RoutedEventArgs e)
+    {
+        var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot;
+        if (original is null || selected is null || links is null || active is null || !ReferenceEquals(active, preparedSource))
+        { MessageBox.Show(this, "اختر جهة من الجدول أولاً بعد اكتمال تحميلها.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+        var dialog = new TransferCategoryWindow(selected.Entry) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        var category = dialog.SelectedGroup;
+        if (!ReferenceEquals(active, snapshot) || SelectedMonth != selected.Entry.Month) { MessageBox.Show(this, "تغيّرت البيانات؛ أعد اختيار الجهة.", "تصنيف الجهة"); return; }
+        try
+        {
+            var updated = await Task.Run(() => linkStore.SaveCategory(original, links, selected.Entry, category));
+            if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
+            { MessageBox.Show(this, "حُفظ التصنيف للنسخة السابقة، ولم تُغيّر النسخة المعروضة.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage();
+            MessageBox.Show(this, "حُفظ التصنيف على الجهاز. راجع التنبيهات واحفظ نسخة احتياطية تشمل التعديلات.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        { MessageBox.Show(this, "تعذّر حفظ التصنيف.\n" + ex.Message, "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void ExportTransfer(object sender, RoutedEventArgs e)
     {
         var plan = preparedTransfer; var source = preparedSource; var group = CurrentTransferGroup;
@@ -279,13 +301,14 @@ public partial class MainWindow : Window
         var dialog = new SaveFileDialog { Title = "حفظ ملف التحويل", Filter = "ملف CSV (*.csv)|*.csv", FileName = group == TransferGroup.Rafidain ? "Rafidain.csv" : "OtherBanks.csv", AddExtension = true, DefaultExt = ".csv", OverwritePrompt = true };
         if (dialog.ShowDialog(this) != true) return;
         if (!string.Equals(Path.GetExtension(dialog.FileName), ".csv", StringComparison.OrdinalIgnoreCase)) { MessageBox.Show(this, "اختر اسماً ينتهي بالامتداد CSV.", "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+        var destination = dialog.FileName;
         TransferExport.IsEnabled = false;
         try
         {
             var date = DateOnly.FromDateTime(DateTime.Now);
             var changed = await Task.Run(() => {
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
-                TransferFileSave.Write(source, plan, group, date, dialog.FileName);
+                TransferFileSave.Write(source, plan, group, date, destination);
                 return linkStore.Load(original).Revision != links.Revision;
             });
             if (changed || !ReferenceEquals(source, snapshot) || plan.Month != SelectedMonth || page != "transfer" || group != CurrentTransferGroup)
