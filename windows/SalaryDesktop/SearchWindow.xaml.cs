@@ -12,11 +12,10 @@ public enum SearchKind { Person, Entity, Page }
 /// نتيجة في البحث الشامل. Target: اسم المنتسب أو الجهة أو وسم القسم.
 public sealed record SearchItem(SearchKind Kind, string Title, string Subtitle, string Target, string Key, string TitleKey, string Icon = "")
 {
-    private static Brush Frozen(string color) { var brush = (Brush)new BrushConverter().ConvertFromString(color)!; brush.Freeze(); return brush; }
-    private static readonly Brush PersonTint = Frozen("#E3EFEC"), PersonInk = Frozen("#135148"), EntityTint = Frozen("#E5F0FC"), EntityInk = Frozen("#0B5DB8"), PageTint = Frozen("#F1F3F4"), PageInk = Frozen("#4D615E");
+    private static Brush Resource(string key) => (Brush)Application.Current.Resources[key];
     public string Glyph => Icon.Length > 0 ? Icon : Kind switch { SearchKind.Person => "", SearchKind.Entity => "", _ => "" };
-    public Brush Tint => Kind switch { SearchKind.Person => PersonTint, SearchKind.Entity => EntityTint, _ => PageTint };
-    public Brush Ink => Kind switch { SearchKind.Person => PersonInk, SearchKind.Entity => EntityInk, _ => PageInk };
+    public Brush Tint => Resource(Kind switch { SearchKind.Person => "PrimarySoft", SearchKind.Entity => "AccentSoft", _ => "TbgF1F5F4" });
+    public Brush Ink => Resource(Kind switch { SearchKind.Person => "Primary", SearchKind.Entity => "Accent", _ => "Muted" });
     public string KindText => Kind switch { SearchKind.Person => "منتسب", SearchKind.Entity => "جهة تنفيذ", _ => "قسم" };
 }
 

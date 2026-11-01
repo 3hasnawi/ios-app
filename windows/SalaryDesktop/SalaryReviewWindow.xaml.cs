@@ -13,7 +13,7 @@ public partial class SalaryReviewWindow : Window
     // نص البحث الموحّد يُحسب مرة واحدة لكل ملاحظة بدل كل ضغطة مفتاح.
     private readonly string[] keys;
     private readonly DispatcherTimer delay = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    public SalaryReviewWindow(SalaryReviewResult result)
+    public SalaryReviewWindow(SalaryReviewResult result, string? kind = null)
     {
         InitializeComponent(); this.result = result;
         keys = result.Rows.Select(r => PayrollAnalysis.Normalize(r.Name + " " + r.Detail)).ToArray();
@@ -21,7 +21,7 @@ public partial class SalaryReviewWindow : Window
         Notes.Text = string.Join("\n", result.Notes);
         delay.Tick += (_, _) => { delay.Stop(); ApplyFilter(); };
         KindPicker.ItemsSource = new[] { "كل الملاحظات" }.Concat(result.Rows.Select(r => r.Kind).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)).ToArray();
-        KindPicker.SelectedIndex = 0; ApplyFilter(); Closed += (_, _) => delay.Stop();
+        KindPicker.SelectedIndex = kind is not null && KindPicker.Items.IndexOf(kind) is var index and > 0 ? index : 0; ApplyFilter(); Closed += (_, _) => delay.Stop();
     }
     private void FilterChanged(object sender, SelectionChangedEventArgs e) { if (IsInitialized) ApplyFilter(); }
     private void SearchChanged(object sender, TextChangedEventArgs e) { if (IsInitialized) { delay.Stop(); delay.Start(); } }

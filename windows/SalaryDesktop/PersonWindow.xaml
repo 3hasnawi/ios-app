@@ -1,11 +1,11 @@
 <Window x:Class="SalaryDesktop.PersonWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ملف المنتسب" Width="1180" Height="780" MinWidth="900" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{StaticResource AppFont}" FontSize="13.5"
-        Background="{StaticResource Page}" Foreground="{StaticResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
   <Window.Resources>
     <DataTemplate x:Key="LineTemplate">
-      <Border BorderBrush="#EDF1F2" BorderThickness="0,0,0,1" Padding="0,7">
+      <Border BorderBrush="{DynamicResource TbgEDF1F2}" BorderThickness="0,0,0,1" Padding="0,7">
         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <StackPanel><TextBlock Text="{Binding Title}" Foreground="#3A524F" TextWrapping="Wrap"/><TextBlock Text="{Binding Note}" Foreground="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"/></StackPanel>
+          <StackPanel><TextBlock Text="{Binding Title}" Foreground="{DynamicResource Tfg3A524F}" TextWrapping="Wrap"/><TextBlock Text="{Binding Note}" Foreground="{DynamicResource Muted}" FontSize="11.5" TextWrapping="Wrap"/></StackPanel>
           <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Top"/>
         </Grid>
       </Border>
@@ -15,17 +15,17 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <Border Width="54" Height="54" CornerRadius="14" Background="{StaticResource PrimarySoft}">
-        <TextBlock x:Name="Initial" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      <Border Width="54" Height="54" CornerRadius="14" Background="{DynamicResource PrimarySoft}">
+        <TextBlock x:Name="Initial" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
       </Border>
       <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
         <TextBlock x:Name="NameText" FontSize="21" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-        <TextBlock x:Name="IdentityText" Foreground="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="IdentityText" Foreground="{DynamicResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
       </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-        <Border Background="White" BorderBrush="#CFD9DA" BorderThickness="1" CornerRadius="9" Margin="0,0,8,0">
+        <Border Background="{DynamicResource TbgFFFFFF}" BorderBrush="{DynamicResource TbgCFD9DA}" BorderThickness="1" CornerRadius="9" Margin="0,0,8,0">
           <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-            <TextBlock Style="{StaticResource Icon}" Text="&#xE787;" Foreground="{StaticResource Primary}" Margin="12,0,2,0"/>
+            <TextBlock Style="{StaticResource Icon}" Text="&#xE787;" Foreground="{DynamicResource Primary}" Margin="12,0,2,0"/>
             <ComboBox x:Name="MonthPicker" Grid.Column="1" Width="170" Height="36" BorderThickness="0" Background="Transparent" SelectionChanged="MonthChanged" ToolTip="شهر القسيمة"/>
           </Grid>
         </Border>
@@ -37,7 +37,7 @@
         </Button>
       </StackPanel>
     </Grid>
-    <TextBlock x:Name="Notice" Grid.Row="1" Foreground="{StaticResource Warn}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+    <TextBlock x:Name="Notice" Grid.Row="1" Foreground="{DynamicResource Warn}" TextWrapping="Wrap" Margin="0,10,0,0"/>
     <TabControl Grid.Row="2" Margin="0,12,0,0" Background="Transparent" BorderThickness="0,1,0,0">
       <TabItem Header="القسيمة">
         <Grid Margin="0,14,0,0">
@@ -45,14 +45,14 @@
           <Border Style="{StaticResource Card}" Margin="0,0,12,0">
             <DockPanel>
               <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="المخصصات" Margin="0,0,0,6"/>
-              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="الاستحقاق" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/><TextBlock x:Name="GrossText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/></Grid></Border>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="الاستحقاق" FontWeight="SemiBold" Foreground="{DynamicResource Primary}"/><TextBlock x:Name="GrossText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="{DynamicResource Primary}"/></Grid></Border>
               <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="AllowanceList" ItemTemplate="{StaticResource LineTemplate}"/></ScrollViewer>
             </DockPanel>
           </Border>
           <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
             <DockPanel>
               <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="الاستقطاعات" Margin="0,0,0,6"/>
-              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="مجموع الاستقطاعات" FontWeight="SemiBold" Foreground="#B4362A"/><TextBlock x:Name="DeductionTotalText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="#B4362A"/></Grid></Border>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="مجموع الاستقطاعات" FontWeight="SemiBold" Foreground="{DynamicResource TfgB4362A}"/><TextBlock x:Name="DeductionTotalText" HorizontalAlignment="Right" FontWeight="SemiBold" Foreground="{DynamicResource TfgB4362A}"/></Grid></Border>
               <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                   <ItemsControl x:Name="DeductionList" ItemTemplate="{StaticResource LineTemplate}"/>
@@ -76,7 +76,7 @@
                 <StackPanel>
                   <TextBlock Style="{StaticResource CardTitle}" Text="الصافي عبر الأشهر"/>
                   <Canvas x:Name="Trend" Height="72" Margin="0,10,0,4" ClipToBounds="True" FlowDirection="LeftToRight"/>
-                  <Grid><TextBlock x:Name="TrendNew" Foreground="{StaticResource Muted}" FontSize="11.5"/><TextBlock x:Name="TrendOld" Foreground="{StaticResource Muted}" FontSize="11.5" HorizontalAlignment="Right"/></Grid>
+                  <Grid><TextBlock x:Name="TrendNew" Foreground="{DynamicResource Muted}" FontSize="11.5"/><TextBlock x:Name="TrendOld" Foreground="{DynamicResource Muted}" FontSize="11.5" HorizontalAlignment="Right"/></Grid>
                 </StackPanel>
               </Border>
               <Border Style="{StaticResource Card}">
@@ -91,7 +91,7 @@
       </TabItem>
       <TabItem Header="الاستقطاعات عبر الأشهر">
         <DockPanel Margin="0,14,0,0">
-          <TextBlock x:Name="HistoryStatus" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="2,8,0,0"/>
+          <TextBlock x:Name="HistoryStatus" DockPanel.Dock="Bottom" Foreground="{DynamicResource Muted}" Margin="2,8,0,0"/>
           <DataGrid x:Name="HistoryTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
             <DataGrid.Columns>
               <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="*"/>
@@ -104,7 +104,7 @@
       </TabItem>
       <TabItem Header="سجل الملاك">
         <DockPanel Margin="0,14,0,0">
-          <TextBlock x:Name="StaffStatus" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
+          <TextBlock x:Name="StaffStatus" DockPanel.Dock="Top" Foreground="{DynamicResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
           <DataGrid x:Name="StaffTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
             <DataGrid.Columns>
               <DataGridTextColumn Header="القسم" Binding="{Binding Section}" Width="*"/>
@@ -116,7 +116,7 @@
       </TabItem>
       <TabItem Header="التغيّرات مع الشهر السابق">
         <DockPanel Margin="0,14,0,0">
-          <TextBlock x:Name="ChangesStatus" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
+          <TextBlock x:Name="ChangesStatus" DockPanel.Dock="Top" Foreground="{DynamicResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
           <DataGrid x:Name="ChangesTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
             <DataGrid.Columns>
               <DataGridTextColumn Header="البند" Binding="{Binding Title}" Width="2*"/>
@@ -130,7 +130,7 @@
     </TabControl>
     <DockPanel Grid.Row="3" Margin="0,12,0,0">
       <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>
-      <TextBlock Text="عرض محلي للقراءة؛ قارن مع الآيفون قبل الاعتماد." Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+      <TextBlock Text="عرض محلي للقراءة؛ قارن مع الآيفون قبل الاعتماد." Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0"/>
     </DockPanel>
   </Grid>
 </Window>

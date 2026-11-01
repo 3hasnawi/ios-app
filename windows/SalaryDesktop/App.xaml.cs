@@ -20,6 +20,13 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, e) => { if (e.ExceptionObject is Exception ex) Log(ex); };
     }
 
+    /// المظهر المحفوظ يُطبّق قبل فتح أي نافذة.
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        Themes.Apply(UiPreferences.Current.Theme ?? "light");
+        base.OnStartup(e);
+    }
+
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         UnhandledCount++;

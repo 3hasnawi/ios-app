@@ -20,7 +20,6 @@ public partial class MainWindow
     private sealed record TableSpec(TableColumn[] Columns, string? Sum, TableFilter[] Filters);
     private sealed record TableResult(System.Collections.IList Rows, string Status, string[][] Options, decimal? Sum, int Missing);
     private sealed record PayrollCache(BackupSnapshot Source, string Month, PayrollRow[] Rows);
-    private sealed record UiSettings(Dictionary<string, string[]>? Columns);
 
     private static TableColumn Text<T>(string key, string title, double weight, Func<T, object?> value, bool shown = true) => new(key, title, weight, false, shown, row => row is T item ? value(item) : null);
     private static TableColumn Number<T>(string key, string title, double weight, Func<T, object?> value, bool shown = true) => new(key, title, weight, true, shown, row => row is T item ? value(item) : null);
@@ -105,29 +104,8 @@ public partial class MainWindow
         RowEntityMenu.Visibility = current is "groups" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private static string UiSettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "ui.json");
-    private Dictionary<string, string[]>? shownColumns;
-    private Dictionary<string, string[]> ShownColumns
-    {
-        get
-        {
-            if (shownColumns is not null) return shownColumns;
-            try { shownColumns = File.Exists(UiSettingsPath) ? JsonSerializer.Deserialize<UiSettings>(File.ReadAllBytes(UiSettingsPath))?.Columns : null; }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException) { shownColumns = null; }
-            return shownColumns ??= new(StringComparer.Ordinal);
-        }
-    }
-    private void SaveShownColumns()
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(UiSettingsPath)!);
-            var temporary = UiSettingsPath + ".tmp";
-            File.WriteAllBytes(temporary, JsonSerializer.SerializeToUtf8Bytes(new UiSettings(ShownColumns)));
-            File.Move(temporary, UiSettingsPath, true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { StatusBar.Text = "تعذّر حفظ اختيار الأعمدة: " + ex.Message; }
-    }
+    private static Dictionary<string, string[]> ShownColumns => UiPreferences.Current.Columns!;
+    private void SaveShownColumns() { if (UiPreferences.Save() is { } error) StatusBar.Text = "تعذّر حفظ اختيار الأعمدة: " + error; }
 
     private void ShowColumns(object sender, RoutedEventArgs e)
     {

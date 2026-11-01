@@ -226,6 +226,23 @@ static class Program
                     File.WriteAllBytes(Path.Combine(folder, "23-entity-list.pdf"), ReportPdf.Generate([entitySheet], assets, stamp));
                     var month = PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff).Months.First(m => m.Month == "أيلول 2026");
                     File.WriteAllBytes(Path.Combine(folder, "24-payslip.pdf"), PayslipPdf.Generate(ReportSheet.HeaderFor(rich), month.Employee!.Name, month.Employee.Rank, month.Employee.Workplace, month.Month, PersonProfiles.Payslip(month), assets, stamp));
+                    // الرئيسية: شريط التدقيق والفئات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
+                    Check(((FrameworkElement)main.FindName("AlertStrip")).Visibility == Visibility.Visible && ((ItemsControl)main.FindName("HomeAlerts")).Items.Count > 0, "home audit strip was not shown");
+                    Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");
+                    Check(((FrameworkElement)main.FindName("BackupReminder")).Visibility == Visibility.Collapsed, "backup reminder shown without local changes");
+                    // الوضع الداكن.
+                    Themes.Apply("dark"); await Task.Delay(500);
+                    Check(((SolidColorBrush)Application.Current.Resources["Page"]).Color == (Color)ColorConverter.ConvertFromString("#0F1918"), "dark theme was not applied");
+                    Shot(main, "25-dark-home");
+                    await Navigate("payroll"); await Task.Delay(600); Shot(main, "26-dark-payroll");
+                    var darkPerson = Fit(new PersonWindow(rich, PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff), "أيلول 2026") { Owner = main }); darkPerson.Show(); await Task.Delay(700); Shot(darkPerson, "27-dark-person"); darkPerson.Close();
+                    var darkSearch = Fit(new SearchWindow(rich, Task.FromResult<IReadOnlyList<StaffMember>?>(richStaff)) { Owner = main }); darkSearch.Show(); await Task.Delay(900);
+                    ((TextBox)darkSearch.FindName("Query")).Text = "الرافدين"; await Task.Delay(300); Shot(darkSearch, "28-dark-search"); darkSearch.Close();
+                    Themes.Apply("light"); await Navigate("home"); await Task.Delay(800);
+                    // معاينة تصميم تذكير الحفظ فقط (النسخة الوهمية بلا تعديلات محلية فعلية).
+                    ((FrameworkElement)main.FindName("BackupReminder")).Visibility = Visibility.Visible;
+                    ((TextBlock)main.FindName("BackupReminderText")).Text = "أشهر مستوردة، حسابات وروابط على هذا الجهاز فقط · آخر نسخة شاملة: قبل يومين";
+                    await Task.Delay(200); Shot(main, "29-backup-reminder");
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }

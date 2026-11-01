@@ -6,10 +6,16 @@ namespace SalaryDesktop;
 public partial class SalaryItemsWindow : Window
 {
     private readonly BackupSnapshot source; private readonly string month; private int request; private bool closed; private SalaryItemGroup? selected;
-    public SalaryItemsWindow(BackupSnapshot source, string month, IReadOnlyList<SalaryItemGroup> groups)
+    public SalaryItemsWindow(BackupSnapshot source, string month, IReadOnlyList<SalaryItemGroup> groups, string? special = null)
     {
         InitializeComponent(); this.source = source; this.month = month; Heading.Text = "بنود الرواتب · " + month; Groups.ItemsSource = groups;
         Status.Text = groups.Count == 0 ? "لا توجد بنود محفوظة لهذا الشهر." : "اختر بنداً لعرض تفاصيله."; Closed += (_, _) => { closed = true; request++; };
+        // فتح كشف خاص من الرئيسية: يُختار بنده مباشرة، أو تُعرض رسالة إن لم يوجد في الشهر.
+        if (special is not null)
+        {
+            if (groups.FirstOrDefault(g => Special(g.Title) == special) is { } match) Groups.SelectedItem = match;
+            else Status.Text = special switch { "fund" => "لا يوجد بند صندوق الشهداء", "health" => "لا يوجد بند الرعاية الصحية", _ => "لا يوجد بند عقد الإطعام" } + " في رواتب هذا الشهر.";
+        }
     }
     private async void GroupChanged(object sender, SelectionChangedEventArgs e)
     {

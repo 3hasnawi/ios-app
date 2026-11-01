@@ -944,6 +944,9 @@ try
         using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([shownTable], reportAssets, stamp))) Check(read.NumberOfPages == 1, "table export PDF");
         try { _ = TableReport.Build(ReportSheet.DefaultHeader, "فارغ", ["الاسم"], -1, [], []); throw new InvalidOperationException("empty table export accepted"); }
         catch (InvalidDataException) { }
+        var overview = HomeOverviews.Build(reportSnapshot, "أيلول 2026", null);
+        Check(overview.Categories.Select(c => c.Count).SequenceEqual([12, 6, 6, 6]) && overview.PreviousMonth == "آب 2026" && overview.NetChange == 300000m && overview.PeopleChange == 0 && overview.AlertError is null, "home overview categories and comparison");
+        Check(overview.Alerts.Any(a => a.Kind == "تغيّر الصافي" && a.Count == 30), "home overview groups review notes");
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");

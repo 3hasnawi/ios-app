@@ -46,7 +46,9 @@ public partial class MainWindow : Window
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
-        Loaded += async (_, _) => { await LoadStoredSnapshot(); RenderPage(); };
+        RestorePlacement();
+        Loaded += async (_, _) => { ShowTheme(); await LoadStoredSnapshot(); RestorePage(); RenderPage(); };
+        Closing += (_, _) => SavePlacement();
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
@@ -73,7 +75,12 @@ public partial class MainWindow : Window
         if (loading) return;
         var dialog = new OpenFileDialog { Title = "اختيار نسخة الآيفون الاحتياطية", Filter = "نسخة احتياطية (*.zip)|*.zip", CheckFileExists = true, Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
-        var selectedPath = dialog.FileName;
+        await OpenBackupFile(dialog.FileName);
+    }
+    /// فتح نسخة من مسار (من نافذة الاختيار أو بسحب الملف إلى البرنامج).
+    private async Task OpenBackupFile(string selectedPath)
+    {
+        if (loading) return;
         loading = true;
         SourceMessage.Text = "جارٍ قراءة النسخة والتحقق من فهرسها دون تغيير الملف الأصلي…";
         try
@@ -117,6 +124,7 @@ public partial class MainWindow : Window
         StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون.";
         SidebarData.Text = $"{snapshot.Months.Count:N0} شهر · {snapshot.StaffCount:N0} في الملاك · {snapshot.Accounts.Count:N0} حساب";
         RenderPage();
+        RefreshBackupReminder(true);
     }
     private async Task LoadStoredSnapshot()
     {
@@ -196,6 +204,7 @@ public partial class MainWindow : Window
     private void RenderPage()
     {
         if (!IsInitialized || HomePanel is null || DataTable is null) return;
+        RefreshBackupReminder();
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
@@ -492,18 +501,20 @@ public partial class MainWindow : Window
         BackupExport.IsEnabled = false;
         try
         {
-            var changed = await Task.Run(() => {
+            var saved = await Task.Run(() => {
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
                 if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة قبل التصدير.");
                 var ledger = reconciliationStore.Load(source);
                 ReconciliationBackupExport.Write(source, ledger.Periods, destination);
-                return linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision;
+                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision, Ledger: ledger.Revision);
             });
+            var changed = saved.Changed;
+            if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);
             Ui.Message(this, changed || !ReferenceEquals(source, snapshot) ? "حُفظت لقطة سابقة؛ تغيّرت البيانات أثناء التصدير، لذا أعد حفظ النسخة. اختبر الاستعادة على الآيفون." : "حُفظت النسخة مع الروابط ودفتر المطابقة بعد فحصها. اختبر استعادتها على الآيفون قبل الاعتماد.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         { Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { if (page == "settings") BackupExport.IsEnabled = snapshot is not null; }
+        finally { if (page == "settings") BackupExport.IsEnabled = snapshot is not null; RefreshBackupReminder(true); }
     }
 
     private sealed record TransferRow(TransferEntry Entry, string Title, string Amount, string Branch, string Iban, string Issues);
@@ -617,7 +628,8 @@ public partial class MainWindow : Window
         { Ui.Message(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
-    private async void OpenSalaryItems(object sender, RoutedEventArgs e)
+    private async void OpenSalaryItems(object sender, RoutedEventArgs e) => await ShowSalaryItems(null);
+    private async Task ShowSalaryItems(string? special)
     {
         var source = snapshot; var month = SelectedMonth;
         if (source is null || month.Length == 0) { Ui.Message(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "بنود الرواتب"); return; }
@@ -626,13 +638,14 @@ public partial class MainWindow : Window
         {
             var groups = await Task.Run(() => SalaryItemReports.Groups(source, month));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّر الشهر أو البيانات؛ أعد فتح التقرير.", "بنود الرواتب"); return; }
-            new SalaryItemsWindow(source, month, groups) { Owner = this }.ShowDialog();
+            new SalaryItemsWindow(source, month, groups, special) { Owner = this }.ShowDialog();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر حساب بنود الرواتب.\n" + ex.Message, "بنود الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { SalaryItemsButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
-    private async void OpenSalaryReview(object sender, RoutedEventArgs e)
+    private void OpenSalaryReview(object sender, RoutedEventArgs e) => OpenSalaryReview((string?)null);
+    private async void OpenSalaryReview(string? kind)
     {
         var source = snapshot; var month = SelectedMonth;
         if (source is null || month.Length == 0) { Ui.Message(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "تدقيق الرواتب"); return; }
@@ -641,7 +654,7 @@ public partial class MainWindow : Window
         {
             var result = await Task.Run(() => SalaryReview.Prepare(source, month, source.StaffCount > 0 ? StaffRecords.Read(source) : []));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
-            new SalaryReviewWindow(result) { Owner = this }.ShowDialog();
+            new SalaryReviewWindow(result, kind) { Owner = this }.ShowDialog();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
@@ -830,6 +843,9 @@ public partial class MainWindow : Window
         }
     }
 
+    private sealed record CategoryTile(string Name, int Count);
+    private sealed record AlertChip(string Kind, int Count, bool Severe) { public string Text => $"{Count:N0} {Kind}"; }
+    private static readonly string[] SevereKinds = ["أسماء مكررة", "صافي ناقص", "IBAN يحتاج مراجعة", "IBAN مكرر", "IBAN فارغ", "رقم مكرر", "حساب الصافي", "مجموع الاستقطاعات"];
     private async void RenderHome()
     {
         StartFromExcelButton.Visibility = snapshot is null ? Visibility.Visible : Visibility.Collapsed;
@@ -837,27 +853,44 @@ public partial class MainWindow : Window
         if (source is null || month.Length == 0)
         {
             NetLabel.Text = "صافي الرواتب للشهر المختار"; NetAmount.Text = "—"; PayrollCount.Text = "لا توجد بيانات مفتوحة"; DataWarning.Text = "";
-            HomeEmployees.Text = "—"; HomeDeductions.Text = "—"; HomeMonths.Text = source is null ? "—" : source.Months.Count.ToString("N0", Numbers);
+            HomeCategories.ItemsSource = FundReport.Categories.Select(c => new CategoryTile(c.Name, 0)).ToArray();
+            DeltaPanel.Visibility = Visibility.Collapsed; AlertStrip.Visibility = Visibility.Collapsed;
             SnapshotSummary.Text = "افتح نسخة الآيفون أو ابدأ بملف رواتب أو استقطاعات."; return;
         }
-        HomeMonths.Text = source.Months.Count.ToString("N0", Numbers);
         SnapshotSummary.Text = $"{source.Months.Count:N0} شهر · {source.StaffCount:N0} سجل في الملاك · {source.Accounts.Count:N0} حساب جهة · {source.Books.Count:N0} كتاب في الأرشيف";
+        var people = staffDigest == source.SourceDigest ? staff : null;
         try
         {
             var totals = await Task.Run(() => PayrollAnalysis.Summarize(source, month));
             if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
             NetLabel.Text = totals.MissingNet > 0 ? $"صافي الرواتب المتاح · {month} · بيانات ناقصة" : $"صافي الرواتب · {month}";
             NetAmount.Text = totals.Employees == 0 || totals.MissingNet == totals.Employees ? "غير متاح" : Amount(totals.NetTotal);
-            PayrollCount.Text = totals.Employees == 0 ? "لا توجد رواتب مستوردة لهذا الشهر" : $"{totals.Employees:N0} منتسب في كشف الرواتب";
-            HomeEmployees.Text = totals.Employees.ToString("N0", Numbers);
-            HomeDeductions.Text = totals.Deductions.ToString("N0", Numbers);
+            PayrollCount.Text = totals.Employees == 0 ? "لا توجد رواتب مستوردة لهذا الشهر" : $"{totals.Employees:N0} منتسب في كشف الرواتب · {totals.Deductions:N0} قيد استقطاع";
             DataWarning.Text = totals.MissingNet > 0 || totals.MissingAmounts > 0
                 ? $"تنبيه: {totals.MissingNet:N0} راتب بلا صافي و{totals.MissingAmounts:N0} قيد بلا مبلغ؛ المجاميع أولية."
                 : "النتائج للعرض والمراجعة؛ قارنها مع نسخة الآيفون قبل الاعتماد.";
+            var overview = await Task.Run(() => HomeOverviews.Build(source, month, people));
+            if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
+            HomeCategories.ItemsSource = overview.Categories.Select(c => new CategoryTile(c.Name, c.Count)).ToArray();
+            if (overview.PreviousMonth is { } previous)
+            {
+                DeltaNet.Text = overview.NetChange is { } change ? (change == 0 ? $"الصافي بلا تغيير عن {previous}" : $"{(change > 0 ? "▲" : "▼")} {Amount(Math.Abs(change))} عن {previous}") : $"لا مقارنة للصافي مع {previous} (مبالغ ناقصة)";
+                DeltaPeople.Text = overview.PeopleChange == 0 ? "عدد المنتسبين بلا تغيير" : $"{(overview.PeopleChange > 0 ? "+" : "−")}{Math.Abs(overview.PeopleChange):N0} منتسب";
+                DeltaPanel.Visibility = Visibility.Visible;
+            }
+            else DeltaPanel.Visibility = Visibility.Collapsed;
+            HomeAlerts.ItemsSource = overview.Alerts.Take(7).Select(a => new AlertChip(a.Kind, a.Count, SevereKinds.Contains(a.Kind))).ToArray();
+            var severe = overview.Alerts.Any(a => SevereKinds.Contains(a.Kind));
+            AlertTitle.Text = overview.AlertError is { } error ? "تعذّر التدقيق: " + error : overview.Alerts.Count == 0 ? "لا توجد ملاحظات في فحوص هذا الشهر" : severe ? "يحتاج انتباهك" : "تغيّرات الشهر";
+            AlertIcon.Text = overview.Alerts.Count == 0 && overview.AlertError is null ? "\uE73E" : "\uE7BA";
+            AlertIcon.SetResourceReference(TextBlock.ForegroundProperty, overview.Alerts.Count == 0 && overview.AlertError is null ? "Primary" : severe ? "Warn" : "Accent");
+            AlertStrip.Visibility = totals.Employees > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
-        catch (Exception ex) when (ex is InvalidDataException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or OverflowException or System.Text.Json.JsonException)
         {
             if (ticket == homeRequest) { NetAmount.Text = "غير متاح"; DataWarning.Text = "تعذّر حساب الملخص: " + ex.Message; }
         }
     }
+    private void OpenAlert(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) OpenSalaryReview(kind); }
+    private async void OpenSpecialReport(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) await ShowSalaryItems(kind); }
 }
