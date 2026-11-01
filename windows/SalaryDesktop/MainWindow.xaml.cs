@@ -552,9 +552,21 @@ public partial class MainWindow : Window
     {
         if (IsInitialized && page == "transfer") RenderTransfers();
     }
+    /// كل تبويب يعرض إجراءاته فقط: ملف التحويل وكتاب المجموعة وتدقيق الإصدار للرافدين والمصارف الأخرى، والكتب المنفردة وقوائم الأسماء
+    /// لفرع الأنبار، وربط الحساب وتحديد المجموعة لكل جهة، ومراجع الكتب حيث تُصدر كتب.
+    private void ShowTransferActions(TransferGroup group)
+    {
+        var bankGroup = group is TransferGroup.Rafidain or TransferGroup.OtherBanks;
+        GroupCard.Visibility = bankGroup ? Visibility.Visible : Visibility.Collapsed;
+        GroupCardTitle.Text = group == TransferGroup.Rafidain ? "مجموعة الرافدين" : "مجموعة الرشيد والمصارف الأخرى";
+        IndividualCard.Visibility = group == TransferGroup.Anbar ? Visibility.Visible : Visibility.Collapsed;
+        ReferencesCard.Visibility = group == TransferGroup.Unresolved ? Visibility.Collapsed : Visibility.Visible;
+        UnresolvedCard.Visibility = group == TransferGroup.Unresolved ? Visibility.Visible : Visibility.Collapsed;
+    }
     private async void RenderTransfers()
     {
         var ticket = ++transferRequest; var source = snapshot; var month = SelectedMonth; var group = CurrentTransferGroup;
+        ShowTransferActions(group);
         preparedTransfer = null; preparedSource = null; TransferExport.IsEnabled = false; TransferTable.ItemsSource = null; IssuanceNotice.Text = "";
         if (source is null || month.Length == 0) { TransferNotice.Text = "افتح نسخة الآيفون واختر الشهر أولاً."; return; }
         TransferNotice.Text = "جارٍ مراجعة بيانات التحويل محلياً…";

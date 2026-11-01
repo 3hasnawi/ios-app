@@ -265,6 +265,16 @@ static class Program
                     await Navigate("payroll"); await Task.Delay(700); Shot(main, "33-font-cairo-eastern");
                     AppFonts.Apply(AppFonts.DefaultFont, "latin"); await Task.Delay(300);
                     Check(NumberSubstitution.GetSubstitution(main) == NumberSubstitutionMethod.European, "latin digits were not restored");
+                    // ملفات التحويل: كل تبويب بإجراءاته فقط.
+                    await Navigate("transfer"); await Task.Delay(1200);
+                    Check(((FrameworkElement)main.FindName("GroupCard")).Visibility == Visibility.Visible && ((FrameworkElement)main.FindName("IndividualCard")).Visibility == Visibility.Collapsed, "Rafidain tab showed the wrong actions");
+                    ((ListBox)main.FindName("TransferGroupPicker")).SelectedIndex = 2; await Task.Delay(1200);
+                    Check(((FrameworkElement)main.FindName("GroupCard")).Visibility == Visibility.Collapsed && ((FrameworkElement)main.FindName("IndividualCard")).Visibility == Visibility.Visible, "Anbar tab showed the wrong actions");
+                    Shot(main, "34-transfer-anbar");
+                    ((ListBox)main.FindName("TransferGroupPicker")).SelectedIndex = 3; await Task.Delay(1200);
+                    Check(((FrameworkElement)main.FindName("UnresolvedCard")).Visibility == Visibility.Visible && ((FrameworkElement)main.FindName("ReferencesCard")).Visibility == Visibility.Collapsed, "unclassified tab showed the wrong actions");
+                    Shot(main, "35-transfer-unresolved");
+                    ((ListBox)main.FindName("TransferGroupPicker")).SelectedIndex = 0;
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }
