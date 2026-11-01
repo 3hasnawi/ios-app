@@ -948,7 +948,7 @@ try
         Check(overview.Categories.Select(c => c.Count).SequenceEqual([12, 6, 6, 6]) && overview.PreviousMonth == "آب 2026" && overview.NetChange == 300000m && overview.PeopleChange == 0 && overview.AlertError is null, "home overview categories and comparison");
         Check(overview.Alerts.Any(a => a.Kind == "تغيّر الصافي" && a.Count == 30), "home overview groups review notes");
         var copiesRoot = Path.Combine(root, "copies"); Directory.CreateDirectory(copiesRoot);
-        var copyDigests = Enumerable.Range(0, 7).Select(i => new string((char)('A' + i), 64)).ToArray();
+        var copyDigests = Enumerable.Range(0, 7).Select(i => new string((char)('0' + i), 64)).ToArray();
         for (int i = 0; i < copyDigests.Length; i++) { var file = Path.Combine(copiesRoot, copyDigests[i] + ".zip"); File.WriteAllBytes(file, new byte[100 + i]); File.SetLastWriteTimeUtc(file, new DateTime(2026, 1, 1).AddDays(i)); }
         File.WriteAllText(Path.Combine(copiesRoot, "current.json"), JsonSerializer.Serialize(new { Version = 1, Digest = copyDigests[0] }));
         var copyStore = new LocalSnapshotStore(copiesRoot);
