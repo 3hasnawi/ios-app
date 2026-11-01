@@ -36,7 +36,7 @@ public static class IndividualLetterPreparation
             case "contracts":
                 if (summary.MissingContractNominal > 0 && !acceptMissingContractNominal)
                     throw new InvalidDataException($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ راجع المبلغ وأكد التجاوز لإعداد الكتاب.");
-                if (summary.MissingContractNominal > 0) notices.Add($"تم تجاوز تنبيه {summary.MissingContractNominal} عقد بلا راتب اسمي بعد مراجعة المستخدم.");
+                if (summary.MissingContractNominal > 0) notices.Add($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ يلزم تأكيد مراجعة المبلغ.");
                 lines.Add(new("حصة التقاعد من الراتب الاسمي", Amount(summary.ContractNominalShare)));
                 lines.Add(new("التوقيفات التقاعدية", Amount(summary.ContractRetirement))); break;
             case "cash_salary":

@@ -412,6 +412,22 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
+    private async void OpenIndividualPayroll(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;
+        var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || transfer is null || original is null || links is null || root is null || payroll is null || !ReferenceEquals(active, preparedSource) || transfer.Month != month)
+        { MessageBox.Show(this, "اختر الشهر وانتظر تحميل التحويلات.", "الكتب المنفردة"); return; }
+        try
+        {
+            bool Current() => linkStore.Load(original).Revision == links.Revision && payrollStore.Load(root).Revision == payroll.Revision;
+            var prepared = await Task.Run(() => { if (!Current()) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتب."); return (summary: BankStatementCalculator.Calculate(active, month), references: LetterReferencePack.Read(active)); });
+            if (!ReferenceEquals(active, snapshot) || month != SelectedMonth) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتب.");
+            new IndividualPayrollWindow(active, prepared.summary, transfer.Payer, transfer.PayerAccount, prepared.references, Current) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر فتح الكتب المنفردة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void OpenNameLists(object sender, RoutedEventArgs e)
     {
         var source = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;

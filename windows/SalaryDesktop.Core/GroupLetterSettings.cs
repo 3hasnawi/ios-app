@@ -9,6 +9,11 @@ public static class GroupLetterSettingsReader
     public static GroupLetterSettings Read(BackupSnapshot snapshot, TransferGroup group)
     {
         var id = group switch { TransferGroup.Rafidain => "rafidain_group", TransferGroup.OtherBanks => "other_banks_group", _ => throw new InvalidDataException("المجموعة غير صالحة للكتاب.") };
+        return Read(snapshot, id);
+    }
+    public static GroupLetterSettings Read(BackupSnapshot snapshot, string id)
+    {
+        if (id is not ("rafidain_group" or "other_banks_group" or "food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary" or "ramadi" or "housing" or "water" or "rafidain_anbar")) throw new InvalidDataException("نوع الكتاب غير صالح.");
         if (!snapshot.SettingsPlists.TryGetValue("transferLetterCustomizations", out var plist)) return new("", "", "", "", "", "", null, null, 0, null);
         try
         {
@@ -31,5 +36,19 @@ public static class GroupLetterSettingsReader
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException or FormatException)
         { throw new InvalidDataException("تعذّر قراءة تخصيصات الكتب من النسخة.", ex); }
+    }
+    public static string? FoodContract(BackupSnapshot snapshot)
+    {
+        if (!snapshot.SettingsPlists.TryGetValue("transferLetterCustomizations", out var plist)) return null;
+        try
+        {
+            if (PropertyListParser.Parse(plist) is not NSData data) throw new InvalidDataException("صيغة تخصيص الكتب غير صالحة.");
+            if (data.Bytes.Length == 0) return null;
+            using var doc = JsonDocument.Parse(data.Bytes);
+            var common = doc.RootElement.GetProperty("common");
+            return common.TryGetProperty("foodContractReference", out var value) && value.ValueKind != JsonValueKind.Null ? value.GetString() : null;
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException)
+        { throw new InvalidDataException("تعذّر قراءة رقم عقد الإطعام.", ex); }
     }
 }

@@ -309,6 +309,31 @@ try
     catch (InvalidDataException) { }
     var badLists = NameLists.Prepare(entitySource with { Deductions = [personRow with { Amount = 2499m }] }, entityTransfer);
     Check(badLists.Single(l => l.Id == entity.Id).Problem is not null && badLists.Single(l => l.Id == entity.Id).Rows.Count == 0, "mismatched name list is not displayed as valid");
+    using var individualSettingsPlist = new MemoryStream();
+    PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(new { common = new { header = "ترويسة عامة", fixedNumber = "ح/1", committeeFirst = "عضو عام", foodContractReference = "عقد تجريبي" }, individual = new Dictionary<string, object> { ["food_company"] = new { committeeFirst = "عضو خاص" } } })), individualSettingsPlist);
+    var individualSettingsSnapshot = emptySettings with { SettingsPlists = new Dictionary<string, byte[]> { ["transferLetterCustomizations"] = individualSettingsPlist.ToArray() } };
+    Check(GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_company").First == "عضو خاص" && GroupLetterSettingsReader.Read(individualSettingsSnapshot, "food_tax").First == "عضو عام" && GroupLetterSettingsReader.FoodContract(individualSettingsSnapshot) == "عقد تجريبي", "individual letter settings inherit and preserve contract reference");
+    var individualSettings = new GroupLetterSettings("ترويسة تجريبية\nقسم حسابات وهمي", "ح/1/22/", "عضو تجريبي أول", "عضو تجريبي ثان", "عضو تجريبي ثالث", "نسخة تجريبية", null, 10, 0, null);
+    var individualFont = File.ReadAllBytes(font); var individualLogo = File.ReadAllBytes(Path.GetFullPath("SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png"));
+    IndividualLetterPlan SampleIndividual(string id, params IndividualLetterLine[] values) { var sum = values.Sum(v => v.Amount); return new(id, "أيلول 2026", "دافع وهمي", fakePayer, fakeReceiver, sum, ArabicAmountWords.Dinars(sum), values, null, null, []); }
+    var singlePlans = new[] {
+        foodPlan, SampleIndividual("food_tax", new IndividualLetterLine("ضريبة عقد الإطعام", 1746)),
+        SampleIndividual("tax_social", new("الحماية الاجتماعية", 300), new("ضريبة الدخل", 200)),
+        acceptedContract, SampleIndividual("cash_salary", new IndividualLetterLine("رواتب الكاش", 500)) };
+    foreach (var individual in singlePlans)
+    {
+        var pdf = IndividualPayrollPdf.Generate(individual, individualSettings, individualFont, individualFont, individualLogo, "٣ / ٢٠٢٢", individual.Id == "cash_salary" ? cashList : null);
+        Check(pdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "individual payroll PDF checked: " + individual.Id);
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_INDIVIDUAL_DIR") is { Length: > 0 } dir) { Directory.CreateDirectory(dir); File.WriteAllBytes(Path.Combine(dir, individual.Id + ".pdf"), pdf); }
+        if (Environment.GetEnvironmentVariable("SALARY_TEST_MAJALLA") is { Length: > 0 } sakkalPath) {
+            var sakkalPdf = IndividualPayrollPdf.Generate(individual, individualSettings, File.ReadAllBytes(sakkalPath), individualFont, individualLogo, "٣ / ٢٠٢٢", individual.Id == "cash_salary" ? cashList : null);
+            if (Environment.GetEnvironmentVariable("SALARY_TEST_INDIVIDUAL_DIR") is { Length: > 0 } sakkalDir) File.WriteAllBytes(Path.Combine(sakkalDir, individual.Id + "-sakkal.pdf"), sakkalPdf);
+        }
+    }
+    try { _ = IndividualPayrollPdf.Generate(foodPlan, individualSettings, individualFont, individualFont, individualLogo, null); throw new InvalidOperationException("food contract reference omitted"); }
+    catch (InvalidDataException) { }
+    try { _ = IndividualPayrollPdf.Generate(singlePlans.Last(), individualSettings, individualFont, individualFont, individualLogo, null, cashList with { Total = 501 }); throw new InvalidOperationException("incorrect cash list accepted"); }
+    catch (InvalidDataException) { }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };
