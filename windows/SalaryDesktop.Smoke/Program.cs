@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using SalaryDesktop;
 using SalaryDesktop.Core;
@@ -38,6 +39,77 @@ static class Program
         }
     }
     private static void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); }
+
+    // بيانات وهمية أوسع لصور التصميم فقط: أسماء مركبة من قوائم عامة وحسابات اختبار.
+    private static void RichFixture(string path)
+    {
+        string[] first = ["علي", "حسن", "كريم", "عمر", "سعد", "أحمد", "خالد", "مازن", "يوسف", "فراس"];
+        string[] second = ["محمد", "عبد الله", "جاسم", "حميد", "صالح", "ناصر", "عادل", "رعد"];
+        string[] third = ["حسين", "جبار", "كاظم", "سلمان", "عباس", "فاضل"];
+        string[] mothers = ["فاطمة", "زينب", "مريم", "خديجة", "سعاد", "نجلاء", "هدى"];
+        string[] ranks = ["ملازم", "نقيب", "رائد", "موظف", "شرطي", "عريف", "نائب ضابط", "عقود"];
+        string[] places = ["قسم الحسابات", "مديرية المرور", "قسم الإدارة", "شرطة الرمادي", "قسم النجدة", "قسم التدريب"];
+        string[] entities = ["مصرف الرافدين / فرع الرمادي", "مصرف الرشيد / فرع الأنبار", "صندوق الإسكان فرع الأنبار", "شركة عراق الجوال", "مصرف الرافدين/فرع الانبار", "المصرف الأهلي العراقي", "مصرف الشرق الأوسط"];
+        string[] months = ["آب 2026", "أيلول 2026"];
+        var employees = new List<object>(); var deductions = new List<object>(); var staff = new List<object>();
+        for (int m = 0; m < months.Length; m++)
+            for (int i = 0; i < 64; i++)
+            {
+                var name = $"{first[i % first.Length]} {second[(i / 3) % second.Length]} {third[(i / 7) % third.Length]}";
+                var rank = ranks[i % ranks.Length]; var net = 650_000m + (i * 37_500m % 900_000m) + m * 5_000m;
+                var items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["صندوق الشهداء"] = rank == "عقود" ? 2000 : 4000, ["الرعاية الصحية"] = 3500 * (1 + i % 4), ["الضريبة"] = 12_000 + i * 150 });
+                var details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = i % 5 == 0 ? "كاش" : "بطاقة", ["الاسمي"] = (430_000 + i * 2_500).ToString(), ["الرقم الموحد"] = (90_000 + i).ToString() });
+                employees.Add(new { month = months[m], name, rank, workplace = places[i % places.Length], net, items, details, rawColumns = (byte[]?)null });
+                if (i % 3 != 2) deductions.Add(new { month = months[m], name, title = entities[i % entities.Length], amount = 25_000m + (i % 6) * 12_500m, note = $"اضبارة {1200 + i} في 2026/{1 + i % 9}/5", rank });
+                if (m == 0)
+                {
+                    var sections = JsonSerializer.SerializeToUtf8Bytes(new[] { new { title = "الوظيفية", fields = new[] { new { label = "الرتبة", value = rank }, new { label = "محل العمل", value = places[i % places.Length] } } } });
+                    staff.Add(new { name, mother = $"{mothers[i % mothers.Length]} {third[(i + 2) % third.Length]}", stat = (5000 + i).ToString(), unified = (90_000 + i).ToString(), rank, status = i % 9 == 0 ? "متقاعد" : "مستمر بالخدمة", workplace = places[i % places.Length], details = sections });
+                }
+            }
+        var accounts = entities.Select((entity, i) => new { entity, iban = $"IQ00TEST{i:D3}000000000000", branch = entity.Contains("الرشيد") ? "مصرف الرشيد / فرع الأنبار" : "مصرف الرافدين / فرع الرمادي", swift = "TESTIQBAAAA", localAccount = (string?)null }).ToArray();
+        var books = new[] { new { id = Guid.Parse("11111111-1111-1111-1111-111111111111"), title = "إشعار تحويل وهمي", month = "أيلول 2026", pages = 1, entity = "شركة عراق الجوال" }, new { id = Guid.Parse("22222222-2222-2222-2222-222222222222"), title = "كتاب وهمي للمراجعة", month = "آب 2026", pages = 2, entity = (string?)null } };
+        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+        Entry(zip, "manifest.json", JsonSerializer.Serialize(new { version = 5, months, employees = employees.Count, deductions = deductions.Count, staff = staff.Count, accounts = accounts.Length, books = books.Length }));
+        Entry(zip, "months.jsonl", Lines(months.Select(month => new { name = month, employeeCount = 64, deductionCount = deductions.Count / 2 })));
+        Entry(zip, "employees.jsonl", Lines(employees)); Entry(zip, "deductions.jsonl", Lines(deductions)); Entry(zip, "staff.jsonl", Lines(staff));
+        Entry(zip, "accounts.jsonl", Lines(accounts)); Entry(zip, "books/index.json", JsonSerializer.Serialize(books));
+        foreach (var book in books) Entry(zip, $"books/{book.id.ToString().ToUpperInvariant()}.pdf", "%PDF-1.4\n% fictional\n");
+        Entry(zip, "settings.json", "{}");
+    }
+
+    // صورة لمحتوى النافذة كما تُعرض (يشمل اتجاه اليمين لليسار)، للمراجعة البصرية فقط.
+    private static void Shot(Window window, string name, int mode = 0)
+    {
+        var folder = Environment.GetEnvironmentVariable("SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(folder)) return;
+        Directory.CreateDirectory(folder);
+        window.UpdateLayout();
+        var root = (FrameworkElement)window.Content;
+        int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        if (mode == 1)
+        {
+            var flow = window.FlowDirection; window.FlowDirection = FlowDirection.LeftToRight; root.FlowDirection = FlowDirection.RightToLeft; window.UpdateLayout();
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen()) dc.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
+            bitmap.Render(visual); bitmap.Render(root);
+            root.ClearValue(FrameworkElement.FlowDirectionProperty); window.FlowDirection = flow; window.UpdateLayout();
+        }
+        else if (mode == 2)
+        {
+            var visual = new DrawingVisual();
+            using (var dc = visual.RenderOpen())
+            {
+                dc.DrawRectangle(window.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
+                dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0, 0, width, height));
+            }
+            bitmap.Render(visual);
+        }
+        else bitmap.Render(window);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(Path.Combine(folder, name + ".png")); encoder.Save(file);
+    }
     [STAThread]
     private static int Main()
     {
@@ -58,7 +130,8 @@ static class Program
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility != Visibility.Visible, "standalone start remained visible over existing data");
                 async Task Navigate(string tag)
                 {
-                    var button = Children<Button>(main).Single(b => Equals(b.Tag, tag)); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(800);
+                    var item = Children<RadioButton>(main).Single(b => Equals(b.Tag, tag)); item.IsChecked = true; await Task.Delay(800);
+                    Check(item.IsChecked == true, $"navigation item {tag} was not selected");
                 }
                 var table = (DataGrid)main.FindName("DataTable");
                 await Navigate("payroll"); Check(table.Items.Count == 1, "payroll page did not show the synthetic employee");
@@ -86,6 +159,27 @@ static class Program
                 var annual = new AnnualImportWindow(snapshot) { Owner = main }; annual.Show(); Check(annual.FindName("Choose") is Button, "annual import page did not open"); annual.Close();
                 var bank = new BankDetailsWindow("أيلول 2026", "دافع وهمي", "IQ06TEST123000000000001", new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
                 var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("KindPicker") is ComboBox, "salary review page did not open"); audit.Close();
+                await Navigate("home");
+                Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported");
+                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCREENSHOT_DIR")))
+                {
+                    var richPath = Path.Combine(directory, "rich.zip"); RichFixture(richPath); var rich = BackupReader.Read(richPath);
+                    main.Width = 1460; main.Height = 860; main.WindowState = WindowState.Normal;
+                    typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [rich]);
+                    await Task.Delay(1200);
+                    Shot(main, "00-render-window", 0); Shot(main, "00-render-flipped", 1); Shot(main, "00-render-brush", 2);
+                    foreach (var (tag, name) in new[] { ("home", "01-home"), ("payroll", "02-payroll"), ("deductions", "03-deductions"), ("staff", "04-staff"), ("archive", "05-archive"), ("groups", "06-groups"), ("bank", "07-bank"), ("transfer", "08-transfer"), ("accounts", "09-accounts"), ("settings", "10-settings") })
+                    {
+                        await Navigate(tag); if (tag is "staff" or "bank" or "transfer") await Task.Delay(1200); Shot(main, name);
+                    }
+                    await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
+                    var detail = new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }; detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
+                    var import = new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }; import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
+                    var richReview = new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }; richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
+                    var richItems = new SalaryItemsWindow(rich, "أيلول 2026", SalaryItemReports.Groups(rich, "أيلول 2026")) { Owner = main }; richItems.Show(); await Task.Delay(500); Shot(richItems, "15-salary-items"); richItems.Close();
+                    Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
+                    Console.WriteLine("Windows design screenshots saved.");
+                }
                 Console.WriteLine("Windows UI smoke passed using fictional backup data."); exit = 0;
             }
             catch (Exception ex) { Console.Error.WriteLine("Windows UI smoke failed: " + ex); }

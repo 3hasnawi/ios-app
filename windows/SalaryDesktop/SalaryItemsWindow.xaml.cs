@@ -21,7 +21,7 @@ public partial class SalaryItemsWindow : Window
             if (closed || request != ticket) return;
             Rows.ItemsSource = rows; Status.Text = $"{rows.Count:N0} سجل · المجموع يطابق ملخص البند.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (!closed && request == ticket) Status.Text = "تعذّر عرض البند: " + ex.Message; }
     }
 }

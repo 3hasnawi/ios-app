@@ -30,7 +30,7 @@ public partial class GroupIssuanceWindow : Window
             else MessageBox.Show(this, "حُفظ تأكيدك للمجموعة. احفظ نسخة احتياطية لتضمين الإقرار.", "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
             working = false; DialogResult = true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر حفظ الإقرار.\n" + ex.Message, "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; ConfirmButton.IsEnabled = true; NoteText.IsEnabled = true; Reviewed.IsEnabled = true; }
     }

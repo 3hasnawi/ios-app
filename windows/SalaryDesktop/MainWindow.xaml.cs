@@ -6,6 +6,8 @@ using System.Windows.Input;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using SalaryDesktop.Core;
@@ -24,6 +26,10 @@ public partial class MainWindow : Window
     private readonly LocalPayrollImports payrollStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "PayrollImports"));
     private readonly LocalReconciliationStore reconciliationStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private string page = "home";
+    private string shownPage = "";
+    private string? columnsPage;
+    private int tableRequest;
+    private int homeRequest;
     private bool loading;
     private int bankRequest;
     private int transferRequest;
@@ -38,6 +44,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
+        // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
+        DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
         Loaded += async (_, _) => { await LoadStoredSnapshot(); RenderPage(); };
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
@@ -56,7 +64,7 @@ public partial class MainWindow : Window
             SetSnapshot(loaded); SourceMessage.Text = "أُنشئت البيانات من ملف Excel وحُفظت محلياً دون تعديل الملف الأصلي.";
             MessageBox.Show(this, "حُفظ الشهر الأول. استورد بقية الملفات والحسابات، واحفظ نسخة احتياطية بعد المراجعة.", "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { SourceMessage.Text = "لم تُنشأ البيانات؛ لم يُعدّل ملف Excel."; MessageBox.Show(this, "تعذّر إنشاء البيانات.\n" + ex.Message, "بدء البيانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { loading = false; StartFromExcelButton.IsEnabled = true; try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
@@ -85,7 +93,7 @@ public partial class MainWindow : Window
             SetSnapshot(loaded);
             SourceMessage.Text = "حُفظت نسخة محلية بعد فحصها؛ ملف الآيفون الأصلي لم يتغير.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
         {
             SourceMessage.Text = snapshot is null ? "لم تُفتح نسخة احتياطية." : "تعذّر فتح النسخة الجديدة؛ ما زالت البيانات السابقة معروضة.";
             MessageBox.Show(this, $"تعذّر قراءة النسخة والتحقق منها.\n{ex.Message}", "فتح النسخة", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -107,6 +115,7 @@ public partial class MainWindow : Window
         if (month is not null && snapshot.Months.Any(m => m.Name == month)) MonthPicker.SelectedItem = month;
         else MonthPicker.SelectedIndex = snapshot.Months.Count > 0 ? 0 : -1;
         StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون.";
+        SidebarData.Text = $"{snapshot.Months.Count:N0} شهر · {snapshot.StaffCount:N0} في الملاك · {snapshot.Accounts.Count:N0} حساب";
         RenderPage();
     }
     private async Task LoadStoredSnapshot()
@@ -118,22 +127,70 @@ public partial class MainWindow : Window
             var loaded = await Task.Run(store.LoadCurrent);
             if (loaded is not null) { SetSnapshot(loaded); SourceMessage.Text = "تم فتح النسخة المحلية المحفوظة على هذا الجهاز."; }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or FormatException or OverflowException)
         { SourceMessage.Text = "تعذّر فتح النسخة المحلية. لم تُستبدل؛ اختر نسخة احتياطية صالحة. " + ex.Message; }
         finally { loading = false; }
     }
+    private RadioButton[] NavItems => [NavHome, NavPayroll, NavDeductions, NavStaff, NavArchive, NavGroups, NavBank, NavTransfer, NavAccounts, NavSettings];
+    /// القائمة الجانبية تختار الصفحة؛ أزرار البطاقات تختار عنصر القائمة المقابل حتى تبقى العلامة صحيحة.
     private void Navigate(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: string next }) return;
-        page = next;
-        if (SearchBox is not null) SearchBox.Text = "";
-        RenderPage();
+        if (sender is RadioButton { Tag: string next, IsChecked: true })
+        {
+            if (next == page && shownPage == page) return;
+            page = next;
+            searchDelay.Stop();
+            if (SearchBox is not null) SearchBox.Text = "";
+            RenderPage();
+            return;
+        }
+        if (sender is Button { Tag: string target } && NavHome is not null && NavItems.FirstOrDefault(item => Equals(item.Tag, target)) is { } radio) radio.IsChecked = true;
+    }
+    private void HideBanner(object sender, RoutedEventArgs e) => SourceBanner.Visibility = Visibility.Collapsed;
+    private void WindowKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
+            if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
+            if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
+            else if (e.Key == Key.O) { e.Handled = true; OpenBackup(this, new RoutedEventArgs()); }
+        }
+        else if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            if (page == "staff" && staffLoadingDigest is null) { staff = null; staffError = null; staffDigest = null; }
+            lock (rowIndexLock) rowIndexes.Clear();
+            groupCache = null;
+            RenderPage();
+        }
+    }
+    private void SearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && SearchBox.Text.Length > 0) { SearchBox.Text = ""; e.Handled = true; }
+        else if (e.Key == Key.Down && DataTable.Items.Count > 0) { DataTable.SelectedIndex = Math.Max(0, DataTable.SelectedIndex); DataTable.Focus(); e.Handled = true; }
+    }
+    private void TableKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || DataTable.SelectedItem is null) return;
+        e.Handled = true; OpenRow();
+    }
+    private void OpenSelectedRow(object sender, RoutedEventArgs e) { if (DataTable.SelectedItem is not null) OpenRow(); }
+    private void OpenDataFolder(object sender, RoutedEventArgs e) =>
+        OpenFolder(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop"));
+    private void OpenLogFolder(object sender, RoutedEventArgs e) => OpenFolder(App.LogFolder);
+    private void OpenFolder(string path)
+    {
+        try { Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true }); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        { MessageBox.Show(this, "تعذّر فتح المجلد.\n" + ex.Message, "الإعدادات", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void MonthChanged(object sender, SelectionChangedEventArgs e) => RenderPage();
     private void SearchChanged(object sender, TextChangedEventArgs e) { searchDelay.Stop(); searchDelay.Start(); }
     private string SelectedMonth => MonthPicker.SelectedItem as string ?? "";
     private static string Amount(decimal amount) => amount.ToString("#,0.##", Numbers);
 
+    private static readonly string[] DataPages = ["payroll", "deductions", "groups", "accounts", "archive", "staff"];
     private void RenderPage()
     {
         if (!IsInitialized || HomePanel is null || DataTable is null) return;
@@ -141,19 +198,39 @@ public partial class MainWindow : Window
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
-        bool available = page is "payroll" or "deductions" or "groups" or "accounts" or "archive" or "staff";
+        bool available = DataPages.Contains(page);
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         StaffReloadButton.Visibility = page == "staff" ? Visibility.Visible : Visibility.Collapsed;
         AccountImportButton.Visibility = page == "accounts" ? Visibility.Visible : Visibility.Collapsed;
         PayrollImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         AnnualImportButton.Visibility = page is "payroll" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
         UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
+        var month = SelectedMonth;
         PageTitle.Text = page switch
         {
             "payroll" => "الرواتب", "deductions" => "الاستقطاعات", "groups" => "جهات التنفيذ",
             "accounts" => "حسابات جهات التنفيذ", "staff" => "الملاك", "archive" => "الأرشيف", "bank" => "كشف حساب البنك",
             "transfer" => "ملفات التحويل", "settings" => "الإعدادات", _ => "الرئيسية"
         };
+        PageSubtitle.Text = page switch
+        {
+            "payroll" => month.Length > 0 ? $"رواتب {month}" : "اختر شهراً لعرض الرواتب",
+            "deductions" => month.Length > 0 ? $"قيود استقطاع {month}" : "اختر شهراً لعرض الاستقطاعات",
+            "groups" => month.Length > 0 ? $"مبالغ الاستقطاع لكل جهة · {month}" : "مبالغ الاستقطاع لكل جهة",
+            "accounts" => "IBAN والفروع المحفوظة لجهات التنفيذ",
+            "staff" => "سجلات الملاك من النسخة المفتوحة",
+            "archive" => "الكتب والإشعارات المؤرشفة في النسخة",
+            "bank" => month.Length > 0 ? $"مبالغ {month} للمراجعة مع المصرف" : "اختر شهراً",
+            "transfer" => month.Length > 0 ? $"{month} · ملفات المصارف والكتب" : "اختر شهراً",
+            "settings" => "النسخ الاحتياطي والبيانات المحلية",
+            _ => month.Length > 0 ? $"ملخص {month}" : "ملخص الشهر المختار"
+        };
+        if (page != shownPage)
+        {
+            shownPage = page;
+            UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
+            panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+        }
         if (page == "home") { RenderHome(); return; }
         if (page == "bank") { RenderBank(); return; }
         if (page == "transfer") { RenderTransfers(); return; }
@@ -164,62 +241,133 @@ public partial class MainWindow : Window
             UnavailableMessage.Text = "هذا القسم غير مكتمل في نسخة ويندوز بعد. لا يمكن استخدامه للحساب أو التصدير أو اعتماد التحويلات حالياً.";
             return;
         }
+        RenderTable();
+    }
+
+    /// أعمدة الجدول تُبنى عند تغيّر القسم فقط، فيبقى عرض الأعمدة وترتيبها أثناء البحث وتغيير الشهر.
+    private void EnsureColumns(string current)
+    {
+        if (columnsPage == current) return;
+        columnsPage = current;
+        DataTable.ItemsSource = null;
         DataTable.Columns.Clear();
-        if (snapshot is null)
+        switch (current)
+        {
+            case "payroll": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("محل العمل", "Workplace", 2); Column("الصافي", "Net", 1, true); break;
+            case "deductions": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("جهة التنفيذ", "Title", 2); Column("المبلغ", "Amount", 1, true); Column("الملاحظة", "Note", 2); break;
+            case "groups": Column("جهة التنفيذ", "Title", 3); Column("عدد الأشخاص", "People", 1, true); Column("المبلغ", "Total", 1, true); Column("مبالغ ناقصة", "MissingAmounts", 1, true); break;
+            case "accounts": Column("الجهة", "Entity", 2); Column("المصرف والفرع", "Branch", 2); Column("IBAN", "Iban", 2); Column("SWIFT", "Swift", 1); Column("الحساب المحلي", "LocalAccount", 1); break;
+            case "staff": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("الرقم الموحد", "Unified", 1); Column("الحالة", "Status", 1); Column("محل العمل", "Workplace", 2); break;
+            case "archive": Column("عنوان الكتاب", "Title", 3); Column("الشهر", "Month", 1); Column("الجهة", "Entity", 2); Column("الصفحات", "Pages", 1, true); break;
+        }
+        OpenRowMenu.Header = current switch
+        {
+            "payroll" => "عرض تفاصيل المنتسب", "staff" => "عرض سجل الملاك", "accounts" => "تعديل الحساب", "archive" => "فتح الكتاب", _ => "لا يوجد إجراء لهذا الجدول"
+        };
+        OpenRowMenu.IsEnabled = current is "payroll" or "staff" or "accounts" or "archive";
+    }
+
+    /// البحث والتصفية في الخلفية على نص مُوحّد محفوظ لكل صف، فلا تتجمد الواجهة مع عشرات آلاف السجلات.
+    private async void RenderTable()
+    {
+        var ticket = ++tableRequest; var source = snapshot; var current = page; var month = SelectedMonth;
+        var tokens = PayrollAnalysis.Normalize(SearchBox.Text).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        EnsureColumns(current);
+        if (source is null)
         {
             TableStatus.Text = "افتح نسخة الآيفون أولاً لعرض البيانات.";
             DataTable.ItemsSource = null;
             return;
         }
-        var tokens = PayrollAnalysis.Normalize(SearchBox.Text).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        bool Matches(params string?[] parts)
+        if (current == "staff" && (staffDigest != source.SourceDigest || staff is null))
         {
-            if (tokens.Length == 0) return true;
-            var text = PayrollAnalysis.Normalize(string.Join(' ', parts.Where(p => p is not null)));
-            return tokens.All(token => text.Contains(token, StringComparison.Ordinal));
+            DataTable.ItemsSource = null; TableStatus.Text = staffDigest == source.SourceDigest && staffError is not null ? staffError : "جارٍ قراءة الملاك من النسخة المحلية…";
+            if (staffLoadingDigest != source.SourceDigest && !(staffDigest == source.SourceDigest && staffError is not null)) LoadStaff(source);
+            return;
         }
-        switch (page)
+        var staffRows = staff;
+        try
+        {
+            var result = await Task.Run(() => Query(current, source, staffRows, month, tokens));
+            if (ticket != tableRequest || !ReferenceEquals(source, snapshot) || current != page || columnsPage != current) return;
+            var sorted = DataTable.Columns.FirstOrDefault(c => c.SortDirection is not null);
+            var direction = sorted?.SortDirection;
+            DataTable.ItemsSource = result.Rows;
+            if (sorted is not null && direction is { } d && !string.IsNullOrEmpty(sorted.SortMemberPath))
+            {
+                var view = CollectionViewSource.GetDefaultView(DataTable.ItemsSource);
+                view.SortDescriptions.Clear(); view.SortDescriptions.Add(new SortDescription(sorted.SortMemberPath, d)); sorted.SortDirection = d;
+            }
+            TableStatus.Text = result.Status;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
+        {
+            if (ticket != tableRequest || current != page) return;
+            DataTable.ItemsSource = null; TableStatus.Text = "تعذّر عرض البيانات: " + ex.Message;
+        }
+    }
+
+    private sealed class RowIndex<T>(IReadOnlyList<T> source, string?[] months, string[] keys)
+    {
+        public IReadOnlyList<T> Source { get; } = source;
+        public T[] Query(string? month, string[] tokens)
+        {
+            var result = new List<T>();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (month is not null && months[i] != month) continue;
+                var key = keys[i]; var match = true;
+                foreach (var token in tokens) if (!key.Contains(token, StringComparison.Ordinal)) { match = false; break; }
+                if (match) result.Add(Source[i]);
+            }
+            return result.ToArray();
+        }
+    }
+    private readonly Dictionary<string, object> rowIndexes = new(StringComparer.Ordinal);
+    private readonly object rowIndexLock = new();
+    private sealed record GroupCache(BackupSnapshot Source, string Month, IReadOnlyList<DeductionGroup> Groups);
+    private volatile GroupCache? groupCache;
+    private RowIndex<T> Index<T>(string name, IReadOnlyList<T> rows, Func<T, string?>? month, Func<T, string?[]> parts)
+    {
+        lock (rowIndexLock) if (rowIndexes.TryGetValue(name, out var cached) && cached is RowIndex<T> hit && ReferenceEquals(hit.Source, rows)) return hit;
+        var months = new string?[rows.Count]; var keys = new string[rows.Count];
+        for (int i = 0; i < rows.Count; i++)
+        {
+            months[i] = month?.Invoke(rows[i]);
+            keys[i] = PayrollAnalysis.Normalize(string.Join(' ', parts(rows[i]).Where(p => p is not null)));
+        }
+        var built = new RowIndex<T>(rows, months, keys);
+        lock (rowIndexLock) rowIndexes[name] = built;
+        return built;
+    }
+    private (System.Collections.IList Rows, string Status) Query(string current, BackupSnapshot source, IReadOnlyList<StaffMember>? staffRows, string month, string[] tokens)
+    {
+        switch (current)
         {
             case "payroll":
-                Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("محل العمل", "Workplace", 2); Column("الصافي", "Net", 1, true);
-                var employees = snapshot.Employees.Where(v => v.Month == SelectedMonth && Matches(v.Name, v.Rank, v.Workplace)).ToArray();
-                DataTable.ItemsSource = employees;
-                TableStatus.Text = $"{employees.Length:N0} سجل · انقر نقراً مزدوجاً على المنتسب لعرض تفاصيله؛ القيم الناقصة تظهر فارغة.";
-                break;
+                var employees = Index("payroll", source.Employees, e => e.Month, e => [e.Name, e.Rank, e.Workplace]).Query(month, tokens);
+                return (employees, $"{employees.Length:N0} سجل · انقر نقراً مزدوجاً أو اضغط Enter لعرض تفاصيل المنتسب؛ القيم الناقصة تظهر فارغة.");
             case "deductions":
-                Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("جهة التنفيذ", "Title", 2); Column("المبلغ", "Amount", 1, true); Column("الملاحظة", "Note", 2);
-                var deductions = snapshot.Deductions.Where(v => v.Month == SelectedMonth && Matches(v.Name, v.Title, v.Rank, v.Note)).ToArray();
-                DataTable.ItemsSource = deductions;
-                TableStatus.Text = $"{deductions.Length:N0} قيد · تظهر القيود كما سُجلت، بما فيها الحالات غير المحتسبة.";
-                break;
+                var deductions = Index("deductions", source.Deductions, d => d.Month, d => [d.Name, d.Title, d.Rank, d.Note]).Query(month, tokens);
+                return (deductions, $"{deductions.Length:N0} قيد · تظهر القيود كما سُجلت، بما فيها الحالات غير المحتسبة.");
             case "groups":
-                Column("جهة التنفيذ", "Title", 3); Column("عدد الأشخاص", "People", 1, true); Column("المبلغ", "Total", 1, true); Column("مبالغ ناقصة", "MissingAmounts", 1, true);
-                var groups = PayrollAnalysis.Groups(snapshot, SelectedMonth).Where(v => Matches(v.Title)).ToArray();
-                DataTable.ItemsSource = groups;
-                TableStatus.Text = $"{groups.Length:N0} جهة · المبالغ الناقصة لم تُحتسب في المجموع؛ راجع العمود الأخير.";
-                break;
+                var cache = groupCache;
+                IReadOnlyList<DeductionGroup> all;
+                if (cache is not null && ReferenceEquals(cache.Source, source) && cache.Month == month) all = cache.Groups;
+                else { all = PayrollAnalysis.Groups(source, month); groupCache = new GroupCache(source, month, all); }
+                var groups = Index("groups", all, null, g => [g.Title]).Query(null, tokens);
+                return (groups, $"{groups.Length:N0} جهة · المبالغ الناقصة لم تُحتسب في المجموع؛ راجع العمود الأخير.");
             case "accounts":
-                Column("الجهة", "Entity", 2); Column("المصرف والفرع", "Branch", 2); Column("IBAN", "Iban", 2); Column("SWIFT", "Swift", 1); Column("الحساب المحلي", "LocalAccount", 1);
-                var accounts = snapshot.Accounts.Where(v => Matches(v.Entity, v.Branch, v.Iban)).ToArray();
-                DataTable.ItemsSource = accounts;
-                TableStatus.Text = $"{accounts.Length:N0} حساب · انقر نقراً مزدوجاً لتعديل بيانات الحساب المحفوظ.";
-                break;
+                var accounts = Index("accounts", source.Accounts, null, a => [a.Entity, a.Branch, a.Iban]).Query(null, tokens);
+                return (accounts, $"{accounts.Length:N0} حساب · انقر نقراً مزدوجاً لتعديل بيانات الحساب المحفوظ.");
             case "staff":
-                Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("الرقم الموحد", "Unified", 1); Column("الحالة", "Status", 1); Column("محل العمل", "Workplace", 2);
-                if (staffDigest != snapshot.SourceDigest || staff is null)
-                {
-                    DataTable.ItemsSource = null; TableStatus.Text = staffDigest == snapshot.SourceDigest && staffError is not null ? staffError : "جارٍ قراءة الملاك من النسخة المحلية…";
-                    if (staffLoadingDigest != snapshot.SourceDigest && !(staffDigest == snapshot.SourceDigest && staffError is not null)) LoadStaff(snapshot);
-                    break;
-                }
-                var staffRows = staff.Where(v => Matches(v.Name, v.Mother, v.Unified, v.Stat, v.Rank, v.Workplace, v.Status)).ToArray();
-                DataTable.ItemsSource = staffRows; TableStatus.Text = $"{staffRows.Length:N0} سجل · انقر نقراً مزدوجاً لعرض تفاصيل المنتسب."; break;
+                var people = Index("staff", staffRows ?? Array.Empty<StaffMember>(), null, v => [v.Name, v.Mother, v.Unified, v.Stat, v.Rank, v.Workplace, v.Status]).Query(null, tokens);
+                return (people, $"{people.Length:N0} سجل · انقر نقراً مزدوجاً لعرض تفاصيل المنتسب.");
             case "archive":
-                Column("عنوان الكتاب", "Title", 3); Column("الشهر", "Month", 1); Column("الجهة", "Entity", 2); Column("الصفحات", "Pages", 1, true);
-                var books = snapshot.Books.Where(v => Matches(v.Title, v.Month, v.Entity)).ToArray();
-                DataTable.ItemsSource = books;
-                TableStatus.Text = $"{books.Length:N0} كتاب · انقر نقراً مزدوجاً على الكتاب لفتحه محلياً في عارض PDF.";
-                break;
+                var books = Index("archive", source.Books, null, b => [b.Title, b.Month, b.Entity]).Query(null, tokens);
+                return (books, $"{books.Length:N0} كتاب · انقر نقراً مزدوجاً على الكتاب لفتحه محلياً في عارض PDF.");
+            default:
+                return (Array.Empty<object>(), "");
         }
     }
 
@@ -237,11 +385,20 @@ public partial class MainWindow : Window
             if (snapshot?.SourceDigest != digest) return;
             staff = loaded; staffDigest = digest; staffError = null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (snapshot?.SourceDigest == digest) { staff = null; staffDigest = digest; staffError = "تعذّر قراءة الملاك: " + ex.Message; } }
         finally { if (staffLoadingDigest == digest) staffLoadingDigest = null; if (page == "staff" && snapshot?.SourceDigest == digest) RenderPage(); }
     }
-    private async void OpenArchiveBook(object sender, MouseButtonEventArgs e)
+    /// النقر المزدوج على شريط التمرير أو العناوين لا يفتح الصف المختار سابقاً.
+    private void OpenArchiveBook(object sender, MouseButtonEventArgs e)
+    {
+        for (var node = e.OriginalSource as DependencyObject; node is not null; node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+        {
+            if (node is DataGridRow) { OpenRow(); return; }
+            if (node is DataGrid or System.Windows.Controls.Primitives.ScrollBar or System.Windows.Controls.Primitives.DataGridColumnHeader) return;
+        }
+    }
+    private async void OpenRow()
     {
         if (page == "staff" && DataTable.SelectedItem is StaffMember member)
         { new StaffDetailsWindow(member) { Owner = this }.ShowDialog(); return; }
@@ -265,7 +422,7 @@ public partial class MainWindow : Window
                 linkState = updated; snapshot = updated.Snapshot; RenderPage();
                 MessageBox.Show(this, "حُفظ الحساب محلياً. راجع التصنيفات والكتب المرتبطة به، واحفظ نسخة احتياطية تشمل التعديلات.", "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Information);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+            catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
             { MessageBox.Show(this, "تعذّر حفظ الحساب.\n" + ex.Message, "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
             return;
         }
@@ -279,7 +436,7 @@ public partial class MainWindow : Window
             await Task.Run(() => BackupReader.CopyBook(source, book, destination));
             Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or Win32Exception)
         {
             MessageBox.Show(this, $"تعذّر فتح الكتاب.\n{ex.Message}", "الأرشيف", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
@@ -303,7 +460,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظت الحسابات محلياً بعد فحصها. راجع تصنيف الجهات واحفظ نسخة احتياطية تشمل التعديلات.", "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AccountImportButton.IsEnabled = true; }
     }
@@ -321,7 +478,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظت بيانات الحساب ومبالغ الشهر. احفظ نسخة احتياطية لتضمين التغييرات.", "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر حفظ بيانات الحساب.\n" + ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void ImportAnnual(object sender, RoutedEventArgs e)
@@ -345,7 +502,7 @@ public partial class MainWindow : Window
             ApplySources(root, result.updated, result.updatedLinks, preview.Months[0].Month);
             MessageBox.Show(this, "حُفظت الأشهر معاً محلياً. راجع الاستقطاعات ثم احفظ نسخة احتياطية تشمل التغييرات.", "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AnnualImportButton.IsEnabled = true; }
     }
@@ -373,7 +530,7 @@ public partial class MainWindow : Window
             ApplySources(root, result.updatedPayroll, result.updatedLinks, preview.Month);
             MessageBox.Show(this, "حُفظت بيانات الشهر محلياً؛ راجع التقارير والمبالغ، ثم احفظ نسخة احتياطية تشمل التغييرات.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر إكمال تحديث العرض. أعد فتح النسخة للتحقق مما حُفظ.\n" + ex.Message, "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { PayrollImportButton.IsEnabled = true; }
     }
@@ -397,13 +554,13 @@ public partial class MainWindow : Window
             });
             MessageBox.Show(this, changed || !ReferenceEquals(source, snapshot) ? "حُفظت لقطة سابقة؛ تغيّرت البيانات أثناء التصدير، لذا أعد حفظ النسخة. اختبر الاستعادة على الآيفون." : "حُفظت النسخة مع الروابط ودفتر المطابقة بعد فحصها. اختبر استعادتها على الآيفون قبل الاعتماد.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
         { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "settings") BackupExport.IsEnabled = snapshot is not null; }
     }
 
     private sealed record TransferRow(TransferEntry Entry, string Title, string Amount, string Branch, string Iban, string Issues);
-    private TransferGroup CurrentTransferGroup => ((TransferGroupPicker.SelectedItem as ComboBoxItem)?.Tag as string) switch
+    private TransferGroup CurrentTransferGroup => ((TransferGroupPicker.SelectedItem as ListBoxItem)?.Tag as string) switch
     {
         "other" => TransferGroup.OtherBanks, "anbar" => TransferGroup.Anbar,
         "unresolved" => TransferGroup.Unresolved, _ => TransferGroup.Rafidain
@@ -442,7 +599,7 @@ public partial class MainWindow : Window
             preparedTransfer = result; preparedSource = source;
             TransferExport.IsEnabled = group is TransferGroup.Rafidain or TransferGroup.OtherBanks && entries.Length > 0 && warnings.Count == 0;
         }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         {
             if (ticket == transferRequest && ReferenceEquals(source, snapshot) && month == SelectedMonth && page == "transfer") TransferNotice.Text = "تعذّر تجهيز التحويل: " + ex.Message;
         }
@@ -463,7 +620,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظ الربط على الجهاز؛ راجع تصنيف الجهة بعد تحديث القائمة. احفظ نسخة احتياطية تشمل التعديلات.", "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ الربط.\n" + ex.Message, "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void ClassifyTransfer(object sender, RoutedEventArgs e)
@@ -483,7 +640,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظ التصنيف على الجهاز. راجع التنبيهات واحفظ نسخة احتياطية تشمل التعديلات.", "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ التصنيف.\n" + ex.Message, "تصنيف الجهة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void ExportTransfer(object sender, RoutedEventArgs e)
@@ -509,7 +666,7 @@ public partial class MainWindow : Window
                 MessageBox.Show(this, "حُفظ ملف لقطة الشهر السابقة؛ تغيّر العرض أثناء الحفظ. راجع الملف قبل استخدامه.", "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning);
             else MessageBox.Show(this, "حُفظ الملف بعد التحقق من صفوفه. راجعه قبل إرساله إلى المصرف.", "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
@@ -524,7 +681,7 @@ public partial class MainWindow : Window
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّر الشهر أو البيانات؛ أعد فتح التقرير.", "بنود الرواتب"); return; }
             new SalaryItemsWindow(source, month, groups) { Owner = this }.ShowDialog();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر حساب بنود الرواتب.\n" + ex.Message, "بنود الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { SalaryItemsButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
@@ -539,7 +696,7 @@ public partial class MainWindow : Window
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
             new SalaryReviewWindow(result) { Owner = this }.ShowDialog();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { AuditHomeButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
@@ -560,7 +717,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظ خط ساكال العريض محلياً. احفظ نسخة احتياطية لتضمينه.", "خط الكتب", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, "تعذّر حفظ الخط.\n" + ex.Message, "خط الكتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void ImportReferences(object sender, RoutedEventArgs e)
@@ -576,7 +733,7 @@ public partial class MainWindow : Window
             linkState = updated; snapshot = updated.Snapshot; RenderPage();
             MessageBox.Show(this, "حُفظت المراجع محلياً. راجع حسابات الكتب واحفظ نسخة احتياطية لتضمينها.", "مراجع الكتب", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر حفظ المراجع.\n" + ex.Message, "مراجع الكتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenIndividualEntity(object sender, RoutedEventArgs e)
@@ -595,7 +752,7 @@ public partial class MainWindow : Window
             if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
             var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر فتح كتب الجهات.\n" + ex.Message, "كتب الجهات", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenIndividualPayroll(object sender, RoutedEventArgs e)
@@ -615,7 +772,7 @@ public partial class MainWindow : Window
             if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
             var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر فتح الكتب المنفردة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenNameLists(object sender, RoutedEventArgs e)
@@ -632,7 +789,7 @@ public partial class MainWindow : Window
             if (!DataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة.");
             new NameListsWindow(month, lists, DataCurrent) { Owner = this }.ShowDialog();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر إعداد القوائم.\n" + ex.Message, "قوائم الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenGroupIssuance(object sender, RoutedEventArgs e)
@@ -650,7 +807,7 @@ public partial class MainWindow : Window
             if (!PayrollCurrent()) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة.");
             var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, "تعذّر تدقيق إصدار المجموعة.\n" + ex.Message, "تدقيق المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void OpenGroupLetter(object sender, RoutedEventArgs e)
@@ -674,7 +831,7 @@ public partial class MainWindow : Window
             if (!PayrollCurrent()) { MessageBox.Show(this, "تغيّرت بيانات الأشهر؛ أعد فتح النسخة لمراجعتها.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             var latest = linkStore.Load(original); linkState = latest; snapshot = latest.Snapshot; RenderPage();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, "تعذّر إعداد كتاب المجموعة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
@@ -684,7 +841,7 @@ public partial class MainWindow : Window
         if (snapshot is null || rootSnapshot is not { } root || baseSnapshot is not { } original || payrollState is not { } payroll || linkState is not { } links) return;
         bool IsCurrent() => payrollStore.Load(root).Revision == payroll.Revision && linkStore.Load(original).Revision == links.Revision;
         try { new ReconciliationWindow(snapshot, SelectedMonth, IsCurrent) { Owner = this }.ShowDialog(); }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر فتح دفتر المطابقة المحفوظ. لم تُغيّر البيانات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void RenderBank()
@@ -719,29 +876,42 @@ public partial class MainWindow : Window
             BankReconcileText.Text = result.ExecutionMatched ? $"المبلغان متطابقان · {Amount(result.ExecutionDeductions)}" :
                 $"ملف جهات التنفيذ: {Amount(result.ExecutionDeductions)} · الفرق: {Amount(result.ExecutionDifference)} · قيود بلا مبلغ: {result.MissingExecutionAmounts:N0}";
         }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         {
             if (ticket == bankRequest && ReferenceEquals(source, snapshot) && month == SelectedMonth && page == "bank")
                 BankNotice.Text = "تعذّر احتساب كشف البنك: " + ex.Message;
         }
     }
 
-    private void RenderHome()
+    private async void RenderHome()
     {
         StartFromExcelButton.Visibility = snapshot is null ? Visibility.Visible : Visibility.Collapsed;
-        if (snapshot is null || SelectedMonth.Length == 0)
+        var ticket = ++homeRequest; var source = snapshot; var month = SelectedMonth;
+        if (source is null || month.Length == 0)
         {
             NetLabel.Text = "صافي الرواتب للشهر المختار"; NetAmount.Text = "—"; PayrollCount.Text = "لا توجد بيانات مفتوحة"; DataWarning.Text = "";
+            HomeEmployees.Text = "—"; HomeDeductions.Text = "—"; HomeMonths.Text = source is null ? "—" : source.Months.Count.ToString("N0", Numbers);
             SnapshotSummary.Text = "افتح نسخة الآيفون أو ابدأ بملف رواتب أو استقطاعات."; return;
         }
-        var totals = PayrollAnalysis.Summarize(snapshot, SelectedMonth);
-        NetLabel.Text = totals.MissingNet > 0 ? "صافي الرواتب المتاح · بيانات ناقصة" : "صافي الرواتب للشهر المختار";
-        NetAmount.Text = totals.Employees == 0 || totals.MissingNet == totals.Employees ? "غير متاح" : Amount(totals.NetTotal);
-        PayrollCount.Text = $"{totals.Employees:N0} منتسب · {SelectedMonth}";
-        DataWarning.Text = totals.MissingNet > 0 || totals.MissingAmounts > 0
-            ? $"تنبيه: {totals.MissingNet:N0} راتب بلا صافي و{totals.MissingAmounts:N0} قيد بلا مبلغ؛ المجاميع أولية."
-            : "النتائج للعرض والمراجعة؛ قارنها مع نسخة الآيفون قبل الاعتماد.";
-        SnapshotSummary.Text = $"{snapshot.Months.Count:N0} شهر · {snapshot.Accounts.Count:N0} حساب جهة · {snapshot.Books.Count:N0} كتاب في الأرشيف";
+        HomeMonths.Text = source.Months.Count.ToString("N0", Numbers);
+        SnapshotSummary.Text = $"{source.Months.Count:N0} شهر · {source.StaffCount:N0} سجل في الملاك · {source.Accounts.Count:N0} حساب جهة · {source.Books.Count:N0} كتاب في الأرشيف";
+        try
+        {
+            var totals = await Task.Run(() => PayrollAnalysis.Summarize(source, month));
+            if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
+            NetLabel.Text = totals.MissingNet > 0 ? $"صافي الرواتب المتاح · {month} · بيانات ناقصة" : $"صافي الرواتب · {month}";
+            NetAmount.Text = totals.Employees == 0 || totals.MissingNet == totals.Employees ? "غير متاح" : Amount(totals.NetTotal);
+            PayrollCount.Text = totals.Employees == 0 ? "لا توجد رواتب مستوردة لهذا الشهر" : $"{totals.Employees:N0} منتسب في كشف الرواتب";
+            HomeEmployees.Text = totals.Employees.ToString("N0", Numbers);
+            HomeDeductions.Text = totals.Deductions.ToString("N0", Numbers);
+            DataWarning.Text = totals.MissingNet > 0 || totals.MissingAmounts > 0
+                ? $"تنبيه: {totals.MissingNet:N0} راتب بلا صافي و{totals.MissingAmounts:N0} قيد بلا مبلغ؛ المجاميع أولية."
+                : "النتائج للعرض والمراجعة؛ قارنها مع نسخة الآيفون قبل الاعتماد.";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or OverflowException)
+        {
+            if (ticket == homeRequest) { NetAmount.Text = "غير متاح"; DataWarning.Text = "تعذّر حساب الملخص: " + ex.Message; }
+        }
     }
     private void Column(string title, string path, double weight, bool numeric = false)
     {

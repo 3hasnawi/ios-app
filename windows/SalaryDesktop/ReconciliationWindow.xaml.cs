@@ -62,7 +62,7 @@ public partial class ReconciliationWindow : Window
             if (missing > 0) notes.Add($"{missing} مبالغ مقترحة لم تُدرج بعد.");
             SourceStatus.Text = notes.Count == 0 ? "راجع تأشير الحركات وتواريخها مع كشف المصرف." : string.Join(" · ", notes);
         }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         { if (ticket == sourceRequest && Current?.Id == period.Id) SourceStatus.Text = "تعذّر فحص مصادر الشهر: " + ex.Message; }
     }
     private async void OpenSuggestions(object sender, RoutedEventArgs e)
@@ -76,7 +76,7 @@ public partial class ReconciliationWindow : Window
             var dialog = new ReconciliationSuggestionsWindow(period, data) { Owner = this };
             if (dialog.ShowDialog() == true && dialog.Result is { } updated) Save(updated);
         }
-        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         { MessageBox.Show(this, "تعذّر حساب المقترحات.\n" + ex.Message, "المبالغ المقترحة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { SuggestionsButton.IsEnabled = true; }
     }
@@ -88,7 +88,7 @@ public partial class ReconciliationWindow : Window
             var all = state.Periods.Where(p => p.Id != updated.Id).Concat([updated]).ToArray();
             state = store.Save(source, state, all); Refresh(updated.Id);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { MessageBox.Show(this, "لم تُحفظ التغييرات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void AddPeriod(object sender, RoutedEventArgs e)
@@ -143,7 +143,7 @@ public partial class ReconciliationWindow : Window
             var changed = externalChanged || state.Revision != captured.Revision;
             MessageBox.Show(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخة الاحتياطية", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportButton.IsEnabled = true; }
     }
@@ -162,7 +162,7 @@ public partial class ReconciliationWindow : Window
             var changed = externalChanged || state.Revision != revision || Current?.Id != period.Id;
             MessageBox.Show(this, changed ? "حُفظت مسودة الفترة السابقة، وقد تغيرت البيانات أثناء التصدير؛ أعد التصدير لآخر التغييرات." : "حُفظت المسودة. راجع الصفحات والرصيد والحركات والتواقيع مع كشف المصرف قبل الاعتماد.", "كشف المطابقة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, "تعذّر إعداد مسودة الكشف.\n" + ex.Message, "كشف المطابقة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { ExportPdfButton.IsEnabled = true; }
     }

@@ -2,7 +2,7 @@ name: Windows desktop checks
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write   # لنشر صور التصميم الوهمية في فرع windows-screenshots
 jobs:
   windows:
     runs-on: windows-latest
@@ -17,7 +17,25 @@ jobs:
       - name: Test backup, bank calculations and transfer files with fictional data
         run: dotnet run --project windows/SalaryDesktop.Tests/SalaryDesktop.Tests.csproj -c Release --no-build --no-launch-profile
       - name: Exercise desktop screens with fictional data
+        env:
+          SCREENSHOT_DIR: ${{ runner.temp }}/windows-screenshots
         run: dotnet run --project windows/SalaryDesktop.Smoke/SalaryDesktop.Smoke.csproj -c Release --no-launch-profile
+      - name: Publish design screenshots to 'windows-screenshots' branch
+        if: always()
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHOTS: ${{ runner.temp }}/windows-screenshots
+        run: |
+          SHOTS=$(cygpath -u "$SHOTS")
+          [ -d "$SHOTS" ] && ls "$SHOTS"/*.png >/dev/null 2>&1 || { echo "No screenshots"; exit 0; }
+          cd "$SHOTS"
+          git init -q -b windows-screenshots
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Windows screens for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" windows-screenshots
       - name: Publish portable Windows trial
         shell: pwsh
         run: |

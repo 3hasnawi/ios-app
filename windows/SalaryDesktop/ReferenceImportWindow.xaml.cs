@@ -20,7 +20,7 @@ public partial class ReferenceImportWindow : Window
             var count = result.count; archive = result.bytes; SaveButton.IsEnabled = true;
             Notice.Text = count == 12 ? "اكتمل فحص المراجع الاثني عشر؛ راجع ثم احفظها." : "اكتمل فحص المراجع الإلزامية الأحد عشر. مرجع تنسيق الأرقام غير موجود، وقد يلزم للآيفون.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Notice.Text = "تعذّر فحص المراجع: " + ex.Message; }
         finally { working = false; Choose.IsEnabled = true; }
     }

@@ -32,7 +32,7 @@ public partial class PayrollImportWindow : Window
             Notice.Text = $"{result.Employees.Count:N0} راتب · {result.Deductions.Count:N0} استقطاع · {result.Problems.Count:N0} مشكلة. " + (result.Problems.Count == 0 ? "راجع السجلات قبل الحفظ." : "صحح الملف وأعد اختياره؛ لا يمكن حفظ بيانات ناقصة.");
             SaveButton.IsEnabled = result.Problems.Count == 0 && result.Employees.Count + result.Deductions.Count > 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { Notice.Text = "تعذّر قراءة الملف: " + ex.Message; }
         finally { Choose.IsEnabled = true; }
     }

@@ -53,7 +53,7 @@ public partial class IndividualSettingsWindow : Window
                 if (changes.Contains("beneficiaryAccount")) { initialAccount = IndividualAccountCustomization.Read(State.Snapshot, id)?.Value ?? ""; AccountText.Text = initialAccount; ConfirmAccount.IsChecked = false; ConfirmAccount.Visibility = Visibility.Collapsed; } }
             Notice.Text = "حُفظت التغييرات. احفظ نسخة احتياطية لتضمين التخصيصات.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 }

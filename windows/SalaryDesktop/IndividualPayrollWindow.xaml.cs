@@ -42,7 +42,7 @@ public partial class IndividualPayrollWindow : Window
             Status.Text = plan.Notices.Count > 0 ? string.Join("\n", plan.Notices) + " يجب تأكيد مراجعة المبلغ قبل التصدير." : "راجع المبلغ والحساب وتنسيق المسودة قبل اعتمادها.";
             ExportButton.IsEnabled = true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (request == ticket) Status.Text = "تعذّر إعداد الكتاب: " + ex.Message; }
         finally { if (request == ticket) SettingsButton.IsEnabled = true; }
     }
@@ -56,7 +56,7 @@ public partial class IndividualPayrollWindow : Window
             window.ShowDialog(); State = window.State; source = State.Snapshot; ContractText.Text = GroupLetterSettingsReader.FoodContract(source) ?? "";
             BookChanged(BookPicker, null!);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
@@ -76,7 +76,7 @@ public partial class IndividualPayrollWindow : Window
             var changed = await Task.Run(() => { if (!Current()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح الكتاب."); IndividualPayrollPdf.Save(captured, settings, font, File.ReadAllBytes(tableFont), File.ReadAllBytes(logo), reference, capturedCash, dialog.FileName); return !Current(); });
             MessageBox.Show(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; BookPicker.IsEnabled = true; ExportButton.IsEnabled = plan is not null; ContractText.IsEnabled = true; SettingsButton.IsEnabled = true; }
     }

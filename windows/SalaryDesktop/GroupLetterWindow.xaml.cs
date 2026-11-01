@@ -62,7 +62,7 @@ public partial class GroupLetterWindow : Window
     private void SaveSettings(object sender, RoutedEventArgs e)
     {
         try { _ = Persist(); Notice.Text = "حُفظت الحقول المعدلة. احفظ نسخة احتياطية لتضمين التخصيصات."; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException) { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException) { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void SelectFont(object sender, RoutedEventArgs e)
     {
@@ -74,14 +74,14 @@ public partial class GroupLetterWindow : Window
             var info = new FileInfo(dialog.FileName); if (info.Length > 3_000_000) throw new InvalidDataException("حجم ملف الخط غير صالح.");
             State = store.SaveGroupFont(source, State, File.ReadAllBytes(dialog.FileName)); Notice.Text = "حُفظ خط ساكال العريض مع تخصيصات النسخة المحلية.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, ex.Message, "استيراد الخط", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void Busy(bool value) { working = value; EditorScroll.IsEnabled = !value; SaveButton.IsEnabled = !value; FontButton.IsEnabled = !value; PreviewButton.IsEnabled = !value; ExportButton.IsEnabled = !value; CloseButton.IsEnabled = !value; }
     private async void Preview(object sender, RoutedEventArgs e)
     {
         try { previewDirectory ??= Path.Combine(Path.GetTempPath(), "salary-group-preview-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(previewDirectory); await Generate(Path.Combine(previewDirectory, Guid.NewGuid().ToString("N") + ".pdf"), true); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { MessageBox.Show(this, "تعذّر إنشاء مجلد المعاينة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { MessageBox.Show(this, "تعذّر إنشاء مجلد المعاينة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
     {
@@ -107,7 +107,7 @@ public partial class GroupLetterWindow : Window
             if (open) Process.Start(new ProcessStartInfo(destination) { UseShellExecute = true });
             else MessageBox.Show(this, "حُفظت المسودة بعد فحص جدولها. راجع النص والتنسيق والتوقيعات على ويندوز قبل الاعتماد.", "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException or System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException or System.ComponentModel.Win32Exception or InvalidOperationException or ArgumentException)
         { MessageBox.Show(this, "تعذّر إعداد مسودة الكتاب.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { Busy(false); }
     }

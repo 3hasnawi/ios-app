@@ -50,7 +50,7 @@ public partial class IndividualEntityWindow : Window
             if (selected is null) Status.Text = candidates.Count == 0 ? "لا توجد جهات لفرع الأنبار في الشهر." : hasSaved ? "تغيّرت الجهة أو حسابها منذ الربط السابق؛ راجعها واخترها من جديد." : "اختر جهة الكتاب؛ الجهات التي تحتاج مراجعة موضحة في القائمة.";
             else { Busy(false); await Select(selected, choice); return; }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Status.Text = "تعذّر مطابقة الجهات: " + ex.Message; }
         finally { if (working) Busy(false); }
     }
@@ -79,7 +79,7 @@ public partial class IndividualEntityWindow : Window
             State = next; plan = selected.Plan; AmountText.Text = plan.Total.ToString("N0", CultureInfo.GetCultureInfo("en-US")); AccountText.Text = plan.BeneficiaryAccount ?? "حساب مصرف الفرع";
             Status.Text = "حُفظ ربط الجهة. راجع الحساب والمبلغ قبل اعتماد المسودة، واحفظ نسخة احتياطية للتعديلات.";
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Status.Text = "تعذّر حفظ الربط: " + ex.Message; }
         finally { Busy(false); }
     }
@@ -97,7 +97,7 @@ public partial class IndividualEntityWindow : Window
             window.ShowDialog(); State = window.State;
             BookChanged(BookPicker, null!);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { MessageBox.Show(this, ex.Message, "تخصيص الكتاب", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private async void Export(object sender, RoutedEventArgs e)
@@ -116,7 +116,7 @@ public partial class IndividualEntityWindow : Window
             var changed = await Task.Run(() => { if (!payrollCurrent() || store.Load(source).Revision != state.Revision) throw new InvalidDataException("تغيّرت البيانات؛ أعد فتح الكتاب."); IndividualEntityPdf.Save(captured, settings, font, File.ReadAllBytes(logo), dialog.FileName); return !payrollCurrent() || store.Load(source).Revision != state.Revision; });
             MessageBox.Show(this, changed ? "حُفظت مسودة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد التصدير." : "حُفظت المسودة بعد فحص حساباتها ومبلغها. راجع النص والتواقيع وقائمة الأسماء قبل الاعتماد.", "الكتب المنفردة", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException or DllNotFoundException or TypeInitializationException)
         { MessageBox.Show(this, "تعذّر إعداد المسودة.\n" + ex.Message, "الكتب المنفردة", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { Busy(false); }
     }

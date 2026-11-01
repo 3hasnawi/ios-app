@@ -25,7 +25,7 @@ public partial class AnnualImportWindow : Window
             Notice.Text = $"{result.Months.Count:N0} شهر · {result.Months.Sum(m => m.Deductions.Count):N0} استقطاع · {result.Problems.Count:N0} مشكلة. " + (result.Problems.Count == 0 ? "راجع الأشهر قبل الحفظ." : "صحح الملف وأعد اختياره؛ لن يحفظ أي شهر مع وجود خطأ.");
             SaveButton.IsEnabled = result.Problems.Count == 0 && result.Months.Count > 0;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { Notice.Text = "تعذّر قراءة الملف: " + ex.Message; }
         finally { working = false; Choose.IsEnabled = true; }
     }
