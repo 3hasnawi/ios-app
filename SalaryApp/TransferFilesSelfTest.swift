@@ -89,7 +89,7 @@ import CryptoKit
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
-        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 114, y: 842 - 89, width: 280, height: 50))?.string ?? ""
+        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 165, y: 842 - 89, width: 265, height: 50))?.string ?? ""
         try check(!statementTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "reconciliation PDF title")
         var compactStatement = statement
         compactStatement.movements = (1...22).map { index in

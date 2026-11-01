@@ -104,11 +104,13 @@ nonisolated enum BankReconciliationPDF {
             let signatureFont = ReportFont.bold(10.5)
             let headingFont = ReportFont.bold(10.5)
             let headingLines = ["كشف مطابقة حساب البنك", "لقيادة شرطة محافظة الانبار"]
-            let organization = ["جمهورية العراق", "وزارة الداخلية", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
+            let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
             guard let logo = UIImage(named: "HomeLogo")?.cgImage,
                   let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
-            guard headingLines.allSatisfy({ lines($0, font: headingFont, width: 272) == 1 }),
-                  organization.allSatisfy({ lines($0, font: bold, width: 150) == 1 }) else { throw Failure.tooLong }
+            guard headingLines.allSatisfy({ lines($0, font: headingFont, width: 257) == 1 }),
+                  let organizationFont = [9.0, 8.5, 8.0].map({ ReportFont.bold(CGFloat($0)) }).first(where: { font in
+                      organization.allSatisfy({ lines($0, font: font, width: 130) == 1 })
+                  }) else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var valuesByRow: [[String]] = []
             if period.openingBalance != 0 {
@@ -168,12 +170,12 @@ nonisolated enum BankReconciliationPDF {
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
                     drawImage(logo, in: CGRect(x: 36, y: 27, width: 72, height: 72), alpha: 1, context: cg)
                     for (index, value) in organization.enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 405, y: 27 + CGFloat(index) * 15, width: 150, height: 15), font: bold, align: .right)
+                        PDFText.draw(value, in: CGRect(x: 432, y: 27 + CGFloat(index) * 13, width: 130, height: 13), font: organizationFont, align: .center)
                     }
-                    let headingBox = CGRect(x: 114, y: 39, width: 280, height: 50)
+                    let headingBox = CGRect(x: 165, y: 39, width: 265, height: 50)
                     UIColor.darkGray.setStroke(); cg.stroke(headingBox, width: 0.7)
                     for (index, value) in headingLines.enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 118, y: 46 + CGFloat(index) * 18, width: 272, height: 18), font: headingFont)
+                        PDFText.draw(value, in: CGRect(x: 169, y: 46 + CGFloat(index) * 18, width: 257, height: 18), font: headingFont)
                     }
                     PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 104, width: 531, height: 20), font: font)
                     if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 126, width: 531, height: 13), font: bold, color: .darkGray) }
