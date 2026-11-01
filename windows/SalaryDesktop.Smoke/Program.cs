@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using SalaryDesktop;
 using SalaryDesktop.Core;
 
@@ -42,13 +43,15 @@ static class Program
     {
         var directory = Path.Combine(Path.GetTempPath(), "salary-ui-smoke-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "fictional.zip"); Fixture(path); var snapshot = BackupReader.Read(path);
-        var application = new SalaryDesktop.App(); application.InitializeComponent(); application.StartupUri = null; application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var application = new SalaryDesktop.App(); application.InitializeComponent(); application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var exit = 1;
         application.Startup += async (_, _) => {
             MainWindow? main = null;
             try
             {
-                main = new MainWindow(); typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]); main.Show();
+                await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                main = application.MainWindow as MainWindow ?? throw new InvalidOperationException("application did not create its main window");
+                typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);
                 await Task.Delay(500);
                 async Task Navigate(string tag)
                 {
