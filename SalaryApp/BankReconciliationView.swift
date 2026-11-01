@@ -21,6 +21,9 @@ struct BankReconciliationView: View {
     @State private var showConfirm = false
     @State private var showSuggestions = false
     @State private var showContractReview = false
+    @State private var showManualApproval = false
+    @State private var manualApproval: ApprovalContext?
+    @State private var pdfManualApproval = false
 
     init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
         self.month = month; self.summary = summary; self.manual = manual; self.figures = figures; self.figuresFailure = figuresFailure; self.entities = entities
@@ -66,9 +69,24 @@ struct BankReconciliationView: View {
         (summary.executionMatched || (summary.executionCount == 0 && summary.bankDeductions == 0)) &&
         unresolvedCount == 0 && incompleteSources == 0 && staleSources.isEmpty && figuresFailure == nil && entities != nil
     }
+    private struct ApprovalContext: Equatable {
+        let period: BankReconciliation.Period
+        let suggestions: [Suggestion]
+        let alerts: [String]
+    }
+    private var currentApprovalContext: ApprovalContext {
+        ApprovalContext(period: period, suggestions: suggestedAmounts, alerts: [
+            "\(unresolvedCount)", "\(incompleteSources)", "\(missingSuggestions)",
+            "\(summary.missingNet)", "\(summary.missingContractNominal)", "\(summary.executionMatched)",
+            "\(summary.executionCount)", "\(summary.bankDeductions)",
+            figuresFailure ?? "", entities == nil ? "missing" : "loaded",
+            staleSources.map { $0.id.uuidString }.sorted().joined(separator: ",")
+        ])
+    }
+    private var manuallyApproved: Bool { manualApproval == currentApprovalContext }
     private var previewIsCurrent: Bool {
-        pdfPeriod == period && pdfSources == suggestedAmounts && pdfComplete == isComplete &&
-        figuresFailure == nil && entities != nil && unresolvedCount == 0 && staleSources.isEmpty
+        pdfPeriod == period && pdfSources == suggestedAmounts &&
+        (pdfManualApproval ? manuallyApproved : (isComplete && pdfComplete))
     }
     private var canEdit: Bool { isLoaded && !BackupManager.shared.isWorking && !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting }
     private var visibleMovements: [BankReconciliation.Movement] {
@@ -90,6 +108,7 @@ struct BankReconciliationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { EditButton() } }
         .onAppear(perform: load)
+        .onChange(of: currentApprovalContext) { manualApproval = nil }
         .sheet(item: $editor) { draft in
             NavigationStack {
                 BankReconciliationMovementEditor(draft: draft, period: period, error: $error) { movement in
@@ -108,6 +127,11 @@ struct BankReconciliationView: View {
         .confirmationDialog(tr("معاينة كشف المطابقة", "Preview reconciliation"), isPresented: $showConfirm, titleVisibility: .visible) {
             Button(tr("معاينة PDF", "Preview PDF")) { preview() }
         } message: { Text(tr("راجع الرصيد والحركات غير المؤشرة مع كشف المصرف الورقي قبل اعتماد الكشف.", "Review the balance and unchecked movements against the paper bank statement before accepting the statement.")) }
+        .confirmationDialog(tr("تأكيد المطابقة اليدوية", "Confirm manual reconciliation"), isPresented: $showManualApproval, titleVisibility: .visible) {
+            Button(tr("أكدت المطابقة يدوياً وتجاوز التنبيهات", "Confirm manual reconciliation and bypass alerts")) {
+                if persist(period) { manualApproval = currentApprovalContext }
+            }
+        } message: { Text(tr("أؤكد أنني راجعت الحركات والمبالغ مع كشف المصرف الورقي، وأتحمل مسؤولية التنبيهات الظاهرة. يُلغى التأكيد عند تعديل بيانات الكشف أو تغير التنبيهات، وعند الخروج من هذه الصفحة.", "I confirm that I reviewed the movements and amounts against the paper bank statement and accept the displayed alerts. Changing the statement data or alerts, or leaving this screen, cancels the confirmation.")) }
         .confirmationDialog(tr("مراجعة مبلغ العقود", "Review contract amount"), isPresented: $showContractReview, titleVisibility: .visible) {
             Button(tr("اعتماد المبلغ المتوفر", "Accept available amount")) {
                 guard let amount = availableContractAmount else { return }
@@ -218,11 +242,18 @@ struct BankReconciliationView: View {
         }
         Section {
             if !period.movements.isEmpty && !isComplete {
-                Text(tr("سيظهر الكشف كمسودة غير مكتملة حتى تتم مراجعة الحركات والمبالغ ويصبح الرصيد صفراً.", "The statement will be marked as an incomplete draft until movements and amounts are reviewed and the balance is zero."))
-                    .font(.footnote).foregroundStyle(.orange)
+                if manuallyApproved {
+                    Label(tr("تم تأكيد المطابقة يدوياً لهذه البيانات. تبقى التنبيهات ظاهرة للمراجعة.", "Manual reconciliation confirmed for these data. Alerts remain visible for review."), systemImage: "checkmark.shield")
+                        .foregroundStyle(.orange)
+                } else {
+                    Text(tr("راجع التنبيهات والكشف الورقي، ثم يمكنك تأكيد المطابقة يدوياً لتصدير الكشف.", "Review the alerts and paper statement, then confirm manually to export."))
+                        .font(.footnote).foregroundStyle(.orange)
+                    Button(tr("تأكيد المطابقة اليدوية", "Confirm manual reconciliation"), systemImage: "checkmark.shield") { showManualApproval = true }
+                        .disabled(!canEdit || totals == nil || preparing)
+                }
             }
             Button(tr("معاينة الكشف PDF", "Preview PDF"), systemImage: "doc.text.magnifyingglass") { showConfirm = true }
-                .disabled(!canEdit || totals == nil || period.movements.isEmpty || preparing || !staleSources.isEmpty || figuresFailure != nil || entities == nil || unresolvedCount > 0)
+                .disabled(!canEdit || totals == nil || period.movements.isEmpty || preparing || (!isComplete && !manuallyApproved))
             if preparing { ProgressView() }
         }
     }
@@ -299,18 +330,20 @@ struct BankReconciliationView: View {
     private func preview() {
         guard persist(period) else { return }
         let snapshot = period
-        let complete = isComplete
+        let manual = !isComplete && manuallyApproved
+        let complete = isComplete || manual
+        let approval = currentApprovalContext
         let sources = suggestedAmounts
         preparing = true
         Task {
             defer { preparing = false }
             do {
                 let url = try await BankReconciliationPDF.make(snapshot, complete: complete)
-                guard snapshot == period, sources == suggestedAmounts, complete == isComplete,
-                      figuresFailure == nil, entities != nil, unresolvedCount == 0, staleSources.isEmpty else {
+                guard snapshot == period, sources == suggestedAmounts, approval == currentApprovalContext,
+                      (manual ? manuallyApproved : isComplete) else {
                     try? FileManager.default.removeItem(at: url); throw BankReconciliation.Failure.invalid
                 }
-                pdfPeriod = snapshot; pdfSources = sources; pdfComplete = complete; pdf = url
+                pdfPeriod = snapshot; pdfSources = sources; pdfComplete = complete; pdfManualApproval = manual; pdf = url
             } catch { self.error = error.localizedDescription }
         }
     }
