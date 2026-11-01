@@ -63,10 +63,16 @@ public static class AccountSpreadsheet
                         continue;
                     }
                     if (!seen.Add(PayrollAnalysis.Normalize(name))) { problems.Add(new(sheet, row, "اسم الجهة مكرر في الملف.")); continue; }
-                    if (reader.GetValue(iban) is not string) { problems.Add(new(sheet, row, "احفظ خانة الحساب كنص؛ القيمة الرقمية قد تفقد أصفاراً.")); continue; }
-                    var entered = TransferPreparation.NormalizeAccount(Cell(iban)); var bank = Cell(branch); var bic = Cell(swift).ToUpperInvariant();
-                    var candidateAccount = new ExecutionAccount(name, entered, bank, bic, null);
+                    var bank = Cell(branch); var bic = Cell(swift).ToUpperInvariant();
                     var allowed = PayrollAnalysis.Normalize(name).Contains(PayrollAnalysis.Normalize("صندوق الإسكان"), StringComparison.Ordinal) || PayrollAnalysis.Normalize(name).Contains(PayrollAnalysis.Normalize("الموارد المائية"), StringComparison.Ordinal);
+                    string entered;
+                    if (reader.GetValue(iban) is string text) entered = TransferPreparation.NormalizeAccount(text);
+                    else if (reader.GetValue(iban) is double number && double.IsFinite(number) && number == Math.Truncate(number) &&
+                        number is >= 100_000_000_000_000d and <= 999_999_999_999_999d && allowed &&
+                        TransferPreparation.Classify(new ExecutionAccount(name, "", bank, "", null)) == TransferGroup.Anbar)
+                        entered = ((long)number).ToString(CultureInfo.InvariantCulture);
+                    else { problems.Add(new(sheet, row, "احفظ خانة الحساب كنص؛ القيمة الرقمية قد تفقد أصفاراً.")); continue; }
+                    var candidateAccount = new ExecutionAccount(name, entered, bank, bic, null);
                     if (entered.Length == 15 && entered.All(char.IsAsciiDigit) && allowed && TransferPreparation.Classify(candidateAccount) == TransferGroup.Anbar)
                         candidateAccount = candidateAccount with { Iban = "", LocalAccount = entered };
                     else if (!TransferPreparation.ValidIban(entered)) { problems.Add(new(sheet, row, "IBAN غير صالح أو غير مكتمل.")); continue; }
