@@ -28,8 +28,8 @@ nonisolated enum BankReconciliationPDF {
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
     private static let widths: [CGFloat] = [78, 189, 88, 88, 88]
     private static let margin: CGFloat = 32
-    private static let tableTop: CGFloat = 145
-    private static let rowTop: CGFloat = 169
+    private static let tableTop: CGFloat = 150
+    private static let rowTop: CGFloat = 174
     private static let tableBottom: CGFloat = 665
     private static let totalHeight: CGFloat = 24
     private static func number(_ value: Int64) throws -> String {
@@ -96,21 +96,31 @@ nonisolated enum BankReconciliationPDF {
         context.draw(image, in: CGRect(x: rect.minX, y: page.height - rect.maxY, width: rect.width, height: rect.height))
         context.restoreGState()
     }
-    static func make(_ period: BankReconciliation.Period, complete: Bool = false) async throws -> URL {
+    static func make(_ period: BankReconciliation.Period, complete: Bool = false, account: BankReconciliation.AccountDetails = .init()) async throws -> URL {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
             let bold = ReportFont.bold(9)
             let signatureFont = ReportFont.bold(10.5)
             let headingFont = ReportFont.bold(10.5)
-            let headingLines = ["كشف مطابقة حساب البنك", "لقيادة شرطة محافظة الانبار"]
+            let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
-            guard let logo = UIImage(named: "HomeLogo")?.cgImage,
-                  let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
-            guard headingLines.allSatisfy({ lines($0, font: headingFont, width: 257) == 1 }),
+            guard let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
+            func value(_ raw: String) throws -> String {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.count <= 100, !trimmed.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
+                return trimmed.isEmpty ? "—" : trimmed
+            }
+            let accountName = try value(account.name)
+            let metadata = [("الفرع", try value(account.branch), 7), ("الحساب", try value(account.localAccount), 8),
+                            ("العملة", "IQD", 9), ("IBAN", try value(account.iban), 10)]
+            let metadataFonts = [8.5, 8.0, 7.5, 7.0].map { ReportFont.regular(CGFloat($0)) }
+            guard lines(heading, font: headingFont, width: 195) == 1,
                   let organizationFont = [9.0, 8.5, 8.0].map({ ReportFont.bold(CGFloat($0)) }).first(where: { font in
                       organization.allSatisfy({ lines($0, font: font, width: 130) == 1 })
-                  }) else { throw Failure.tooLong }
+                  }),
+                  let metadataFont = metadataFonts.first(where: { font in metadata.allSatisfy({ lines($0.1, font: font, width: 116) == 1 }) }),
+                  let accountTitleFont = [9.0, 8.5, 8.0].map({ ReportFont.bold(CGFloat($0)) }).first(where: { lines(accountName, font: $0, width: 220) == 1 }) else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var valuesByRow: [[String]] = []
             if period.openingBalance != 0 {
@@ -168,15 +178,23 @@ nonisolated enum BankReconciliationPDF {
                     drawImage(watermark, in: CGRect(x: 120, y: 280, width: 355, height: 355), alpha: 0.06, context: cg)
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
-                    drawImage(logo, in: CGRect(x: 36, y: 27, width: 72, height: 72), alpha: 1, context: cg)
+                    for (index, item) in metadata.enumerated() {
+                        let y = 27 + CGFloat(index) * 16
+                        let valueRect = CGRect(x: 32, y: y, width: 116, height: 14)
+                        PDFText.draw(item.0 + ":", in: CGRect(x: 154, y: y, width: 43, height: 14), font: metadataFont, align: .right)
+                        PDFText.draw(item.1, in: valueRect, font: metadataFont, align: .left)
+                        if item.1 != "—" { placements.append((pageCount, valueRect, item.1, item.2, index + 1)) }
+                    }
                     for (index, value) in organization.enumerated() {
                         PDFText.draw(value, in: CGRect(x: 432, y: 27 + CGFloat(index) * 13, width: 130, height: 13), font: organizationFont, align: .center)
                     }
-                    for (index, value) in headingLines.enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 169, y: 46 + CGFloat(index) * 18, width: 257, height: 18), font: headingFont)
-                    }
-                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 104, width: 531, height: 20), font: font)
-                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 126, width: 531, height: 13), font: bold, color: .darkGray) }
+                    PDFText.draw(heading, in: CGRect(x: 200, y: 46, width: 195, height: 24), font: headingFont)
+                    let accountRect = CGRect(x: 150, y: 101, width: 220, height: 15)
+                    PDFText.draw("اسم الحساب:", in: CGRect(x: 372, y: 101, width: 75, height: 15), font: accountTitleFont, align: .right)
+                    PDFText.draw(accountName, in: accountRect, font: accountTitleFont, align: .right)
+                    if accountName != "—" { placements.append((pageCount, accountRect, accountName, 11, 1)) }
+                    PDFText.draw("الفترة من \(date(period.start)) إلى \(date(period.end))", in: CGRect(x: margin, y: 118, width: 531, height: 15), font: font)
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: 135, width: 531, height: 12), font: bold, color: .darkGray) }
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
@@ -236,14 +254,27 @@ nonisolated enum BankReconciliationPDF {
                 let isDate = column == 0 || column == 6
                 let matches = actual == wanted || (isDate && matchesDate(actual, expected: wanted)) ||
                     (column == 1 && matchesDescription(actual, expected: wanted)) ||
-                    (column == 5 && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
+                    ([5, 7, 11].contains(column) && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
                 guard matches else {
                     #if targetEnvironment(simulator)
                     if ProcessInfo.processInfo.arguments.contains("-transferFilesTest") {
                         throw Failure.debugVerification(actual: actual, expected: wanted, column: column)
                     }
                     #endif
-                    let area = column >= 5 ? tr("التوقيع", "signature") : [tr("التاريخ", "date"), tr("البيان", "description"), tr("الدائن", "credit"), tr("المدين", "debit"), tr("الرصيد", "balance")][column]
+                    let area: String
+                    switch column {
+                    case 0: area = tr("التاريخ", "date")
+                    case 1: area = tr("البيان", "description")
+                    case 2: area = tr("الدائن", "credit")
+                    case 3: area = tr("المدين", "debit")
+                    case 4: area = tr("الرصيد", "balance")
+                    case 5, 6: area = tr("التوقيع", "signature")
+                    case 7: area = tr("الفرع", "branch")
+                    case 8: area = tr("رقم الحساب", "account number")
+                    case 9: area = tr("العملة", "currency")
+                    case 10: area = "IBAN"
+                    default: area = tr("اسم الحساب", "account name")
+                    }
                     throw Failure.verification(page: pageIndex + 1, area: area, row: row)
                 }
             }

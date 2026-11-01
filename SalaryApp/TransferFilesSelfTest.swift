@@ -84,12 +84,21 @@ import CryptoKit
         let mixedStatementPDF = try await BankReconciliationPDF.make(mixedStatement)
         defer { try? FileManager.default.removeItem(at: mixedStatementPDF) }
         try check(PDFDocument(url: mixedStatementPDF) != nil, "reconciliation PDF mixed Arabic and year")
+        let fictionalAccount = BankReconciliation.AccountDetails(name: "حساب تجريبي", branch: "فرع تجريبي", localAccount: "123456789", iban: "IQ00TEST123456789012345")
+        try check(!fictionalAccount.isIncomplete && BankReconciliation.AccountDetails().isIncomplete, "reconciliation account completeness")
+        let accountStatementPDF = try await BankReconciliationPDF.make(statement, complete: true, account: fictionalAccount)
+        defer { try? FileManager.default.removeItem(at: accountStatementPDF) }
+        try check(PDFDocument(url: accountStatementPDF)?.pageCount == 1, "reconciliation fictional account details PDF")
+        var oversizedAccount = fictionalAccount
+        oversizedAccount.iban = String(repeating: "A", count: 150)
+        do { _ = try await BankReconciliationPDF.make(statement, complete: true, account: oversizedAccount); throw Failure(errorDescription: "oversized account accepted") }
+        catch is Failure { throw Failure(errorDescription: "oversized account accepted") } catch { }
         let statementPDF = try await BankReconciliationPDF.make(statement)
         defer { try? FileManager.default.removeItem(at: statementPDF) }
         let statementDocument = PDFDocument(url: statementPDF)
         let paper = statementDocument?.page(at: 0)?.bounds(for: .mediaBox)
         try check(statementDocument?.pageCount == 1 && paper?.width == 595 && paper?.height == 842, "reconciliation PDF A4 portrait")
-        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 165, y: 842 - 89, width: 265, height: 50))?.string ?? ""
+        let statementTitle = statementDocument?.page(at: 0)?.selection(for: CGRect(x: 200, y: 842 - 70, width: 195, height: 24))?.string ?? ""
         try check(!statementTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "reconciliation PDF title")
         var compactStatement = statement
         compactStatement.movements = (1...22).map { index in

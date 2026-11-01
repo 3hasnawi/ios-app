@@ -138,6 +138,8 @@ struct BankStatementView: View {
     @AppStorage("bankStatementMonth") private var selectedMonth = ""
     @AppStorage("bankStatementAccountName") private var accountName = ""
     @AppStorage("bankStatementIBAN") private var iban = ""
+    @AppStorage("bankStatementBranch") private var bankBranch = "الأنبار"
+    @AppStorage("bankStatementLocalAccount") private var localAccount = ""
     @AppStorage("bankStatementManualAmounts") private var manualAmountsData = Data()
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
@@ -320,6 +322,8 @@ struct BankStatementView: View {
             .task(id: loadKey) { await loadSummary(force: false) }
             .onChange(of: accountName) { BackupManager.shared.markChanged() }
             .onChange(of: iban) { BackupManager.shared.markChanged() }
+            .onChange(of: bankBranch) { BackupManager.shared.markChanged() }
+            .onChange(of: localAccount) { BackupManager.shared.markChanged() }
             .onChange(of: manualAmountsData) { BackupManager.shared.markChanged() }
             .task {
                 if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
@@ -384,7 +388,10 @@ struct BankStatementView: View {
             Form {
                 Section(tr("الحساب", "Account")) {
                     TextField(tr("اسم الحساب", "Account name"), text: $accountName)
+                    TextField(tr("الفرع", "Branch"), text: $bankBranch)
+                    TextField(tr("رقم الحساب المحلي", "Local account number"), text: $localAccount).keyboardType(.numberPad)
                     TextField("IBAN", text: $iban).textInputAutocapitalization(.characters)
+                    LabeledContent(tr("العملة", "Currency"), value: "IQD")
                 }
                 if let month {
                     BankManualAmountFields(

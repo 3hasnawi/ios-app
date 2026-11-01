@@ -9,11 +9,16 @@ struct BankReconciliationView: View {
     let figuresFailure: String?
     let entities: [TransferEntity]?
     @AppStorage(BankReconciliation.settingsKey) private var stored = Data()
+    @AppStorage("bankStatementAccountName") private var accountName = ""
+    @AppStorage("bankStatementIBAN") private var accountIBAN = ""
+    @AppStorage("bankStatementBranch") private var accountBranch = "الأنبار"
+    @AppStorage("bankStatementLocalAccount") private var localAccount = ""
     @State private var period: BankReconciliation.Period
     @State private var isLoaded = false
     @State private var editor: MovementDraft?
     @State private var pdf: URL?
     @State private var pdfPeriod: BankReconciliation.Period?
+    @State private var pdfAccount: BankReconciliation.AccountDetails?
     @State private var pdfSources: [Suggestion] = []
     @State private var pdfComplete = false
     @State private var preparing = false
@@ -32,6 +37,9 @@ struct BankReconciliationView: View {
         initial.memberFirst = "باسم فواز نواف"; initial.memberSecond = "حميد زيدان خلف"
         initial.signatureDefaultsInitialized = true
         _period = State(initialValue: initial)
+    }
+    private var account: BankReconciliation.AccountDetails {
+        .init(name: accountName, branch: accountBranch, localAccount: localAccount, iban: accountIBAN)
     }
     private var totals: BankReconciliation.Totals? { try? BankReconciliation.calculate(period) }
     private var unmatched: Int { period.movements.filter { !$0.matched }.count }
@@ -74,11 +82,12 @@ struct BankReconciliationView: View {
     }
     private struct ApprovalContext: Equatable {
         let period: BankReconciliation.Period
+        let account: BankReconciliation.AccountDetails
         let suggestions: [Suggestion]
         let alerts: [String]
     }
     private var currentApprovalContext: ApprovalContext {
-        ApprovalContext(period: period, suggestions: suggestedAmounts, alerts: [
+        ApprovalContext(period: period, account: account, suggestions: suggestedAmounts, alerts: [
             "\(unresolvedCount)", "\(incompleteSources)", "\(missingSuggestions)",
             "\(summary.missingNet)", "\(summary.missingContractNominal)", "\(summary.executionMatched)",
             "\(summary.executionCount)", "\(summary.bankDeductions)",
@@ -88,7 +97,7 @@ struct BankReconciliationView: View {
     }
     private var manuallyApproved: Bool { manualApproval == currentApprovalContext }
     private var previewIsCurrent: Bool {
-        pdfPeriod == period && pdfSources == suggestedAmounts &&
+        pdfPeriod == period && pdfAccount == account && pdfSources == suggestedAmounts &&
         (pdfManualApproval ? manuallyApproved : (isComplete && pdfComplete))
     }
     private var canEdit: Bool { isLoaded && !BackupManager.shared.isWorking && !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting }
@@ -168,6 +177,10 @@ struct BankReconciliationView: View {
     @ViewBuilder private var summarySection: some View {
         if let totals {
             Section(tr("ملخص الحساب", "Account summary")) {
+                if account.isIncomplete {
+                    Label(tr("أكمل اسم الحساب والفرع ورقم الحساب المحلي وIBAN من إعداد الحساب لتظهر في الكشف.", "Complete the account name, branch, local account number and IBAN in Account settings so they appear on the statement."), systemImage: "info.circle")
+                        .foregroundStyle(.orange)
+                }
                 LabeledContent(tr("التمويل", "Funding"), value: Money.format(Double(totals.funding)))
                 LabeledContent(tr("مجموع الدائن", "Total credits"), value: Money.format(Double(totals.credits)))
                 LabeledContent(tr("مجموع المدين", "Total debits"), value: Money.format(Double(totals.debits)))
@@ -343,6 +356,7 @@ struct BankReconciliationView: View {
     private func preview() {
         guard persist(period) else { return }
         let snapshot = period
+        let accountSnapshot = account
         let manual = !isComplete && manuallyApproved
         let complete = isComplete || manual
         let approval = currentApprovalContext
@@ -351,12 +365,12 @@ struct BankReconciliationView: View {
         Task {
             defer { preparing = false }
             do {
-                let url = try await BankReconciliationPDF.make(snapshot, complete: complete)
-                guard snapshot == period, sources == suggestedAmounts, approval == currentApprovalContext,
+                let url = try await BankReconciliationPDF.make(snapshot, complete: complete, account: accountSnapshot)
+                guard snapshot == period, accountSnapshot == account, sources == suggestedAmounts, approval == currentApprovalContext,
                       (manual ? manuallyApproved : isComplete) else {
                     try? FileManager.default.removeItem(at: url); throw BankReconciliation.Failure.invalid
                 }
-                pdfPeriod = snapshot; pdfSources = sources; pdfComplete = complete; pdfManualApproval = manual; pdf = url
+                pdfPeriod = snapshot; pdfAccount = accountSnapshot; pdfSources = sources; pdfComplete = complete; pdfManualApproval = manual; pdf = url
             } catch { self.error = error.localizedDescription }
         }
     }

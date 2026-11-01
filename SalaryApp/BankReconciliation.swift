@@ -39,6 +39,16 @@ nonisolated enum BankReconciliation {
         /// بصمة بيانات الحركة عند مراجعتها؛ أي تغيير في الحقول يلغي المطابقة.
         var matched: Bool = false
     }
+    /// بيانات ظاهرة في الكشف؛ لا يُستنتج الحساب المحلي من رقم IBAN.
+    struct AccountDetails: Equatable, Sendable {
+        var name: String = ""
+        var branch: String = "الأنبار"
+        var localAccount: String = ""
+        var iban: String = ""
+        var isIncomplete: Bool {
+            [name, branch, localAccount, iban].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+    }
     struct Period: Codable, Identifiable, Equatable, Sendable {
         var id = UUID()
         var month: String
