@@ -8,7 +8,7 @@ namespace SalaryDesktop;
 public partial class EmployeeDetailsWindow : Window
 {
     private sealed record DetailLine(string Section, string Key, string Value);
-    public EmployeeDetailsWindow(Employee employee)
+    public EmployeeDetailsWindow(Employee employee, BackupSnapshot? source = null)
     {
         InitializeComponent();
         NameText.Text = employee.Name;
@@ -38,7 +38,28 @@ public partial class EmployeeDetailsWindow : Window
             }
             catch (JsonException) { problems.Add("تعذرت قراءة بعض بنود الراتب"); }
         }
+        if (source is not null)
+        {
+            string Key(string name) => PayrollAnalysis.Normalize(name).Replace(" ", "", StringComparison.Ordinal);
+            var key = Key(employee.Name);
+            if (source.Employees.Count(e => e.Month == employee.Month && Key(e.Name) == key) != 1)
+                problems.Add("الاسم مكرر؛ لم تُربط الاستقطاعات تلقائياً");
+            else
+            {
+                foreach (var deduction in source.Deductions.Where(d => d.Month == employee.Month && Key(d.Name) == key))
+                {
+                    var amount = deduction.Amount?.ToString("#,0.##", CultureInfo.GetCultureInfo("en-US")) ?? "غير محتسب";
+                    var note = deduction.Note;
+                    if (PayrollAnalysis.IsInactive(deduction))
+                    {
+                        var end = note.IndexOf('⟧'); var status = end >= 0 ? note["⟦حالة الاستقطاع:".Length..end] : "موقوف";
+                        note = status + (end >= 0 ? note[(end + 1)..] : "");
+                    }
+                    rows.Add(new("استقطاعات جهات التنفيذ", deduction.Title, amount + (string.IsNullOrWhiteSpace(note) ? "" : " · " + note.Trim())));
+                }
+            }
+        }
         DetailTable.ItemsSource = rows;
-        StatusText.Text = problems.Count == 0 ? "عرض محلي للقراءة فقط." : string.Join(" · ", problems) + "؛ راجع نسخة الآيفون.";
+        StatusText.Text = problems.Count == 0 ? "عرض محلي للقراءة فقط." : string.Join(" · ", problems) + "؛ راجع البيانات.";
     }
 }

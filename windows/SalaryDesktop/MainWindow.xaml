@@ -47,7 +47,7 @@
               </StackPanel>
             </Border>
             <UniformGrid Columns="2" Margin="0,0,0,14">
-              <Border Style="{StaticResource Card}" Margin="0,0,0,0"><StackPanel><TextBlock Text="التقارير وجهات التنفيذ" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="عرض الجهات ومبالغ الاستقطاعات" Foreground="#718481" Margin="0,7,0,14"/><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" HorizontalAlignment="Right"/></StackPanel></Border>
+              <Border Style="{StaticResource Card}" Margin="0,0,0,0"><StackPanel><TextBlock Text="التقارير وجهات التنفيذ" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="عرض الجهات ومبالغ الاستقطاعات" Foreground="#718481" Margin="0,7,0,14"/><WrapPanel><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب" Padding="16,9" Margin="10,0,0,0"/></WrapPanel></StackPanel></Border>
               <Border Style="{StaticResource Card}" Margin="14,0,0,0"><StackPanel><TextBlock Text="تدقيق الرواتب" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="فحوص أولية ومقارنة الشهر السابق" Foreground="#718481" Margin="0,7,0,14"/><Button x:Name="AuditHomeButton" Content="فتح التدقيق الأولي" Click="OpenSalaryReview" Padding="16,9" HorizontalAlignment="Right"/></StackPanel></Border>
             </UniformGrid>
             <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="البيانات المفتوحة" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="SnapshotSummary" Text="اختر نسخة احتياطية للبدء." Foreground="#718481" Margin="0,10,0,0" TextWrapping="Wrap"/></StackPanel></Border>

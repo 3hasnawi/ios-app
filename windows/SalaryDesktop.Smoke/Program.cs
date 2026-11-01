@@ -63,6 +63,18 @@ static class Program
                 await Navigate("staff"); await Task.Delay(1200); Check(table.Items.Count == 1 && table.Items[0] is StaffMember, "staff page did not load its synthetic record");
                 await Navigate("bank"); Check(((FrameworkElement)main.FindName("BankPanel")).Visibility == Visibility.Visible, "bank page was not visible");
                 await Navigate("transfer"); Check(((FrameworkElement)main.FindName("TransferPanel")).Visibility == Visibility.Visible, "transfer page was not visible");
+                var employeeDetails = new EmployeeDetailsWindow(snapshot.Employees[0], snapshot) { Owner = main }; employeeDetails.Show();
+                Check(((DataGrid)employeeDetails.FindName("DetailTable")).Items.Count >= 5, "employee details did not display payroll and deduction data"); employeeDetails.Close();
+                var duplicateSource = snapshot with { Employees = [snapshot.Employees[0], snapshot.Employees[0]] };
+                var duplicateDetails = new EmployeeDetailsWindow(snapshot.Employees[0], duplicateSource) { Owner = main }; duplicateDetails.Show();
+                Check(((TextBlock)duplicateDetails.FindName("StatusText")).Text.Contains("مكرر", StringComparison.Ordinal), "duplicate employee identity was not flagged"); duplicateDetails.Close();
+                var itemGroups = SalaryItemReports.Groups(snapshot, "أيلول 2026"); var items = new SalaryItemsWindow(snapshot, "أيلول 2026", itemGroups) { Owner = main }; items.Show();
+                Check(items.FindName("Groups") is DataGrid, "salary item report page did not open"); items.Close();
+                var linkStore = new LocalTransferLinks(Path.Combine(directory, "links")); var linkState = linkStore.Load(snapshot);
+                var settings = new IndividualSettingsWindow(snapshot, linkState, linkStore, "food_company", () => true, "أيلول 2026", null, "IQ76TEST123000000000002") { Owner = main };
+                settings.Show(); Check(((TextBox)settings.FindName("AccountText")).Text.Length > 0, "individual letter settings did not open"); settings.Close();
+                var reconciliation = new ReconciliationWindow(snapshot, "أيلول 2026", () => true) { Owner = main };
+                reconciliation.Show(); Check(reconciliation.FindName("Periods") is ComboBox, "reconciliation page did not open"); reconciliation.Close();
                 var staff = new StaffDetailsWindow(StaffRecords.Read(snapshot)[0]) { Owner = main }; staff.Show(); Check(((DataGrid)staff.FindName("Fields")).Items.Count == 1, "staff details were not displayed"); staff.Close();
                 var names = NameLists.Prepare(snapshot, TransferPreparation.Prepare(snapshot, "أيلول 2026"));
                 var lists = new NameListsWindow("أيلول 2026", names, () => true) { Owner = main }; lists.Show(); Check(((ComboBox)lists.FindName("ListPicker")).Items.Count == 1, "name list page did not open"); lists.Close();

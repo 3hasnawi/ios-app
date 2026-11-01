@@ -521,6 +521,13 @@ try
     try { _ = bookLinkStore.SaveBankDetails(bookSource, bankOtherMonth, "أيلول 2026", "دافع وهمي", fakePayer, new BankManualAmounts(-1, 0, 0)); throw new InvalidOperationException("negative manual amount accepted"); }
     catch (InvalidDataException) { }
     Check(bookLinkStore.Load(bookSource).Revision == bankOtherMonth.Revision, "invalid bank settings preserve prior state");
+    var itemEmployees = new[] { contractPerson, contractPerson with { Name = "شخص آخر وهمي", Items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["الرعاية الصحية"] = 30m }) } };
+    var itemSource = snapshot with { Employees = itemEmployees }; var itemGroups = SalaryItemReports.Groups(itemSource, "أيلول 2026"); var healthGroup = itemGroups.Single(g => g.Title == "الرعاية الصحية");
+    Check(healthGroup.People == 2 && healthGroup.Total == 50 && SalaryItemReports.Rows(itemSource, "أيلول 2026", healthGroup).Sum(r => r.Amount) == 50, "salary item report matches contributing employees and totals");
+    try { _ = SalaryItemReports.Rows(itemSource, "أيلول 2026", healthGroup with { Total = 51 }); throw new InvalidOperationException("incorrect item report summary accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = SalaryItemReports.Groups(itemSource with { Employees = [contractPerson with { Items = Encoding.UTF8.GetBytes("{") }] }, "أيلول 2026"); throw new InvalidOperationException("invalid payroll items accepted"); }
+    catch (InvalidDataException) { }
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

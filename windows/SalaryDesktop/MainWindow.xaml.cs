@@ -229,7 +229,7 @@ public partial class MainWindow : Window
         { new StaffDetailsWindow(member) { Owner = this }.ShowDialog(); return; }
         if (page == "payroll" && DataTable.SelectedItem is Employee employee)
         {
-            var detail = new EmployeeDetailsWindow(employee) { Owner = this };
+            var detail = new EmployeeDetailsWindow(employee, snapshot) { Owner = this };
             detail.ShowDialog();
             return;
         }
@@ -486,6 +486,21 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException)
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
+    }
+    private async void OpenSalaryItems(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot; var month = SelectedMonth;
+        if (source is null || month.Length == 0) { MessageBox.Show(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "بنود الرواتب"); return; }
+        SalaryItemsButton.IsEnabled = false; StatusBar.Text = "جارٍ حساب بنود الرواتب…";
+        try
+        {
+            var groups = await Task.Run(() => SalaryItemReports.Groups(source, month));
+            if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّر الشهر أو البيانات؛ أعد فتح التقرير.", "بنود الرواتب"); return; }
+            new SalaryItemsWindow(source, month, groups) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر حساب بنود الرواتب.\n" + ex.Message, "بنود الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { SalaryItemsButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
     private async void OpenSalaryReview(object sender, RoutedEventArgs e)
     {
