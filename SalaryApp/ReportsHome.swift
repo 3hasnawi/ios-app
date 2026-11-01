@@ -31,6 +31,7 @@ struct ReportsView: View {
     @State private var deductionGroups: [ReportGroup] = []
     @State private var loadedKey = ""
     @State private var path: [ReportsRoute] = []
+    @State private var pushedRoute: ReportsRoute?
     @State private var showExport = false
     @State private var exporter = QuickExporter.shared
     @State private var appliedLaunchOptions = false
@@ -53,7 +54,29 @@ struct ReportsView: View {
     private var loadKey: String { "\(month?.name ?? "")|\(month?.deductionCount ?? 0)|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(byEntity)" }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        Group {
+            if pushedFromHome { reportsContent }
+            else { NavigationStack(path: $path) { reportsContent } }
+        }
+    }
+    private func open(_ route: ReportsRoute) {
+        if pushedFromHome { pushedRoute = route } else { path.append(route) }
+    }
+    private func openRoot(_ route: ReportsRoute) {
+        if pushedFromHome { pushedRoute = route } else { path = [route] }
+    }
+    @ViewBuilder private func destination(_ route: ReportsRoute) -> some View {
+        switch route {
+        case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
+        case .deductionComparison: DeductionAuditView(months: months.map(\.name))
+        case .employeeDeductions: EmployeeDeductionsView()
+        case .salaryAudit: SalaryAuditView(months: months.map(\.name))
+        case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
+        case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
+        case .group(let group): ReportDetailView(group: group)
+        }
+    }
+    private var reportsContent: some View {
             ScrollView {
                 if months.isEmpty {
                     ContentUnavailableView(tr("لا توجد بيانات", "No data"), systemImage: "chart.bar.doc.horizontal",
@@ -76,16 +99,7 @@ struct ReportsView: View {
             .navigationTitle(tr("التقارير", "Reports"))
             // عنوان صغير وزر الشهر في شريط العنوان (مثل الرئيسية) حتى تبدأ البطاقات من أعلى الشاشة.
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(pushedFromHome)
             .toolbar {
-                if pushedFromHome {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.backward")
-                        }
-                        .accessibilityLabel(tr("العودة", "Back"))
-                    }
-                }
                 if presentedFromHome {
                     ToolbarItem(placement: .topBarLeading) {
                         Button(tr("إغلاق", "Close"), systemImage: "xmark") { dismiss() }
@@ -96,17 +110,8 @@ struct ReportsView: View {
                     if !months.isEmpty { filters }
                 }
             }
-            .navigationDestination(for: ReportsRoute.self) { route in
-                switch route {
-                case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
-                case .deductionComparison: DeductionAuditView(months: months.map(\.name))
-                case .employeeDeductions: EmployeeDeductionsView()
-                case .salaryAudit: SalaryAuditView(months: months.map(\.name))
-                case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
-                case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
-                case .group(let group): ReportDetailView(group: group)
-                }
-            }
+            .navigationDestination(for: ReportsRoute.self) { route in destination(route) }
+            .navigationDestination(item: $pushedRoute) { route in destination(route) }
             .sheet(isPresented: $showExport) {
                 if let month {
                     DeductionExportSheet(month: month.name, byEntity: byEntity, groups: deductionGroups)
@@ -155,10 +160,10 @@ struct ReportsView: View {
             }
             .onChange(of: router.pendingReport, initial: true) { _, route in
                 guard let route else { return }
-                path = [route]
+                openRoot(route)
                 router.pendingReport = nil
             }
-            .task(id: "\(loadKey)|\(path.count)") {
+            .task(id: "\(loadKey)|\(path.count)|\(pushedRoute != nil)") {
                 auditIssues = nil
                 guard let name = months.first?.name else { return }
                 let key = loadKey
@@ -167,7 +172,6 @@ struct ReportsView: View {
                 guard !Task.isCancelled, key == loadKey else { return }
                 auditIssues = issues
             }
-        }
     }
 
     // MARK: البطاقات
@@ -202,13 +206,13 @@ struct ReportsView: View {
         let health = groups.first { HealthCareReport.applies(to: $0.title) }
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             ReportCard(title: tr("صندوق الشهداء", "Martyrs fund"), subtitle: fund.map { tr("\(Num.format($0.count)) موظف", "\($0.count) employees") },
-                       total: fund?.total, systemImage: "star.fill", color: .green, group: fund, path: $path, onPreview: { previewGroup = $0 })
+                       total: fund?.total, systemImage: "star.fill", color: .green, group: fund, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
             ReportCard(title: tr("عقد الإطعام", "Food contract"), subtitle: food.map { tr("عراق الجوال · \(Num.format($0.count))", "Iraq Mobile · \($0.count)") },
-                       total: food?.total, systemImage: "fork.knife", color: .orange, group: food, path: $path, onPreview: { previewGroup = $0 })
+                       total: food?.total, systemImage: "fork.knife", color: .orange, group: food, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
             ReportCard(title: tr("الرعاية الصحية", "Health care"), subtitle: health.map { tr("\(Num.format($0.count)) مشترك", "\($0.count) subscribers") },
-                       total: health?.total, systemImage: "cross.case.fill", color: .red, group: health, path: $path, onPreview: { previewGroup = $0 })
+                       total: health?.total, systemImage: "cross.case.fill", color: .red, group: health, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
             Button {
-                path.append(.items)
+                open(.items)
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     CardIcon(systemImage: "list.bullet.rectangle", color: .gray)
@@ -234,7 +238,7 @@ struct ReportsView: View {
 
     private var auditCard: some View {
         Button {
-            path.append(.audit)
+            open(.audit)
         } label: {
             HStack(spacing: 12) {
                 CardIcon(systemImage: auditIssues == 0 ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
@@ -263,16 +267,16 @@ struct ReportsView: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("auditCard")
         .contextMenu {
-            Button(tr("فتح", "Open"), systemImage: "checkmark.shield") { path.append(.audit) }
-            Button(tr("تدقيق الرواتب", "Payroll audit"), systemImage: "banknote") { path.append(.salaryAudit) }
-            Button(tr("تدقيق الاستقطاعات", "Deduction audit"), systemImage: "arrow.left.arrow.right") { path.append(.deductionComparison) }
+            Button(tr("فتح", "Open"), systemImage: "checkmark.shield") { open(.audit) }
+            Button(tr("تدقيق الرواتب", "Payroll audit"), systemImage: "banknote") { open(.salaryAudit) }
+            Button(tr("تدقيق الاستقطاعات", "Deduction audit"), systemImage: "arrow.left.arrow.right") { open(.deductionComparison) }
         }
     }
 
     // MARK: جهات التنفيذ
 
     private var employeeDeductionsCard: some View {
-        Button { path.append(.employeeDeductions) } label: {
+        Button { open(.employeeDeductions) } label: {
             HStack(spacing: 12) {
                 CardIcon(systemImage: "person.text.rectangle", color: .green)
                 VStack(alignment: .leading, spacing: 4) {
@@ -297,7 +301,7 @@ struct ReportsView: View {
         let total = deductionGroups.reduce(0) { $0 + $1.total }
         return HStack(spacing: 12) {
             Button {
-                path.append(.entities)
+                open(.entities)
             } label: {
                 HStack(spacing: 12) {
                     CardIcon(systemImage: "building.columns.fill", color: .indigo)
@@ -325,7 +329,7 @@ struct ReportsView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
         .contextMenu {
-            Button(tr("قائمة الجهات", "Entities list"), systemImage: "list.bullet") { path.append(.entities) }
+            Button(tr("قائمة الجهات", "Entities list"), systemImage: "list.bullet") { open(.entities) }
             Button(tr("تصدير…", "Export…"), systemImage: "square.and.arrow.up") { showExport = true }
                 .disabled(deductionGroups.isEmpty)
         }
@@ -367,12 +371,12 @@ struct ReportsView: View {
         appliedLaunchOptions = true
         let defaults = UserDefaults.standard
         let payroll = defaults.string(forKey: "reportKind") == "payroll"
-        if payroll { path = [.items] }
-        if defaults.bool(forKey: "reportsEntities") { path = [.entities] }
-        if defaults.bool(forKey: "reportsAudit") { path = [.audit] }
-        if defaults.bool(forKey: "compareDeductions") { path = [.deductionComparison] }
+        if payroll { openRoot(.items) }
+        if defaults.bool(forKey: "reportsEntities") { openRoot(.entities) }
+        if defaults.bool(forKey: "reportsAudit") { openRoot(.audit) }
+        if defaults.bool(forKey: "compareDeductions") { openRoot(.deductionComparison) }
 
-        if defaults.bool(forKey: "salaryAudit") { path = [.salaryAudit] }
+        if defaults.bool(forKey: "salaryAudit") { openRoot(.salaryAudit) }
 
         if defaults.bool(forKey: "auditTest"), months.count > 1 {
             let a = months[1].name, b = months[0].name
@@ -386,7 +390,7 @@ struct ReportsView: View {
             LaunchOptions.writeReport("audit=\(s == nil || d == nil ? "failed" : "ok") issues=\(digest.issues) \(checks) salary \(kinds) deductions \(dk)")
         }
         if LaunchOptions.openReport, let first = testGroup(payroll ? payrollGroups : deductionGroups) {
-            path.append(.group(first))
+            open(.group(first))
         }
         if defaults.string(forKey: "exportSheet") != nil { showExport = true }
         if let raw = defaults.string(forKey: "bulkExport"), let category = EntityCategory(rawValue: raw), let month {
@@ -437,13 +441,13 @@ private struct ReportCard: View {
     let systemImage: String
     let color: Color
     let group: ReportGroup?
-    @Binding var path: [ReportsRoute]
+    let onOpen: (ReportGroup) -> Void
     var onPreview: (ReportGroup) -> Void = { _ in }
     @State private var exporter = QuickExporter.shared
 
     var body: some View {
         Button {
-            if let group { path.append(.group(group)) }
+            if let group { onOpen(group) }
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
@@ -468,7 +472,7 @@ private struct ReportCard: View {
         .contextMenu {
             if let group {
                 Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { onPreview(group) }
-                Button(tr("فتح التفاصيل", "Open details"), systemImage: "list.bullet.rectangle") { path.append(.group(group)) }
+                Button(tr("فتح التفاصيل", "Open details"), systemImage: "list.bullet.rectangle") { onOpen(group) }
                 Divider()
                 Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { exporter.special(group, format: .excel) }
                 Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { exporter.special(group, format: .pdf) }
