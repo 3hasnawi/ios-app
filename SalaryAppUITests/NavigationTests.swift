@@ -21,6 +21,7 @@ final class NavigationTests: XCTestCase {
     }
 
     func testReportsBackGestures() {
+        continueAfterFailure = false
         app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES"]
         app.launch()
         let home = element("homeReportsEntry")
@@ -35,9 +36,9 @@ final class NavigationTests: XCTestCase {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
             start.press(forDuration: 0.1, thenDragTo: end)
         }
-        swipeBack(); XCTAssertTrue(group.waitForExistence(timeout: 10))
-        swipeBack(); XCTAssertTrue(entities.waitForExistence(timeout: 10))
-        swipeBack(); XCTAssertTrue(home.waitForExistence(timeout: 10))
+        swipeBack(); XCTAssertTrue(group.waitForExistence(timeout: 10), "detail to entity list: \(app.debugDescription)")
+        swipeBack(); XCTAssertTrue(entities.waitForExistence(timeout: 10), "entity list to reports: \(app.debugDescription)")
+        swipeBack(); XCTAssertTrue(home.waitForExistence(timeout: 10), "reports to home: \(app.debugDescription)")
     }
 
     func testDeductionComparison() {
