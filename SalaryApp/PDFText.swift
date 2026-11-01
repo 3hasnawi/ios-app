@@ -8,7 +8,7 @@ import CoreText
 /// فيتجمد التطبيق أكثر من ١٠ ثوانٍ ويغلقه النظام (0x8BADF00D)، وتفشل المشاركة والنسخ بعد التصدير.
 /// CoreText لا يمر بهذا التسجيل، والشكل يبقى كما هو.
 nonisolated enum PDFText {
-    private static let rtl: CTParagraphStyle = {
+    static let rtl: CTParagraphStyle = {
         let direction = CTWritingDirection.rightToLeft
         return withUnsafeBytes(of: direction) { (raw: UnsafeRawBufferPointer) -> CTParagraphStyle in
             var setting = CTParagraphStyleSetting(spec: .baseWritingDirection,

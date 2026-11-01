@@ -41,12 +41,14 @@ nonisolated enum BankReconciliationPDF {
         return ReportSheet.easternDigits(formatter.string(from: value))
     }
     private static func lines(_ value: String, font: UIFont, width: CGFloat) -> Int {
-        let text = NSAttributedString(string: value, attributes: [.font: font])
+        let text = NSAttributedString(string: value, attributes: [.font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): PDFText.rtl])
         let setter = CTTypesetterCreateWithAttributedString(text)
         var offset = 0, count = 0
         while offset < text.length {
             let n = CTTypesetterSuggestLineBreak(setter, offset, Double(width))
-            if n <= 0 { return Int.max }
+            if n <= 0 || n > text.length - offset { return Int.max }
+            let line = CTTypesetterCreateLine(setter, CFRange(location: offset, length: n))
+            if CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line) > Double(width) + 0.5 { return Int.max }
             offset += n; count += 1
         }
         return max(1, count)
@@ -94,30 +96,55 @@ nonisolated enum BankReconciliationPDF {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
-            let font = ReportFont.regular(9), bold = ReportFont.bold(9)
+            let bold = ReportFont.bold(9)
+            let signatureFont = ReportFont.bold(10.5)
             let headingFont = ReportFont.bold(13)
             let heading = "كشف مطابقة حساب البنك لقيادة شرطة محافظة الانبار"
             guard let logo = UIImage(named: "HomeLogo")?.cgImage,
                   let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
             guard lines(heading, font: headingFont, width: 487) == 1 else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
-            var rows: [([String], CGFloat)] = []
+            var valuesByRow: [[String]] = []
             if period.openingBalance != 0 {
-                rows.append(([date(period.start), "الرصيد الافتتاحي", "—", "—", try number(period.openingBalance)], 22))
+                valuesByRow.append([date(period.start), "الرصيد الافتتاحي", "—", "—", try number(period.openingBalance)])
             }
             for line in totals.lines {
                 let item = line.movement
-                let values = [date(item.date), item.description, item.direction == .credit ? try number(item.amount) : "—",
-                              item.direction == .debit ? try number(item.amount) : "—", try number(line.balance)]
-                let counts = zip(values, widths).map { lines($0.0, font: font, width: $0.1 - 8) }
-                guard counts.allSatisfy({ $0 != Int.max && $0 <= 5 }), counts[0] == 1,
-                      counts[2] == 1, counts[3] == 1, counts[4] == 1 else { throw Failure.tooLong }
-                rows.append((values, max(22, CGFloat(counts.max() ?? 1) * font.lineHeight + 8)))
+                valuesByRow.append([date(item.date), item.description, item.direction == .credit ? try number(item.amount) : "—",
+                                    item.direction == .debit ? try number(item.amount) : "—", try number(line.balance)])
             }
             let totalRow = ["", "المجموع", try number(totals.credits), try number(totals.debits), try number(totals.balance)]
+            // نستخدم أكبر خط يتيح صفحة واحدة، وإلا نحافظ على الحجم الواضح ونقسم الكشف.
+            func layout(size: CGFloat, minimumHeight: CGFloat) -> [(values: [String], height: CGFloat)]? {
+                let candidate = ReportFont.regular(size)
+                var result: [(values: [String], height: CGFloat)] = []
+                for values in valuesByRow {
+                    let counts = zip(values, widths).map { lines($0.0, font: candidate, width: $0.1 - 8) }
+                    guard counts.allSatisfy({ $0 != Int.max && $0 <= 5 }), counts[0] == 1,
+                          counts[2] == 1, counts[3] == 1, counts[4] == 1 else { return nil }
+                    let height = max(minimumHeight, ceil(CGFloat(counts.max() ?? 1) * candidate.lineHeight + 4))
+                    guard height <= 424 else { return nil }
+                    result.append((values, height))
+                }
+                return result
+            }
+            let candidates: [(CGFloat, CGFloat)] = [(9, 18), (8.5, 17), (8, 16)]
+            var firstValid: (UIFont, [(values: [String], height: CGFloat)])?
+            var singlePage: (UIFont, [(values: [String], height: CGFloat)])?
+            for (size, height) in candidates {
+                guard let rows = layout(size: size, minimumHeight: height) else { continue }
+                let candidate = (ReportFont.regular(size), rows)
+                if firstValid == nil { firstValid = candidate }
+                if rows.reduce(CGFloat(0), { $0 + $1.height }) + 24 <= 448 {
+                    singlePage = candidate
+                    break
+                }
+            }
+            guard let selected = singlePage ?? firstValid else { throw Failure.tooLong }
+            let font = selected.0, rows = selected.1
             let signatures = [BankReconciliation.signatureLines(period, first: true), BankReconciliation.signatureLines(period, first: false)]
             guard zip(totalRow, widths).allSatisfy({ lines($0.0, font: bold, width: $0.1 - 6) == 1 }),
-                  signatures.flatMap({ $0 }).allSatisfy({ lines($0, font: bold, width: 217) == 1 && !$0.unicodeScalars.contains(where: { $0.value < 32 }) }) else { throw Failure.tooLong }
+                  signatures.flatMap({ $0 }).allSatisfy({ lines($0, font: signatureFont, width: 217) == 1 && !$0.unicodeScalars.contains(where: { $0.value < 32 }) }) else { throw Failure.tooLong }
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("bank-reconciliation-\(UUID().uuidString).pdf")
             var done = false
             defer { if !done { try? FileManager.default.removeItem(at: destination) } }
@@ -176,7 +203,7 @@ nonisolated enum BankReconciliationPDF {
                             let x: CGFloat = column == 0 ? 315 : 55
                             for (line, value) in values.enumerated() {
                                 let rect = CGRect(x: x, y: 700 + CGFloat(line) * 18, width: 225, height: 18)
-                                PDFText.draw(value, in: rect, font: bold)
+                                PDFText.draw(value, in: rect, font: signatureFont, color: .black)
                                 if !value.isEmpty { placements.append((pageCount, rect, value, line == 3 ? 6 : 5, line + 1)) }
                             }
                         }
