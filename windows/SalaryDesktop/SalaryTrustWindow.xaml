@@ -39,7 +39,7 @@
     <!-- المرشحات: تنطبق على الجدول والكشف PDF وExcel. -->
     <Grid Grid.Row="2" Margin="0,12,0,0">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <TextBox x:Name="SearchBox" Height="38" Tag="ابحث بالاسم أو الحالة…" TextChanged="FiltersChanged" MaxWidth="420" HorizontalAlignment="Left" Width="420"/>
+      <TextBox x:Name="SearchBox" Height="38" Tag="ابحث بالاسم…" TextChanged="FiltersChanged" MaxWidth="420" HorizontalAlignment="Left" Width="420"/>
       <ComboBox x:Name="MonthPicker" Grid.Column="1" Width="190" Height="38" Margin="10,0,0,0" DisplayMemberPath="Label" SelectionChanged="FiltersChanged" ToolTip="الشهر"/>
       <ComboBox x:Name="StatusPicker" Grid.Column="2" Width="170" Height="38" Margin="10,0,0,0" DisplayMemberPath="Title" SelectionChanged="FiltersChanged" ToolTip="حالة الصرف"/>
     </Grid>

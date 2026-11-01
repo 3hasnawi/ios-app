@@ -31,12 +31,16 @@ public static class SalaryTrustReports
         return new ReportSheet(header, "أمانات الرواتب · " + filters, columns, rows, [], ShowTotal: false);
     }
 
-    /// PDF بالشكل المعتمد، ويُرفض إذا كانت خلية لا تتسع كاملة بدل اقتطاعها.
-    public static byte[] Pdf(ReportSheet sheet, ReportAssets assets, DateTime stamp)
+    /// PDF متعدد الأسطر والصفحات دون اقتطاع (SalaryTrustPdf)، مثل الآيفون بعد إصلاح 575e5ce.
+    public static byte[] Pdf(ReportSheet sheet, ReportAssets assets, DateTime stamp) => SalaryTrustPdf.Generate(sheet, assets, stamp);
+
+    /// القيود بعد المرشحات المتقاطعة (الشهر وحالة الصرف والبحث بالاسم) بترتيب الآيفون: الأحدث شهراً ثم الاسم تنازلياً.
+    public static IReadOnlyList<SalaryTrustEntry> Filtered(IEnumerable<SalaryTrustEntry> entries, int month, SalaryTrustFilter status, string search)
     {
-        if (ReportPdf.Overflow(sheet, assets) is { } cell)
-            throw new InvalidDataException($"بعض بيانات الكشف طويلة ولا تتسع كاملة في PDF ({cell})؛ صدّر Excel لتجنب اقتطاع البيانات.");
-        return ReportPdf.Generate([sheet], assets, stamp);
+        var query = PersonProfiles.Key(search.Trim());
+        return entries.Where(e => (month == 0 || e.Year * 100 + e.Month == month) && SalaryTrust.Includes(status, e) &&
+                (query.Length == 0 || PersonProfiles.Key(e.Name).Contains(query, StringComparison.Ordinal)))
+            .OrderByDescending(e => e.Year).ThenByDescending(e => e.Month).ThenByDescending(e => e.Name, StringComparer.Ordinal).ToArray();
     }
 
     /// Excel: المبالغ أرقام حقيقية والنصوص كما هي، بنفس رأس الكشف وتجميد الصفوف الثلاثة الأولى.

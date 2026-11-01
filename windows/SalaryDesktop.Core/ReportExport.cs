@@ -341,34 +341,6 @@ public static class ReportPdf
     }
 
     private const float Margin = 28, RowHeight = 20, TitleHeight = 30, ColumnsHeight = 22;
-
-    /// أول نص لا يتسع في خليته حتى بعد التصغير المسموح (الرسم يختصره بـ«…»)، أو null إن اتسع كل شيء.
-    /// للكشوف التي يجب ألا تُقتطع بياناتها (مثل كشف الأمانات في الآيفون).
-    public static string? Overflow(ReportSheet sheet, ReportAssets assets)
-    {
-        sheet.Validate();
-        using var canvas = new ReportCanvas(assets, DateTime.Now);
-        canvas.BeginPage(sheet.Landscape);
-        try { return FirstOverflow(canvas, sheet); }
-        finally { canvas.EndPage(1, 1); }
-    }
-    private static string? FirstOverflow(ReportCanvas canvas, ReportSheet sheet)
-    {
-        var width = canvas.PageWidth; var tableWidth = width - Margin * 2;
-        var widths = Widths(canvas, sheet, tableWidth);
-        bool Fits(string text, float room, float size, bool bold)
-        {
-            using var paint = canvas.Paint(Math.Max(6.5f, size - 2.5f), bold);
-            return canvas.Width(paint, text) <= room - 8;
-        }
-        if (!Fits(sheet.Header, tableWidth, 14, true)) return sheet.Header;
-        if (!Fits(sheet.Title, tableWidth, 14, true)) return sheet.Title;
-        for (int c = 0; c < sheet.Columns.Count; c++) if (!Fits(sheet.Columns[c].Title, widths[c], 10.5f, true)) return sheet.Columns[c].Title;
-        foreach (var row in sheet.Rows)
-            for (int c = 0; c < row.Length; c++)
-                if (sheet.Columns[c].Kind == ReportColumnKind.Text && !Fits(row[c], widths[c], 10, false)) return row[c];
-        return null;
-    }
     private static int PerPage(ReportSheet sheet)
     {
         var height = sheet.Landscape ? 595f : 842f;

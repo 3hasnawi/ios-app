@@ -1114,9 +1114,20 @@ try
     }
     try { _ = SalaryTrustReports.Sheet(filterLedger, [trustEntry with { Amount = 5 }], ReportSheet.DefaultHeader, "", "", ""); throw new InvalidOperationException("stale trust report accepted"); }
     catch (InvalidDataException) { }
-    var longStatus = filterLedger with { Entries = [unpaidEntry with { CaseStatus = string.Concat(Enumerable.Repeat("حالة طويلة جداً لا تتسع ", 12)) }] };
-    try { _ = SalaryTrustReports.Pdf(SalaryTrustReports.Sheet(longStatus, longStatus.Entries, ReportSheet.DefaultHeader, "", "", ""), trustAssets, trustStamp); throw new InvalidOperationException("truncated trust PDF accepted"); }
+    // PDF متعدد الأسطر والصفحات (مثل SalaryTrustPDF في الآيفون): الاسم والحالة الطويلان يلتفان دون اقتطاع، والمبالغ تُطابق من الملف.
+    var longStatus = filterLedger with { Entries = [unpaidEntry with { Name = "منتسب وهمي باسم طويل جداً يتجاوز عرض خلية الاسم في الكشف ولا يُقتطع", CaseStatus = string.Concat(Enumerable.Repeat("حالة طويلة جداً متعددة الأسطر ", 12)) }] };
+    using (var read = UglyToad.PdfPig.PdfDocument.Open(SalaryTrustReports.Pdf(SalaryTrustReports.Sheet(longStatus, longStatus.Entries, ReportSheet.DefaultHeader, "", "", ""), trustAssets, trustStamp)))
+        Check(read.NumberOfPages == 1, "long trust name and status wrap instead of being truncated");
+    var manyTrust = new SalaryTrustLedger(1, Enumerable.Range(0, 120).Select(i => unpaidEntry with { Id = Guid.NewGuid().ToString(), Name = $"منتسب وهمي رقم {i}", Amount = 1000 + i, CaseStatus = i % 7 == 0 ? string.Concat(Enumerable.Repeat("حالة متعددة الأسطر ", 6)) : "" }).ToArray(), true);
+    var manyShown = SalaryTrustReports.Filtered(manyTrust.Entries, 0, SalaryTrustFilter.All, "");
+    using (var read = UglyToad.PdfPig.PdfDocument.Open(SalaryTrustReports.Pdf(SalaryTrustReports.Sheet(manyTrust, manyShown, ReportSheet.DefaultHeader, "كل الأشهر", "كل الحالات", ""), trustAssets, trustStamp)))
+        Check(read.NumberOfPages > 3, "many trust entries split across PDF pages");
+    var tallTrust = filterLedger with { Entries = [unpaidEntry with { CaseStatus = new string('ح', 1990) }] };
+    try { _ = SalaryTrustReports.Pdf(SalaryTrustReports.Sheet(tallTrust, tallTrust.Entries, ReportSheet.DefaultHeader, "", "", ""), trustAssets, trustStamp); throw new InvalidOperationException("entry taller than a PDF page accepted"); }
     catch (InvalidDataException) { }
+    // المرشحات متقاطعة: الشهر وحالة الصرف والبحث بالاسم معاً، والترتيب كالآيفون.
+    var crossed = SalaryTrustReports.Filtered(filterLedger.Entries, 202610, SalaryTrustFilter.Unfinished, "غير مصروف");
+    Check(crossed.Count == 1 && crossed[0].Id == unpaidEntry.Id && SalaryTrustReports.Filtered(filterLedger.Entries, 202609, SalaryTrustFilter.All, "").Single().Id == reviewEntry.Id, "trust filters intersect month, status and name search");
     // الملف الافتتاحي: مبالغ بأرقام عربية وصف غير صالح يوقف الاستيراد كله.
     var arabicDigits = Path.Combine(root, "trust-arabic-digits.xlsx");
     MakeMonthlyXlsx(arabicDigits, ["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "الحالة"], [["منتسب وهمي", "١٬٠٠٠", "أيلول", "2026", ""]]);

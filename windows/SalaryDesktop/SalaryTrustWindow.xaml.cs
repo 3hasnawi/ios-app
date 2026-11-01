@@ -63,12 +63,8 @@ public partial class SalaryTrustWindow : Window
     {
         var month = (MonthPicker.SelectedItem as MonthOption)?.Key ?? 0;
         var filter = (StatusPicker.SelectedItem as StatusOption)?.Filter ?? SalaryTrustFilter.All;
-        var key = PersonProfiles.Key(SearchBox.Text);
-        shown = state.Ledger.Entries
-            .Where(e => month == 0 || e.Year * 100 + e.Month == month)
-            .Where(e => SalaryTrust.Includes(filter, e))
-            .Where(e => key.Length == 0 || PersonProfiles.Key(e.Name).Contains(key, StringComparison.Ordinal) || PersonProfiles.Key(e.CaseStatus).Contains(key, StringComparison.Ordinal))
-            .OrderByDescending(e => e.Year).ThenByDescending(e => e.Month).ThenBy(e => e.Name, StringComparer.CurrentCulture).ToArray();
+        // المرشحات متقاطعة (الشهر وحالة الصرف والبحث بالاسم) وتنطبق على الجدول وملخصه والكشف، كما في الآيفون.
+        shown = SalaryTrustReports.Filtered(state.Ledger.Entries, month, filter, SearchBox.Text);
         Table.ItemsSource = shown.Select(e => new Row(e, e.Name, e.Rank, SalaryTrust.MonthLabel(e.Year, e.Month), e.Year * 100 + e.Month, Number(e.Amount), e.Amount,
             e.ReviewPending ? "—" : Number(SalaryTrust.Paid(e)), e.ReviewPending ? "—" : Number(SalaryTrust.Remaining(e)), e.ReviewPending ? -1 : SalaryTrust.Remaining(e),
             e.CaseStatus, SalaryTrust.PaymentStatus(e), e.ReviewPending ? "review" : SalaryTrust.Remaining(e) == 0 ? "paid" : SalaryTrust.Paid(e) > 0 ? "partial" : "unpaid",
