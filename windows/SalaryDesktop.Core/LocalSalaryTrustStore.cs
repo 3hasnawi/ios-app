@@ -29,11 +29,12 @@ public sealed class LocalSalaryTrustStore(string directory)
     public SalaryTrustSnapshot Load(BackupSnapshot source)
     {
         var path = FileFor(source.SourceDigest);
-        return File.Exists(path) ? Read(path, source.SourceDigest) : new(SalaryTrust.ReadFromBackup(source), null);
+        var result = File.Exists(path) ? Read(path, source.SourceDigest) : new(SalaryTrust.ReadFromBackup(source), null);
+        SalaryTrust.ValidateBooks(result.Ledger, source.Books); return result;
     }
     public SalaryTrustSnapshot Save(BackupSnapshot source, SalaryTrustSnapshot expected, SalaryTrustLedger ledger)
     {
-        SalaryTrust.Validate(ledger); Directory.CreateDirectory(root);
+        SalaryTrust.Validate(ledger); SalaryTrust.ValidateBooks(ledger, source.Books); Directory.CreateDirectory(root);
         using var guard = new FileStream(Path.Combine(root, ".trust.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var path = FileFor(source.SourceDigest);
         var actual = File.Exists(path) ? Read(path, source.SourceDigest).Revision : null;

@@ -29,6 +29,8 @@ nonisolated enum SalaryTrust {
         var legacyPaid: Bool
         var reviewPending: Bool
         var payments: [Payment]
+        /// روابط كتب الأرشيف فقط؛ لا تثبت الصرف ولا تغيّر الرصيد.
+        var bookIds: [String]? = nil
         var paid: Int64 { legacyPaid ? amount : payments.reduce(0) { $0 + $1.amount } }
         var remaining: Int64 { amount - paid }
     }
@@ -67,6 +69,11 @@ nonisolated enum SalaryTrust {
                   (1900...2200).contains(e.year), (1...12).contains(e.month),
                   e.amount > 0, e.amount <= maximum, keys.insert(key(e)).inserted,
                   (!e.legacyPaid || e.payments.isEmpty), (!e.reviewPending || (!e.legacyPaid && e.payments.isEmpty)) else { throw invalid(tr("سجل أمانة غير صالح أو مكرر؛ لم تُحفظ التغييرات.", "A trust entry is invalid or duplicated; changes were not saved.")) }
+            let bookIds = e.bookIds ?? []
+            guard bookIds.count <= 100, bookIds.allSatisfy({ UUID(uuidString: $0) != nil }),
+                  Set(bookIds.map { $0.lowercased() }).count == bookIds.count else {
+                throw invalid(tr("روابط كتب الأمانة غير صالحة أو مكررة.", "Trust document links are invalid or duplicated."))
+            }
             var paid: Int64 = 0
             for p in e.payments {
                 guard UUID(uuidString: p.id) != nil, payments.insert(p.id.lowercased()).inserted,
@@ -79,6 +86,30 @@ nonisolated enum SalaryTrust {
             }
             guard total <= maximum - e.amount else { throw invalid(tr("مجموع الأمانات يتجاوز الحد المدعوم.", "Trust total exceeds the supported limit.")) }
             total += e.amount
+        }
+    }
+    /// يربط كتاباً بمجموعة في عملية واحدة دون تغيير المبالغ أو حالة الصرف.
+    static func linking(_ ledger: Ledger, bookID: UUID, entries ids: Set<String>) throws -> Ledger {
+        try validate(ledger)
+        guard !ids.isEmpty, ids.isSubset(of: Set(ledger.entries.map(\.id))) else {
+            throw invalid(tr("تغيّرت القيود؛ أعد اختيارها.", "Entries changed; select them again."))
+        }
+        var result = ledger
+        for index in result.entries.indices where ids.contains(result.entries[index].id) {
+            var links = result.entries[index].bookIds ?? []
+            if !links.contains(where: { UUID(uuidString: $0) == bookID }) { links.append(bookID.uuidString) }
+            result.entries[index].bookIds = links
+        }
+        try validate(result)
+        return result
+    }
+    static func validateBooks(_ ledger: Ledger, available: Set<UUID>) throws {
+        for entry in ledger.entries {
+            for id in entry.bookIds ?? [] {
+                guard let uuid = UUID(uuidString: id), available.contains(uuid) else {
+                    throw invalid(tr("كتاب مرتبط بأحد قيود الأمانات غير موجود في الأرشيف؛ لم تُحفظ النسخة.", "A document linked to a trust entry is missing from the archive; the backup was not saved."))
+                }
+            }
         }
     }
     static func decode(_ data: Data) throws -> Ledger {

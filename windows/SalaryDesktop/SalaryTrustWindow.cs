@@ -11,11 +11,11 @@ namespace SalaryDesktop;
 /// دفتر الأمانات مرتبط بالنسخة المفتوحة، ولا يحفظ أية بيانات قبل المراجعة.
 public sealed class SalaryTrustWindow : Window
 {
-    private sealed record Row(string Id, string Name, string Month, string Amount, string Remaining, string CaseStatus, string Status);
+    private sealed record Row(string Id, string Name, string Month, string Amount, string Remaining, string CaseStatus, string Status, string Documents);
     private readonly BackupSnapshot source;
     private readonly LocalSalaryTrustStore store;
     private readonly Func<bool> current;
-    private readonly DataGrid table = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single, Margin = new Thickness(0, 8, 0, 8) };
+    private readonly DataGrid table = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Extended, Margin = new Thickness(0, 8, 0, 8) };
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), FontSize = 15 };
     private readonly TextBox search = new() { Margin = new Thickness(0, 6, 0, 6), MinWidth = 260 };
     private SalaryTrustSnapshot state;
@@ -37,10 +37,11 @@ public sealed class SalaryTrustWindow : Window
         actions.Children.Add(Action("استيراد ملف الأمانات", ImportOpening));
         actions.Children.Add(Action("مراجعة وإضافة كاش الشهر", AddCash));
         actions.Children.Add(Action("فتح القيد وتسجيل الصرف", OpenEntry));
+        actions.Children.Add(Action("ربط المحدد بكتاب من الأرشيف", LinkArchive));
         DockPanel.SetDock(actions, Dock.Top); panel.Children.Add(actions);
         search.ToolTip = "البحث بالاسم"; search.TextChanged += (_, _) => Render();
         DockPanel.SetDock(search, Dock.Top); panel.Children.Add(search);
-        foreach (var (header, key, width) in new[] { ("الاسم", "Name", 3.0), ("الشهر", "Month", 1.0), ("المبلغ", "Amount", 1.0), ("المتبقي", "Remaining", 1.0), ("الحالة", "CaseStatus", 1.5), ("الصرف", "Status", 1.0) })
+        foreach (var (header, key, width) in new[] { ("الاسم", "Name", 3.0), ("الشهر", "Month", 1.0), ("المبلغ", "Amount", 1.0), ("المتبقي", "Remaining", 1.0), ("الحالة", "CaseStatus", 1.5), ("الصرف", "Status", 1.0), ("كتب", "Documents", 0.6) })
             table.Columns.Add(new DataGridTextColumn { Header = header, Binding = new Binding(key), Width = new DataGridLength(width, DataGridLengthUnitType.Star) });
         table.MouseDoubleClick += (_, _) => EditSelected(); panel.Children.Add(table);
         Render();
@@ -54,7 +55,7 @@ public sealed class SalaryTrustWindow : Window
         table.ItemsSource = entries.Where(e => key.Length == 0 || PersonProfiles.Key(e.Name).Contains(key, StringComparison.Ordinal))
             .OrderByDescending(e => e.Year).ThenByDescending(e => e.Month).ThenBy(e => e.Name, StringComparer.CurrentCulture)
             .Select(e => new Row(e.Id, e.Name, $"{e.Month}/{e.Year}", Number(e.Amount), e.ReviewPending ? "—" : Number(SalaryTrust.Remaining(e)), e.CaseStatus,
-                e.ReviewPending ? "للمراجعة" : SalaryTrust.Remaining(e) == 0 ? "مصروف بالكامل" : SalaryTrust.Paid(e) > 0 ? "مصروف جزئياً" : "غير مصروف")).ToArray();
+                e.ReviewPending ? "للمراجعة" : SalaryTrust.Remaining(e) == 0 ? "مصروف بالكامل" : SalaryTrust.Paid(e) > 0 ? "مصروف جزئياً" : "غير مصروف", (e.BookIds?.Count ?? 0).ToString(CultureInfo.InvariantCulture))).ToArray();
     }
     private bool Save(SalaryTrustLedger next)
     {
@@ -107,12 +108,48 @@ public sealed class SalaryTrustWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
         { Ui.Message(this, ex.Message, "إضافة كاش الشهر", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
+    private void LinkArchive(object sender, RoutedEventArgs e)
+    {
+        var selected = table.SelectedItems.OfType<Row>().Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+        if (selected.Count == 0) { Ui.Message(this, "حدد قيداً أو مجموعة قيود أولاً.", "ربط كتاب الصرف"); return; }
+        if (source.Books.Count == 0) { Ui.Message(this, "لا توجد كتب في الأرشيف داخل النسخة المفتوحة. امسح الكتاب في الآيفون واحفظ نسخة ثم افتحها هنا.", "ربط كتاب الصرف"); return; }
+        var picker = new Window { Title = "ربط كتاب من الأرشيف", Owner = this, Width = 560, Height = 430, WindowStartupLocation = WindowStartupLocation.CenterOwner, FlowDirection = FlowDirection.RightToLeft };
+        var panel = new DockPanel { Margin = new Thickness(18) }; picker.Content = panel;
+        var heading = new TextBlock { Text = $"اختر كتاباً لربطه بـ {selected.Count:N0} قيد. الربط لا يسجّل صرفاً ولا يغيّر الأرصدة.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        DockPanel.SetDock(heading, Dock.Top); panel.Children.Add(heading);
+        var button = new Button { Content = "ربط الكتاب", Margin = new Thickness(0, 12, 0, 0), Padding = new Thickness(14, 7, 14, 7) };
+        DockPanel.SetDock(button, Dock.Bottom); panel.Children.Add(button);
+        var books = new ListBox { ItemsSource = source.Books.Select(b => new BookChoice(b, b.Title + " · " + b.Month)).ToArray(), DisplayMemberPath = "Label" };
+        panel.Children.Add(books); button.Click += (_, _) => { if (books.SelectedItem is BookChoice) picker.DialogResult = true; };
+        if (picker.ShowDialog() != true || books.SelectedItem is not BookChoice choice) return;
+        try
+        {
+            var linked = SalaryTrust.Link(state.Ledger, choice.Book.Id, selected);
+            if (Save(linked)) Ui.Message(this, "رُبط الكتاب بالقيود المحددة دون تسجيل صرف.", "ربط كتاب الصرف");
+        }
+        catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "ربط كتاب الصرف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+    private sealed record BookChoice(ArchiveBook Book, string Label);
+    private void OpenArchive(ArchiveBook book)
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), "salary-trust-book-" + Guid.NewGuid().ToString("N") + ".pdf");
+        try
+        {
+            BackupReader.CopyBook(source, book, temporary);
+            var bytes = File.ReadAllBytes(temporary);
+            var owner = Application.Current.Windows.OfType<SalaryTrustEntryWindow>().FirstOrDefault(w => w.IsActive) as Window ?? this;
+            Exports.ShowBytes(owner, book.Title, bytes);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        { Ui.Message(this, "تعذّر فتح الكتاب.\n" + ex.Message, "الأرشيف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { try { File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
     private void OpenEntry(object sender, RoutedEventArgs e) => EditSelected();
     private void EditSelected()
     {
         if (table.SelectedItem is not Row row) return;
         var entry = state.Ledger.Entries.First(e => e.Id == row.Id);
-        new SalaryTrustEntryWindow(entry, changed => {
+        new SalaryTrustEntryWindow(entry, source.Books, OpenArchive, changed => {
             var index = state.Ledger.Entries.ToList().FindIndex(e => e.Id == entry.Id);
             if (index < 0 || state.Ledger.Entries[index] != entry) { Ui.Message(this, "تغيّر القيد؛ أعد فتحه.", "أمانات الرواتب"); return false; }
             var entries = state.Ledger.Entries.ToArray(); entries[index] = changed;
@@ -129,7 +166,7 @@ internal sealed class SalaryTrustEntryWindow : Window
     private readonly TextBox note = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70 };
     private readonly TextBox amount = new(), book = new(), paymentNote = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 50 };
     private readonly DatePicker date = new() { SelectedDate = DateTime.Today };
-    public SalaryTrustEntryWindow(SalaryTrustEntry entry, Func<SalaryTrustEntry, bool> save)
+    public SalaryTrustEntryWindow(SalaryTrustEntry entry, IReadOnlyList<ArchiveBook> books, Action<ArchiveBook> openBook, Func<SalaryTrustEntry, bool> save)
     {
         this.entry = entry; this.save = save; Title = "تفاصيل الأمانة"; Width = 560; Height = 680; MinWidth = 450; MinHeight = 540;
         FlowDirection = FlowDirection.RightToLeft; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -143,6 +180,18 @@ internal sealed class SalaryTrustEntryWindow : Window
         panel.Children.Add(new TextBlock { Text = "ملاحظات القيد" }); note.Text = entry.Note; panel.Children.Add(note);
         var saveNote = new Button { Content = "حفظ الحالة والملاحظات", Margin = new Thickness(0, 8, 0, 14), HorizontalAlignment = HorizontalAlignment.Left };
         saveNote.Click += (_, _) => Save(entry with { CaseStatus = caseStatus.Text.Trim(), Note = note.Text.Trim() }); panel.Children.Add(saveNote);
+        panel.Children.Add(new TextBlock { Text = "كتب الصرف المرتبطة", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 6) });
+        foreach (var rawId in entry.BookIds ?? [])
+        {
+            var found = Guid.TryParse(rawId, out var id) ? books.FirstOrDefault(b => b.Id == id) : null;
+            if (found is null) { panel.Children.Add(new TextBlock { Text = "كتاب مرتبط غير موجود في الأرشيف." }); continue; }
+            var row = new WrapPanel();
+            var open = new Button { Content = found.Title, Margin = new Thickness(0, 0, 8, 4) }; open.Click += (_, _) => openBook(found); row.Children.Add(open);
+            var unlink = new Button { Content = "إزالة الارتباط", Margin = new Thickness(0, 0, 0, 4) };
+            unlink.Click += (_, _) => { if (Ui.Message(this, "إزالة ارتباط هذا الكتاب بالقيد؟ سيبقى الكتاب في الأرشيف.", "إزالة الارتباط", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) Save(entry with { BookIds = (entry.BookIds ?? []).Where(x => !Guid.TryParse(x, out var parsed) || parsed != found.Id).ToArray(), CaseStatus = caseStatus.Text.Trim(), Note = note.Text.Trim() }); }; row.Children.Add(unlink);
+            panel.Children.Add(row);
+        }
+        panel.Children.Add(new TextBlock { Text = "ربط الكتاب أو إزالته لا يسجّل صرفاً ولا يغيّر الرصيد.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 10) });
         if (entry.ReviewPending)
         {
             panel.Children.Add(new TextBlock { Text = "هذا القيد مستبعد من الرصيد حتى تحدد حالته.", TextWrapping = TextWrapping.Wrap });

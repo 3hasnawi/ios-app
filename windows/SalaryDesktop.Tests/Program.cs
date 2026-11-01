@@ -1038,6 +1038,9 @@ try
     var reviewEntry = new SalaryTrustEntry(Guid.NewGuid().ToString(), "منتسب ثان وهمي", "رتبة", "قسم", 2026, 9, 500,
         "حالة", "", "قطع علاقة تقاعد", false, true, []);
     var trustLedger = new SalaryTrustLedger(1, [trustEntry, reviewEntry], true);
+    var oldLedger = System.Text.Json.Nodes.JsonNode.Parse(SalaryTrust.Encode(trustLedger))!.AsObject();
+    foreach (var node in oldLedger["entries"]!.AsArray()) node!.AsObject().Remove("bookIds");
+    Check(SalaryTrust.Decode(Encoding.UTF8.GetBytes(oldLedger.ToJsonString())).Entries.All(e => e.BookIds is null), "older ledgers without document links remain readable");
     var trustDecoded = SalaryTrust.Decode(SalaryTrust.Encode(trustLedger));
     Check(trustDecoded.Entries.Count == 2 && SalaryTrust.Remaining(trustDecoded.Entries[0]) == 700 &&
           trustDecoded.Entries[0].CaseStatus == "حالة تجريبية" && trustDecoded.Entries[0].Note == "ملاحظة قيد وهمية" &&
@@ -1056,10 +1059,22 @@ try
     var openingTrust = SalaryTrustSpreadsheet.Read(trustXlsx);
     Check(openingTrust.Entries.Count == 3 && openingTrust.Entries[0].CaseStatus == "حالة من الملف" && openingTrust.Entries[0].Note == "ملاحظة قيد" &&
         openingTrust.Entries[1].LegacyPaid && openingTrust.Entries[2].ReviewPending, "opening trust spreadsheet and source status");
+    var fictionalBook = snapshot.Books.Single();
+    var idsToLink = new HashSet<string>([trustEntry.Id, reviewEntry.Id], StringComparer.Ordinal);
+    var linkedTrust = SalaryTrust.Link(trustLedger, fictionalBook.Id, idsToLink);
+    SalaryTrust.ValidateBooks(linkedTrust, snapshot.Books);
+    Check(linkedTrust.Entries.All(e => e.BookIds?.Count == 1) && SalaryTrust.Remaining(linkedTrust.Entries[0]) == SalaryTrust.Remaining(trustEntry), "group linking does not create a payment");
+    var linkedAgain = SalaryTrust.Link(linkedTrust, fictionalBook.Id, idsToLink);
+    Check(linkedAgain.Entries.All(e => e.BookIds?.Count == 1), "relinking the same book does not duplicate it");
+    try { _ = SalaryTrust.Link(trustLedger, fictionalBook.Id, new HashSet<string> { Guid.NewGuid().ToString() }); throw new InvalidOperationException("linking missing entry accepted"); }
+    catch (InvalidDataException) { }
+    try { SalaryTrust.ValidateBooks(linkedTrust, []); throw new InvalidOperationException("missing linked book accepted"); }
+    catch (InvalidDataException) { }
     var trustBackup = Path.Combine(root, "trust-fictional.zip");
-    ReconciliationBackupExport.Write(snapshot, [], trustBackup, trustLedger);
+    ReconciliationBackupExport.Write(snapshot, [], trustBackup, linkedTrust);
     var trustRead = SalaryTrust.ReadFromBackup(BackupReader.Read(trustBackup));
-    Check(trustRead.Entries.Count == 2 && trustRead.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية", "trust ledger survives shared backup");
+    Check(trustRead.Entries.Count == 2 && trustRead.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية" &&
+          Guid.Parse(trustRead.Entries[0].BookIds!.Single()) == fictionalBook.Id, "trust ledger and archived document link survive shared backup");
     Console.WriteLine("Salary trust ledger checked with fictional data.");
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");
 }

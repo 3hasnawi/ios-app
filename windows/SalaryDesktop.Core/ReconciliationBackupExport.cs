@@ -52,7 +52,7 @@ public static class ReconciliationBackupExport
             throw new InvalidDataException("وجهة النسخة غير صالحة.");
         var settings = source.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         settings["bankReconciliations"] = LedgerPlist(periods);
-        if (trust is not null) settings[SalaryTrust.SettingsKey] = SalaryTrust.Plist(trust);
+        if (trust is not null) { SalaryTrust.ValidateBooks(trust, source.Books); settings[SalaryTrust.SettingsKey] = SalaryTrust.Plist(trust); }
         var settingsJson = JsonSerializer.SerializeToUtf8Bytes(settings);
         var temp = Path.Combine(directory, ".salary-ledger-backup-" + Guid.NewGuid().ToString("N") + ".tmp");
         try

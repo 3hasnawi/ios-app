@@ -143,6 +143,7 @@ struct OfficialBooksView: View {
 struct OfficialBookEditor: View {
     let months: [String]
     let existing: OfficialBook?
+    private let onSaved: ((OfficialBook) -> Void)?
     @State private var images: [Data]?
     @State private var title: String
     @State private var month: String
@@ -155,9 +156,10 @@ struct OfficialBookEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = OfficialBookStore.shared
 
-    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?) {
+    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?, onSaved: ((OfficialBook) -> Void)? = nil) {
         self.months = months
         self.existing = existing
+        self.onSaved = onSaved
         _images = State(initialValue: images)
         _title = State(initialValue: existing?.title ?? "")
         _month = State(initialValue: initialMonth)
@@ -278,7 +280,11 @@ struct OfficialBookEditor: View {
         Task {
             do {
                 if let existing { try store.rename(existing, to: title, entity: entity) }
-                else if let images { try await store.save(title: title, month: month, entity: entity, images: images) }
+                else if let images {
+                    let book = try await store.save(title: title, month: month, entity: entity, images: images, scheduleBackup: onSaved == nil)
+                    onSaved?(book)
+                    if onSaved != nil { Task { _ = await BackupManager.shared.autoBackup() } }
+                }
                 saving = false
                 dismiss()
             } catch {

@@ -124,6 +124,10 @@ actor BackupActor {
             BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
         }, from: 0.8, to: 0.82)
         let books = try OfficialBookFiles.stage(into: dir.appendingPathComponent("books", isDirectory: true))
+        if let serialized = settings[SalaryTrust.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            try SalaryTrust.validateBooks(SalaryTrust.decode(data), available: Set(books.map(\.id)))
+        }
 
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
@@ -196,8 +200,16 @@ actor BackupActor {
         let booksFolder = folder.appendingPathComponent("books", isDirectory: true)
         if manifest.version >= 3 {
             guard let expected = manifest.books else { throw BackupError.notBackup }
-            _ = try OfficialBookFiles.validateArchive(in: booksFolder, expected: expected)
+            let archivedBooks = try OfficialBookFiles.validateArchive(in: booksFolder, expected: expected)
+            if let serialized = settings[SalaryTrust.settingsKey] {
+                guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+                try SalaryTrust.validateBooks(SalaryTrust.decode(data), available: Set(archivedBooks.map(\.id)))
+            }
         } else {
+            if let serialized = settings[SalaryTrust.settingsKey] {
+                guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+                try SalaryTrust.validateBooks(SalaryTrust.decode(data), available: [])
+            }
             try OfficialBookFiles.write([], in: booksFolder)
         }
         let preparedBooks = try OfficialBookFiles.prepareReplacement(from: booksFolder)

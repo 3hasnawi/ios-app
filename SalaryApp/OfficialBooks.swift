@@ -176,7 +176,8 @@ final class OfficialBookStore {
         revision += 1
     }
 
-    func save(title rawTitle: String, month: String, entity rawEntity: String, images: [Data]) async throws {
+    @discardableResult
+    func save(title rawTitle: String, month: String, entity rawEntity: String, images: [Data], scheduleBackup: Bool = true) async throws -> OfficialBook {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let entity = rawEntity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw OfficialBookError.invalidTitle }
@@ -198,7 +199,8 @@ final class OfficialBookStore {
             books = next
             revision += 1
             BackupManager.shared.markChanged()
-            Task { _ = await BackupManager.shared.autoBackup() }
+            if scheduleBackup { Task { _ = await BackupManager.shared.autoBackup() } }
+            return book
         } catch {
             try? FileManager.default.removeItem(at: destination)
             throw error
@@ -222,6 +224,10 @@ final class OfficialBookStore {
     }
 
     func delete(_ book: OfficialBook) throws {
+        let ledger = try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data())
+        guard !ledger.entries.contains(where: { ($0.bookIds ?? []).contains(where: { UUID(uuidString: $0) == book.id }) }) else {
+            throw SalaryTrust.invalid(tr("الكتاب مرتبط بقيود أمانات؛ أزل ارتباطاته قبل حذفه.", "This document is linked to trust entries; remove those links before deleting it."))
+        }
         if let loadError { throw NSError(domain: "OfficialBooks", code: 1, userInfo: [NSLocalizedDescriptionKey: loadError]) }
         let next = books.filter { $0.id != book.id }
         try OfficialBookFiles.write(next)

@@ -12,6 +12,19 @@ nonisolated enum SalaryTrustSelfTest {
             let ledger = SalaryTrust.Ledger(entries: [entry, review], openingImported: true)
             let restored = try SalaryTrust.decode(SalaryTrust.encode(ledger))
             guard restored == ledger, restored.entries[0].remaining == 700, restored.entries[1].reviewPending else { return false }
+            let bookID = UUID()
+            let ids: Set<String> = [entry.id, review.id]
+            let linked = try SalaryTrust.linking(ledger, bookID: bookID, entries: ids)
+            guard linked.entries.allSatisfy({ $0.bookIds == [bookID.uuidString] }) else { return false }
+            let duplicate = try SalaryTrust.linking(linked, bookID: bookID, entries: ids)
+            guard duplicate == linked else { return false }
+            do { _ = try SalaryTrust.linking(ledger, bookID: bookID, entries: [UUID().uuidString]); return false } catch { }
+            try SalaryTrust.validate(linked)
+            try SalaryTrust.validateBooks(linked, available: [bookID])
+            guard linked.entries[0].remaining == entry.remaining else { return false }
+            do { try SalaryTrust.validateBooks(linked, available: []); return false } catch { }
+            let linkedRoundTrip = try SalaryTrust.decode(SalaryTrust.encode(linked))
+            guard linkedRoundTrip.entries[0].bookIds == [bookID.uuidString] else { return false }
             var bad = ledger
             bad.entries[0].payments[0].amount = 1001
             do { try SalaryTrust.validate(bad); return false } catch { }

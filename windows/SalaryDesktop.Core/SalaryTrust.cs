@@ -8,7 +8,7 @@ namespace SalaryDesktop.Core;
 // صيغة JSON نفسها في الآيفون داخل قيمة بيانات plist في settings.json.
 public sealed record SalaryTrustPayment(string Id, long Amount, string BookNumber, string BookDate, string Note);
 public sealed record SalaryTrustEntry(string Id, string Name, string Rank, string Workplace, int Year, int Month,
-    long Amount, string CaseStatus, string Note, string ImportedStatus, bool LegacyPaid, bool ReviewPending, IReadOnlyList<SalaryTrustPayment> Payments);
+    long Amount, string CaseStatus, string Note, string ImportedStatus, bool LegacyPaid, bool ReviewPending, IReadOnlyList<SalaryTrustPayment> Payments, IReadOnlyList<string>? BookIds = null);
 public sealed record SalaryTrustLedger(int Version, IReadOnlyList<SalaryTrustEntry> Entries, bool OpeningImported);
 
 public static class SalaryTrust
@@ -32,6 +32,9 @@ public static class SalaryTrust
                 e.Year is < 1900 or > 2200 || e.Month is < 1 or > 12 || e.Amount is <= 0 or > Maximum || e.Payments is null ||
                 !keys.Add($"{e.Year}-{e.Month}|{PersonProfiles.Key(e.Name)}") || (e.LegacyPaid && e.Payments.Count != 0) || (e.ReviewPending && (e.LegacyPaid || e.Payments.Count != 0)))
                 throw new InvalidDataException("سجل أمانة غير صالح أو مكرر؛ لم تُحفظ التغييرات.");
+            var books = new HashSet<Guid>();
+            if (e.BookIds is { Count: > 100 } || (e.BookIds is not null && e.BookIds.Any(x => !Guid.TryParse(x, out var bookId) || !books.Add(bookId))))
+                throw new InvalidDataException("روابط كتب الأمانة غير صالحة أو مكررة.");
             long paid = 0;
             foreach (var p in e.Payments)
             {
@@ -44,6 +47,26 @@ public static class SalaryTrust
             if (total > Maximum - e.Amount) throw new InvalidDataException("مجموع الأمانات يتجاوز الحد المدعوم.");
             total += e.Amount;
         }
+    }
+    /// ربط مجموعة بكتاب واحد لا يسجل صرفاً؛ يُرفض الطلب كله عند غياب أي قيد.
+    public static SalaryTrustLedger Link(SalaryTrustLedger ledger, Guid bookId, IReadOnlySet<string> ids)
+    {
+        Validate(ledger);
+        if (bookId == Guid.Empty || ids.Count == 0 || !ids.IsSubsetOf(ledger.Entries.Select(e => e.Id).ToHashSet(StringComparer.Ordinal)))
+            throw new InvalidDataException("تغيّرت القيود؛ أعد اختيارها.");
+        var result = ledger with { Entries = ledger.Entries.Select(entry => {
+            if (!ids.Contains(entry.Id)) return entry;
+            var links = (entry.BookIds ?? []).ToList();
+            if (!links.Any(id => Guid.TryParse(id, out var parsed) && parsed == bookId)) links.Add(bookId.ToString());
+            return entry with { BookIds = links };
+        }).ToArray() };
+        Validate(result); return result;
+    }
+    public static void ValidateBooks(SalaryTrustLedger ledger, IReadOnlyCollection<ArchiveBook> available)
+    {
+        var ids = available.Select(x => x.Id).ToHashSet();
+        if (ledger.Entries.SelectMany(e => e.BookIds ?? []).Any(id => !Guid.TryParse(id, out var bookId) || !ids.Contains(bookId)))
+            throw new InvalidDataException("كتاب مرتبط بأحد قيود الأمانات غير موجود في الأرشيف؛ لم تُحفظ النسخة.");
     }
     public static long Paid(SalaryTrustEntry e) => e.LegacyPaid ? e.Amount : e.Payments.Sum(p => p.Amount);
     public static long Remaining(SalaryTrustEntry e) => e.Amount - Paid(e);
@@ -58,7 +81,11 @@ public static class SalaryTrust
     public static SalaryTrustLedger ReadFromBackup(BackupSnapshot snapshot)
     {
         if (!snapshot.SettingsPlists.TryGetValue(SettingsKey, out var plist)) return Empty;
-        try { return PropertyListParser.Parse(plist) is NSData data ? Decode(data.Bytes) : throw new InvalidDataException("صيغة دفتر الأمانات غير صالحة."); }
+        try
+        {
+            if (PropertyListParser.Parse(plist) is not NSData data) throw new InvalidDataException("صيغة دفتر الأمانات غير صالحة.");
+            var ledger = Decode(data.Bytes); ValidateBooks(ledger, snapshot.Books); return ledger;
+        }
         catch (Exception ex) when (ex is not InvalidDataException) { throw new InvalidDataException("تعذّر قراءة دفتر الأمانات.", ex); }
     }
     public static byte[] Plist(SalaryTrustLedger ledger)
