@@ -437,12 +437,14 @@
               <StackPanel>
                 <TextBlock Style="{StaticResource CardTitle}" Text="المظهر"/>
                 <TextBlock Style="{StaticResource Hint}" Text="الوضع الداكن يريح العين في الإضاءة الخافتة؛ «حسب ويندوز» يتبع إعداد النظام. الكشوف المطبوعة لا تتأثر." Margin="0,6,0,10" TextWrapping="Wrap"/>
-                <ListBox x:Name="ThemePicker" SelectionChanged="ThemeChanged" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Segment}" HorizontalAlignment="Left">
+<Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2" HorizontalAlignment="Left">
+                <ListBox x:Name="ThemePicker" SelectionChanged="ThemeChanged" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource Segment}">
                   <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
                   <ListBoxItem Tag="light" Content="فاتح"/>
                   <ListBoxItem Tag="dark" Content="داكن"/>
                   <ListBoxItem Tag="system" Content="حسب ويندوز"/>
                 </ListBox>
+                </Border>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}">
