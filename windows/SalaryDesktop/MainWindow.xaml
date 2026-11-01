@@ -92,12 +92,13 @@
           <DataGrid x:Name="TransferTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" RowHeaderWidth="0" HeadersVisibility="Column" Background="White" EnableRowVirtualization="True" GridLinesVisibility="Horizontal">
             <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="2*"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="2*"/></DataGrid.Columns>
           </DataGrid>
-          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
+          <WrapPanel Grid.Row="3" Orientation="Horizontal" Margin="0,12,0,0">
             <Button x:Name="TransferExport" Style="{StaticResource ActionButton}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
             <Button Content="ربط حساب الجهة المختارة" Click="LinkTransferAccount" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="تحديد مجموعة الجهة" Click="ClassifyTransfer" Padding="16,10" Margin="12,0,0,0"/>
             <Button Content="كتاب المجموعة · مسودة PDF" Click="OpenGroupLetter" Padding="16,10" Margin="12,0,0,0"/>
-          </StackPanel>
+            <Button Content="قوائم الأسماء" Click="OpenNameLists" Padding="16,10" Margin="12,0,0,0"/>
+          </WrapPanel>
         </Grid>
         <ScrollViewer x:Name="SettingsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
           <StackPanel><Border Style="{StaticResource Card}"><StackPanel>

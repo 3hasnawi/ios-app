@@ -49,7 +49,11 @@ static byte[] MakeReferenceArchive(string fontPath, string payer, string benefic
         using (var face = SKTypeface.FromFile(fontPath))
         using (var paint = new SKPaint { Typeface = face, TextSize = 10, Color = SKColors.Black })
         {
-            for (int i = 0; i < pages; i++) { var canvas = pdf.BeginPage(595.3f, 841.9f); canvas.Clear(SKColors.White); if (i == 0 && id == "food_company") { canvas.DrawText(payer, 386, 364, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id == "contracts") { canvas.DrawText(payer, 127, 347, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id.EndsWith("group", StringComparison.Ordinal)) canvas.DrawText(payer, 387, 350, paint); pdf.EndPage(); }
+            for (int i = 0; i < pages; i++) { var canvas = pdf.BeginPage(595.3f, 841.9f); canvas.Clear(SKColors.White); if (i == 0 && id == "food_company") { canvas.DrawText(payer, 386, 364, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id == "contracts") { canvas.DrawText(payer, 127, 347, paint); canvas.DrawText("(", 300, 385, paint); canvas.DrawText(beneficiary, 80, 405, paint); } else if (i == 0 && id == "ramadi") { canvas.DrawText(payer, 387, 362, paint); canvas.DrawText(beneficiary, 335, 378, paint); }
+                else if (i == 0 && id == "housing") { canvas.DrawText(payer, 212, 312, paint); canvas.DrawText(beneficiary[^15..], 141, 328, paint); }
+                else if (i == 0 && id == "water") { canvas.DrawText(payer, 387, 346, paint); canvas.DrawText(beneficiary[^15..], 41, 362, paint); }
+                else if (i == 0 && id == "rafidain_anbar") canvas.DrawText(payer, 162, 312, paint);
+                else if (i == 0 && id.EndsWith("group", StringComparison.Ordinal)) canvas.DrawText(payer, 387, 350, paint); pdf.EndPage(); }
             pdf.Close();
         }
         return file.ToArray();
@@ -248,6 +252,10 @@ try
     var contractBank = BankStatementCalculator.Calculate(contractSnapshot, "أيلول 2026");
     Check(contractBank.Cash == 500m && contractBank.ContractNominalShare == 120m && contractBank.ContractContribution == 195m &&
           contractBank.Breakdown["الرعاية الصحية"] == 20m && contractBank.Breakdown["شركة عراق الجوال"] == 100m, "contract rounding and deduction sources");
+    var cashList = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson, contractPerson with { Name = "صفر تجريبي", Net = 0m }] }, "أيلول 2026");
+    Check(cashList.Total == 500 && cashList.Rows.Count == 1 && cashList.Rows[0].Name == contractPerson.Name, "cash list excludes zero and matches net total");
+    try { _ = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson with { Workplace = "" }] }, "أيلول 2026"); throw new InvalidOperationException("incomplete cash person accepted"); }
+    catch (InvalidDataException) { }
     string[] rawHeaders = ["مجموع استقطاعات المصارف", "صندوق الشهداء", "الرعاية الصحية", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "توقيفات تقاعدية"];
     var rawColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = rawHeaders, values = rawHeaders.Select(_ => "").ToArray() });
     var incompleteContract = contractPerson with {
@@ -272,6 +280,35 @@ try
     catch (InvalidDataException) { }
     var acceptedContract = IndividualLetterPreparation.Payroll("contracts", incompleteBank, "دافع وهمي", fakePayer, references, true);
     Check(acceptedContract.Total == 75 && acceptedContract.Notices.Count == 1, "explicit contract warning review remains recorded");
+    var anbarAccount = new ExecutionAccount("جهة وهمية", fakeReceiver, "الرافدين فرع الانبار", "", null);
+    var entity = new TransferEntry("deduction|جهة وهمية", "أيلول 2026", "جهة وهمية", 2500m, 1, 0, anbarAccount, TransferGroup.Anbar, null, false);
+    var entityTransfer = new TransferSnapshot("أيلول 2026", "دافع وهمي", fakePayer, [entity], []);
+    var personRow = new Deduction("أيلول 2026", "اسم تجريبي", "جهة وهمية", 2500m, "", "رتبة تجريبية");
+    var entitySource = snapshot with { Deductions = [personRow] };
+    foreach (var id in new[] { "ramadi", "housing", "water" })
+    {
+        var plan = IndividualEntityPreparation.Prepare(entitySource, entityTransfer, id, entity.Id, references);
+        Check(plan.Total == 2500 && plan.People == 1 && plan.Rows.Single().Name == personRow.Name, "individual entity matches source for " + id);
+    }
+    try { _ = IndividualEntityPreparation.Prepare(entitySource with { Deductions = [personRow with { Amount = 2499m }] }, entityTransfer, "ramadi", entity.Id, references); throw new InvalidOperationException("mismatched entity rows accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = IndividualEntityPreparation.Prepare(entitySource with { Deductions = [personRow with { Rank = "" }] }, entityTransfer, "water", entity.Id, references); throw new InvalidOperationException("missing water rank accepted"); }
+    catch (InvalidDataException) { }
+    var directTitle = "مصرف الرافدين/فرع الانبار";
+    var directEntity = entity with { Id = "deduction|" + directTitle, Title = directTitle, Account = null };
+    var direct = IndividualEntityPreparation.Prepare(entitySource with { Deductions = [personRow with { Title = directTitle }] }, entityTransfer with { Entries = [directEntity] }, "rafidain_anbar", directEntity.Id, references);
+    Check(direct.BeneficiaryAccount is null && direct.Total == 2500, "direct Anbar bank book uses the matched deduction");
+    var nameLists = NameLists.Prepare(entitySource, entityTransfer);
+    Check(nameLists.Single(l => l.Id == entity.Id).Rows.Single().Amount == 2500 && nameLists.Single(l => l.Id == entity.Id).Rows.Single().Number == 1, "entity name list matches deductions and includes sequence");
+    var generatedNames = NameListPdf.Generate(nameLists.Single(l => l.Id == entity.Id), File.ReadAllBytes(font));
+    Check(generatedNames.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "independent entity names PDF verified");
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_NAMES_PDF") is { Length: > 0 } namesPath) File.WriteAllBytes(namesPath, generatedNames);
+    var manyNames = nameLists.Single(l => l.Id == entity.Id) with { Rows = Enumerable.Range(1, 100).Select(n => new NameListRow(n, "اسم تجريبي", "عقود", "قسم افتراضي", 2500)).ToArray(), Total = 250000 };
+    using (var pagesDocument = UglyToad.PdfPig.PdfDocument.Open(NameListPdf.Generate(manyNames, File.ReadAllBytes(font)))) Check(pagesDocument.NumberOfPages > 1, "long name list continues on separate pages");
+    try { _ = NameListPdf.Generate(manyNames with { Total = 1 }, File.ReadAllBytes(font)); throw new InvalidOperationException("invalid list total accepted"); }
+    catch (InvalidDataException) { }
+    var badLists = NameLists.Prepare(entitySource with { Deductions = [personRow with { Amount = 2499m }] }, entityTransfer);
+    Check(badLists.Single(l => l.Id == entity.Id).Problem is not null && badLists.Single(l => l.Id == entity.Id).Rows.Count == 0, "mismatched name list is not displayed as valid");
     var composedLinksStore = new LocalTransferLinks(Path.Combine(root, "composed-links"));
     var composedInitial = composedLinksStore.Load(combinedPayroll.Snapshot);
     var fakeUpdatedAccount = composedInitial.Snapshot.Accounts.Single() with { Iban = fakeReceiver, Branch = "الرافدين فرع تجريبي", Swift = "TESTIQBAAAA" };

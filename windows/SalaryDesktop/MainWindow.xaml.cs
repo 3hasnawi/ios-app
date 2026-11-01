@@ -412,6 +412,23 @@ public partial class MainWindow : Window
         { MessageBox.Show(this, "تعذّر حفظ ملف التحويل.\n" + ex.Message, "ملف التحويل", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { if (page == "transfer") RenderTransfers(); }
     }
+    private async void OpenNameLists(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot; var transfer = preparedTransfer; var month = SelectedMonth;
+        var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (source is null || transfer is null || original is null || links is null || root is null || payroll is null || !ReferenceEquals(source, preparedSource) || transfer.Month != month)
+        { MessageBox.Show(this, "اختر الشهر وانتظر اكتمال تحميل التحويلات.", "قوائم الأسماء"); return; }
+        try
+        {
+            var lists = await Task.Run(() => NameLists.Prepare(source, transfer));
+            if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { MessageBox.Show(this, "تغيّرت بيانات الشهر؛ أعد فتح القوائم.", "قوائم الأسماء"); return; }
+            bool DataCurrent() => linkStore.Load(original).Revision == links.Revision && payrollStore.Load(root).Revision == payroll.Revision;
+            if (!DataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة.");
+            new NameListsWindow(month, lists, DataCurrent) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { MessageBox.Show(this, "تعذّر إعداد القوائم.\n" + ex.Message, "قوائم الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private async void OpenGroupLetter(object sender, RoutedEventArgs e)
     {
         var plan = preparedTransfer; var active = snapshot; var original = baseSnapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState; var group = CurrentTransferGroup;
