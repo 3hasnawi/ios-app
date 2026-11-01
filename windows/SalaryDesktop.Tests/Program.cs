@@ -265,7 +265,7 @@ try
     var healthLinked = payrollLinkStore.SaveLink(payrollLinkSource, payrollLinks, healthEntry, alternativeAccount);
     Check(TransferPreparation.Prepare(healthLinked.Snapshot, "أيلول 2026").Entries.Single(e => e.Id == "payroll|health").Account?.Entity == alternativeAccount.Entity && healthLinked.Links.ContainsKey("health"), "payroll recipient links to saved account");
     var linkedBackupPath = Path.Combine(root, "linked-backup.zip");
-    ReconciliationBackupExport.Write(updatedLinks.Snapshot, [], linkedBackupPath);
+    ReconciliationBackupExport.Write(updatedLinks.Snapshot with { Accounts = snapshot.Accounts }, [], linkedBackupPath);
     var exportedLinksPlist = (NSData)PropertyListParser.Parse(BackupReader.Read(linkedBackupPath).SettingsPlists["transferPayrollAccountLinks"]);
     Check(JsonSerializer.Deserialize<Dictionary<string, string>>(exportedLinksPlist.Bytes)!["deduction|جهه وهميه"] == PayrollAnalysis.Normalize(alternativeAccount.Entity), "backup includes changed account aliases");
     var realLinkStore = new LocalTransferLinks(Path.Combine(root, "real-fixture-links"));
@@ -280,6 +280,20 @@ try
     Check(TransferPreparation.Prepare(completeRestored, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية") is { Group: TransferGroup.Rafidain, Account.Entity: "جهة وهمية" } &&
           BankReconciliation.ReadFromBackup(completeRestored).Single().Id == period.Id && completeRestored.Employees.Count == snapshot.Employees.Count,
           "backup restores account alias, classification and reconciliation with original records");
+    var accountStore = new LocalTransferLinks(Path.Combine(root, "account-edit")); var initialAccountState = accountStore.Load(snapshot);
+    var changedAccount = snapshot.Accounts.Single() with { Iban = fakeReceiver, Swift = "TESTIQBAAAA", Branch = "الرافدين فرع وهمي" };
+    var editedAccountState = accountStore.SaveAccount(snapshot, initialAccountState, snapshot.Accounts.Single(), changedAccount);
+    Check(accountStore.Load(snapshot).Snapshot.Accounts.Single().Iban == fakeReceiver && snapshot.Accounts.Single().Iban != fakeReceiver, "account edits persist locally without changing backup");
+    Check(TransferPreparation.Prepare(editedAccountState.Snapshot, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية") is { Group: TransferGroup.Rafidain, Account.Iban: fakeReceiver }, "edited account updates transfer classification");
+    try { _ = accountStore.SaveAccount(snapshot, editedAccountState, changedAccount, changedAccount with { Iban = "IQ00" }); throw new InvalidOperationException("invalid account accepted"); }
+    catch (InvalidDataException) { }
+    Check(accountStore.Load(snapshot).Revision == editedAccountState.Revision, "invalid account edit preserves previous state");
+    try { _ = accountStore.SaveAccount(snapshot, editedAccountState, changedAccount, changedAccount with { Swift = "غير صالح" }); throw new InvalidOperationException("invalid swift accepted"); }
+    catch (InvalidDataException) { }
+    var accountBackupPath = Path.Combine(root, "account-edited.zip");
+    ReconciliationBackupExport.Write(editedAccountState.Snapshot, [period], accountBackupPath);
+    var accountBackup = BackupReader.Read(accountBackupPath);
+    Check(accountBackup.Accounts.Single() == changedAccount && accountBackup.Employees.Count == snapshot.Employees.Count && BankReconciliation.ReadFromBackup(accountBackup).Single().Id == period.Id, "edited account and reconciliation restore from backup");
     var suggestions = ReconciliationSuggestions.Prepare(fullyMatchedSnapshot, "أيلول 2026");
     var groupSuggestion = suggestions.Items.Single(s => s.Id.EndsWith("|group|rafidain", StringComparison.Ordinal));
     Check(groupSuggestion.Amount == 2500 && groupSuggestion.SourceLineIds.Single() == "deductions|أيلول 2026|false|جهة وهمية|execution" && suggestions.Items.Any(s => s.Id.EndsWith("|cash", StringComparison.Ordinal) && s.Amount == 500), "suggestions from matched payroll and group sources");

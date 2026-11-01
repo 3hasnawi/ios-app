@@ -159,7 +159,7 @@ public partial class MainWindow : Window
                 Column("الجهة", "Entity", 2); Column("المصرف والفرع", "Branch", 2); Column("IBAN", "Iban", 2); Column("SWIFT", "Swift", 1); Column("الحساب المحلي", "LocalAccount", 1);
                 var accounts = snapshot.Accounts.Where(v => Matches(v.Entity, v.Branch, v.Iban)).ToArray();
                 DataTable.ItemsSource = accounts;
-                TableStatus.Text = $"{accounts.Length:N0} حساب · عرض محلي للقراءة فقط.";
+                TableStatus.Text = $"{accounts.Length:N0} حساب · انقر نقراً مزدوجاً لتعديل بيانات الحساب المحفوظ.";
                 break;
             case "archive":
                 Column("عنوان الكتاب", "Title", 3); Column("الشهر", "Month", 1); Column("الجهة", "Entity", 2); Column("الصفحات", "Pages", 1, true);
@@ -176,6 +176,24 @@ public partial class MainWindow : Window
         {
             var detail = new EmployeeDetailsWindow(employee) { Owner = this };
             detail.ShowDialog();
+            return;
+        }
+        if (page == "accounts" && DataTable.SelectedItem is ExecutionAccount account)
+        {
+            var original = baseSnapshot; var links = linkState; var active = snapshot;
+            if (original is null || links is null || active is null) return;
+            var dialog = new AccountEditorWindow(account) { Owner = this };
+            if (dialog.ShowDialog() != true || dialog.Result is not { } edited) return;
+            try
+            {
+                var updated = await Task.Run(() => linkStore.SaveAccount(original, links, account, edited));
+                if (!ReferenceEquals(original, baseSnapshot) || !ReferenceEquals(active, snapshot))
+                { MessageBox.Show(this, "حُفظ الحساب للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+                linkState = updated; snapshot = updated.Snapshot; RenderPage();
+                MessageBox.Show(this, "حُفظ الحساب محلياً. راجع التصنيفات والكتب المرتبطة به، واحفظ نسخة احتياطية تشمل التعديلات.", "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+            { MessageBox.Show(this, "تعذّر حفظ الحساب.\n" + ex.Message, "تعديل الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
             return;
         }
         if (page != "archive" || snapshot is null || DataTable.SelectedItem is not ArchiveBook book) return;
@@ -259,7 +277,7 @@ public partial class MainWindow : Window
         var original = baseSnapshot; var selected = TransferTable.SelectedItem as TransferRow; var links = linkState; var active = snapshot;
         if (original is null || selected is null || links is null || active is null || !ReferenceEquals(active, preparedSource))
         { MessageBox.Show(this, "اختر جهة من الجدول أولاً بعد اكتمال تحميلها.", "ربط حساب الجهة", MessageBoxButton.OK, MessageBoxImage.Information); return; }
-        var dialog = new AccountLinkWindow(selected.Entry, original.Accounts) { Owner = this };
+        var dialog = new AccountLinkWindow(selected.Entry, active.Accounts) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.SelectedAccount is not { } account) return;
         if (!ReferenceEquals(active, snapshot) || SelectedMonth != selected.Entry.Month) { MessageBox.Show(this, "تغيّرت البيانات؛ أعد اختيار الجهة.", "ربط حساب الجهة"); return; }
         try

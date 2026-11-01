@@ -1,6 +1,8 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text;
 using Claunia.PropertyList;
 
 namespace SalaryDesktop.Core;
@@ -39,6 +41,11 @@ public static class ReconciliationBackupExport
         var temp = Path.Combine(directory, ".salary-ledger-backup-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
+            var original = BackupReader.Read(source.SourcePath);
+            if (original.SourceDigest != source.SourceDigest) throw new InvalidDataException("تغيّرت نسخة المصدر؛ لم يُحفظ الملف.");
+            var changedAccounts = !original.Accounts.SequenceEqual(source.Accounts);
+            if (changedAccounts && (original.Version < 2 || !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Select(a => a.Entity))))
+                throw new InvalidDataException("لا يمكن حفظ الحسابات في صيغة النسخة هذه أو مع تغيير أسمائها.");
             using var input = new FileStream(source.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (Convert.ToHexString(SHA256.HashData(input)) != source.SourceDigest) throw new InvalidDataException("تغيّرت نسخة المصدر؛ لم يُحفظ الملف.");
             input.Position = 0;
@@ -52,16 +59,29 @@ public static class ReconciliationBackupExport
                     newEntry.LastWriteTime = oldEntry.LastWriteTime; newEntry.ExternalAttributes = oldEntry.ExternalAttributes;
                     using var outStream = newEntry.Open();
                     if (oldEntry.FullName == "settings.json") outStream.Write(settingsJson);
+                    else if (changedAccounts && oldEntry.FullName == "accounts.jsonl")
+                    {
+                        using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
+                        foreach (var account in source.Accounts) writer.WriteLine(JsonSerializer.Serialize(new { entity = account.Entity, iban = account.Iban, branch = account.Branch, swift = account.Swift, localAccount = account.LocalAccount }));
+                    }
+                    else if (changedAccounts && oldEntry.FullName == "manifest.json")
+                    {
+                        using var originalManifest = oldEntry.Open();
+                        var manifest = JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
+                        manifest["accounts"] = source.Accounts.Count;
+                        JsonSerializer.Serialize(outStream, manifest);
+                    }
                     else { using var inStream = oldEntry.Open(); inStream.CopyTo(outStream); }
                 }
             }
             var restored = BackupReader.Read(temp);
+            if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
             var readPeriods = BankReconciliation.ReadFromBackup(restored);
             if (!LedgerPlist(readPeriods).AsSpan().SequenceEqual(LedgerPlist(periods))) throw new InvalidDataException("تعذّر التحقق من دفتر المطابقة في النسخة الجديدة.");
             using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))
             using (var newZip = ZipFile.OpenRead(temp))
             {
-                foreach (var oldEntry in oldZip.Entries.Where(e => e.FullName != "settings.json"))
+                foreach (var oldEntry in oldZip.Entries.Where(e => e.FullName != "settings.json" && !(changedAccounts && (e.FullName == "accounts.jsonl" || e.FullName == "manifest.json"))))
                 {
                     var copy = newZip.GetEntry(oldEntry.FullName) ?? throw new InvalidDataException("ملف مفقود في النسخة الجديدة.");
                     using var a = oldEntry.Open(); using var b = copy.Open();
