@@ -43,7 +43,7 @@ public static class ReconciliationBackupExport
                 refundOf = m.RefundOf, isRefund = m.IsRefund, isFunding = m.IsFunding, matched = m.Matched }).ToArray() }).ToArray() };
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(body)), plist); return plist.ToArray();
     }
-    public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination)
+    public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination, SalaryTrustLedger? trust = null)
     {
         var target = Path.GetFullPath(destination); var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("المجلد غير صالح.");
         var name = Path.GetFileNameWithoutExtension(target);
@@ -52,6 +52,7 @@ public static class ReconciliationBackupExport
             throw new InvalidDataException("وجهة النسخة غير صالحة.");
         var settings = source.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         settings["bankReconciliations"] = LedgerPlist(periods);
+        if (trust is not null) settings[SalaryTrust.SettingsKey] = SalaryTrust.Plist(trust);
         var settingsJson = JsonSerializer.SerializeToUtf8Bytes(settings);
         var temp = Path.Combine(directory, ".salary-ledger-backup-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
@@ -127,6 +128,7 @@ public static class ReconciliationBackupExport
             if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
             if (!restored.Months.SequenceEqual(source.Months) || !SameEmployees(restored.Employees, source.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
                 throw new InvalidDataException("تعذّر التحقق من بيانات الأشهر في النسخة الجديدة.");
+            if (trust is not null && !SalaryTrust.Encode(SalaryTrust.ReadFromBackup(restored)).AsSpan().SequenceEqual(SalaryTrust.Encode(trust))) throw new InvalidDataException("تعذّر التحقق من دفتر الأمانات في النسخة الجديدة.");
             var readPeriods = BankReconciliation.ReadFromBackup(restored);
             if (!LedgerPlist(readPeriods).AsSpan().SequenceEqual(LedgerPlist(periods))) throw new InvalidDataException("تعذّر التحقق من دفتر المطابقة في النسخة الجديدة.");
             using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))

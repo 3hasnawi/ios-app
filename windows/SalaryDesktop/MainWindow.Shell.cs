@@ -15,6 +15,7 @@ public partial class MainWindow
     private DateTime backupChecked;
 
     /// بصمة التعديلات المحلية (الأشهر المستوردة، الروابط والحسابات، دفتر المطابقة) تُقارن بآخر نسخة شاملة حُفظت لهذه النسخة.
+    private static string? LedgerRevisions(string? ledger, string? trust) => ledger is null && trust is null ? null : $"{ledger ?? "-"}/{trust ?? "-"}";
     private static string Fingerprint(string? payroll, string? links, string? ledger) => $"{payroll}|{links}|{ledger}";
 
     private void RememberBackup(BackupSnapshot root, string? payroll, string? links, string? ledger)
@@ -34,13 +35,13 @@ public partial class MainWindow
         RefreshBackupSetupNotice();
         if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; AuditNoticeCard.Visibility = Visibility.Collapsed; return; }
         string? ledger;
-        try { ledger = await Task.Run(() => reconciliationStore.Load(source).Revision); }
+        try { ledger = await Task.Run(() => LedgerRevisions(reconciliationStore.Load(source).Revision, trustStore.Load(source).Revision)); }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException) { ledger = null; }
         if (ticket != backupRequest || !ReferenceEquals(source, snapshot)) return;
         var parts = new List<string>();
         if (payroll?.Revision is not null) parts.Add("أشهر مستوردة");
         if (links?.Revision is not null) parts.Add("حسابات وروابط");
-        if (ledger is not null) parts.Add("دفتر المطابقة");
+        if (ledger is not null) parts.Add("المطابقة والأمانات");
         var mark = UiPreferences.Current.Backups!.GetValueOrDefault(root.SourceDigest);
         var pending = parts.Count > 0 && mark?.Fingerprint != Fingerprint(payroll?.Revision, links?.Revision, ledger);
         // عدد التعديلات: كل تغيّر في بصمة جزء (أشهر، روابط، مطابقة) منذ آخر نسخة شاملة يُعدّ تعديلاً.

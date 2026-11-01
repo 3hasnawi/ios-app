@@ -104,6 +104,11 @@ struct SettingsView: View {
                                    subtitle: dataSummary) { EmptyView() }
                     }
                     NavigationLink {
+                        SalaryTrustView()
+                    } label: {
+                        SettingRow(title: tr("أمانات الرواتب", "Salary trust"), systemImage: "building.columns.fill", color: .teal) { EmptyView() }
+                    }
+                    NavigationLink {
                         BackupView()
                     } label: {
                         SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud.fill", color: .pink,

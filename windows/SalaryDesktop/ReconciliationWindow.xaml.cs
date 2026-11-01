@@ -14,6 +14,7 @@ public partial class ReconciliationWindow : Window
     private readonly BackupSnapshot source;
     private readonly Func<bool> sourceIsCurrent;
     private readonly LocalReconciliationStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
+    private readonly LocalSalaryTrustStore trustStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "SalaryTrust"));
     private ReconciliationSnapshot state;
     private readonly string suggestedMonth;
     private int sourceRequest;
@@ -142,8 +143,9 @@ public partial class ReconciliationWindow : Window
             var externalChanged = await Task.Run(() => {
                 if (store.Load(source).Revision != captured.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة؛ أعد فتحه قبل تصدير النسخة.");
                 if (!sourceIsCurrent()) throw new InvalidDataException("تغيّرت بيانات التطبيق؛ أعد فتح دفتر المطابقة قبل التصدير.");
-                ReconciliationBackupExport.Write(source, captured.Periods, destination);
-                return !sourceIsCurrent() || store.Load(source).Revision != captured.Revision;
+                var trust = trustStore.Load(source);
+                ReconciliationBackupExport.Write(source, captured.Periods, destination, trust.Ledger);
+                return !sourceIsCurrent() || store.Load(source).Revision != captured.Revision || trustStore.Load(source).Revision != trust.Revision;
             });
             var changed = externalChanged || state.Revision != captured.Revision;
             Ui.Message(this, (changed ? "حُفظت لقطة الدفتر السابقة، وقد تغيّرت البيانات أثناء التصدير؛ أعد التصدير لحفظ آخر التغييرات. " : "حُفظت النسخة مع دفتر المطابقة بعد فحص محتواها. ") + "يلزم تجربة استعادتها على الآيفون قبل الاعتماد عليها.", "النسخة الاحتياطية", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);

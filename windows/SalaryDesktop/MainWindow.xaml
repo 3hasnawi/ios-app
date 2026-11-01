@@ -48,6 +48,7 @@
             <RadioButton x:Name="NavArchive" Style="{StaticResource NavItem}" Tag="archive" Checked="Navigate" ToolTip="Ctrl+5">
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE7B8;" Width="28"/><TextBlock Text="الأرشيف"/></StackPanel>
             </RadioButton>
+            <Button Content="أمانات الرواتب" Click="OpenSalaryTrust" HorizontalContentAlignment="Right" Margin="4,2,4,4"/>
             <TextBlock Style="{StaticResource NavHeader}" Text="التقارير"/>
             <RadioButton x:Name="NavGroups" Style="{StaticResource NavItem}" Tag="groups" Checked="Navigate" ToolTip="Ctrl+6">
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8F1;" Width="28"/><TextBlock Text="جهات التنفيذ"/></StackPanel>

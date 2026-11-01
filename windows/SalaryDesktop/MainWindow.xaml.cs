@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly LocalSnapshotStore store = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Backups"));
     private readonly LocalTransferLinks linkStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "TransferLinks"));
     private readonly LocalPayrollImports payrollStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "PayrollImports"));
+    private readonly LocalSalaryTrustStore trustStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "SalaryTrust"));
     private readonly LocalReconciliationStore reconciliationStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private string page = "home";
     private string shownPage = "";
@@ -96,7 +97,7 @@ public partial class MainWindow : Window
             {
                 var inspected = await Task.Run(() => BackupReader.Read(selectedPath));
                 inspectedDigest = inspected.SourceDigest;
-                var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null;
+                var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null || (await Task.Run(() => trustStore.Load(shown))).Revision is not null;
                 if (inspected.SourceDigest != previous.SourceDigest && hasLocalChanges)
                 {
                     // التعديلات المحلية لا تندمج مع النسخة الأخرى؛ يُعرض حفظها في نسخة شاملة قبل الانتقال حتى لا يضيع عمل ويندوز.
@@ -484,6 +485,15 @@ public partial class MainWindow : Window
         { Ui.Message(this, "تعذّر حفظ الملف السنوي.\n" + ex.Message, "الاستيراد السنوي", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
     /// استيراد ملف رواتب أو استقطاعات شهر؛ الشهر من اسم الملف إن عُرف، وإلا يكتبه المستخدم في نافذة المراجعة.
+    private void OpenSalaryTrust(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot;
+        if (source is null) { Ui.Message(this, "افتح نسخة احتياطية أو استورد بيانات الرواتب أولاً.", "أمانات الرواتب"); return; }
+        try { new SalaryTrustWindow(source, trustStore, () => ReferenceEquals(snapshot, source) && !loading && !backingUp) { Owner = this }.ShowDialog(); RefreshBackupReminder(true); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        { Ui.Message(this, "تعذّر فتح دفتر الأمانات.\n" + ex.Message, "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
     private async Task<bool> ImportPayrollFrom(string path, string? month = null, bool quiet = false)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
@@ -505,6 +515,12 @@ public partial class MainWindow : Window
             if (!ReferenceEquals(root, rootSnapshot) || !ReferenceEquals(active, snapshot))
             { Ui.Message(this, "حُفظت بيانات الشهر للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
             ApplySources(root, result.updatedPayroll, result.updatedLinks, preview.Month);
+            if (preview.Employees.Count > 0 && snapshot is { } trustSource)
+            {
+                try { await Task.Run(() => trustStore.AddCash(trustSource, preview.Month)); }
+                catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
+                { Ui.Message(this, "حُفظت الرواتب، لكن لم تُحدّث الأمانات؛ راجع قائمة الكاش.\n" + ex.Message, "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            }
             if (!quiet) Ui.Message(this, "حُفظت بيانات الشهر محلياً؛ راجع التقارير والمبالغ.", "استيراد الرواتب", MessageBoxButton.OK, MessageBoxImage.Information);
             return true;
         }
@@ -528,8 +544,9 @@ public partial class MainWindow : Window
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات؛ أعد فتح النسخة قبل التصدير.");
                 if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النسخة قبل التصدير.");
                 var ledger = reconciliationStore.Load(source);
-                ReconciliationBackupExport.Write(source, ledger.Periods, destination);
-                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision, Ledger: ledger.Revision);
+                var trust = trustStore.Load(source);
+                ReconciliationBackupExport.Write(source, ledger.Periods, destination, trust.Ledger);
+                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision || trustStore.Load(source).Revision != trust.Revision, Ledger: LedgerRevisions(ledger.Revision, trust.Revision));
             });
             var changed = saved.Changed;
             if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);

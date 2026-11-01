@@ -127,11 +127,12 @@ public partial class MainWindow
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                 BackupDestination.Guard(destination, source);
                 var ledger = reconciliationStore.Load(source);
-                ReconciliationBackupExport.Write(source, ledger.Periods, destination);
+                var trust = trustStore.Load(source);
+                ReconciliationBackupExport.Write(source, ledger.Periods, destination, trust.Ledger);
                 // فحص الملف المكتوب: يُقرأ فهرسه ويجب أن يحتوي كل الأشهر.
                 var written = BackupReader.Read(destination);
                 if (source.Months.Any(m => !written.Months.Any(w => w.Name == m.Name))) throw new InvalidDataException("تعذّر التحقق من النسخة بعد كتابتها.");
-                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision, Ledger: ledger.Revision);
+                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision || trustStore.Load(source).Revision != trust.Revision, Ledger: LedgerRevisions(ledger.Revision, trust.Revision));
             });
             if (!saved.Changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);
             UiPreferences.Current.BackupLast = DateTime.Now; UiPreferences.Current.BackupError = null; UiPreferences.Current.BackupPlace = Path.GetFileName(destination); UiPreferences.Save();

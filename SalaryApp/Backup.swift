@@ -37,7 +37,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
+                               SalaryTrust.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -173,6 +173,15 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        if settings[SalaryTrust.settingsKey] == nil,
+           let saved = UserDefaults.standard.data(forKey: SalaryTrust.settingsKey),
+           !(try SalaryTrust.decode(saved)).entries.isEmpty {
+            throw SalaryTrust.invalid(tr("النسخة المختارة لا تحتوي دفتر الأمانات الموجود على الجهاز. لم تُستبدل البيانات؛ احفظ نسخة شاملة أولاً واسترجع نسخة تحتوي الدفتر.", "The selected backup does not contain this device’s trust ledger. Data was not replaced; save a full backup and restore one containing the ledger."))
+        }
+        if let serialized = settings[SalaryTrust.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try SalaryTrust.decode(data)
+        }
         if let serialized = settings[BankReconciliation.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try BankReconciliation.decode(data)
@@ -848,9 +857,10 @@ final class BackupManager {
         if let savedSeen { UserDefaults.standard.set(savedSeen, forKey: BackupServerConfig.seenKey) }
         else { UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenKey) }
         let serverDatesOK = serverDate != nil && noSeenIsNewer && !sameIsNewer && laterIsNewer
+        let trustOK = SalaryTrustSelfTest.run()
         let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
-            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK
-        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
+            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK
+        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
     }
 
     // MARK: - الاسترجاع
@@ -942,6 +952,7 @@ final class BackupManager {
                     try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink)
                 }.value
                 BankStatementCache.shared.invalidate()
+                if settings[SalaryTrust.settingsKey] == nil { UserDefaults.standard.removeObject(forKey: SalaryTrust.settingsKey) }
                 for (key, data) in settings {
                     if let value = try? PropertyListSerialization.propertyList(from: data, format: nil) {
                         UserDefaults.standard.set(value, forKey: key)

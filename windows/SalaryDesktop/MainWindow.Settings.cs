@@ -120,7 +120,7 @@ public partial class MainWindow
 
     private static string SizeText(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} غيغابايت" : $"{bytes / (double)(1L << 20):0.0} ميغابايت";
     private bool HasLocalEdits(string digest) =>
-        Directory.Exists(Path.Combine(LocalRoot, "PayrollImports", digest)) || File.Exists(Path.Combine(LocalRoot, "TransferLinks", digest + ".json")) || File.Exists(Path.Combine(LocalRoot, "Reconciliations", digest + ".json"));
+        Directory.Exists(Path.Combine(LocalRoot, "PayrollImports", digest)) || File.Exists(Path.Combine(LocalRoot, "TransferLinks", digest + ".json")) || File.Exists(Path.Combine(LocalRoot, "Reconciliations", digest + ".json")) || File.Exists(Path.Combine(LocalRoot, "SalaryTrust", digest + ".json"));
 
     private void ShowCopies()
     {

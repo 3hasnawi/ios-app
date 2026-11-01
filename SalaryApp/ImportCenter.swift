@@ -403,6 +403,7 @@ final class ImportCenter {
         var totals = (employees: 0, deductions: 0)
         var accountTotals = (added: 0, updated: 0, invalid: 0)
         var months = Set<String>()
+        var trustPayrollMonths = Set<String>()
         var newestPayroll: (key: Int, name: String)?
 
         for (index, job) in jobs.enumerated() {
@@ -466,6 +467,7 @@ final class ImportCenter {
                     if d > 0 { parts.append(tr("\(Num.format(d)) استقطاع", "\(Num.format(d)) deductions")) }
                     lines.append("\(month): " + parts.joined(separator: tr(" و", ", ")))
                     if kind != .deductions {
+                        trustPayrollMonths.insert(month)
                         let odd = HealthCareReport.irregularCount(in: result.employees)
                         if odd > 0 {
                             warnings.append(tr("⚠️ \(month): \(Num.format(odd)) مبلغ رعاية صحية لا يقبل القسمة على \(Num.format(3500)). راجعه في التقارير ← الرعاية الصحية.",
@@ -498,6 +500,14 @@ final class ImportCenter {
         candidates = []
         progress.end()
         isBusy = false
+        if !fromTest {
+            for month in trustPayrollMonths.sorted(by: { MonthName.sortKey($0) < MonthName.sortKey($1) }) {
+                do {
+                    let count = try await SalaryTrustStore.addCash(month: month)
+                    if count > 0 { warnings.append(tr("أمانات \(month): أُضيف \(Num.format(count)) قيد كاش.", "Trust \(month): added \(count) cash entries.")) }
+                } catch { warnings.append(tr("تعذّرت إضافة كاش \(month) للأمانات: \(error.localizedDescription)", "Could not add \(month) cash to trust: \(error.localizedDescription)")) }
+            }
+        }
         await BackupManager.shared.refreshIntegrityWarning()
         if let newestPayroll { lastPayrollMonth = newestPayroll.name }
 

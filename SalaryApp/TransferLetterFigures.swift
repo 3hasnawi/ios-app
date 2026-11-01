@@ -164,6 +164,8 @@ nonisolated struct TransferCashEmployee: Sendable, Identifiable {
     let rank: String
     let workplace: String
     let amount: Double
+    /// nil يعني أن لقطة أعمدة الملف غير متاحة؛ النص الفارغ يعني خلية ملاحظات فارغة.
+    var caseStatus: String? = nil
 }
 
 nonisolated struct TransferCashList: Sendable {
@@ -178,7 +180,7 @@ actor TransferCashListEngine {
     /// يُرفض الكشف إن تعذّر تصنيف أي راتب، لأن ذلك قد يُسقط موظفاً يستحق الصرف كاش.
     func list(month: String) throws -> TransferCashList {
         var descriptor = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })
-        descriptor.propertiesToFetch = [\.name, \.rank, \.workplace, \.netSalary, \.detailsData]
+        descriptor.propertiesToFetch = [\.name, \.rank, \.workplace, \.netSalary, \.detailsData, \.rawColumnsData]
         let employees = try modelContext.fetch(descriptor)
         guard !employees.isEmpty else { throw TransferLetterFigureError.missingPayroll }
         var result: [TransferCashEmployee] = []
@@ -195,7 +197,18 @@ actor TransferCashListEngine {
                 throw NSError(domain: "TransferCash", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("توجد رواتب بلا طريقة دفع واضحة؛ تحقق منها قبل إنشاء قائمة الكاش.", "Some payroll rows have an unclear payment method; review them before creating the cash list.")])
             }
             if cash {
-                result.append(TransferCashEmployee(id: index, name: employee.name, rank: employee.rank, workplace: employee.workplace, amount: net))
+                var status: String?
+                if let raw = employee.rawColumns {
+                    let names = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"].map(ArabicText.normalize)
+                    let indices = raw.headers.indices.filter { names.contains(ArabicText.normalize(raw.headers[$0])) }
+                    if indices.count == 1, let netIndex = indices.first, netIndex + 1 < raw.headers.count {
+                        let header = ArabicText.normalize(raw.headers[netIndex + 1])
+                        if header.hasPrefix(ArabicText.normalize("الملاحظات")) || header.hasPrefix(ArabicText.normalize("ملاحظات")) || header == ArabicText.normalize("ملاحظة") {
+                            status = raw.values[netIndex + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+                }
+                result.append(TransferCashEmployee(id: index, name: employee.name, rank: employee.rank, workplace: employee.workplace, amount: net, caseStatus: status))
             }
         }
         result.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }

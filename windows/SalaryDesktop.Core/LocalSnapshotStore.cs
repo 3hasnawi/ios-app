@@ -89,6 +89,7 @@ public sealed class LocalSnapshotStore(string directory)
         var snapshot = BackupReader.Read(FileFor(pointer.Digest));
         if (snapshot.SourceDigest != pointer.Digest) throw new InvalidDataException("تغيّر ملف النسخة المحلية؛ لم تُستبدل البيانات.");
         _ = BankReconciliation.ReadFromBackup(snapshot);
+        _ = SalaryTrust.ReadFromBackup(snapshot);
         return snapshot;
     }
     public BackupSnapshot Import(string path, CancellationToken cancellation = default, string? expectedDigest = null, bool requireEmptyStore = false)
@@ -136,6 +137,7 @@ public sealed class LocalSnapshotStore(string directory)
             var stored = BackupReader.Read(target, cancellation);
             if (stored.SourceDigest != original.SourceDigest) throw new InvalidDataException("تعذّر التحقق من النسخة المحلية؛ لم تُستبدل البيانات.");
             _ = BankReconciliation.ReadFromBackup(stored);
+            _ = SalaryTrust.ReadFromBackup(stored);
             cancellation.ThrowIfCancellationRequested();
             var pointer = JsonSerializer.SerializeToUtf8Bytes(new Pointer(1, stored.SourceDigest));
             using (var output = new FileStream(pointerTemp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))

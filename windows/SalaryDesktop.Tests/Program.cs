@@ -265,6 +265,9 @@ try
     var contractBank = BankStatementCalculator.Calculate(contractSnapshot, "أيلول 2026");
     Check(contractBank.Cash == 500m && contractBank.ContractNominalShare == 120m && contractBank.ContractContribution == 195m &&
           contractBank.Breakdown["الرعاية الصحية"] == 20m && contractBank.Breakdown["شركة عراق الجوال"] == 100m, "contract rounding and deduction sources");
+    var statusColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "صافي الراتب", "الملاحظات4" }, values = new[] { "500", "حالة تجريبية" } });
+    var statusCash = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson with { RawColumns = statusColumns }] }, "أيلول 2026");
+    Check(statusCash.Rows.Single().CaseStatus == "حالة تجريبية", "cash status comes from notes immediately after net salary");
     var cashList = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson, contractPerson with { Name = "صفر تجريبي", Net = 0m }] }, "أيلول 2026");
     Check(cashList.Total == 500 && cashList.Rows.Count == 1 && cashList.Rows[0].Name == contractPerson.Name, "cash list excludes zero and matches net total");
     try { _ = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson with { Workplace = "" }] }, "أيلول 2026"); throw new InvalidOperationException("incomplete cash person accepted"); }
@@ -1028,6 +1031,36 @@ try
         }
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
+    // الأمانات: رصيد، صرف جزئي، ملاحظات القيد والدفعة، ومنع تكرار الاسم/الشهر أو تجاوز المبلغ.
+    var trustEntry = new SalaryTrustEntry(Guid.NewGuid().ToString(), "منتسب وهمي", "رتبة وهمية", "قسم وهمي", 2026, 10, 1000,
+        "حالة تجريبية", "ملاحظة قيد وهمية", "", false, false,
+        [new SalaryTrustPayment(Guid.NewGuid().ToString(), 300, "كتاب وهمي", "2026-11-02", "ملاحظة صرف وهمية")]);
+    var reviewEntry = new SalaryTrustEntry(Guid.NewGuid().ToString(), "منتسب ثان وهمي", "رتبة", "قسم", 2026, 9, 500,
+        "حالة", "", "قطع علاقة تقاعد", false, true, []);
+    var trustLedger = new SalaryTrustLedger(1, [trustEntry, reviewEntry], true);
+    var trustDecoded = SalaryTrust.Decode(SalaryTrust.Encode(trustLedger));
+    Check(trustDecoded.Entries.Count == 2 && SalaryTrust.Remaining(trustDecoded.Entries[0]) == 700 &&
+          trustDecoded.Entries[0].CaseStatus == "حالة تجريبية" && trustDecoded.Entries[0].Note == "ملاحظة قيد وهمية" &&
+          trustDecoded.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية" && trustDecoded.Entries[1].ReviewPending, "trust ledger round trip and partial payment");
+    try { SalaryTrust.Validate(trustLedger with { Entries = [trustEntry, trustEntry with { Id = Guid.NewGuid().ToString() }] }); throw new InvalidOperationException("duplicate trust entry accepted"); }
+    catch (InvalidDataException) { }
+    try { SalaryTrust.Validate(trustLedger with { Entries = [trustEntry with { Payments = [new SalaryTrustPayment(Guid.NewGuid().ToString(), 1001, "كتاب", "2026-11-02", "")] }] }); throw new InvalidOperationException("overpayment accepted"); }
+    catch (InvalidDataException) { }
+    try { SalaryTrust.Validate(trustLedger with { Entries = [trustEntry with { Payments = [new SalaryTrustPayment(Guid.NewGuid().ToString(), 10, "كتاب", "2026-02-30", "")] }] }); throw new InvalidOperationException("invalid book date accepted"); }
+    catch (InvalidDataException) { }
+    var trustXlsx = Path.Combine(root, "trust-fictional.xlsx");
+    MakeMonthlyXlsx(trustXlsx, ["ت", "الرتبة", "الاسم الكامل", "صافي الراتب", "ملاحظات4", "الفوج او المديرية", "الشهر", "السنة", "الحالة", "الملاحظات"],
+        [["1", "رتبة", "منتسب أول وهمي", "1000", "حالة من الملف", "قسم", "أيلول", "2026", "", "ملاحظة قيد"],
+         ["2", "رتبة", "منتسب ثان وهمي", "2000", "حالة أخرى", "قسم", "آب", "2026", "صرف", ""],
+         ["3", "رتبة", "منتسب ثالث وهمي", "3000", "", "قسم", "تموز", "2026", "قطع علاقة تقاعد", ""]]);
+    var openingTrust = SalaryTrustSpreadsheet.Read(trustXlsx);
+    Check(openingTrust.Entries.Count == 3 && openingTrust.Entries[0].CaseStatus == "حالة من الملف" && openingTrust.Entries[0].Note == "ملاحظة قيد" &&
+        openingTrust.Entries[1].LegacyPaid && openingTrust.Entries[2].ReviewPending, "opening trust spreadsheet and source status");
+    var trustBackup = Path.Combine(root, "trust-fictional.zip");
+    ReconciliationBackupExport.Write(snapshot, [], trustBackup, trustLedger);
+    var trustRead = SalaryTrust.ReadFromBackup(BackupReader.Read(trustBackup));
+    Check(trustRead.Entries.Count == 2 && trustRead.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية", "trust ledger survives shared backup");
+    Console.WriteLine("Salary trust ledger checked with fictional data.");
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");
 }
 finally { Directory.Delete(root, true); }

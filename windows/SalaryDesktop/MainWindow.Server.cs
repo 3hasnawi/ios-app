@@ -212,10 +212,11 @@ public partial class MainWindow
                 if (linkStore.Load(original).Revision != links.Revision) throw new InvalidDataException("تغيّرت روابط الحسابات أثناء النسخ؛ أعد المحاولة.");
                 if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر أثناء النسخ؛ أعد المحاولة.");
                 var ledger = reconciliationStore.Load(source);
-                ReconciliationBackupExport.Write(source, ledger.Periods, temporary);
+                var trust = trustStore.Load(source);
+                ReconciliationBackupExport.Write(source, ledger.Periods, temporary, trust.Ledger);
                 var written = BackupReader.Read(temporary);
                 if (source.Months.Any(m => !written.Months.Any(w => w.Name == m.Name))) throw new InvalidDataException("تعذّر التحقق من النسخة بعد تجهيزها.");
-                return (Ledger: ledger.Revision, Size: new FileInfo(temporary).Length);
+                return (Ledger: ledger.Revision, Trust: trust.Revision, Size: new FileInfo(temporary).Length);
             });
             // فحص ثانٍ بعد تجهيز الملف (مثل الآيفون): التأكيد اليدوي لا يشمل نسخة رُفعت أثناء التجهيز.
             var beforeUpload = await BackupServer.Status(ServerHttp, url, token);
@@ -227,8 +228,8 @@ public partial class MainWindow
             }
             var size = await BackupServer.Upload(ServerHttp, url, token, temporary);
             if (size != prepared.Size) throw new InvalidDataException("حجم النسخة على السيرفر لا يطابق الملف المرفوع؛ أعد المحاولة.");
-            var changed = await Task.Run(() => linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != prepared.Ledger);
-            if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, prepared.Ledger);
+            var changed = await Task.Run(() => linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != prepared.Ledger || trustStore.Load(source).Revision != prepared.Trust);
+            if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, LedgerRevisions(prepared.Ledger, prepared.Trust));
             var saved = UiPreferences.Current;
             saved.BackupLast = DateTime.Now; saved.BackupError = null; saved.ServerPending = false; saved.BackupPlace = BackupServer.Place; ClearServerNewer();
             try { saved.ServerSeen = (await BackupServer.Status(ServerHttp, url, token)).Latest ?? DateTimeOffset.UtcNow; }
