@@ -1031,6 +1031,8 @@ try
         }
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
+    // نسخة مصدر جديدة: ملف valid.zip عُدّل عمداً في اختبار سابق.
+    var trustSourcePath = Path.Combine(root, "trust-source.zip"); MakeBackup(trustSourcePath); var trustSnapshot = BackupReader.Read(trustSourcePath);
     // الأمانات: رصيد، صرف جزئي، ملاحظات القيد والدفعة، ومنع تكرار الاسم/الشهر أو تجاوز المبلغ.
     var trustEntry = new SalaryTrustEntry(Guid.NewGuid().ToString(), "منتسب وهمي", "رتبة وهمية", "قسم وهمي", 2026, 10, 1000,
         "حالة تجريبية", "ملاحظة قيد وهمية", "", false, false,
@@ -1059,10 +1061,10 @@ try
     var openingTrust = SalaryTrustSpreadsheet.Read(trustXlsx);
     Check(openingTrust.Entries.Count == 3 && openingTrust.Entries[0].CaseStatus == "حالة من الملف" && openingTrust.Entries[0].Note == "ملاحظة قيد" &&
         openingTrust.Entries[1].LegacyPaid && openingTrust.Entries[2].ReviewPending, "opening trust spreadsheet and source status");
-    var fictionalBook = snapshot.Books.Single();
+    var fictionalBook = trustSnapshot.Books.Single();
     var idsToLink = new HashSet<string>([trustEntry.Id, reviewEntry.Id], StringComparer.Ordinal);
     var linkedTrust = SalaryTrust.Link(trustLedger, fictionalBook.Id, idsToLink);
-    SalaryTrust.ValidateBooks(linkedTrust, snapshot.Books);
+    SalaryTrust.ValidateBooks(linkedTrust, trustSnapshot.Books);
     Check(linkedTrust.Entries.All(e => e.BookIds?.Count == 1) && SalaryTrust.Remaining(linkedTrust.Entries[0]) == SalaryTrust.Remaining(trustEntry), "group linking does not create a payment");
     var linkedAgain = SalaryTrust.Link(linkedTrust, fictionalBook.Id, idsToLink);
     Check(linkedAgain.Entries.All(e => e.BookIds?.Count == 1), "relinking the same book does not duplicate it");
@@ -1071,7 +1073,7 @@ try
     try { SalaryTrust.ValidateBooks(linkedTrust, []); throw new InvalidOperationException("missing linked book accepted"); }
     catch (InvalidDataException) { }
     var trustBackup = Path.Combine(root, "trust-fictional.zip");
-    ReconciliationBackupExport.Write(snapshot, [], trustBackup, linkedTrust);
+    ReconciliationBackupExport.Write(trustSnapshot, [], trustBackup, linkedTrust);
     var trustRead = SalaryTrust.ReadFromBackup(BackupReader.Read(trustBackup));
     Check(trustRead.Entries.Count == 2 && trustRead.Entries[0].Payments[0].Note == "ملاحظة صرف وهمية" &&
           Guid.Parse(trustRead.Entries[0].BookIds!.Single()) == fictionalBook.Id, "trust ledger and archived document link survive shared backup");
@@ -1093,7 +1095,7 @@ try
     var iphoneLedger = SalaryTrust.Decode(Encoding.UTF8.GetBytes("{\"entries\":[{\"amount\":900,\"caseStatus\":\"\",\"id\":\"" + iphoneId + "\",\"importedStatus\":\"\",\"legacyPaid\":false,\"month\":10,\"name\":\"منتسب آيفون وهمي\",\"note\":\"\",\"payments\":[{\"amount\":400,\"bookDate\":\"\",\"bookNumber\":\"\",\"id\":\"" + iphonePayment + "\",\"note\":\"\"}],\"rank\":\"\",\"reviewPending\":false,\"workplace\":\"\",\"year\":2026}],\"openingImported\":true,\"version\":1}"));
     Check(iphoneLedger.Entries.Single().Payments.Single().BookNumber == "" && SalaryTrust.Remaining(iphoneLedger.Entries.Single()) == 500 && iphoneLedger.Entries.Single().BookIds is null, "iPhone ledger with empty book number and date opens on Windows");
     var iphoneBackup = Path.Combine(root, "trust-iphone-format.zip");
-    ReconciliationBackupExport.Write(snapshot, [], iphoneBackup, iphoneLedger);
+    ReconciliationBackupExport.Write(trustSnapshot, [], iphoneBackup, iphoneLedger);
     Check(SalaryTrust.ReadFromBackup(BackupReader.Read(iphoneBackup)).Entries.Single().Payments.Single().BookDate == "", "empty book fields survive the shared backup");
     // المرشحات والمتبقي المؤكد والكشف (مطابق للآيفون).
     var paidEntry = trustEntry with { Id = Guid.NewGuid().ToString(), Name = "منتسب مصروف وهمي", Payments = [Pay(1000, "", "")] };
@@ -1138,7 +1140,7 @@ try
     catch (InvalidDataException) { }
     // دفتر الجهاز وكاش الأشهر بعد الافتتاح: إضافة مرة واحدة، ورفض تغيّر الحالة أو حفظ قديم.
     var cashMonth = "تشرين الأول 2026";
-    var cashSource = snapshot with { Months = snapshot.Months.Append(new PayrollMonth(cashMonth, 1, 0)).ToArray(), Employees = [contractPerson with { Month = cashMonth, RawColumns = statusColumns }] };
+    var cashSource = trustSnapshot with { Months = trustSnapshot.Months.Append(new PayrollMonth(cashMonth, 1, 0)).ToArray(), Employees = [contractPerson with { Month = cashMonth, RawColumns = statusColumns }] };
     var localTrust = new LocalSalaryTrustStore(Path.Combine(root, "salary-trust"));
     var emptyTrust = localTrust.Load(cashSource);
     var savedTrust = localTrust.Save(cashSource, emptyTrust, openingTrust);
