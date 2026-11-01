@@ -99,11 +99,11 @@ nonisolated enum BankReconciliationPDF {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
             let bold = ReportFont.bold(9)
-            let signatureFont = ReportFont.bold(14)
-            let headingFont = ReportFont.bold(14)
-            let organizationFont = ReportFont.bold(12)
+            let signatureFont = ReportFont.bold(12)
+            let headingFont = ReportFont.bold(12)
+            let organizationFont = ReportFont.bold(10)
             let metadataFont = ReportFont.regular(10)
-            let periodFont = ReportFont.bold(10)
+            let periodFont = ReportFont.bold(8)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
             guard let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
@@ -115,8 +115,8 @@ nonisolated enum BankReconciliationPDF {
             let accountName = try value(account.name)
             let metadata = [("اسم الحساب", accountName, 11), ("الفرع", try value(account.branch), 7),
                             ("الحساب", try value(account.localAccount), 8), ("العملة", "IQD", 9), ("IBAN", try value(account.iban), 10)]
-            guard lines(heading, font: headingFont, width: 531) == 1,
-                  organization.allSatisfy({ lines($0, font: organizationFont, width: 235) == 1 }),
+            guard lines(heading, font: headingFont, width: 223) == 1,
+                  organization.allSatisfy({ lines($0, font: organizationFont, width: 150) == 1 }),
                   metadata.allSatisfy({ lines($0.0 + ":", font: metadataFont, width: 80) == 1 }) else { throw Failure.tooLong }
             var metadataHeights: [CGFloat] = []
             for item in metadata {
@@ -124,12 +124,14 @@ nonisolated enum BankReconciliationPDF {
                 guard count != Int.max, count <= 2 else { throw Failure.tooLong }
                 metadataHeights.append(max(19, ceil(CGFloat(count) * metadataFont.lineHeight + 4)))
             }
-            let headerTop: CGFloat = 25
-            let headingTop = max(128, headerTop + max(95, metadataHeights.reduce(0, +)) + 8)
-            let periodTop = headingTop + 32
+            let organizationTop: CGFloat = 25
+            let headingTop: CGFloat = 25
+            let periodTop: CGFloat = 46
+            let metadataTop: CGFloat = 68
             let periodText = "الــفــتــرة مــن \(date(period.start)) إلــى \(date(period.end))"
-            guard lines(periodText, font: periodFont, width: 531) == 1 else { throw Failure.tooLong }
-            let tableTop = periodTop + 38
+            guard lines(periodText, font: periodFont, width: 223) == 1 else { throw Failure.tooLong }
+            let contentBottom = max(metadataTop + metadataHeights.reduce(0, +), organizationTop + 75, periodTop + 16)
+            let tableTop = contentBottom + 18
             let rowTop = tableTop + 24
             guard rowTop + totalHeight < tableBottom else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
@@ -199,7 +201,7 @@ nonisolated enum BankReconciliationPDF {
                     drawImage(watermark, in: CGRect(x: 120, y: 280, width: 355, height: 355), alpha: 0.06, context: cg)
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
-                    var metadataY = headerTop
+                    var metadataY = metadataTop
                     for (index, item) in metadata.enumerated() {
                         let height = metadataHeights[index]
                         let valueRect = CGRect(x: 32, y: metadataY, width: 188, height: height)
@@ -209,11 +211,11 @@ nonisolated enum BankReconciliationPDF {
                         metadataY += height
                     }
                     for (index, value) in organization.enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 327, y: headerTop + CGFloat(index) * 19, width: 235, height: 19), font: organizationFont, align: .center)
+                        PDFText.draw(value, in: CGRect(x: 412, y: organizationTop + CGFloat(index) * 15, width: 150, height: 15), font: organizationFont, align: .center)
                     }
-                    PDFText.draw(heading, in: CGRect(x: margin, y: headingTop, width: 531, height: 28), font: headingFont)
-                    PDFText.draw(periodText, in: CGRect(x: margin, y: periodTop, width: 531, height: 20), font: periodFont)
-                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: periodTop + 20, width: 531, height: 14), font: bold, color: .darkGray) }
+                    PDFText.draw(heading, in: CGRect(x: 167.5, y: headingTop, width: 260, height: 20), font: headingFont)
+                    PDFText.draw(periodText, in: CGRect(x: 167.5, y: periodTop, width: 260, height: 16), font: periodFont)
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: contentBottom + 2, width: 531, height: 14), font: bold, color: .darkGray) }
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
