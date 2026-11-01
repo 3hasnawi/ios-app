@@ -437,5 +437,19 @@
         </Setter.Value>
       </Setter>
     </Style>
+    <!-- القوائم المنبثقة: من اليمين لليسار بخط الواجهة وحافة هادئة. -->
+    <Style TargetType="ContextMenu">
+      <Setter Property="FlowDirection" Value="RightToLeft"/>
+      <Setter Property="FontFamily" Value="Segoe UI"/>
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#D3DCDD"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="3"/>
+    </Style>
+    <Style TargetType="MenuItem">
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    </Style>
   </Application.Resources>
 </Application>

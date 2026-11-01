@@ -5,7 +5,7 @@ using SalaryDesktop.Core;
 namespace SalaryDesktop;
 public partial class SalaryItemsWindow : Window
 {
-    private readonly BackupSnapshot source; private readonly string month; private int request; private bool closed;
+    private readonly BackupSnapshot source; private readonly string month; private int request; private bool closed; private SalaryItemGroup? selected;
     public SalaryItemsWindow(BackupSnapshot source, string month, IReadOnlyList<SalaryItemGroup> groups)
     {
         InitializeComponent(); this.source = source; this.month = month; Heading.Text = "بنود الرواتب · " + month; Groups.ItemsSource = groups;
@@ -15,13 +15,43 @@ public partial class SalaryItemsWindow : Window
     {
         if (Groups.SelectedItem is not SalaryItemGroup group || Rows is null) return;
         var ticket = ++request; Rows.ItemsSource = null; Status.Text = "جارٍ مراجعة تفاصيل البند…";
+        selected = null; ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = false; SpecialPanel.Visibility = Visibility.Collapsed;
         try
         {
             var rows = await Task.Run(() => SalaryItemReports.Rows(source, month, group));
             if (closed || request != ticket) return;
             Rows.ItemsSource = rows; Status.Text = $"{rows.Count:N0} سجل · المجموع يطابق ملخص البند.";
+            selected = group; ListExcel.IsEnabled = ListPdf.IsEnabled = ListPrint.IsEnabled = true;
+            var special = Special(group.Title);
+            SpecialPanel.Visibility = special is null ? Visibility.Collapsed : Visibility.Visible;
+            SpecialTitle.Text = special switch { "fund" => "كشف صندوق الشهداء حسب الفئة:", "food" => "كشف عقد الإطعام:", "health" => "اشتراكات الرعاية الصحية:", _ => "" };
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { if (!closed && request == ticket) Status.Text = "تعذّر عرض البند: " + ex.Message; }
     }
+
+    /// الكشوف الخاصة بأشكالها المعتمدة حسب اسم البند (مثل الآيفون).
+    private static string? Special(string title) => FundReport.Applies(title) ? "fund" : FoodContractReport.Applies(title) ? "food" : HealthCareReport.Applies(title) ? "health" : null;
+    private string ListName => selected is null ? "" : $"قائمة {selected.Title} - {month}";
+    private async void ExportListExcel(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.SaveExcel(this, ListName, () => XlsxReport.Generate(StandardReports.ItemList(source, month, g.Title))); }
+    private async void ExportListPdf(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.SavePdf(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
+    private async void PrintList(object sender, RoutedEventArgs e) { if (selected is { } g) await Exports.Print(this, ListName, assets => ReportPdf.Generate([StandardReports.ItemList(source, month, g.Title)], assets, DateTime.Now)); }
+    private (string Name, Func<byte[]> Excel, Func<ReportAssets, byte[]> Pdf)? SpecialFiles()
+    {
+        if (selected is not { } group) return null;
+        var title = group.Title;
+        return Special(title) switch
+        {
+            "fund" => (FundReport.FileName(month), () => FundReport.Excel(FundReport.Summary(source, month, title), FundReport.Title(source, month)),
+                assets => FundReport.Pdf(FundReport.Summary(source, month, title), FundReport.Title(source, month), assets, DateTime.Now)),
+            "food" => (FoodContractReport.FileName(month), () => FoodContractReport.Excel(FoodContractReport.Rows(source, month, title), FoodContractReport.Title(source, month)),
+                assets => FoodContractReport.Pdf(FoodContractReport.Rows(source, month, title), FoodContractReport.Title(source, month), assets, DateTime.Now)),
+            "health" => (HealthCareReport.FileName(month), () => HealthCareReport.Excel(HealthCareReport.Build(source, month, title), HealthCareReport.Title(source, month, false), HealthCareReport.Title(source, month, true)),
+                assets => HealthCareReport.Pdf(HealthCareReport.Build(source, month, title), HealthCareReport.Title(source, month, false), HealthCareReport.Title(source, month, true), assets, DateTime.Now)),
+            _ => null
+        };
+    }
+    private async void ExportSpecialExcel(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.SaveExcel(this, f.Name, f.Excel); }
+    private async void ExportSpecialPdf(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.SavePdf(this, f.Name, f.Pdf); }
+    private async void PrintSpecial(object sender, RoutedEventArgs e) { if (SpecialFiles() is { } f) await Exports.Print(this, f.Name, f.Pdf); }
 }

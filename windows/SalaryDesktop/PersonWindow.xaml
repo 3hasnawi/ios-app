@@ -1,0 +1,136 @@
+<Window x:Class="SalaryDesktop.PersonWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ملف المنتسب" Width="1180" Height="780" MinWidth="900" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="Segoe UI" FontSize="13.5"
+        Background="{StaticResource Page}" Foreground="{StaticResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+    <DataTemplate x:Key="LineTemplate">
+      <Border BorderBrush="#EDF1F2" BorderThickness="0,0,0,1" Padding="0,7">
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock Text="{Binding Title}" Foreground="#3A524F" TextWrapping="Wrap"/><TextBlock Text="{Binding Note}" Foreground="{StaticResource Muted}" FontSize="11.5" TextWrapping="Wrap"/></StackPanel>
+          <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Top"/>
+        </Grid>
+      </Border>
+    </DataTemplate>
+  </Window.Resources>
+  <Grid Margin="24,20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Border Width="54" Height="54" CornerRadius="14" Background="{StaticResource PrimarySoft}">
+        <TextBlock x:Name="Initial" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      </Border>
+      <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+        <TextBlock x:Name="NameText" FontSize="21" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+        <TextBlock x:Name="IdentityText" Foreground="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+      <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+        <Border Background="White" BorderBrush="#CFD9DA" BorderThickness="1" CornerRadius="9" Margin="0,0,8,0">
+          <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource Icon}" Text="&#xE787;" Foreground="{StaticResource Primary}" Margin="12,0,2,0"/>
+            <ComboBox x:Name="MonthPicker" Grid.Column="1" Width="170" Height="36" BorderThickness="0" Background="Transparent" SelectionChanged="MonthChanged" ToolTip="شهر القسيمة"/>
+          </Grid>
+        </Border>
+        <Button Click="CopySummary" ToolTip="نسخ ملخص القسيمة" Margin="0,0,8,0">
+          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="نسخ"/></StackPanel>
+        </Button>
+        <Button x:Name="PdfButton" Style="{StaticResource ActionButton}" Click="ExportPayslip" ToolTip="قسيمة الشهر المعروض بصيغة PDF">
+          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="القسيمة PDF"/></StackPanel>
+        </Button>
+      </StackPanel>
+    </Grid>
+    <TextBlock x:Name="Notice" Grid.Row="1" Foreground="{StaticResource Warn}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+    <TabControl Grid.Row="2" Margin="0,12,0,0" Background="Transparent" BorderThickness="0,1,0,0">
+      <TabItem Header="القسيمة">
+        <Grid Margin="0,14,0,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="300"/></Grid.ColumnDefinitions>
+          <Border Style="{StaticResource Card}" Margin="0,0,12,0">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="المخصصات" Margin="0,0,0,6"/>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="الاستحقاق" FontWeight="SemiBold" Foreground="{StaticResource Primary}"/><TextBlock x:Name="GrossText" HorizontalAlignment="Right" FontWeight="Bold" Foreground="{StaticResource Primary}"/></Grid></Border>
+              <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="AllowanceList" ItemTemplate="{StaticResource LineTemplate}"/></ScrollViewer>
+            </DockPanel>
+          </Border>
+          <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,12,0">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="الاستقطاعات" Margin="0,0,0,6"/>
+              <Border DockPanel.Dock="Bottom" Padding="0,8,0,0"><Grid><TextBlock Text="مجموع الاستقطاعات" FontWeight="SemiBold" Foreground="#B4362A"/><TextBlock x:Name="DeductionTotalText" HorizontalAlignment="Right" FontWeight="Bold" Foreground="#B4362A"/></Grid></Border>
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                  <ItemsControl x:Name="DeductionList" ItemTemplate="{StaticResource LineTemplate}"/>
+                  <TextBlock x:Name="EntityHeader" Text="استقطاعات جهات التنفيذ (ملف الاستقطاعات)" Style="{StaticResource SectionLabel}" Margin="0,14,0,2"/>
+                  <ItemsControl x:Name="EntityList" ItemTemplate="{StaticResource LineTemplate}"/>
+                </StackPanel>
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+          <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <Border CornerRadius="14" Padding="18" Margin="0,0,0,12">
+                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush></Border.Background>
+                <StackPanel>
+                  <TextBlock x:Name="NetLabel" Text="صافي الراتب" Foreground="#CDE6DF"/>
+                  <TextBlock x:Name="NetText" Text="—" FontSize="30" FontWeight="Bold" Foreground="White" Margin="0,4,0,6"/>
+                  <Border x:Name="DeltaChip" Background="#26FFFFFF" CornerRadius="10" Padding="9,3" HorizontalAlignment="Left"><TextBlock x:Name="DeltaText" Foreground="White" FontSize="12"/></Border>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource CardTitle}" Text="الصافي عبر الأشهر"/>
+                  <Canvas x:Name="Trend" Height="90" Margin="0,10,0,4" ClipToBounds="True" FlowDirection="LeftToRight"/>
+                  <Grid><TextBlock x:Name="TrendNew" Foreground="{StaticResource Muted}" FontSize="11.5"/><TextBlock x:Name="TrendOld" Foreground="{StaticResource Muted}" FontSize="11.5" HorizontalAlignment="Right"/></Grid>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource Card}">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource CardTitle}" Text="بيانات الراتب"/>
+                  <ItemsControl x:Name="InfoList" ItemTemplate="{StaticResource LineTemplate}" Margin="0,4,0,0"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="الاستقطاعات عبر الأشهر">
+        <DockPanel Margin="0,14,0,0">
+          <TextBlock x:Name="HistoryStatus" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="2,8,0,0"/>
+          <DataGrid x:Name="HistoryTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="*"/>
+              <DataGridTextColumn Header="جهة التنفيذ" Binding="{Binding Title}" Width="2*"/>
+              <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:#,0.##}, TargetNullValue=غير محتسب}" Width="*"/>
+              <DataGridTextColumn Header="الملاحظة" Binding="{Binding Note}" Width="2*"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+      <TabItem Header="سجل الملاك">
+        <DockPanel Margin="0,14,0,0">
+          <TextBlock x:Name="StaffStatus" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
+          <DataGrid x:Name="StaffTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="القسم" Binding="{Binding Section}" Width="*"/>
+              <DataGridTextColumn Header="الحقل" Binding="{Binding Label}" Width="1.4*"/>
+              <DataGridTextColumn Header="القيمة" Binding="{Binding Value}" Width="2*"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+      <TabItem Header="التغيّرات مع الشهر السابق">
+        <DockPanel Margin="0,14,0,0">
+          <TextBlock x:Name="ChangesStatus" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
+          <DataGrid x:Name="ChangesTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="البند" Binding="{Binding Title}" Width="2*"/>
+              <DataGridTextColumn Header="الشهر السابق" Binding="{Binding Before}" Width="*"/>
+              <DataGridTextColumn Header="الشهر المعروض" Binding="{Binding After}" Width="*"/>
+              <DataGridTextColumn Header="الفرق" Binding="{Binding Difference}" Width="*"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+    <DockPanel Grid.Row="3" Margin="0,12,0,0">
+      <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,7"/>
+      <TextBlock Text="عرض محلي للقراءة؛ قارن مع الآيفون قبل الاعتماد." Foreground="{StaticResource Muted}" VerticalAlignment="Center"/>
+    </DockPanel>
+  </Grid>
+</Window>

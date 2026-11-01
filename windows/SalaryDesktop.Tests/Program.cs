@@ -880,35 +880,35 @@ try
         // الكشوف المعتمدة وملف المنتسب ببيانات وهمية.
         string[] reportRanks = ["ملازم", "موظف د3", "شرطي", "عقود", "نقيب"];
         var reportEmployees = new List<Employee>();
-        foreach (var month in new[] { "أيلول 2026", "آب 2026" })
+        foreach (var reportMonth in new[] { "أيلول 2026", "آب 2026" })
             for (int i = 0; i < 30; i++)
             {
                 var items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["صندوق الشهداء"] = i % 5 == 3 ? 2000 : 4000, ["الرعاية الصحية"] = i == 7 ? 5000 : 3500 * (1 + i % 3), ["شركة عراق الجوال"] = i % 2 == 0 ? 25000 : 50000 });
-                var details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["الاسمي"] = "500000", ["الاستحقاق"] = month == "آب 2026" ? "790000" : "800000", ["مجموع الاستقطاعات"] = "100000", ["IBAN"] = "IQ00TEST000000000000000", ["طريقة الدفع"] = "بطاقة" });
-                reportEmployees.Add(new Employee(month, $"منتسب وهمي {i}", reportRanks[i % 5], "قسم وهمي", (month == "آب 2026" ? 690000m : 700000m) + i, items, details, null));
+                var details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["الاسمي"] = "500000", ["الاستحقاق"] = reportMonth == "آب 2026" ? "790000" : "800000", ["مجموع الاستقطاعات"] = "100000", ["IBAN"] = "IQ00TEST000000000000000", ["طريقة الدفع"] = "بطاقة" });
+                reportEmployees.Add(new Employee(reportMonth, $"منتسب وهمي {i}", reportRanks[i % 5], "قسم وهمي", (reportMonth == "آب 2026" ? 690000m : 700000m) + i, items, details, null));
             }
         var reportDeductions = Enumerable.Range(0, 12).Select(i => new Deduction("أيلول 2026", $"منتسب وهمي {i}", i % 2 == 0 ? "جهة وهمية أولى" : "جهة وهمية ثانية", 10000m + i * 500, $"اضبارة {i}", "")).ToList();
         reportDeductions.Add(new Deduction("أيلول 2026", "منتسب وهمي 20", "جهة وهمية أولى", null, "⟦حالة الاستقطاع:موقوف⟧", ""));
         var reportSnapshot = new BackupSnapshot(Path.Combine(root, "fictional-report.zip"), new string('A', 64), 5,
             [new PayrollMonth("أيلول 2026", 30, reportDeductions.Count), new PayrollMonth("آب 2026", 30, 0)], reportEmployees, reportDeductions, 0, [], [], new Dictionary<string, byte[]>());
-        var entity = StandardReports.EntityDeductions(reportSnapshot, "أيلول 2026", "جهة وهمية أولى");
-        Check(entity.Rows.Count == 6 && entity.Total == reportDeductions.Where(d => d.Title == "جهة وهمية أولى" && d.Amount is not null).Sum(d => d.Amount!.Value) && entity.Rows[0][1] == "ملازم" && entity.Title.Contains("٢٠٢٦", StringComparison.Ordinal), "entity list excludes inactive entries and takes payroll rank");
-        var entityXlsx = Path.Combine(root, "entity.xlsx"); ReportFiles.Save(XlsxReport.Generate(entity), entityXlsx, ".xlsx");
+        var entityReport = StandardReports.EntityDeductions(reportSnapshot, "أيلول 2026", "جهة وهمية أولى");
+        Check(entityReport.Rows.Count == 6 && entityReport.Total == reportDeductions.Where(d => d.Title == "جهة وهمية أولى" && d.Amount is not null).Sum(d => d.Amount!.Value) && entityReport.Rows[0][1] == "ملازم" && entityReport.Title.Contains("٢٠٢٦", StringComparison.Ordinal), "entityReport list excludes inactive entries and takes payroll rank");
+        var entityXlsx = Path.Combine(root, "entity.xlsx"); ReportFiles.Save(XlsxReport.Generate(entityReport), entityXlsx, ".xlsx");
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
         using (var stream = File.OpenRead(entityXlsx)) using (var reader = ExcelDataReader.ExcelReaderFactory.CreateOpenXmlReader(stream))
         {
             reader.Read(); Check(Convert.ToString(reader.GetValue(0)) == ReportSheet.DefaultHeader, "Excel header");
-            reader.Read(); Check(Convert.ToString(reader.GetValue(0)) == entity.Title, "Excel title");
+            reader.Read(); Check(Convert.ToString(reader.GetValue(0)) == entityReport.Title, "Excel title");
             reader.Read(); Check(Convert.ToString(reader.GetValue(2)) == "الاسم الكامل", "Excel columns");
             reader.Read(); Check(Convert.ToDouble(reader.GetValue(0)) == 1 && Convert.ToString(reader.GetValue(2)) == "منتسب وهمي 0" && Convert.ToDecimal(reader.GetValue(3)) == 10000m, "Excel first row");
         }
         var reportAssets = ReportAssets.Load(Path.GetFullPath("SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png"));
         var stamp = new DateTime(2026, 11, 1, 10, 30, 0);
-        var entityPdf = ReportPdf.Generate([entity], reportAssets, stamp);
+        var entityPdf = ReportPdf.Generate([entityReport], reportAssets, stamp);
         using (var read = UglyToad.PdfPig.PdfDocument.Open(entityPdf)) Check(read.NumberOfPages == 1, "entity PDF pages");
         var longSheet = new ReportSheet(ReportSheet.DefaultHeader, "كشف وهمي طويل", [new("ت", 5, ReportColumnKind.Serial), new("الاسم الكامل", 34, ReportColumnKind.Text), new("المبلغ", 14, ReportColumnKind.Amount)],
             Enumerable.Range(0, 120).Select(i => new[] { "", $"منتسب وهمي طويل الاسم جداً لاختبار الاختصار رقم {i}", "" }).ToArray(), Enumerable.Range(0, 120).Select(i => 1000m * i).ToArray()).Fitted();
-        using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([longSheet, entity], reportAssets, stamp))) Check(read.NumberOfPages >= 4, "multi-page PDF with several sheets");
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([longSheet, entityReport], reportAssets, stamp))) Check(read.NumberOfPages >= 4, "multi-page PDF with several sheets");
         var fund = FundReport.Summary(reportSnapshot, "أيلول 2026", "صندوق الشهداء");
         Check(fund[0].Count == 12 && fund[1].Count == 6 && fund[2].Count == 6 && fund[3].Count == 6 && fund[3].Total == 12000m, "fund categories by rank");
         Check(FundReport.Excel(fund, FundReport.Title(reportSnapshot, "أيلول 2026")).Length > 500 && FundReport.Pdf(fund, FundReport.Title(reportSnapshot, "أيلول 2026"), reportAssets, stamp).Length > 500, "fund files");
@@ -926,6 +926,24 @@ try
         var changes = PersonProfiles.Changes(person, "أيلول 2026");
         Check(changes.Any(c => c.Title == "صافي الراتب" && c.Difference == "+10,000") && changes.Any(c => c.Title.StartsWith("استقطاع جديد", StringComparison.Ordinal)), "month changes");
         Check(PersonProfiles.SearchIndex(reportSnapshot, null).Count == 30, "search index keeps one entry per person");
+        var payslipPdf = PayslipPdf.Generate(ReportSheet.DefaultHeader, person.Name, "ملازم", "قسم وهمي", "أيلول 2026", slip, reportAssets, stamp);
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(payslipPdf)) Check(read.NumberOfPages == 1, "payslip PDF pages");
+        var payrollRows = PayrollRows.Build(reportEmployees.Where(e => e.Month == "أيلول 2026"));
+        Check(payrollRows.Length == 30 && payrollRows[0].Payment == "بطاقة" && payrollRows[0].Gross == 800000m && payrollRows[0].TotalDeductions == 100000m && payrollRows[0].Iban.StartsWith("IQ00", StringComparison.Ordinal), "payroll rows read detail fields");
+        var brokenRow = PayrollRows.Row(reportEmployees[0] with { Details = Encoding.UTF8.GetBytes("{broken") });
+        Check(brokenRow.Payment.Length == 0 && brokenRow.Net == reportEmployees[0].Net, "broken details keep the payroll row");
+        var shownTable = TableReport.Build(ReportSheet.DefaultHeader, "جدول وهمي", ["الاسم", "المبلغ", "الملاحظة"], 1, [["أ", "", "x"], ["ب", "", ""], ["ج", "", "موقوف"]], [1000m, 2500.5m, null]);
+        Check(shownTable.Columns.Count == 4 && shownTable.Total == 3500.5m && shownTable.Rows[2][2] == "—" && shownTable.Rows[1][0] == "2", "displayed table report");
+        var shownXlsx = Path.Combine(root, "shown.xlsx"); ReportFiles.Save(XlsxReport.Generate(shownTable), shownXlsx, ".xlsx");
+        using (var stream = File.OpenRead(shownXlsx)) using (var reader = ExcelDataReader.ExcelReaderFactory.CreateOpenXmlReader(stream))
+        {
+            reader.Read(); reader.Read(); reader.Read(); reader.Read(); Check(Convert.ToDecimal(reader.GetValue(2)) == 1000m, "table export amount cell");
+            reader.Read(); reader.Read(); Check(Convert.ToString(reader.GetValue(2)) == "—", "missing amount shown as dash");
+            reader.Read(); Check(Convert.ToDecimal(reader.GetValue(2)) == 3500.5m, "table export total excludes missing amount");
+        }
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([shownTable], reportAssets, stamp))) Check(read.NumberOfPages == 1, "table export PDF");
+        try { _ = TableReport.Build(ReportSheet.DefaultHeader, "فارغ", ["الاسم"], -1, [], []); throw new InvalidOperationException("empty table export accepted"); }
+        catch (InvalidDataException) { }
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
     Console.WriteLine("Windows core checks passed with fictional data, including reconciliation validation.");

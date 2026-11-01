@@ -72,19 +72,27 @@
     <Grid Grid.Column="1" Margin="28,20,28,14">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <Grid Grid.Row="0" Margin="0,0,0,14">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
           <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="Bold"/>
           <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
         </StackPanel>
-        <Border Grid.Column="1" Background="White" BorderBrush="#CFD9DA" BorderThickness="1" CornerRadius="9" Margin="0,0,10,0" VerticalAlignment="Center">
+        <Button x:Name="GlobalSearchButton" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="#CFD9DA" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+K)">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#7A8D8A" Margin="0,0,9,0"/>
+            <TextBlock Grid.Column="1" Text="ابحث عن منتسب أو جهة…" Foreground="#8A9B98" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <Border Grid.Column="2" Background="#F1F5F4" BorderBrush="#E1E8E7" BorderThickness="1" CornerRadius="5" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="11.5" Foreground="#5D716E"/></Border>
+          </Grid>
+        </Button>
+        <Border Grid.Column="2" Background="White" BorderBrush="#CFD9DA" BorderThickness="1" CornerRadius="9" Margin="0,0,10,0" VerticalAlignment="Center">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <TextBlock Style="{StaticResource Icon}" Text="&#xE787;" Foreground="{StaticResource Primary}" Margin="12,0,2,0"/>
             <ComboBox x:Name="MonthPicker" Grid.Column="1" Width="190" Height="36" BorderThickness="0" Background="Transparent" SelectionChanged="MonthChanged" VerticalContentAlignment="Center" ToolTip="الشهر المعروض"/>
           </Grid>
         </Border>
-        <Button Grid.Column="2" Click="OpenBackup" ToolTip="فتح نسخة احتياطية من الآيفون (Ctrl+O)" Padding="14,8">
+        <Button Grid.Column="3" Click="OpenBackup" ToolTip="فتح نسخة احتياطية من الآيفون (Ctrl+O)" Padding="14,8">
           <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8E5;" Foreground="{StaticResource Accent}" Margin="0,0,8,0"/><TextBlock Text="فتح نسخة الآيفون"/></StackPanel>
         </Button>
       </Grid>
@@ -133,7 +141,7 @@
                 <DockPanel>
                   <Border DockPanel.Dock="Top" Width="36" Height="36" CornerRadius="9" Background="{StaticResource AccentSoft}" HorizontalAlignment="Left"><TextBlock Style="{StaticResource Icon}" Text="&#xE8F1;" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/></Border>
                   <TextBlock DockPanel.Dock="Top" Style="{StaticResource CardTitle}" Text="التقارير وجهات التنفيذ" Margin="0,12,0,0"/>
-                  <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="مبالغ الاستقطاع لكل جهة وبنود الرواتب" Margin="0,4,0,14"/>
+                  <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}" Text="قوائم الجهات المعتمدة، وكشوف صندوق الشهداء والرعاية الصحية وعقد الإطعام من «بنود الرواتب»" TextWrapping="Wrap" Margin="0,4,0,14"/>
                   <WrapPanel VerticalAlignment="Bottom"><Button Style="{StaticResource ActionButton}" Tag="groups" Click="Navigate" Content="عرض الجهات" Margin="0,0,8,6"/><Button x:Name="SalaryItemsButton" Click="OpenSalaryItems" Content="بنود الرواتب" Margin="0,0,0,6"/></WrapPanel>
                 </DockPanel>
               </Border>
@@ -172,7 +180,7 @@
 
         <!-- جداول البيانات -->
         <Grid x:Name="DataPanel" Visibility="Collapsed">
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Grid>
@@ -180,20 +188,68 @@
               <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="#8A9B98" FontSize="14" HorizontalAlignment="Left" Margin="12,0,0,0" IsHitTestVisible="False"/>
             </Grid>
             <WrapPanel Grid.Column="1">
+              <Button x:Name="ColumnsButton" Click="ShowColumns" Margin="10,0,0,0" ToolTip="إظهار الأعمدة أو إخفاؤها؛ يُحفظ الاختيار لكل جدول">
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE71D;" Foreground="{StaticResource Primary}" Margin="0,0,7,0"/><TextBlock Text="الأعمدة"/></StackPanel>
+                <Button.ContextMenu><ContextMenu x:Name="ColumnsMenu"/></Button.ContextMenu>
+              </Button>
+              <Button x:Name="ExportButton" Click="ShowExportMenu" Margin="10,0,0,0" ToolTip="تصدير الجدول المعروض بالشكل المعتمد أو طباعته">
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" Foreground="{StaticResource Primary}" Margin="0,0,7,0"/><TextBlock Text="تصدير وطباعة"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="10" Foreground="#7A8D8A" Margin="8,0,0,0"/></StackPanel>
+                <Button.ContextMenu>
+                  <ContextMenu x:Name="ExportMenu">
+                    <MenuItem Header="Excel بالشكل المعتمد" Click="ExportTableExcel"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="#1E7145"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="PDF بالشكل المعتمد" Click="ExportTablePdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="#B03A2E"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="طباعة" Click="PrintTable"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
+                    <Separator/>
+                    <MenuItem x:Name="ExportCopyMenu" Header="نسخ الصفوف المحددة للصقها في Excel" InputGestureText="Ctrl+C" Click="CopyRows"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;"/></MenuItem.Icon></MenuItem>
+                    <Separator x:Name="EntityExportSeparator"/>
+                    <MenuItem x:Name="EntityExportMenu" Header="قائمة استقطاعات الجهة المعتمدة">
+                      <MenuItem Header="Excel" Click="ExportEntityExcel"/>
+                      <MenuItem Header="PDF" Click="ExportEntityPdf"/>
+                      <MenuItem Header="طباعة" Click="PrintEntity"/>
+                    </MenuItem>
+                  </ContextMenu>
+                </Button.ContextMenu>
+              </Button>
               <Button x:Name="StaffReloadButton" Content="إعادة قراءة الملاك" Click="ReloadStaff" Margin="10,0,0,0" Visibility="Collapsed"/>
               <Button x:Name="AccountImportButton" Content="استيراد حسابات Excel" Click="ImportAccounts" Style="{StaticResource ActionButton}" Margin="10,0,0,0" Visibility="Collapsed"/>
               <Button x:Name="PayrollImportButton" Content="استيراد الرواتب والاستقطاعات" Click="ImportPayroll" Style="{StaticResource ActionButton}" Margin="10,0,0,0" Visibility="Collapsed"/>
               <Button x:Name="AnnualImportButton" Content="الاستقطاعات السنوية" Click="ImportAnnual" Margin="10,0,0,0" Visibility="Collapsed" ToolTip="استيراد ملف استقطاعات سنوي يُقسّم إلى أشهر"/>
             </WrapPanel>
           </Grid>
-          <TextBlock x:Name="TableStatus" Grid.Row="1" Foreground="{StaticResource Muted}" Margin="2,10,0,10" TextWrapping="Wrap"/>
-          <DataGrid x:Name="DataTable" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableColumnVirtualization="True" SelectionMode="Single" MouseDoubleClick="OpenArchiveBook" PreviewKeyDown="TableKeyDown">
+          <WrapPanel x:Name="FilterBar" Grid.Row="1" Margin="0,10,0,0" Visibility="Collapsed">
+            <Border Background="{StaticResource PrimarySoft}" CornerRadius="8" Width="34" Height="34" Margin="0,0,8,0" ToolTip="تصفية سريعة"><TextBlock Style="{StaticResource Icon}" Text="&#xE71C;" Foreground="{StaticResource Primary}" HorizontalAlignment="Center"/></Border>
+            <StackPanel x:Name="FilterHost" Orientation="Horizontal"/>
+            <Button x:Name="ClearFiltersButton" Style="{StaticResource QuietButton}" Click="ClearFilters" Visibility="Collapsed" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE894;" FontSize="11" Margin="0,0,6,0"/><TextBlock Text="مسح التصفية"/></StackPanel>
+            </Button>
+          </WrapPanel>
+          <TextBlock x:Name="TableStatus" Grid.Row="2" Foreground="{StaticResource Muted}" Margin="2,10,0,10" TextWrapping="Wrap"/>
+          <DataGrid x:Name="DataTable" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableColumnVirtualization="True"
+                    SelectionMode="Extended" SelectionUnit="FullRow" MouseDoubleClick="OpenArchiveBook" PreviewKeyDown="TableKeyDown" SelectionChanged="TableSelectionChanged">
             <DataGrid.ContextMenu>
-              <ContextMenu FlowDirection="RightToLeft">
-                <MenuItem x:Name="OpenRowMenu" Header="فتح التفاصيل" Click="OpenSelectedRow"/>
+              <ContextMenu Opened="RowMenuOpened">
+                <MenuItem x:Name="OpenRowMenu" Header="فتح التفاصيل" Click="OpenSelectedRow" FontWeight="SemiBold"/>
+                <MenuItem x:Name="SecondRowMenu" Header="تفاصيل أخرى" Click="OpenSecondRow"/>
+                <Separator/>
+                <MenuItem x:Name="CopyRowsMenu" Header="نسخ الصفوف المحددة" InputGestureText="Ctrl+C" Click="CopyRows"/>
+                <MenuItem x:Name="RowEntityMenu" Header="قائمة استقطاعات الجهة المعتمدة">
+                  <MenuItem Header="Excel" Click="ExportEntityExcel"/>
+                  <MenuItem Header="PDF" Click="ExportEntityPdf"/>
+                  <MenuItem Header="طباعة" Click="PrintEntity"/>
+                </MenuItem>
               </ContextMenu>
             </DataGrid.ContextMenu>
           </DataGrid>
+          <Border x:Name="TotalsBar" Grid.Row="4" Background="#F7FAF9" BorderBrush="{StaticResource Line}" BorderThickness="1,0,1,1" Padding="14,8">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="Ctrl+A تحديد الكل · Ctrl+C نسخ المحدد" Foreground="#8A9B98" FontSize="12" VerticalAlignment="Center"/>
+              <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE8EF;" Foreground="{StaticResource Primary}" Margin="0,0,8,0"/>
+                <TextBlock x:Name="TotalsShown" FontWeight="SemiBold" VerticalAlignment="Center" Text="—"/>
+              </StackPanel>
+              <TextBlock x:Name="TotalsSelected" Margin="22,0,0,0" Foreground="{StaticResource Accent}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+          </Border>
         </Grid>
 
         <!-- كشف البنك -->
@@ -338,6 +394,8 @@
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+1 … Ctrl+9" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="التنقل بين الأقسام بترتيب القائمة" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+0" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="الإعدادات" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث في الجدول" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث الشامل عن منتسب أو جهة أو قسم" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+C" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="نسخ الصفوف المحددة للصقها في Excel" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح نسخة الآيفون" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="F5" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="إعادة تحميل الصفحة" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="#F1F5F4" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Enter" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="فتح الصف المختار" Foreground="#3A524F" VerticalAlignment="Center"/></Grid>

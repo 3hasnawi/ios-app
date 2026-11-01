@@ -12,7 +12,7 @@ public enum ReportColumnKind { Serial, Text, Amount }
 public sealed record ReportColumn(string Title, double Width, ReportColumnKind Kind);
 
 /// كشف بالشكل المعتمد في الآيفون: رأس (اسم الجهة) ← شريط أزرق بعنوان الكشف ← رؤوس الأعمدة ← الصفوف ← سطر المجموع.
-/// قيم الصفوف نصوص، وعمود المبلغ رقم في Amounts.
+/// قيم الصفوف نصوص، وعمود المبلغ رقم في Amounts؛ ونص غير فارغ في خانة المبلغ (مثل «غير محتسب») يُعرض بدل الرقم ومبلغه صفر.
 public sealed record ReportSheet(string Header, string Title, IReadOnlyList<ReportColumn> Columns, IReadOnlyList<string[]> Rows, IReadOnlyList<decimal> Amounts, bool ShowTotal = true)
 {
     public const string DefaultHeader = "قيادة شرطة محافظة الانبار";
@@ -121,7 +121,7 @@ public static class XlsxReport
                 rows.Append(sheet.Columns[c].Kind switch
                 {
                     ReportColumnKind.Serial => $"<c r=\"{reference}\" s=\"5\"><v>{i + 1}</v></c>",
-                    ReportColumnKind.Amount => $"<c r=\"{reference}\" s=\"6\"><v>{Number(sheet.Amounts[i])}</v></c>",
+                    ReportColumnKind.Amount => sheet.Rows[i][c].Length > 0 ? Text(reference, sheet.Rows[i][c], 4) : $"<c r=\"{reference}\" s=\"6\"><v>{Number(sheet.Amounts[i])}</v></c>",
                     _ => Text(reference, sheet.Rows[i][c], 4)
                 });
             }
@@ -402,7 +402,7 @@ public static class ReportPdf
                 switch (sheet.Columns[c].Kind)
                 {
                     case ReportColumnKind.Serial: canvas.Text(serial, (i + 1).ToString(CultureInfo.InvariantCulture), r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, true); break;
-                    case ReportColumnKind.Amount: canvas.Text(amount, ReportSheet.Money(sheet.Amounts[i]), r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, true); break;
+                    case ReportColumnKind.Amount: canvas.Text(sheet.Rows[i][c].Length > 0 ? text : amount, sheet.Rows[i][c].Length > 0 ? sheet.Rows[i][c] : ReportSheet.Money(sheet.Amounts[i]), r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, true); break;
                     default: canvas.Text(text, sheet.Rows[i][c], r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Right); break;
                 }
             }

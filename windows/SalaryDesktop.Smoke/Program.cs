@@ -129,7 +129,11 @@ static class Program
                     Check(item.IsChecked == true, $"navigation item {tag} was not selected");
                 }
                 var table = (DataGrid)main.FindName("DataTable");
-                await Navigate("payroll"); Check(table.Items.Count == 1, "payroll page did not show the synthetic employee");
+                await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
+                var filterHost = (StackPanel)main.FindName("FilterHost");
+                Check(Children<ComboBox>(filterHost).Count() == 3 && Children<ComboBox>(filterHost).First().Items.Count == 2, "payroll quick filters were not built");
+                Check(((TextBlock)main.FindName("TotalsShown")).Text.Contains("500", StringComparison.Ordinal), "payroll totals row did not show the net sum");
+                Children<ComboBox>(filterHost).Last().SelectedIndex = 1; await Task.Delay(700); Check(table.Items.Count == 1, "payment filter hid the matching row");
                 await Navigate("deductions"); Check(table.Items.Count == 1, "deductions page did not show the synthetic entry");
                 await Navigate("staff"); await Task.Delay(1200); Check(table.Items.Count == 1 && table.Items[0] is StaffMember, "staff page did not load its synthetic record");
                 await Navigate("bank"); Check(((FrameworkElement)main.FindName("BankPanel")).Visibility == Visibility.Visible, "bank page was not visible");
@@ -154,6 +158,12 @@ static class Program
                 var annual = new AnnualImportWindow(snapshot) { Owner = main }; annual.Show(); Check(annual.FindName("Choose") is Button, "annual import page did not open"); annual.Close();
                 var bank = new BankDetailsWindow("أيلول 2026", "دافع وهمي", "IQ06TEST123000000000001", new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
                 var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("KindPicker") is ComboBox, "salary review page did not open"); audit.Close();
+                var profile = PersonProfiles.Build(snapshot, "منتسب وهمي", StaffRecords.Read(snapshot));
+                var person = new PersonWindow(snapshot, profile, "أيلول 2026") { Owner = main }; person.Show(); await Task.Delay(300);
+                Check(((TextBlock)person.FindName("NetText")).Text == "500" && ((DataGrid)person.FindName("HistoryTable")).Items.Count == 1, "member profile did not show the payslip and deductions"); person.Close();
+                var search = new SearchWindow(snapshot, Task.FromResult<IReadOnlyList<StaffMember>?>(StaffRecords.Read(snapshot))) { Owner = main }; search.Show(); await Task.Delay(800);
+                ((TextBox)search.FindName("Query")).Text = "123"; await Task.Delay(200);
+                Check(((ListBox)search.FindName("Results")).Items.Count == 1, "global search did not find the member by unified number"); search.Close();
                 await Navigate("home");
                 Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported");
                 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCREENSHOT_DIR")))
@@ -172,6 +182,36 @@ static class Program
                     var import = Fit(new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }); import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
                     var richReview = Fit(new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }); richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
                     var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", SalaryItemReports.Groups(rich, "أيلول 2026")) { Owner = main }); richItems.Show(); await Task.Delay(500); Shot(richItems, "15-salary-items"); richItems.Close();
+                    // البحث الشامل، ملف المنتسب، التصفية والمجاميع، وكشوف PDF/Excel المعتمدة للمراجعة البصرية.
+                    var richStaff = StaffRecords.Read(rich);
+                    var richSearch = Fit(new SearchWindow(rich, Task.FromResult<IReadOnlyList<StaffMember>?>(richStaff)) { Owner = main }); richSearch.Show(); await Task.Delay(900);
+                    ((TextBox)richSearch.FindName("Query")).Text = "علي محمد"; await Task.Delay(300); Shot(richSearch, "16-global-search"); richSearch.Close();
+                    var richPerson = Fit(new PersonWindow(rich, PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff), "أيلول 2026") { Owner = main }); richPerson.Show(); await Task.Delay(800); Shot(richPerson, "17-person-payslip");
+                    var tabs = Children<TabControl>(richPerson).First();
+                    tabs.SelectedIndex = 1; await Task.Delay(400); Shot(richPerson, "18-person-deductions");
+                    tabs.SelectedIndex = 3; await Task.Delay(400); Shot(richPerson, "19-person-changes"); richPerson.Close();
+                    await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = ""; await Task.Delay(900);
+                    var richTable = (DataGrid)main.FindName("DataTable");
+                    foreach (var column in richTable.Columns.Where(c => c.SortMemberPath is "Unified" or "TotalDeductions")) column.Visibility = Visibility.Visible;
+                    Children<ComboBox>((StackPanel)main.FindName("FilterHost")).First().SelectedIndex = 1; await Task.Delay(900);
+                    richTable.SelectedItems.Clear(); foreach (var row in richTable.Items.Cast<object>().Take(4)) richTable.SelectedItems.Add(row); await Task.Delay(300);
+                    Check(((TextBlock)main.FindName("TotalsSelected")).Text.Contains("المحدد", StringComparison.Ordinal), "selection totals were not shown");
+                    Shot(main, "20-payroll-filter-totals");
+                    foreach (var column in richTable.Columns.Where(c => c.SortMemberPath is "Unified" or "TotalDeductions")) column.Visibility = Visibility.Collapsed;
+                    await Navigate("deductions"); Children<ComboBox>((StackPanel)main.FindName("FilterHost")).First().SelectedIndex = 1; await Task.Delay(900); Shot(main, "21-deductions-entity-filter");
+                    await Navigate("home");
+                    var folder = Environment.GetEnvironmentVariable("SCREENSHOT_DIR")!;
+                    var assets = ReportAssets.Load(Path.GetFullPath("SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png"));
+                    var stamp = new DateTime(2026, 10, 1);
+                    var payrollRows = PayrollRows.Build(rich.Employees.Where(e => e.Month == "أيلول 2026"));
+                    var tableSheet = TableReport.Build(ReportSheet.HeaderFor(rich), "رواتب شهر أيلول ٢٠٢٦", ["الاسم", "الرتبة", "محل العمل", "طريقة الدفع", "الصافي"], 4,
+                        payrollRows.Select(r => new[] { r.Name, r.Rank, r.Workplace, r.Payment, "" }).ToArray(), payrollRows.Select(r => r.Net).ToArray());
+                    File.WriteAllBytes(Path.Combine(folder, "22-table-export.pdf"), ReportPdf.Generate([tableSheet], assets, stamp));
+                    File.WriteAllBytes(Path.Combine(folder, "22-table-export.xlsx"), XlsxReport.Generate(tableSheet));
+                    var entitySheet = StandardReports.EntityDeductions(rich, "أيلول 2026", "شركة عراق الجوال");
+                    File.WriteAllBytes(Path.Combine(folder, "23-entity-list.pdf"), ReportPdf.Generate([entitySheet], assets, stamp));
+                    var month = PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff).Months.First(m => m.Month == "أيلول 2026");
+                    File.WriteAllBytes(Path.Combine(folder, "24-payslip.pdf"), PayslipPdf.Generate(ReportSheet.HeaderFor(rich), month.Employee!.Name, month.Employee.Rank, month.Employee.Workplace, month.Month, PersonProfiles.Payslip(month), assets, stamp));
                     Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported while capturing screens");
                     Console.WriteLine("Windows design screenshots saved.");
                 }

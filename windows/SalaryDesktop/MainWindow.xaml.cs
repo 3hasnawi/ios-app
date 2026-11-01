@@ -153,6 +153,7 @@ public partial class MainWindow : Window
         {
             var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
+            if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
             if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.O) { e.Handled = true; OpenBackup(this, new RoutedEventArgs()); }
         }
@@ -161,7 +162,7 @@ public partial class MainWindow : Window
             e.Handled = true;
             if (page == "staff" && staffLoadingDigest is null) { staff = null; staffError = null; staffDigest = null; }
             lock (rowIndexLock) rowIndexes.Clear();
-            groupCache = null;
+            groupCache = null; payrollCache = null;
             RenderPage();
         }
     }
@@ -172,6 +173,7 @@ public partial class MainWindow : Window
     }
     private void TableKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; CopyRows(sender, e); return; }
         if (e.Key != Key.Enter || DataTable.SelectedItem is null) return;
         e.Handled = true; OpenRow();
     }
@@ -244,51 +246,29 @@ public partial class MainWindow : Window
         RenderTable();
     }
 
-    /// أعمدة الجدول تُبنى عند تغيّر القسم فقط، فيبقى عرض الأعمدة وترتيبها أثناء البحث وتغيير الشهر.
-    private void EnsureColumns(string current)
-    {
-        if (columnsPage == current) return;
-        columnsPage = current;
-        DataTable.ItemsSource = null;
-        DataTable.Columns.Clear();
-        switch (current)
-        {
-            case "payroll": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("محل العمل", "Workplace", 2); Column("الصافي", "Net", 1, true); break;
-            case "deductions": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("جهة التنفيذ", "Title", 2); Column("المبلغ", "Amount", 1, true); Column("الملاحظة", "Note", 2); break;
-            case "groups": Column("جهة التنفيذ", "Title", 3); Column("عدد الأشخاص", "People", 1, true); Column("المبلغ", "Total", 1, true); Column("مبالغ ناقصة", "MissingAmounts", 1, true); break;
-            case "accounts": Column("الجهة", "Entity", 2); Column("المصرف والفرع", "Branch", 2); Column("IBAN", "Iban", 2); Column("SWIFT", "Swift", 1); Column("الحساب المحلي", "LocalAccount", 1); break;
-            case "staff": Column("الاسم", "Name", 2); Column("الرتبة", "Rank", 1); Column("الرقم الموحد", "Unified", 1); Column("الحالة", "Status", 1); Column("محل العمل", "Workplace", 2); break;
-            case "archive": Column("عنوان الكتاب", "Title", 3); Column("الشهر", "Month", 1); Column("الجهة", "Entity", 2); Column("الصفحات", "Pages", 1, true); break;
-        }
-        OpenRowMenu.Header = current switch
-        {
-            "payroll" => "عرض تفاصيل المنتسب", "staff" => "عرض سجل الملاك", "accounts" => "تعديل الحساب", "archive" => "فتح الكتاب", _ => "لا يوجد إجراء لهذا الجدول"
-        };
-        OpenRowMenu.IsEnabled = current is "payroll" or "staff" or "accounts" or "archive";
-    }
-
     /// البحث والتصفية في الخلفية على نص مُوحّد محفوظ لكل صف، فلا تتجمد الواجهة مع عشرات آلاف السجلات.
     private async void RenderTable()
     {
         var ticket = ++tableRequest; var source = snapshot; var current = page; var month = SelectedMonth;
         var tokens = PayrollAnalysis.Normalize(SearchBox.Text).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         EnsureColumns(current);
+        var filters = (string?[])filterValues.Clone();
         if (source is null)
         {
             TableStatus.Text = "افتح نسخة الآيفون أولاً لعرض البيانات.";
-            DataTable.ItemsSource = null;
+            DataTable.ItemsSource = null; UpdateTotals();
             return;
         }
         if (current == "staff" && (staffDigest != source.SourceDigest || staff is null))
         {
-            DataTable.ItemsSource = null; TableStatus.Text = staffDigest == source.SourceDigest && staffError is not null ? staffError : "جارٍ قراءة الملاك من النسخة المحلية…";
+            DataTable.ItemsSource = null; UpdateTotals(); TableStatus.Text = staffDigest == source.SourceDigest && staffError is not null ? staffError : "جارٍ قراءة الملاك من النسخة المحلية…";
             if (staffLoadingDigest != source.SourceDigest && !(staffDigest == source.SourceDigest && staffError is not null)) LoadStaff(source);
             return;
         }
         var staffRows = staff;
         try
         {
-            var result = await Task.Run(() => Query(current, source, staffRows, month, tokens));
+            var result = await Task.Run(() => Query(current, source, staffRows, month, tokens, filters));
             if (ticket != tableRequest || !ReferenceEquals(source, snapshot) || current != page || columnsPage != current) return;
             var sorted = DataTable.Columns.FirstOrDefault(c => c.SortDirection is not null);
             var direction = sorted?.SortDirection;
@@ -299,11 +279,13 @@ public partial class MainWindow : Window
                 view.SortDescriptions.Clear(); view.SortDescriptions.Add(new SortDescription(sorted.SortMemberPath, d)); sorted.SortDirection = d;
             }
             TableStatus.Text = result.Status;
+            FillFilters(result.Options);
+            shownSum = result.Sum; shownMissing = result.Missing; UpdateTotals();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
         {
             if (ticket != tableRequest || current != page) return;
-            DataTable.ItemsSource = null; TableStatus.Text = "تعذّر عرض البيانات: " + ex.Message;
+            DataTable.ItemsSource = null; UpdateTotals(); TableStatus.Text = "تعذّر عرض البيانات: " + ex.Message;
         }
     }
 
@@ -340,37 +322,6 @@ public partial class MainWindow : Window
         lock (rowIndexLock) rowIndexes[name] = built;
         return built;
     }
-    private (System.Collections.IList Rows, string Status) Query(string current, BackupSnapshot source, IReadOnlyList<StaffMember>? staffRows, string month, string[] tokens)
-    {
-        switch (current)
-        {
-            case "payroll":
-                var employees = Index("payroll", source.Employees, e => e.Month, e => [e.Name, e.Rank, e.Workplace]).Query(month, tokens);
-                return (employees, $"{employees.Length:N0} سجل · انقر نقراً مزدوجاً أو اضغط Enter لعرض تفاصيل المنتسب؛ القيم الناقصة تظهر فارغة.");
-            case "deductions":
-                var deductions = Index("deductions", source.Deductions, d => d.Month, d => [d.Name, d.Title, d.Rank, d.Note]).Query(month, tokens);
-                return (deductions, $"{deductions.Length:N0} قيد · تظهر القيود كما سُجلت، بما فيها الحالات غير المحتسبة.");
-            case "groups":
-                var cache = groupCache;
-                IReadOnlyList<DeductionGroup> all;
-                if (cache is not null && ReferenceEquals(cache.Source, source) && cache.Month == month) all = cache.Groups;
-                else { all = PayrollAnalysis.Groups(source, month); groupCache = new GroupCache(source, month, all); }
-                var groups = Index("groups", all, null, g => [g.Title]).Query(null, tokens);
-                return (groups, $"{groups.Length:N0} جهة · المبالغ الناقصة لم تُحتسب في المجموع؛ راجع العمود الأخير.");
-            case "accounts":
-                var accounts = Index("accounts", source.Accounts, null, a => [a.Entity, a.Branch, a.Iban]).Query(null, tokens);
-                return (accounts, $"{accounts.Length:N0} حساب · انقر نقراً مزدوجاً لتعديل بيانات الحساب المحفوظ.");
-            case "staff":
-                var people = Index("staff", staffRows ?? Array.Empty<StaffMember>(), null, v => [v.Name, v.Mother, v.Unified, v.Stat, v.Rank, v.Workplace, v.Status]).Query(null, tokens);
-                return (people, $"{people.Length:N0} سجل · انقر نقراً مزدوجاً لعرض تفاصيل المنتسب.");
-            case "archive":
-                var books = Index("archive", source.Books, null, b => [b.Title, b.Month, b.Entity]).Query(null, tokens);
-                return (books, $"{books.Length:N0} كتاب · انقر نقراً مزدوجاً على الكتاب لفتحه محلياً في عارض PDF.");
-            default:
-                return (Array.Empty<object>(), "");
-        }
-    }
-
     private void ReloadStaff(object sender, RoutedEventArgs e)
     {
         if (snapshot is null || staffLoadingDigest is not null) return;
@@ -400,14 +351,10 @@ public partial class MainWindow : Window
     }
     private async void OpenRow()
     {
-        if (page == "staff" && DataTable.SelectedItem is StaffMember member)
-        { new StaffDetailsWindow(member) { Owner = this }.ShowDialog(); return; }
-        if (page == "payroll" && DataTable.SelectedItem is Employee employee)
-        {
-            var detail = new EmployeeDetailsWindow(employee, snapshot) { Owner = this };
-            detail.ShowDialog();
-            return;
-        }
+        if (page == "staff" && DataTable.SelectedItem is StaffMember member) { await OpenPerson(member.Name, null); return; }
+        if (page == "payroll" && DataTable.SelectedItem is PayrollRow row) { await OpenPerson(row.Name, row.Month); return; }
+        if (page == "deductions" && DataTable.SelectedItem is Deduction deduction) { await OpenPerson(deduction.Name, deduction.Month); return; }
+        if (page == "groups" && DataTable.SelectedItem is DeductionGroup group) { ShowEntity(group.Title); return; }
         if (page == "accounts" && DataTable.SelectedItem is ExecutionAccount account)
         {
             var original = baseSnapshot; var links = linkState; var active = snapshot; var root = rootSnapshot; var payroll = payrollState;
@@ -912,10 +859,5 @@ public partial class MainWindow : Window
         {
             if (ticket == homeRequest) { NetAmount.Text = "غير متاح"; DataWarning.Text = "تعذّر حساب الملخص: " + ex.Message; }
         }
-    }
-    private void Column(string title, string path, double weight, bool numeric = false)
-    {
-        var binding = new Binding(path) { TargetNullValue = "—", StringFormat = numeric ? "{0:#,0.##}" : null, ConverterCulture = Numbers };
-        DataTable.Columns.Add(new DataGridTextColumn { Header = title, Binding = binding, Width = new DataGridLength(weight, DataGridLengthUnitType.Star) });
     }
 }
