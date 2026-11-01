@@ -57,7 +57,7 @@ struct ContentView: View {
     @State private var search = LaunchOptions.search
     /// النص المطبَّق فعلاً على البحث: يتأخر قليلاً عن الكتابة حتى لا يُعاد البحث مع كل حرف.
     @State private var appliedSearch = LaunchOptions.search
-    @State private var path: [Employee] = []
+    @State private var path = NavigationPath()
     @State private var showingBookScanner = false
     @State private var bookDraft: ScannedBookDraft?
     @State private var scannedBookMonth = ""
@@ -126,7 +126,7 @@ struct ContentView: View {
                 .onChange(of: importCenter.lastPayrollMonth) { _, name in
                     guard let name else { return }
                     selectedMonth = months.first?.name ?? name
-                    path = []
+                    path = NavigationPath()
                     importCenter.lastPayrollMonth = nil
                 }
                 .onChange(of: months.first?.name) { _, newest in
@@ -162,7 +162,7 @@ struct ContentView: View {
             ForEach(months) { month in
                 Button {
                     selectedMonth = month.name
-                    path = []
+                    path = NavigationPath()
                 } label: {
                     if month.name == currentMonth?.name { Label(month.name, systemImage: "checkmark") }
                     else { Text(month.name) }
@@ -240,7 +240,7 @@ struct ContentView: View {
             )
             descriptor.fetchLimit = 1
             if let first = try? context.fetch(descriptor).first {
-                path = [first]
+                path = NavigationPath(); path.append(first)
             }
         }
     }
