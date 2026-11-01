@@ -58,7 +58,7 @@ public static class AppFonts
         else
         {
             NumberSubstitution.SetCultureSource(root, NumberCultureSource.Override);
-            NumberSubstitution.SetCultureOverride(root, CultureInfo.InvariantCulture);
+            NumberSubstitution.SetCultureOverride(root, CultureInfo.GetCultureInfo("en-US")); // الثقافة المحايدة غير مقبولة هنا (اسمها فارغ).
             NumberSubstitution.SetSubstitution(root, NumberSubstitutionMethod.European);
         }
     }
