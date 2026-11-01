@@ -138,9 +138,10 @@ public static class GroupLetterPdf
                 string CellText(int col) => string.Concat(page.Letters.Where(l => { var p = l.GlyphRectangle; var cx = (p.Left+p.Right)/2; var cy = (p.Bottom+p.Top)/2; return cx >= X[col] && cx <= X[col+1] && cy >= H-rowTop-rowHeight && cy <= H-rowTop; }).OrderBy(l => l.GlyphRectangle.Left).Select(l => l.Value));
                 var iban = new string(CellText(2).Where(char.IsAsciiLetterOrDigit).ToArray()).ToUpperInvariant();
                 var amountText = TransferPreparation.NormalizeAccount(CellText(0)).Replace(",", "", StringComparison.Ordinal).Replace("٬", "", StringComparison.Ordinal);
-                if (iban != plan.Lines[row].Iban || !long.TryParse(amountText, out var amount) || amount != plan.Lines[row].Amount ||
-                    Identity(CellText(1)) != Identity(plan.Lines[row].Branch) || Identity(CellText(3)) != Identity(plan.Lines[row].Title))
-                    throw new InvalidDataException("تعذّر التحقق من بيانات صف في جدول الكتاب؛ لم يُصدّر الملف.");
+                if (iban != plan.Lines[row].Iban) throw new InvalidDataException($"تعذّر التحقق من رقم حساب الصف {row + 1} في جدول الكتاب.");
+                if (!long.TryParse(amountText, out var amount) || amount != plan.Lines[row].Amount) throw new InvalidDataException($"تعذّر التحقق من مبلغ الصف {row + 1} في جدول الكتاب.");
+                if (Identity(CellText(1)) != Identity(plan.Lines[row].Branch)) throw new InvalidDataException($"تعذّر التحقق من فرع الصف {row + 1} في جدول الكتاب.");
+                if (Identity(CellText(3)) != Identity(plan.Lines[row].Title)) throw new InvalidDataException($"تعذّر التحقق من اسم الصف {row + 1} في جدول الكتاب.");
             }
             var totalRead = string.Concat(page.Letters.Where(l => { var p = l.GlyphRectangle; var cx = (p.Left + p.Right) / 2; var cy = (p.Bottom + p.Top) / 2; return cx >= X[0] && cx <= X[1] && cy >= H - top - 22 && cy <= H - top; }).OrderBy(l => l.GlyphRectangle.Left).Select(l => l.Value));
             var totalNumber = TransferPreparation.NormalizeAccount(totalRead).Replace(",", "", StringComparison.Ordinal).Replace("٬", "", StringComparison.Ordinal);

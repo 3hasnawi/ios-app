@@ -284,7 +284,19 @@ try
     var fontBytes = File.ReadAllBytes(font); var logoBytes = File.ReadAllBytes(logoPath);
     try { GroupLetterFont.Validate(fontBytes); throw new InvalidOperationException("wrong letter font accepted"); }
     catch (InvalidDataException) { }
-    var groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes);
+    byte[] groupPdf;
+    try { groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes); }
+    catch (InvalidDataException) when (OperatingSystem.IsWindows())
+    {
+        foreach (var name in new[] { "times.ttf", "tahoma.ttf", "segoeui.ttf" })
+        {
+            var alternative = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), name);
+            if (!File.Exists(alternative)) { Console.WriteLine("Synthetic font diagnostic: " + name + " unavailable"); continue; }
+            try { _ = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, File.ReadAllBytes(alternative), logoBytes); Console.WriteLine("Synthetic font diagnostic: " + name + " passed"); }
+            catch (InvalidDataException ex) { Console.WriteLine("Synthetic font diagnostic: " + name + " " + ex.Message); }
+        }
+        throw;
+    }
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
     var changedBodyMonthPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { BodyMonth = "كانون الأول 2025", OutgoingMonth = 11 }, fontBytes, fontBytes, logoBytes);
     using (var monthDocument = UglyToad.PdfPig.PdfDocument.Open(changedBodyMonthPdf))
