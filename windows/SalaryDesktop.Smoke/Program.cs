@@ -159,7 +159,7 @@ static class Program
                 await application.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 main = application.MainWindow as MainWindow ?? throw new InvalidOperationException("application did not create its main window");
                 var families = Fonts.GetFontFamilies(new Uri("pack://application:,,,/SalaryDesktop;component/Fonts/")).ToArray();
-                foreach (var option in AppFonts.Options)
+                foreach (var option in AppFonts.Options.Where(o => !o.Installed))
                     Check(families.Any(f => f.Source.Contains("#" + option.Family, StringComparison.Ordinal)), "embedded font family missing: " + option.Family);
                 var kufi = families.FirstOrDefault(f => f.Source.EndsWith("#Noto Kufi Arabic", StringComparison.Ordinal)) ?? families.First(f => f.Source.Contains("#Noto Kufi Arabic", StringComparison.Ordinal));
                 var weights = kufi.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet();
