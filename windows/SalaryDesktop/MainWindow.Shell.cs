@@ -123,6 +123,9 @@ public partial class MainWindow
         var saved = UiPreferences.Current;
         if (App.Unattended || saved.Window is not [var left, var top, var width, var height]) return;
         var screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop, SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+        var work = SystemParameters.WorkArea;
+        // حجم محفوظ أكبر من الشاشة الحالية (مثل لابتوب بعد شاشة كبيرة) لا يُستعاد؛ ScreenFit يضبط النافذة.
+        if (width > Math.Max(work.Width, screen.Width) + 1 || height > Math.Max(work.Height, screen.Height) + 1) { if (saved.Maximized) WindowState = WindowState.Maximized; return; }
         if (width < MinWidth || height < MinHeight || !screen.IntersectsWith(new Rect(left, top, width, height)) || !screen.Contains(new Point(left + 40, top + 20))) return;
         WindowStartupLocation = WindowStartupLocation.Manual; Left = left; Top = top; Width = width; Height = height;
         if (saved.Maximized) WindowState = WindowState.Maximized;
