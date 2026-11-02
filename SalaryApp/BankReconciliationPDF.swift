@@ -28,8 +28,7 @@ nonisolated enum BankReconciliationPDF {
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
     private static let widths: [CGFloat] = [78, 189, 88, 88, 88]
     private static let margin: CGFloat = 32
-    private static let tableBottom: CGFloat = 665
-    private static let totalHeight: CGFloat = 24
+    private static let totalHeight: CGFloat = 26
     private static func number(_ value: Int64) throws -> String {
         let prefix = value < 0 ? "−" : ""
         return prefix + (try TransferWordValues.groupedAmount(Double(abs(value))))
@@ -103,12 +102,18 @@ nonisolated enum BankReconciliationPDF {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
-            let bold = ReportFont.bold(9)
-            let signatureFont = ReportFont.bold(12)
-            let headingFont = ReportFont.bold(12)
-            let organizationFont = ReportFont.bold(10)
-            let metadataFont = ReportFont.regular(10)
-            let periodFont = ReportFont.bold(8)
+            // الأحجام (طلب المالك 2026-11-02، مطابق لويندوز ReconciliationPdf.Statement): Arial لكل الكشف؛ الترويسة 11 والعنوان 14،
+            // رؤوس الأعمدة والمبالغ والمجموع عريض 11، البيان 10.5 ينزل إلى سطر آخر، الصف لا يقل عن 24 مع تظليل متناوب، والتواقيع عريض 16.
+            let bold = ReportFont.bold(11)
+            let signatureFont = ReportFont.bold(16)
+            let headingFont = ReportFont.bold(14)
+            let organizationFont = ReportFont.bold(11)
+            let labelFont = ReportFont.bold(10.5)
+            let valueFont = ReportFont.regular(10.5)
+            let periodFont = ReportFont.bold(11)
+            let font = ReportFont.regular(10.5)
+            let amountFont = ReportFont.bold(11)
+            let shade = UIColor(red: 0xF3 / 255, green: 0xF7 / 255, blue: 0xFB / 255, alpha: 1)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
             guard let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
@@ -117,36 +122,54 @@ nonisolated enum BankReconciliationPDF {
                 guard trimmed.count <= 100, !trimmed.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
                 return trimmed.isEmpty ? "—" : trimmed
             }
-            let accountName = try value(account.name)
-            let metadata = [("اسم الحساب", accountName, 11), ("الفرع", try value(account.branch), 7),
-                            ("الحساب", try value(account.localAccount), 8), ("العملة", "IQD", 9), ("IBAN", try value(account.iban), 10)]
-            guard lines(heading, font: headingFont, width: 223) == 1,
-                  organization.allSatisfy({ lines($0, font: organizationFont, width: 150) == 1 }),
-                  metadata.allSatisfy({ lines($0.0 + ":", font: metadataFont, width: 80) == 1 }) else { throw Failure.tooLong }
-            let organizationTop: CGFloat = 25
-            let headingTop: CGFloat = 25
-            let periodTop: CGFloat = 46
-            let metadataTop: CGFloat = 25
             let periodText = "الــفــتــرة مــن \(date(period.start)) إلــى \(date(period.end))"
-            guard lines(periodText, font: periodFont, width: 223) == 1 else { throw Failure.tooLong }
-            // يظل العنوان والفترة في المنتصف وتتكيف خانات الحساب مع المساحة المتاحة يسارهما.
-            let metadataRight = min(306, page.midX - max(textWidth(heading, font: headingFont), textWidth(periodText, font: periodFont)) / 2 - 8)
-            var metadataHeights: [CGFloat] = []
-            var metadataLabelWidths: [CGFloat] = []
-            var metadataValueWidths: [CGFloat] = []
-            for item in metadata {
-                let labelWidth = ceil(textWidth(item.0 + ":", font: metadataFont) + 2)
-                let valueWidth = metadataRight - margin - labelWidth - 6
-                guard valueWidth >= 50 else { throw Failure.tooLong }
-                let count = lines(item.1, font: metadataFont, width: valueWidth)
-                guard count != Int.max, count <= 2 else { throw Failure.tooLong }
-                metadataLabelWidths.append(labelWidth)
-                metadataValueWidths.append(valueWidth)
-                metadataHeights.append(max(19, ceil(CGFloat(count) * metadataFont.lineHeight + 4)))
+            guard lines(heading, font: headingFont, width: 250) == 1, lines(periodText, font: periodFont, width: 520) == 1,
+                  organization.allSatisfy({ lines($0, font: organizationFont, width: 160) == 1 }) else { throw Failure.tooLong }
+            // بيانات الحساب تحت العنوان يسار ترويسة الوزارة: (الاسم، الفرع) ثم (العملة، IBAN)؛ الحساب المحلي لا يظهر في الكشف.
+            // السطر الأطول من المساحة يُقسم ولا يُقص. الرقم الثالث رمز التحقق من القراءة بعد الإنشاء.
+            let accountLeft: CGFloat = margin, accountRight: CGFloat = 392, accountGap: CGFloat = 18, accountLine: CGFloat = 17
+            let accountWidth = accountRight - accountLeft
+            let groups: [[(String, String, Int)]] = [[("اسم الحساب", try value(account.name), 11), ("الفرع", try value(account.branch), 7)],
+                                                     [("العملة", "IQD", 9), ("IBAN", try value(account.iban), 10)]]
+            func segmentWidth(_ item: (String, String, Int)) -> CGFloat { textWidth(item.0 + ":", font: labelFont) + 5 + textWidth(item.1, font: valueFont) }
+            var accountLines: [[(String, String, Int)]] = []
+            for group in groups {
+                var line: [(String, String, Int)] = []
+                var width: CGFloat = 0
+                for item in group {
+                    let size = segmentWidth(item)
+                    guard size <= accountWidth else { throw Failure.tooLong }
+                    if !line.isEmpty && width + accountGap + size > accountWidth { accountLines.append(line); line = []; width = 0 }
+                    width += (line.isEmpty ? 0 : accountGap) + size
+                    line.append(item)
+                }
+                accountLines.append(line)
             }
-            let contentBottom = max(metadataTop + metadataHeights.reduce(0, +), organizationTop + 75, periodTop + 16)
-            let tableTop = contentBottom + 18
-            let rowTop = tableTop + 24
+            guard accountLines.count <= 4 else { throw Failure.tooLong }
+            let organizationTop: CGFloat = 25, organizationLine: CGFloat = 16
+            let accountTop: CGFloat = 56
+            let contentBottom = max(organizationTop + CGFloat(organization.count) * organizationLine, accountTop + CGFloat(accountLines.count) * accountLine)
+            // الفترة شريط بعرض الجدول فوقه مباشرة، و«مسودة» فوقها عند عدم الاكتمال.
+            let periodHeight: CGFloat = 22, headerHeight: CGFloat = 26
+            let periodTop = contentBottom + (complete ? 10 : 26)
+            let tableTop = periodTop + periodHeight
+            let rowTop = tableTop + headerHeight
+            // تواقيع اللجنة عريض 16 بلا إطار ولا سطر توقيع، أسفل آخر صفحة؛ المنصب الطويل ينزل إلى سطر ثانٍ.
+            let signatures = [BankReconciliation.signatureLines(period, first: true), BankReconciliation.signatureLines(period, first: false)]
+            var signatureHeights: [[CGFloat]] = []
+            for values in signatures {
+                var heights: [CGFloat] = []
+                for item in values {
+                    let count = lines(item, font: signatureFont, width: 237)
+                    guard count != Int.max, count <= 2, !item.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
+                    heights.append(max(24, ceil(CGFloat(count) * signatureFont.lineHeight + 4)))
+                }
+                signatureHeights.append(heights)
+            }
+            let signatureHeight = signatureHeights.map { $0.reduce(0, +) }.max() ?? 0
+            guard signatureHeight <= 170 else { throw Failure.tooLong }
+            let signatureTop = 812 - signatureHeight
+            let tableBottom = signatureTop - 16
             guard rowTop + totalHeight < tableBottom else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
             var valuesByRow: [[String]] = []
@@ -159,47 +182,17 @@ nonisolated enum BankReconciliationPDF {
                                     item.direction == .debit ? try number(item.amount) : "—", try number(line.balance)])
             }
             let totalRow = ["", "المجموع", try number(totals.credits), try number(totals.debits), try number(totals.balance)]
-            // نستخدم أكبر خط يتيح صفحة واحدة، وإلا نحافظ على الحجم الواضح ونقسم الكشف.
-            func layout(size: CGFloat, minimumHeight: CGFloat) -> [(values: [String], height: CGFloat)]? {
-                let candidate = ReportFont.regular(size)
-                var result: [(values: [String], height: CGFloat)] = []
-                for values in valuesByRow {
-                    let counts = zip(values, widths).map { lines($0.0, font: candidate, width: $0.1 - 8) }
-                    guard counts.allSatisfy({ $0 != Int.max && $0 <= 5 }), counts[0] == 1,
-                          counts[2] == 1, counts[3] == 1, counts[4] == 1 else { return nil }
-                    let height = max(minimumHeight, ceil(CGFloat(counts.max() ?? 1) * candidate.lineHeight + 4))
-                    guard height <= tableBottom - rowTop - totalHeight else { return nil }
-                    result.append((values, height))
-                }
-                return result
+            // البيان ينزل إلى سطر آخر بدل تصغير الخط، والكشف يمتد على صفحات.
+            var rows: [(values: [String], height: CGFloat)] = []
+            for values in valuesByRow {
+                let description = lines(values[1], font: font, width: widths[1] - 8)
+                guard description != Int.max, description <= 5, lines(values[0], font: font, width: widths[0] - 8) == 1,
+                      (2...4).allSatisfy({ lines(values[$0], font: amountFont, width: widths[$0] - 8) == 1 }) else { throw Failure.tooLong }
+                let height = max(24, ceil(CGFloat(description) * font.lineHeight + 6))
+                guard height <= tableBottom - rowTop - totalHeight else { throw Failure.tooLong }
+                rows.append((values, height))
             }
-            let candidates: [(CGFloat, CGFloat)] = [(9, 18), (8.5, 17), (8, 16)]
-            var firstValid: (UIFont, [(values: [String], height: CGFloat)])?
-            var singlePage: (UIFont, [(values: [String], height: CGFloat)])?
-            for (size, height) in candidates {
-                guard let rows = layout(size: size, minimumHeight: height) else { continue }
-                let candidate = (ReportFont.regular(size), rows)
-                if firstValid == nil { firstValid = candidate }
-                if rows.reduce(CGFloat(0), { $0 + $1.height }) + totalHeight <= tableBottom - rowTop {
-                    singlePage = candidate
-                    break
-                }
-            }
-            guard let selected = singlePage ?? firstValid else { throw Failure.tooLong }
-            let font = selected.0, rows = selected.1
-            let signatures = [BankReconciliation.signatureLines(period, first: true), BankReconciliation.signatureLines(period, first: false)]
             guard zip(totalRow, widths).allSatisfy({ lines($0.0, font: bold, width: $0.1 - 6) == 1 }) else { throw Failure.tooLong }
-            var signatureHeights: [[CGFloat]] = []
-            for values in signatures {
-                var heights: [CGFloat] = []
-                for item in values {
-                    let count = lines(item, font: signatureFont, width: 237)
-                    guard count != Int.max, count <= 2, !item.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
-                    heights.append(max(22, ceil(CGFloat(count) * signatureFont.lineHeight + 3)))
-                }
-                guard heights.reduce(0, +) <= 126 else { throw Failure.tooLong }
-                signatureHeights.append(heights)
-            }
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("bank-reconciliation-\(UUID().uuidString).pdf")
             var done = false
             defer { if !done { try? FileManager.default.removeItem(at: destination) } }
@@ -215,27 +208,36 @@ nonisolated enum BankReconciliationPDF {
                     drawImage(watermark, in: CGRect(x: 120, y: 280, width: 355, height: 355), alpha: 0.06, context: cg)
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
-                    var metadataY = metadataTop
-                    for (index, item) in metadata.enumerated() {
-                        let height = metadataHeights[index]
-                        let valueRect = CGRect(x: margin, y: metadataY, width: metadataValueWidths[index], height: height)
-                        let labelRect = CGRect(x: metadataRight - metadataLabelWidths[index], y: metadataY, width: metadataLabelWidths[index], height: height)
-                        PDFText.draw(item.0 + ":", in: labelRect, font: metadataFont, align: .right)
-                        PDFText.draw(item.1, in: valueRect, font: metadataFont, align: .left, wrap: true)
-                        if item.1 != "—" { placements.append((pageCount, valueRect, item.1, item.2, index + 1)) }
-                        metadataY += height
-                    }
                     for (index, value) in organization.enumerated() {
-                        PDFText.draw(value, in: CGRect(x: 412, y: organizationTop + CGFloat(index) * 15, width: 150, height: 15), font: organizationFont, align: .center)
+                        PDFText.draw(value, in: CGRect(x: 400, y: organizationTop + CGFloat(index) * organizationLine, width: 162, height: organizationLine), font: organizationFont, align: .center)
                     }
-                    PDFText.draw(heading, in: CGRect(x: 167.5, y: headingTop, width: 260, height: 20), font: headingFont)
-                    PDFText.draw(periodText, in: CGRect(x: 167.5, y: periodTop, width: 260, height: 16), font: periodFont)
-                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: contentBottom + 2, width: 531, height: 14), font: bold, color: .darkGray) }
+                    PDFText.draw(heading, in: CGRect(x: 172.5, y: 27, width: 250, height: 24), font: headingFont)
+                    for (lineIndex, segments) in accountLines.enumerated() {
+                        let total = segments.reduce(CGFloat(0)) { $0 + segmentWidth($1) } + accountGap * CGFloat(segments.count - 1)
+                        var right = (accountLeft + accountRight) / 2 + total / 2
+                        let lineY = accountTop + CGFloat(lineIndex) * accountLine
+                        for item in segments {
+                            let label = item.0 + ":"
+                            let labelWidth = textWidth(label, font: labelFont)
+                            PDFText.draw(label, in: CGRect(x: right - labelWidth - 1, y: lineY, width: labelWidth + 2, height: accountLine), font: labelFont, align: .right)
+                            right -= labelWidth + 5
+                            let valueWidth = textWidth(item.1, font: valueFont)
+                            let valueRect = CGRect(x: right - valueWidth - 0.5, y: lineY, width: valueWidth + 1, height: accountLine)
+                            PDFText.draw(item.1, in: valueRect, font: valueFont, align: .center)
+                            if item.1 != "—" { placements.append((pageCount, valueRect, item.1, item.2, lineIndex + 1)) }
+                            right -= valueWidth + accountGap
+                        }
+                    }
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: periodTop - 16, width: 531, height: 14), font: ReportFont.bold(9), color: .darkGray) }
+                    let periodBar = CGRect(x: page.width - margin - 531, y: periodTop, width: 531, height: periodHeight)
+                    shade.setFill(); cg.fill(periodBar)
+                    UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: 0.5)
+                    PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
                         x -= width
-                        let cell = CGRect(x: x, y: tableTop, width: width, height: 24)
+                        let cell = CGRect(x: x, y: tableTop, width: width, height: headerHeight)
                         rects.append(cell)
                         UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                         UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
@@ -244,10 +246,11 @@ nonisolated enum BankReconciliationPDF {
                     var y = rowTop
                     while index < rows.count, y + rows[index].1 <= tableBottom {
                         let (values, height) = rows[index]
+                        if index % 2 == 1 { shade.setFill(); cg.fill(CGRect(x: rects[4].minX, y: y, width: 531, height: height)) }
                         for i in values.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
-                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 1 ? .right : .center, wrap: true)
+                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: (2...4).contains(i) ? amountFont : font, align: i == 1 ? .right : .center, wrap: true)
                             if values[i] != "—" && !values[i].isEmpty { placements.append((pageCount, cell, values[i], i, index + 1)) }
                         }
                         y += height; index += 1
@@ -255,15 +258,15 @@ nonisolated enum BankReconciliationPDF {
                     if index == rows.count {
                         if y + totalHeight > tableBottom { pageCount += 1; continue }
                         for i in totalRow.indices {
-                            let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: 24)
+                            let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: totalHeight)
                             UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
                             PDFText.draw(totalRow[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                             if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i, rows.count + 1)) }
                         }
                         for (column, values) in signatures.enumerated() {
-                            let x: CGFloat = column == 0 ? 314 : 36
-                            var signatureY: CGFloat = 690
+                            let x: CGFloat = column == 0 ? 306 : 44
+                            var signatureY = signatureTop
                             for (line, value) in values.enumerated() {
                                 let height = signatureHeights[column][line]
                                 let rect = CGRect(x: x, y: signatureY, width: 245, height: height)

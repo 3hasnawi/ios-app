@@ -98,7 +98,7 @@ public static class ReconciliationPdf
         // بيانات الحساب تحت العنوان مباشرة يسار ترويسة الوزارة (تعديل المالك): (الاسم، الفرع) ثم (العملة، IBAN)؛ الحساب المحلي لا يظهر في الكشف؛
         // السطر الأطول من المساحة يُقسم إلى سطر آخر ولا يُقص.
         const float accountLeft = Margin, accountRight = 392, accountWidth = accountRight - accountLeft, accountGap = 18, accountLine = 17;
-        float SegmentWidth((string Label, string Value) s) => W(s.Label + ":", labelFont) + 4 + W(s.Value, valueFont);
+        float SegmentWidth((string Label, string Value) s) => W(s.Label + ":", labelFont) + 5 + W(s.Value, valueFont);
         var accountLines = new List<List<(string Label, string Value)>>();
         foreach (var group in new[] { new[] { ("اسم الحساب", Value(account.Name)), ("الفرع", Value(account.Branch)) }, new[] { ("العملة", "IQD"), ("IBAN", Value(account.Iban)) } })
         {
@@ -197,7 +197,7 @@ public static class ReconciliationPdf
                     foreach (var segment in segments)
                     {
                         var label = segment.Label + ":";
-                        DrawRight(canvas, boldShaper, labelFont, label, right, baseline); right -= W(label, labelFont) + 4;
+                        DrawRight(canvas, boldShaper, labelFont, label, right, baseline); right -= W(label, labelFont) + 5;
                         DrawRight(canvas, regularShaper, valueFont, segment.Value, right, baseline); right -= W(segment.Value, valueFont) + accountGap;
                     }
                 }

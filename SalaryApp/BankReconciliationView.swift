@@ -191,7 +191,7 @@ struct BankReconciliationView: View {
         if let totals {
             Section(tr("ملخص الحساب", "Account summary")) {
                 if account.isIncomplete {
-                    Label(tr("أكمل اسم الحساب والفرع ورقم الحساب المحلي وIBAN من إعداد الحساب لتظهر في الكشف.", "Complete the account name, branch, local account number and IBAN in Account settings so they appear on the statement."), systemImage: "info.circle")
+                    Label(tr("أكمل اسم الحساب والفرع وIBAN من إعداد الحساب لتظهر في الكشف.", "Complete the account name, branch and IBAN in Account settings so they appear on the statement."), systemImage: "info.circle")
                         .foregroundStyle(.orange)
                 }
                 LabeledContent(tr("التمويل", "Funding"), value: Money.format(Double(totals.funding)))
