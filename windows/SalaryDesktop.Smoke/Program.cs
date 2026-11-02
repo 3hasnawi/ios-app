@@ -17,6 +17,22 @@ static class Program
     {
         var entry = zip.CreateEntry(name); using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false)); writer.Write(value);
     }
+    private static void Entry(ZipArchive zip, string name, byte[] value)
+    {
+        var entry = zip.CreateEntry(name); using var stream = entry.Open(); stream.Write(value);
+    }
+    /// صفحة كتاب وهمية مرسومة (بلا نص حقيقي) لمعاينات الأرشيف.
+    internal static byte[] FictionalPage(int seed)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(1240, 1754); using var canvas = new SkiaSharp.SKCanvas(bitmap); canvas.Clear(SkiaSharp.SKColors.White);
+        using var ink = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(60, 70, 80), IsAntialias = true };
+        using var head = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(28, 110, 91), IsAntialias = true };
+        using var stamp = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(40, 80, 170, 150), IsAntialias = true, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = 8 };
+        canvas.DrawRect(120, 110, 1000, 26, head); canvas.DrawRect(820, 170, 300, 18, ink); canvas.DrawRect(120, 170, 260, 18, ink);
+        for (int i = 0; i < 16 + seed % 5; i++) canvas.DrawRect(120 + (i % 4 == 0 ? 0 : 60), 320 + i * 62, i % 4 == 3 ? 560 : 940, 14, ink);
+        canvas.DrawCircle(330, 1480, 110, stamp); canvas.DrawRect(820, 1460, 260, 14, ink);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap); using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Jpeg, 88); return data.ToArray();
+    }
     private static string Lines<T>(IEnumerable<T> rows) => string.Concat(rows.Select(r => JsonSerializer.Serialize(r) + "\n"));
     private static void Fixture(string path)
     {
@@ -83,7 +99,7 @@ static class Program
         Entry(zip, "months.jsonl", Lines(months.Select(month => new { name = month, employeeCount = 64, deductionCount = deductions.Count / 2 })));
         Entry(zip, "employees.jsonl", Lines(employees)); Entry(zip, "deductions.jsonl", Lines(deductions)); Entry(zip, "staff.jsonl", Lines(staff));
         Entry(zip, "accounts.jsonl", Lines(accounts)); Entry(zip, "books/index.json", JsonSerializer.Serialize(books));
-        foreach (var book in books) Entry(zip, $"books/{book.id.ToString().ToUpperInvariant()}.pdf", "%PDF-1.4\n% fictional\n");
+        foreach (var book in books) Entry(zip, $"books/{book.id.ToString().ToUpperInvariant()}.pdf", ArchivePdf.FromImages(Enumerable.Range(0, book.pages).Select(i => new ArchiveImage(FictionalPage(i + book.pages))).ToArray()));
         Entry(zip, "settings.json", "{}");
     }
 
@@ -190,7 +206,8 @@ static class Program
                     await Task.Delay(1200);
                     foreach (var (tag, name) in new[] { ("home", "01-home"), ("payroll", "02-payroll"), ("deductions", "03-deductions"), ("staff", "04-staff"), ("archive", "05-archive"), ("groups", "06-groups"), ("bank", "07-bank"), ("transfer", "08-transfer"), ("accounts", "09-accounts"), ("settings", "10-settings") })
                     {
-                        await Navigate(tag); if (tag is "staff" or "bank" or "transfer") await Task.Delay(1200); Shot(main, name);
+                        await Navigate(tag); if (tag is "staff" or "bank" or "transfer" or "archive") await Task.Delay(1200); Shot(main, name);
+                        if (tag == "archive") Check(((ListBox)main.FindName("ArchiveList")).Items.Count == 2, "archive list did not show the books");
                     }
                     await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
                     var detail = Fit(new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }); detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
@@ -254,6 +271,14 @@ static class Program
                     var statementWindow = Fit(new EmployeeDeductionWindow(rich, new DeductionPerson(PersonProfiles.Key(sampleDeduction.Name), sampleDeduction.Name, sampleDeduction.Rank), sampleDeduction.Title) { Owner = main }, 1120, 780);
                     statementWindow.Show(); await Task.Delay(1800);
                     Check(((ItemsControl)statementWindow.FindName("Rows")).Items.Count > 0, "employee deduction statement rows were not shown"); Shot(statementWindow, "41-employee-deductions"); statementWindow.Close();
+                    var scanFolder = Path.Combine(directory, "scan"); Directory.CreateDirectory(scanFolder);
+                    var scanFiles = new[] { Path.Combine(scanFolder, "Scan_0001.jpg"), Path.Combine(scanFolder, "Scan_0002.jpg") };
+                    for (int i = 0; i < scanFiles.Length; i++) File.WriteAllBytes(scanFiles[i], FictionalPage(i + 3));
+                    var archiveAdd = Fit(new ArchiveBookWindow(ArchiveBookMode.Add, ["أيلول 2026", "آب 2026"], ["شركة عراق الجوال", "مصرف الرافدين"], "أيلول 2026", files: scanFiles) { Owner = main }, 1040, 720);
+                    archiveAdd.Show(); await Task.Delay(1500);
+                    Check(((ItemsControl)archiveAdd.FindName("PageList")).Items.Count == 2 && ((TextBox)archiveAdd.FindName("TitleBox")).Text.Length == 0, "archive import did not load scanned pages or named a scanner file");
+                    ((TextBox)archiveAdd.FindName("TitleBox")).Text = "كتاب وهمي بشأن الاستقطاع"; await Task.Delay(200);
+                    Shot(archiveAdd, "45-archive-add"); archiveAdd.Close();
                     // أمانات الرواتب ببيانات وهمية: الجدول بالمرشحات، وقيد بدفعة جزئية بلا رقم كتاب ولا تاريخ.
                     var trustStore = new LocalSalaryTrustStore(Path.Combine(directory, "salary-trust"));
                     SalaryTrustPayment Pay(long amount, string number, string date, string note) => new(Guid.NewGuid().ToString(), amount, number, date, note);

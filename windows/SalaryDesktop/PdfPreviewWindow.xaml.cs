@@ -78,7 +78,7 @@ public partial class PdfPreviewWindow : Window
     }
 
     /// صفحة واحدة بدقة محددة (نقطة PDF ← بكسل) على خلفية بيضاء؛ للطباعة بدقة الطابعة.
-    private static BitmapSource RenderPage(byte[] bytes, int index, double pixelsPerPoint, double dpi)
+    internal static BitmapSource RenderPage(byte[] bytes, int index, double pixelsPerPoint, double dpi)
     {
         lock (Docnet.Core.DocLib.Instance)
         {

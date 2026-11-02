@@ -97,12 +97,12 @@ public partial class MainWindow : Window
             {
                 var inspected = await Task.Run(() => BackupReader.Read(selectedPath));
                 inspectedDigest = inspected.SourceDigest;
-                var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null || (await Task.Run(() => trustStore.Load(shown))).Revision is not null;
+                var hasLocalChanges = payrollState?.Revision is not null || linkState?.Revision is not null || (await Task.Run(() => reconciliationStore.Load(shown))).Revision is not null || (await Task.Run(() => trustStore.Load(shown))).Revision is not null || ArchiveRevision(shown) is not null;
                 if (inspected.SourceDigest != previous.SourceDigest && hasLocalChanges)
                 {
                     // التعديلات المحلية لا تندمج مع النسخة الأخرى؛ يُعرض حفظها في نسخة شاملة قبل الانتقال حتى لا يضيع عمل ويندوز.
                     var choice = Ui.Message(this,
-                        "توجد تعديلات محلية مرتبطة بالنسخة الحالية (أشهر مستوردة أو حسابات أو دفتر مطابقة). تبقى على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى.\n\nنعم: احفظ نسخة شاملة بالتعديلات أولاً ثم افتح الأخرى.\nلا: افتح الأخرى دون حفظ.\nإلغاء: ابقَ على النسخة الحالية.",
+                        "توجد تعديلات محلية مرتبطة بالنسخة الحالية (أشهر مستوردة أو حسابات أو دفتر مطابقة أو كتب في الأرشيف). تبقى على الجهاز، لكنها لا تندمج تلقائياً مع النسخة الأخرى.\n\nنعم: احفظ نسخة شاملة بالتعديلات أولاً ثم افتح الأخرى.\nلا: افتح الأخرى دون حفظ.\nإلغاء: ابقَ على النسخة الحالية.",
                         "تغيير النسخة المفتوحة", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
                     if (choice == MessageBoxResult.Cancel || choice == MessageBoxResult.None) { SourceMessage.Text = "لم تتغير النسخة المفتوحة."; return false; }
                     if (choice == MessageBoxResult.Yes)
@@ -131,9 +131,10 @@ public partial class MainWindow : Window
 
     private void SetSnapshot(BackupSnapshot loaded)
     {
-        var payroll = payrollStore.Load(loaded);
+        var archived = WithArchive(loaded);
+        var payroll = payrollStore.Load(archived);
         var links = linkStore.Load(payroll.Snapshot);
-        ApplySources(loaded, payroll, links, null);
+        ApplySources(archived, payroll, links, null);
     }
     private void ApplySources(BackupSnapshot root, PayrollImportState payroll, TransferLinksSnapshot links, string? month)
     {
@@ -187,6 +188,7 @@ public partial class MainWindow : Window
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
             if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
             if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
+            else if (e.Key == Key.F && ArchivePanel.Visibility == Visibility.Visible) { ArchiveSearch.Focus(); ArchiveSearch.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.O) { e.Handled = true; ImportFiles(this, new RoutedEventArgs()); }
         }
         else if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
@@ -224,7 +226,7 @@ public partial class MainWindow : Window
     private string SelectedMonth => MonthPicker.SelectedItem as string ?? "";
     private static string Amount(decimal amount) => amount.ToString("#,0.##", Numbers);
 
-    private static readonly string[] DataPages = ["payroll", "deductions", "groups", "accounts", "archive", "staff"];
+    private static readonly string[] DataPages = ["payroll", "deductions", "groups", "accounts", "staff"];
     private void RenderPage()
     {
         if (!IsInitialized || HomePanel is null || DataTable is null) return;
@@ -233,10 +235,11 @@ public partial class MainWindow : Window
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        ArchivePanel.Visibility = page == "archive" ? Visibility.Visible : Visibility.Collapsed;
         bool available = DataPages.Contains(page);
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         StaffReloadButton.Visibility = page == "staff" ? Visibility.Visible : Visibility.Collapsed;
-        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && !available ? Visibility.Visible : Visibility.Collapsed;
+        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && page != "archive" && !available ? Visibility.Visible : Visibility.Collapsed;
         var month = SelectedMonth;
         PageTitle.Text = page switch
         {
@@ -251,7 +254,7 @@ public partial class MainWindow : Window
             "groups" => month.Length > 0 ? $"مبالغ الاستقطاع لكل جهة · {month}" : "مبالغ الاستقطاع لكل جهة",
             "accounts" => "IBAN والفروع المحفوظة لجهات التنفيذ",
             "staff" => "سجلات الملاك من النسخة المفتوحة",
-            "archive" => "الكتب والإشعارات المؤرشفة في النسخة",
+            "archive" => "الكتب والإشعارات: إضافة من ملف أو ماسح ضوئي، وربطها بالشهر والجهة",
             "bank" => month.Length > 0 ? $"مبالغ {month} للمراجعة مع المصرف" : "اختر شهراً",
             "transfer" => month.Length > 0 ? $"{month} · ملفات المصارف والكتب" : "اختر شهراً",
             "settings" => "النسخ الاحتياطي والبيانات المحلية",
@@ -260,13 +263,14 @@ public partial class MainWindow : Window
         if (page != shownPage)
         {
             shownPage = page;
-            UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
+            UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, "archive" => ArchivePanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
             panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
         }
         if (page == "home") { RenderHome(); return; }
         if (page == "bank") { RenderBank(); return; }
         if (page == "transfer") { RenderTransfers(); return; }
         if (page == "settings") { BackupExport.IsEnabled = snapshot is not null; ShowSettings(); return; }
+        if (page == "archive") { RenderArchive(); return; }
         if (!available)
         {
             UnavailableTitle.Text = PageTitle.Text;
@@ -546,7 +550,7 @@ public partial class MainWindow : Window
                 var ledger = reconciliationStore.Load(source);
                 var trust = trustStore.Load(source);
                 ReconciliationBackupExport.Write(source, ledger.Periods, destination, trust.Ledger);
-                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision || trustStore.Load(source).Revision != trust.Revision, Ledger: LedgerRevisions(ledger.Revision, trust.Revision));
+                return (Changed: linkStore.Load(original).Revision != links.Revision || payrollStore.Load(root).Revision != payroll.Revision || reconciliationStore.Load(source).Revision != ledger.Revision || trustStore.Load(source).Revision != trust.Revision, Ledger: LedgerRevisions(ledger.Revision, trust.Revision, ArchiveRevision(source)));
             });
             var changed = saved.Changed;
             if (!changed && ReferenceEquals(source, snapshot)) RememberBackup(root, payroll.Revision, links.Revision, saved.Ledger);

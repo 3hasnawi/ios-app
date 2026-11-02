@@ -24,6 +24,25 @@ public static class ReconciliationBackupExport
         }
         return JsonSerializer.SerializeToUtf8Bytes(result.ToDictionary(p => p.Key, p => new { count = p.Value.Count, total = p.Value.Total }, StringComparer.Ordinal));
     }
+    private static string BookEntry(Guid id) => $"books/{id.ToString().ToUpperInvariant()}.pdf";
+    /// فهرس الكتب بصيغة الآيفون (OfficialBook): تُبقى حقول كل كتاب الأصلية (ومنها createdAt) وتُحدَّث الاسم والشهر والجهة والصفحات.
+    private static byte[] BookIndex(Stream original, IReadOnlyList<ArchiveBook> books)
+    {
+        var old = new Dictionary<Guid, JsonObject>();
+        if (JsonNode.Parse(original) is not JsonArray array) throw new InvalidDataException("فهرس الأرشيف غير صالح.");
+        foreach (var node in array)
+            if (node is JsonObject item && item["id"] is JsonValue value && value.TryGetValue<string>(out var text) && Guid.TryParse(text, out var id)) old[id] = item;
+        var result = new JsonArray();
+        foreach (var book in books)
+        {
+            var node = old.TryGetValue(book.Id, out var found) ? (JsonObject)found.DeepClone() : new JsonObject { ["id"] = book.Id.ToString().ToUpperInvariant() };
+            node["title"] = book.Title; node["month"] = book.Month; node["pages"] = book.Pages;
+            if (node["createdAt"] is null) node["createdAt"] = book.CreatedAt ?? LocalArchiveStore.IosNow();
+            if (book.Entity is null) node.Remove("entity"); else node["entity"] = book.Entity;
+            result.Add(node);
+        }
+        return Encoding.UTF8.GetBytes(result.ToJsonString());
+    }
     private static double IosDate(DateOnly date)
     {
         var zone = TimeZoneInfo.TryFindSystemTimeZoneById("Asia/Baghdad", out var iraq) ? iraq :
@@ -65,6 +84,14 @@ public static class ReconciliationBackupExport
             var changedMonths = !original.Months.SequenceEqual(source.Months) || changedEmployees || changedDeductions;
             if (original.Months.Any(m => !source.Months.Any(n => n.Name == m.Name)) || source.Months.Select(m => m.Name).Distinct(StringComparer.Ordinal).Count() != source.Months.Count)
                 throw new InvalidDataException("لا يمكن حذف شهر أو تكراره عند حفظ النسخة.");
+            var localBooks = source.LocalBookFiles ?? new Dictionary<Guid, string>();
+            var changedBooks = localBooks.Count > 0 || !original.Books.SequenceEqual(source.Books);
+            if (changedBooks && (original.Version < 3 || source.Books.Select(b => b.Id).Distinct().Count() != source.Books.Count || localBooks.Keys.Any(id => !source.Books.Any(b => b.Id == id))
+                || source.Books.Any(b => !localBooks.ContainsKey(b.Id) && !original.Books.Any(o => o.Id == b.Id && o.Pages == b.Pages))))
+                throw new InvalidDataException("تعديلات الأرشيف لا تطابق النسخة؛ أعد فتح الأرشيف.");
+            var droppedBooks = changedBooks ? original.Books.Where(o => localBooks.ContainsKey(o.Id) || !source.Books.Any(b => b.Id == o.Id)).Select(o => BookEntry(o.Id)).ToHashSet(StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
+            bool Rewritten(string name) => name == "settings.json" || (changedAccounts && name == "accounts.jsonl") || ((changedAccounts || changedMonths || changedBooks) && name == "manifest.json") ||
+                (changedMonths && name == "months.jsonl") || (changedEmployees && name == "employees.jsonl") || (changedDeductions && name == "deductions.jsonl") || (changedBooks && name == "books/index.json");
             if (changedAccounts && (original.Version < 2 || source.Accounts.Count < original.Accounts.Count ||
                 !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Take(original.Accounts.Count).Select(a => a.Entity))))
                 throw new InvalidDataException("لا يمكن حفظ الحسابات في صيغة النسخة هذه أو مع تغيير أسمائها.");
@@ -77,6 +104,7 @@ public static class ReconciliationBackupExport
             {
                 foreach (var oldEntry in oldZip.Entries)
                 {
+                    if (droppedBooks.Contains(oldEntry.FullName)) continue;
                     var newEntry = newZip.CreateEntry(oldEntry.FullName, CompressionLevel.Optimal);
                     newEntry.LastWriteTime = oldEntry.LastWriteTime; newEntry.ExternalAttributes = oldEntry.ExternalAttributes;
                     using var outStream = newEntry.Open();
@@ -113,28 +141,50 @@ public static class ReconciliationBackupExport
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
                         foreach (var d in source.Deductions) writer.WriteLine(JsonSerializer.Serialize(new { month = d.Month, name = d.Name, title = d.Title, amount = d.Amount, note = d.Note, rank = d.Rank }));
                     }
-                    else if ((changedAccounts || changedMonths) && oldEntry.FullName == "manifest.json")
+                    else if (changedBooks && oldEntry.FullName == "books/index.json")
+                    {
+                        using var originalIndex = oldEntry.Open();
+                        outStream.Write(BookIndex(originalIndex, source.Books));
+                    }
+                    else if ((changedAccounts || changedMonths || changedBooks) && oldEntry.FullName == "manifest.json")
                     {
                         using var originalManifest = oldEntry.Open();
                         var manifest = JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
                         manifest["accounts"] = source.Accounts.Count;
+                        if (changedBooks) manifest["books"] = source.Books.Count;
                         if (changedMonths) { manifest["months"] = new JsonArray(source.Months.Select(m => (JsonNode?)JsonValue.Create(m.Name)).ToArray()); manifest["employees"] = source.Employees.Count; manifest["deductions"] = source.Deductions.Count; }
                         JsonSerializer.Serialize(outStream, manifest);
                     }
                     else { using var inStream = oldEntry.Open(); inStream.CopyTo(outStream); }
+                }
+                // ملفات الكتب المضافة أو المستبدلة في ويندوز.
+                foreach (var (id, file) in localBooks)
+                {
+                    var bytes = File.ReadAllBytes(file);
+                    if (bytes.Length < 5 || !bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8)) throw new InvalidDataException("ملف كتاب محلي غير صالح.");
+                    var entry = newZip.CreateEntry(BookEntry(id), CompressionLevel.Optimal);
+                    using var stream = entry.Open(); stream.Write(bytes);
                 }
             }
             var restored = BackupReader.Read(temp);
             if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
             if (!restored.Months.SequenceEqual(source.Months) || !SameEmployees(restored.Employees, source.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
                 throw new InvalidDataException("تعذّر التحقق من بيانات الأشهر في النسخة الجديدة.");
+            if (!restored.Books.Select(b => b with { CreatedAt = null }).SequenceEqual(source.Books.Select(b => b with { CreatedAt = null }))) throw new InvalidDataException("تعذّر التحقق من فهرس الأرشيف في النسخة الجديدة.");
+            if (localBooks.Count > 0)
+                using (var check = ZipFile.OpenRead(temp))
+                    foreach (var (id, file) in localBooks)
+                    {
+                        using var stored = (check.GetEntry(BookEntry(id)) ?? throw new InvalidDataException("ملف كتاب مفقود في النسخة الجديدة.")).Open();
+                        if (!SHA256.HashData(stored).AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(file)))) throw new InvalidDataException("تعذّر التحقق من ملف كتاب في النسخة الجديدة.");
+                    }
             if (trust is not null && !SalaryTrust.Encode(SalaryTrust.ReadFromBackup(restored)).AsSpan().SequenceEqual(SalaryTrust.Encode(trust))) throw new InvalidDataException("تعذّر التحقق من دفتر الأمانات في النسخة الجديدة.");
             var readPeriods = BankReconciliation.ReadFromBackup(restored);
             if (!LedgerPlist(readPeriods).AsSpan().SequenceEqual(LedgerPlist(periods))) throw new InvalidDataException("تعذّر التحقق من دفتر المطابقة في النسخة الجديدة.");
             using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))
             using (var newZip = ZipFile.OpenRead(temp))
             {
-                foreach (var oldEntry in oldZip.Entries.Where(e => e.FullName != "settings.json" && !(changedAccounts && e.FullName == "accounts.jsonl") && !((changedAccounts || changedMonths) && e.FullName == "manifest.json") && !(changedMonths && e.FullName == "months.jsonl") && !(changedEmployees && e.FullName == "employees.jsonl") && !(changedDeductions && e.FullName == "deductions.jsonl")))
+                foreach (var oldEntry in oldZip.Entries.Where(e => !Rewritten(e.FullName) && !droppedBooks.Contains(e.FullName)))
                 {
                     var copy = newZip.GetEntry(oldEntry.FullName) ?? throw new InvalidDataException("ملف مفقود في النسخة الجديدة.");
                     using var a = oldEntry.Open(); using var b = copy.Open();

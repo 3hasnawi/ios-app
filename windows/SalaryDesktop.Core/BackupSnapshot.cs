@@ -11,10 +11,15 @@ public sealed record PayrollMonth(string Name, int EmployeeCount, int DeductionC
 public sealed record Employee(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
 public sealed record Deduction(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
 public sealed record ExecutionAccount(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);
-public sealed record ArchiveBook(Guid Id, string Title, string Month, int Pages, string? Entity);
+/// CreatedAt بثواني الآيفون (منذ ٢٠٠١) كما في books/index.json؛ يُحفظ كما هو عند إعادة كتابة الفهرس.
+public sealed record ArchiveBook(Guid Id, string Title, string Month, int Pages, string? Entity, double? CreatedAt = null);
 public sealed record BackupSnapshot(string SourcePath, string SourceDigest, int Version, IReadOnlyList<PayrollMonth> Months,
     IReadOnlyList<Employee> Employees, IReadOnlyList<Deduction> Deductions, int StaffCount,
-    IReadOnlyList<ExecutionAccount> Accounts, IReadOnlyList<ArchiveBook> Books, IReadOnlyDictionary<string, byte[]> SettingsPlists);
+    IReadOnlyList<ExecutionAccount> Accounts, IReadOnlyList<ArchiveBook> Books, IReadOnlyDictionary<string, byte[]> SettingsPlists)
+{
+    /// كتب أُضيفت أو استُبدل ملفها في ويندوز: المعرّف ← مسار PDF المحلي (من LocalArchiveStore)؛ الباقي يُقرأ من ملف النسخة.
+    public IReadOnlyDictionary<Guid, string>? LocalBookFiles { get; init; }
+}
 
 public static class BackupReader
 {
@@ -27,12 +32,19 @@ public static class BackupReader
     private sealed record EmployeeData(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
     private sealed record DeductionData(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
     private sealed record AccountData(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);
-    private sealed record BookData(Guid Id, string Title, string Month, int Pages, string? Entity);
+    private sealed record BookData(Guid Id, string Title, string Month, int Pages, string? Entity, double? CreatedAt);
 
     // The caller chooses a new private temporary file; the UUID is resolved only inside the original backup.
     public static void CopyBook(BackupSnapshot snapshot, ArchiveBook book, string destination)
     {
         if (!snapshot.Books.Any(item => item.Id == book.Id)) throw new InvalidDataException("الكتاب غير موجود في فهرس النسخة المفتوحة.");
+        if (snapshot.LocalBookFiles?.GetValueOrDefault(book.Id) is { } local)
+        {
+            var data = File.ReadAllBytes(local);
+            if (data.Length < 5 || !data.AsSpan(0, 5).SequenceEqual("%PDF-"u8)) throw new InvalidDataException("ملف الكتاب المحلي ليس PDF صالحاً.");
+            using var copy = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            copy.Write(data); return;
+        }
         using var input = new FileStream(snapshot.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
         if (!string.Equals(Convert.ToHexString(SHA256.HashData(input)), snapshot.SourceDigest, StringComparison.Ordinal))
             throw new InvalidDataException("تغيّر ملف النسخة منذ فتحه؛ أعد فتح النسخة قبل عرض الكتاب.");
@@ -160,6 +172,6 @@ public static class BackupReader
             deductions.Select(d => new Deduction(d.Month, d.Name, d.Title, d.Amount, d.Note ?? "", d.Rank ?? "")).ToArray(),
             staffCount,
             accounts.Select(a => new ExecutionAccount(a.Entity, a.Iban ?? "", a.Branch ?? "", a.Swift ?? "", a.LocalAccount)).ToArray(),
-            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity)).ToArray(), settingsPlists);
+            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity, b.CreatedAt)).ToArray(), settingsPlists);
     }
 }

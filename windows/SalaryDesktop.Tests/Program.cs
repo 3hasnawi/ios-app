@@ -1097,6 +1097,58 @@ try
     var iphoneBackup = Path.Combine(root, "trust-iphone-format.zip");
     ReconciliationBackupExport.Write(trustSnapshot, [], iphoneBackup, iphoneLedger);
     Check(SalaryTrust.ReadFromBackup(BackupReader.Read(iphoneBackup)).Entries.Single().Payments.Single().BookDate == "", "empty book fields survive the shared backup");
+    // الأرشيف في ويندوز: إضافة كتاب من صور (مثل الماسح) أو PDF، تعديل البيانات، الاستبدال والحذف، ثم دخولها النسخة الاحتياطية بصيغة الآيفون.
+    var archiveSource = Path.Combine(root, "archive-fictional.zip"); MakeBackup(archiveSource);
+    var archiveRaw = BackupReader.Read(archiveSource);
+    var archiveStore = new LocalArchiveStore(Path.Combine(root, "archive-store"));
+    byte[] FictionalPage(int width, int height)
+    {
+        using var bitmap = new SKBitmap(width, height); using var canvas = new SKCanvas(bitmap); canvas.Clear(SKColors.White);
+        using var ink = new SKPaint { Color = SKColors.Black }; canvas.DrawRect(width / 10f, height / 10f, width / 2f, height / 20f, ink);
+        using var image = SKImage.FromBitmap(bitmap); using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90); return data.ToArray();
+    }
+    var scanned = ArchivePdf.FromImages([new ArchiveImage(FictionalPage(1240, 1754)), new ArchiveImage(FictionalPage(1754, 1240), 1)]);
+    Check(ArchivePdf.Pages(scanned) == 2, "scanned pages become a two-page archive PDF");
+    try { _ = ArchivePdf.FromImages(Enumerable.Range(0, 4).Select(_ => new ArchiveImage(FictionalPage(200, 300))).ToArray()); throw new InvalidOperationException("four scanned pages accepted"); }
+    catch (InvalidDataException) { }
+    try { _ = ArchivePdf.Pages(Encoding.ASCII.GetBytes("not a pdf")); throw new InvalidOperationException("non-PDF accepted"); }
+    catch (InvalidDataException) { }
+    var archiveEmpty = archiveStore.Load(archiveRaw);
+    Check(archiveEmpty.Revision is null && archiveEmpty.Books.Count == 1 && ReferenceEquals(archiveStore.Apply(archiveRaw), archiveRaw), "archive without Windows changes uses the backup as-is");
+    try { _ = archiveStore.Add(archiveRaw, archiveEmpty, "   ", "أيلول 2026", null, scanned); throw new InvalidOperationException("untitled book accepted"); }
+    catch (InvalidDataException) { }
+    var archiveAdded = archiveStore.Add(archiveRaw, archiveEmpty, "كتاب ممسوح وهمي", "أيلول 2026", "جهة وهمية للأرشيف", scanned);
+    var addedBook = archiveAdded.Books[0];
+    Check(archiveAdded.Books.Count == 2 && addedBook.Pages == 2 && addedBook.CreatedAt is > 0 && archiveAdded.Files.ContainsKey(addedBook.Id), "scanned book added to the local archive");
+    try { _ = archiveStore.Edit(archiveRaw, archiveEmpty, addedBook.Id, "اسم آخر", "أيلول 2026", null); throw new InvalidOperationException("stale archive revision accepted"); }
+    catch (InvalidDataException) { }
+    var originalBook = archiveRaw.Books[0];
+    var archiveEdited = archiveStore.Edit(archiveRaw, archiveAdded, originalBook.Id, "كتاب وهمي بعد التعديل", "تشرين الاول 2026", "");
+    var singlePage = ArchivePdf.FromImages([new ArchiveImage(FictionalPage(600, 800))]);
+    var archiveReplaced = archiveStore.Replace(archiveRaw, archiveEdited, addedBook.Id, singlePage);
+    Check(archiveReplaced.Books.Single(b => b.Id == addedBook.Id).Pages == 1 && archiveReplaced.Books.Single(b => b.Id == originalBook.Id) is { Title: "كتاب وهمي بعد التعديل", Month: "تشرين الاول 2026", Entity: null }, "archive edit and file replacement");
+    var archiveApplied = archiveStore.Apply(archiveRaw);
+    var previewCopy = Path.Combine(root, "archive-local-copy.pdf");
+    BackupReader.CopyBook(archiveApplied, archiveApplied.Books.Single(b => b.Id == addedBook.Id), previewCopy);
+    Check(File.ReadAllBytes(previewCopy).AsSpan().SequenceEqual(singlePage), "local archive book opens from the Windows copy");
+    var archiveBackup = Path.Combine(root, "archive-shared.zip");
+    ReconciliationBackupExport.Write(archiveApplied, [], archiveBackup);
+    var archiveRead = BackupReader.Read(archiveBackup);
+    Check(archiveRead.Books.Count == 2 && archiveRead.Books[0].Id == addedBook.Id && archiveRead.Books[0].Entity == "جهة وهمية للأرشيف" && archiveRead.Books[1].Title == "كتاب وهمي بعد التعديل" && archiveRead.Books[1].Entity is null, "archive changes enter the shared backup index");
+    using (var archiveZip = ZipFile.OpenRead(archiveBackup))
+    {
+        var index = JsonDocument.Parse(archiveZip.GetEntry("books/index.json")!.Open()).RootElement;
+        Check(index[0].GetProperty("id").GetString() == addedBook.Id.ToString().ToUpperInvariant() && index[0].GetProperty("createdAt").GetDouble() > 0 && !index[1].TryGetProperty("entity", out _), "archive index keeps the iPhone format");
+        Check(JsonDocument.Parse(archiveZip.GetEntry("manifest.json")!.Open()).RootElement.GetProperty("books").GetInt32() == 2, "manifest counts archive books");
+    }
+    var sharedCopy = Path.Combine(root, "archive-shared-copy.pdf");
+    BackupReader.CopyBook(archiveRead, archiveRead.Books[0], sharedCopy);
+    Check(File.ReadAllBytes(sharedCopy).AsSpan().SequenceEqual(singlePage), "replaced book file stored in the shared backup");
+    var archiveDeleted = archiveStore.Delete(archiveRaw, archiveStore.Load(archiveRaw), originalBook.Id);
+    var deletedBackup = Path.Combine(root, "archive-deleted.zip");
+    ReconciliationBackupExport.Write(archiveStore.Apply(archiveRaw), [], deletedBackup);
+    using (var deletedZip = ZipFile.OpenRead(deletedBackup))
+        Check(archiveDeleted.Books.Count == 1 && BackupReader.Read(deletedBackup).Books.Single().Id == addedBook.Id && deletedZip.GetEntry($"books/{originalBook.Id.ToString().ToUpperInvariant()}.pdf") is null, "deleted book removed from the shared backup");
     // المرشحات والمتبقي المؤكد والكشف (مطابق للآيفون).
     var paidEntry = trustEntry with { Id = Guid.NewGuid().ToString(), Name = "منتسب مصروف وهمي", Payments = [Pay(1000, "", "")] };
     var unpaidEntry = trustEntry with { Id = Guid.NewGuid().ToString(), Name = "منتسب غير مصروف وهمي", Payments = [] };
