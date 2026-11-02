@@ -417,8 +417,8 @@ struct TransferFilesView: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button(tr("تم", "Done")) { showSettings = false } } }
             }
         }
-        .onChange(of: payerName) { BackupManager.shared.markChanged() }
-        .onChange(of: payerIBAN) { BackupManager.shared.markChanged() }
+        .onChange(of: payerName) { BackupManager.shared.markSettingChanged("bankStatementAccountName") }
+        .onChange(of: payerIBAN) { BackupManager.shared.markSettingChanged("bankStatementIBAN") }
         .onAppear { draftCoverage.discardIfDifferent(draftRevision) }
         .onChange(of: draftRevision) { draftCoverage.discardIfDifferent(draftRevision) }
         .task(id: "\(loadKey)|\(bankCache.revision)") {

@@ -320,11 +320,11 @@ struct BankStatementView: View {
             }
             .sheet(isPresented: $showSettings) { bankSettingsSheet }
             .task(id: loadKey) { await loadSummary(force: false) }
-            .onChange(of: accountName) { BackupManager.shared.markChanged() }
-            .onChange(of: iban) { BackupManager.shared.markChanged() }
-            .onChange(of: bankBranch) { BackupManager.shared.markChanged() }
-            .onChange(of: localAccount) { BackupManager.shared.markChanged() }
-            .onChange(of: manualAmountsData) { BackupManager.shared.markChanged() }
+            .onChange(of: accountName) { BackupManager.shared.markSettingChanged("bankStatementAccountName") }
+            .onChange(of: iban) { BackupManager.shared.markSettingChanged("bankStatementIBAN") }
+            .onChange(of: bankBranch) { BackupManager.shared.markSettingChanged("bankStatementBranch") }
+            .onChange(of: localAccount) { BackupManager.shared.markSettingChanged("bankStatementLocalAccount") }
+            .onChange(of: manualAmountsData) { BackupManager.shared.markSettingChanged("bankStatementManualAmounts") }
             .task {
                 if UserDefaults.standard.bool(forKey: "openBankSettings") { showSettings = true }
             }

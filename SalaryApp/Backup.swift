@@ -301,6 +301,8 @@ final class BackupManager {
     private static let errorAtKey = "autoBackupLastErrorAt"
     /// آخر تغيير في البيانات (استيراد أو حذف): إذا كان بعد آخر نسخة ناجحة تُعاد المحاولة تلقائياً.
     private static let changedKey = "backupDataChangedAt"
+    /// آخر تغيير شملته نسخة ناجحة أو أزاله استرجاع مؤكد؛ لا يغيّر تاريخ النسخة المعروض.
+    private static let acknowledgedChangeKey = "backupAcknowledgedChangeAt"
     /// فهرس آخر نسخة ناجحة أو مسترجعة؛ لا يحتوي أسماء أشخاص أو مبالغ.
     private static let safetyManifestKey = "backupSafetyManifestV1"
     /// اختبار المحاكي: مسار ملف بدل iCloud.
@@ -318,12 +320,22 @@ final class BackupManager {
     var pendingServerRestoreDate: Date? { pendingServerRestore?.date }
     var overwriteCandidate: BackupServerStatus?
     var version = 0
+    /// القيم المستعادة تمنع احتساب إشعارات AppStorage المتأخرة كتعديل يدوي.
+    private var restoredSettingValues: [String: Data] = [:]
 
     var lastBackup: Date? { UserDefaults.standard.object(forKey: Self.lastKey) as? Date }
     var hasUnbackedChanges: Bool {
         if BackupServerConfig.enabled && UserDefaults.standard.bool(forKey: BackupServerConfig.pendingKey) { return true }
-        guard let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date else { return false }
-        return changed > (lastBackup ?? .distantPast)
+        return Self.hasPendingChange(UserDefaults.standard.object(forKey: Self.changedKey) as? Date,
+                                     acknowledged: UserDefaults.standard.object(forKey: Self.acknowledgedChangeKey) as? Date,
+                                     lastBackup: lastBackup)
+    }
+    private static func hasPendingChange(_ changed: Date?, acknowledged: Date?, lastBackup: Date?) -> Bool {
+        guard let changed else { return false }
+        return changed > (acknowledged ?? lastBackup ?? .distantPast)
+    }
+    private static func hasRetainedSettings(backupKeys: Set<String>, localKeys: Set<String>) -> Bool {
+        !localKeys.isSubset(of: backupKeys)
     }
     var lastSize: Int64 { Int64(UserDefaults.standard.integer(forKey: Self.lastSizeKey)) }
     var lastPlace: String { UserDefaults.standard.string(forKey: Self.lastPlaceKey) ?? "" }
@@ -390,6 +402,7 @@ final class BackupManager {
             return
         }
         isWorking = true
+        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         Task {
             defer { isWorking = false; version += 1 }
             do {
@@ -404,6 +417,7 @@ final class BackupManager {
                 defaults.removeObject(forKey: Self.folderKey)
                 if !BackupServerConfig.ready {
                     defaults.set(Date(), forKey: Self.lastKey)
+                    defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
                     defaults.set(Int(size), forKey: Self.lastSizeKey)
                     defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
                     defaults.removeObject(forKey: Self.errorKey)
@@ -592,13 +606,29 @@ final class BackupManager {
         version += 1
     }
 
+    /// قد يصل إشعار إعداد مستعاد لاحقاً، حتى بعد انتهاء تطبيق قيم النسخة.
+    func markSettingChanged(_ key: String) {
+        if let restored = restoredSettingValues[key],
+           Self.isRestoredSetting(UserDefaults.standard.object(forKey: key), equalTo: restored) { return }
+        restoredSettingValues.removeValue(forKey: key)
+        markChanged()
+    }
+
+    private static func isRestoredSetting(_ value: Any?, equalTo restored: Data) -> Bool {
+        guard let value,
+              let current = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) else { return false }
+        return current == restored
+    }
+
     /// بيانات تغيّرت بعد آخر نسخة ناجحة أو حان موعد النسخة الدورية.
     var needsBackup: Bool {
         guard !Self.manualOnly, BackupServerConfig.ready || resolveFile() != nil else { return false }
         // لا نحاول كل دقيقة عند تعذّر الاتصال بمزود iCloud.
         if let lastErrorAt, Date().timeIntervalSince(lastErrorAt) < 10 * 60 { return false }
         let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
-        let pendingChange = changed.map { $0 > (lastBackup ?? .distantPast) && Date().timeIntervalSince($0) >= 120 } ?? false
+        let acknowledged = UserDefaults.standard.object(forKey: Self.acknowledgedChangeKey) as? Date
+        let pendingChange = Self.hasPendingChange(changed, acknowledged: acknowledged, lastBackup: lastBackup) &&
+            changed.map { Date().timeIntervalSince($0) >= 120 } == true
         let firstServerBackup = BackupServerConfig.ready && UserDefaults.standard.bool(forKey: BackupServerConfig.pendingKey)
         let afterImport = Self.autoEnabled && (pendingChange || lastError != nil)
         let periodic = Self.schedule.interval.map { Date().timeIntervalSince(lastBackup ?? .distantPast) >= $0 } ?? false
@@ -634,6 +664,7 @@ final class BackupManager {
             return "⚠️ " + BackupError.noFolder.localizedDescription
         }
         isWorking = true
+        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         defer { isWorking = false; version += 1 }
         // يكمل النسخ حتى لو خرج المستخدم من التطبيق أثناءه.
         let task = UIApplication.shared.beginBackgroundTask(withName: "backup")
@@ -678,6 +709,7 @@ final class BackupManager {
             let place = Self.placeName(file.deletingLastPathComponent())
             let defaults = UserDefaults.standard
             defaults.set(Date(), forKey: Self.lastKey)
+            defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(place, forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
@@ -702,6 +734,7 @@ final class BackupManager {
         let address = BackupServerConfig.address
         let token = BackupServerConfig.token
         isWorking = true
+        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         defer { isWorking = false; version += 1 }
         let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
@@ -758,6 +791,7 @@ final class BackupManager {
             defaults.removeObject(forKey: BackupServerConfig.conflictKey)
             defaults.removeObject(forKey: BackupServerConfig.firstChoiceKey)
             defaults.set(Date(), forKey: Self.lastKey)
+            defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(tr("السيرفر المحلي", "Local server"), forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
@@ -957,6 +991,7 @@ final class BackupManager {
         let serverRestore = pendingServerRestore
         pendingServerRestore = nil
         isWorking = true
+        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         Task {
             defer { isWorking = false; version += 1; try? FileManager.default.removeItem(at: pending.folder) }
             let progress = ImportProgress.shared
@@ -968,6 +1003,12 @@ final class BackupManager {
                     try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink)
                 }.value
                 BankStatementCache.shared.invalidate()
+                restoredSettingValues = settings.reduce(into: [:]) { result, item in
+                    if let value = try? PropertyListSerialization.propertyList(from: item.value, format: nil),
+                       let normalized = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) {
+                        result[item.key] = normalized
+                    }
+                }
                 if settings[SalaryTrust.settingsKey] == nil { UserDefaults.standard.removeObject(forKey: SalaryTrust.settingsKey) }
                 for (key, data) in settings {
                     if let value = try? PropertyListSerialization.propertyList(from: data, format: nil) {
@@ -978,6 +1019,12 @@ final class BackupManager {
                 Self.rememberSafetyManifest(pending.manifest)
                 if let serverRestore, BackupServerConfig.address == serverRestore.address, BackupServerConfig.token == serverRestore.token {
                     BackupServerConfig.remember(serverRestore.date)
+                    // لا نعدّ الإعدادات المحلية التي لم تشملها النسخة محفوظة فيها.
+                    let localKeys = Set(BackupFormat.settingsKeys.filter { UserDefaults.standard.object(forKey: $0) != nil })
+                    let retained = Self.hasRetainedSettings(backupKeys: Set(settings.keys), localKeys: localKeys)
+                    if !retained {
+                        UserDefaults.standard.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
+                    }
                     UserDefaults.standard.removeObject(forKey: BackupServerConfig.pendingKey)
                     UserDefaults.standard.removeObject(forKey: BackupServerConfig.firstChoiceKey)
                     UserDefaults.standard.removeObject(forKey: BackupServerConfig.conflictKey)
@@ -1015,6 +1062,20 @@ final class BackupManager {
         }
         let before = counts()
         do {
+            let old = Date(timeIntervalSince1970: 100), newer = Date(timeIntervalSince1970: 200)
+            let restored = try PropertyListSerialization.data(fromPropertyList: "قيمة وهمية", format: .binary, options: 0)
+            guard !Self.hasPendingChange(old, acknowledged: old, lastBackup: .distantPast),
+                  Self.hasPendingChange(newer, acknowledged: old, lastBackup: newer),
+                  !Self.hasPendingChange(old, acknowledged: nil, lastBackup: newer),
+                  Self.hasPendingChange(newer, acknowledged: nil, lastBackup: old),
+                  !Self.hasRetainedSettings(backupKeys: ["a", "b"], localKeys: ["a"]),
+                  Self.hasRetainedSettings(backupKeys: ["a"], localKeys: ["a", "b"]),
+                  Self.isRestoredSetting("قيمة وهمية", equalTo: restored),
+                  !Self.isRestoredSetting("تعديل وهمي", equalTo: restored),
+                  !Self.isRestoredSetting(nil, equalTo: restored) else {
+                LaunchOptions.writeReport("backup=failed changeWatermark=failed")
+                return
+            }
             let previous = BackupFormat.Manifest(version: 4, createdAt: .now, months: ["شهر تجريبي"], employees: 2, deductions: 1, staff: 2, accounts: 1, books: 1)
             var lostMonth = previous; lostMonth.months = []
             var lostEmployees = previous; lostEmployees.employees = 0
