@@ -204,8 +204,12 @@ try
     if (Environment.GetEnvironmentVariable("SALARY_TEST_PDF") is { Length: > 0 } pdfPath) File.WriteAllBytes(pdfPath, testPdf);
     var longPeriod = period with { Movements = Enumerable.Range(0, 75).Select(i => new BankMovement(Guid.NewGuid(), period.Start, "حركة اختبارية ذات بيان طويل للتأكد من ظهور النص بوضوح في الكشف الورقي", 100, MovementDirection.Debit)).ToArray() };
     var longPdf = ReconciliationPdf.Generate(longPeriod, font);
-    var pdfStructure = Encoding.Latin1.GetString(longPdf);
-    Check(System.Text.RegularExpressions.Regex.Matches(pdfStructure, @"/Type\s*/Page\b").Count > 1 && pdfStructure.Contains("/MediaBox [0 0 595 842]", StringComparison.Ordinal), "long reconciliation generates multiple A4 pages");
+    using (var longDocument = UglyToad.PdfPig.PdfDocument.Open(longPdf))
+    {
+        var longPages = longDocument.GetPages().ToArray();
+        Check(longPages.Length > 1 && longPages.All(p => Math.Abs(p.Width - 595) < 1 && Math.Abs(p.Height - 842) < 1),
+            $"long reconciliation generates multiple A4 pages ({longPages.Length} pages, {string.Join(", ", longPages.Select(p => $"{p.Width:0}x{p.Height:0}"))})");
+    }
     if (Environment.GetEnvironmentVariable("SALARY_TEST_LONG_PDF") is { Length: > 0 } longPath) File.WriteAllBytes(longPath, longPdf);
     var pdfOutput = Path.Combine(root, "statement.pdf"); File.WriteAllText(pdfOutput, "original");
     try { ReconciliationPdf.SaveDraft(period with { Movements = [] }, font, pdfOutput); throw new InvalidOperationException("empty statement accepted"); }
