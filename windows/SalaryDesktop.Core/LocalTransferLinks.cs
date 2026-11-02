@@ -9,8 +9,14 @@ public sealed record TransferLinksSnapshot(BackupSnapshot Snapshot, IReadOnlyDic
 /// روابط أسماء الاستقطاعات إلى الحسابات المحفوظة؛ تحفظ مستقلة عن ملف الآيفون.
 public sealed class LocalTransferLinks(string directory)
 {
-    private sealed record LinkData(int Version, string SourceDigest, Dictionary<string, string> Links, Dictionary<string, string>? Categories = null, List<ExecutionAccount>? Accounts = null, byte[]? Customizations = null, byte[]? BoldFont = null, byte[]? BookLinks = null, byte[]? BankName = null, byte[]? BankIban = null, byte[]? BankManual = null, byte[]? ReferenceArchive = null, byte[]? Issuance = null);
+    private sealed record LinkData(int Version, string SourceDigest, Dictionary<string, string> Links, Dictionary<string, string>? Categories = null, List<ExecutionAccount>? Accounts = null, byte[]? Customizations = null, byte[]? BoldFont = null, byte[]? BookLinks = null, byte[]? BankName = null, byte[]? BankIban = null, byte[]? BankManual = null, byte[]? ReferenceArchive = null, byte[]? Issuance = null, Dictionary<string, byte[]>? Settings = null);
     private readonly string root = Path.GetFullPath(directory);
+    /// إعدادات إضافية يعدّلها ويندوز وتُكتب كما هي في settings.json (قيم plist)، مثل فرع الحساب ورقمه المحلي.
+    public static readonly IReadOnlySet<string> EditableSettings = new HashSet<string>(["bankStatementBranch", "bankStatementLocalAccount"], StringComparer.Ordinal);
+    private static void ValidateSettings(IReadOnlyDictionary<string, byte[]>? settings)
+    {
+        if (settings is not null && settings.Any(p => !EditableSettings.Contains(p.Key) || p.Value is null || p.Value.Length > 100_000)) throw new InvalidDataException("إعدادات الحساب المحلية غير صالحة.");
+    }
     private static string Digest(string value) => value.Length == 64 && value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F') ? value : throw new InvalidDataException("بصمة النسخة غير صالحة.");
     private string FileFor(BackupSnapshot source) => Path.Combine(root, Digest(source.SourceDigest) + ".json");
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
@@ -30,7 +36,7 @@ public sealed class LocalTransferLinks(string directory)
         catch (Exception e) when (e is JsonException or ArgumentException or IndexOutOfRangeException or OverflowException)
         { throw new InvalidDataException("تعذّر قراءة روابط الحسابات من النسخة.", e); }
     }
-    private static BackupSnapshot WithLinks(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks, byte[]? bankName, byte[]? bankIban, byte[]? bankManual, byte[]? referenceArchive, byte[]? issuance)
+    private static BackupSnapshot WithLinks(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks, byte[]? bankName, byte[]? bankIban, byte[]? bankManual, byte[]? referenceArchive, byte[]? issuance, IReadOnlyDictionary<string, byte[]>? extra = null)
     {
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(links)), plist);
         var settings = source.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
@@ -45,6 +51,7 @@ public sealed class LocalTransferLinks(string directory)
         if (bankManual is not null) settings["bankStatementManualAmounts"] = bankManual;
         if (referenceArchive is not null) settings["transferReferenceArchiveData"] = referenceArchive;
         if (issuance is not null) settings[GroupIssuance.SettingsKey] = issuance;
+        foreach (var (key, value) in extra ?? new Dictionary<string, byte[]>()) settings[key] = value;
         return source with { SettingsPlists = settings, Accounts = accounts };
     }
     public TransferLinksSnapshot Load(BackupSnapshot source)
@@ -67,7 +74,8 @@ public sealed class LocalTransferLinks(string directory)
             var bankManual = data.BankManual ?? source.SettingsPlists.GetValueOrDefault("bankStatementManualAmounts");
             var referenceArchive = data.ReferenceArchive ?? source.SettingsPlists.GetValueOrDefault("transferReferenceArchiveData");
             var issuance = data.Issuance ?? source.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey);
-            var snapshot = WithLinks(source, data.Links, categories, accounts, custom, bold, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance);
+            ValidateSettings(data.Settings);
+            var snapshot = WithLinks(source, data.Links, categories, accounts, custom, bold, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance, data.Settings);
             _ = IndividualLetterLinks.Read(snapshot);
             return new(snapshot, data.Links, Hash(bytes), categories);
         }
@@ -294,9 +302,22 @@ public sealed class LocalTransferLinks(string directory)
             current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"),
             current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementAccountName"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementIBAN"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementManualAmounts"), plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey));
     }
-    public TransferLinksSnapshot SaveBankDetails(BackupSnapshot source, TransferLinksSnapshot expected, string month, string name, string iban, BankManualAmounts amounts)
+    public TransferLinksSnapshot SaveBankDetails(BackupSnapshot source, TransferLinksSnapshot expected, string month, string name, string iban, BankManualAmounts amounts, string? branch = null, string? localAccount = null)
     {
         name = name.Trim(); iban = TransferPreparation.NormalizeAccount(iban);
+        var account = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        if (branch is not null)
+        {
+            branch = branch.Trim();
+            if (branch.Length is 0 or > 100 || branch.Any(char.IsControl)) throw new InvalidDataException("اكتب فرع المصرف (حتى ١٠٠ حرف).");
+            account["bankStatementBranch"] = PlistString(branch);
+        }
+        if (localAccount is not null)
+        {
+            localAccount = TransferPreparation.NormalizeAccount(localAccount);
+            if (localAccount.Length > 30 || localAccount.Any(c => !char.IsAsciiDigit(c))) throw new InvalidDataException("رقم الحساب المحلي أرقام فقط (حتى ٣٠ رقماً).");
+            account["bankStatementLocalAccount"] = PlistString(localAccount);
+        }
         if (string.IsNullOrWhiteSpace(name) || name.Length > 200 || name.Any(c => char.IsControl(c) || c == '|') || !TransferPreparation.ValidIban(iban) || MonthNames.SortKey(month) == 0 ||
             new[] { amounts.AccumulatedLeave, amounts.EmployeeRewards, amounts.SingleList }.Any(v => v < 0 || v > 9_007_199_254_740_991m || v != decimal.Truncate(v)))
             throw new InvalidDataException("راجع اسم الحساب وIBAN ومبالغ الشهر اليدوية.");
@@ -316,7 +337,7 @@ public sealed class LocalTransferLinks(string directory)
         static byte[] Plist(NSObject obj) { using var stream = new MemoryStream(); PropertyListParser.SaveAsBinary(obj, stream); return stream.ToArray(); }
         return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts,
             current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"),
-            Plist(new NSString(name)), Plist(new NSString(iban)), Plist(new NSData(JsonSerializer.SerializeToUtf8Bytes(all))), current.Snapshot.SettingsPlists.GetValueOrDefault("transferReferenceArchiveData"), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey));
+            Plist(new NSString(name)), Plist(new NSString(iban)), Plist(new NSData(JsonSerializer.SerializeToUtf8Bytes(all))), current.Snapshot.SettingsPlists.GetValueOrDefault("transferReferenceArchiveData"), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey), account);
     }
     public TransferLinksSnapshot SaveGroupFont(BackupSnapshot source, TransferLinksSnapshot expected, byte[] font)
     {
@@ -327,16 +348,28 @@ public sealed class LocalTransferLinks(string directory)
         using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(font), plist);
         return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts, current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementAccountName"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementIBAN"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementManualAmounts"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferReferenceArchiveData"), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey));
     }
-    private TransferLinksSnapshot Write(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks, byte[]? bankName, byte[]? bankIban, byte[]? bankManual, byte[]? referenceArchive, byte[]? issuance)
+    private static byte[] PlistString(string value) { using var stream = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSString(value), stream); return stream.ToArray(); }
+    private TransferLinksSnapshot Write(BackupSnapshot source, Dictionary<string, string> links, Dictionary<string, string> categories, IReadOnlyList<ExecutionAccount> accounts, byte[]? customizations, byte[]? boldFont, byte[]? bookLinks, byte[]? bankName, byte[]? bankIban, byte[]? bankManual, byte[]? referenceArchive, byte[]? issuance, IReadOnlyDictionary<string, byte[]>? settingsUpdate = null)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(new LinkData(1, source.SourceDigest, links, categories, accounts.ToList(), customizations, boldFont, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance));
+        // الإعدادات الإضافية المحفوظة سابقاً تبقى مع كل حفظ، وتُستبدل القيم الجديدة فقط.
+        var settings = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var path = FileFor(source);
+        if (File.Exists(path))
+        {
+            try { foreach (var (key, value) in JsonSerializer.Deserialize<LinkData>(File.ReadAllBytes(path))?.Settings ?? new Dictionary<string, byte[]>()) settings[key] = value; }
+            catch (JsonException ex) { throw new InvalidDataException("تعذّر قراءة الإعدادات المحلية؛ لم تُحفظ التغييرات.", ex); }
+        }
+        foreach (var (key, value) in settingsUpdate ?? new Dictionary<string, byte[]>()) settings[key] = value;
+        ValidateSettings(settings);
+        var extra = settings.Count == 0 ? null : settings;
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new LinkData(1, source.SourceDigest, links, categories, accounts.ToList(), customizations, boldFont, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance, extra));
         var temp = Path.Combine(root, ".links-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
             using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { output.Write(bytes); output.Flush(true); }
             using (var input = File.OpenRead(temp)) if (!SHA256.HashData(input).AsSpan().SequenceEqual(SHA256.HashData(bytes))) throw new InvalidDataException("تعذّر التحقق من روابط الحسابات.");
             File.Move(temp, FileFor(source), true);
-            return new(WithLinks(source, links, categories, accounts, customizations, boldFont, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance), links, Hash(bytes), categories);
+            return new(WithLinks(source, links, categories, accounts, customizations, boldFont, bookLinks, bankName, bankIban, bankManual, referenceArchive, issuance, extra), links, Hash(bytes), categories);
         }
         finally { try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }

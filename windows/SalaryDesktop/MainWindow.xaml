@@ -444,53 +444,149 @@
           </Grid>
         </Grid>
 
-        <!-- كشف البنك -->
-        <ScrollViewer x:Name="BankPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
-          <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="340"/></Grid.ColumnDefinitions>
-            <Border Style="{StaticResource Card}" Margin="0,0,14,14" VerticalAlignment="Top">
+        <!-- كشف البنك: بطاقات الحالة، جدول الكشف بأقسامه (الزر الأيمن لكل الإجراءات)، وفترات المطابقة. -->
+        <Grid x:Name="BankPanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+              <Button Click="EditBankDetails" ToolTip="اسم الحساب وفرعه ورقمه المحلي وIBAN، ومبالغ الشهر اليدوية">
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE713;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="بيانات الحساب والمبالغ اليدوية"/></StackPanel>
+              </Button>
+              <Button Click="PreviewBankStatement" Margin="8,0,0,0" ToolTip="كشف الشهر بالشكل المعتمد؛ الطباعة والحفظ من الزر الأيمن على الجدول">
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel>
+              </Button>
+              <Button x:Name="OpenReconciliationButton" Click="OpenReconciliation" Margin="8,0,0,0" IsEnabled="False" Background="{DynamicResource Primary}" BorderBrush="{DynamicResource Primary}" Foreground="White" ToolTip="فترات المطابقة وحركاتها واعتمادها">
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="White" Margin="0,0,7,0"/><TextBlock Text="دفتر المطابقة"/></StackPanel>
+              </Button>
+            </StackPanel>
+            <TextBlock Text="الزر الأيمن على أي سطر لتعديله أو نسخه أو طباعة الكشف" Foreground="{DynamicResource Tfg8A9B98}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+          </DockPanel>
+          <Grid Grid.Row="1" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="1.3*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border CornerRadius="14" Padding="20,14">
+              <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush></Border.Background>
               <StackPanel>
-                <DockPanel Margin="0,0,0,8">
-                  <Button DockPanel.Dock="Right" Click="EditBankDetails" ToolTip="بيانات الجهة الدافعة والمبالغ اليدوية للشهر">
-                    <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE70F;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="تعديل الحساب والمبالغ اليدوية"/></StackPanel>
-                  </Button>
-                  <TextBlock Style="{StaticResource CardTitle}" Text="تفاصيل المبالغ" VerticalAlignment="Center"/>
-                </DockPanel>
-                <ItemsControl x:Name="BankRows">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Border BorderBrush="{DynamicResource TbgEDF1F2}" BorderThickness="0,0,0,1" Padding="2,9">
-                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                          <TextBlock Text="{Binding Title}" Foreground="{DynamicResource Tfg3A524F}"/><TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold"/>
-                        </Grid>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <TextBlock Text="المبلغ للمراجعة مع المصرف" FontSize="13" Foreground="#CDE6DF"/>
+                <TextBlock x:Name="BankTotalText" FontSize="30" FontWeight="SemiBold" Foreground="White" Margin="0,4" Text="—"/>
+                <TextBlock x:Name="BankNotice" Foreground="#FFD892" TextWrapping="Wrap" FontSize="12.5" MaxHeight="52" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
             </Border>
-            <StackPanel Grid.Column="1">
-              <Border CornerRadius="14" Padding="20" Margin="0,0,0,14">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#1C6E5B" Offset="0"/><GradientStop Color="#0F443B" Offset="1"/></LinearGradientBrush>
-                </Border.Background>
-                <StackPanel>
-                  <TextBlock Text="كشف حساب البنك · مبلغ للمراجعة" FontSize="13" Foreground="#CDE6DF"/>
-                  <TextBlock x:Name="BankTotalText" FontSize="32" FontWeight="SemiBold" Foreground="White" Margin="0,8" Text="—"/>
-                  <TextBlock x:Name="BankNotice" Foreground="#FFD892" TextWrapping="Wrap"/>
-                </StackPanel>
-              </Border>
-              <Border Style="{StaticResource Card}">
-                <StackPanel>
-                  <TextBlock Style="{StaticResource CardTitle}" Text="مطابقة استقطاعات المصارف"/>
-                  <TextBlock x:Name="BankReconcileText" TextWrapping="Wrap" Margin="0,10,0,0"/>
-                  <Button x:Name="OpenReconciliationButton" Content="دفتر مطابقة الحساب" Click="OpenReconciliation" Style="{StaticResource ActionButton}" HorizontalAlignment="Left" Margin="0,14,0,0" IsEnabled="False"/>
-                  <TextBlock Style="{StaticResource Hint}" Text="راجع الحركات والمبالغ المقترحة مع كشف المصرف؛ كشف PDF مسودة تحتاج مراجعة." FontSize="12" Margin="0,10,0,0"/>
-                </StackPanel>
-              </Border>
-            </StackPanel>
+            <Border Grid.Column="2" Style="{StaticResource Card}" Margin="0" Padding="18,14">
+              <StackPanel>
+                <TextBlock Text="مطابقة الاستقطاعات التنفيذية" Foreground="{DynamicResource Muted}"/>
+                <TextBlock x:Name="BankReconcileText" FontSize="16.5" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                <TextBlock x:Name="BankReconcileHint" Foreground="{DynamicResource Muted}" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Style="{StaticResource Card}" Margin="0" Padding="18,14" Cursor="Hand" MouseLeftButtonUp="OpenLatestPeriod" ToolTip="فتح الفترة في دفتر المطابقة">
+              <StackPanel>
+                <TextBlock Text="مطابقة الشهر السابق" Foreground="{DynamicResource Muted}"/>
+                <TextBlock x:Name="BankLastPeriodText" FontSize="16.5" FontWeight="SemiBold" Margin="0,6,0,0" TextWrapping="Wrap" Text="—"/>
+                <TextBlock x:Name="BankLastPeriodHint" Foreground="{DynamicResource Muted}" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
           </Grid>
-        </ScrollViewer>
+          <Grid Grid.Row="2" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="370"/></Grid.ColumnDefinitions>
+            <!-- جدول الكشف -->
+            <Border Style="{StaticResource Card}" Padding="0" Margin="0,0,14,0">
+              <ListBox x:Name="BankRows" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizingWhenGrouping="True" VirtualizingPanel.ScrollUnit="Pixel"
+                       MouseDoubleClick="BankRowDoubleClick" KeyDown="BankRowKeyDown">
+                <ListBox.GroupStyle>
+                  <GroupStyle>
+                    <GroupStyle.HeaderTemplate>
+                      <DataTemplate>
+                        <Border Background="{DynamicResource TbgF7FAF9}" BorderBrush="{DynamicResource TbgEDF1F2}" BorderThickness="0,1,0,1" Padding="18,7">
+                          <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Muted}" FontWeight="SemiBold" FontSize="12.5"/>
+                        </Border>
+                      </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                  </GroupStyle>
+                </ListBox.GroupStyle>
+                <ListBox.ItemContainerStyle>
+                  <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Template">
+                      <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                          <Border x:Name="Box" Padding="18,8" Background="Transparent" BorderBrush="{DynamicResource TbgEDF1F2}" BorderThickness="0,0,0,1"><ContentPresenter/></Border>
+                          <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource PrimarySoft}"/></Trigger>
+                          </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                      </Setter.Value>
+                    </Setter>
+                  </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                  <DataTemplate>
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="Title" Text="{Binding Title}" Foreground="{DynamicResource Tfg3A524F}" TextTrimming="CharacterEllipsis"/>
+                        <Border Margin="8,0,0,0" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="7" Padding="6,0" Visibility="{Binding ManualVisibility}" ToolTip="مبلغ يدوي لهذا الشهر؛ عدّله بالنقر المزدوج أو الزر الأيمن">
+                          <TextBlock Text="يدوي" Foreground="{DynamicResource Accent}" FontSize="11.5"/>
+                        </Border>
+                      </StackPanel>
+                      <TextBlock x:Name="Value" Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </Grid>
+                    <DataTemplate.Triggers>
+                      <DataTrigger Binding="{Binding IsTotal}" Value="True">
+                        <Setter TargetName="Title" Property="FontWeight" Value="Bold"/><Setter TargetName="Title" Property="Foreground" Value="{DynamicResource Primary}"/>
+                        <Setter TargetName="Value" Property="FontWeight" Value="Bold"/><Setter TargetName="Value" Property="Foreground" Value="{DynamicResource Primary}"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding IsBasis}" Value="True"><Setter TargetName="Value" Property="Foreground" Value="{DynamicResource Muted}"/><Setter TargetName="Value" Property="FontWeight" Value="Normal"/></DataTrigger>
+                    </DataTemplate.Triggers>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+                <ListBox.ContextMenu>
+                  <ContextMenu x:Name="BankMenu" Opened="BankMenuOpened">
+                    <MenuItem x:Name="BankEditManualItem" Header="تعديل المبلغ اليدوي…" Click="EditBankManual" FontWeight="SemiBold"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE70F;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem x:Name="BankCopyAmountItem" Header="نسخ المبلغ" Click="CopyBankAmount"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;"/></MenuItem.Icon></MenuItem>
+                    <MenuItem x:Name="BankCopyLineItem" Header="نسخ السطر" Click="CopyBankLine"/>
+                    <MenuItem Header="نسخ الكشف كاملاً" Click="CopyBankAll"/>
+                    <Separator/>
+                    <MenuItem Header="بيانات الحساب والمبالغ اليدوية…" Click="EditBankDetails"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE713;"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="معاينة الكشف" Click="PreviewBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="طباعة الكشف" Click="PrintBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="حفظ الكشف PDF…" Click="SaveBankStatementPdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="حفظ الكشف Excel…" Click="SaveBankStatementExcel"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
+                    <Separator/>
+                    <MenuItem Header="فتح دفتر المطابقة" Click="OpenReconciliation"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                  </ContextMenu>
+                </ListBox.ContextMenu>
+              </ListBox>
+            </Border>
+            <!-- فترات المطابقة -->
+            <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0" Padding="16">
+              <DockPanel>
+                <DockPanel DockPanel.Dock="Top">
+                  <Button DockPanel.Dock="Right" Click="NewReconciliationPeriod" Padding="10,4" ToolTip="فترة مطابقة جديدة">
+                    <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE710;" FontSize="12" Foreground="{DynamicResource Primary}" Margin="0,0,6,0"/><TextBlock Text="فترة جديدة"/></StackPanel>
+                  </Button>
+                  <TextBlock Style="{StaticResource CardTitle}" Text="فترات المطابقة" VerticalAlignment="Center"/>
+                </DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="انقر مرتين لفتح الفترة · الزر الأيمن: فتح، معاينة، طباعة" Foreground="{DynamicResource Muted}" FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"/>
+                <Grid>
+                  <ListBox x:Name="BankPeriods" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="BankPeriodDoubleClick" ItemTemplate="{StaticResource PeriodCardTemplate}" ItemContainerStyle="{StaticResource PeriodCardItem}">
+                    <ListBox.ContextMenu>
+                      <ContextMenu Opened="BankPeriodMenuOpened">
+                        <MenuItem x:Name="BankPeriodOpenItem" Header="فتح الفترة في دفتر المطابقة" Click="OpenSelectedBankPeriod" FontWeight="SemiBold"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodPreviewItem" Header="معاينة كشف الفترة" Click="PreviewBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodPrintItem" Header="طباعة كشف الفترة" Click="PrintBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodSaveItem" Header="حفظ كشف الفترة PDF…" Click="SaveBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                        <Separator/>
+                        <MenuItem Header="فترة جديدة…" Click="NewReconciliationPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE710;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                      </ContextMenu>
+                    </ListBox.ContextMenu>
+                  </ListBox>
+                  <TextBlock x:Name="BankPeriodsEmpty" Text="لا توجد فترات مطابقة بعد؛ أضف فترة جديدة." Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Visibility="Collapsed"/>
+                </Grid>
+              </DockPanel>
+            </Border>
+          </Grid>
+        </Grid>
 
         <!-- ملفات التحويل -->
         <Grid x:Name="TransferPanel" Visibility="Collapsed">

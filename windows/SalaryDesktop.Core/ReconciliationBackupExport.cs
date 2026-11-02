@@ -43,25 +43,7 @@ public static class ReconciliationBackupExport
         }
         return Encoding.UTF8.GetBytes(result.ToJsonString());
     }
-    private static double IosDate(DateOnly date)
-    {
-        var zone = TimeZoneInfo.TryFindSystemTimeZoneById("Asia/Baghdad", out var iraq) ? iraq :
-            TimeZoneInfo.TryFindSystemTimeZoneById("Arab Standard Time", out var windows) ? windows : TimeZoneInfo.CreateCustomTimeZone("Iraq", TimeSpan.FromHours(3), "Iraq", "Iraq");
-        var local = DateTime.SpecifyKind(date.ToDateTime(new TimeOnly(12, 0)), DateTimeKind.Unspecified);
-        var utc = TimeZoneInfo.ConvertTimeToUtc(local, zone);
-        return (utc - new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
-    }
-    private static byte[] LedgerPlist(IReadOnlyList<BankPeriod> periods)
-    {
-        foreach (var period in periods) _ = BankReconciliation.Calculate(period);
-        if (periods.Count > 5000 || periods.Select(p => p.Id).Distinct().Count() != periods.Count) throw new InvalidDataException("فترات المطابقة غير صالحة.");
-        var body = new { version = 1, periods = periods.Select(p => new { id = p.Id, month = p.Month, start = IosDate(p.Start), end = IosDate(p.End), openingBalance = p.OpeningBalance,
-            memberFirst = p.FirstMember, memberSecond = p.SecondMember, acceptedContractMissing = p.AcceptedContractMissing, acceptedContractAmount = p.AcceptedContractAmount,
-            movements = p.Movements.Select(m => new { id = m.Id, date = IosDate(m.Date), description = m.Description, amount = m.Amount,
-                direction = m.Direction == MovementDirection.Credit ? "credit" : "debit", sourceID = m.SourceId, sourceLineIDs = m.SourceLineIds,
-                refundOf = m.RefundOf, isRefund = m.IsRefund, isFunding = m.IsFunding, matched = m.Matched }).ToArray() }).ToArray() };
-        using var plist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(JsonSerializer.SerializeToUtf8Bytes(body)), plist); return plist.ToArray();
-    }
+    private static byte[] LedgerPlist(IReadOnlyList<BankPeriod> periods) => BankReconciliation.LedgerPlist(periods);
     public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination, SalaryTrustLedger? trust = null)
     {
         var target = Path.GetFullPath(destination); var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("المجلد غير صالح.");

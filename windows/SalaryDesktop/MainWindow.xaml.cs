@@ -447,23 +447,6 @@ public partial class MainWindow : Window
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
         { Ui.Message(this, "تعذّر استيراد الحسابات.\n" + ex.Message, "استيراد الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
-    private async void EditBankDetails(object sender, RoutedEventArgs e)
-    {
-        var active = snapshot; var month = SelectedMonth; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
-        if (active is null || original is null || links is null || root is null || payroll is null || month.Length == 0) { Ui.Message(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "بيانات الحساب"); return; }
-        try
-        {
-            var payer = TransferPreparation.Payer(active); var manual = BankStatementCalculator.Manual(active, month);
-            var dialog = new BankDetailsWindow(month, payer.Name, payer.Iban, manual) { Owner = this };
-            if (dialog.ShowDialog() != true || dialog.Result is not { } input) return;
-            var updated = await Task.Run(() => { if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النافذة."); return linkStore.SaveBankDetails(original, links, month, input.Name, input.Iban, input.Amounts); });
-            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) { Ui.Message(this, "حُفظت البيانات للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "بيانات الحساب"); return; }
-            linkState = updated; snapshot = updated.Snapshot; RenderPage();
-            Ui.Message(this, "حُفظت بيانات الحساب ومبالغ الشهر. احفظ نسخة احتياطية لتضمين التغييرات.", "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
-        { Ui.Message(this, "تعذّر حفظ بيانات الحساب.\n" + ex.Message, "بيانات الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
-    }
     private async Task<bool> ImportAnnualFrom(string path, bool quiet = false)
     {
         var root = rootSnapshot; var payroll = payrollState; var active = snapshot; var links = linkState; var original = baseSnapshot;
@@ -860,56 +843,6 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException or DllNotFoundException or TypeInitializationException)
         { Ui.Message(this, "تعذّر إعداد كتاب المجموعة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
-    }
-
-    private sealed record BankRow(string Title, string Value);
-    private void OpenReconciliation(object sender, RoutedEventArgs e)
-    {
-        if (snapshot is null || rootSnapshot is not { } root || baseSnapshot is not { } original || payrollState is not { } payroll || linkState is not { } links) return;
-        bool IsCurrent() => payrollStore.Load(root).Revision == payroll.Revision && linkStore.Load(original).Revision == links.Revision;
-        try { new ReconciliationWindow(snapshot, SelectedMonth, IsCurrent) { Owner = this }.ShowDialog(); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
-        { Ui.Message(this, "تعذّر فتح دفتر المطابقة المحفوظ. لم تُغيّر البيانات.\n" + ex.Message, "مطابقة الحساب", MessageBoxButton.OK, MessageBoxImage.Warning); }
-    }
-    private async void RenderBank()
-    {
-        var ticket = ++bankRequest;
-        var source = snapshot;
-        var month = SelectedMonth;
-        BankRows.ItemsSource = null; BankTotalText.Text = "—"; BankReconcileText.Text = "";
-        if (source is null || month.Length == 0) { BankNotice.Text = "افتح نسخة الآيفون واختر الشهر أولاً."; return; }
-        BankNotice.Text = "جارٍ احتساب بيانات الشهر محلياً…";
-        BeginLoading("bank", "جارٍ احتساب كشف البنك…");
-        try
-        {
-            var result = await Task.Run(() => BankStatementCalculator.Calculate(source, month));
-            if (ticket != bankRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth || page != "bank") return;
-            BankTotalText.Text = Amount(result.BankTotal);
-            var warnings = result.Warnings.ToList();
-            if (!result.ExecutionMatched) warnings.Add("مطابقة ملف جهات التنفيذ غير مكتملة أو المبلغ مختلف.");
-            BankNotice.Text = warnings.Count == 0 ? "راجع البيانات والمبلغ مع نسخة الآيفون قبل الاعتماد." : "مبلغ أولي · " + string.Join(" · ", warnings);
-            var rows = new List<BankRow>
-            {
-                new("صافي الرواتب كاش", Amount(result.Cash)), new("صافي الرواتب بطاقة", Amount(result.Card)),
-                new("صافي غير مصنف", Amount(result.Unclassified)), new("مجموع الصافي", Amount(result.Net)),
-                new("الإجازات المتراكمة", Amount(result.Manual.AccumulatedLeave)), new("مكافآت المنتسبين", Amount(result.Manual.EmployeeRewards)),
-                new("قائمة مفردة", Amount(result.Manual.SingleList)), new("مجموع استقطاعات المصارف", Amount(result.BankDeductions))
-            };
-            rows.AddRange(result.Breakdown.Select(pair => new BankRow(pair.Key, Amount(pair.Value))));
-            rows.Add(new("اسمي العقود · أساس الحساب", Amount(result.ContractNominal)));
-            rows.Add(new("12% من الاسمي", Amount(result.ContractNominalShare)));
-            rows.Add(new("توقيفات العقود", Amount(result.ContractRetirement)));
-            rows.Add(new("مساهمة العقود المحتسبة", Amount(result.ContractContribution)));
-            BankRows.ItemsSource = rows;
-            BankReconcileText.Text = result.ExecutionMatched ? $"المبلغان متطابقان · {Amount(result.ExecutionDeductions)}" :
-                $"ملف جهات التنفيذ: {Amount(result.ExecutionDeductions)} · الفرق: {Amount(result.ExecutionDifference)} · قيود بلا مبلغ: {result.MissingExecutionAmounts:N0}";
-        }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException or OverflowException)
-        {
-            if (ticket == bankRequest && ReferenceEquals(source, snapshot) && month == SelectedMonth && page == "bank")
-                BankNotice.Text = "تعذّر احتساب كشف البنك: " + ex.Message;
-        }
-        finally { if (ticket == bankRequest) EndLoading("bank"); }
     }
 
     private sealed record CategoryTile(string Name, int Count);

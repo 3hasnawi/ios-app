@@ -6,13 +6,9 @@ using SkiaSharp.HarfBuzz;
 
 namespace SalaryDesktop.Core;
 
-/// كشف مسودة؛ لا يثبت صحة المطابقة أو حصول التحويلات في المصرف.
+/// كشف مطابقة حساب البنك بالشكل المعتمد، وأدوات رسم النص العربي المشتركة مع بقية الكشوف (ReportCanvas).
 public static class ReconciliationPdf
 {
-    private const float PageWidth = 595, PageHeight = 842, Left = 30, Right = 565, TableTop = 170, Bottom = 680;
-    private static readonly float[] X = [30, 125, 220, 315, 490, 565];
-    private static string Number(long n) => n.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
-    private static string Date(DateOnly date) => date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture);
     private static string[] Runs(string text)
     {
         if (!text.Any(c => c is >= '\u0600' and <= '\u08ff')) return [text];
@@ -54,80 +50,199 @@ public static class ReconciliationPdf
         DrawRight(canvas, shaper, paint, text, rightAlign ? right - 3 : left + (right - left + width) / 2, baseline);
         paint.TextSize = size;
     }
-    private static void Text(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float x, float y, bool centered = false)
-    {
-        var width = Width(text, shaper, paint);
-        DrawRight(canvas, shaper, paint, text, centered ? x + width / 2 : x, y);
-    }
+    /// توافق مع الاستدعاءات القديمة والاختبارات: كشف مسودة بخط واحد ودون بيانات حساب.
     public static byte[] Generate(BankPeriod period, string fontPath)
     {
+        var font = File.ReadAllBytes(fontPath);
+        return Statement(period, new BankAccountDetails("", "", "", ""), false, new ReportAssets(font, font, null));
+    }
+
+    private static readonly string[] Organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"];
+    private static readonly float[] Widths = [78, 189, 88, 88, 88];   // من اليمين: التاريخ، البيان، دائن، مدين، الرصيد
+    private const float Margin = 32, TableBottom = 665, TotalHeight = 24;
+    private static string Amount(long value) => (value < 0 ? "−" : "") + Math.Abs(value).ToString("N0", CultureInfo.GetCultureInfo("en-US"));
+    private static string EasternDate(DateOnly date) => ReportSheet.Eastern(date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture));
+
+    /// كشف مطابقة حساب البنك بالشكل المعتمد في الآيفون (BankReconciliationPDF.swift): ترويسة الوزارة يميناً، العنوان والفترة في الوسط،
+    /// بيانات الحساب يساراً، جدول التاريخ/البيان/دائن/مدين/الرصيد مع الرصيد الافتتاحي والمجموع، وتوقيع عضوي اللجنة في آخر صفحة.
+    /// complete = false يضيف «مسودة · المطابقة غير مكتملة».
+    public static byte[] Statement(BankPeriod period, BankAccountDetails account, bool complete, ReportAssets assets)
+    {
         var totals = BankReconciliation.Calculate(period);
-        if (period.Movements.Count == 0) throw new InvalidDataException("أضف حركة واحدة على الأقل قبل إعداد الكشف.");
-        using var face = SKTypeface.FromFile(fontPath) ?? throw new InvalidDataException("تعذّر فتح خط الكشف العربي.");
-        using var shaper = new SKShaper(face);
-        using var paint = new SKPaint { Typeface = face, TextSize = 10, IsAntialias = true, Color = SKColors.Black };
-        using var stroke = new SKPaint { Color = new SKColor(65, 65, 65), Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
-        var descriptions = totals.Lines.Select(line => Wrap(line.Movement.Description, shaper, paint, X[4] - X[3] - 8)).ToArray();
-        var firstName = Wrap(period.FirstMember, shaper, paint, 210);
-        var secondName = Wrap(period.SecondMember, shaper, paint, 210);
-        if (firstName.Count > 3 || secondName.Count > 3) throw new InvalidDataException("اسم عضو اللجنة طويل جداً للكشف؛ اختصر الاسم أو راجع التنسيق.");
-        var required = string.Join(' ', totals.Lines.Select(x => x.Movement.Description)) + period.Month + period.FirstMember + period.SecondMember + "كشف مطابقة الحساب مدين دائن الرصيد الرصيد الافتتاحي عضوا اللجنة مسودة غير معتمدة";
-        if (!paint.ContainsGlyphs(required)) throw new InvalidDataException("الخط المتاح لا يدعم بعض أحرف الكشف.");
-        using var memory = new MemoryStream();
-        using (var pdf = PdfOutput.Create(memory))
+        if (totals.Lines.Count == 0) throw new InvalidDataException("لا توجد حركات لعرضها في الكشف.");
+        using var regularData = SKData.CreateCopy(assets.Regular); using var boldData = SKData.CreateCopy(assets.Bold);
+        using var regular = SKTypeface.FromData(regularData) ?? throw new InvalidDataException("تعذّر فتح خط Arial.");
+        using var boldFace = SKTypeface.FromData(boldData) ?? throw new InvalidDataException("تعذّر فتح خط Arial العريض.");
+        using var regularShaper = new SKShaper(regular); using var boldShaper = new SKShaper(boldFace);
+        using var watermark = assets.Watermark is { } logo ? SKBitmap.Decode(logo) : null;
+        SKPaint Font(float size, bool isBold) => new() { Typeface = isBold ? boldFace : regular, TextSize = size, IsAntialias = true, Color = SKColors.Black };
+        SKShaper ShaperOf(SKPaint paint) => paint.Typeface == boldFace ? boldShaper : regularShaper;
+        float W(string text, SKPaint paint) => Width(text, ShaperOf(paint), paint);
+        List<string> Lines(string text, SKPaint paint, float width) => Wrap(text, ShaperOf(paint), paint, width);
+        static string Value(string raw)
         {
-            SKCanvas? canvas = null; float y = 0; int page = 0;
-            void StartPage()
-            {
-                if (++page > 2000) throw new InvalidDataException("الكشف يتجاوز عدد الصفحات المدعوم.");
-                canvas = pdf.BeginPage(PageWidth, PageHeight); canvas.Clear(SKColors.White); y = TableTop;
-                paint.TextSize = 17; Text(canvas, shaper, paint, "كشف مطابقة حساب المصرف", PageWidth / 2, 54, true);
-                paint.TextSize = 10; Text(canvas, shaper, paint, "مسودة للمراجعة — غير معتمدة", PageWidth / 2, 78, true);
-                Fit(canvas, shaper, paint, "شهر الرواتب: " + period.Month, Left, Right, 107, true);
-                Fit(canvas, shaper, paint, "الفترة: " + Date(period.Start) + " - " + Date(period.End), Left, Right, 126, true);
-                Fit(canvas, shaper, paint, "الرصيد الافتتاحي: " + Number(period.OpeningBalance), Left, Right, 145, true);
-                var headings = new[] { "الرصيد", "مدين", "دائن", "البيان", "التاريخ" };
-                for (int i = 0; i < headings.Length; i++) { canvas.DrawRect(X[i], y, X[i+1] - X[i], 25, stroke); Fit(canvas, shaper, paint, headings[i], X[i], X[i+1], y + 17); }
-                y += 25;
-            }
-            void EndPage() { pdf.EndPage(); canvas = null; }
-            StartPage();
-            for (int i = 0; i < totals.Lines.Count; i++)
-            {
-                var line = totals.Lines[i]; var height = Math.Max(24f, descriptions[i].Count * 14f + 8f);
-                if (height > Bottom - TableTop - 25) throw new InvalidDataException("بيان حركة طويل جداً للكشف.");
-                if (y + height > Bottom) { EndPage(); StartPage(); }
-                var c = canvas!;
-                for (int col = 0; col < 5; col++) c.DrawRect(X[col], y, X[col+1] - X[col], height, stroke);
-                Fit(c, shaper, paint, Number(line.Balance), X[0], X[1], y + 16);
-                Fit(c, shaper, paint, line.Movement.Direction == MovementDirection.Debit ? Number(line.Movement.Amount) : "—", X[1], X[2], y + 16);
-                Fit(c, shaper, paint, line.Movement.Direction == MovementDirection.Credit ? Number(line.Movement.Amount) : "—", X[2], X[3], y + 16);
-                for (int j = 0; j < descriptions[i].Count; j++) Fit(c, shaper, paint, descriptions[i][j], X[3], X[4], y + 16 + j * 14, true);
-                Fit(c, shaper, paint, Date(line.Movement.Date), X[4], X[5], y + 16);
-                y += height;
-            }
-            if (y + 25 > Bottom) { EndPage(); StartPage(); }
-            var last = canvas!;
-            for (int col = 0; col < 5; col++) last.DrawRect(X[col], y, X[col+1] - X[col], 25, stroke);
-            Fit(last, shaper, paint, Number(totals.Balance), X[0], X[1], y + 17);
-            Fit(last, shaper, paint, Number(totals.Debits), X[1], X[2], y + 17);
-            Fit(last, shaper, paint, Number(totals.Credits), X[2], X[3], y + 17);
-            Fit(last, shaper, paint, "المجموع", X[3], X[4], y + 17);
-            Text(last, shaper, paint, "عضو اللجنة", 155, 735, true); Text(last, shaper, paint, "عضو اللجنة", 440, 735, true);
-            for (int j = 0; j < firstName.Count; j++) Text(last, shaper, paint, firstName[j], 440, 755 + j * 14, true);
-            for (int j = 0; j < secondName.Count; j++) Text(last, shaper, paint, secondName[j], 155, 755 + j * 14, true);
-            EndPage(); pdf.Close();
+            var trimmed = raw.Trim();
+            if (trimmed.Length > 100 || trimmed.Any(char.IsControl)) throw new InvalidDataException("أحد بيانات الحساب طويل جداً للكشف.");
+            return trimmed.Length == 0 ? "—" : trimmed;
         }
-        var bytes = memory.ToArray();
+
+        using var heading = Font(12, true); using var organization = Font(10, true); using var metadataFont = Font(10, false);
+        using var periodFont = Font(8, true); using var bold = Font(9, true); using var signatureFont = Font(12, true);
+        const string title = "كشف مطابقة حساب البنك";
+        var periodText = $"الــفــتــرة مــن {EasternDate(period.Start)} إلــى {EasternDate(period.End)}";
+        var metadata = new (string Label, string Value)[] { ("اسم الحساب", Value(account.Name)), ("الفرع", Value(account.Branch)), ("الحساب", Value(account.LocalAccount)), ("العملة", "IQD"), ("IBAN", Value(account.Iban)) };
+        if (W(title, heading) > 223 || W(periodText, periodFont) > 223 || Organization.Any(o => W(o, organization) > 150)) throw new InvalidDataException("ترويسة الكشف لا تتسع؛ راجع التواريخ.");
+        var metadataRight = Math.Min(306f, 595f / 2 - Math.Max(W(title, heading), W(periodText, periodFont)) / 2 - 8);
+        var metadataRows = new List<(string Label, List<string> Lines, float LabelWidth, float ValueWidth, float Height)>();
+        foreach (var (label, value) in metadata)
+        {
+            var labelWidth = MathF.Ceiling(W(label + ":", metadataFont) + 2);
+            var valueWidth = metadataRight - Margin - labelWidth - 6;
+            if (valueWidth < 50) throw new InvalidDataException("بيانات الحساب لا تتسع في رأس الكشف.");
+            var lines = Lines(value, metadataFont, valueWidth);
+            if (lines.Count > 2) throw new InvalidDataException("أحد بيانات الحساب طويل جداً للكشف.");
+            metadataRows.Add((label, lines, labelWidth, valueWidth, Math.Max(19, MathF.Ceiling(lines.Count * metadataFont.FontSpacing + 4))));
+        }
+        var contentBottom = Math.Max(25 + metadataRows.Sum(r => r.Height), Math.Max(25 + 75f, 46 + 16f));
+        var tableTop = contentBottom + 18; var rowTop = tableTop + 24;
+        if (rowTop + TotalHeight >= TableBottom) throw new InvalidDataException("رأس الكشف طويل جداً.");
+
+        var values = new List<string[]>();
+        if (period.OpeningBalance != 0) values.Add([EasternDate(period.Start), "الرصيد الافتتاحي", "—", "—", Amount(period.OpeningBalance)]);
+        foreach (var line in totals.Lines)
+        {
+            var m = line.Movement;
+            values.Add([EasternDate(m.Date), m.Description, m.Direction == MovementDirection.Credit ? Amount(m.Amount) : "—", m.Direction == MovementDirection.Debit ? Amount(m.Amount) : "—", Amount(line.Balance)]);
+        }
+        string[] totalRow = ["", "المجموع", Amount(totals.Credits), Amount(totals.Debits), Amount(totals.Balance)];
+        // أكبر خط يتيح صفحة واحدة، وإلا يبقى الحجم الواضح ويُقسَّم الكشف على صفحات.
+        (float Size, List<(string[] Values, List<string> Description, float Height)> Rows)? Layout(float size, float minimum)
+        {
+            using var paint = Font(size, false);
+            var rows = new List<(string[], List<string>, float)>();
+            foreach (var row in values)
+            {
+                var description = Lines(row[1], paint, Widths[1] - 8);
+                if (description.Count > 5) return null;
+                for (int c = 0; c < 5; c++) if (c != 1 && W(row[c], paint) > Widths[c] - 8) return null;
+                var height = Math.Max(minimum, MathF.Ceiling(description.Count * paint.FontSpacing + 4));
+                if (height > TableBottom - rowTop - TotalHeight) return null;
+                rows.Add((row, description, height));
+            }
+            return (size, rows);
+        }
+        (float Size, List<(string[] Values, List<string> Description, float Height)> Rows)? first = null, single = null;
+        foreach (var (size, minimum) in new[] { (9f, 18f), (8.5f, 17f), (8f, 16f) })
+        {
+            if (Layout(size, minimum) is not { } candidate) continue;
+            first ??= candidate;
+            if (candidate.Rows.Sum(r => r.Height) + TotalHeight <= TableBottom - rowTop) { single = candidate; break; }
+        }
+        var chosen = single ?? first ?? throw new InvalidDataException("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.");
+        for (int c = 0; c < 5; c++) if (W(totalRow[c], bold) > Widths[c] - 6) throw new InvalidDataException("مجموع الكشف لا يتسع في الجدول.");
+        var signatures = new[] { BankReconciliation.SignatureLines(period, true), BankReconciliation.SignatureLines(period, false) };
+        var signatureLayout = signatures.Select(lines => lines.Select(text =>
+        {
+            if (text.Any(char.IsControl)) throw new InvalidDataException("بيانات التوقيع غير صالحة.");
+            var wrapped = Lines(text, signatureFont, 237);
+            if (wrapped.Count > 2) throw new InvalidDataException("أحد أسطر التوقيع طويل جداً؛ اختصره من بيانات اللجنة.");
+            return (Lines: wrapped, Height: Math.Max(22, MathF.Ceiling(wrapped.Count * signatureFont.FontSpacing + 3)));
+        }).ToArray()).ToArray();
+        if (signatureLayout.Any(column => column.Sum(l => l.Height) > 126)) throw new InvalidDataException("بيانات التوقيع طويلة جداً للكشف.");
+
+        var gray = new SKColor(237, 237, 237); var dark = new SKColor(85, 85, 85);
+        using var cellStroke = new SKPaint { Color = dark, Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true };
+        using var border = new SKPaint { Color = new SKColor(115, 115, 115), Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
+        using var fill = new SKPaint { Color = gray, Style = SKPaintStyle.Fill };
+        using var output = new MemoryStream();
+        using (var document = PdfOutput.Create(output))
+        {
+            SKCanvas canvas = null!;
+            // نص (سطر أو أكثر) في مستطيل، في المنتصف عمودياً؛ المحاذاة يمين أو وسط أو يسار.
+            void Draw(IReadOnlyList<string> lines, SKPaint paint, SKRect rect, int align)
+            {
+                var shaper = ShaperOf(paint); var spacing = paint.FontSpacing; var ascent = -paint.FontMetrics.Ascent;
+                var top = rect.MidY - lines.Count * spacing / 2;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    var width = Width(lines[i], shaper, paint);
+                    var right = align switch { 0 => rect.Right, 2 => rect.Left + width, _ => rect.MidX + width / 2 };
+                    DrawRight(canvas, shaper, paint, lines[i], right, top + i * spacing + ascent - 1);
+                }
+            }
+            float[] lefts = new float[5]; { var x = 595f - Margin; for (int c = 0; c < 5; c++) { x -= Widths[c]; lefts[c] = x; } }
+            using var rowFont = Font(chosen.Size, false);
+            int index = 0, pages = 0; var finished = false;
+            do
+            {
+                if (++pages > 2000) throw new InvalidDataException("الكشف يتجاوز عدد الصفحات المدعوم.");
+                canvas = document.BeginPage(595, 842); canvas.Clear(SKColors.White);
+                if (watermark is not null) { using var faint = new SKPaint { Color = SKColors.White.WithAlpha(15), FilterQuality = SKFilterQuality.High, IsAntialias = true }; canvas.DrawBitmap(watermark, SKRect.Create(120, 280, 355, 355), faint); }
+                canvas.DrawRect(SKRect.Create(21, 18, 553, 804), border);
+                var y = 25f;
+                foreach (var row in metadataRows)
+                {
+                    Draw([row.Label + ":"], metadataFont, SKRect.Create(metadataRight - row.LabelWidth, y, row.LabelWidth, row.Height), 0);
+                    Draw(row.Lines, metadataFont, SKRect.Create(Margin, y, row.ValueWidth, row.Height), 2);
+                    y += row.Height;
+                }
+                for (int i = 0; i < Organization.Length; i++) Draw([Organization[i]], organization, SKRect.Create(412, 25 + i * 15, 150, 15), 1);
+                Draw([title], heading, SKRect.Create(167.5f, 25, 260, 20), 1);
+                Draw([periodText], periodFont, SKRect.Create(167.5f, 46, 260, 16), 1);
+                if (!complete) { using var draft = Font(9, true); draft.Color = dark; Draw(["مسودة · المطابقة غير مكتملة"], draft, SKRect.Create(Margin, contentBottom + 2, 531, 14), 1); }
+                string[] labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"];
+                for (int c = 0; c < 5; c++)
+                {
+                    var cell = SKRect.Create(lefts[c], tableTop, Widths[c], 24);
+                    canvas.DrawRect(cell, fill); canvas.DrawRect(cell, cellStroke);
+                    Draw([labels[c]], bold, cell, 1);
+                }
+                y = rowTop;
+                while (index < chosen.Rows.Count && y + chosen.Rows[index].Height <= TableBottom)
+                {
+                    var (row, description, height) = chosen.Rows[index];
+                    for (int c = 0; c < 5; c++)
+                    {
+                        var cell = SKRect.Create(lefts[c], y, Widths[c], height);
+                        canvas.DrawRect(cell, cellStroke);
+                        var inner = SKRect.Create(cell.Left + 4, cell.Top + 2, cell.Width - 8, cell.Height - 4);
+                        if (c == 1) Draw(description, rowFont, inner, 0); else Draw([row[c]], rowFont, inner, 1);
+                    }
+                    y += height; index++;
+                }
+                if (index == chosen.Rows.Count && y + TotalHeight <= TableBottom)
+                {
+                    for (int c = 0; c < 5; c++)
+                    {
+                        var cell = SKRect.Create(lefts[c], y, Widths[c], TotalHeight);
+                        canvas.DrawRect(cell, fill); canvas.DrawRect(cell, cellStroke);
+                        Draw([totalRow[c]], bold, cell, 1);
+                    }
+                    for (int column = 0; column < 2; column++)
+                    {
+                        float x = column == 0 ? 314 : 36, signatureY = 690;
+                        foreach (var (lines, height) in signatureLayout[column])
+                        {
+                            Draw(lines, signatureFont, SKRect.Create(x + 4, signatureY, 237, height), 1);
+                            signatureY += height;
+                        }
+                    }
+                    finished = true;
+                }
+                document.EndPage();
+            } while (!finished);
+            document.Close();
+        }
+        var bytes = output.ToArray();
         if (bytes.Length < 8 || !bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8)) throw new InvalidDataException("تعذّر التحقق من ملف الكشف.");
         return bytes;
     }
-    public static void SaveDraft(BankPeriod period, string fontPath, string destination)
+    /// حفظ ملف الكشف عبر ملف مؤقت ثم نقله، فلا يُستبدل ملف موجود بملف ناقص.
+    public static void Save(byte[] bytes, string destination)
     {
         var target = Path.GetFullPath(destination);
         if (!string.Equals(Path.GetExtension(target), ".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("اختر ملفاً بالامتداد PDF.");
         var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("مجلد الحفظ غير صالح.");
-        var bytes = Generate(period, fontPath);
         var temp = Path.Combine(directory, ".salary-reconciliation-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
@@ -136,5 +251,10 @@ public static class ReconciliationPdf
             File.Move(temp, target, true);
         }
         finally { try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
+    public static void SaveDraft(BankPeriod period, string fontPath, string destination)
+    {
+        if (!string.Equals(Path.GetExtension(Path.GetFullPath(destination)), ".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("اختر ملفاً بالامتداد PDF.");
+        Save(Generate(period, fontPath), destination);
     }
 }

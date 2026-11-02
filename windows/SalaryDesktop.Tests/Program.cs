@@ -254,6 +254,57 @@ try
     try { ReconciliationBackupExport.Write(ledgerSnapshot, [period with { Movements = [funding, refund, repay with { Amount = 201 }] }], exportedLedgerBackup); throw new InvalidOperationException("invalid exported ledger accepted"); }
     catch (InvalidDataException) { }
     Check(previousExport.SequenceEqual(SHA256.HashData(File.ReadAllBytes(exportedLedgerBackup))), "failed reconciliation export preserves existing file");
+    // حقول الآيفون التي لا يستخدمها ويندوز (ومنها بيانات اللجنة) تبقى كما هي، والاعتماد يُحفظ ويقفل الفترة.
+    var iphoneFields = JsonSerializer.SerializeToUtf8Bytes(new { version = 1, periods = new[] { new { id = period.Id, month = period.Month,
+        start = IosDate(new DateTimeOffset(2026, 9, 26, 21, 30, 0, TimeSpan.Zero)), end = IosDate(new DateTimeOffset(2026, 10, 26, 21, 30, 0, TimeSpan.Zero)),
+        openingBalance = 0, memberFirst = "عضو وهمي أول", memberSecond = "عضو وهمي ثان", firstRank = "رتبة وهمية", firstPosition = "منصب وهمي", firstDate = " / 10 / 2026",
+        secondRank = "رتبة ثانية وهمية", secondPosition = "منصب ثان وهمي", signatureDefaultsInitialized = true, futureField = "قيمة مستقبلية",
+        movements = new[] { new { id = funding.Id, date = IosDate(new DateTimeOffset(2026, 9, 26, 21, 30, 0, TimeSpan.Zero)), description = funding.Description, amount = funding.Amount, direction = "credit", isFunding = true, matched = true, futureMovement = 7 } } } } });
+    using var iphonePlist = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(iphoneFields), iphonePlist);
+    var iphoneLedgerSnapshot = snapshot with { SettingsPlists = new Dictionary<string, byte[]> { ["bankReconciliations"] = iphonePlist.ToArray() } };
+    var iphonePeriod = BankReconciliation.ReadFromBackup(iphoneLedgerSnapshot).Single();
+    Check(iphonePeriod.Committee is { FirstRank: "رتبة وهمية", SecondPosition: "منصب ثان وهمي", DefaultsInitialized: true } && iphonePeriod.Extra!.Contains("futureField", StringComparison.Ordinal) &&
+          iphonePeriod.Movements[0].Extra!.Contains("futureMovement", StringComparison.Ordinal) && !iphonePeriod.IsConfirmed, "iPhone committee and unknown ledger fields are read");
+    var signatureLines = BankReconciliation.SignatureLines(iphonePeriod, true);
+    Check(signatureLines[0] == "رتبة وهمية" && signatureLines[1] == "عضو وهمي أول" && signatureLines[3] == " / ١٠ / ٢٠٢٦" && BankReconciliation.SignatureLines(iphonePeriod, false)[3] == " / ١٠ / ٢٠٢٦", "committee signature lines follow the iPhone format");
+    var confirmedPeriod = BankReconciliation.Confirm(iphonePeriod, new DateTime(2026, 10, 30, 9, 0, 0, DateTimeKind.Utc));
+    Check(confirmedPeriod.IsConfirmed && BankReconciliation.ConfirmedTime(confirmedPeriod)?.Hour == 12, "confirmation time is stored and shown in Baghdad time");
+    var fidelityBackup = Path.Combine(root, "reconciliation-fidelity.zip");
+    ReconciliationBackupExport.Write(iphoneLedgerSnapshot, [confirmedPeriod], fidelityBackup);
+    var fidelityRead = BackupReader.Read(fidelityBackup);
+    var fidelityPeriod = BankReconciliation.ReadFromBackup(fidelityRead).Single();
+    using (var fidelityJson = JsonDocument.Parse(((NSData)PropertyListParser.Parse(fidelityRead.SettingsPlists["bankReconciliations"])).Bytes))
+    {
+        var stored = fidelityJson.RootElement.GetProperty("periods")[0];
+        Check(stored.GetProperty("firstRank").GetString() == "رتبة وهمية" && stored.GetProperty("futureField").GetString() == "قيمة مستقبلية" && stored.GetProperty("confirmedAt").GetDouble() > 0 &&
+              stored.GetProperty("movements")[0].GetProperty("futureMovement").GetInt32() == 7 && !stored.TryGetProperty("secondDate", out _), "backup keeps iPhone fields and adds confirmedAt");
+    }
+    Check(BankReconciliation.Same(fidelityPeriod, confirmedPeriod), "confirmed period survives the shared backup unchanged");
+    var lockStore = new LocalReconciliationStore(Path.Combine(root, "ledger-lock"));
+    var lockStart = lockStore.Load(iphoneLedgerSnapshot);
+    var lockConfirmed = lockStore.Save(iphoneLedgerSnapshot, lockStart, [confirmedPeriod]);
+    try { _ = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, [confirmedPeriod with { OpeningBalance = 5 }]); throw new InvalidOperationException("confirmed period edited"); }
+    catch (InvalidDataException) { }
+    try { _ = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, []); throw new InvalidOperationException("confirmed period deleted"); }
+    catch (InvalidDataException) { }
+    var lockReopened = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, [BankReconciliation.Unconfirm(confirmedPeriod)]);
+    var lockEdited = lockStore.Save(iphoneLedgerSnapshot, lockReopened, [BankReconciliation.Unconfirm(confirmedPeriod) with { OpeningBalance = 5 }]);
+    Check(lockEdited.Periods.Single().OpeningBalance == 5 && !lockEdited.Periods.Single().IsConfirmed, "unconfirming a period allows editing again");
+    // المراجعة: الفترة الكاملة (رصيد صفر، تمويل في أول يوم، كل الحركات مؤشرة) بلا تنبيهات مانعة.
+    var completePeriod = period with { Movements = [funding with { Matched = true }, spending with { Amount = 1000, Matched = true, SourceId = null, SourceLineIds = null }] };
+    var completeReview = ReconciliationReview.Prepare(completePeriod, null, null, new BankAccountDetails("حساب وهمي", "فرع وهمي", "123", "IQ00TEST"));
+    var openReview = ReconciliationReview.Prepare(period, null, null, null);
+    Check(completeReview.Complete && completeReview.Unmatched == 0 && !openReview.Complete && openReview.Unmatched > 0 &&
+          ReconciliationReview.Prepare(completePeriod, null, null, new BankAccountDetails("", "", "", "")).Complete, "reconciliation review alerts and completeness");
+    // كشف المطابقة بالشكل المعتمد: بيانات الحساب والجدول والمجموع والتوقيع.
+    var statementFont = File.ReadAllBytes(font);
+    var reconStatement = ReconciliationPdf.Statement(confirmedPeriod with { OpeningBalance = 0 }, new BankAccountDetails("حساب رواتب وهمي", "فرع وهمي", "1234567", "IQ00TEST0000000000001"), true, new ReportAssets(statementFont, statementFont, null));
+    using (var reconPdf = UglyToad.PdfPig.PdfDocument.Open(reconStatement))
+    {
+        var words = string.Join(" ", reconPdf.GetPages().SelectMany(pg => pg.GetWords()).Select(w => w.Text));
+        Check(reconPdf.NumberOfPages == 1 && words.Contains("IQD", StringComparison.Ordinal) && words.Contains("IQ00TEST0000000000001", StringComparison.Ordinal) && words.Contains("1,000", StringComparison.Ordinal), "approved reconciliation statement contains account, currency and amounts");
+    }
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_STATEMENT_PDF") is { Length: > 0 } statementPath) File.WriteAllBytes(statementPath, reconStatement);
     Check(BankStatementCalculator.Manual(emptySettings, "أيلول 2026").Total == 0m, "absent manual amounts");
     var brokenSettings = snapshot with { SettingsPlists = new Dictionary<string, byte[]> { ["bankStatementManualAmounts"] = [1, 2, 3] } };
     try { _ = BankStatementCalculator.Manual(brokenSettings, "أيلول 2026"); throw new InvalidOperationException("invalid manual settings accepted"); }
@@ -538,6 +589,14 @@ try
     try { _ = bookLinkStore.SaveBankDetails(bookSource, bankOtherMonth, "أيلول 2026", "دافع وهمي", fakePayer, new BankManualAmounts(-1, 0, 0)); throw new InvalidOperationException("negative manual amount accepted"); }
     catch (InvalidDataException) { }
     Check(bookLinkStore.Load(bookSource).Revision == bankOtherMonth.Revision, "invalid bank settings preserve prior state");
+    var bankAccountState = bookLinkStore.SaveBankDetails(bookSource, bankOtherMonth, "أيلول 2026", "دافع تجريبي محدّث", fakePayer, new BankManualAmounts(1000, 2000, 3000), "فرع وهمي", "123456789");
+    var savedAccount = TransferPreparation.Account(bankAccountState.Snapshot);
+    var afterOtherSave = bookLinkStore.SaveBankDetails(bookSource, bankAccountState, "تشرين الاول 2026", "دافع تجريبي محدّث", fakePayer, new BankManualAmounts(4, 5, 6));
+    Check(savedAccount is { Branch: "فرع وهمي", LocalAccount: "123456789" } && TransferPreparation.Account(afterOtherSave.Snapshot).Branch == "فرع وهمي" && TransferPreparation.Account(bookSource).Branch == "الأنبار", "bank branch and local account are saved and kept by later saves");
+    var bankAccountBackup = Path.Combine(root, "bank-account-backup.zip"); ReconciliationBackupExport.Write(afterOtherSave.Snapshot, [], bankAccountBackup);
+    Check(TransferPreparation.Account(BackupReader.Read(bankAccountBackup)) is { Branch: "فرع وهمي", LocalAccount: "123456789" }, "bank branch and local account survive backup export");
+    try { _ = bookLinkStore.SaveBankDetails(bookSource, afterOtherSave, "أيلول 2026", "دافع وهمي", fakePayer, new BankManualAmounts(0, 0, 0), "فرع", "12ab"); throw new InvalidOperationException("non-numeric local account accepted"); }
+    catch (InvalidDataException) { }
     var itemEmployees = new[] { contractPerson, contractPerson with { Name = "شخص آخر وهمي", Items = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, decimal> { ["الرعاية الصحية"] = 30m }) } };
     var itemSource = snapshot with { Employees = itemEmployees }; var itemGroups = SalaryItemReports.Groups(itemSource, "أيلول 2026"); var healthGroup = itemGroups.Single(g => g.Title == "الرعاية الصحية");
     Check(healthGroup.People == 2 && healthGroup.Total == 50 && SalaryItemReports.Rows(itemSource, "أيلول 2026", healthGroup).Sum(r => r.Amount) == 50, "salary item report matches contributing employees and totals");

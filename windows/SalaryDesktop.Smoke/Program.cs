@@ -100,7 +100,22 @@ static class Program
         Entry(zip, "employees.jsonl", Lines(employees)); Entry(zip, "deductions.jsonl", Lines(deductions)); Entry(zip, "staff.jsonl", Lines(staff));
         Entry(zip, "accounts.jsonl", Lines(accounts)); Entry(zip, "books/index.json", JsonSerializer.Serialize(books));
         foreach (var book in books) Entry(zip, $"books/{book.id.ToString().ToUpperInvariant()}.pdf", ArchivePdf.FromImages(Enumerable.Range(0, book.pages).Select(i => new ArchiveImage(FictionalPage(i + book.pages))).ToArray()));
-        Entry(zip, "settings.json", "{}");
+        Entry(zip, "settings.json", JsonSerializer.Serialize(new Dictionary<string, string> { ["bankReconciliations"] = Convert.ToBase64String(BankReconciliation.LedgerPlist(FictionalPeriods())) }));
+    }
+    /// فترتا مطابقة وهميتان: آب معتمدة، وأيلول قيد العمل (حركتان غير مؤشرتين).
+    internal static BankPeriod[] FictionalPeriods()
+    {
+        BankMovement M(int month, int day, string text, long amount, bool credit, bool matched, bool funding = false) =>
+            new(Guid.NewGuid(), new DateOnly(2026, month, day), text, amount, credit ? MovementDirection.Credit : MovementDirection.Debit, IsFunding: funding, Matched: matched);
+        var committee = new BankCommittee(DefaultsInitialized: true);
+        var august = new BankPeriod(Guid.NewGuid(), "آب 2026", new DateOnly(2026, 8, 3), new DateOnly(2026, 9, 2), 0, "عضو وهمي أول", "عضو وهمي ثان", null, null,
+            [M(8, 3, "تمويل رواتب آب", 1_812_400_000, true, true, true), M(8, 5, "تحويل مجموعة الرافدين", 1_050_000_000, false, true), M(8, 6, "صرف الرواتب كاش", 212_000_000, false, true),
+             M(8, 9, "تحويل مصرف وهمي أ", 255_000_000, false, true), M(8, 20, "الضريبة", 295_400_000, false, true)], committee);
+        var september = new BankPeriod(Guid.NewGuid(), "أيلول 2026", new DateOnly(2026, 9, 3), new DateOnly(2026, 10, 2), 0, "عضو وهمي أول", "عضو وهمي ثان", null, null,
+            [M(9, 3, "تمويل رواتب أيلول", 1_846_250_500, true, true, true), M(9, 5, "تحويل مجموعة الرافدين", 1_071_450_500, false, true), M(9, 6, "صرف الرواتب كاش", 214_600_000, false, true),
+             M(9, 8, "تحويل مصرف وهمي أ", 260_000_000, false, true), M(9, 9, "شركة اتصالات وهمية", 25_000_000, false, false), M(9, 12, "الرعاية الصحية", 18_300_000, false, true),
+             M(9, 20, "الضريبة", 41_210_000, false, false)], committee);
+        return [BankReconciliation.Confirm(august, new DateTime(2026, 9, 4, 8, 0, 0, DateTimeKind.Utc)), september];
     }
 
     // جهاز الفحص قد تكون شاشته صغيرة؛ النافذة الأكبر منها تُقص، فتُصغّر قبل التصوير.
@@ -180,14 +195,14 @@ static class Program
                 var settings = new IndividualSettingsWindow(snapshot, linkState, linkStore, "food_company", () => true, "أيلول 2026", null, "IQ76TEST123000000000002") { Owner = main };
                 settings.Show(); Check(((TextBox)settings.FindName("AccountText")).Text.Length > 0, "individual letter settings did not open"); settings.Close();
                 var reconciliation = new ReconciliationWindow(snapshot, "أيلول 2026", () => true) { Owner = main };
-                reconciliation.Show(); Check(reconciliation.FindName("Periods") is ComboBox, "reconciliation page did not open"); reconciliation.Close();
+                reconciliation.Show(); Check(reconciliation.FindName("PeriodList") is ListBox, "reconciliation page did not open"); reconciliation.Close();
                 var staff = new StaffDetailsWindow(StaffRecords.Read(snapshot)[0]) { Owner = main }; staff.Show(); Check(((DataGrid)staff.FindName("Fields")).Items.Count == 1, "staff details were not displayed"); staff.Close();
                 var names = NameLists.Prepare(snapshot, TransferPreparation.Prepare(snapshot, "أيلول 2026"));
                 var lists = new NameListsWindow("أيلول 2026", names, () => true) { Owner = main }; lists.Show(); Check(((ComboBox)lists.FindName("ListPicker")).Items.Count == 1, "name list page did not open"); lists.Close();
                 var initial = new PayrollImportWindow(null, "") { Owner = main }; initial.Show(); Check(initial.FindName("Choose") is Button, "standalone monthly import did not open"); initial.Close();
                 var refImport = new ReferenceImportWindow() { Owner = main }; refImport.Show(); Check(refImport.FindName("Choose") is Button, "reference import did not open"); refImport.Close();
                 var annual = new AnnualImportWindow(snapshot) { Owner = main }; annual.Show(); Check(annual.FindName("Choose") is Button, "annual import page did not open"); annual.Close();
-                var bank = new BankDetailsWindow("أيلول 2026", "دافع وهمي", "IQ06TEST123000000000001", new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
+                var bank = new BankDetailsWindow("أيلول 2026", new BankAccountDetails("دافع وهمي", "فرع وهمي", "123456", "IQ06TEST123000000000001"), new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
                 var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("KindPicker") is ComboBox, "salary review page did not open"); audit.Close();
                 var profile = PersonProfiles.Build(snapshot, "منتسب وهمي", StaffRecords.Read(snapshot));
                 var person = new PersonWindow(snapshot, profile, "أيلول 2026") { Owner = main }; person.Show(); await Task.Delay(300);
@@ -279,6 +294,15 @@ static class Program
                     Check(((ItemsControl)archiveAdd.FindName("PageList")).Items.Count == 2 && ((TextBox)archiveAdd.FindName("TitleBox")).Text.Length == 0, "archive import did not load scanned pages or named a scanner file");
                     ((TextBox)archiveAdd.FindName("TitleBox")).Text = "كتاب وهمي بشأن الاستقطاع"; await Task.Delay(200);
                     Shot(archiveAdd, "45-archive-add"); archiveAdd.Close();
+                    var ledger = Fit(new ReconciliationWindow(rich, "تشرين الاول 2026", () => true, BankReconciliation.ReadFromBackup(rich).Single(p => !p.IsConfirmed).Id) { Owner = main }, 1340, 820);
+                    ledger.Show(); await Task.Delay(1500);
+                    Check(((ListBox)ledger.FindName("PeriodList")).Items.Count == 2 && ((DataGrid)ledger.FindName("Lines")).Items.Count == 7, "ledger did not show periods and movements");
+                    Shot(ledger, "46-ledger");
+                    ((ListBox)ledger.FindName("PeriodList")).SelectedIndex = 1; await Task.Delay(700); Shot(ledger, "47-ledger-confirmed"); ledger.Close();
+                    var confirmedSample = BankReconciliation.ReadFromBackup(rich).Single(p => p.IsConfirmed);
+                    var confirmWindow = new ReconciliationConfirmWindow(BankReconciliation.Unconfirm(confirmedSample), ReconciliationReview.Prepare(BankReconciliation.Unconfirm(confirmedSample), null, null, null), true) { Owner = main };
+                    confirmWindow.Show(); await Task.Delay(400); Shot(confirmWindow, "48-ledger-confirm"); confirmWindow.Close();
+                    var periodEditor = Fit(new ReconciliationEditor(null, "أيلول 2026", confirmedSample) { Owner = main }, 560, 720); periodEditor.Show(); await Task.Delay(400); Shot(periodEditor, "49-period-editor"); periodEditor.Close();
                     // أمانات الرواتب ببيانات وهمية: الجدول بالمرشحات، وقيد بدفعة جزئية بلا رقم كتاب ولا تاريخ.
                     var trustStore = new LocalSalaryTrustStore(Path.Combine(directory, "salary-trust"));
                     SalaryTrustPayment Pay(long amount, string number, string date, string note) => new(Guid.NewGuid().ToString(), amount, number, date, note);

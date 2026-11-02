@@ -49,8 +49,10 @@ public sealed class LocalReconciliationStore(string directory)
         Directory.CreateDirectory(root);
         var path = FileFor(source.SourceDigest);
         using var guard = new FileStream(Path.Combine(root, ".ledger.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        var actual = File.Exists(path) ? ReadFile(path, source.SourceDigest).Revision : null;
-        if (actual != expected.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة في نافذة أخرى؛ أعد فتحه قبل الحفظ.");
+        var current = File.Exists(path) ? ReadFile(path, source.SourceDigest) : new(BankReconciliation.ReadFromBackup(source), null);
+        if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّر دفتر المطابقة في نافذة أخرى؛ أعد فتحه قبل الحفظ.");
+        // الفترة المعتمدة مقفلة: لا تُعدّل ولا تُحذف إلا بعد إلغاء اعتمادها.
+        BankReconciliation.CheckLocked(current.Periods, periods);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(new Ledger(1, source.SourceDigest, periods.ToList()));
         var temp = Path.Combine(root, ".ledger-" + Guid.NewGuid().ToString("N") + ".tmp");
         try

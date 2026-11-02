@@ -7,6 +7,11 @@ using Claunia.PropertyList;
 
 namespace SalaryDesktop.Core;
 
+public sealed record BankAccountDetails(string Name, string Branch, string LocalAccount, string Iban)
+{
+    public bool IsIncomplete => new[] { Name, Branch, LocalAccount, Iban }.Any(string.IsNullOrWhiteSpace);
+}
+
 public enum TransferGroup { Rafidain, OtherBanks, Anbar, Unresolved }
 public sealed record TransferEntry(string Id, string Month, string Title, decimal Amount, int People,
     int MissingAmounts, ExecutionAccount? Account, TransferGroup Group, string? Beneficiary, bool DuplicateSource);
@@ -108,6 +113,13 @@ public static class TransferPreparation
     {
         null => "", NSString value => value.Content, _ => throw new InvalidDataException($"صيغة إعداد {key} غير صالحة.")
     };
+    /// بيانات الحساب الظاهرة في كشف المطابقة (مثل الآيفون): الاسم والفرع (الافتراضي الأنبار) والحساب المحلي وIBAN.
+    public static BankAccountDetails Account(BackupSnapshot snapshot)
+    {
+        var branch = SettingString(snapshot, "bankStatementBranch");
+        return new(SettingString(snapshot, "bankStatementAccountName"), ReadSetting(snapshot, "bankStatementBranch") is null ? "الأنبار" : branch,
+            SettingString(snapshot, "bankStatementLocalAccount"), SettingString(snapshot, "bankStatementIBAN"));
+    }
     public static (string Name, string Iban) Payer(BackupSnapshot snapshot) => (SettingString(snapshot, "bankStatementAccountName"), SettingString(snapshot, "bankStatementIBAN"));
     private static Dictionary<string, string> SettingDictionary(BackupSnapshot snapshot, string key)
     {

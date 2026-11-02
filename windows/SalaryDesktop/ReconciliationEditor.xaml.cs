@@ -22,18 +22,24 @@ public partial class ReconciliationEditor : Window
             throw new InvalidDataException("أدخل مبلغاً صحيحاً بالدينار؛ ضع الفواصل بين كل ثلاث مراتب.");
         return result;
     }
-    public ReconciliationEditor(BankPeriod? existing, string suggestedMonth)
+    /// template: آخر فترة؛ تُنسخ منها بيانات اللجنة للفترة الجديدة.
+    public ReconciliationEditor(BankPeriod? existing, string suggestedMonth, BankPeriod? template = null)
     {
-        InitializeComponent(); period = existing; TitleText.Text = existing is null ? "فترة مطابقة جديدة" : "تعديل فترة المطابقة";
+        InitializeComponent(); period = existing; TitleText.Text = existing is null ? "فترة مطابقة جديدة" : "تعديل الفترة واللجنة";
+        HintText.Text = "ابدأ بتمويل الشهر السابق وانتهِ قبل التمويل الجديد.";
+        var committee = (existing ?? template)?.Committee;
+        FirstRank.Text = committee?.FirstRank ?? ""; FirstPosition.Text = committee?.FirstPosition ?? ""; FirstDate.Text = existing?.Committee?.FirstDate ?? "";
+        SecondRank.Text = committee?.SecondRank ?? ""; SecondPosition.Text = committee?.SecondPosition ?? ""; SecondDate.Text = existing?.Committee?.SecondDate ?? "";
         FirstLabel.Text = "شهر الرواتب المطابَق"; First.Text = existing?.Month ?? suggestedMonth; DateLabel.Text = "بداية الفترة · تاريخ التمويل";
         Date.SelectedDate = existing?.Start.ToDateTime(TimeOnly.MinValue) ?? DateTime.Today;
         EndDate.SelectedDate = existing?.End.ToDateTime(TimeOnly.MinValue) ?? DateTime.Today;
-        Opening.Text = (existing?.OpeningBalance ?? 0).ToString(CultureInfo.InvariantCulture); MemberFirst.Text = existing?.FirstMember ?? ""; MemberSecond.Text = existing?.SecondMember ?? "";
+        Opening.Text = (existing?.OpeningBalance ?? 0).ToString(CultureInfo.InvariantCulture); MemberFirst.Text = (existing ?? template)?.FirstMember ?? ""; MemberSecond.Text = (existing ?? template)?.SecondMember ?? "";
         MovementFields.Visibility = Visibility.Collapsed;
     }
     public ReconciliationEditor(BankPeriod selected, BankMovement? movement)
     {
         InitializeComponent(); period = selected; old = movement; TitleText.Text = movement is null ? "حركة جديدة" : "تعديل الحركة";
+        HintText.Text = $"{selected.Month} · {selected.Start.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture)} — {selected.End.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture)}"; HeadIcon.Text = "\uE8C7"; Height = 600;
         FirstLabel.Text = "البيان"; First.Text = movement?.Description ?? ""; DateLabel.Text = "تاريخ الحركة";
         Date.SelectedDate = (movement?.Date ?? selected.Start).ToDateTime(TimeOnly.MinValue);
         Amount.Text = movement?.Amount.ToString(CultureInfo.InvariantCulture) ?? ""; Direction.SelectedIndex = movement?.Direction == MovementDirection.Debit ? 1 : 0;
@@ -51,13 +57,17 @@ public partial class ReconciliationEditor : Window
             if (PeriodFields.Visibility == Visibility.Visible)
             {
                 if (EndDate.SelectedDate is not DateTime end) throw new InvalidDataException("اختر نهاية الفترة.");
-                var value = new BankPeriod(period?.Id ?? Guid.NewGuid(), First.Text.Trim(), DateOnly.FromDateTime(date), DateOnly.FromDateTime(end), ParseAmount(Opening.Text), MemberFirst.Text.Trim(), MemberSecond.Text.Trim(), period?.AcceptedContractMissing, period?.AcceptedContractAmount, period?.Movements ?? []);
+                static string? Optional(string text) => text.Trim() is { Length: > 0 } value ? value : null;
+                var committee = new BankCommittee(Optional(FirstRank.Text), Optional(FirstPosition.Text), Optional(FirstDate.Text), Optional(SecondRank.Text), Optional(SecondPosition.Text), Optional(SecondDate.Text),
+                    period?.Committee?.DefaultsInitialized ?? (MemberFirst.Text.Trim().Length + MemberSecond.Text.Trim().Length > 0 ? (bool?)true : null));
+                var value = new BankPeriod(period?.Id ?? Guid.NewGuid(), First.Text.Trim(), DateOnly.FromDateTime(date), DateOnly.FromDateTime(end), ParseAmount(Opening.Text), MemberFirst.Text.Trim(), MemberSecond.Text.Trim(), period?.AcceptedContractMissing, period?.AcceptedContractAmount, period?.Movements ?? [],
+                    committee, period?.ConfirmedAt, period?.Extra);
                 _ = BankReconciliation.Calculate(value); ResultPeriod = value;
             }
             else
             {
                 var value = new BankMovement(old?.Id ?? Guid.NewGuid(), DateOnly.FromDateTime(date), First.Text.Trim(), ParseAmount(Amount.Text), Direction.SelectedIndex == 0 ? MovementDirection.Credit : MovementDirection.Debit,
-                    old?.SourceId, old?.SourceLineIds, (RefundOf.SelectedItem as RefundOption)?.Id, Refund.IsChecked == true, Funding.IsChecked == true, old?.Matched ?? false);
+                    old?.SourceId, old?.SourceLineIds, (RefundOf.SelectedItem as RefundOption)?.Id, Refund.IsChecked == true, Funding.IsChecked == true, old?.Matched ?? false, old?.Extra);
                 ResultMovement = old is null ? value : BankReconciliation.Replace(old, value);
                 var movements = period!.Movements.Where(m => m.Id != value.Id).Concat([ResultMovement]).ToArray();
                 _ = BankReconciliation.Calculate(period with { Movements = movements });
