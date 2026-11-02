@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 
 namespace SalaryDesktop;
@@ -9,10 +10,12 @@ namespace SalaryDesktop;
 /// المورد AppFont ديناميكي في كل النوافذ، فتغيير الخط يسري فوراً. الأرقام: إنجليزية (0-9) أو هندية (٠-٩) لكل النصوص المعروضة.
 public static class AppFonts
 {
-    public sealed record Option(string Key, string Name, string Family, string Note)
+    /// Installed = خط من ويندوز نفسه (Arial مثبت في كل نسخ ويندوز ولا يُضمَّن في البرنامج)؛ Bold = كل نصوص الواجهة بالوزن العريض.
+    public sealed record Option(string Key, string Name, string Family, string Note, bool Installed = false, bool Bold = false)
     {
-        public FontFamily Font => new(new Uri("pack://application:,,,/SalaryDesktop;component/"), "./Fonts/#" + Family + ", Segoe UI");
-        public string Preview => "نهاد جمعة الذيابي · 437,024";
+        public FontFamily Font => Installed ? new FontFamily(Family + ", Segoe UI") : new FontFamily(new Uri("pack://application:,,,/SalaryDesktop;component/"), "./Fonts/#" + Family + ", Segoe UI");
+        public FontWeight Weight => Bold ? FontWeights.Bold : FontWeights.Normal;
+        public string Preview => "منتسب وهمي للعرض · 437,024";
     }
 
     public static readonly Option[] Options =
@@ -23,7 +26,10 @@ public static class AppFonts
         new("tajawal", "Tajawal", "Tajawal", "خفيف ومرتب"),
         new("almarai", "Almarai", "Almarai", "بسيط وواضح"),
         new("plex", "IBM Plex Sans Arabic", "IBM Plex Sans Arabic", "رفيع"),
+        new("arial", "Arial عادي", "Arial", "خط الكشوف المعتمد بوزن عادي", Installed: true),
+        new("arial-bold", "Arial عريض", "Arial", "خط الكشوف المعتمد بوزن عريض لكل النصوص", Installed: true, Bold: true),
     ];
+    public static FontWeight CurrentWeight => Find(CurrentFont).Weight;
     public const string DefaultFont = "noto-kufi";
     public static string CurrentFont { get; private set; } = DefaultFont;
     public static bool EasternDigits { get; private set; }
@@ -40,11 +46,14 @@ public static class AppFonts
         if (!hooked)
         {
             hooked = true;
-            EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler((sender, _) => { if (sender is Window window) Digits(window); }));
-            EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent, new RoutedEventHandler((sender, _) => { if (sender is ContextMenu menu) Digits(menu); }));
+            EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler((sender, _) => { if (sender is Window window) { Digits(window); Weigh(window); } }));
+            EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent, new RoutedEventHandler((sender, _) => { if (sender is ContextMenu menu) { Digits(menu); Weigh(menu); } }));
         }
-        foreach (Window window in Application.Current.Windows) Digits(window);
+        foreach (Window window in Application.Current.Windows) { Digits(window); Weigh(window); }
     }
+
+    /// الوزن موروث مثل الخط: يُضبط على النافذة أو القائمة، والنصوص ذات الوزن المحدد (العناوين) تبقى كما هي.
+    private static void Weigh(DependencyObject root) => root.SetValue(TextElement.FontWeightProperty, CurrentWeight);
 
     /// شكل الأرقام موروث في شجرة العناصر، فيكفي ضبطه على النافذة أو القائمة المنبثقة.
     private static void Digits(DependencyObject root)

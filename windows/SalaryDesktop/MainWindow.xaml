@@ -695,7 +695,7 @@
                   <ComboBox.ItemTemplate>
                     <DataTemplate>
                       <StackPanel Margin="0,2">
-                        <TextBlock Text="{Binding Preview}" FontFamily="{Binding Font}" FontSize="15"/>
+                        <TextBlock Text="{Binding Preview}" FontFamily="{Binding Font}" FontWeight="{Binding Weight}" FontSize="15"/>
                         <TextBlock FontSize="11.5" Foreground="{DynamicResource Muted}"><Run Text="{Binding Name, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Note, Mode=OneWay}"/></TextBlock>
                       </StackPanel>
                     </DataTemplate>
