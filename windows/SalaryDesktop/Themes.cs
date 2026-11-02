@@ -24,6 +24,8 @@ public static class Themes
         ["WarnSoft"] = ("#FFF5E5", "#33271A"),
         ["WarnLine"] = ("#F3D3A8", "#5A4123"),
         ["Violet"] = ("#6B4FD8", "#A897F0"),
+        ["Danger"] = ("#B4362A", "#F08A7E"),
+        ["DangerSoft"] = ("#FDECEA", "#3A1F1C"),
         ["VioletSoft"] = ("#EEE9FB", "#2A2440"),
         ["NavGroup"] = ("#F4F7F7", "#132321"),
         ["Tbg0877E8"] = ("#0877E8", "#1E77D2"),

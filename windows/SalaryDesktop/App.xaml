@@ -4,6 +4,8 @@
     <SolidColorBrush x:Key="Primary" Color="#135148"/>
     <SolidColorBrush x:Key="PrimarySoft" Color="#E3EFEC"/>
     <SolidColorBrush x:Key="Violet" Color="#6B4FD8"/>
+    <SolidColorBrush x:Key="Danger" Color="#B4362A"/>
+    <SolidColorBrush x:Key="DangerSoft" Color="#FDECEA"/>
     <SolidColorBrush x:Key="VioletSoft" Color="#EEE9FB"/>
     <SolidColorBrush x:Key="NavGroup" Color="#F4F7F7"/>
     <SolidColorBrush x:Key="Accent" Color="#0877E8"/>

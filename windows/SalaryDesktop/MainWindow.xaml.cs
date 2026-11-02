@@ -711,7 +711,8 @@ public partial class MainWindow : Window
             var people = await StaffFor(source);
             var result = await Task.Run(() => SalaryReview.Prepare(source, month, people));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
-            new SalaryReviewWindow(result, kind) { Owner = this }.ShowDialog();
+            // نافذة غير حاجبة حتى يُفتح ملف المنتسب من الحالة مباشرة بجانبها.
+            new SalaryReviewWindow(result, kind, name => OpenPerson(name, month)) { Owner = this }.Show();
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }

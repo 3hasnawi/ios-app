@@ -5,7 +5,11 @@ using System.Runtime.CompilerServices;
 namespace SalaryDesktop.Core;
 
 public sealed record SalaryReviewRow(string Kind, string Name, string Detail, decimal? Before, decimal? After);
-public sealed record SalaryReviewResult(string Month, string? PreviousMonth, int EmployeeCount, int ExcludedAmbiguous, IReadOnlyList<SalaryReviewRow> Rows, IReadOnlyList<string> Notes);
+public sealed record SalaryReviewResult(string Month, string? PreviousMonth, int EmployeeCount, int ExcludedAmbiguous, IReadOnlyList<SalaryReviewRow> Rows, IReadOnlyList<string> Notes)
+{
+    /// الحالات المشخّصة لصفحة التدقيق (SalaryReviewDiagnosis)؛ Rows تبقى للأعداد في الرئيسية.
+    public IReadOnlyList<ReviewIssue> Issues { get; init; } = [];
+}
 
 /// مقارنة مبدئية لا تفترض أن الاسمين المتطابقين يعودان للشخص نفسه عند وجود تكرار.
 public static class SalaryReview
@@ -51,7 +55,8 @@ public static class SalaryReview
     {
         var cache = Cache.GetOrCreateValue(source);
         lock (cache) if (cache.TryGetValue(month, out var hit) && ReferenceEquals(hit.Staff, staff)) return hit.Result;
-        var result = Compute(source, month, staff);
+        var computed = Compute(source, month, staff);
+        var result = computed with { Issues = SalaryReviewDiagnosis.Build(source, computed) };
         lock (cache) cache[month] = (staff, result);
         return result;
     }

@@ -508,6 +508,12 @@ try
     var detailedAudit = SalaryReview.Prepare(snapshot with { Employees = auditEmployees, Deductions = [personRow with { Month = reviewMonth }] }, reviewMonth);
     Check(detailedAudit.Rows.Any(r => r.Kind == "حساب الصافي" && r.Before == 500 && r.After == 499) && detailedAudit.Rows.Any(r => r.Kind == "الرعاية الصحية") && detailedAudit.Rows.Count(r => r.Kind == "رقم مكرر") == 2, "salary review checks arithmetic, healthcare, and repeated identifiers");
     Check(detailedAudit.Rows.Any(r => r.Kind == "استقطاع بلا راتب") && detailedAudit.Rows.Any(r => r.Kind == "مجموع الاستقطاعات"), "salary review checks deduction orphans and totals");
+    // التشخيص: التكرار حالة واحدة لكل رقم، وفرق الصافي الصغير يُشخّص تقريباً، ولكل حالة سبب.
+    Check(detailedAudit.Issues.Count(i => i.Kind == "رقم مكرر") == 1 && detailedAudit.Issues.Single(i => i.Kind == "رقم مكرر") is { People.Count: 2 } repeated && repeated.Title.Contains("123", StringComparison.Ordinal)
+        && detailedAudit.Issues.Any(i => i.Kind == "حساب الصافي" && i.Diagnosis.Contains("تقريب", StringComparison.Ordinal)) && detailedAudit.Issues.All(i => i.Diagnosis.Length > 0),
+        "salary review groups repeated numbers into one diagnosed case");
+    Check(review.Issues.Any(i => i.Kind == "تغيّر الصافي" && i.People.Contains(reviewNew.Name)) && review.Issues.Any(i => i.Kind == "أسماء مكررة" && i.Columns.Count == 2), "salary review diagnoses changes and duplicate rows");
+    Check(SalaryReviewDiagnosis.IbanProblem("IQ00TEST000000000000000").Contains("رقم التحقق", StringComparison.Ordinal) && SalaryReviewDiagnosis.IbanProblem("IQ12").Contains("4 خانة", StringComparison.Ordinal), "IBAN problems are explained");
     var afterAccount = bookLinkStore.SaveIndividualSettings(bookSource, afterFood, "ramadi", bodySettings, false, new HashSet<string> { "beneficiaryAccount" }, "أيلول 2026", preparedEntity.Id, fakeAlternate);
     Check(IndividualAccountCustomization.Read(afterAccount.Snapshot, "ramadi")?.Value == fakeAlternate, "individual account customization saved with its reference");
     var beforeUpdate = TransferPreparation.Prepare(afterAccount.Snapshot, "أيلول 2026");

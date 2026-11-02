@@ -203,7 +203,7 @@ static class Program
                 var refImport = new ReferenceImportWindow() { Owner = main }; refImport.Show(); Check(refImport.FindName("Choose") is Button, "reference import did not open"); refImport.Close();
                 var annual = new AnnualImportWindow(snapshot) { Owner = main }; annual.Show(); Check(annual.FindName("Choose") is Button, "annual import page did not open"); annual.Close();
                 var bank = new BankDetailsWindow("أيلول 2026", new BankAccountDetails("دافع وهمي", "فرع وهمي", "123456", "IQ06TEST123000000000001"), new BankManualAmounts(1, 2, 3)) { Owner = main }; bank.Show(); Check(((TextBox)bank.FindName("LeaveText")).Text == "1", "bank settings did not display manual amount"); bank.Close();
-                var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("KindPicker") is ComboBox, "salary review page did not open"); audit.Close();
+                var review = SalaryReview.Prepare(snapshot, "أيلول 2026", StaffRecords.Read(snapshot)); var audit = new SalaryReviewWindow(review) { Owner = main }; audit.Show(); Check(audit.FindName("CategoryList") is ListBox, "salary review page did not open"); audit.Close();
                 var profile = PersonProfiles.Build(snapshot, "منتسب وهمي", StaffRecords.Read(snapshot));
                 var person = new PersonWindow(snapshot, profile, "أيلول 2026") { Owner = main }; person.Show(); await Task.Delay(300);
                 Check(((TextBlock)person.FindName("NetText")).Text == "500" && ((DataGrid)person.FindName("HistoryTable")).Items.Count == 1, "member profile did not show the payslip and deductions"); person.Close();
