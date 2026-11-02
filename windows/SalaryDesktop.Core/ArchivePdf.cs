@@ -37,7 +37,7 @@ public static class ArchivePdf
     /// يتحقق أن البيانات صورة يمكن قراءتها (JPG أو PNG أو BMP أو غيرها مما تدعمه Skia).
     public static void ValidateImage(byte[] bytes)
     {
-        if (bytes.Length is 0 or > MaxBytes) throw new InvalidDataException("ملف الصورة فارغ أو كبير جداً.");
+        if (bytes.Length == 0 || bytes.Length > MaxBytes) throw new InvalidDataException("ملف الصورة فارغ أو كبير جداً.");
         using var codec = SKCodec.Create(new SKMemoryStream(bytes)) ?? throw new InvalidDataException("الملف ليس صورة مدعومة.");
         if (codec.Info.Width <= 0 || codec.Info.Height <= 0) throw new InvalidDataException("أبعاد الصورة غير صالحة.");
     }
