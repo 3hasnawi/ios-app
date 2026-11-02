@@ -330,7 +330,7 @@ try
         var words = string.Join(" ", reconPdf.GetPages().SelectMany(pg => pg.GetWords()).Select(w => w.Text));
         Check(reconPdf.NumberOfPages == 1 && words.Contains("IQD", StringComparison.Ordinal) && words.Contains("IQ00TEST0000000000001", StringComparison.Ordinal) && words.Contains("1,000", StringComparison.Ordinal), "approved reconciliation statement contains account, currency and amounts");
     }
-    if (Environment.GetEnvironmentVariable("SALARY_TEST_STATEMENT_PDF") is { Length: > 0 } statementPath) File.WriteAllBytes(statementPath, reconStatement);
+    if (Environment.GetEnvironmentVariable("SALARY_TEST_STATEMENT_PDF") is { Length: > 0 } statementPath) { Directory.CreateDirectory(Path.GetDirectoryName(statementPath)!); File.WriteAllBytes(statementPath, reconStatement); }
     Check(BankStatementCalculator.Manual(emptySettings, "أيلول 2026").Total == 0m, "absent manual amounts");
     var brokenSettings = snapshot with { SettingsPlists = new Dictionary<string, byte[]> { ["bankStatementManualAmounts"] = [1, 2, 3] } };
     try { _ = BankStatementCalculator.Manual(brokenSettings, "أيلول 2026"); throw new InvalidOperationException("invalid manual settings accepted"); }

@@ -19,6 +19,8 @@ jobs:
           # نماذج كتب التحويل ببيانات وهمية تُنشر مع الصور لمقارنتها بمسودة الآيفون.
           SALARY_TEST_INDIVIDUAL_DIR: ${{ runner.temp }}/windows-screenshots/letters
           SALARY_TEST_GROUP_PDF: ${{ runner.temp }}/windows-screenshots/letters/group.pdf
+          # كشف مطابقة حساب البنك المعتمد ببيانات وهمية.
+          SALARY_TEST_STATEMENT_PDF: ${{ runner.temp }}/windows-screenshots/letters/reconciliation-statement.pdf
         run: dotnet run --project windows/SalaryDesktop.Tests/SalaryDesktop.Tests.csproj -c Release --no-build --no-launch-profile
       - name: Use a desktop-sized screen for design screenshots
         shell: pwsh
