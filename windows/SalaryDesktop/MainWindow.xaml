@@ -16,7 +16,7 @@
       <Border x:Name="Sidebar" Width="236" CornerRadius="20" Background="{DynamicResource TbgFFFFFF}" BorderBrush="{DynamicResource Line}" BorderThickness="1" ClipToBounds="True">
         <DockPanel Margin="11,16,11,11">
           <StackPanel DockPanel.Dock="Top">
-            <Grid Margin="4,0,0,12">
+            <Grid Margin="4,0,0,10">
               <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
               <Image x:Name="SidebarLogo" Source="pack://application:,,,/SalaryDesktop;component/Assets/AppIcon.png" Width="38" Height="38" RenderOptions.BitmapScalingMode="HighQuality"/>
               <StackPanel x:Name="SidebarBrand" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
@@ -27,20 +27,19 @@
             <Rectangle Height="1" Fill="{DynamicResource TbgE8EEED}" Margin="4,0,4,8"/>
           </StackPanel>
           <StackPanel DockPanel.Dock="Bottom">
-            <Rectangle Height="1" Fill="{DynamicResource TbgE8EEED}" Margin="4,6,4,6"/>
+            <Rectangle Height="1" Fill="{DynamicResource TbgE8EEED}" Margin="4,4,4,4"/>
             <Button x:Name="SidebarToggle" Style="{StaticResource NavButton}" Click="ToggleSidebar" ToolTip="طيّ القائمة إلى أيقونات (Ctrl+B)">
               <StackPanel Orientation="Horizontal"><TextBlock x:Name="SidebarToggleIcon" Style="{StaticResource Icon}" Text="&#xE76C;" Width="28" FontSize="13"/><TextBlock Text="طيّ القائمة"/></StackPanel>
             </Button>
             <RadioButton x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="settings" Checked="Navigate" ToolTip="Ctrl+0">
               <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE713;" Width="28"/><TextBlock Text="الإعدادات"/></StackPanel>
             </RadioButton>
-            <Border x:Name="SidebarDataBox" Background="{DynamicResource TbgF1F5F4}" CornerRadius="12" Padding="11,9" Margin="0,8,0,0">
+            <Border x:Name="SidebarDataBox" Background="{DynamicResource TbgF1F5F4}" CornerRadius="12" Padding="11,8" Margin="0,6,0,0" ToolTip="البيانات محفوظة محلياً في حساب ويندوز">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Ellipse x:Name="SidebarDataDot" Width="8" Height="8" Fill="{DynamicResource Primary}" VerticalAlignment="Top" Margin="0,5,9,0"/>
                 <StackPanel Grid.Column="1">
                   <TextBlock x:Name="SidebarData" Text="لا توجد بيانات مفتوحة" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Tfg38504C}" TextWrapping="Wrap"/>
-                  <TextBlock Text="محفوظة محلياً في حساب ويندوز" FontSize="11.5" Foreground="{DynamicResource Muted}" Margin="0,3,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
               </Grid>
             </Border>
