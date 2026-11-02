@@ -90,13 +90,14 @@ public static class ReconciliationPdf
         // البيان 10.5، والصف لا يقل عن 24 مع تظليل متناوب؛ تواقيع اللجنة عريض 16 بلا إطار.
         using var heading = Font(14, true); using var organization = Font(11, true);
         using var labelFont = Font(10.5f, true); using var valueFont = Font(10.5f, false);
-        using var periodFont = Font(9, true); using var bold = Font(11, true); using var signatureFont = Font(16, true);
+        using var periodFont = Font(11, true); using var bold = Font(11, true); using var signatureFont = Font(16, true);
         using var amountFont = Font(11, true);
         const string title = "كشف مطابقة حساب البنك";
         var periodText = $"الــفــتــرة مــن {EasternDate(period.Start)} إلــى {EasternDate(period.End)}";
-        if (W(title, heading) > 250 || W(periodText, periodFont) > 250 || Organization.Any(o => W(o, organization) > 160)) throw new InvalidDataException("ترويسة الكشف لا تتسع؛ راجع التواريخ.");
-        // بيانات الحساب أسفل العنوان على سطرين في وسط الصفحة: (الاسم، الفرع، الحساب) ثم (العملة، IBAN)؛ السطر الطويل يُقسم ولا يُقص.
-        const float accountWidth = 531, accountGap = 22, accountLine = 18;
+        if (W(title, heading) > 250 || W(periodText, periodFont) > 520 || Organization.Any(o => W(o, organization) > 160)) throw new InvalidDataException("ترويسة الكشف لا تتسع؛ راجع التواريخ.");
+        // بيانات الحساب تحت العنوان مباشرة يسار ترويسة الوزارة (تعديل المالك): (الاسم، الفرع، الحساب) ثم (العملة، IBAN)؛
+        // السطر الأطول من المساحة يُقسم إلى سطر آخر ولا يُقص.
+        const float accountLeft = Margin, accountRight = 392, accountWidth = accountRight - accountLeft, accountGap = 18, accountLine = 17;
         float SegmentWidth((string Label, string Value) s) => W(s.Label + ":", labelFont) + 4 + W(s.Value, valueFont);
         var accountLines = new List<List<(string Label, string Value)>>();
         foreach (var group in new[] { new[] { ("اسم الحساب", Value(account.Name)), ("الفرع", Value(account.Branch)), ("الحساب", Value(account.LocalAccount)) }, new[] { ("العملة", "IQD"), ("IBAN", Value(account.Iban)) } })
@@ -112,10 +113,12 @@ public static class ReconciliationPdf
             accountLines.Add(line);
         }
         if (accountLines.Count > 4) throw new InvalidDataException("بيانات الحساب طويلة جداً للكشف.");
-        const float organizationLine = 16;
-        var accountTop = 25 + Organization.Length * organizationLine + 10;
-        var contentBottom = accountTop + accountLines.Count * accountLine;
-        var tableTop = contentBottom + 18; var rowTop = tableTop + HeaderHeight;
+        const float organizationLine = 16, periodHeight = 22;
+        var accountTop = 56f;
+        var contentBottom = Math.Max(25 + Organization.Length * organizationLine, accountTop + accountLines.Count * accountLine);
+        // الفترة شريط بعرض الجدول فوقه مباشرة، و«مسودة» فوقها عند عدم الاكتمال.
+        var periodTop = contentBottom + (complete ? 10 : 26);
+        var tableTop = periodTop + periodHeight; var rowTop = tableTop + HeaderHeight;
 
         // تواقيع اللجنة: عريض 16 في عمودين أسفل آخر صفحة، والسطر الطويل (المنصب) ينزل إلى سطر ثانٍ.
         var signatures = new[] { BankReconciliation.SignatureLines(period, true), BankReconciliation.SignatureLines(period, false) };
@@ -159,7 +162,6 @@ public static class ReconciliationPdf
         using var border = new SKPaint { Color = new SKColor(115, 115, 115), Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
         using var fill = new SKPaint { Color = gray, Style = SKPaintStyle.Fill };
         using var shade = new SKPaint { Color = new SKColor(0xF3, 0xF7, 0xFB), Style = SKPaintStyle.Fill };
-        using var rule = new SKPaint { Color = new SKColor(200, 200, 200), Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true };
         using var output = new MemoryStream();
         using (var document = PdfOutput.Create(output))
         {
@@ -186,13 +188,11 @@ public static class ReconciliationPdf
                 canvas.DrawRect(SKRect.Create(21, 18, 553, 804), border);
                 for (int i = 0; i < Organization.Length; i++) Draw([Organization[i]], organization, SKRect.Create(400, 25 + i * organizationLine, 162, organizationLine), 1);
                 Draw([title], heading, SKRect.Create(172.5f, 27, 250, 24), 1);
-                Draw([periodText], periodFont, SKRect.Create(172.5f, 53, 250, 16), 1);
-                canvas.DrawLine(Margin, accountTop - 5, 595 - Margin, accountTop - 5, rule);
                 for (int l = 0; l < accountLines.Count; l++)
                 {
                     var segments = accountLines[l];
                     var total = segments.Sum(SegmentWidth) + accountGap * (segments.Count - 1);
-                    var right = 595f / 2 + total / 2;
+                    var right = (accountLeft + accountRight) / 2 + total / 2;
                     var baseline = accountTop + l * accountLine + (accountLine - labelFont.FontSpacing) / 2 - labelFont.FontMetrics.Ascent - 1;
                     foreach (var segment in segments)
                     {
@@ -201,7 +201,10 @@ public static class ReconciliationPdf
                         DrawRight(canvas, regularShaper, valueFont, segment.Value, right, baseline); right -= W(segment.Value, valueFont) + accountGap;
                     }
                 }
-                if (!complete) { using var draft = Font(9, true); draft.Color = dark; Draw(["مسودة · المطابقة غير مكتملة"], draft, SKRect.Create(Margin, contentBottom + 2, 531, 14), 1); }
+                if (!complete) { using var draft = Font(9, true); draft.Color = dark; Draw(["مسودة · المطابقة غير مكتملة"], draft, SKRect.Create(Margin, periodTop - 16, 531, 14), 1); }
+                var periodBar = SKRect.Create(lefts[4], periodTop, 595f - Margin - lefts[4], periodHeight);
+                canvas.DrawRect(periodBar, shade); canvas.DrawRect(periodBar, cellStroke);
+                Draw([periodText], periodFont, periodBar, 1);
                 string[] labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"];
                 for (int c = 0; c < 5; c++)
                 {
