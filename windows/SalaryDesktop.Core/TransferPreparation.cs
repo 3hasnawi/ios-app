@@ -9,7 +9,8 @@ namespace SalaryDesktop.Core;
 
 public sealed record BankAccountDetails(string Name, string Branch, string LocalAccount, string Iban)
 {
-    public bool IsIncomplete => new[] { Name, Branch, LocalAccount, Iban }.Any(string.IsNullOrWhiteSpace);
+    /// ما يظهر في رأس كشف المطابقة: الاسم والفرع وIBAN (الحساب المحلي حُذف من الكشف بطلب المالك).
+    public bool IsIncomplete => new[] { Name, Branch, Iban }.Any(string.IsNullOrWhiteSpace);
 }
 
 public enum TransferGroup { Rafidain, OtherBanks, Anbar, Unresolved }

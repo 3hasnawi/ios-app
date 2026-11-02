@@ -95,12 +95,12 @@ public static class ReconciliationPdf
         const string title = "كشف مطابقة حساب البنك";
         var periodText = $"الــفــتــرة مــن {EasternDate(period.Start)} إلــى {EasternDate(period.End)}";
         if (W(title, heading) > 250 || W(periodText, periodFont) > 520 || Organization.Any(o => W(o, organization) > 160)) throw new InvalidDataException("ترويسة الكشف لا تتسع؛ راجع التواريخ.");
-        // بيانات الحساب تحت العنوان مباشرة يسار ترويسة الوزارة (تعديل المالك): (الاسم، الفرع، الحساب) ثم (العملة، IBAN)؛
+        // بيانات الحساب تحت العنوان مباشرة يسار ترويسة الوزارة (تعديل المالك): (الاسم، الفرع) ثم (العملة، IBAN)؛ الحساب المحلي لا يظهر في الكشف؛
         // السطر الأطول من المساحة يُقسم إلى سطر آخر ولا يُقص.
         const float accountLeft = Margin, accountRight = 392, accountWidth = accountRight - accountLeft, accountGap = 18, accountLine = 17;
         float SegmentWidth((string Label, string Value) s) => W(s.Label + ":", labelFont) + 4 + W(s.Value, valueFont);
         var accountLines = new List<List<(string Label, string Value)>>();
-        foreach (var group in new[] { new[] { ("اسم الحساب", Value(account.Name)), ("الفرع", Value(account.Branch)), ("الحساب", Value(account.LocalAccount)) }, new[] { ("العملة", "IQD"), ("IBAN", Value(account.Iban)) } })
+        foreach (var group in new[] { new[] { ("اسم الحساب", Value(account.Name)), ("الفرع", Value(account.Branch)) }, new[] { ("العملة", "IQD"), ("IBAN", Value(account.Iban)) } })
         {
             var line = new List<(string Label, string Value)>(); var width = 0f;
             foreach (var segment in group)

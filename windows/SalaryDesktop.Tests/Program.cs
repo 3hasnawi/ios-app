@@ -328,7 +328,7 @@ try
     using (var reconPdf = UglyToad.PdfPig.PdfDocument.Open(reconStatement))
     {
         var words = string.Join(" ", reconPdf.GetPages().SelectMany(pg => pg.GetWords()).Select(w => w.Text));
-        Check(reconPdf.NumberOfPages == 1 && words.Contains("IQD", StringComparison.Ordinal) && words.Contains("IQ00TEST0000000000001", StringComparison.Ordinal) && words.Contains("1,000", StringComparison.Ordinal), "approved reconciliation statement contains account, currency and amounts");
+        Check(reconPdf.NumberOfPages == 1 && words.Contains("IQD", StringComparison.Ordinal) && words.Contains("IQ00TEST0000000000001", StringComparison.Ordinal) && words.Contains("1,000", StringComparison.Ordinal) && !words.Contains("1234567", StringComparison.Ordinal), "approved reconciliation statement contains account, currency and amounts without the local account");
     }
     if (Environment.GetEnvironmentVariable("SALARY_TEST_STATEMENT_PDF") is { Length: > 0 } statementPath) { Directory.CreateDirectory(Path.GetDirectoryName(statementPath)!); File.WriteAllBytes(statementPath, reconStatement); }
     Check(BankStatementCalculator.Manual(emptySettings, "أيلول 2026").Total == 0m, "absent manual amounts");

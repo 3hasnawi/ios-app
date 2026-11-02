@@ -59,7 +59,7 @@ public sealed record ReconciliationReview(ReconciliationTotals Totals, int Unmat
         else if (funding.Any(m => m.Date != period.Start)) alerts.Add(new("تاريخ التمويل لا يطابق بداية الفترة."));
         if (totals.OutstandingRefunds.Count > 0) alerts.Add(new($"{totals.OutstandingRefunds.Count:N0} مبلغ مسترجع لم يُعد بالكامل."));
         alerts.AddRange(sources.Alerts);
-        if (account is { IsIncomplete: true }) alerts.Add(new("بيانات الحساب في رأس الكشف ناقصة (الاسم أو الفرع أو الحساب المحلي أو IBAN).", false));
+        if (account is { IsIncomplete: true }) alerts.Add(new("بيانات الحساب في رأس الكشف ناقصة (الاسم أو الفرع أو IBAN).", false));
         return new(totals, unmatched, sources, alerts);
     }
 }
