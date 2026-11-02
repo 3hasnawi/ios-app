@@ -139,6 +139,24 @@ nonisolated enum OfficialBookPDF {
     }
 }
 
+extension OfficialBookPDF {
+    /// ملف PDF جاهز (من «الملفات» أو ويندوز): يُقبل من صفحة إلى ثلاث صفحات، غير محمي بكلمة سر.
+    nonisolated static func pageCount(_ data: Data) throws -> Int {
+        guard data.count > 5, data.prefix(5) == Data("%PDF-".utf8), data.count <= 60_000_000,
+              let provider = CGDataProvider(data: data as CFData), let pdf = CGPDFDocument(provider),
+              !pdf.isEncrypted || pdf.isUnlocked else { throw OfficialBookError.damagedPDF }
+        guard (1...3).contains(pdf.numberOfPages) else { throw OfficialBookError.invalidPages }
+        return pdf.numberOfPages
+    }
+    /// صور الماسح إلى بيانات PDF في ملف مؤقت (لاستبدال ملف كتاب موجود).
+    nonisolated static func data(from images: [Data]) throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("book-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try create(images, at: url)
+        return try Data(contentsOf: url)
+    }
+}
+
 /// تدوير صفحة مصوّرة قبل تجميع PDF، مع الإبقاء على الصفحات الأخرى كما هي.
 nonisolated enum OfficialBookImage {
     static func rotateClockwise(_ data: Data) throws -> Data {
@@ -207,7 +225,68 @@ final class OfficialBookStore {
         }
     }
 
-    func rename(_ book: OfficialBook, to rawTitle: String, entity rawEntity: String) throws {
+    /// حفظ ملف PDF جاهز من «الملفات» كتاباً جديداً (مثل ويندوز).
+    @discardableResult
+    func save(title rawTitle: String, month: String, entity rawEntity: String, pdf: Data) async throws -> OfficialBook {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entity = rawEntity.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { throw OfficialBookError.invalidTitle }
+        guard !month.isEmpty else { throw OfficialBookError.invalidMonth }
+        if let loadError { throw NSError(domain: "OfficialBooks", code: 1, userInfo: [NSLocalizedDescriptionKey: loadError]) }
+        let pages = try OfficialBookPDF.pageCount(pdf)
+        let book = OfficialBook(id: UUID(), title: title, month: month, pages: pages, createdAt: .now, entity: entity.isEmpty ? nil : entity)
+        let destination = OfficialBookFiles.file(book.id)
+        try FileManager.default.createDirectory(at: OfficialBookFiles.root, withIntermediateDirectories: true)
+        do {
+            try pdf.write(to: destination, options: [.atomic, .completeFileProtection])
+            try OfficialBookFiles.validate(book)
+            var next = books
+            next.insert(book, at: 0)
+            try OfficialBookFiles.write(next)
+            books = next
+            revision += 1
+            BackupManager.shared.markChanged()
+            Task { _ = await BackupManager.shared.autoBackup() }
+            return book
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+    }
+
+    /// استبدال ملف الكتاب مع إبقاء معرّفه وبياناته وارتباطاته (الأمانات)؛ يُستعاد الملف القديم إذا فشل الحفظ.
+    func replaceFile(_ book: OfficialBook, pdf: Data) throws {
+        if let loadError { throw NSError(domain: "OfficialBooks", code: 1, userInfo: [NSLocalizedDescriptionKey: loadError]) }
+        guard let index = books.firstIndex(where: { $0.id == book.id }) else { throw OfficialBookError.missingFile }
+        let pages = try OfficialBookPDF.pageCount(pdf)
+        let fm = FileManager.default
+        let destination = OfficialBookFiles.file(book.id)
+        let backup = OfficialBookFiles.root.appendingPathComponent("old-\(UUID().uuidString).pdf")
+        try fm.copyItem(at: destination, to: backup)
+        defer { try? fm.removeItem(at: backup) }
+        var next = books
+        next[index].pages = pages
+        do {
+            try pdf.write(to: destination, options: [.atomic, .completeFileProtection])
+            try OfficialBookFiles.validate(next[index])
+            try OfficialBookFiles.write(next)
+        } catch {
+            try? fm.removeItem(at: destination)
+            try? fm.copyItem(at: backup, to: destination)
+            throw error
+        }
+        books = next
+        revision += 1
+        BackupManager.shared.markChanged()
+        Task { _ = await BackupManager.shared.autoBackup() }
+    }
+
+    func replaceFile(_ book: OfficialBook, images: [Data]) async throws {
+        let pdf = try await Task.detached(priority: .userInitiated) { try OfficialBookPDF.data(from: images) }.value
+        try replaceFile(book, pdf: pdf)
+    }
+
+    func rename(_ book: OfficialBook, to rawTitle: String, month rawMonth: String? = nil, entity rawEntity: String) throws {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let entity = rawEntity.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw OfficialBookError.invalidTitle }
@@ -216,6 +295,11 @@ final class OfficialBookStore {
         var next = books
         next[index].title = title
         next[index].entity = entity.isEmpty ? nil : entity
+        // تعديل الشهر (مثل ويندوز): يبقى الملف والمعرّف كما هما.
+        if let month = rawMonth?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            guard !month.isEmpty else { throw OfficialBookError.invalidMonth }
+            next[index].month = month
+        }
         try OfficialBookFiles.write(next)
         books = next
         revision += 1

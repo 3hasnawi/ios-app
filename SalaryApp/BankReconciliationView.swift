@@ -26,9 +26,8 @@ struct BankReconciliationView: View {
     @State private var showConfirm = false
     @State private var showSuggestions = false
     @State private var showContractReview = false
-    @State private var showManualApproval = false
-    @State private var manualApproval: ApprovalContext?
-    @State private var pdfManualApproval = false
+    @State private var showConfirmPeriod = false
+    @State private var showUnconfirm = false
 
     init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
         self.month = month; self.summary = summary; self.manual = manual; self.figures = figures; self.figuresFailure = figuresFailure; self.entities = entities
@@ -80,27 +79,21 @@ struct BankReconciliationView: View {
         (summary.executionMatched || (summary.executionCount == 0 && summary.bankDeductions == 0)) &&
         unresolvedCount == 0 && incompleteSources == 0 && staleSources.isEmpty && figuresFailure == nil && entities != nil
     }
-    private struct ApprovalContext: Equatable {
-        let period: BankReconciliation.Period
-        let account: BankReconciliation.AccountDetails
-        let suggestions: [Suggestion]
-        let alerts: [String]
-    }
-    private var currentApprovalContext: ApprovalContext {
-        ApprovalContext(period: period, account: account, suggestions: suggestedAmounts, alerts: [
-            "\(unresolvedCount)", "\(incompleteSources)", "\(missingSuggestions)",
-            "\(summary.missingNet)", "\(summary.missingContractNominal)", "\(summary.executionMatched)",
-            "\(summary.executionCount)", "\(summary.bankDeductions)",
-            figuresFailure ?? "", entities == nil ? "missing" : "loaded",
-            staleSources.map { $0.id.uuidString }.sorted().joined(separator: ",")
-        ])
-    }
-    private var manuallyApproved: Bool { manualApproval == currentApprovalContext }
     private var previewIsCurrent: Bool {
-        pdfPeriod == period && pdfAccount == account && pdfSources == suggestedAmounts &&
-        (pdfManualApproval ? manuallyApproved : (isComplete && pdfComplete))
+        pdfPeriod == period && pdfAccount == account && pdfSources == suggestedAmounts && pdfComplete == (period.isConfirmed || isComplete)
     }
     private var canEdit: Bool { isLoaded && !BackupManager.shared.isWorking && !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting }
+    /// الفترة المعتمدة مقفلة للقراءة حتى «إلغاء الاعتماد» (مثل ويندوز).
+    private var editable: Bool { canEdit && !period.isConfirmed }
+    private func confirmedText(_ value: BankReconciliation.Period) -> String {
+        guard let date = value.confirmedAt else { return "" }
+        return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute())
+    }
+    private func status(_ value: BankReconciliation.Period) -> String {
+        if value.isConfirmed { return tr("معتمدة \(confirmedText(value))", "Confirmed \(confirmedText(value))") }
+        let matched = value.movements.filter(\.matched).count
+        return tr("قيد العمل · \(Num.format(matched)) من \(Num.format(value.movements.count)) مؤشرة", "In progress · \(matched) of \(value.movements.count) checked")
+    }
     private var visibleMovements: [BankReconciliation.Movement] {
         totals?.lines.map(\.movement) ?? period.movements
     }
@@ -120,7 +113,6 @@ struct BankReconciliationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { EditButton() } }
         .onAppear(perform: load)
-        .onChange(of: currentApprovalContext) { manualApproval = nil }
         .sheet(item: $editor) { draft in
             NavigationStack {
                 BankReconciliationMovementEditor(draft: draft, period: period, error: $error) { movement in
@@ -139,11 +131,20 @@ struct BankReconciliationView: View {
         .confirmationDialog(tr("معاينة كشف المطابقة", "Preview reconciliation"), isPresented: $showConfirm, titleVisibility: .visible) {
             Button(tr("معاينة PDF", "Preview PDF")) { preview() }
         } message: { Text(tr("راجع الرصيد والحركات غير المؤشرة مع كشف المصرف الورقي قبل اعتماد الكشف.", "Review the balance and unchecked movements against the paper bank statement before accepting the statement.")) }
-        .confirmationDialog(tr("تأكيد المطابقة اليدوية", "Confirm manual reconciliation"), isPresented: $showManualApproval, titleVisibility: .visible) {
-            Button(tr("أكدت المطابقة يدوياً وتجاوز التنبيهات", "Confirm manual reconciliation and bypass alerts")) {
-                if persist(period) { manualApproval = currentApprovalContext }
+        .confirmationDialog(tr("اعتماد مطابقة الفترة", "Confirm reconciliation"), isPresented: $showConfirmPeriod, titleVisibility: .visible) {
+            Button(isComplete ? tr("اعتماد وحفظ", "Confirm and save") : tr("أعتمد المطابقة يدوياً وأتحمل التنبيهات", "Confirm manually and accept the alerts")) {
+                var candidate = period; candidate.confirmedAt = Date(); persist(candidate)
             }
-        } message: { Text(tr("أؤكد أنني راجعت الحركات والمبالغ مع كشف المصرف الورقي، وأتحمل مسؤولية التنبيهات الظاهرة. يُلغى التأكيد عند تعديل بيانات الكشف أو تغير التنبيهات، وعند الخروج من هذه الصفحة.", "I confirm that I reviewed the movements and amounts against the paper bank statement and accept the displayed alerts. Changing the statement data or alerts, or leaving this screen, cancels the confirmation.")) }
+        } message: {
+            Text(isComplete
+                 ? tr("راجعت الحركات والرصيد مع كشف المصرف الورقي. تُحفظ الفترة «معتمدة» وتُقفل، ويُفتح كشفها في أي وقت. للتعديل لاحقاً استخدم «إلغاء الاعتماد».", "I reviewed the movements and balance against the paper statement. The period is saved as confirmed and locked; its statement can be opened any time. Use Remove confirmation to edit later.")
+                 : tr("توجد تنبيهات ظاهرة. أؤكد أنني راجعت الحركات والمبالغ مع كشف المصرف الورقي وأتحمل مسؤولية التنبيهات. تُحفظ الفترة «معتمدة» وتُقفل.", "Alerts are shown. I confirm that I reviewed the movements against the paper statement and accept the alerts. The period is saved as confirmed and locked."))
+        }
+        .confirmationDialog(tr("إلغاء اعتماد الفترة", "Remove confirmation"), isPresented: $showUnconfirm, titleVisibility: .visible) {
+            Button(tr("إلغاء الاعتماد للتعديل", "Remove confirmation to edit"), role: .destructive) {
+                var candidate = period; candidate.confirmedAt = nil; persist(candidate)
+            }
+        } message: { Text(tr("تعود الفترة «قيد العمل» للتعديل، ويلزم اعتمادها من جديد بعد المراجعة.", "The period returns to in progress for editing and must be confirmed again after review.")) }
         .confirmationDialog(tr("مراجعة مبلغ العقود", "Review contract amount"), isPresented: $showContractReview, titleVisibility: .visible) {
             Button(tr("اعتماد المبلغ المتوفر", "Accept available amount")) {
                 guard let amount = availableContractAmount else { return }
@@ -160,13 +161,19 @@ struct BankReconciliationView: View {
             if savedPeriods.count > 1 {
                 Picker(tr("فترة محفوظة", "Saved period"), selection: Binding(get: { period.id }, set: { id in
                     if let saved = savedPeriods.first(where: { $0.id == id }) { period = BankReconciliation.preparedSignatures(saved) }
-                })) { ForEach(savedPeriods) { value in Text("\(value.start.formatted(date: .numeric, time: .omitted)) – \(value.end.formatted(date: .numeric, time: .omitted))").tag(value.id) } }
+                })) { ForEach(savedPeriods) { value in Text("\(value.start.formatted(date: .numeric, time: .omitted)) – \(value.end.formatted(date: .numeric, time: .omitted)) · \(status(value))").tag(value.id) } }
+            }
+            if savedPeriods.contains(where: { $0.id == period.id }) {
+                Label(status(period), systemImage: period.isConfirmed ? "lock.fill" : "pencil.circle")
+                    .foregroundStyle(period.isConfirmed ? Color.green : Color.orange)
             }
             LabeledContent(tr("شهر التمويل والبيانات", "Funding and data month"), value: month)
-            DatePicker(tr("من", "From"), selection: $period.start, displayedComponents: .date)
-            DatePicker(tr("إلى", "To"), selection: $period.end, displayedComponents: .date)
-            BankReconciliationIntegerField(title: tr("الرصيد الافتتاحي", "Opening balance"), amount: $period.openingBalance)
-            Button(tr("حفظ الفترة", "Save period"), systemImage: "checkmark.circle") { persist(period) }.disabled(!canEdit)
+            Group {
+                DatePicker(tr("من", "From"), selection: $period.start, displayedComponents: .date)
+                DatePicker(tr("إلى", "To"), selection: $period.end, displayedComponents: .date)
+                BankReconciliationIntegerField(title: tr("الرصيد الافتتاحي", "Opening balance"), amount: $period.openingBalance)
+            }.disabled(period.isConfirmed)
+            Button(tr("حفظ الفترة", "Save period"), systemImage: "checkmark.circle") { persist(period) }.disabled(!editable)
             if let saved = savedPeriods.first(where: { $0.id == period.id }), saved != period {
                 Button(tr("استعادة الفترة المحفوظة", "Restore saved period"), systemImage: "arrow.uturn.backward") { period = BankReconciliation.preparedSignatures(saved) }
             }
@@ -209,8 +216,8 @@ struct BankReconciliationView: View {
             Section { Text(tr("تعذّر تحميل بعض مبالغ الكتب: \(figuresFailure)", "Some letter amounts could not be loaded: \(figuresFailure)")).foregroundStyle(.orange) }
         }
         Section {
-            Button(tr("إضافة حركة", "Add movement"), systemImage: "plus.circle") { editor = MovementDraft(date: period.start) }.disabled(!canEdit)
-            Button(tr("المبالغ المقترحة من التطبيق", "Suggested amounts from the app"), systemImage: "tray.and.arrow.down") { showSuggestions = true }.disabled(!canEdit)
+            Button(tr("إضافة حركة", "Add movement"), systemImage: "plus.circle") { editor = MovementDraft(date: period.start) }.disabled(!editable)
+            Button(tr("المبالغ المقترحة من التطبيق", "Suggested amounts from the app"), systemImage: "tray.and.arrow.down") { showSuggestions = true }.disabled(!editable)
         } footer: { Text(tr("أدخل تاريخ التنفيذ كما يظهر في كشف المصرف؛ تأكيد كتاب أو احتساب راتب لا يثبت تنفيذ حركة مصرفية.", "Enter the execution date shown on the bank statement; a confirmed letter or calculated salary is not proof of a bank movement.")) }
     }
     @ViewBuilder private var movementSection: some View {
@@ -224,7 +231,7 @@ struct BankReconciliationView: View {
                         candidate.movements[index].matched.toggle()
                         persist(candidate)
                     } label: { Image(systemName: movement.matched ? "checkmark.circle.fill" : "circle").foregroundStyle(movement.matched ? Color.green : Color.secondary) }
-                    .buttonStyle(.plain).disabled(!canEdit)
+                    .buttonStyle(.plain).disabled(!editable)
                     Button { editor = MovementDraft(movement) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(movement.description).foregroundStyle(.primary)
@@ -232,17 +239,17 @@ struct BankReconciliationView: View {
                             Text("\(movement.date.formatted(date: .numeric, time: .omitted)) · \(movement.direction.title)")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.buttonStyle(.plain).disabled(!canEdit)
+                    }.buttonStyle(.plain).disabled(!editable)
                     Text(Money.format(Double(movement.amount))).font(.subheadline.monospacedDigit())
                 }
                 .swipeActions {
                     Button(role: .destructive) {
                         var candidate = period; candidate.movements.removeAll { $0.id == movement.id }; persist(candidate)
-                    } label: { Label(tr("حذف", "Delete"), systemImage: "trash") }.disabled(!canEdit)
+                    } label: { Label(tr("حذف", "Delete"), systemImage: "trash") }.disabled(!editable)
                 }
             }
             .onMove { offsets, destination in
-                guard canEdit, let lines = totals?.lines else { return }
+                guard editable, let lines = totals?.lines else { return }
                 var sorted = lines.map(\.movement)
                 sorted.move(fromOffsets: offsets, toOffset: destination)
                 var candidate = period; candidate.movements = sorted
@@ -251,6 +258,7 @@ struct BankReconciliationView: View {
         } header: { Text(tr("الحركات", "Movements")) } footer: { Text(tr("اضغط الدائرة بعد التأكد من الحركة في كشف المصرف الورقي. استخدم تعديل لترتيب حركات اليوم نفسه كما ظهرت في الكشف.", "Check the circle after verifying the movement on paper. Use Edit to order movements on the same day as they appear on the statement.")) }
     }
     @ViewBuilder private var finishSection: some View {
+        Group {
         Section(tr("عضو اللجنة الأول · اليمين", "First committee member · right")) {
             TextField(tr("الرتبة", "Rank"), text: Binding(get: { period.firstRank ?? "عقيد الشرطة" }, set: { period.firstRank = $0 }))
             TextField(tr("الاسم", "Name"), text: $period.memberFirst)
@@ -262,22 +270,30 @@ struct BankReconciliationView: View {
             TextField(tr("الاسم", "Name"), text: $period.memberSecond)
             TextField(tr("المنصب", "Position"), text: Binding(get: { period.secondPosition ?? "مدير الحسابات" }, set: { period.secondPosition = $0 }))
             TextField(tr("التاريخ", "Date"), text: Binding(get: { period.secondDate ?? BankReconciliation.signatureDate(period.end) }, set: { period.secondDate = $0 }))
-            Button(tr("حفظ بيانات اللجنة", "Save committee details"), systemImage: "checkmark.circle") { persist(period) }.disabled(!canEdit)
+            Button(tr("حفظ بيانات اللجنة", "Save committee details"), systemImage: "checkmark.circle") { persist(period) }.disabled(!editable)
         }
+        }.disabled(period.isConfirmed)
         Section {
-            if !period.movements.isEmpty && !isComplete {
-                if manuallyApproved {
-                    Label(tr("تم تأكيد المطابقة يدوياً لهذه البيانات. تبقى التنبيهات ظاهرة للمراجعة.", "Manual reconciliation confirmed for these data. Alerts remain visible for review."), systemImage: "checkmark.shield")
-                        .foregroundStyle(.orange)
-                } else {
-                    Text(tr("راجع التنبيهات والكشف الورقي، ثم يمكنك تأكيد المطابقة يدوياً لتصدير الكشف.", "Review the alerts and paper statement, then confirm manually to export."))
+            if period.isConfirmed {
+                Label(tr("اعتُمدت مطابقة هذه الفترة \(confirmedText(period)) وهي مقفلة للقراءة.", "This period was confirmed \(confirmedText(period)) and is read-only."), systemImage: "lock.fill")
+                    .foregroundStyle(.green)
+                Button(tr("معاينة الكشف المعتمد", "Preview confirmed statement"), systemImage: "doc.text.magnifyingglass") { preview() }
+                    .disabled(!canEdit || totals == nil || preparing)
+                Button(tr("إلغاء الاعتماد للتعديل", "Remove confirmation to edit"), systemImage: "lock.open", role: .destructive) { showUnconfirm = true }
+                    .disabled(!canEdit || preparing)
+            } else {
+                if !period.movements.isEmpty && !isComplete {
+                    Text(tr("راجع التنبيهات والكشف الورقي قبل الاعتماد؛ الكشف قبل الاعتماد يظهر «مسودة».", "Review the alerts and paper statement before confirming; the statement shows Draft until then."))
                         .font(.footnote).foregroundStyle(.orange)
-                    Button(tr("تأكيد المطابقة اليدوية", "Confirm manual reconciliation"), systemImage: "checkmark.shield") { showManualApproval = true }
-                        .disabled(!canEdit || totals == nil || preparing)
                 }
+                Button(tr("اعتماد مطابقة الفترة", "Confirm reconciliation"), systemImage: "checkmark.shield") { showConfirmPeriod = true }
+                    .disabled(!editable || totals == nil || period.movements.isEmpty || unmatched > 0 || preparing)
+                if unmatched > 0 && !period.movements.isEmpty {
+                    Text(tr("أشّر كل الحركات أولاً (بقي \(Num.format(unmatched))).", "Check all movements first (\(unmatched) left).")).font(.footnote).foregroundStyle(.secondary)
+                }
+                Button(tr("معاينة الكشف PDF", "Preview PDF"), systemImage: "doc.text.magnifyingglass") { showConfirm = true }
+                    .disabled(!canEdit || totals == nil || period.movements.isEmpty || preparing)
             }
-            Button(tr("معاينة الكشف PDF", "Preview PDF"), systemImage: "doc.text.magnifyingglass") { showConfirm = true }
-                .disabled(!canEdit || totals == nil || period.movements.isEmpty || preparing || (!isComplete && !manuallyApproved))
             if preparing { ProgressView() }
         }
     }
@@ -347,8 +363,10 @@ struct BankReconciliationView: View {
         do {
             _ = try BankReconciliation.calculate(value)
             var ledger = try BankReconciliation.decode(stored)
+            let before = ledger.periods
             if let index = ledger.periods.firstIndex(where: { $0.id == value.id }) { ledger.periods[index] = value }
             else { ledger.periods.append(value) }
+            try BankReconciliation.checkLocked(before: before, after: ledger.periods)
             stored = try JSONEncoder().encode(ledger); period = value
             BackupManager.shared.markChanged(); return true
         } catch { self.error = error.localizedDescription; return false }
@@ -357,20 +375,17 @@ struct BankReconciliationView: View {
         guard persist(period) else { return }
         let snapshot = period
         let accountSnapshot = account
-        let manual = !isComplete && manuallyApproved
-        let complete = isComplete || manual
-        let approval = currentApprovalContext
+        let complete = period.isConfirmed || isComplete
         let sources = suggestedAmounts
         preparing = true
         Task {
             defer { preparing = false }
             do {
                 let url = try await BankReconciliationPDF.make(snapshot, complete: complete, account: accountSnapshot)
-                guard snapshot == period, accountSnapshot == account, sources == suggestedAmounts, approval == currentApprovalContext,
-                      (manual ? manuallyApproved : isComplete) else {
+                guard snapshot == period, accountSnapshot == account, sources == suggestedAmounts, complete == (period.isConfirmed || isComplete) else {
                     try? FileManager.default.removeItem(at: url); throw BankReconciliation.Failure.invalid
                 }
-                pdfPeriod = snapshot; pdfAccount = accountSnapshot; pdfSources = sources; pdfComplete = complete; pdfManualApproval = manual; pdf = url
+                pdfPeriod = snapshot; pdfAccount = accountSnapshot; pdfSources = sources; pdfComplete = complete; pdf = url
             } catch { self.error = error.localizedDescription }
         }
     }

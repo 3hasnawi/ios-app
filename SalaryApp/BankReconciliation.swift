@@ -6,7 +6,7 @@ nonisolated enum BankReconciliation {
     static let maximumAmount: Int64 = 9_007_199_254_740_991
 
     enum Failure: LocalizedError {
-        case invalid, duplicated, outOfPeriod, refundMismatch, overflow, incompatibleVersion
+        case invalid, duplicated, outOfPeriod, refundMismatch, overflow, incompatibleVersion, locked
         var errorDescription: String? {
             switch self {
             case .invalid: tr("تحقق من الفترة والمبلغ والبيان قبل الحفظ.", "Check the period, amount and description before saving.")
@@ -15,6 +15,7 @@ nonisolated enum BankReconciliation {
             case .refundMismatch: tr("راجع ربط المبالغ المسترجعة: يجب أن يكون الصرف مرتبطاً بوارد وأن لا يتجاوزه.", "Check refund links: repayments must reference a credit and cannot exceed it.")
             case .overflow: tr("مجموع الحركات يتجاوز الحد المدعوم؛ لم يُحفظ التغيير.", "The movement total exceeds the supported limit; the change was not saved.")
             case .incompatibleVersion: tr("تعذّر قراءة بيانات المطابقة المحفوظة؛ لم تُستبدل البيانات.", "Could not read saved reconciliation data; it was not replaced.")
+            case .locked: tr("الفترة معتمدة ومقفلة؛ ألغِ اعتمادها قبل تعديلها أو حذفها.", "This period is confirmed and locked; remove the confirmation before editing or deleting it.")
             }
         }
     }
@@ -38,6 +39,8 @@ nonisolated enum BankReconciliation {
         var isFunding: Bool? = nil
         /// بصمة بيانات الحركة عند مراجعتها؛ أي تغيير في الحقول يلغي المطابقة.
         var matched: Bool = false
+        /// حقول لا يعرفها هذا الإصدار (من ويندوز أو إصدار أحدث) تُحفظ كما وردت ولا تضيع عند الحفظ.
+        var extra: [String: LedgerJSON]? = nil
     }
     /// بيانات ظاهرة في الكشف؛ لا يُستنتج الحساب المحلي من رقم IBAN.
     struct AccountDetails: Equatable, Sendable {
@@ -67,10 +70,16 @@ nonisolated enum BankReconciliation {
         var acceptedContractMissing: Int? = nil
         var acceptedContractAmount: Int64? = nil
         var movements: [Movement] = []
+        /// وقت اعتماد مطابقة الفترة (مشترك مع ويندوز)؛ الفترة المعتمدة مقفلة حتى يُلغى اعتمادها.
+        var confirmedAt: Date? = nil
+        /// حقول لا يعرفها هذا الإصدار تُحفظ كما وردت.
+        var extra: [String: LedgerJSON]? = nil
+        var isConfirmed: Bool { confirmedAt != nil }
     }
     static func preparedSignatures(_ input: Period) -> Period {
         var value = input
-        if value.signatureDefaultsInitialized == nil {
+        // الفترة المعتمدة تُعرض كما حُفظت؛ لا تُضاف إليها القيم الافتراضية فتبدو معدّلة.
+        if value.signatureDefaultsInitialized == nil && value.confirmedAt == nil {
             if value.memberFirst.isEmpty { value.memberFirst = "باسم فواز نواف" }
             if value.memberSecond.isEmpty { value.memberSecond = "حميد زيدان خلف" }
             value.signatureDefaultsInitialized = true
@@ -232,6 +241,126 @@ nonisolated enum BankReconciliation {
         if old.date != changed.date || old.description != changed.description || old.amount != changed.amount || old.direction != changed.direction || old.sourceID != changed.sourceID || old.sourceLineIDs != changed.sourceLineIDs || old.refundOf != changed.refundOf || old.isRefund != changed.isRefund || old.isFunding != changed.isFunding {
             result.matched = false
         } else { result.matched = old.matched }
+        result.extra = old.extra
         return result
+    }
+    /// الفترة المعتمدة لا تُعدّل ولا تُحذف إلا بعد إلغاء اعتمادها (نفس قاعدة ويندوز).
+    static func checkLocked(before: [Period], after: [Period]) throws {
+        for old in before where old.isConfirmed {
+            guard let next = after.first(where: { $0.id == old.id }) else { throw Failure.locked }
+            if next.isConfirmed && next != old { throw Failure.locked }
+        }
+    }
+}
+
+/// قيمة JSON عامة لحفظ الحقول غير المعروفة في دفتر المطابقة.
+nonisolated indirect enum LedgerJSON: Codable, Equatable, Sendable {
+    case null, bool(Bool), number(Double), string(String), array([LedgerJSON]), object([String: LedgerJSON])
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([LedgerJSON].self) { self = .array(value) }
+        else { self = .object(try container.decode([String: LedgerJSON].self)) }
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .null: try container.encodeNil()
+        case .bool(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        }
+    }
+}
+
+nonisolated struct LedgerKey: CodingKey, Hashable {
+    let stringValue: String
+    init(_ value: String) { stringValue = value }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    var intValue: Int? { nil }
+    init?(intValue: Int) { return nil }
+}
+
+/// ترميز يدوي يطابق الترميز التلقائي السابق (التواريخ بإعداد المرمّز نفسه، والاختياري الفارغ لا يُكتب)
+/// ويضيف الحقول غير المعروفة كما وردت.
+extension BankReconciliation.Movement {
+    private nonisolated static let known: Set<String> = ["id", "date", "description", "amount", "direction", "sourceID", "sourceLineIDs", "refundOf", "isRefund", "isFunding", "matched"]
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LedgerKey.self)
+        id = try c.decode(UUID.self, forKey: LedgerKey("id"))
+        date = try c.decode(Date.self, forKey: LedgerKey("date"))
+        description = try c.decode(String.self, forKey: LedgerKey("description"))
+        amount = try c.decode(Int64.self, forKey: LedgerKey("amount"))
+        direction = try c.decode(BankReconciliation.Direction.self, forKey: LedgerKey("direction"))
+        sourceID = try c.decodeIfPresent(String.self, forKey: LedgerKey("sourceID"))
+        sourceLineIDs = try c.decodeIfPresent([String].self, forKey: LedgerKey("sourceLineIDs"))
+        refundOf = try c.decodeIfPresent(UUID.self, forKey: LedgerKey("refundOf"))
+        isRefund = try c.decodeIfPresent(Bool.self, forKey: LedgerKey("isRefund"))
+        isFunding = try c.decodeIfPresent(Bool.self, forKey: LedgerKey("isFunding"))
+        matched = try c.decodeIfPresent(Bool.self, forKey: LedgerKey("matched")) ?? false
+        var unknown: [String: LedgerJSON] = [:]
+        for key in c.allKeys where !Self.known.contains(key.stringValue) { unknown[key.stringValue] = try c.decode(LedgerJSON.self, forKey: key) }
+        extra = unknown.isEmpty ? nil : unknown
+    }
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: LedgerKey.self)
+        for (key, value) in extra ?? [:] where !Self.known.contains(key) { try c.encode(value, forKey: LedgerKey(key)) }
+        try c.encode(id, forKey: LedgerKey("id")); try c.encode(date, forKey: LedgerKey("date"))
+        try c.encode(description, forKey: LedgerKey("description")); try c.encode(amount, forKey: LedgerKey("amount"))
+        try c.encode(direction, forKey: LedgerKey("direction"))
+        try c.encodeIfPresent(sourceID, forKey: LedgerKey("sourceID")); try c.encodeIfPresent(sourceLineIDs, forKey: LedgerKey("sourceLineIDs"))
+        try c.encodeIfPresent(refundOf, forKey: LedgerKey("refundOf")); try c.encodeIfPresent(isRefund, forKey: LedgerKey("isRefund"))
+        try c.encodeIfPresent(isFunding, forKey: LedgerKey("isFunding")); try c.encode(matched, forKey: LedgerKey("matched"))
+    }
+}
+
+extension BankReconciliation.Period {
+    private nonisolated static let known: Set<String> = ["id", "month", "start", "end", "openingBalance", "memberFirst", "memberSecond", "firstRank", "firstPosition", "firstDate",
+                                             "secondRank", "secondPosition", "secondDate", "signatureDefaultsInitialized", "acceptedContractMissing", "acceptedContractAmount",
+                                             "movements", "confirmedAt"]
+    nonisolated init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: LedgerKey.self)
+        id = try c.decode(UUID.self, forKey: LedgerKey("id"))
+        month = try c.decode(String.self, forKey: LedgerKey("month"))
+        start = try c.decode(Date.self, forKey: LedgerKey("start"))
+        end = try c.decode(Date.self, forKey: LedgerKey("end"))
+        openingBalance = try c.decodeIfPresent(Int64.self, forKey: LedgerKey("openingBalance")) ?? 0
+        memberFirst = try c.decodeIfPresent(String.self, forKey: LedgerKey("memberFirst")) ?? ""
+        memberSecond = try c.decodeIfPresent(String.self, forKey: LedgerKey("memberSecond")) ?? ""
+        firstRank = try c.decodeIfPresent(String.self, forKey: LedgerKey("firstRank"))
+        firstPosition = try c.decodeIfPresent(String.self, forKey: LedgerKey("firstPosition"))
+        firstDate = try c.decodeIfPresent(String.self, forKey: LedgerKey("firstDate"))
+        secondRank = try c.decodeIfPresent(String.self, forKey: LedgerKey("secondRank"))
+        secondPosition = try c.decodeIfPresent(String.self, forKey: LedgerKey("secondPosition"))
+        secondDate = try c.decodeIfPresent(String.self, forKey: LedgerKey("secondDate"))
+        signatureDefaultsInitialized = try c.decodeIfPresent(Bool.self, forKey: LedgerKey("signatureDefaultsInitialized"))
+        acceptedContractMissing = try c.decodeIfPresent(Int.self, forKey: LedgerKey("acceptedContractMissing"))
+        acceptedContractAmount = try c.decodeIfPresent(Int64.self, forKey: LedgerKey("acceptedContractAmount"))
+        movements = try c.decodeIfPresent([BankReconciliation.Movement].self, forKey: LedgerKey("movements")) ?? []
+        confirmedAt = try c.decodeIfPresent(Date.self, forKey: LedgerKey("confirmedAt"))
+        var unknown: [String: LedgerJSON] = [:]
+        for key in c.allKeys where !Self.known.contains(key.stringValue) { unknown[key.stringValue] = try c.decode(LedgerJSON.self, forKey: key) }
+        extra = unknown.isEmpty ? nil : unknown
+    }
+    nonisolated func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: LedgerKey.self)
+        for (key, value) in extra ?? [:] where !Self.known.contains(key) { try c.encode(value, forKey: LedgerKey(key)) }
+        try c.encode(id, forKey: LedgerKey("id")); try c.encode(month, forKey: LedgerKey("month"))
+        try c.encode(start, forKey: LedgerKey("start")); try c.encode(end, forKey: LedgerKey("end"))
+        try c.encode(openingBalance, forKey: LedgerKey("openingBalance"))
+        try c.encode(memberFirst, forKey: LedgerKey("memberFirst")); try c.encode(memberSecond, forKey: LedgerKey("memberSecond"))
+        try c.encodeIfPresent(firstRank, forKey: LedgerKey("firstRank")); try c.encodeIfPresent(firstPosition, forKey: LedgerKey("firstPosition"))
+        try c.encodeIfPresent(firstDate, forKey: LedgerKey("firstDate")); try c.encodeIfPresent(secondRank, forKey: LedgerKey("secondRank"))
+        try c.encodeIfPresent(secondPosition, forKey: LedgerKey("secondPosition")); try c.encodeIfPresent(secondDate, forKey: LedgerKey("secondDate"))
+        try c.encodeIfPresent(signatureDefaultsInitialized, forKey: LedgerKey("signatureDefaultsInitialized"))
+        try c.encodeIfPresent(acceptedContractMissing, forKey: LedgerKey("acceptedContractMissing"))
+        try c.encodeIfPresent(acceptedContractAmount, forKey: LedgerKey("acceptedContractAmount"))
+        try c.encode(movements, forKey: LedgerKey("movements"))
+        try c.encodeIfPresent(confirmedAt, forKey: LedgerKey("confirmedAt"))
     }
 }

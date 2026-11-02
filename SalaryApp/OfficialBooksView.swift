@@ -1,10 +1,18 @@
 import SwiftUI
 import SwiftData
 import VisionKit
+import UniformTypeIdentifiers
 
 struct ScannedBookDraft: Identifiable {
     let id = UUID()
     let images: [Data]
+}
+
+/// ملف PDF مختار من «الملفات» قبل تسميته وربطه بشهر.
+struct ImportedBookDraft: Identifiable {
+    let id = UUID()
+    let pdf: Data
+    let suggestedTitle: String
 }
 
 /// أرشيف الكتب المرتبطة بالأشهر؛ البحث بالاسم أو الشهر أو الجهة المرتبطة.
@@ -19,6 +27,10 @@ struct OfficialBooksView: View {
     @State private var editing: OfficialBook?
     @State private var deleting: OfficialBook?
     @State private var error: String?
+    @State private var showingImporter = false
+    @State private var imported: ImportedBookDraft?
+    /// الكتاب الذي يُستبدل ملفه (بالمسح أو من «الملفات») مع إبقاء معرّفه وارتباطاته.
+    @State private var replacing: OfficialBook?
 
     private var monthNames: [String] { months.map(\.name) }
     private var visible: [OfficialBook] {
@@ -53,6 +65,13 @@ struct OfficialBooksView: View {
                 }
                 .disabled(monthNames.isEmpty)
                 .accessibilityIdentifier("scanOfficialBook")
+                Button {
+                    replacing = nil
+                    showingImporter = true
+                } label: {
+                    Label(tr("استيراد PDF من الملفات", "Import PDF from Files"), systemImage: "doc.badge.plus")
+                }
+                .disabled(monthNames.isEmpty)
             } footer: {
                 Text(tr("يحدد الماسح حواف الورقة ويلتقطها تلقائيًا. صوّر الكتاب وإشعاره ضمن ١–٣ صفحات، ثم راجع الصفحات وعدّلها قبل الحفظ.",
                         "The scanner detects edges and captures automatically. Scan the letter and its notice as 1–3 pages, then review and edit before saving."))
@@ -87,7 +106,14 @@ struct OfficialBooksView: View {
                         Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") {
                             do { try OfficialBookShare.present(book) } catch { self.error = error.localizedDescription }
                         }
-                        Button(tr("تعديل الاسم والجهة", "Edit name and entity"), systemImage: "pencil") { editing = book }
+                        Button(tr("تعديل الاسم والشهر والجهة", "Edit name, month and entity"), systemImage: "pencil") { editing = book }
+                        Menu(tr("استبدال الملف", "Replace file")) {
+                            Button(tr("مسح صفحات جديدة", "Scan new pages"), systemImage: "doc.viewfinder") {
+                                if VNDocumentCameraViewController.isSupported { replacing = book; showingScanner = true }
+                                else { error = OfficialBookError.unavailableCamera.localizedDescription }
+                            }
+                            Button(tr("ملف PDF من الملفات", "PDF from Files"), systemImage: "doc.badge.plus") { replacing = book; showingImporter = true }
+                        }
                         Button(tr("حذف الكتاب", "Delete document"), systemImage: "trash", role: .destructive) { deleting = book }
                     }
                 }
@@ -104,21 +130,45 @@ struct OfficialBooksView: View {
         .sheet(isPresented: $showingScanner) {
             OfficialBookScanner(onComplete: { images in
                 showingScanner = false
+                let target = replacing
+                replacing = nil
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(250))
-                    draft = ScannedBookDraft(images: images)
+                    if let target {
+                        do { try await store.replaceFile(target, images: images) } catch { self.error = error.localizedDescription }
+                    } else {
+                        draft = ScannedBookDraft(images: images)
+                    }
                 }
             }, onFailure: { message in
                 showingScanner = false
+                replacing = nil
                 error = message
-            }, onCancel: { showingScanner = false })
+            }, onCancel: { showingScanner = false; replacing = nil })
+        }
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.pdf]) { result in
+            let target = replacing
+            replacing = nil
+            do {
+                let url = try result.get()
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let data = try Data(contentsOf: url)
+                _ = try OfficialBookPDF.pageCount(data)
+                if let target { try store.replaceFile(target, pdf: data) }
+                else { imported = ImportedBookDraft(pdf: data, suggestedTitle: Self.meaningfulName(url.deletingPathExtension().lastPathComponent)) }
+            } catch { self.error = error.localizedDescription }
+        }
+        .sheet(item: $imported) { file in
+            OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth,
+                               images: nil, existing: nil, pdf: file.pdf, suggestedTitle: file.suggestedTitle)
         }
         .sheet(item: $draft) { draft in
             OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth,
                                images: draft.images, existing: nil)
         }
         .sheet(item: $editing) { book in
-            OfficialBookEditor(months: monthNames, initialMonth: book.month, images: nil, existing: book)
+            OfficialBookEditor(months: monthNames.contains(book.month) ? monthNames : [book.month] + monthNames, initialMonth: book.month, images: nil, existing: book)
         }
         .confirmationDialog(tr("حذف الكتاب؟", "Delete document?"), isPresented: Binding(
             get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
@@ -136,6 +186,15 @@ struct OfficialBooksView: View {
             get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+
+    /// أسماء ملفات الماسح والكاميرا (Scan_0001، IMG_1234…) ليست اسماً للكتاب؛ يُطلب من المستخدم كتابة اسم.
+    static func meaningfulName(_ name: String) -> String {
+        let value = name.replacingOccurrences(of: "_", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = value.lowercased()
+        let generic = ["scan", "scanned", "img", "image", "doc", "document", "page", "pdf", "untitled", "photo", "dsc", "whatsapp", "screenshot", "مستند", "صورة", "مسح"]
+        if generic.contains(where: { lower.hasPrefix($0) }) && value.filter(\.isLetter).count <= 12 { return "" }
+        return value.filter(\.isLetter).count >= 3 ? value : ""
     }
 }
 
@@ -156,12 +215,15 @@ struct OfficialBookEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = OfficialBookStore.shared
 
-    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?, onSaved: ((OfficialBook) -> Void)? = nil) {
+    /// ملف PDF من «الملفات» بدل صور الماسح.
+    private let pdf: Data?
+    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?, pdf: Data? = nil, suggestedTitle: String = "", onSaved: ((OfficialBook) -> Void)? = nil) {
         self.months = months
         self.existing = existing
         self.onSaved = onSaved
+        self.pdf = pdf
         _images = State(initialValue: images)
-        _title = State(initialValue: existing?.title ?? "")
+        _title = State(initialValue: existing?.title ?? suggestedTitle)
         _month = State(initialValue: initialMonth)
         _entity = State(initialValue: existing?.entity ?? "")
     }
@@ -172,13 +234,11 @@ struct OfficialBookEditor: View {
                 Section(tr("بيانات الكتاب", "Document details")) {
                     TextField(tr("اسم الكتاب", "Document name"), text: $title)
                         .textInputAutocapitalization(.sentences)
+                    Picker(tr("الشهر", "Month"), selection: $month) {
+                        ForEach(months, id: \.self) { Text($0).tag($0) }
+                    }
                     if existing == nil {
-                        Picker(tr("الشهر", "Month"), selection: $month) {
-                            ForEach(months, id: \.self) { Text($0).tag($0) }
-                        }
-                        LabeledContent(tr("عدد الصفحات", "Pages"), value: Num.format(images?.count ?? 0))
-                    } else {
-                        LabeledContent(tr("الشهر", "Month"), value: month)
+                        LabeledContent(tr("عدد الصفحات", "Pages"), value: Num.format(pdf.flatMap { try? OfficialBookPDF.pageCount($0) } ?? images?.count ?? 0))
                     }
                     TextField(tr("جهة التنفيذ المرتبطة (اختياري)", "Related entity (optional)"), text: $entity)
                 }
@@ -226,6 +286,7 @@ struct OfficialBookEditor: View {
                 }
             }
             .navigationTitle(existing == nil ? tr("حفظ الكتاب", "Save document") : tr("تعديل الكتاب", "Edit document"))
+            // الكتاب بلا اسم (مسح أو ملف باسم عام): يُكتب اسم يسهل البحث عنه.
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -279,7 +340,11 @@ struct OfficialBookEditor: View {
         saving = true
         Task {
             do {
-                if let existing { try store.rename(existing, to: title, entity: entity) }
+                if let existing { try store.rename(existing, to: title, month: month, entity: entity) }
+                else if let pdf {
+                    let book = try await store.save(title: title, month: month, entity: entity, pdf: pdf)
+                    onSaved?(book)
+                }
                 else if let images {
                     let book = try await store.save(title: title, month: month, entity: entity, images: images, scheduleBackup: onSaved == nil)
                     onSaved?(book)
