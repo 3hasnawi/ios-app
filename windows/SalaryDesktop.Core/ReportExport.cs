@@ -244,7 +244,7 @@ public sealed class ReportCanvas : IDisposable
         bold = SKTypeface.FromData(boldData) ?? regular;
         regularShaper = new SKShaper(regular); boldShaper = new SKShaper(bold);
         if (assets.Watermark is { } logo) watermark = SKBitmap.Decode(logo);
-        document = SKDocument.CreatePdf(output) ?? throw new InvalidDataException("تعذّر إنشاء ملف PDF.");
+        document = PdfOutput.Create(output);
         this.stamp = stamp;
     }
 
@@ -323,29 +323,57 @@ public sealed class ReportCanvas : IDisposable
 }
 
 /// الكشف المعتمد PDF: A4 بالطول أو بالعرض بحسب عرض الأعمدة، يتكرر العنوان ورؤوس الأعمدة في كل صفحة، والمجموع في آخر صفحة.
+/// وضوح الأسماء (طلب المالك): عمود الاسم بخط Arial عريض 11.5 وبقية النصوص عادي 10.5، صف لا يقل عن 24 نقطة مع تظليل متناوب،
+/// والنص الطويل ينزل إلى سطر آخر بدل أن يصغر خطه أو يُختصر.
 public static class ReportPdf
 {
-    private static readonly SKColor Dark = new(31, 79, 120), Light = new(222, 235, 247), Line = new(155, 184, 212);
+    private static readonly SKColor Dark = new(31, 79, 120), Light = new(222, 235, 247), Line = new(155, 184, 212), Zebra = new(243, 247, 251);
+    private const float Margin = 28, MinRow = 24, TitleHeight = 30, ColumnsHeight = 24, NameSize = 11.5f, TextSize = 10.5f;
+
+    /// عمود الاسم يُبرز (الاسم، الاسم الكامل، اسم المنتسب…).
+    public static bool IsNameColumn(ReportColumn column) => column.Kind == ReportColumnKind.Text && (column.Title.Contains("الاسم", StringComparison.Ordinal) || column.Title.StartsWith("اسم", StringComparison.Ordinal));
+
+    private sealed record Layout(ReportSheet Sheet, float[] Widths, float[] Xs, List<string>[][] Cells, float[] Heights, List<(int First, int End)> Pages);
 
     public static byte[] Generate(IReadOnlyList<ReportSheet> sheets, ReportAssets assets, DateTime stamp)
     {
         if (sheets.Count == 0) throw new InvalidDataException("لا يوجد كشف للتصدير.");
         foreach (var sheet in sheets) sheet.Validate();
         using var canvas = new ReportCanvas(assets, stamp);
-        var layouts = sheets.Select(s => (Sheet: s, PerPage: PerPage(s), Pages: 0)).ToArray();
-        for (int i = 0; i < layouts.Length; i++) layouts[i].Pages = Math.Max(1, (int)Math.Ceiling((layouts[i].Sheet.Rows.Count + (layouts[i].Sheet.HasTotal ? 1 : 0)) / (double)layouts[i].PerPage));
-        var total = layouts.Sum(l => l.Pages); var page = 0;
-        foreach (var (sheet, perPage, pageCount) in layouts)
-            for (int p = 0; p < pageCount; p++) { canvas.BeginPage(sheet.Landscape); Render(canvas, sheet, p, perPage, pageCount); canvas.EndPage(++page, total); }
+        var layouts = sheets.Select(s => Prepare(canvas, s)).ToArray();
+        var total = layouts.Sum(l => l.Pages.Count); var page = 0;
+        foreach (var layout in layouts)
+            for (int p = 0; p < layout.Pages.Count; p++) { canvas.BeginPage(layout.Sheet.Landscape); Render(canvas, layout, p); canvas.EndPage(++page, total); }
         return canvas.Finish();
     }
 
-    private const float Margin = 28, RowHeight = 20, TitleHeight = 30, ColumnsHeight = 22;
-    private static int PerPage(ReportSheet sheet)
+    private static Layout Prepare(ReportCanvas canvas, ReportSheet sheet)
     {
-        var height = sheet.Landscape ? 595f : 842f;
-        var tableTop = Margin + 24 + TitleHeight + ColumnsHeight; var bottom = height - Margin - 18;
-        return Math.Max(1, (int)((bottom - tableTop) / RowHeight));
+        float width = sheet.Landscape ? 842 : 595, height = sheet.Landscape ? 595 : 842, tableWidth = width - Margin * 2;
+        var widths = Widths(canvas, sheet, tableWidth);
+        var xs = new float[widths.Length]; var x = width - Margin;
+        for (int i = 0; i < widths.Length; i++) { x -= widths[i]; xs[i] = x; }
+        using var name = canvas.Paint(NameSize, true); using var text = canvas.Paint(TextSize, false);
+        var cells = sheet.Rows.Select(row => row.Select((value, c) => sheet.Columns[c].Kind switch
+        {
+            ReportColumnKind.Text => canvas.Lines(IsNameColumn(sheet.Columns[c]) ? name : text, value, widths[c] - 8),
+            ReportColumnKind.Amount when value.Length > 0 => canvas.Lines(text, value, widths[c] - 8),
+            _ => [value],
+        }).ToArray()).ToArray();
+        var spacing = Math.Max(name.FontSpacing, text.FontSpacing);
+        var heights = cells.Select(row => MathF.Ceiling(Math.Max(MinRow, row.Max(l => l.Count) * spacing + 8))).ToArray();
+        // توزيع الصفوف على الصفحات بارتفاعاتها الفعلية، مع ترك مكان سطر المجموع في الصفحة الأخيرة.
+        var tableTop = Margin + 24 + TitleHeight + ColumnsHeight; var bottom = height - Margin - 18; var room = bottom - tableTop;
+        if (heights.Any(h => h > room - ColumnsHeight)) throw new InvalidDataException("أحد صفوف الكشف أطول من صفحة كاملة؛ صدّر Excel.");
+        var pages = new List<(int First, int End)>(); var first = 0; float used = 0;
+        for (int i = 0; i < heights.Length; i++)
+        {
+            if (used + heights[i] > room) { pages.Add((first, i)); first = i; used = 0; }
+            used += heights[i];
+        }
+        if (sheet.HasTotal && used + ColumnsHeight > room && heights.Length > 0) { pages.Add((first, heights.Length)); first = heights.Length; }
+        pages.Add((first, heights.Length));
+        return new Layout(sheet, widths, xs, cells, heights, pages);
     }
 
     /// التسلسل والمبالغ (ومنها المجموع) تظهر كاملة؛ والباقي يوزّع على أعمدة النص بنسبتها.
@@ -354,13 +382,13 @@ public static class ReportPdf
         var sum = sheet.Columns.Sum(c => c.Width);
         var widths = sheet.Columns.Select(c => (float)(c.Width / sum) * tableWidth).ToArray();
         var fixedColumns = new HashSet<int>();
-        using var bold10 = canvas.Paint(10, true); using var bold11 = canvas.Paint(11, true); using var head = canvas.Paint(10.5f, true);
+        using var serial = canvas.Paint(10.5f, true); using var amount = canvas.Paint(11, true); using var head = canvas.Paint(11, true);
         for (int c = 0; c < sheet.Columns.Count; c++)
         {
             float need = sheet.Columns[c].Kind switch
             {
-                ReportColumnKind.Serial => Math.Max(canvas.Width(bold10, Math.Max(sheet.Rows.Count, 1).ToString(CultureInfo.InvariantCulture)), canvas.Width(head, sheet.Columns[c].Title)) + 14,
-                ReportColumnKind.Amount => Math.Max(Math.Max(canvas.Width(bold11, ReportSheet.Money(Math.Max(Math.Abs(sheet.Total), sheet.Amounts.Count == 0 ? 0 : sheet.Amounts.Max(a => Math.Abs(a))))), canvas.Width(bold11, ReportSheet.Money(sheet.Total))), canvas.Width(head, sheet.Columns[c].Title)) + 16,
+                ReportColumnKind.Serial => Math.Max(canvas.Width(serial, Math.Max(sheet.Rows.Count, 1).ToString(CultureInfo.InvariantCulture)), canvas.Width(head, sheet.Columns[c].Title)) + 14,
+                ReportColumnKind.Amount => Math.Max(Math.Max(canvas.Width(amount, ReportSheet.Money(Math.Max(Math.Abs(sheet.Total), sheet.Amounts.Count == 0 ? 0 : sheet.Amounts.Max(a => Math.Abs(a))))), canvas.Width(amount, ReportSheet.Money(sheet.Total))), canvas.Width(head, sheet.Columns[c].Title)) + 16,
                 _ => 0
             };
             if (need > widths[c]) { widths[c] = need; fixedColumns.Add(c); }
@@ -372,17 +400,15 @@ public static class ReportPdf
         return widths;
     }
 
-    private static void Render(ReportCanvas canvas, ReportSheet sheet, int page, int perPage, int pages)
+    private static void Render(ReportCanvas canvas, Layout layout, int page)
     {
+        var sheet = layout.Sheet; var widths = layout.Widths; var xs = layout.Xs;
         var width = canvas.PageWidth; var tableWidth = width - Margin * 2; var headerTop = Margin;
-        var widths = Widths(canvas, sheet, tableWidth);
-        var xs = new float[widths.Length]; var x = width - Margin;
-        for (int i = 0; i < widths.Length; i++) { x -= widths[i]; xs[i] = x; }
         SKRect Cell(int c, float y, float h) => SKRect.Create(xs[c], y, widths[c], h);
 
         using var header = canvas.Paint(14, true); using var titlePaint = canvas.Paint(14, true, SKColors.White);
-        using var head = canvas.Paint(10.5f, true); using var text = canvas.Paint(10, false); using var serial = canvas.Paint(10, true);
-        using var amount = canvas.Paint(10.5f, true); using var totalPaint = canvas.Paint(11, true);
+        using var head = canvas.Paint(11, true); using var text = canvas.Paint(TextSize, false); using var name = canvas.Paint(NameSize, true);
+        using var serial = canvas.Paint(10.5f, true); using var amount = canvas.Paint(11, true); using var totalPaint = canvas.Paint(11.5f, true);
         canvas.Text(header, sheet.Header, Margin, width - Margin, headerTop + 16, ReportCanvas.Align.Center);
         var titleRect = SKRect.Create(Margin, headerTop + 24, tableWidth, TitleHeight);
         canvas.Fill(titleRect, Dark);
@@ -391,33 +417,45 @@ public static class ReportPdf
         for (int c = 0; c < sheet.Columns.Count; c++)
         {
             var r = Cell(c, columnsY, ColumnsHeight); canvas.Fill(r, Light); canvas.Stroke(r, Line, .5f);
-            canvas.Text(head, sheet.Columns[c].Title, r.Left, r.Right, r.Top + 15, ReportCanvas.Align.Center);
+            canvas.Text(head, sheet.Columns[c].Title, r.Left, r.Right, r.Top + 16, ReportCanvas.Align.Center);
         }
-        var y = columnsY + ColumnsHeight; var start = page * perPage; var end = Math.Min(sheet.Rows.Count, start + perPage);
-        for (int i = start; i < end; i++)
+        // أسطر الخلية في وسطها عمودياً.
+        void Lines(SKPaint paint, IReadOnlyList<string> lines, SKRect r, ReportCanvas.Align align, bool number)
         {
+            var spacing = paint.FontSpacing; var start = r.Top + (r.Height - lines.Count * spacing) / 2 - paint.FontMetrics.Ascent;
+            for (int k = 0; k < lines.Count; k++) canvas.Text(paint, lines[k], r.Left, r.Right, start + k * spacing, align, number);
+        }
+        var y = columnsY + ColumnsHeight; var (first, end) = layout.Pages[page];
+        for (int i = first; i < end; i++)
+        {
+            var h = layout.Heights[i];
+            if (i % 2 == 1) canvas.Fill(SKRect.Create(xs[^1], y, tableWidth, h), Zebra);
             for (int c = 0; c < sheet.Columns.Count; c++)
             {
-                var r = Cell(c, y, RowHeight); canvas.Stroke(r, Line, .5f);
+                var r = Cell(c, y, h); canvas.Stroke(r, Line, .5f);
+                var lines = layout.Cells[i][c];
                 switch (sheet.Columns[c].Kind)
                 {
-                    case ReportColumnKind.Serial: canvas.Text(serial, (i + 1).ToString(CultureInfo.InvariantCulture), r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, true); break;
-                    case ReportColumnKind.Amount: canvas.Text(sheet.Rows[i][c].Length > 0 ? text : amount, sheet.Rows[i][c].Length > 0 ? sheet.Rows[i][c] : ReportSheet.Money(sheet.Amounts[i]), r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, true); break;
-                    default: canvas.Text(text, sheet.Rows[i][c], r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Right); break;
+                    case ReportColumnKind.Serial: Lines(serial, [(i + 1).ToString(CultureInfo.InvariantCulture)], r, ReportCanvas.Align.Center, true); break;
+                    case ReportColumnKind.Amount:
+                        if (sheet.Rows[i][c].Length > 0) Lines(text, lines, r, ReportCanvas.Align.Center, true);
+                        else Lines(amount, [ReportSheet.Money(sheet.Amounts[i])], r, ReportCanvas.Align.Center, true);
+                        break;
+                    default: Lines(IsNameColumn(sheet.Columns[c]) ? name : text, lines, r, ReportCanvas.Align.Right, true); break;
                 }
             }
-            y += RowHeight;
+            y += h;
         }
-        if (page == pages - 1 && sheet.HasTotal)
+        if (page == layout.Pages.Count - 1 && sheet.HasTotal)
         {
             var amountColumn = sheet.AmountColumn;
             for (int c = 0; c < sheet.Columns.Count; c++) canvas.Fill(Cell(c, y, ColumnsHeight), Light);
             var label = Cell(0, y, ColumnsHeight); for (int c = 1; c < amountColumn; c++) label = SKRect.Union(label, Cell(c, y, ColumnsHeight));
             canvas.Stroke(label, Line, .5f);
             for (int c = amountColumn; c < sheet.Columns.Count; c++) canvas.Stroke(Cell(c, y, ColumnsHeight), Line, .5f);
-            canvas.Text(totalPaint, "المجموع", label.Left, label.Right, y + 15, ReportCanvas.Align.Center);
+            canvas.Text(totalPaint, "المجموع", label.Left, label.Right, y + 16, ReportCanvas.Align.Center);
             var cell = Cell(amountColumn, y, ColumnsHeight);
-            canvas.Text(totalPaint, ReportSheet.Money(sheet.Total), cell.Left, cell.Right, y + 15, ReportCanvas.Align.Center, true);
+            canvas.Text(totalPaint, ReportSheet.Money(sheet.Total), cell.Left, cell.Right, y + 16, ReportCanvas.Align.Center, true);
         }
     }
 }

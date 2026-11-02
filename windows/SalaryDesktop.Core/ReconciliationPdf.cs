@@ -74,7 +74,7 @@ public static class ReconciliationPdf
         var required = string.Join(' ', totals.Lines.Select(x => x.Movement.Description)) + period.Month + period.FirstMember + period.SecondMember + "كشف مطابقة الحساب مدين دائن الرصيد الرصيد الافتتاحي عضوا اللجنة مسودة غير معتمدة";
         if (!paint.ContainsGlyphs(required)) throw new InvalidDataException("الخط المتاح لا يدعم بعض أحرف الكشف.");
         using var memory = new MemoryStream();
-        using (var pdf = SKDocument.CreatePdf(memory) ?? throw new InvalidDataException("تعذّر إنشاء الكشف."))
+        using (var pdf = PdfOutput.Create(memory))
         {
             SKCanvas? canvas = null; float y = 0; int page = 0;
             void StartPage()

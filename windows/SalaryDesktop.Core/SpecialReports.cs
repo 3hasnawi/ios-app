@@ -17,7 +17,8 @@ public static class StandardReports
         catch (JsonException ex) { throw new InvalidDataException("تعذّر قراءة بنود أحد الرواتب؛ لم يُنشأ الكشف.", ex); }
     }
 
-    /// قائمة الاستقطاعات لجهة: ت، الرتبة، الاسم الكامل، المبلغ، جهة التنفيذ، رقم وتاريخ الاضبارة، ثم المجموع.
+    /// قائمة الاستقطاعات لجهة: ت، الرتبة، الاسم الكامل، المبلغ، رقم وتاريخ الاضبارة، ثم المجموع.
+    /// عمود «جهة التنفيذ» حُذف بطلب المالك لأنه يتكرر بنفس القيمة واسم الجهة في العنوان؛ فيتسع عمود الاسم.
     /// الحالات غير المحتسبة (موقوف/هارب/محكوم) لا تدخل، والرتبة من القيد أو من راتب الشهر.
     public static ReportSheet EntityDeductions(BackupSnapshot source, string month, string entity)
     {
@@ -27,8 +28,8 @@ public static class StandardReports
         foreach (var employee in source.Employees.Where(e => e.Month == month)) ranks.TryAdd(Key(employee.Name), employee.Rank);
         return new ReportSheet(ReportSheet.HeaderFor(source), $"قائمة الاستقطاعات لـ شهر {ReportSheet.Eastern(month)} - {entity}",
             [new("ت", 5, ReportColumnKind.Serial), new("الرتبة", 11, ReportColumnKind.Text), new("الاسم الكامل", 34, ReportColumnKind.Text),
-             new("المبلغ", 14, ReportColumnKind.Amount), new("جهة التنفيذ", 28, ReportColumnKind.Text), new("رقم وتاريخ الاضبارة", 32, ReportColumnKind.Text)],
-            rows.Select((d, i) => new[] { (i + 1).ToString(CultureInfo.InvariantCulture), d.Rank.Length > 0 ? d.Rank : ranks.GetValueOrDefault(Key(d.Name), ""), d.Name, "", d.Title, d.Note }).ToArray(),
+             new("المبلغ", 14, ReportColumnKind.Amount), new("رقم وتاريخ الاضبارة", 32, ReportColumnKind.Text)],
+            rows.Select((d, i) => new[] { (i + 1).ToString(CultureInfo.InvariantCulture), d.Rank.Length > 0 ? d.Rank : ranks.GetValueOrDefault(Key(d.Name), ""), d.Name, "", d.Note }).ToArray(),
             rows.Select(d => d.Amount ?? 0m).ToArray()).Fitted();
     }
 
@@ -340,24 +341,38 @@ public static class HealthCareReport
         "<xf numFmtId=\"0\" fontId=\"2\" fillId=\"4\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\"/></xf>" +
         "</cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>";
 
-    /// A4 بالطول: المشتركون ثم غير المشتركين من صفحة جديدة.
+    /// A4 بالطول: المشتركون ثم غير المشتركين من صفحة جديدة. الأسماء بخط عريض 11.5 وتنزل إلى سطر ثانٍ بدل التصغير،
+    /// والصف لا يقل عن 24 نقطة مع تظليل متناوب (طلب المالك لوضوح الأسماء)؛ تبقى ألوان النموذج والخلية الحمراء كما هي.
     public static byte[] Pdf(Lists lists, string subscribersTitle, string othersTitle, ReportAssets assets, DateTime stamp)
     {
         using var canvas = new ReportCanvas(assets, stamp);
-        const float margin = 32, rowH = 20, pageH = 842; float width = 595 - margin * 2;
-        SKColor yellow = new(255, 255, 0), gray = new(217, 217, 217), red = new(255, 125, 128);
-        using var bold = canvas.Paint(10.5f, true); using var titlePaint = canvas.Paint(13, true);
-        var perPage = (int)((pageH - margin * 2 - 34 - rowH - 16) / rowH);
-        int Pages(int count) => Math.Max(1, (int)Math.Ceiling(count / (double)perPage));
-        var total = Pages(lists.Subscribers.Count) + Pages(lists.Others.Count); var page = 0;
-        foreach (var others in new[] { false, true })
+        const float margin = 32, headH = 22, minRow = 24, pageH = 842; float width = 595 - margin * 2;
+        SKColor yellow = new(255, 255, 0), gray = new(217, 217, 217), red = new(255, 125, 128), zebra = new(244, 244, 244);
+        using var bold = canvas.Paint(10.5f, true); using var titlePaint = canvas.Paint(13, true); using var name = canvas.Paint(11.5f, true);
+        float tableTop = margin + 34 + headH, bottom = pageH - margin - 16;
+        (float[] Widths, float[] Xs) Columns(bool others)
         {
-            var rows = others ? lists.Others : lists.Subscribers;
-            string[] headers = others ? ["ت", "الرتبة", "الاسم", "المبلغ"] : ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"];
             float[] ratios = others ? [7, 13, 42, 14] : [7, 13, 42, 14, 17];
             var widths = ratios.Select(r => r / ratios.Sum() * width).ToArray();
             var xs = new float[widths.Length]; var x = 595 - margin; for (int i = 0; i < widths.Length; i++) { x -= widths[i]; xs[i] = x; }
-            for (int p = 0; p < Pages(rows.Count); p++)
+            return (widths, xs);
+        }
+        (List<string>[] Names, float[] Heights, List<(int First, int End)> Pages) Layout(IReadOnlyList<Row> rows, float nameWidth)
+        {
+            var names = rows.Select(r => canvas.Lines(name, r.Name, nameWidth - 8)).ToArray();
+            var heights = names.Select(n => MathF.Ceiling(Math.Max(minRow, n.Count * name.FontSpacing + 8))).ToArray();
+            var pages = new List<(int, int)>(); int first = 0; float used = 0;
+            for (int i = 0; i < heights.Length; i++) { if (used + heights[i] > bottom - tableTop) { pages.Add((first, i)); first = i; used = 0; } used += heights[i]; }
+            pages.Add((first, heights.Length));
+            return (names, heights, pages);
+        }
+        var sub = Layout(lists.Subscribers, Columns(false).Widths[2]); var oth = Layout(lists.Others, Columns(true).Widths[2]);
+        var total = sub.Pages.Count + oth.Pages.Count; var page = 0;
+        foreach (var others in new[] { false, true })
+        {
+            var rows = others ? lists.Others : lists.Subscribers; var layout = others ? oth : sub; var (widths, xs) = Columns(others);
+            string[] headers = others ? ["ت", "الرتبة", "الاسم", "المبلغ"] : ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"];
+            foreach (var (first, end) in layout.Pages)
             {
                 canvas.BeginPage(false);
                 var titleRect = SKRect.Create(margin, margin, width, 30); canvas.Fill(titleRect, yellow); canvas.Stroke(titleRect, SKColors.Black, .6f);
@@ -365,23 +380,29 @@ public static class HealthCareReport
                 var y = titleRect.Bottom + 4;
                 for (int c = 0; c < headers.Length; c++)
                 {
-                    var r = SKRect.Create(xs[c], y, widths[c], rowH); canvas.Fill(r, gray); canvas.Stroke(r, SKColors.Black, .6f);
-                    canvas.Text(bold, headers[c], r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center);
+                    var r = SKRect.Create(xs[c], y, widths[c], headH); canvas.Fill(r, gray); canvas.Stroke(r, SKColors.Black, .6f);
+                    canvas.Text(bold, headers[c], r.Left, r.Right, r.Top + 15, ReportCanvas.Align.Center);
                 }
-                y += rowH;
-                for (int i = p * perPage; i < Math.Min(rows.Count, (p + 1) * perPage); i++)
+                y += headH;
+                for (int i = first; i < end; i++)
                 {
-                    var row = rows[i];
+                    var row = rows[i]; var h = layout.Heights[i];
                     var values = new List<string> { (i + 1).ToString(CultureInfo.InvariantCulture), row.Rank, row.Name, XlsxReport.Number(row.Amount) };
                     if (!others) values.Add(FamilyText(row.Amount));
+                    if (i % 2 == 1) canvas.Fill(SKRect.Create(xs[^1], y, width, h), zebra);
                     for (int c = 0; c < values.Count; c++)
                     {
-                        var r = SKRect.Create(xs[c], y, widths[c], rowH);
+                        var r = SKRect.Create(xs[c], y, widths[c], h);
                         if (c == 4 && !IsExact(row.Amount)) canvas.Fill(r, red);
                         canvas.Stroke(r, SKColors.Black, .6f);
-                        canvas.Text(bold, values[c], r.Left, r.Right, r.Top + 14, ReportCanvas.Align.Center, c is 0 or 3 or 4);
+                        if (c == 2)
+                        {
+                            var lines = layout.Names[i]; var start = r.Top + (h - lines.Count * name.FontSpacing) / 2 - name.FontMetrics.Ascent;
+                            for (int k = 0; k < lines.Count; k++) canvas.Text(name, lines[k], r.Left, r.Right, start + k * name.FontSpacing, ReportCanvas.Align.Center, true);
+                        }
+                        else canvas.Text(bold, values[c], r.Left, r.Right, r.MidY + 4, ReportCanvas.Align.Center, c is 0 or 3 or 4);
                     }
-                    y += rowH;
+                    y += h;
                 }
                 canvas.EndPage(++page, total);
             }

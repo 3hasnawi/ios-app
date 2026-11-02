@@ -397,7 +397,7 @@ public static class AdaptiveLetterPdf
 
         using var logo = SKBitmap.Decode(source.Logo) ?? throw new InvalidDataException("تعذّر فتح شعار الكتاب.");
         using var memory = new MemoryStream();
-        using (var pdf = SKDocument.CreatePdf(memory) ?? throw new InvalidDataException("تعذّر إنشاء الكتاب."))
+        using (var pdf = PdfOutput.Create(memory))
         {
             using var stroke = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
             using var shade = new SKPaint { Color = new SKColor(240, 240, 240), Style = SKPaintStyle.Fill };

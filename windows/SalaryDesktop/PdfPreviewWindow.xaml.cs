@@ -14,6 +14,8 @@ namespace SalaryDesktop;
 /// معاينة PDF داخل البرنامج (بدل فتح عارض خارجي): تُرسم الصفحات بمكتبة ويندوز (Windows.Data.Pdf)، مع الحفظ والطباعة من النافذة نفسها.
 public partial class PdfPreviewWindow : Window
 {
+    /// دقة رسم المعاينة نسبة إلى 72 نقطة في البوصة (ثلاثة أضعاف = وضوح عند التكبير حتى 300٪).
+    private const double Sharpness = 3.0;
     public sealed class PageView(BitmapSource image, double width, double height, string label) : INotifyPropertyChanged
     {
         private double zoom = 1;
@@ -48,7 +50,7 @@ public partial class PdfPreviewWindow : Window
     /// (كانت تُبقي العملية معلّقة ثم تنهيها بخطأ بعد الإغلاق).
     private static List<PageView> RenderPages(byte[] bytes)
     {
-        const double scale = 2.2 * 96 / 72;   // نقاط PDF ← بكسل بدقة مضاعفة
+        const double scale = Sharpness * 96 / 72;   // نقاط PDF ← بكسل بدقة ثلاثية لوضوح المعاينة عند التكبير
         var result = new List<PageView>();
         lock (Docnet.Core.DocLib.Instance)
         {
@@ -69,7 +71,7 @@ public partial class PdfPreviewWindow : Window
                 }
                 var image = BitmapSource.Create(width, height, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, raw, width * 4);
                 image.Freeze();
-                result.Add(new PageView(image, width / 2.2, height / 2.2, $"صفحة {i + 1:N0} من {count:N0}"));
+                result.Add(new PageView(image, width / Sharpness, height / Sharpness, $"صفحة {i + 1:N0} من {count:N0}"));
             }
         }
         return result;
@@ -97,7 +99,7 @@ public partial class PdfPreviewWindow : Window
         }
     }
 
-    /// يرسل الصفحات إلى الطابعة واحدة تلو الأخرى بدقة الطابعة (300–600 نقطة في البوصة)، فتخرج الحروف والخطوط حادة
+    /// يرسل الصفحات إلى الطابعة واحدة تلو الأخرى بدقة 600 نقطة في البوصة، فتخرج الحروف والخطوط حادة
     /// كالنسخة الأصلية بدل صورة المعاينة منخفضة الدقة التي تبدو مستنسخة. الرسم عند الطلب يحدّ من استهلاك الذاكرة.
     private sealed class PrintPaginator(byte[] pdf, IReadOnlyList<PageView> pages, double dpi) : DocumentPaginator
     {
@@ -197,10 +199,9 @@ public partial class PdfPreviewWindow : Window
         var cursor = Cursor; Cursor = Cursors.Wait;
         try
         {
-            var resolution = 300.0;
-            try { if (dialog.PrintTicket?.PageResolution?.X is int x && x > 0) resolution = x; }
-            catch (Exception ex) when (ex is InvalidOperationException or System.Printing.PrintQueueException) { }
-            resolution = Math.Clamp(resolution, 300, 600);
+            // أعلى جودة عملية (طلب المالك): 600 نقطة في البوصة دائماً، وهي دقة الطباعة الحقيقية لمعظم طابعات المكاتب؛
+            // الأعلى منها يضاعف الذاكرة أربع مرات لكل صفحة دون فرق ظاهر في الكشوف.
+            const double resolution = 600;
             dialog.PrintDocument(new PrintPaginator(pdf, pages, resolution), TitleText.Text);
             InfoText.Text = $"أُرسل الكشف إلى الطابعة بدقة {resolution:N0} نقطة في البوصة.";
         }

@@ -11,7 +11,7 @@ public static class SalaryTrustPdf
 {
     private static readonly float[] Widths = [28, 150, 75, 78, 125, 110, 110, 110];
     private const float PageW = 842, PageH = 595, Margin = 28, Bottom = 560, Content = 786;
-    private static readonly SKColor Dark = new(31, 79, 120), HeadFill = new(235, 235, 235), Line = new(90, 90, 90);
+    private static readonly SKColor Dark = new(31, 79, 120), HeadFill = new(235, 235, 235), Line = new(90, 90, 90), Zebra = new(243, 247, 251);
     private static readonly int[] NumberColumns = [0, 5, 6, 7];
 
     private sealed record Placement(int Page, int Row, float Y, float Height);
@@ -21,7 +21,9 @@ public static class SalaryTrustPdf
         if (sheet.Columns.Count != Widths.Length || sheet.Rows.Count == 0 || sheet.Rows.Any(r => r.Length != Widths.Length)) throw new InvalidDataException("الكشف فارغ أو غير صالح.");
         using var canvas = new ReportCanvas(assets, stamp);
         using var headerPaint = canvas.Paint(12, true); using var titlePaint = canvas.Paint(12, true, SKColors.White);
-        using var columnPaint = canvas.Paint(10, true); using var cellPaint = canvas.Paint(9, false);
+        // الأسماء بخط عريض 11 والبقية 10، وصف لا يقل عن 24 مع تظليل متناوب (وضوح الأسماء بطلب المالك).
+        using var columnPaint = canvas.Paint(10.5f, true); using var cellPaint = canvas.Paint(10, false); using var namePaint = canvas.Paint(11, true);
+        SKPaint PaintFor(int column) => column == 1 ? namePaint : cellPaint;
         var x = new float[Widths.Length]; var right = PageW - Margin;
         for (int c = 0; c < Widths.Length; c++) { right -= Widths[c]; x[c] = right; }
 
@@ -34,8 +36,8 @@ public static class SalaryTrustPdf
         var tableTop = top + titleHeight;
         var maximumRow = Bottom - tableTop - headHeight;
         if (maximumRow <= 40) throw new InvalidDataException("عنوان الكشف أطول من مساحة الصفحة؛ اختصر البحث.");
-        var cells = sheet.Rows.Select(row => row.Select((value, c) => canvas.Lines(cellPaint, value, Widths[c] - 8)).ToArray()).ToArray();
-        var heights = cells.Select(row => MathF.Ceiling(Math.Max(20, row.Max(l => l.Count) * cellPaint.FontSpacing + 6))).ToArray();
+        var cells = sheet.Rows.Select(row => row.Select((value, c) => canvas.Lines(PaintFor(c), value, Widths[c] - 8)).ToArray()).ToArray();
+        var heights = cells.Select(row => MathF.Ceiling(Math.Max(24, row.Select((l, c) => l.Count * PaintFor(c).FontSpacing).Max() + 8))).ToArray();
         if (heights.Any(h => h > maximumRow)) throw new InvalidDataException("أحد القيود أطول من صفحة PDF؛ صدّر Excel لهذا الكشف.");
 
         // تقسيم الصفوف على الصفحات أولاً ليُعرف عدد الصفحات في التذييل.
@@ -67,11 +69,14 @@ public static class SalaryTrustPdf
                 Lines(columnPaint, columnLines[c], x[c], Widths[c], tableTop, headHeight, ReportCanvas.Align.Center);
             }
             foreach (var place in placements.Where(pl => pl.Page == p))
+            {
+                if (place.Row % 2 == 1) canvas.Fill(SKRect.Create(Margin, place.Y, Content, place.Height), Zebra);
                 for (int c = 0; c < Widths.Length; c++)
                 {
                     canvas.Stroke(SKRect.Create(x[c], place.Y, Widths[c], place.Height), Line, 0.5f);
-                    Lines(cellPaint, cells[place.Row][c], x[c], Widths[c], place.Y, place.Height, NumberColumns.Contains(c) ? ReportCanvas.Align.Center : ReportCanvas.Align.Right);
+                    Lines(PaintFor(c), cells[place.Row][c], x[c], Widths[c], place.Y, place.Height, NumberColumns.Contains(c) ? ReportCanvas.Align.Center : ReportCanvas.Align.Right);
                 }
+            }
             canvas.EndPage(p + 1, pages);
         }
         var bytes = canvas.Finish();

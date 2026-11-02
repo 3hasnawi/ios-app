@@ -14,7 +14,10 @@ public static class NameListPdf
     private static string Eastern(string s) => string.Concat(s.Select(c => c is >= '0' and <= '9' ? (char)('٠' + c - '0') : c));
     private static string Number(long n) => Eastern(n.ToString("N0", CultureInfo.GetCultureInfo("en-US")));
     private static string Identity(string value) => new string(PayrollAnalysis.Normalize(value.Normalize(NormalizationForm.FormKC).Replace('ی', 'ي').Replace('ھ', 'ه')).Where(char.IsLetterOrDigit).Order().ToArray());
-    public static byte[] Generate(NameList list, byte[] fontBytes)
+    /// وضوح الأسماء (طلب المالك): الأسماء بخط عريض 11.5 والبقية 10.5 دون تصغير لحشر القائمة في صفحة واحدة؛
+    /// النص الطويل ينزل إلى سطر آخر، والقائمة تمتد على صفحات مع تكرار الرأس، وتظليل متناوب للصفوف.
+    private const float Size = 10.5f, NameSize = 11.5f, Spacing = 14.5f, MinRow = 22;
+    public static byte[] Generate(NameList list, byte[] fontBytes, byte[]? boldBytes = null)
     {
         if (list.Problem is not null || list.Rows.Count is 0 or > 5000 || MonthNames.SortKey(list.Month) == 0 || string.IsNullOrWhiteSpace(list.Title) || fontBytes.Length is 0 or > 3_000_000)
             throw new InvalidDataException("القائمة غير جاهزة للتصدير؛ راجع بياناتها أولاً.");
@@ -22,21 +25,16 @@ public static class NameListPdf
             list.Rows.Sum(row => (decimal)row.Amount) != list.Total || list.Total <= 0 || list.Total > 9_007_199_254_740_991L)
             throw new InvalidDataException("أسماء القائمة أو مجموعها غير صالح.");
         using var data = SKData.CreateCopy(fontBytes); using var face = SKTypeface.FromData(data) ?? throw new InvalidDataException("تعذّر فتح خط القائمة.");
-        using var paint = new SKPaint { Typeface = face, TextSize = 9.5f, IsAntialias = true, Color = SKColors.Black };
+        using var boldData = boldBytes is { Length: > 0 } ? SKData.CreateCopy(boldBytes) : null;
+        using var boldFace = boldData is not null ? SKTypeface.FromData(boldData) : null;
+        using var paint = new SKPaint { Typeface = face, TextSize = Size, IsAntialias = true, Color = SKColors.Black };
+        using var namePaint = new SKPaint { Typeface = boldFace ?? face, TextSize = NameSize, IsAntialias = true, Color = SKColors.Black, FakeBoldText = boldFace is null };
+        using var zebra = new SKPaint { Color = new SKColor(243, 243, 243), Style = SKPaintStyle.Fill };
         using var stroke = new SKPaint { Color = new SKColor(70, 70, 70), Style = SKPaintStyle.Stroke, StrokeWidth = .6f, IsAntialias = true };
         var cells = list.Rows.Select(r => new[] { Number(r.Amount), r.Workplace, r.Rank, r.Name, Eastern(r.Number.ToString(CultureInfo.InvariantCulture)) }).ToArray();
-        List<string>[][] wrapped = []; float[] heights = [];
-        void Prepare(float size)
-        {
-            paint.TextSize = size;
-            wrapped = cells.Select(row => row.Select((cell, col) => col is 0 or 4 ? new List<string> { cell } : ArabicPresentation.Wrap(cell, paint, X[col + 1] - X[col] - 6)).ToArray()).ToArray();
-            heights = wrapped.Select(row => Math.Max(13, row.Max(lines => lines.Count) * (size + 2) + 4)).ToArray();
-        }
-        var size = 9.5f; Prepare(size);
-        if (heights.Sum() > Bottom - TableTop - 44)
-            for (var candidate = 9f; candidate >= 7f; candidate -= .5f) { Prepare(candidate); size = candidate; if (heights.Sum() <= Bottom - TableTop - 44) break; }
-        // If one page cannot hold the list legibly, use a comfortable size and repeat headings.
-        if (heights.Sum() > Bottom - TableTop - 44) { size = 9.5f; Prepare(size); }
+        var size = Size;
+        var wrapped = cells.Select(row => row.Select((cell, col) => col is 0 or 4 ? new List<string> { cell } : ArabicPresentation.Wrap(cell, col == 3 ? namePaint : paint, X[col + 1] - X[col] - 6)).ToArray()).ToArray();
+        var heights = wrapped.Select(row => Math.Max(MinRow, row.Max(lines => lines.Count) * Spacing + 7)).ToArray();
         if (heights.Any(h => h > Bottom - TableTop - 44)) throw new InvalidDataException("اسم أو محل عمل لا يتسع في القائمة.");
         var pages = new List<(int First, int End)>();
         for (int first = 0; first < cells.Length;)
@@ -46,7 +44,7 @@ public static class NameListPdf
             if (end == first) throw new InvalidDataException("تعذّر توزيع القائمة على الصفحات.");
             pages.Add((first, end)); first = end;
         }
-        using var output = new MemoryStream(); using (var pdf = SKDocument.CreatePdf(output) ?? throw new InvalidDataException("تعذّر إنشاء قائمة PDF."))
+        using var output = new MemoryStream(); using (var pdf = PdfOutput.Create(output))
         {
             var boxes = new List<(int Page, int Row, float Y, float Height)>();
             float totalY = 0;
@@ -63,10 +61,12 @@ public static class NameListPdf
                 for (int row = pages[p].First; row < pages[p].End; row++)
                 {
                     var h = heights[row]; boxes.Add((p + 1, row, y, h));
+                    if (row % 2 == 1) canvas.DrawRect(X[0], y, X[5] - X[0], h, zebra);
                     for (int col = 0; col < 5; col++)
                     {
                         canvas.DrawRect(X[col], y, X[col + 1] - X[col], h, stroke);
-                        for (int line = 0; line < wrapped[row][col].Count; line++) ArabicPresentation.Fit(canvas, paint, wrapped[row][col][line], X[col], X[col + 1], y + size + 2 + line * (size + 2), col is 1 or 2 or 3);
+                        var lines = wrapped[row][col]; var top = y + (h - lines.Count * Spacing) / 2;
+                        for (int line = 0; line < lines.Count; line++) ArabicPresentation.Fit(canvas, col == 3 ? namePaint : paint, lines[line], X[col], X[col + 1], top + (line + 1) * Spacing - 3.5f, col is 1 or 2 or 3);
                     }
                     y += h;
                 }
@@ -93,11 +93,11 @@ public static class NameListPdf
             return bytes;
         }
     }
-    public static void Save(NameList list, byte[] font, string destination)
+    public static void Save(NameList list, byte[] font, string destination, byte[]? bold = null)
     {
         var target = Path.GetFullPath(destination);
         if (!string.Equals(Path.GetExtension(target), ".pdf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("اختر ملف PDF صالحاً.");
-        var bytes = Generate(list, font); var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("مجلد الحفظ غير صالح.");
+        var bytes = Generate(list, font, bold); var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("مجلد الحفظ غير صالح.");
         var temporary = Path.Combine(directory, ".name-list-" + Guid.NewGuid().ToString("N") + ".tmp");
         try { using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { file.Write(bytes); file.Flush(true); }
             using (var file = File.OpenRead(temporary)) if (!SHA256.HashData(file).AsSpan().SequenceEqual(SHA256.HashData(bytes))) throw new InvalidDataException("تعذّر التحقق من القائمة المحفوظة.");

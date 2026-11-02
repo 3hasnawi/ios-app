@@ -31,7 +31,7 @@ public partial class NameListsWindow : Window
     {
         if (working || ListPicker.SelectedItem is not NameList list || list.Problem is not null) return;
         var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
-        await Exports.PreviewPdf(this, "قائمة أسماء", () => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); return NameListPdf.Generate(list, File.ReadAllBytes(fontPath)); });
+        await Exports.PreviewPdf(this, "قائمة أسماء", () => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); return NameListPdf.Generate(list, File.ReadAllBytes(fontPath), BoldFont()); });
     }
     private async void Export(object sender, RoutedEventArgs e)
     {
@@ -42,11 +42,18 @@ public partial class NameListsWindow : Window
         try
         {
             var fontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf");
-            var changed = await Task.Run(() => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); NameListPdf.Save(list, File.ReadAllBytes(fontPath), dialog.FileName); return !dataCurrent(); });
+            var changed = await Task.Run(() => { if (!dataCurrent()) throw new InvalidDataException("تغيّرت بيانات الشهر؛ أعد فتح القائمة."); NameListPdf.Save(list, File.ReadAllBytes(fontPath), dialog.FileName, BoldFont()); return !dataCurrent(); });
             Ui.Message(this, changed ? "حُفظت قائمة سابقة وتغيّرت البيانات أثناء الحفظ؛ أعد تصديرها." : "حُفظت القائمة بعد فحص صفوفها ومجموعها. راجعها قبل الاعتماد.", "قائمة الأسماء", MessageBoxButton.OK, changed ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or DllNotFoundException or TypeInitializationException)
         { Ui.Message(this, "تعذّر تصدير القائمة.\n" + ex.Message, "قائمة الأسماء", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { working = false; ListPicker.IsEnabled = true; ExportButton.IsEnabled = list.Problem is null && list.Rows.Count > 0; }
+    }
+    /// خط Arial العريض للأسماء إن وُجد في ويندوز.
+    private static byte[]? BoldFont()
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arialbd.ttf");
+        try { return File.Exists(path) ? File.ReadAllBytes(path) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 }
