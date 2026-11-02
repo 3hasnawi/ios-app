@@ -976,6 +976,8 @@ try
         reportDeductions.Add(new Deduction("أيلول 2026", "منتسب وهمي 20", "جهة وهمية أولى", null, "⟦حالة الاستقطاع:موقوف⟧", ""));
         var reportSnapshot = new BackupSnapshot(Path.Combine(root, "fictional-report.zip"), new string('A', 64), 5,
             [new PayrollMonth("أيلول 2026", 30, reportDeductions.Count), new PayrollMonth("آب 2026", 30, 0)], reportEmployees, reportDeductions, 0, [], [], new Dictionary<string, byte[]>());
+        var reportMonthSummary = PayrollAnalysis.Summarize(reportSnapshot, "أيلول 2026");
+        Check(reportMonthSummary.Deductions == 12 && reportMonthSummary.DeductionTotal == 153000m && reportMonthSummary.Entities == 2, "home deduction total and entity count exclude inactive entries");
         var entityReport = StandardReports.EntityDeductions(reportSnapshot, "أيلول 2026", "جهة وهمية أولى");
         Check(entityReport.Rows.Count == 6 && entityReport.Total == reportDeductions.Where(d => d.Title == "جهة وهمية أولى" && d.Amount is not null).Sum(d => d.Amount!.Value) && entityReport.Rows[0][1] == "ملازم" && entityReport.Title.Contains("٢٠٢٦", StringComparison.Ordinal), "entityReport list excludes inactive entries and takes payroll rank");
         var entityXlsx = Path.Combine(root, "entity.xlsx"); ReportFiles.Save(XlsxReport.Generate(entityReport), entityXlsx, ".xlsx");

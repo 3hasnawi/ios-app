@@ -146,7 +146,7 @@ public partial class MainWindow
 
     private async void ArchiveOpen(object sender, RoutedEventArgs e)
     {
-        if (SelectedArchive is { } row && await SelectedBookBytes("الأرشيف") is { } bytes) Exports.ShowBytes(this, row.Title, bytes);
+        if (SelectedArchive is { } row && await SelectedBookBytes("الأرشيف") is { } bytes) { Exports.ShowBytes(this, row.Title, bytes); Remember("book", row.Book.Id.ToString(), row.Title); }
     }
     private async void ArchivePrint(object sender, RoutedEventArgs e)
     {

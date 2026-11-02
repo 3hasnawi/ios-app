@@ -64,6 +64,7 @@ public partial class MainWindow
             BackupReminderText.Text = string.Join("، ", parts) + " على هذا الجهاز فقط · " + (mark is null ? "لم تُحفظ نسخة شاملة بعد" : "آخر نسخة شاملة: " + Ago(mark.At));
         }
         if (page == "settings") ShowBackupSettings();
+        if (page == "home") { RenderNextSteps(); PageSubtitle.Text = HomeSubtitle(SelectedMonth); }
     }
 
     private static string Ago(DateTime at)

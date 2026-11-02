@@ -148,7 +148,7 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Pill" CornerRadius="8" Background="Transparent" Padding="12,9"><ContentPresenter VerticalAlignment="Center"/></Border>
+            <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="12,9"><ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/></Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/></Trigger>
@@ -168,12 +168,17 @@
         <Setter.Value>
           <ControlTemplate TargetType="RadioButton">
             <Grid>
-              <Border x:Name="Pill" CornerRadius="8" Background="Transparent" Padding="12,9">
-                <ContentPresenter VerticalAlignment="Center"/>
+              <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="12,9">
+                <Grid>
+                  <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                  <!-- اختصار لوحة المفاتيح في طرف العنصر (من التلميح)؛ يختفي في القائمة المطويّة. -->
+                  <TextBlock x:Name="Hint" Text="{Binding ToolTip, RelativeSource={RelativeSource TemplatedParent}}" FlowDirection="LeftToRight" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10.5" FontWeight="Normal" Foreground="{DynamicResource TbgA3B2B0}" IsHitTestVisible="False"/>
+                </Grid>
               </Border>
-              <Border x:Name="Marker" Width="3" Height="18" CornerRadius="2" Background="{DynamicResource Primary}" HorizontalAlignment="Left" Visibility="Collapsed"/>
+              <Border x:Name="Marker" Width="3" Height="18" CornerRadius="2" Margin="3,0,0,0" Background="{DynamicResource Primary}" HorizontalAlignment="Left" Visibility="Collapsed"/>
             </Grid>
             <ControlTemplate.Triggers>
+              <Trigger Property="HorizontalContentAlignment" Value="Center"><Setter TargetName="Hint" Property="Visibility" Value="Collapsed"/></Trigger>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
               <Trigger Property="IsChecked" Value="True">
                 <Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/>
@@ -185,6 +190,69 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+    <!-- عناصر الرئيسية: بطاقة قابلة للنقر (أداة، خطوة، رقم)، وشريحة «فُتح مؤخراً»، وزر الخطوة التالية. -->
+    <Style x:Key="HomeTile" TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="14,10"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontWeight" Value="Normal"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" SnapsToDevicePixels="True">
+              <Grid>
+                <Border x:Name="Shade" Background="{DynamicResource Tbg0B2420}" CornerRadius="11" Opacity="0"/>
+                <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Shade" Property="Opacity" Value="0.035"/><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TbgC5CFCE}"/></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="Shade" Property="Opacity" Value="0.08"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="StatCell" TargetType="Button" BasedOn="{StaticResource HomeTile}">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="18,13"/>
+    </Style>
+    <Style x:Key="ChipButton" TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Tfg2F4744}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="0,0,8,6"/>
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="15" Padding="12,4">
+              <ContentPresenter VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="PrimaryAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="{DynamicResource Primary}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="20,10"/>
     </Style>
     <Style x:Key="NavHeader" TargetType="TextBlock">
       <Setter Property="FontSize" Value="11.5"/>

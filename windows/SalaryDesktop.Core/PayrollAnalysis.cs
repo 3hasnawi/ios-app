@@ -3,7 +3,12 @@ using System.Text;
 
 namespace SalaryDesktop.Core;
 
-public sealed record MonthSummary(int Employees, decimal NetTotal, int MissingNet, int Deductions, int MissingAmounts);
+public sealed record MonthSummary(int Employees, decimal NetTotal, int MissingNet, int Deductions, int MissingAmounts)
+{
+    /// مجموع مبالغ الاستقطاع النافذة وعدد الجهات (عناوين الاستقطاع) في الشهر؛ للرئيسية.
+    public decimal DeductionTotal { get; init; }
+    public int Entities { get; init; }
+}
 public sealed record DeductionGroup(string Title, int People, decimal Total, int MissingAmounts);
 
 public static class PayrollAnalysis
@@ -32,7 +37,8 @@ public static class PayrollAnalysis
         var people = snapshot.Employees.Where(e => e.Month == month).ToArray();
         var entries = snapshot.Deductions.Where(d => d.Month == month && !IsInactive(d)).ToArray();
         return new MonthSummary(people.Length, people.Sum(e => e.Net ?? 0m), people.Count(e => e.Net is null),
-            entries.Length, entries.Count(d => d.Amount is null));
+            entries.Length, entries.Count(d => d.Amount is null))
+        { DeductionTotal = entries.Sum(d => d.Amount ?? 0m), Entities = entries.Select(d => d.Title).Distinct(StringComparer.Ordinal).Count() };
     }
     public static IReadOnlyList<DeductionGroup> Groups(BackupSnapshot snapshot, string month) =>
         snapshot.Deductions.Where(d => d.Month == month && !IsInactive(d))

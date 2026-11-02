@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private string? columnsPage;
     private int tableRequest;
     private int homeRequest;
+    private bool salaryItemsBusy, auditBusy;
     private bool loading;
     private int bankRequest;
     private int transferRequest;
@@ -48,6 +49,7 @@ public partial class MainWindow : Window
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
         RestorePlacement();
+        ApplySidebar(false);
         VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
         Loaded += async (_, _) =>
         {
@@ -187,6 +189,7 @@ public partial class MainWindow : Window
             var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
             if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
+            if (e.Key == Key.B) { e.Handled = true; ToggleSidebar(this, new RoutedEventArgs()); return; }
             if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.F && ArchivePanel.Visibility == Visibility.Visible) { ArchiveSearch.Focus(); ArchiveSearch.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.O) { e.Handled = true; ImportFiles(this, new RoutedEventArgs()); }
@@ -245,7 +248,7 @@ public partial class MainWindow : Window
         {
             "payroll" => "الرواتب", "deductions" => "الاستقطاعات", "groups" => "جهات التنفيذ",
             "accounts" => "حسابات جهات التنفيذ", "staff" => "الملاك", "archive" => "الأرشيف", "bank" => "كشف حساب البنك",
-            "transfer" => "ملفات التحويل", "settings" => "الإعدادات", _ => "الرئيسية"
+            "transfer" => "ملفات التحويل", "settings" => "الإعدادات", _ => Greeting()
         };
         PageSubtitle.Text = page switch
         {
@@ -258,8 +261,9 @@ public partial class MainWindow : Window
             "bank" => month.Length > 0 ? $"مبالغ {month} للمراجعة مع المصرف" : "اختر شهراً",
             "transfer" => month.Length > 0 ? $"{month} · ملفات المصارف والكتب" : "اختر شهراً",
             "settings" => "النسخ الاحتياطي والبيانات المحلية",
-            _ => month.Length > 0 ? $"ملخص {month}" : "ملخص الشهر المختار"
+            _ => HomeSubtitle(month)
         };
+        GlobalSearchButton.Visibility = page == "home" ? Visibility.Collapsed : Visibility.Visible;
         if (page != shownPage)
         {
             shownPage = page;
@@ -680,7 +684,8 @@ public partial class MainWindow : Window
     {
         var source = snapshot; var month = SelectedMonth;
         if (source is null || month.Length == 0) { Ui.Message(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "بنود الرواتب"); return; }
-        SalaryItemsButton.IsEnabled = false; StatusBar.Text = "جارٍ حساب بنود الرواتب…";
+        if (salaryItemsBusy) return;
+        salaryItemsBusy = true; StatusBar.Text = "جارٍ حساب بنود الرواتب…";
         try
         {
             var groups = await Task.Run(() => SalaryItemReports.Groups(source, month));
@@ -692,14 +697,15 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر حساب بنود الرواتب.\n" + ex.Message, "بنود الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { SalaryItemsButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
+        finally { salaryItemsBusy = false; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
     private void OpenSalaryReview(object sender, RoutedEventArgs e) => OpenSalaryReview((string?)null);
     private async void OpenSalaryReview(string? kind)
     {
         var source = snapshot; var month = SelectedMonth;
         if (source is null || month.Length == 0) { Ui.Message(this, "افتح نسخة الآيفون واختر الشهر أولاً.", "تدقيق الرواتب"); return; }
-        AuditHomeButton.IsEnabled = false; StatusBar.Text = "جارٍ تدقيق الرواتب ومقارنة الشهر السابق…";
+        if (auditBusy) return;
+        auditBusy = true; StatusBar.Text = "جارٍ تدقيق الرواتب ومقارنة الشهر السابق…";
         try
         {
             var result = await Task.Run(() => SalaryReview.Prepare(source, month, source.StaffCount > 0 ? StaffRecords.Read(source) : []));
@@ -708,7 +714,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
         { Ui.Message(this, "تعذّر تدقيق الرواتب.\n" + ex.Message, "تدقيق الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { AuditHomeButton.IsEnabled = true; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
+        finally { auditBusy = false; StatusBar.Text = "البيانات في نسخة محلية على هذا الجهاز؛ لا توجد مزامنة تلقائية مع الآيفون."; }
     }
     private async void ImportSakkalFont(object sender, RoutedEventArgs e)
     {
@@ -845,60 +851,6 @@ public partial class MainWindow : Window
         { Ui.Message(this, "تعذّر إعداد كتاب المجموعة.\n" + ex.Message, "كتاب المجموعة", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
-    private sealed record CategoryTile(string Name, int Count);
-    private sealed record AlertChip(string Kind, int Count, bool Severe) { public string Text => $"{Count:N0} {Kind}"; }
     private static readonly string[] SevereKinds = ["أسماء مكررة", "صافي ناقص", "IBAN يحتاج مراجعة", "IBAN مكرر", "IBAN فارغ", "رقم مكرر", "حساب الصافي", "مجموع الاستقطاعات"];
-    private async void RenderHome()
-    {
-        StartFromExcelButton.Visibility = snapshot is null ? Visibility.Visible : Visibility.Collapsed;
-        var ticket = ++homeRequest; var source = snapshot; var month = SelectedMonth;
-        if (source is null || month.Length == 0)
-        {
-            NetLabel.Text = "صافي الرواتب للشهر المختار"; NetAmount.Text = "—"; PayrollCount.Text = "لا توجد بيانات مفتوحة"; DataWarning.Text = "";
-            HomeCategories.ItemsSource = FundReport.Categories.Select(c => new CategoryTile(c.Name, 0)).ToArray();
-            DeltaPanel.Visibility = Visibility.Collapsed; AlertStrip.Visibility = Visibility.Collapsed;
-            SnapshotSummary.Text = "افتح نسخة الآيفون أو ابدأ بملف رواتب أو استقطاعات."; return;
-        }
-        SnapshotSummary.Text = $"{source.Months.Count:N0} شهر · {source.StaffCount:N0} سجل في الملاك · {source.Accounts.Count:N0} حساب جهة · {source.Books.Count:N0} كتاب في الأرشيف";
-        var people = staffDigest == source.SourceDigest ? staff : null;
-        var cached = homeCache is { } hit && ReferenceEquals(hit.Source, source) && hit.Month == month && ReferenceEquals(hit.People, people) ? hit : ((BackupSnapshot, string, IReadOnlyList<StaffMember>?, MonthSummary, HomeOverview)?)null;
-        if (cached is null) BeginLoading("home", "جارٍ احتساب ملخص الشهر…");
-        try
-        {
-            var totals = cached?.Item4 ?? await Task.Run(() => PayrollAnalysis.Summarize(source, month));
-            if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
-            NetLabel.Text = totals.MissingNet > 0 ? $"صافي الرواتب المتاح · {month} · بيانات ناقصة" : $"صافي الرواتب · {month}";
-            NetAmount.Text = totals.Employees == 0 || totals.MissingNet == totals.Employees ? "غير متاح" : Amount(totals.NetTotal);
-            PayrollCount.Text = totals.Employees == 0 ? "لا توجد رواتب مستوردة لهذا الشهر" : $"{totals.Employees:N0} منتسب في كشف الرواتب · {totals.Deductions:N0} قيد استقطاع";
-            DataWarning.Text = totals.MissingNet > 0 || totals.MissingAmounts > 0
-                ? $"تنبيه: {totals.MissingNet:N0} راتب بلا صافي و{totals.MissingAmounts:N0} قيد بلا مبلغ؛ المجاميع أولية."
-                : "النتائج للعرض والمراجعة؛ قارنها مع نسخة الآيفون قبل الاعتماد.";
-            var overview = cached?.Item5 ?? await Task.Run(() => HomeOverviews.Build(source, month, people));
-            if (ticket != homeRequest || !ReferenceEquals(source, snapshot) || month != SelectedMonth) return;
-            homeCache = (source, month, people, totals, overview);
-            HomeCategories.ItemsSource = overview.Categories.Select(c => new CategoryTile(c.Name, c.Count)).ToArray();
-            if (overview.PreviousMonth is { } previous)
-            {
-                DeltaNet.Text = overview.NetChange is { } change ? (change == 0 ? $"الصافي بلا تغيير عن {previous}" : $"{(change > 0 ? "▲" : "▼")} {Amount(Math.Abs(change))} عن {previous}") : $"لا مقارنة للصافي مع {previous} (مبالغ ناقصة)";
-                DeltaPeople.Text = overview.PeopleChange == 0 ? "عدد المنتسبين بلا تغيير" : $"{(overview.PeopleChange > 0 ? "+" : "−")}{Math.Abs(overview.PeopleChange):N0} منتسب";
-                DeltaPanel.Visibility = Visibility.Visible;
-            }
-            else DeltaPanel.Visibility = Visibility.Collapsed;
-            HomeAlerts.ItemsSource = overview.Alerts.Take(7).Select(a => new AlertChip(a.Kind, a.Count, SevereKinds.Contains(a.Kind))).ToArray();
-            var severe = overview.Alerts.Any(a => SevereKinds.Contains(a.Kind));
-            var severeAlerts = overview.Alerts.Where(a => SevereKinds.Contains(a.Kind)).ToArray();
-            ShowAuditNotice(month, severeAlerts.Sum(a => a.Count), severeAlerts.Select(a => $"{a.Kind} ({a.Count:N0})"));
-            AlertTitle.Text = overview.AlertError is { } error ? "تعذّر التدقيق: " + error : overview.Alerts.Count == 0 ? "لا توجد ملاحظات في فحوص هذا الشهر" : severe ? "يحتاج انتباهك" : "تغيّرات الشهر";
-            AlertIcon.Text = overview.Alerts.Count == 0 && overview.AlertError is null ? "\uE73E" : "\uE7BA";
-            AlertIcon.SetResourceReference(TextBlock.ForegroundProperty, overview.Alerts.Count == 0 && overview.AlertError is null ? "Primary" : severe ? "Warn" : "Accent");
-            AlertStrip.Visibility = totals.Employees > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-        catch (Exception ex) when (ex is InvalidDataException or OverflowException or System.Text.Json.JsonException)
-        {
-            if (ticket == homeRequest) { NetAmount.Text = "غير متاح"; DataWarning.Text = "تعذّر حساب الملخص: " + ex.Message; }
-        }
-        finally { if (ticket == homeRequest) EndLoading("home"); }
-    }
-    private void OpenAlert(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) OpenSalaryReview(kind); }
     private async void OpenSpecialReport(object sender, RoutedEventArgs e) { if (sender is Button { Tag: string kind }) await ShowSalaryItems(kind); }
 }

@@ -88,6 +88,7 @@ public partial class MainWindow
         try
         {
             var periods = reconciliationStore.Load(source).Periods;
+            RefreshBankBadge(periods.Count(p => !p.IsConfirmed));
             var cards = PeriodCard.List(periods);
             BankPeriods.ItemsSource = cards;
             BankPeriodsEmpty.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

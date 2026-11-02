@@ -191,6 +191,7 @@ public partial class MainWindow
     /// يعرض قيود جهة في صفحة الاستقطاعات مصفّاة عليها.
     private void ShowEntity(string entity)
     {
+        Remember("entity", entity, entity);
         if (page == "deductions" && filterValues.Length > 0) { filterValues[0] = entity; SearchBox.Text = ""; RenderTable(); return; }
         pendingEntity = entity; NavDeductions.IsChecked = true;
     }
@@ -433,6 +434,7 @@ public partial class MainWindow
             var profile = await Task.Run(() => PersonProfiles.Build(source, name, people));
             Cursor = cursor;
             new PersonWindow(source, profile, month) { Owner = this }.Show();
+            Remember("person", name, name);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or JsonException)
         { Cursor = cursor; Ui.Message(this, "تعذّر فتح ملف المنتسب.\n" + ex.Message, "ملف المنتسب", MessageBoxButton.OK, MessageBoxImage.Warning); }
