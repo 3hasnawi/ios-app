@@ -54,8 +54,9 @@ internal sealed class UiPreferences
     public bool ServerNewer { get; set; }
     public string? ServerNewerText { get; set; }
     public string? BackupPlace { get; set; }
-    /// القائمة الجانبية العائمة: مطويّة إلى أيقونات أو موسّعة.
-    public bool SidebarCollapsed { get; set; }
+    /// زر ✕ يُبقي البرنامج يعمل في الخلفية بجانب الساعة (للنسخ وفحص السيرفر)، وتلميح ذلك يظهر مرة واحدة.
+    public bool CloseToTray { get; set; } = true;
+    public bool TrayHintShown { get; set; }
     /// الرئيسية: ما فُتح مؤخراً، وعدد مرات استعمال كل أداة، والأدوات المثبتة والمخفية.
     public List<RecentItem>? Recent { get; set; }
     public Dictionary<string, int>? ToolUse { get; set; }

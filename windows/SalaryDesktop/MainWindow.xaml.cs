@@ -49,15 +49,15 @@ public partial class MainWindow : Window
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
         RestorePlacement();
-        ApplySidebar(false);
         VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
         Loaded += async (_, _) =>
         {
-            ShowTheme(); Locker.Start(); StartBackupTimer(); HookNotifications();
+            ShowTheme(); Locker.Start(); StartBackupTimer(); HookNotifications(); InitTray();
             await LoadStoredSnapshot(); RestorePage(); RenderPage();
             if (!App.Unattended) await FindUpdate(false);
         };
-        Closing += (_, _) => SavePlacement();
+        Closing += WindowClosing;
+        Closed += (_, _) => { tray?.Dispose(); tray = null; }; 
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
@@ -189,7 +189,6 @@ public partial class MainWindow : Window
             var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
             if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
-            if (e.Key == Key.B) { e.Handled = true; ToggleSidebar(this, new RoutedEventArgs()); return; }
             if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.F && ArchivePanel.Visibility == Visibility.Visible) { ArchiveSearch.Focus(); ArchiveSearch.SelectAll(); e.Handled = true; }
             else if (e.Key == Key.O) { e.Handled = true; ImportFiles(this, new RoutedEventArgs()); }

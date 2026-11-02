@@ -118,6 +118,7 @@ public partial class MainWindow
         var saved = UiPreferences.Current;
         saved.ServerNewer = true; saved.ServerNewerText = text; UiPreferences.Save();
         RefreshBackupSetupNotice();
+        TrayNotice("نسخة أحدث على السيرفر", text);
     }
     private void ClearServerNewer()
     {
@@ -242,6 +243,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             UiPreferences.Current.BackupError = ex.Message; UiPreferences.Save();
+            TrayNotice("تعذّر النسخ إلى السيرفر", ex.Message, true);
             StatusBar.Text = "⚠ تعذّر النسخ إلى السيرفر: " + ex.Message;
             if (manual) Ui.Message(this, "تعذّر النسخ إلى السيرفر.\n" + ex.Message, "النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;

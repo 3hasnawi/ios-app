@@ -3,6 +3,9 @@
     <!-- ألوان التطبيق: الأخضر المحاسبي من الآيفون، والأزرق للأفعال الرئيسية. -->
     <SolidColorBrush x:Key="Primary" Color="#135148"/>
     <SolidColorBrush x:Key="PrimarySoft" Color="#E3EFEC"/>
+    <SolidColorBrush x:Key="Violet" Color="#6B4FD8"/>
+    <SolidColorBrush x:Key="VioletSoft" Color="#EEE9FB"/>
+    <SolidColorBrush x:Key="NavGroup" Color="#F4F7F7"/>
     <SolidColorBrush x:Key="Accent" Color="#0877E8"/>
     <SolidColorBrush x:Key="AccentSoft" Color="#E7F1FD"/>
     <SolidColorBrush x:Key="Page" Color="#F3F5F6"/>
@@ -136,11 +139,36 @@
       <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
 
-    <!-- عناصر القائمة الجانبية: اختيار واحد مع علامة للصفحة الحالية. -->
+    <!-- القائمة الجانبية (المقترح ١ المعتمد): مجموعات بخلفية خفيفة، لكل قسم أيقونة في مربع ملوّن، والقسم المفتوح شريط أخضر ممتلئ بنص أبيض.
+         لون المربع والأيقونة من Tag (مورد ديناميكي)، ويتحول للأبيض في القسم المفتوح. -->
+    <Style x:Key="NavTile" TargetType="Border">
+      <Setter Property="Width" Value="28"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Margin" Value="0,0,10,0"/>
+      <Setter Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Background" Value="#2EFFFFFF"/></DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="NavGlyph" TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="Foreground" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsChecked, RelativeSource={RelativeSource AncestorType=RadioButton}}" Value="True"><Setter Property="Foreground" Value="White"/></DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="NavGroupBox" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource NavGroup}"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="4"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
     <!-- عنصر في القائمة الجانبية يفتح نافذة (مثل أمانات الرواتب) بنفس شكل عناصر الأقسام. -->
     <Style x:Key="NavButton" TargetType="Button">
       <Setter Property="Foreground" Value="{DynamicResource Tfg2F4744}"/>
-      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontSize" Value="13.5"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Margin" Value="0,1"/>
       <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -148,9 +176,9 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="12,7"><ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/></Border>
+            <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="6,5"><ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/></Border>
             <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgE8EEED}"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -160,36 +188,53 @@
     <Style x:Key="NavItem" TargetType="RadioButton">
       <Setter Property="GroupName" Value="nav"/>
       <Setter Property="Foreground" Value="{DynamicResource Tfg2F4744}"/>
-      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontSize" Value="13.5"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Margin" Value="0,1"/>
       <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="RadioButton">
-            <Grid>
-              <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="12,7">
-                <Grid>
-                  <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
-                  <!-- اختصار لوحة المفاتيح في طرف العنصر (من التلميح)؛ يختفي في القائمة المطويّة. -->
-                  <TextBlock x:Name="Hint" Text="{Binding ToolTip, RelativeSource={RelativeSource TemplatedParent}}" FlowDirection="LeftToRight" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="10.5" FontWeight="Normal" Foreground="{DynamicResource TbgA3B2B0}" IsHitTestVisible="False"/>
-                </Grid>
-              </Border>
-              <Border x:Name="Marker" Width="3" Height="18" CornerRadius="2" Margin="3,0,0,0" Background="{DynamicResource Primary}" HorizontalAlignment="Left" Visibility="Collapsed"/>
-            </Grid>
+            <Border x:Name="Pill" CornerRadius="10" Background="Transparent" Padding="6,5">
+              <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+            </Border>
             <ControlTemplate.Triggers>
-              <Trigger Property="HorizontalContentAlignment" Value="Center"><Setter TargetName="Hint" Property="Visibility" Value="Collapsed"/></Trigger>
-              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgEEF3F2}"/></Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgE8EEED}"/></Trigger>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/>
-                <Setter TargetName="Marker" Property="Visibility" Value="Visible"/>
-                <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
-                <Setter Property="FontWeight" Value="Medium"/>
+                <Setter TargetName="Pill" Property="Background" Value="{DynamicResource Primary}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+    <!-- زر الإعدادات الصغير في بطاقة الحالة أسفل القائمة. -->
+    <Style x:Key="NavGear" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="nav"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Foreground" Value="{DynamicResource Tfg3A524F}"/>
+      <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Box" Width="32" Height="32" CornerRadius="9" Background="{DynamicResource TbgFFFFFF}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource TbgC5CFCE}"/></Trigger>
+              <Trigger Property="IsChecked" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource Primary}"/><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="Foreground" Value="White"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="NavHeader" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource Tfg8A9B98}"/>
+      <Setter Property="Margin" Value="8,4,0,2"/>
     </Style>
     <!-- عناصر الرئيسية: بطاقة قابلة للنقر (أداة، خطوة، رقم)، وشريحة «فُتح مؤخراً»، وزر الخطوة التالية. -->
     <Style x:Key="HomeTile" TargetType="Button">
@@ -253,12 +298,6 @@
       <Setter Property="Foreground" Value="White"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Padding" Value="20,10"/>
-    </Style>
-    <Style x:Key="NavHeader" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="11.5"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="Foreground" Value="{DynamicResource Tfg8A9B98}"/>
-      <Setter Property="Margin" Value="12,11,0,3"/>
     </Style>
     <!-- أزرار مجموعات ملفات التحويل كتبويبات مقسّمة. -->
     <Style x:Key="Segment" TargetType="ListBoxItem">

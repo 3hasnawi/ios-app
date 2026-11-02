@@ -33,7 +33,7 @@ public partial class MainWindow
         backupChecked = DateTime.UtcNow;
         var ticket = ++backupRequest; var source = snapshot; var root = rootSnapshot; var payroll = payrollState; var links = linkState;
         RefreshBackupSetupNotice();
-        if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; AuditNoticeCard.Visibility = Visibility.Collapsed; return; }
+        if (source is null || root is null) { BackupReminder.Visibility = Visibility.Collapsed; AuditNoticeCard.Visibility = Visibility.Collapsed; ShowSidebarStatus(false); return; }
         string? ledger;
         try { ledger = await Task.Run(() => LedgerRevisions(reconciliationStore.Load(source).Revision, trustStore.Load(source).Revision, ArchiveRevision(source))); }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or JsonException) { ledger = null; }
@@ -58,6 +58,7 @@ public partial class MainWindow
         var next = new PendingChanges(payroll?.Revision, links?.Revision, ledger, count);
         if (next != last) { UiPreferences.Current.Pending![root.SourceDigest] = next; UiPreferences.Save(); }
         BackupReminder.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        ShowSidebarStatus(pending);
         if (pending)
         {
             BackupReminderTitle.Text = count == 1 ? "تعديل واحد غير محفوظ في نسخة" : count == 2 ? "تعديلان غير محفوظين في نسخة" : $"{count:N0} تعديلات غير محفوظة في نسخة";
@@ -65,6 +66,13 @@ public partial class MainWindow
         }
         if (page == "settings") ShowBackupSettings();
         if (page == "home") { RenderNextSteps(); PageSubtitle.Text = HomeSubtitle(SelectedMonth); }
+    }
+
+    /// سطر الحالة أسفل القائمة الجانبية: آخر نسخة احتياطية، أو تنبيه بتعديلات لم تُحفظ في نسخة.
+    private void ShowSidebarStatus(bool pending)
+    {
+        SidebarBackup.Text = pending ? "تعديلات لم تُحفظ في نسخة بعد" : UiPreferences.Current.BackupLast is { } last ? "آخر نسخة احتياطية " + Ago(last) : "لم تُحفظ نسخة احتياطية بعد";
+        SidebarDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, pending ? "Warn" : "Primary");
     }
 
     private static string Ago(DateTime at)

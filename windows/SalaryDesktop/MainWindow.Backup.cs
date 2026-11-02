@@ -44,6 +44,7 @@ public partial class MainWindow
         try
         {
             BackupAutoBox.IsChecked = saved.BackupAuto;
+            CloseToTrayBox.IsChecked = saved.CloseToTray;
             BackupSchedulePicker.SelectedItem = BackupSchedulePicker.Items.OfType<ListBoxItem>().FirstOrDefault(i => Equals(i.Tag, saved.BackupSchedule ?? "off")) ?? BackupSchedulePicker.Items[0];
         }
         finally { syncingBackup = false; }
@@ -143,6 +144,7 @@ public partial class MainWindow
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             UiPreferences.Current.BackupError = ex.Message; UiPreferences.Save();
+            TrayNotice("تعذّر النسخ الاحتياطي", ex.Message, true);
             StatusBar.Text = "⚠ تعذّر النسخ الاحتياطي: " + ex.Message;
             if (manual) Ui.Message(this, "تعذّر حفظ النسخة.\n" + ex.Message, "النسخ الاحتياطي", MessageBoxButton.OK, MessageBoxImage.Warning);
             return false;

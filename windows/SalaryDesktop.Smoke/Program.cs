@@ -320,13 +320,8 @@ static class Program
                     Check(((TextBlock)main.FindName("NextTitle")).Text.Length > 0 && ((FrameworkElement)main.FindName("NextButton")).Visibility == Visibility.Visible, "home next step was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");
                     Check(((ItemsControl)main.FindName("HomeTools")).Items.Count == 6, "home tools were not shown");
-                    // القائمة الجانبية المطويّة ثم إعادتها.
-                    var toggleSidebar = typeof(MainWindow).GetMethod("ToggleSidebar", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                    toggleSidebar.Invoke(main, [main, new RoutedEventArgs()]); await Task.Delay(500);
-                    Check(((FrameworkElement)main.FindName("SidebarBrand")).Visibility == Visibility.Collapsed, "sidebar did not collapse");
-                    Shot(main, "50-sidebar-collapsed");
-                    toggleSidebar.Invoke(main, [main, new RoutedEventArgs()]); await Task.Delay(500);
-                    Check(((FrameworkElement)main.FindName("SidebarBrand")).Visibility == Visibility.Visible, "sidebar did not expand");
+                    // القائمة الجانبية الثابتة: الإعدادات زر في بطاقة الحالة، والشارة على كشف البنك.
+                    Check(((FrameworkElement)main.FindName("NavSettings")).IsVisible && ((FrameworkElement)main.FindName("SidebarBackup")).IsVisible, "sidebar status card was not shown");
                     Check(((FrameworkElement)main.FindName("BackupReminder")).Visibility == Visibility.Collapsed, "backup reminder shown without local changes");
                     // الوضع الداكن.
                     Themes.Apply("dark"); await Task.Delay(500);

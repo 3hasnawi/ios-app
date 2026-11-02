@@ -2,12 +2,11 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media.Animation;
 using SalaryDesktop.Core;
 
 namespace SalaryDesktop;
 
-/// الرئيسية «ماذا أفعل الآن» والقائمة الجانبية العائمة.
+/// الرئيسية «ماذا أفعل الآن».
 public partial class MainWindow
 {
     private sealed record CategoryTile(string Name, int Count) { public string Text => $"{Name} {Count:N0}"; }
@@ -194,7 +193,7 @@ public partial class MainWindow
     private void RefreshBankBadge(int open)
     {
         BankBadgeText.Text = open.ToString("N0", Numbers);
-        BankBadge.Visibility = open > 0 && !UiPreferences.Current.SidebarCollapsed ? Visibility.Visible : Visibility.Collapsed;
+        BankBadge.Visibility = open > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ——— فُتح مؤخراً ———
@@ -320,59 +319,5 @@ public partial class MainWindow
             menu.Items.Add(show);
         }
         menu.IsOpen = true;
-    }
-
-    // ——— القائمة الجانبية العائمة ———
-
-    private readonly Dictionary<FrameworkElement, object?> navTips = new();
-    private IEnumerable<ContentControl> SidebarItems() =>
-        SidebarNav.Children.OfType<ContentControl>().Concat(new ContentControl[] { SidebarToggle, NavSettings });
-
-    private void ToggleSidebar(object sender, RoutedEventArgs e)
-    {
-        UiPreferences.Current.SidebarCollapsed = !UiPreferences.Current.SidebarCollapsed;
-        UiPreferences.Save();
-        ApplySidebar(true);
-    }
-
-    /// المطويّة: أيقونات في المنتصف، والعناوين خطوط فاصلة، والتلميح يحمل اسم القسم واختصاره.
-    private void ApplySidebar(bool animate)
-    {
-        var collapsed = UiPreferences.Current.SidebarCollapsed;
-        var width = collapsed ? 76.0 : 236.0;
-        if (animate && !App.Unattended)
-            Sidebar.BeginAnimation(WidthProperty, new DoubleAnimation(width, TimeSpan.FromMilliseconds(180)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
-        else { Sidebar.BeginAnimation(WidthProperty, null); Sidebar.Width = width; }
-        SidebarBrand.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-        SidebarDataBox.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-        SidebarDataMini.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var item in SidebarItems())
-        {
-            if (!navTips.ContainsKey(item)) navTips[item] = item.ToolTip;
-            var original = navTips[item];
-            if (item.Content is not StackPanel panel || panel.Children.Count < 2) continue;
-            var label = (panel.Children[1] as TextBlock)?.Text ?? "";
-            for (var i = 1; i < panel.Children.Count; i++)
-                if (!ReferenceEquals(panel.Children[i], BankBadge)) panel.Children[i].Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-            item.HorizontalContentAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Left;
-            item.ToolTip = !collapsed ? original : ReferenceEquals(item, SidebarToggle) ? "توسيع القائمة (Ctrl+B)" :
-                original is string tip && tip.StartsWith("Ctrl", StringComparison.Ordinal) ? $"{label} · {tip}" : label;
-        }
-        if (collapsed) BankBadge.Visibility = Visibility.Collapsed;
-        else if (BankBadgeText.Text is { Length: > 0 } count && count != "0") BankBadge.Visibility = Visibility.Visible;
-        foreach (var header in SidebarNav.Children.OfType<TextBlock>())
-        {
-            header.Tag ??= header.Text;
-            if (collapsed)
-            {
-                header.Text = ""; header.Height = 1; header.Margin = new Thickness(12, 9, 12, 9);
-                header.SetResourceReference(TextBlock.BackgroundProperty, "TbgE8EEED");
-            }
-            else
-            {
-                header.Text = (string)header.Tag; header.ClearValue(HeightProperty); header.ClearValue(MarginProperty); header.ClearValue(TextBlock.BackgroundProperty);
-            }
-        }
-        SidebarToggleIcon.Text = collapsed ? "" : "";
     }
 }
