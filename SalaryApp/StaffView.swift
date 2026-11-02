@@ -204,8 +204,15 @@ struct RootView: View {
             Button(tr("إلغاء", "Cancel"), role: .cancel) { backup.cancelRestore() }
         } message: {
             if let m = backup.pendingRestore?.manifest {
-                Text(tr("نسخة \(m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale)))\n\(m.months.count) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك · \(Num.format(m.books ?? 0)) كتب PDF\nستُستبدل كل البيانات الحالية، بما فيها الكتب، بمحتوى النسخة.",
-                        "Backup of \(m.createdAt.formatted())\n\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff · \(m.books ?? 0) PDFs\nAll current data, including documents, will be replaced."))
+                let created = m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
+                let counts = tr("\(Num.format(m.months.count)) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك · \(Num.format(m.books ?? 0)) كتب PDF", "\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff · \(m.books ?? 0) PDFs")
+                let warning = tr("ستُستبدل كل البيانات الحالية، بما فيها الكتب، بمحتوى النسخة.", "All current data, including documents, will be replaced.")
+                if let uploadedAt = backup.pendingServerRestoreDate {
+                    let uploaded = uploadedAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
+                    Text(tr("وقت رفع الملف إلى السيرفر: \(uploaded)\nتاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى تاريخ الملف قديماً بعد إعادة حفظه في ويندوز؛ وقت الرفع لا يحدد الجهاز أو محتوى التعديلات.\n\(counts)\n\(warning)", "Uploaded to the server: \(uploaded)\nCreation date recorded in the file: \(created)\nThe file date may be older after saving it in Windows; the upload time does not identify the device or its changes.\n\(counts)\n\(warning)"))
+                } else {
+                    Text(tr("تاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى قديماً بعد إعادة حفظ الملف في ويندوز.\n\(counts)\n\(warning)", "Creation date recorded in the file: \(created)\nThis date may be older after saving the file in Windows.\n\(counts)\n\(warning)"))
+                }
             }
         }
         .alert(tr("النسخ الاحتياطي", "Backup"), isPresented: Binding(get: { backup.message != nil }, set: { if !$0 { backup.message = nil } })) {

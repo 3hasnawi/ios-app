@@ -637,6 +637,7 @@ jobs:
           grep -q "backup=ok" ci-output/backup-report.txt && echo "::notice::Backup OK: $(cat ci-output/backup-report.txt)" \
             || echo "::error::Backup round trip failed: $(cat ci-output/backup-report.txt)"
           grep -q "corruptRestore=ok" ci-output/backup-report.txt || { echo "::error::Corrupt backup changed existing data"; exit 1; }
+          grep -q "serverTime=ok" ci-output/backup-report.txt || { echo "::error::Server restore time was not preserved or cleared"; exit 1; }
           # النسخ التلقائي إلى مجلد التطبيق (نسخة واحدة تُستبدل)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
           rm -f "$DATA/Documents/import-report.txt"

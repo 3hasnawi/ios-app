@@ -314,6 +314,8 @@ final class BackupManager {
     /// نسخة تنتظر تأكيد الاسترجاع.
     var pendingRestore: (folder: URL, manifest: BackupFormat.Manifest)?
     private var pendingServerRestore: (date: Date, address: String, token: String)?
+    /// وقت رفع الملف الحالي كما سجله السيرفر، لا تاريخ الإنشاء داخل الملف.
+    var pendingServerRestoreDate: Date? { pendingServerRestore?.date }
     var overwriteCandidate: BackupServerStatus?
     var version = 0
 
@@ -830,8 +832,7 @@ final class BackupManager {
                 guard after.latest == latest, BackupServerConfig.address == address, BackupServerConfig.token == token else {
                     throw BackupServerUpload.failure(0, fallback: tr("تغيّرت نسخة السيرفر أثناء التنزيل؛ أعد المحاولة.", "The server backup changed during download; try again."))
                 }
-                await open(file)
-                if pendingRestore != nil { pendingServerRestore = (latest, address, token) }
+                await open(file, serverRestore: (latest, address, token))
             } catch {
                 message = tr("تعذّر تنزيل النسخة من السيرفر: \(error.localizedDescription)", "Could not download the server backup: \(error.localizedDescription)")
             }
@@ -887,7 +888,7 @@ final class BackupManager {
 
     func openForRestore(_ url: URL) async { await open(url) }
 
-    private func open(_ url: URL) async {
+    private func open(_ url: URL, serverRestore: (date: Date, address: String, token: String)? = nil) async {
         do {
             let folder = try await Task.detached(priority: .userInitiated) { () throws -> URL in
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
@@ -937,6 +938,8 @@ final class BackupManager {
                 throw BackupError.notBackup
             }
             await FilePicker.waitUntilSettled()
+            // تُضبط بيانات السيرفر قبل إظهار نافذة الاسترجاع لتظهر مع الملف الصحيح.
+            pendingServerRestore = serverRestore
             pendingRestore = (folder, manifest)
         } catch {
             message = error.localizedDescription
@@ -1028,8 +1031,18 @@ final class BackupManager {
             let start = Date()
             let (url, _) = try await makeBackup(title: "test")
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+            // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.
+            let serverCopy = FileManager.default.temporaryDirectory.appendingPathComponent("server-time-test-\(UUID().uuidString).zip")
+            try FileManager.default.copyItem(at: url, to: serverCopy)
+            let testServerDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+            await open(serverCopy, serverRestore: (testServerDate, "test-address", "test-token"))
+            guard pendingRestore != nil, pendingServerRestoreDate == testServerDate else {
+                cancelRestore(); LaunchOptions.writeReport("backup=failed serverTime=failed"); return
+            }
+            cancelRestore()
+            guard pendingServerRestoreDate == nil else { LaunchOptions.writeReport("backup=failed serverTime=failed"); return }
             await open(url)
-            guard let pending = pendingRestore else { LaunchOptions.writeReport("backup=failed open \(message ?? "")"); return }
+            guard pendingServerRestoreDate == nil, let pending = pendingRestore else { LaunchOptions.writeReport("backup=failed open \(message ?? "")"); return }
             // سجل تالف متأخر يجب ألا يحذف أو يغيّر البيانات الحالية.
             let employeesFile = pending.folder.appendingPathComponent("employees.jsonl")
             let original = try Data(contentsOf: employeesFile)
@@ -1072,7 +1085,7 @@ final class BackupManager {
             confirmRestore()
             while isWorking || pendingRestore != nil { try? await Task.sleep(for: .milliseconds(200)) }
             let after = counts()
-            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok corruptReferenceGuard=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
+            LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok corruptReferenceGuard=ok serverTime=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
         } catch {
             LaunchOptions.writeReport("backup=failed \(error.localizedDescription)")
         }
