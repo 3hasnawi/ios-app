@@ -118,6 +118,8 @@ public partial class MainWindow
 
     // ——— النسخ المحلية ———
 
+    /// النسخ المحلية التي تبقى عند التنظيف: الحالية والسابقة (طلب المالك؛ الاحتياط الكامل على السيرفر).
+    private const int KeepCopies = 2;
     private static string SizeText(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} غيغابايت" : $"{bytes / (double)(1L << 20):0.0} ميغابايت";
     private bool HasLocalEdits(string digest) =>
         Directory.Exists(Path.Combine(LocalRoot, "PayrollImports", digest)) || File.Exists(Path.Combine(LocalRoot, "TransferLinks", digest + ".json")) || File.Exists(Path.Combine(LocalRoot, "Reconciliations", digest + ".json")) || File.Exists(Path.Combine(LocalRoot, "SalaryTrust", digest + ".json"));
@@ -127,18 +129,18 @@ public partial class MainWindow
         try
         {
             var copies = store.Copies();
-            CopiesText.Text = copies.Count == 0 ? "لا توجد نسخ محلية بعد." : $"{copies.Count:N0} نسخة محفوظة · الحجم {SizeText(copies.Sum(c => c.Size))}" + (copies.Count > 5 ? $" · يمكن حذف {copies.Skip(5).Count(c => !c.Current && !HasLocalEdits(c.Digest)):N0} نسخة أقدم" : "");
-            PruneButton.IsEnabled = copies.Count > 5;
+            CopiesText.Text = copies.Count == 0 ? "لا توجد نسخ محلية بعد." : $"{copies.Count:N0} نسخة محفوظة · الحجم {SizeText(copies.Sum(c => c.Size))}" + (copies.Count > KeepCopies ? $" · يمكن حذف {copies.Skip(KeepCopies).Count(c => !c.Current && !HasLocalEdits(c.Digest)):N0} نسخة أقدم" : "");
+            PruneButton.IsEnabled = copies.Count > KeepCopies;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { CopiesText.Text = "تعذّر قراءة النسخ المحلية: " + ex.Message; PruneButton.IsEnabled = false; }
     }
     private async void PruneCopies(object sender, RoutedEventArgs e)
     {
-        if (Ui.Message(this, "ستُحذف النسخ المحلية الأقدم ويبقى آخر 5 نسخ. لا تُحذف النسخة المفتوحة ولا أي نسخة مرتبطة بتعديلات محلية، ولا تتأثر ملفات الآيفون الأصلية. هل تريد المتابعة؟", "النسخ المحلية", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (Ui.Message(this, "ستُحذف النسخ المحلية الأقدم ويبقى آخر نسختين (المفتوحة والتي قبلها). لا تُحذف النسخة المفتوحة ولا أي نسخة مرتبطة بتعديلات محلية، ولا تتأثر ملفات الآيفون الأصلية. هل تريد المتابعة؟", "النسخ المحلية", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         PruneButton.IsEnabled = false;
         try
         {
-            var result = await Task.Run(() => store.Prune(5, HasLocalEdits));
+            var result = await Task.Run(() => store.Prune(KeepCopies, HasLocalEdits));
             Ui.Message(this, $"حُذفت {result.Deleted:N0} نسخة ووُفّر {SizeText(result.Freed)}." + (result.Protected > 0 ? $" أُبقيت {result.Protected:N0} نسخة أقدم لأنها مرتبطة بتعديلات محلية أو قيد الاستعمال." : ""), "النسخ المحلية", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)

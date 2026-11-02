@@ -537,7 +537,7 @@
               <StackPanel>
                 <TextBlock Style="{StaticResource CardTitle}" Text="النسخ المحلية"/>
                 <TextBlock x:Name="CopiesText" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,10" Text="—"/>
-                <WrapPanel><Button x:Name="PruneButton" Content="حذف النسخ الأقدم (يبقى آخر 5)" Click="PruneCopies"/></WrapPanel>
+                <WrapPanel><Button x:Name="PruneButton" Content="حذف النسخ الأقدم (يبقى آخر نسختين)" Click="PruneCopies"/></WrapPanel>
                 <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,8,0,0" Text="كل نسخة آيفون تُفتح تُحفظ نسخة منها هنا. لا تُحذف النسخة المفتوحة ولا أي نسخة مرتبطة بتعديلات محلية."/>
               </StackPanel>
             </Border>
