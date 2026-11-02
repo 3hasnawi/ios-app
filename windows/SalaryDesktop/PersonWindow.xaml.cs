@@ -3,16 +3,17 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Shapes;
 using SalaryDesktop.Core;
 
 namespace SalaryDesktop;
 
-/// ملف المنتسب الموحّد: القسيمة لكل شهر، استقطاعاته عبر الأشهر، سجل الملاك، والتغيّر عن الشهر السابق.
+/// ملف المنتسب الموحّد (لوحة المنتسب): الأشهر يميناً، القسيمة مع استقطاعات جهات التنفيذ فقط في الوسط،
+/// وتنبيه التغيّر وبيانات الراتب والإجراءات يساراً؛ ثم الاستقطاعات عبر الأشهر وسجل الملاك والتغيّرات في تبويبات.
 public partial class PersonWindow : Window
 {
     private sealed record StaffLine(string Section, string Label, string Value);
+    /// شهر في قائمة الأشهر: الصافي والسهم مقارنة بالشهر السابق (up/down/same/none).
+    public sealed record MonthItem(string Month, string NetText, string Arrow, string Trend);
     private readonly BackupSnapshot source;
     private readonly PersonProfile profile;
     private static readonly CultureInfo Numbers = CultureInfo.GetCultureInfo("en-US");
@@ -30,9 +31,10 @@ public partial class PersonWindow : Window
             staff?.Unified is { Length: > 0 } u ? "الموحد " + u : null, staff?.Stat is { Length: > 0 } s ? "الإحصائي " + s : null, staff?.Status }
             .Where(v => !string.IsNullOrWhiteSpace(v));
         IdentityText.Text = string.Join(" · ", identity);
-        MonthPicker.ItemsSource = profile.Months.Select(m => m.Month).ToArray();
+        var items = profile.Months.Select(MonthEntry).ToArray();
+        MonthList.ItemsSource = items;
         var initial = month is not null && profile.Months.Any(m => m.Month == month) ? month : profile.Months.FirstOrDefault(m => m.Employee is not null)?.Month ?? profile.Months.FirstOrDefault()?.Month;
-        if (initial is not null) MonthPicker.SelectedItem = initial; else Render();
+        if (items.FirstOrDefault(i => i.Month == initial) is { } chosen) { MonthList.SelectedItem = chosen; MonthList.ScrollIntoView(chosen); } else Render();
 
         var history = PersonProfiles.History(profile);
         HistoryTable.ItemsSource = history;
@@ -48,9 +50,42 @@ public partial class PersonWindow : Window
             }
             catch (InvalidDataException ex) { StaffStatus.Text = ex.Message; }
         }
-        Loaded += (_, _) => DrawTrend();
-        Trend.SizeChanged += (_, _) => DrawTrend();
     }
+
+    private MonthItem MonthEntry(ProfileMonth month)
+    {
+        var net = month.Ambiguous ? null : month.Employee?.Net;
+        var before = PersonProfiles.Previous(profile, month.Month) is { Ambiguous: false } p ? p.Employee?.Net : null;
+        var text = month.Ambiguous ? "الاسم مكرر" : net is { } n ? ReportSheet.Money(n) : month.Employee is null ? "استقطاعات فقط" : "—";
+        if (net is null || before is null) return new MonthItem(month.Month, text, "", "none");
+        return net > before ? new MonthItem(month.Month, text, "▲", "up") : net < before ? new MonthItem(month.Month, text, "▼", "down") : new MonthItem(month.Month, text, "=", "same");
+    }
+
+    /// استقطاعات جهات التنفيذ من ملف الاستقطاعات للشهر: غير المحتسب يظهر «غير محتسب» ولا يدخل المجموع.
+    private static (IReadOnlyList<ProfileLine> Lines, decimal Total) EntityLines(ProfileMonth month, Payslip slip)
+    {
+        var lines = new List<ProfileLine>(); decimal total = 0;
+        for (int i = 0; i < month.Deductions.Count; i++)
+        {
+            var row = month.Deductions[i]; var line = i < slip.EntityDeductions.Count ? slip.EntityDeductions[i] : new ProfileLine(row.Title, "", row.Amount);
+            if (PayrollAnalysis.IsInactive(row))
+            {
+                var note = string.Join(" · ", new[] { line.Note, row.Amount is { } a ? "المبلغ " + ReportSheet.Money(a) : "" }.Where(v => v.Length > 0));
+                lines.Add(line with { Value = "غير محتسب", Note = note });
+            }
+            else { lines.Add(line); total += row.Amount ?? 0; }
+        }
+        return (lines, total);
+    }
+
+    private void CopyValue(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string value || value.Length == 0) return;
+        try { Clipboard.SetText(value); Notice.Text = "نُسخ: " + value; }
+        catch (System.Runtime.InteropServices.COMException ex) { Notice.Text = "تعذّر النسخ: " + ex.Message; }
+    }
+    private void ShowStaff(object sender, RoutedEventArgs e) => Tabs.SelectedItem = StaffTab;
+    private void ShowChanges(object sender, RoutedEventArgs e) => Tabs.SelectedItem = ChangesTab;
 
     private void CloseWindow(object sender, RoutedEventArgs e) => Close();
     /// كشف استقطاعات المنتسب: الجهة المحددة في جدول الاستقطاعات عبر الأشهر، أو جهة الشهر المعروض إن كانت واحدة.
@@ -61,25 +96,31 @@ public partial class PersonWindow : Window
         var detail = string.Join(" · ", new[] { Current?.Employee?.Rank, Current?.Employee?.Workplace }.Where(v => !string.IsNullOrWhiteSpace(v)));
         new EmployeeDeductionWindow(source, new DeductionPerson(profile.Key, profile.Name, detail), entity) { Owner = this }.ShowDialog();
     }
-    private ProfileMonth? Current => profile.Months.FirstOrDefault(m => m.Month == MonthPicker.SelectedItem as string);
+    private ProfileMonth? Current => profile.Months.FirstOrDefault(m => m.Month == (MonthList.SelectedItem as MonthItem)?.Month);
     private void MonthChanged(object sender, SelectionChangedEventArgs e) => Render();
 
     private void Render()
     {
         var month = Current;
         PdfButton.IsEnabled = ReportButton.IsEnabled = month?.Employee is not null;
+        ChangeAlert.Visibility = Visibility.Collapsed;
         if (month is null)
         {
             Notice.Text = "لا توجد رواتب أو استقطاعات بهذا الاسم في الأشهر المحفوظة.";
-            AllowanceList.ItemsSource = DeductionList.ItemsSource = EntityList.ItemsSource = InfoList.ItemsSource = null;
-            NetText.Text = "—"; DeltaChip.Visibility = Visibility.Collapsed; return;
+            SlipTitle.Text = "القسيمة";
+            AllowanceList.ItemsSource = EntityList.ItemsSource = InfoList.ItemsSource = null;
+            GrossText.Text = DeductionTotalText.Text = "—"; NoEntities.Visibility = Visibility.Visible;
+            NetText.Text = "—"; DeltaText.Text = ""; return;
         }
         try
         {
+            SlipTitle.Text = "قسيمة " + month.Month;
             var slip = PersonProfiles.Payslip(month);
             AllowanceList.ItemsSource = slip.Allowances; GrossText.Text = slip.Gross?.Value ?? "—";
-            DeductionList.ItemsSource = slip.Deductions; DeductionTotalText.Text = slip.TotalDeductions?.Value ?? "—";
-            EntityList.ItemsSource = slip.EntityDeductions; EntityHeader.Visibility = slip.EntityDeductions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            var (entities, total) = EntityLines(month, slip);
+            EntityList.ItemsSource = entities;
+            NoEntities.Visibility = entities.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            DeductionTotalText.Text = entities.Count == 0 ? "—" : ReportSheet.Money(total);
             InfoList.ItemsSource = slip.Info;
             NetLabel.Text = "صافي " + month.Month;
             NetText.Text = slip.Net is { } net ? ReportSheet.Money(net) : "غير متاح";
@@ -88,36 +129,22 @@ public partial class PersonWindow : Window
             {
                 var difference = now - before;
                 DeltaText.Text = difference == 0 ? $"بلا تغيير عن {previous.Month}" : $"{(difference > 0 ? "▲" : "▼")} {ReportSheet.Money(Math.Abs(difference))} عن {previous.Month}";
-                DeltaChip.Visibility = Visibility.Visible;
             }
-            else DeltaChip.Visibility = Visibility.Collapsed;
+            else DeltaText.Text = "";
             Notice.Text = month.Ambiguous ? "الاسم مكرر في كشف رواتب هذا الشهر؛ لم تُعرض القسيمة حتى لا تختلط بيانات شخصين." :
                 month.Employee is null ? "لا يوجد راتب لهذا الاسم في الشهر المختار؛ تظهر استقطاعات ملف التنفيذ فقط." : "";
             var changes = PersonProfiles.Changes(profile, month.Month);
             ChangesTable.ItemsSource = changes;
             ChangesStatus.Text = previous is null ? "لا يوجد شهر سابق لهذا الاسم للمقارنة." :
                 changes.Count == 0 ? $"لا تغيّر عن {previous.Month}." : $"{changes.Count:N0} تغيّر مقارنة بـ {previous.Month}.";
+            if (previous is not null && changes.Count > 0)
+            {
+                ChangeTitle.Text = $"تغيّر عن {previous.Month} ({changes.Count:N0})";
+                ChangeText.Text = string.Join("\n", changes.Take(3).Select(c => $"{c.Title}: {c.Difference}")) + (changes.Count > 3 ? "\n…" : "");
+                ChangeAlert.Visibility = Visibility.Visible;
+            }
         }
         catch (InvalidDataException ex) { Notice.Text = ex.Message; }
-    }
-
-    /// خط الصافي لآخر ستة أشهر: الأقدم يساراً والأحدث يميناً.
-    private void DrawTrend()
-    {
-        Trend.Children.Clear();
-        var points = profile.Months.Where(m => m.Employee?.Net is not null).Take(6).Reverse().Select(m => (m.Month, Net: m.Employee!.Net!.Value)).ToArray();
-        TrendOld.Text = points.Length > 0 ? points[0].Month : ""; TrendNew.Text = points.Length > 1 ? points[^1].Month : "";
-        if (points.Length < 2 || Trend.ActualWidth < 20) return;
-        double min = (double)points.Min(p => p.Net), max = (double)points.Max(p => p.Net), w = Trend.ActualWidth - 12, h = Trend.ActualHeight - 12;
-        var line = new Polyline { Stroke = (Brush)FindResource("Primary"), StrokeThickness = 2.5, StrokeLineJoin = PenLineJoin.Round };
-        for (int i = 0; i < points.Length; i++)
-        {
-            var x = 6 + w * i / (points.Length - 1); var y = 6 + (max == min ? h / 2 : h - h * ((double)points[i].Net - min) / (max - min));
-            line.Points.Add(new Point(x, y));
-            var dot = new Ellipse { Width = i == points.Length - 1 ? 9 : 6, Height = i == points.Length - 1 ? 9 : 6, Fill = (Brush)FindResource("Primary"), ToolTip = $"{points[i].Month}: {ReportSheet.Money(points[i].Net)}" };
-            Canvas.SetLeft(dot, x - dot.Width / 2); Canvas.SetTop(dot, y - dot.Height / 2); Trend.Children.Add(dot);
-        }
-        Trend.Children.Insert(0, line);
     }
 
     private void CopySummary(object sender, RoutedEventArgs e)
@@ -130,10 +157,11 @@ public partial class PersonWindow : Window
             if (slip.Net is { } net) text.AppendLine("الصافي: " + ReportSheet.Money(net));
             var lines = new List<ProfileLine>(slip.Allowances);
             if (slip.Gross is not null) lines.Add(slip.Gross);
-            lines.AddRange(slip.Deductions);
-            if (slip.TotalDeductions is not null) lines.Add(slip.TotalDeductions);
             foreach (var line in lines) text.AppendLine($"{line.Title}: {line.Value}");
-            foreach (var line in slip.EntityDeductions) text.AppendLine($"{line.Title}: {line.Value}" + (line.Note.Length > 0 ? " · " + line.Note : ""));
+            var (entities, total) = EntityLines(month, slip);
+            if (entities.Count > 0) text.AppendLine("استقطاعات جهات التنفيذ:");
+            foreach (var line in entities) text.AppendLine($"{line.Title}: {line.Value}" + (line.Note.Length > 0 ? " · " + line.Note : ""));
+            if (entities.Count > 0) text.AppendLine("مجموع استقطاعات الجهات: " + ReportSheet.Money(total));
             Clipboard.SetText(text.ToString());
             Notice.Text = "نُسخ ملخص القسيمة.";
         }
