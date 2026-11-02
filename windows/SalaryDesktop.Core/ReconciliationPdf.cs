@@ -197,7 +197,10 @@ public static class ReconciliationPdf
                     foreach (var segment in segments)
                     {
                         var label = segment.Label + ":";
-                        DrawRight(canvas, boldShaper, labelFont, label, right, baseline); right -= W(label, labelFont) + 5;
+                        // التسمية اللاتينية (IBAN) تُرسم ثم النقطتان على يسارها، كما في اتجاه السطر العربي.
+                        if (segment.Label.All(char.IsAscii)) { DrawRight(canvas, boldShaper, labelFont, segment.Label, right, baseline); DrawRight(canvas, boldShaper, labelFont, ":", right - W(segment.Label, labelFont), baseline); }
+                        else DrawRight(canvas, boldShaper, labelFont, label, right, baseline);
+                        right -= W(label, labelFont) + 5;
                         DrawRight(canvas, regularShaper, valueFont, segment.Value, right, baseline); right -= W(segment.Value, valueFont) + accountGap;
                     }
                 }
