@@ -218,13 +218,15 @@
             <Border Style="{StaticResource Card}" Padding="0" Margin="0,16,0,0">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <Button Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب">
-                  <StackPanel>
-                    <TextBlock x:Name="NetLabel" Text="صافي الرواتب" Foreground="{DynamicResource Muted}" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock x:Name="NetAmount" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
-                    <TextBlock x:Name="DeltaNet" FontSize="12.5" Foreground="{DynamicResource Primary}" TextTrimming="CharacterEllipsis"/>
-                  </StackPanel>
-                </Button>
+                <Border Background="{StaticResource HeroGradient}" CornerRadius="14" Margin="4">
+                  <Button Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب" Foreground="White">
+                    <StackPanel>
+                      <TextBlock x:Name="NetLabel" Text="صافي الرواتب" Foreground="#E3F1ED" FontSize="13" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock x:Name="NetAmount" Text="—" Foreground="White" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
+                      <TextBlock x:Name="DeltaNet" FontSize="12.5" Foreground="#E3F1ED" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Button>
+                </Border>
                 <Rectangle Grid.Column="1" Fill="{DynamicResource Line}" Margin="0,14"/>
                 <Button Grid.Column="2" Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب">
                   <StackPanel>
@@ -358,6 +360,7 @@
             <DataGrid.ContextMenu>
               <ContextMenu Opened="RowMenuOpened">
                 <MenuItem x:Name="OpenRowMenu" Header="فتح التفاصيل" Click="OpenSelectedRow" FontWeight="SemiBold"/>
+                <MenuItem Header="عرض التفاصيل الجانبية" Click="OpenInspectorClick"/>
                 <MenuItem x:Name="SecondRowMenu" Header="تفاصيل أخرى" Click="OpenSecondRow"/>
                 <Separator/>
                 <MenuItem x:Name="CopyRowsMenu" Header="نسخ الصفوف المحددة" InputGestureText="Ctrl+C" Click="CopyRows"/>
@@ -378,6 +381,54 @@
               </StackPanel>
               <TextBlock x:Name="TotalsSelected" Margin="22,0,0,0" Foreground="{DynamicResource Accent}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
+          </Border>
+          <!-- تفاصيل الصف المحدد، فوق الجدول مع بقاء أحداث الجدول الأصلية. -->
+          <Border x:Name="InspectorDrawer" Grid.Row="0" Grid.RowSpan="5" Panel.ZIndex="40" Width="360" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
+                  HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="0,0,0,0" Visibility="Collapsed" Style="{StaticResource FluentCard}" Padding="0"
+                  AutomationProperties.Name="تفاصيل السجل المحدد">
+            <Border.RenderTransform><TranslateTransform x:Name="InspectorSlide"/></Border.RenderTransform>
+            <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="3" Opacity="0.20"/></Border.Effect>
+            <Grid>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <Border Background="{StaticResource HeroGradient}" CornerRadius="15,15,0,0" Padding="18">
+                <StackPanel>
+                  <DockPanel>
+                    <Button DockPanel.Dock="Left" Click="CloseInspectorClick" Style="{StaticResource QuietButton}" Foreground="White" MinHeight="32" Padding="8,3" ToolTip="إغلاق التفاصيل (Esc)" AutomationProperties.Name="إغلاق التفاصيل">
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xE711;"/>
+                    </Button>
+                    <TextBlock Text="تفاصيل السجل" Foreground="#E3F1ED" FontSize="13" VerticalAlignment="Center"/>
+                  </DockPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <Border Background="#33FFFFFF" Width="46" Height="46" CornerRadius="14" Margin="0,0,12,0"><TextBlock x:Name="InspectorAvatarText" Foreground="White" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                    <StackPanel VerticalAlignment="Center">
+                      <TextBlock x:Name="InspectorTitleText" Foreground="White" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="240"/>
+                      <TextBlock x:Name="InspectorSubtitleText" Foreground="#E3F1ED" FontSize="12" TextTrimming="CharacterEllipsis" MaxWidth="240"/>
+                    </StackPanel>
+                  </StackPanel>
+                  <DockPanel Margin="0,14,0,0"><TextBlock x:Name="InspectorCodeText" Foreground="#E3F1ED" FontSize="12"/><TextBlock x:Name="InspectorNetAmountText" Foreground="White" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Left"/></DockPanel>
+                </StackPanel>
+              </Border>
+              <Border Grid.Row="1" Background="{DynamicResource NavGroup}" CornerRadius="10" Margin="14,14,14,0" Padding="3">
+                <UniformGrid Columns="3">
+                  <RadioButton x:Name="InspectorTabAll" Style="{StaticResource InspectorTab}" GroupName="InspectorTabs" Content="الكل" IsChecked="True" Checked="InspectorTabChanged"/>
+                  <RadioButton x:Name="InspectorTabDeductions" Style="{StaticResource InspectorTab}" GroupName="InspectorTabs" Content="الاستقطاعات" Checked="InspectorTabChanged"/>
+                  <RadioButton x:Name="InspectorTabBank" Style="{StaticResource InspectorTab}" GroupName="InspectorTabs" Content="المصرف" Checked="InspectorTabChanged"/>
+                </UniformGrid>
+              </Border>
+              <ScrollViewer Grid.Row="2" Margin="16,10,16,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="InspectorFieldsList">
+                  <ItemsControl.ItemTemplate><DataTemplate>
+                    <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="0,9">
+                      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.4*"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding Key}" Foreground="{DynamicResource Muted}" FontSize="12.5" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{DynamicResource Ink}" FontSize="13" FontWeight="Medium" TextWrapping="Wrap" TextAlignment="Left"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+              <TextBlock Grid.Row="3" Text="عرض معلومات السجل المحدد · Esc للإغلاق" Foreground="{DynamicResource Muted}" FontSize="11.5" Margin="16,12,16,14" TextWrapping="Wrap"/>
+            </Grid>
           </Border>
         </Grid>
 

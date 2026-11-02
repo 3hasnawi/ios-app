@@ -45,6 +45,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeInspectorEvents();
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);
@@ -183,6 +184,7 @@ public partial class MainWindow : Window
     {
         if (Locker.IsLocked) return;
         if (e.Key == Key.Escape && NotificationPanel.Visibility == Visibility.Visible) { NotificationPanel.Visibility = Visibility.Collapsed; e.Handled = true; return; }
+        if (e.Key == Key.Escape && InspectorDrawer is { Visibility: Visibility.Visible }) { CloseInspector(); e.Handled = true; return; }
         if (Keyboard.Modifiers == ModifierKeys.Control)
         {
             if (e.Key == Key.L) { e.Handled = true; LockNow(this, new RoutedEventArgs()); return; }
@@ -265,6 +267,7 @@ public partial class MainWindow : Window
         GlobalSearchButton.Visibility = page == "home" ? Visibility.Collapsed : Visibility.Visible;
         if (page != shownPage)
         {
+            CloseInspector();
             shownPage = page;
             UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, "archive" => ArchivePanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
             panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });

@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -176,6 +177,16 @@ static class Program
                 }
                 var table = (DataGrid)main.FindName("DataTable");
                 await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
+                table.SelectedIndex = 0; await Task.Delay(150);
+                var inspector = (Border)main.FindName("InspectorDrawer");
+                Check(inspector.Visibility == Visibility.Visible && ((TextBlock)main.FindName("InspectorTitleText")).Text == ((PayrollRow)table.Items[0]).Name, "inspector did not show the selected payroll record");
+                Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector did not display record fields");
+                ((RadioButton)main.FindName("InspectorTabBank")).IsChecked = true;
+                Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector tab lost the selected record");
+                var source = PresentationSource.FromVisual(main) ?? throw new InvalidOperationException("main window has no input source");
+                var escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+                main.RaiseEvent(escape);
+                Check(escape.Handled && inspector.Visibility == Visibility.Collapsed && table.SelectedIndex == 0, "escape did not close the inspector while preserving selection");
                 var filterHost = (StackPanel)main.FindName("FilterHost");
                 Check(Children<ComboBox>(filterHost).Count() == 3 && Children<ComboBox>(filterHost).First().Items.Count == 2, "payroll quick filters were not built");
                 Check(((TextBlock)main.FindName("TotalsShown")).Text.Contains("500", StringComparison.Ordinal), "payroll totals row did not show the net sum");
