@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace SalaryDesktop.Core;
 
@@ -43,7 +44,18 @@ public static class SalaryReview
         foreach (var (word, digit) in new[] { ("الاول", "1"), ("اول", "1"), ("الثاني", "2"), ("ثاني", "2"), ("الثالث", "3"), ("ثالث", "3"), ("الرابع", "4"), ("رابع", "4"), ("الخامس", "5"), ("خامس", "5") }) s = s.Replace(word, digit, StringComparison.Ordinal);
         return new string(s.Where(c => !char.IsWhiteSpace(c) && c is not ('.' or '/' or '-')).ToArray());
     }
+    /// النتيجة محفوظة لكل نسخة بيانات وشهر وقائمة ملاك (المرجع نفسه)، فالرئيسية وفتح التدقيق لا يعيدان الحساب.
+    /// أي تعديل ينشئ BackupSnapshot جديدة فتُحسب من جديد.
+    private static readonly ConditionalWeakTable<BackupSnapshot, Dictionary<string, (IReadOnlyList<StaffMember>? Staff, SalaryReviewResult Result)>> Cache = new();
     public static SalaryReviewResult Prepare(BackupSnapshot source, string month, IReadOnlyList<StaffMember>? staff = null)
+    {
+        var cache = Cache.GetOrCreateValue(source);
+        lock (cache) if (cache.TryGetValue(month, out var hit) && ReferenceEquals(hit.Staff, staff)) return hit.Result;
+        var result = Compute(source, month, staff);
+        lock (cache) cache[month] = (staff, result);
+        return result;
+    }
+    private static SalaryReviewResult Compute(BackupSnapshot source, string month, IReadOnlyList<StaffMember>? staff)
     {
         var key = MonthNames.SortKey(month);
         if (key == 0 || !source.Months.Any(m => m.Name == month)) throw new InvalidDataException("اختر شهراً محفوظاً صالحاً للتدقيق.");

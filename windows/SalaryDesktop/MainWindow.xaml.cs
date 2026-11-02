@@ -707,7 +707,9 @@ public partial class MainWindow : Window
         auditBusy = true; StatusBar.Text = "جارٍ تدقيق الرواتب ومقارنة الشهر السابق…";
         try
         {
-            var result = await Task.Run(() => SalaryReview.Prepare(source, month, source.StaffCount > 0 ? StaffRecords.Read(source) : []));
+            // الملاك من الذاكرة إن قُرئت (لا تُقرأ من القرص في كل فتح)، والنتيجة محفوظة من حساب الرئيسية لنفس الشهر.
+            var people = await StaffFor(source);
+            var result = await Task.Run(() => SalaryReview.Prepare(source, month, people));
             if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّر الشهر أو البيانات؛ أعد فتح التدقيق.", "تدقيق الرواتب"); return; }
             new SalaryReviewWindow(result, kind) { Owner = this }.ShowDialog();
         }
