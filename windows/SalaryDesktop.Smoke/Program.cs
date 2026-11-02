@@ -181,6 +181,8 @@ static class Program
                 var inspector = (Border)main.FindName("InspectorDrawer");
                 Check(inspector.Visibility == Visibility.Visible && ((TextBlock)main.FindName("InspectorTitleText")).Text == ((PayrollRow)table.Items[0]).Name, "inspector did not show the selected payroll record");
                 Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector did not display record fields");
+                Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "صافي الراتب المستحق" && ((TextBlock)main.FindName("InspectorNetAmountText")).Text.Contains("500", StringComparison.Ordinal), "inspector payroll amount was not labeled as net pay");
+                Check(((Button)main.FindName("InspectorSecondaryActionBtn")).Visibility == Visibility.Visible, "payroll detail action was not available");
                 ((RadioButton)main.FindName("InspectorTabBank")).IsChecked = true;
                 Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector tab lost the selected record");
                 var source = PresentationSource.FromVisual(main) ?? throw new InvalidOperationException("main window has no input source");
@@ -192,6 +194,8 @@ static class Program
                 Check(((TextBlock)main.FindName("TotalsShown")).Text.Contains("500", StringComparison.Ordinal), "payroll totals row did not show the net sum");
                 Children<ComboBox>(filterHost).Last().SelectedIndex = 1; await Task.Delay(700); Check(table.Items.Count == 1, "payment filter hid the matching row");
                 await Navigate("deductions"); Check(table.Items.Count == 1, "deductions page did not show the synthetic entry");
+                table.SelectedIndex = 0; await Task.Delay(150);
+                Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "المبلغ" && ((Button)main.FindName("InspectorSecondaryActionBtn")).Visibility == Visibility.Collapsed, "deduction inspector showed an unavailable action or mislabeled the amount");
                 await Navigate("staff"); await Task.Delay(1200); Check(table.Items.Count == 1 && table.Items[0] is StaffMember, "staff page did not load its synthetic record");
                 await Navigate("bank"); Check(((FrameworkElement)main.FindName("BankPanel")).Visibility == Visibility.Visible, "bank page was not visible");
                 await Navigate("transfer"); Check(((FrameworkElement)main.FindName("TransferPanel")).Visibility == Visibility.Visible, "transfer page was not visible");

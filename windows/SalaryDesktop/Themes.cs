@@ -13,6 +13,7 @@ public static class Themes
     private static readonly Dictionary<string, (string Light, string Dark)> Palette = new(StringComparer.Ordinal)
     {
         ["Primary"] = ("#135148", "#4CB8A2"),
+        ["SurfaceSubtle"] = ("#F8FAFA", "#1C2826"),
         ["PrimarySoft"] = ("#E3EFEC", "#183A34"),
         ["Accent"] = ("#0877E8", "#4C9DF5"),
         ["AccentSoft"] = ("#E7F1FD", "#16304D"),

@@ -42,8 +42,17 @@ public partial class MainWindow
         var title = FindFirstMatch(fields, "الاسم", "جهة التنفيذ", "الجهة", "عنوان الكتاب") ?? "سجل محدد";
         InspectorTitleText.Text = title;
         InspectorCodeText.Text = FindFirstMatch(fields, "الرقم الموحد", "الرقم الإحصائي") ?? "";
+        InspectorCodeBadge.Visibility = InspectorCodeText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         InspectorSubtitleText.Text = FindFirstMatch(fields, "محل العمل", "الرتبة", "المصرف والفرع") ?? PageTitle.Text;
-        InspectorNetAmountText.Text = FindFirstMatch(fields, "الصافي", "المبلغ", "الاستحقاق") ?? "—";
+        var amount = page == "payroll" ? FindFirstMatch(fields, "الصافي") : FindFirstMatch(fields, "المبلغ");
+        InspectorAmountCard.Visibility = amount is null ? Visibility.Collapsed : Visibility.Visible;
+        InspectorAmountLabel.Text = page == "payroll" ? "صافي الراتب المستحق" : "المبلغ";
+        InspectorNetAmountText.Text = amount ?? "—";
+        InspectorTabAll.Content = page == "payroll" ? "ملخص الراتب" : "الملخص";
+        InspectorPrimaryActionBtn.Content = OpenRowMenu.Header;
+        InspectorPrimaryActionBtn.IsEnabled = OpenRowMenu.IsEnabled;
+        InspectorSecondaryActionBtn.Content = SecondRowMenu.Header;
+        InspectorSecondaryActionBtn.Visibility = SecondRowMenu.Visibility;
         InspectorAvatarText.Text = GetArabicInitials(title);
         FilterInspectorFields();
 
