@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:SalaryDesktop"
         Title="تطبيق الرواتب — ويندوز" Height="840" Width="1460" MinHeight="660" MinWidth="1080"
         Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
-        WindowStartupLocation="CenterScreen" AllowDrop="True" DragOver="WindowDragOver" Drop="WindowDrop" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" PreviewKeyDown="WindowKeyDown">
+        WindowStartupLocation="CenterScreen" AllowDrop="True" DragOver="WindowDragOver" Drop="WindowDrop" UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType" PreviewKeyDown="WindowKeyDown">
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
