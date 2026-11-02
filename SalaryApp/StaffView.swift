@@ -142,6 +142,7 @@ struct RootView: View {
             #endif
             if UserDefaults.standard.bool(forKey: "backupTest") { await BackupManager.shared.selfTest() }
             if UserDefaults.standard.bool(forKey: "autoBackupTest") { await BackupManager.shared.autoBackupSelfTest() }
+            await BackupManager.shared.checkServerNotification()
             await BackupManager.shared.autoBackupIfNeeded()
             await AutoPilot.shared.run()
         }
@@ -157,10 +158,11 @@ struct RootView: View {
                 await BackupManager.shared.autoBackupIfNeeded()
             }
         }
-        // أثناء بقاء التطبيق مفتوحاً تُراجع ساعة النسخ دون انتظار استيراد جديد.
+        // أثناء بقاء التطبيق مفتوحاً يُفحص السيرفر وتُراجع ساعة النسخ.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             guard scenePhase == .active else { return }
             Task {
+                await BackupManager.shared.checkServerNotification()
                 await BackupManager.shared.autoBackupIfNeeded()
             }
         }
@@ -209,7 +211,8 @@ struct RootView: View {
                 let warning = tr("ستُستبدل كل البيانات الحالية، بما فيها الكتب، بمحتوى النسخة.", "All current data, including documents, will be replaced.")
                 if let uploadedAt = backup.pendingServerRestoreDate {
                     let uploaded = uploadedAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
-                    Text(tr("وقت رفع الملف إلى السيرفر: \(uploaded)\nتاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى تاريخ الملف قديماً بعد إعادة حفظه في ويندوز؛ وقت الرفع لا يحدد الجهاز أو محتوى التعديلات.\n\(counts)\n\(warning)", "Uploaded to the server: \(uploaded)\nCreation date recorded in the file: \(created)\nThe file date may be older after saving it in Windows; the upload time does not identify the device or its changes.\n\(counts)\n\(warning)"))
+                    let device = backup.pendingServerRestoreDevice ?? tr("غير معروف", "Unknown")
+                    Text(tr("وقت رفع الملف إلى السيرفر: \(uploaded)\nالجهاز الذي رفع النسخة: \(device)\n\(counts)\n\(warning)", "Uploaded to the server: \(uploaded)\nUploaded by: \(device)\n\(counts)\n\(warning)"))
                 } else {
                     Text(tr("تاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى قديماً بعد إعادة حفظ الملف في ويندوز.\n\(counts)\n\(warning)", "Creation date recorded in the file: \(created)\nThis date may be older after saving the file in Windows.\n\(counts)\n\(warning)"))
                 }

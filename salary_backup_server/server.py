@@ -1,4 +1,6 @@
 import hashlib
+import base64
+import binascii
 import hmac
 import json
 import os
@@ -6,6 +8,7 @@ import re
 import shutil
 import tempfile
 import threading
+import uuid
 import zipfile
 from google_drive import DriveSync
 from datetime import datetime, timezone
@@ -16,6 +19,59 @@ DATA = Path(os.environ.get("SALARY_BACKUP_DIR", "/data/backups"))
 MAX_SIZE = 2 * 1024 * 1024 * 1024
 LOCK = threading.Lock()
 DASHBOARD = Path(__file__).with_name("dashboard.html")
+METADATA = ".backup-current-meta.json"
+
+
+def upload_device(headers):
+    device_id = headers.get("X-Backup-Device-ID")
+    encoded = headers.get("X-Backup-Device-Name")
+    platform = headers.get("X-Backup-Device-Platform")
+    if device_id is None and encoded is None and platform is None:
+        return None
+    try:
+        if not isinstance(device_id, str) or str(uuid.UUID(device_id)) != device_id:
+            raise ValueError("invalid device id")
+        if not isinstance(encoded, str) or len(encoded) > 512 or platform not in ("ios", "windows"):
+            raise ValueError("invalid device metadata")
+        name = base64.b64decode(encoded, validate=True).decode("utf-8")
+        name = "".join(char for char in name if char.isprintable()).strip()
+        if not name or len(name) > 128:
+            raise ValueError("invalid device name")
+        return {"id": device_id, "name": name, "platform": platform}
+    except (ValueError, binascii.Error, UnicodeError) as exc:
+        raise ValueError("invalid device metadata") from exc
+
+
+def file_stamp(info):
+    return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns]
+
+
+def read_metadata(file, info):
+    if file.name != "backup-current.zip":
+        return None
+    try:
+        path = DATA / METADATA
+        if path.stat().st_size > 8192:
+            return None
+        metadata = json.loads(path.read_bytes())
+        if not isinstance(metadata, dict) or metadata.get("file_stamp") != file_stamp(info):
+            return None
+        return metadata
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def write_metadata(meta):
+    fd, name = tempfile.mkstemp(prefix=".meta-", dir=DATA)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(meta, output, ensure_ascii=False, separators=(",", ":"))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(name, DATA / METADATA)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def valid_archive(path):
@@ -99,13 +155,18 @@ class Handler(BaseHTTPRequestHandler):
                 DATA.mkdir(parents=True, exist_ok=True, mode=0o700)
                 disk = shutil.disk_usage(DATA)
                 backups = []
-                for file in DATA.glob("backup-*.zip"):
-                    try:
-                        stat = file.stat()
-                    except FileNotFoundError:
-                        continue
-                    backups.append({"id": file.name, "size": stat.st_size,
-                                    "created_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()})
+                with LOCK:
+                    for file in DATA.glob("backup-*.zip"):
+                        try:
+                            stat = file.stat()
+                        except FileNotFoundError:
+                            continue
+                        uploaded = datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()
+                        item = {"id": file.name, "size": stat.st_size, "created_at": uploaded, "uploaded_at": uploaded}
+                        metadata = read_metadata(file, stat)
+                        if metadata:
+                            item.update({"upload_id": metadata.get("upload_id"), "device": metadata.get("device")})
+                        backups.append(item)
                 backups.sort(key=lambda b: b["created_at"], reverse=True)
                 return self.response(200, {"service": "salary-backup", "version": 1,
                     "disk_total": disk.total, "disk_used": disk.used, "disk_free": disk.free,
@@ -172,6 +233,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             digest = self.headers.get("X-Content-SHA256", "")
+            device = upload_device(self.headers)
             if length <= 0 or length > MAX_SIZE or not re.fullmatch(r"[0-9a-f]{64}", digest):
                 self.close_connection = True
                 return self.response(400, {"error": "invalid length or checksum"})
@@ -212,6 +274,13 @@ class Handler(BaseHTTPRequestHandler):
                         ensure_no_missing_data(manifest, valid_archive(old))
                     if conditional:
                         activate_write_guard()
+                    os.utime(name, None)
+                    with open(name, "rb") as uploaded_file:
+                        os.fsync(uploaded_file.fileno())
+                    info = os.stat(name)
+                    upload_id = str(uuid.uuid4())
+                    uploaded = datetime.fromtimestamp(info.st_mtime, timezone.utc).isoformat()
+                    write_metadata({"file_stamp": file_stamp(info), "upload_id": upload_id, "device": device})
                     os.replace(name, DATA / filename)
                     directory = os.open(DATA, os.O_RDONLY)
                     try:
@@ -223,7 +292,8 @@ class Handler(BaseHTTPRequestHandler):
                         if old.name != filename:
                             old.unlink()
                 self.server.drive.event.set()
-                return self.response(201, {"id": filename, "size": length, "sha256": digest})
+                return self.response(201, {"id": filename, "size": length, "sha256": digest,
+                                           "upload_id": upload_id, "uploaded_at": uploaded})
             finally:
                 if os.path.exists(name):
                     os.unlink(name)

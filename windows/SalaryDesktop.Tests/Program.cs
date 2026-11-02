@@ -1122,6 +1122,25 @@ try
             var serverStatus = await BackupServer.Status(http, serverBase, new string('k', 40));
             Check(serverStatus.Count == 1 && serverStatus.Bytes == 22 && serverStatus.DiskFree == 1000 && serverStatus.Latest?.Year == 2026, "server status for connection test");
         }
+        var fictionalDevice = Guid.NewGuid().ToString("D"); var fictionalUpload = Guid.NewGuid().ToString("D");
+        using (var http = new HttpClient(new StubHandler(r =>
+        {
+            Check(r.Headers.GetValues("X-Backup-Device-ID").Single() == fictionalDevice &&
+                  Encoding.UTF8.GetString(Convert.FromBase64String(r.Headers.GetValues("X-Backup-Device-Name").Single())) == "حاسوب وهمي" &&
+                  r.Headers.GetValues("X-Backup-Device-Platform").Single() == "windows", "server upload device identity");
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created) { Content = new StringContent(JsonSerializer.Serialize(new { size = 22, sha256 = serverDigest, upload_id = fictionalUpload, uploaded_at = "2026-11-03T10:00:00+00:00" })) };
+        })))
+        {
+            var receipt = await BackupServer.UploadWithDevice(http, serverBase, new string('k', 40), serverFile, fictionalDevice, "حاسوب وهمي");
+            Check(receipt.UploadId == fictionalUpload && receipt.UploadedAt?.Year == 2026, "upload receipt identifies this exact upload");
+        }
+        var statusJson = JsonSerializer.Serialize(new { service = "salary-backup", backup_count = 1, backup_bytes = 22, disk_free = 1000,
+            backups = new[] { new { created_at = "2025-01-01T10:00:00+00:00", uploaded_at = "2026-11-03T10:00:00+00:00", upload_id = fictionalUpload, device = new { id = fictionalDevice, name = "حاسوب وهمي" } } } });
+        using (var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(statusJson) })))
+        {
+            var serverStatus = await BackupServer.Status(http, serverBase, new string('k', 40));
+            Check(serverStatus.Latest?.Year == 2026 && serverStatus.UploadId == fictionalUpload && serverStatus.DeviceId == fictionalDevice && serverStatus.DeviceName == "حاسوب وهمي", "server upload time and device identity");
+        }
         Console.WriteLine("Approved report exports and member profile checked with fictional data.");
     }
     // نسخة مصدر جديدة: ملف valid.zip عُدّل عمداً في اختبار سابق.

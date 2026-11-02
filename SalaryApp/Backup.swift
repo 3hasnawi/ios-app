@@ -315,9 +315,10 @@ final class BackupManager {
     private var checkingIntegrity = false
     /// نسخة تنتظر تأكيد الاسترجاع.
     var pendingRestore: (folder: URL, manifest: BackupFormat.Manifest)?
-    private var pendingServerRestore: (date: Date, address: String, token: String)?
+    private var pendingServerRestore: (date: Date, address: String, token: String, uploadID: String?, deviceName: String?)?
     /// وقت رفع الملف الحالي كما سجله السيرفر، لا تاريخ الإنشاء داخل الملف.
     var pendingServerRestoreDate: Date? { pendingServerRestore?.date }
+    var pendingServerRestoreDevice: String? { pendingServerRestore?.deviceName }
     var overwriteCandidate: BackupServerStatus?
     var version = 0
     /// القيم المستعادة تمنع احتساب إشعارات AppStorage المتأخرة كتعديل يدوي.
@@ -652,7 +653,7 @@ final class BackupManager {
 
     /// يكتب النسخة فوق ملف النسخة المحفوظ في iCloud (نسخة واحدة دائماً) ويحفظ النتيجة نجاحاً أو فشلاً.
     @discardableResult
-    func backupToDestination(manual: Bool = false, approved: Date? = nil) async -> String? {
+    func backupToDestination(manual: Bool = false, approved: BackupServerStatus? = nil) async -> String? {
         guard !isWorking else { return nil }
         guard !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
             return tr("⚠️ انتظر انتهاء الاستيراد قبل النسخ.", "⚠️ Wait for the import to finish before backing up.")
@@ -726,7 +727,7 @@ final class BackupManager {
         }
     }
 
-    private func backupToServer(manual: Bool, approved: Date?) async -> String? {
+    private func backupToServer(manual: Bool, approved: BackupServerStatus?) async -> String? {
         guard let base = BackupServerConfig.url(BackupServerConfig.address), BackupServerConfig.ready else {
             message = tr("تحقق من إعدادات السيرفر المحلي.", "Check local server settings.")
             return "⚠️ " + (message ?? "")
@@ -752,7 +753,7 @@ final class BackupManager {
                 defaults.set(Date(), forKey: Self.errorAtKey)
                 return reason
             }
-            if current.newer && (approved == nil || approved != current.latest) {
+            if current.newer && (approved == nil || approved?.latest != current.latest || approved?.uploadID != current.uploadID) {
                 defaults.set(true, forKey: BackupServerConfig.conflictKey)
                 let reason = tr("على السيرفر نسخة أحدث من جهاز آخر رُفعت \(current.description)؛ استرجعها من «استرجاع من السيرفر» قبل رفع نسخة هذا الجهاز.", "The server has a newer backup from another device uploaded \(current.description); restore it before uploading this device’s backup.")
                 defaults.set(reason, forKey: Self.errorKey)
@@ -775,19 +776,24 @@ final class BackupManager {
                 defaults.set(reason, forKey: Self.errorKey); defaults.set(Date(), forKey: Self.errorAtKey)
                 return reason
             }
-            if beforeUpload.newer && (approved == nil || approved != beforeUpload.latest) {
+            if beforeUpload.newer && (approved == nil || approved?.latest != beforeUpload.latest || approved?.uploadID != beforeUpload.uploadID) {
                 defaults.set(true, forKey: BackupServerConfig.conflictKey)
                 let reason = tr("على السيرفر نسخة أحدث من جهاز آخر رُفعت \(beforeUpload.description)؛ استرجعها أولاً.", "The server has a newer backup from another device uploaded \(beforeUpload.description); restore it first.")
                 defaults.set(reason, forKey: Self.errorKey); defaults.set(Date(), forKey: Self.errorAtKey)
                 if manual { overwriteCandidate = beforeUpload }
                 return reason
             }
-            let size = try await BackupServerUpload.upload(file: file, base: base, token: token)
+            var cleanedName = String(UIDevice.current.name.components(separatedBy: .controlCharacters).joined().prefix(100))
+            while cleanedName.utf8.count > 240 && !cleanedName.isEmpty { cleanedName.removeLast() }
+            let deviceID = BackupServerConfig.deviceID
+            let deviceName = "\(cleanedName.isEmpty ? "iPhone" : cleanedName) · \(deviceID.prefix(4).uppercased())"
+            let receipt = try await BackupServerUpload.upload(file: file, base: base, token: token, deviceID: deviceID, deviceName: deviceName)
+            let size = receipt.size
             guard size == expected else { throw BackupError.emptyArchive }
             guard BackupServerConfig.ready, BackupServerConfig.address == address, BackupServerConfig.token == token else { throw CancellationError() }
-            let latest = try? await BackupServerUpload.status(base: base, token: token)
-            guard BackupServerConfig.ready, BackupServerConfig.address == address, BackupServerConfig.token == token else { throw CancellationError() }
-            BackupServerConfig.remember(latest?.latest ?? Date())
+            if let uploaded = receipt.uploaded, let uploadID = receipt.uploadID {
+                BackupServerConfig.remember(uploaded, uploadID: uploadID)
+            }
             defaults.removeObject(forKey: BackupServerConfig.conflictKey)
             defaults.removeObject(forKey: BackupServerConfig.firstChoiceKey)
             defaults.set(Date(), forKey: Self.lastKey)
@@ -819,21 +825,21 @@ final class BackupManager {
             let status = try await BackupServerUpload.status(base: base, token: token)
             guard !Task.isCancelled, !isWorking, BackupServerConfig.ready, defaults.bool(forKey: BackupServerConfig.notifyKey),
                   BackupServerConfig.address == address, BackupServerConfig.token == token,
-                  status.newer, let latest = status.latest else { return }
+                  status.newer, status.deviceID != BackupServerConfig.deviceID, let latest = status.latest else { return }
             defaults.set(true, forKey: BackupServerConfig.conflictKey)
             defaults.set(tr("على السيرفر نسخة أحدث من جهاز آخر رُفعت \(status.description)؛ استرجعها من «استرجاع من السيرفر» قبل رفع نسخة هذا الجهاز.", "The server has a newer backup from another device uploaded \(status.description); restore it before uploading this device’s backup."), forKey: Self.errorKey)
             defaults.set(Date(), forKey: Self.errorAtKey)
             version += 1
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let identifier = formatter.string(from: latest)
+            let identifier = status.uploadID ?? formatter.string(from: latest)
             guard defaults.string(forKey: BackupServerConfig.notifiedKey) != identifier else { return }
             let center = UNUserNotificationCenter.current()
             let authorization = await center.notificationSettings().authorizationStatus
             guard authorization == .authorized || authorization == .provisional || authorization == .ephemeral else { return }
             let content = UNMutableNotificationContent()
             content.title = tr("نسخة أحدث على السيرفر", "Newer backup on server")
-            content.body = tr("رفع جهاز آخر نسخة جديدة. افتح النسخ الاحتياطي واسترجعها قبل النسخ من هذا الآيفون.", "Another device uploaded a new backup. Open Backup and restore it before uploading from this iPhone.")
+            content.body = tr("رُفعت نسخة: \(status.description). افتح النسخ الاحتياطي لمراجعتها.", "Backup uploaded: \(status.description). Open Backup to review it.")
             content.sound = .default
             content.userInfo = ["route": "backup"]
             try await center.add(UNNotificationRequest(identifier: "backup-server-newer", content: content, trigger: nil))
@@ -863,10 +869,10 @@ final class BackupManager {
                 defer { try? FileManager.default.removeItem(at: file) }
                 // لا ننسب التنزيل لتاريخ نسخة تغيرت أثناء النقل.
                 let after = try await BackupServerUpload.status(base: base, token: token)
-                guard after.latest == latest, BackupServerConfig.address == address, BackupServerConfig.token == token else {
+                guard after.latest == latest, after.uploadID == status.uploadID, BackupServerConfig.address == address, BackupServerConfig.token == token else {
                     throw BackupServerUpload.failure(0, fallback: tr("تغيّرت نسخة السيرفر أثناء التنزيل؛ أعد المحاولة.", "The server backup changed during download; try again."))
                 }
-                await open(file, serverRestore: (latest, address, token))
+                await open(file, serverRestore: (latest, address, token, status.uploadID, status.deviceName))
             } catch {
                 message = tr("تعذّر تنزيل النسخة من السيرفر: \(error.localizedDescription)", "Could not download the server backup: \(error.localizedDescription)")
             }
@@ -895,15 +901,23 @@ final class BackupManager {
         let valid = (try? Archive(url: file, accessMode: .read))?["manifest.json"] != nil
         // اختبار مقارنة تاريخ السيرفر دون ملفات حقيقية، مع إعادة القيمة السابقة بعد الاختبار.
         let savedSeen = UserDefaults.standard.string(forKey: BackupServerConfig.seenKey)
+        let savedSeenUpload = UserDefaults.standard.string(forKey: BackupServerConfig.seenUploadKey)
+        UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenUploadKey)
         let serverDate = BackupServerUpload.parseDate("2026-01-01T00:00:00.123456+00:00")
         UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenKey)
         let noSeenIsNewer = BackupServerStatus(count: 1, size: 1, free: 1, latest: serverDate).newer
         if let serverDate { BackupServerConfig.remember(serverDate) }
         let sameIsNewer = BackupServerStatus(count: 1, size: 1, free: 1, latest: serverDate).newer
         let laterIsNewer = BackupServerStatus(count: 1, size: 1, free: 1, latest: serverDate?.addingTimeInterval(3)).newer
+        let uploadOne = UUID().uuidString.lowercased(), uploadTwo = UUID().uuidString.lowercased()
+        if let serverDate { BackupServerConfig.remember(serverDate, uploadID: uploadOne) }
+        let sameUploadIsNewer = BackupServerStatus(count: 1, size: 1, free: 1, latest: serverDate, uploadID: uploadOne).newer
+        let differentUploadIsNewer = BackupServerStatus(count: 1, size: 1, free: 1, latest: serverDate, uploadID: uploadTwo).newer
         if let savedSeen { UserDefaults.standard.set(savedSeen, forKey: BackupServerConfig.seenKey) }
         else { UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenKey) }
-        let serverDatesOK = serverDate != nil && noSeenIsNewer && !sameIsNewer && laterIsNewer
+        if let savedSeenUpload { UserDefaults.standard.set(savedSeenUpload, forKey: BackupServerConfig.seenUploadKey) }
+        else { UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenUploadKey) }
+        let serverDatesOK = serverDate != nil && noSeenIsNewer && !sameIsNewer && laterIsNewer && !sameUploadIsNewer && differentUploadIsNewer
         let trustOK = SalaryTrustSelfTest.run()
         let trustPDFOK = await SalaryTrustSelfTest.pdf()
         let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
@@ -922,7 +936,7 @@ final class BackupManager {
 
     func openForRestore(_ url: URL) async { await open(url) }
 
-    private func open(_ url: URL, serverRestore: (date: Date, address: String, token: String)? = nil) async {
+    private func open(_ url: URL, serverRestore: (date: Date, address: String, token: String, uploadID: String?, deviceName: String?)? = nil) async {
         do {
             let folder = try await Task.detached(priority: .userInitiated) { () throws -> URL in
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
@@ -1018,7 +1032,7 @@ final class BackupManager {
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 Self.rememberSafetyManifest(pending.manifest)
                 if let serverRestore, BackupServerConfig.address == serverRestore.address, BackupServerConfig.token == serverRestore.token {
-                    BackupServerConfig.remember(serverRestore.date)
+                    BackupServerConfig.remember(serverRestore.date, uploadID: serverRestore.uploadID)
                     // لا نعدّ الإعدادات المحلية التي لم تشملها النسخة محفوظة فيها.
                     let localKeys = Set(BackupFormat.settingsKeys.filter { UserDefaults.standard.object(forKey: $0) != nil })
                     let retained = Self.hasRetainedSettings(backupKeys: Set(settings.keys), localKeys: localKeys)
@@ -1096,7 +1110,7 @@ final class BackupManager {
             let serverCopy = FileManager.default.temporaryDirectory.appendingPathComponent("server-time-test-\(UUID().uuidString).zip")
             try FileManager.default.copyItem(at: url, to: serverCopy)
             let testServerDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
-            await open(serverCopy, serverRestore: (testServerDate, "test-address", "test-token"))
+            await open(serverCopy, serverRestore: (testServerDate, "test-address", "test-token", nil, nil))
             guard pendingRestore != nil, pendingServerRestoreDate == testServerDate else {
                 cancelRestore(); LaunchOptions.writeReport("backup=failed serverTime=failed"); return
             }
@@ -1339,7 +1353,7 @@ struct BackupView: View {
         ), presenting: manager.overwriteCandidate) { candidate in
             Button(tr("استبدلها بنسخة هذا الجهاز", "Replace with this device’s backup"), role: .destructive) {
                 manager.overwriteCandidate = nil
-                Task { await manager.backupToDestination(manual: true, approved: candidate.latest) }
+                Task { await manager.backupToDestination(manual: true, approved: candidate) }
             }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { manager.overwriteCandidate = nil }
         } message: { candidate in

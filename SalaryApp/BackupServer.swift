@@ -13,14 +13,25 @@ nonisolated enum BackupServerConfig {
     static let firstChoiceKey = "backupServerFirstChoice"
     static let notifyKey = "backupServerNotify"
     static let notifiedKey = "backupServerNotified"
+    static let seenUploadKey = "backupServerSeenUploadID"
+    private static let deviceKey = "backupServerDeviceID"
+    static var deviceID: String {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: deviceKey), let id = UUID(uuidString: raw) { return id.uuidString.lowercased() }
+        let id = UUID().uuidString.lowercased()
+        defaults.set(id, forKey: deviceKey)
+        return id
+    }
     static var seen: Date? {
         guard let value = UserDefaults.standard.string(forKey: seenKey) else { return nil }
         return BackupServerUpload.parseDate(value)
     }
-    static func remember(_ date: Date) {
+    static func remember(_ date: Date, uploadID: String? = nil) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         UserDefaults.standard.set(formatter.string(from: date), forKey: seenKey)
+        if let uploadID, UUID(uuidString: uploadID) != nil { UserDefaults.standard.set(uploadID.lowercased(), forKey: seenUploadKey) }
+        else { UserDefaults.standard.removeObject(forKey: seenUploadKey) }
     }
     private static let account = "salary-backup-server-token"
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
@@ -63,14 +74,19 @@ nonisolated struct BackupServerStatus {
     let size: Int64
     let free: Int64
     let latest: Date?
+    var uploadID: String? = nil
+    var deviceID: String? = nil
+    var deviceName: String? = nil
     var newer: Bool {
         guard let latest else { return false }
+        if let uploadID { return uploadID != UserDefaults.standard.string(forKey: BackupServerConfig.seenUploadKey) }
         guard let seen = BackupServerConfig.seen else { return true }
         return latest.timeIntervalSince(seen) > 2
     }
     var description: String {
         guard let latest else { return tr("لا توجد نسخة بعد", "No backup yet") }
-        return "\(latest.formatted(date: .abbreviated, time: .shortened)) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))"
+        let source = deviceName ?? tr("جهاز غير معروف", "Unknown device")
+        return "\(latest.formatted(date: .abbreviated, time: .shortened)) · \(source) (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))"
     }
 }
 
@@ -110,7 +126,7 @@ nonisolated enum BackupServerUpload {
         }
         let latest: Date?
         if count > 0 {
-            guard let raw = backups.first?["created_at"] as? String, let date = parseDate(raw) else {
+            guard let raw = (backups.first?["uploaded_at"] ?? backups.first?["created_at"]) as? String, let date = parseDate(raw) else {
                 throw failure(0, fallback: tr("تعذّر قراءة تاريخ نسخة السيرفر؛ لم يُرفع شيء.", "Could not read the server backup date; nothing was uploaded."))
             }
             latest = date
@@ -118,7 +134,14 @@ nonisolated enum BackupServerUpload {
             guard backups.isEmpty else { throw failure(0, fallback: tr("حالة السيرفر غير متسقة.", "Inconsistent server status.")) }
             latest = nil
         }
-        return BackupServerStatus(count: count, size: size, free: free, latest: latest)
+        let first = backups.first
+        let rawID = first?["upload_id"] as? String
+        let uploadID = rawID.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
+        let device = first?["device"] as? [String: Any]
+        let deviceID = (device?["id"] as? String).flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
+        let name = device?["name"] as? String
+        let deviceName = deviceID != nil && name?.isEmpty == false && (name?.count ?? 0) <= 128 ? name : nil
+        return BackupServerStatus(count: count, size: size, free: free, latest: latest, uploadID: uploadID, deviceID: deviceID, deviceName: deviceName)
     }
 
     /// لا نضغط مئات الميغابايتات إذا لم يكن السيرفر قابلاً للوصول؛ أي رد HTTP يكفي.
@@ -144,12 +167,15 @@ nonisolated enum BackupServerUpload {
         while let bytes = try input.read(upToCount: 1024 * 1024), !bytes.isEmpty { hash.update(data: bytes) }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-    static func upload(file: URL, base: URL, token: String) async throws -> Int64 {
+    static func upload(file: URL, base: URL, token: String, deviceID: String, deviceName: String) async throws -> (size: Int64, uploadID: String?, uploaded: Date?) {
         let digest = try await Task.detached(priority: .utility) { try sha256(file) }.value
         var request = URLRequest(url: base.appendingPathComponent("v1/backups"))
         request.httpMethod = "POST"
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue(digest, forHTTPHeaderField: "X-Content-SHA256")
+        request.setValue(deviceID, forHTTPHeaderField: "X-Backup-Device-ID")
+        request.setValue(Data(deviceName.utf8).base64EncodedString(), forHTTPHeaderField: "X-Backup-Device-Name")
+        request.setValue("ios", forHTTPHeaderField: "X-Backup-Device-Platform")
         request.setValue("application/zip", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 600
         let (data, response) = try await URLSession.shared.upload(for: request, fromFile: file)
@@ -162,7 +188,9 @@ nonisolated enum BackupServerUpload {
               let size = (object["size"] as? NSNumber)?.int64Value, size > 0 else {
             throw NSError(domain: "BackupServer", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("لم يؤكد السيرفر حفظ النسخة؛ تحقق من العنوان ورمز الوصول.", "Server did not confirm the backup; check the address and token.")])
         }
-        return size
+        let uploadID = (object["upload_id"] as? String).flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
+        let uploaded = (object["uploaded_at"] as? String).flatMap(parseDate)
+        return (size, uploadID, uploaded)
     }
 }
 
@@ -223,6 +251,7 @@ struct BackupServerSettings: View {
                     guard (!enabled || (BackupServerConfig.url(address) != nil && token.utf8.count >= 32 && token.unicodeScalars.allSatisfy { $0.isASCII && !$0.properties.isWhitespace })), BackupServerConfig.saveToken(token) else { error = true; return }
                     if BackupServerConfig.address != address || previousToken != token {
                         UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenKey)
+                        UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenUploadKey)
                         UserDefaults.standard.removeObject(forKey: BackupServerConfig.conflictKey)
                         UserDefaults.standard.removeObject(forKey: BackupServerConfig.firstChoiceKey)
                         UserDefaults.standard.removeObject(forKey: BackupServerConfig.notifiedKey)

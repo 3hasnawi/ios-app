@@ -33,6 +33,7 @@ public partial class MainWindow
             if (due && (saved.BackupLast is null || BackupReminder.Visibility == Visibility.Visible)) await BackupToFile(false);
         };
         backupTimer.Start();
+        _ = CheckServerNewer(true);
     }
 
     private static string ScheduleText(string? schedule) => schedule switch { "hourly" => "كل ساعة", "daily" => "كل يوم", _ => "بعد الاستيراد" };

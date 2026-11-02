@@ -2,11 +2,13 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace SalaryDesktop.Core;
 
-public sealed record BackupServerStatus(int Count, long Bytes, long DiskFree, DateTimeOffset? Latest);
+public sealed record BackupServerStatus(int Count, long Bytes, long DiskFree, DateTimeOffset? Latest, string? UploadId = null, string? DeviceId = null, string? DeviceName = null);
+public sealed record BackupServerReceipt(long Size, string? UploadId, DateTimeOffset? UploadedAt);
 
 /// عميل سيرفر النسخ المحلي (إضافة Home Assistant «salary_backup_server») بنفس قواعد الآيفون في BackupServer.swift:
 /// عنوان IP خاص وHTTP محلي فقط، رمز وصول لا يقل عن ٣٢ حرفاً، رفع ملف النسخة مع بصمة SHA-256 وتأكيد السيرفر لها،
@@ -60,12 +62,28 @@ public static class BackupServer
 
     /// يرفع الملف ويعيد الحجم الذي أكّده السيرفر بعد مطابقة البصمة.
     public static async Task<long> Upload(HttpClient http, Uri baseUri, string token, string file, CancellationToken cancel = default)
+        => (await UploadCore(http, baseUri, token, file, null, null, cancel).ConfigureAwait(false)).Size;
+
+    public static Task<BackupServerReceipt> UploadWithDevice(HttpClient http, Uri baseUri, string token, string file, string deviceId, string deviceName, CancellationToken cancel = default)
+    {
+        if (!Guid.TryParseExact(deviceId, "D", out var parsed) || parsed.ToString("D") != deviceId || string.IsNullOrWhiteSpace(deviceName) || deviceName.Length > 128 || deviceName.Any(char.IsControl))
+            throw new InvalidDataException("هوية الجهاز غير صالحة.");
+        return UploadCore(http, baseUri, token, file, deviceId, deviceName, cancel);
+    }
+
+    private static async Task<BackupServerReceipt> UploadCore(HttpClient http, Uri baseUri, string token, string file, string? deviceId, string? deviceName, CancellationToken cancel)
     {
         var digest = await Task.Run(() => Sha256(file), cancel).ConfigureAwait(false);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancel); timeout.CancelAfter(TimeSpan.FromMinutes(10));
         await using var stream = File.OpenRead(file);
         using var request = Request(HttpMethod.Post, baseUri, "v1/backups", token);
         request.Headers.Add("X-Content-SHA256", digest);
+        if (deviceId is not null && deviceName is not null)
+        {
+            request.Headers.Add("X-Backup-Device-ID", deviceId);
+            request.Headers.Add("X-Backup-Device-Name", Convert.ToBase64String(Encoding.UTF8.GetBytes(deviceName)));
+            request.Headers.Add("X-Backup-Device-Platform", "windows");
+        }
         request.Content = new StreamContent(stream, 1024 * 1024);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         request.Content.Headers.ContentLength = stream.Length;
@@ -80,7 +98,9 @@ public static class BackupServer
             if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("sha256", out var sha) || sha.GetString() != digest
                 || !root.TryGetProperty("size", out var size) || !size.TryGetInt64(out var bytes) || bytes <= 0)
                 throw new InvalidDataException(unconfirmed);
-            return bytes;
+            var id = root.TryGetProperty("upload_id", out var upload) && upload.ValueKind == JsonValueKind.String && Guid.TryParseExact(upload.GetString(), "D", out var parsed) ? parsed.ToString("D") : null;
+            DateTimeOffset? at = root.TryGetProperty("uploaded_at", out var time) && time.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(time.GetString(), out var uploaded) ? uploaded : null;
+            return new BackupServerReceipt(bytes, id, at);
         }
         catch (JsonException ex) { throw new InvalidDataException(unconfirmed, ex); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested) { throw new InvalidDataException("انقطع الاتصال بالسيرفر أثناء رفع النسخة؛ أعد المحاولة.", ex); }
@@ -115,10 +135,16 @@ public static class BackupServer
             var root = json.RootElement;
             if (!root.TryGetProperty("service", out var service) || service.GetString() != "salary-backup") throw new InvalidDataException("العنوان لا يخص سيرفر النسخ الاحتياطي.");
             long Long(string name) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
-            DateTimeOffset? latest = null;
-            if (root.TryGetProperty("backups", out var list) && list.ValueKind == JsonValueKind.Array && list.GetArrayLength() > 0
-                && list[0].TryGetProperty("created_at", out var at) && DateTimeOffset.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed)) latest = parsed;
-            return new BackupServerStatus((int)Long("backup_count"), Long("backup_bytes"), Long("disk_free"), latest);
+            DateTimeOffset? latest = null; string? uploadId = null, deviceId = null, deviceName = null;
+            if (root.TryGetProperty("backups", out var list) && list.ValueKind == JsonValueKind.Array && list.GetArrayLength() > 0)
+            {
+                var item = list[0];
+                if ((item.TryGetProperty("uploaded_at", out var at) || item.TryGetProperty("created_at", out at)) && at.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed)) latest = parsed;
+                if (item.TryGetProperty("upload_id", out var upload) && upload.ValueKind == JsonValueKind.String && Guid.TryParseExact(upload.GetString(), "D", out var id)) uploadId = id.ToString("D");
+                if (item.TryGetProperty("device", out var device) && device.ValueKind == JsonValueKind.Object && device.TryGetProperty("id", out var identity) && identity.ValueKind == JsonValueKind.String && Guid.TryParseExact(identity.GetString(), "D", out var deviceGuid) && device.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 and <= 128 } label)
+                { deviceId = deviceGuid.ToString("D"); deviceName = label; }
+            }
+            return new BackupServerStatus((int)Long("backup_count"), Long("backup_bytes"), Long("disk_free"), latest, uploadId, deviceId, deviceName);
         }
         catch (JsonException ex) { throw new InvalidDataException("رد السيرفر غير مفهوم.", ex); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested) { throw new InvalidDataException(Unreachable, ex); }

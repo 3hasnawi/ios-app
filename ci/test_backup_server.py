@@ -1,5 +1,6 @@
 """Smoke test: fake backups only; no Home Assistant or simulator required."""
 import hashlib
+import base64
 import http.client
 import importlib.util
 import io
@@ -9,6 +10,7 @@ import tempfile
 import threading
 import zipfile
 import sys
+import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "salary_backup_server"))
 
 spec = importlib.util.spec_from_file_location("backup_server", Path(__file__).resolve().parents[1] / "salary_backup_server/server.py")
@@ -60,6 +62,57 @@ with tempfile.TemporaryDirectory() as directory:
     details = json.loads(body)
     assert status == 200 and details["backup_count"] == 1 and details["backup_bytes"] == len(data)
     assert len(details["backups"]) == 1 and details["disk_total"] >= details["disk_free"] > 0
+    device_id = str(uuid.uuid4())
+    device_headers = {**headers, "X-Backup-Device-ID": device_id,
+                      "X-Backup-Device-Name": base64.b64encode("مكتب تجريبي".encode()).decode(),
+                      "X-Backup-Device-Platform": "windows"}
+    code, body = request("POST", "/v1/backups", data, device_headers)
+    receipt = json.loads(body)
+    assert code == 201 and uuid.UUID(receipt["upload_id"])
+    _, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
+    entry = json.loads(body)["backups"][0]
+    assert entry["upload_id"] == receipt["upload_id"] and entry["uploaded_at"] == receipt["uploaded_at"]
+    assert entry["device"] == {"id": device_id, "name": "مكتب تجريبي", "platform": "windows"}
+    assert request("POST", "/v1/backups", data, {**device_headers, "X-Backup-Device-ID": "invalid"})[0] == 400
+    assert request("POST", "/v1/backups", data, {**headers, "X-Backup-Device-ID": device_id})[0] == 400
+    _, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
+    assert json.loads(body)["backups"][0]["upload_id"] == receipt["upload_id"]
+    # فقد الربط بين بيانات الجهاز والملف لا ينسب الملف إلى جهاز خطأ.
+    metadata_path = server_module.DATA / server_module.METADATA
+    metadata = json.loads(metadata_path.read_text())
+    metadata["file_stamp"][1] += 1
+    metadata_path.write_text(json.dumps(metadata))
+    _, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
+    assert "device" not in json.loads(body)["backups"][0]
+    # الأجهزة القديمة تبقى قادرة على الرفع ويكون المصدر غير معروف.
+    code, body = request("POST", "/v1/backups", data, headers)
+    assert code == 201 and json.loads(body)["upload_id"] != receipt["upload_id"]
+    _, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
+    assert json.loads(body)["backups"][0]["device"] is None
+    # رفعان متنافسان قد يستبدلان بعضهما في v1، لكن المصدر لا يجوز أن يُنسب للملف الخطأ.
+    second = io.BytesIO()
+    with zipfile.ZipFile(second, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 4, "months": ["test"], "employees": 1}))
+        archive.writestr("fixture.txt", "fictional second device")
+    other_data = second.getvalue()
+    other_id = str(uuid.uuid4())
+    uploads = [(data, device_id), (other_data, other_id)]
+    results = []
+    def upload_with_identity(item):
+        payload, identity = item
+        h = {"Authorization": "Bearer " + server.token, "X-Content-SHA256": hashlib.sha256(payload).hexdigest(),
+             "X-Backup-Device-ID": identity, "X-Backup-Device-Name": base64.b64encode(b"fictional").decode(),
+             "X-Backup-Device-Platform": "windows"}
+        results.append(request("POST", "/v1/backups", payload, h)[0])
+    threads = [threading.Thread(target=upload_with_identity, args=(item,)) for item in uploads]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert results == [201, 201]
+    _, body = request("GET", "/v1/status", headers={"Authorization": "Bearer " + server.token})
+    published = (server_module.DATA / "backup-current.zip").read_bytes()
+    expected_device = next(identity for payload, identity in uploads if payload == published)
+    assert json.loads(body)["backups"][0]["device"]["id"] == expected_device
+    assert request("POST", "/v1/backups", data, headers)[0] == 201
     assert request("GET", "/v1/backups/latest", headers={"Authorization": "Bearer " + server.token}) == (200, data)
     assert request("GET", "/v1/backups/latest")[0] == 401
     # لا يُفعّل استقبال التعديلات بالمراجعات افتراضياً، ولا يغيّر سلوك الآيفون الحالي.
