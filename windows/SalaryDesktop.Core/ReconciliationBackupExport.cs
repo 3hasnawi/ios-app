@@ -44,8 +44,13 @@ public static class ReconciliationBackupExport
         return Encoding.UTF8.GetBytes(result.ToJsonString());
     }
     private static byte[] LedgerPlist(IReadOnlyList<BankPeriod> periods) => BankReconciliation.LedgerPlist(periods);
-    public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination, SalaryTrustLedger? trust = null)
+    /// كل نسخة شاملة تُكتب من ويندوز تأخذ تاريخ إنشاء جديداً في manifest.json (ثواني الآيفون منذ ٢٠٠١ بتوقيت UTC، مثل JSONEncoder)،
+    /// حتى لو لم تتغير الأعداد؛ وتبقى بقية حقول الفهرس كما هي بما فيها غير المعروفة، ولا تتغير تواريخ الكتب. createdAt للاختبار فقط.
+    public static double IosSeconds(DateTimeOffset moment) => (moment.UtcDateTime - new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+    private static readonly string[] ManifestUpdated = ["createdAt", "accounts", "books", "months", "employees", "deductions"];
+    public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination, SalaryTrustLedger? trust = null, DateTimeOffset? createdAt = null)
     {
+        var created = IosSeconds(createdAt ?? DateTimeOffset.UtcNow);
         var target = Path.GetFullPath(destination); var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("المجلد غير صالح.");
         var name = Path.GetFileNameWithoutExtension(target);
         if (!string.Equals(Path.GetExtension(target), ".zip", StringComparison.OrdinalIgnoreCase) || string.Equals(target, source.SourcePath, StringComparison.OrdinalIgnoreCase) ||
@@ -72,7 +77,7 @@ public static class ReconciliationBackupExport
                 || source.Books.Any(b => !localBooks.ContainsKey(b.Id) && !original.Books.Any(o => o.Id == b.Id && o.Pages == b.Pages))))
                 throw new InvalidDataException("تعديلات الأرشيف لا تطابق النسخة؛ أعد فتح الأرشيف.");
             var droppedBooks = changedBooks ? original.Books.Where(o => localBooks.ContainsKey(o.Id) || !source.Books.Any(b => b.Id == o.Id)).Select(o => BookEntry(o.Id)).ToHashSet(StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
-            bool Rewritten(string name) => name == "settings.json" || (changedAccounts && name == "accounts.jsonl") || ((changedAccounts || changedMonths || changedBooks) && name == "manifest.json") ||
+            bool Rewritten(string name) => name == "settings.json" || (changedAccounts && name == "accounts.jsonl") || name == "manifest.json" ||
                 (changedMonths && name == "months.jsonl") || (changedEmployees && name == "employees.jsonl") || (changedDeductions && name == "deductions.jsonl") || (changedBooks && name == "books/index.json");
             if (changedAccounts && (original.Version < 2 || source.Accounts.Count < original.Accounts.Count ||
                 !original.Accounts.Select(a => a.Entity).SequenceEqual(source.Accounts.Take(original.Accounts.Count).Select(a => a.Entity))))
@@ -128,11 +133,12 @@ public static class ReconciliationBackupExport
                         using var originalIndex = oldEntry.Open();
                         outStream.Write(BookIndex(originalIndex, source.Books));
                     }
-                    else if ((changedAccounts || changedMonths || changedBooks) && oldEntry.FullName == "manifest.json")
+                    else if (oldEntry.FullName == "manifest.json")
                     {
                         using var originalManifest = oldEntry.Open();
                         var manifest = JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
-                        manifest["accounts"] = source.Accounts.Count;
+                        manifest["createdAt"] = created;
+                        if (changedAccounts || changedMonths || changedBooks) manifest["accounts"] = source.Accounts.Count;
                         if (changedBooks) manifest["books"] = source.Books.Count;
                         if (changedMonths) { manifest["months"] = new JsonArray(source.Months.Select(m => (JsonNode?)JsonValue.Create(m.Name)).ToArray()); manifest["employees"] = source.Employees.Count; manifest["deductions"] = source.Deductions.Count; }
                         JsonSerializer.Serialize(outStream, manifest);
@@ -161,6 +167,18 @@ public static class ReconciliationBackupExport
                         if (!SHA256.HashData(stored).AsSpan().SequenceEqual(SHA256.HashData(File.ReadAllBytes(file)))) throw new InvalidDataException("تعذّر التحقق من ملف كتاب في النسخة الجديدة.");
                     }
             if (trust is not null && !SalaryTrust.Encode(SalaryTrust.ReadFromBackup(restored)).AsSpan().SequenceEqual(SalaryTrust.Encode(trust))) throw new InvalidDataException("تعذّر التحقق من دفتر الأمانات في النسخة الجديدة.");
+            // الفهرس الجديد: تاريخ هذه النسخة، وبقية الحقول (ومنها ما لا يعرفه ويندوز) كما في المصدر.
+            using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))
+            using (var newZip = ZipFile.OpenRead(temp))
+            {
+                JsonObject Manifest(ZipArchive zip) { using var stream = (zip.GetEntry("manifest.json") ?? throw new InvalidDataException("فهرس النسخة مفقود.")).Open(); return JsonNode.Parse(stream)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح."); }
+                var before = Manifest(oldZip); var after = Manifest(newZip);
+                if (after["createdAt"] is not JsonValue value || !value.TryGetValue<double>(out var written) || Math.Abs(written - created) > 0.001 || restored.CreatedAt is not { } read || Math.Abs(read - created) > 0.001)
+                    throw new InvalidDataException("تعذّر التحقق من تاريخ النسخة الجديدة.");
+                var kept = before.Where(p => !ManifestUpdated.Contains(p.Key)).ToArray();
+                if (after.Count(p => !ManifestUpdated.Contains(p.Key)) != kept.Length || kept.Any(p => !after.TryGetPropertyValue(p.Key, out var node) || !JsonNode.DeepEquals(p.Value, node)))
+                    throw new InvalidDataException("تعذّر التحقق من فهرس النسخة الجديدة.");
+            }
             var readPeriods = BankReconciliation.ReadFromBackup(restored);
             if (!LedgerPlist(readPeriods).AsSpan().SequenceEqual(LedgerPlist(periods))) throw new InvalidDataException("تعذّر التحقق من دفتر المطابقة في النسخة الجديدة.");
             using (var oldZip = new ZipArchive(input, ZipArchiveMode.Read, true))

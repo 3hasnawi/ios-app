@@ -73,7 +73,7 @@ static void MakeBackup(string path, bool wrongCount = false, bool duplicate = fa
 {
     using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
     var id = Guid.Parse("a0a0a0a0-b0b0-c0c0-d0d0-e0e0e0e0e0e0");
-    Entry(zip, "manifest.json", JsonSerializer.Serialize(new { version = 5, months = omitRecentMonth ? new[] { "أيلول 2026" } : new[] { "تشرين الاول 2026", "أيلول 2026" }, employees = wrongCount ? 3 : 2, deductions = 3, staff = 0, accounts = 1, books = 1 }));
+    Entry(zip, "manifest.json", JsonSerializer.Serialize(new { version = 5, months = omitRecentMonth ? new[] { "أيلول 2026" } : new[] { "تشرين الاول 2026", "أيلول 2026" }, employees = wrongCount ? 3 : 2, deductions = 3, staff = 0, accounts = 1, books = 1, createdAt = 700000000.25, futureField = new { kept = true, big = 12345678901234567L } }));
     Entry(zip, "months.jsonl", Lines(omitRecentMonth ? new[] { new { name = "أيلول 2026", employeeCount = 2, deductionCount = 3 } } : new[] { new { name = "أيلول 2026", employeeCount = 2, deductionCount = 3 }, new { name = "تشرين الاول 2026", employeeCount = 0, deductionCount = 0 } }));
     Entry(zip, "employees.jsonl", Lines(new[] {
         new { month = "أيلول 2026", name = "أحمد وهمي", rank = "رتبة وهمية", workplace = "قسم وهمي", net = (decimal?)1250000m,
@@ -247,8 +247,22 @@ try
     catch (InvalidDataException) { }
     Check(ledgers.Load(ledgerSnapshot).Revision == savedLedger.Revision, "invalid ledger preserves previous state");
     var exportedLedgerBackup = Path.Combine(root, "reconciliation-backup.zip");
-    ReconciliationBackupExport.Write(ledgerSnapshot, savedLedger.Periods, exportedLedgerBackup);
+    // تاريخ النسخة: كل نسخة شاملة من ويندوز تأخذ وقت إنشائها (ثواني ٢٠٠١ UTC)، وتبقى حقول الفهرس الأخرى ومصدرها كما هي.
+    var exportMoment = new DateTimeOffset(2026, 11, 2, 23, 30, 15, TimeSpan.FromHours(3));   // بعد منتصف ليل UTC بنصف ساعة بتوقيت بغداد
+    ReconciliationBackupExport.Write(ledgerSnapshot, savedLedger.Periods, exportedLedgerBackup, createdAt: exportMoment);
     var exportedLedger = BackupReader.Read(exportedLedgerBackup);
+    System.Text.Json.Nodes.JsonObject ManifestOf(string path) { using var zip = ZipFile.OpenRead(path); using var stream = zip.GetEntry("manifest.json")!.Open(); return System.Text.Json.Nodes.JsonNode.Parse(stream)!.AsObject(); }
+    var sourceManifest = ManifestOf(ledgerSnapshot.SourcePath); var exportedManifest = ManifestOf(exportedLedgerBackup);
+    Check(ledgerSnapshot.Created == new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(700000000.25) && sourceManifest["createdAt"]!.GetValue<double>() == 700000000.25, "backup creation date read from the iPhone manifest");
+    Check(Math.Abs(exportedManifest["createdAt"]!.GetValue<double>() - ReconciliationBackupExport.IosSeconds(exportMoment)) < 0.001 && exportedLedger.Created == exportMoment
+        && exportedLedger.Created!.Value.UtcDateTime.Day == 2 && exportedLedger.Created.Value.ToOffset(TimeSpan.FromHours(3)).Hour == 23, "Windows backup records its own creation time in UTC seconds since 2001");
+    Check(System.Text.Json.Nodes.JsonNode.DeepEquals(sourceManifest["futureField"], exportedManifest["futureField"]) && exportedManifest["futureField"]!["big"]!.ToJsonString() == "12345678901234567"
+        && exportedManifest["version"]!.GetValue<int>() == sourceManifest["version"]!.GetValue<int>() && exportedManifest.Count == sourceManifest.Count, "backup manifest keeps unknown fields while updating the date");
+    Check(BackupReader.CreatedAt(exportedLedgerBackup) == exportMoment, "backup date readable from the manifest alone");
+    var unchangedBackup = Path.Combine(root, "unchanged-backup.zip"); var beforeUnchanged = DateTimeOffset.UtcNow.AddSeconds(-1);
+    ReconciliationBackupExport.Write(snapshot, [], unchangedBackup);
+    var unchangedCreated = BackupReader.Read(unchangedBackup).Created;
+    Check(unchangedCreated is { } fresh && fresh >= beforeUnchanged && fresh <= DateTimeOffset.UtcNow.AddSeconds(1) && ManifestOf(unchangedBackup)["months"]!.ToJsonString() == ManifestOf(snapshot.SourcePath)["months"]!.ToJsonString(), "backup without data changes still gets a new creation date");
     var roundTripPeriod = BankReconciliation.ReadFromBackup(exportedLedger).Single();
     Check(roundTripPeriod.Id == period.Id && roundTripPeriod.Movements.Count == 4 && roundTripPeriod.Movements[2].RefundOf == refund.Id && roundTripPeriod.End == period.End && BankReconciliation.Calculate(roundTripPeriod).Balance == 0, "reconciliation backup preserves dates, links and totals");
     Check(exportedLedger.Employees.Count == snapshot.Employees.Count && exportedLedger.Books.Count == snapshot.Books.Count && before.SequenceEqual(SHA256.HashData(File.ReadAllBytes(valid))), "reconciliation backup preserves source data and original file");

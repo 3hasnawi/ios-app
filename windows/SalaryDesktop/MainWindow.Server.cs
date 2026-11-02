@@ -102,7 +102,7 @@ public partial class MainWindow
         UiPreferences.Current.ServerPending = false; UiPreferences.Save();
         if (UiPreferences.Current.ServerSeen is { } seen && latest <= seen.AddSeconds(2)) return;
         var answer = Ui.Message(this,
-            $"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)})، غالباً من الآيفون. لم يُرفع شيء فوقها.\n\nنعم: نزّلها وافتحها هنا الآن (يُنصح بها إذا كانت نسخة الآيفون أحدث).\nلا: أبقِ بيانات ويندوز؛ لن يُرفع إلى السيرفر تلقائياً حتى تسترجع نسخته أو تؤكد الاستبدال من «نسخ الآن».",
+            $"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)}). لم يُرفع شيء فوقها.\n\nنعم: نزّلها وافتحها هنا الآن (إذا كانت أحدث من بيانات هذا الجهاز).\nلا: أبقِ بيانات ويندوز؛ لن يُرفع إلى السيرفر تلقائياً حتى تسترجع نسخته أو تؤكد الاستبدال من «نسخ الآن».",
             "نسخة موجودة على السيرفر", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Yes) await RestoreServerCopy();
         else MarkServerNewer($"على السيرفر نسخة رُفعت {Ago(latest.LocalDateTime)} ({SizeText(status.Bytes)}). لم يُرفع شيء فوقها؛ استرجعها أولاً.");
@@ -267,7 +267,18 @@ public partial class MainWindow
             await BackupServer.DownloadLatest(ServerHttp, url, token, temporary);
             // لا يُنسب التنزيل إلى تاريخ نسخة تغيّرت أثناء النقل (مثل الآيفون).
             if ((await BackupServer.Status(ServerHttp, url, token)).Latest != latest) throw new InvalidDataException("تغيّرت نسخة السيرفر أثناء التنزيل؛ أعد المحاولة.");
+            DateTimeOffset? fileCreated;
+            try { fileCreated = await Task.Run(() => BackupReader.CreatedAt(temporary)); }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException) { fileCreated = null; }
             EndLoading("*");
+            // وقت الرفع من السيرفر وتاريخ الإنشاء من فهرس الملف شيئان مختلفين (مثل نافذة الآيفون)؛ لا يُنسب أي منهما إلى جهاز.
+            static string When(DateTimeOffset moment) => moment.ToLocalTime().ToString("yyyy/MM/dd HH:mm", Numbers);
+            var answer = Ui.Message(this,
+                $"وقت رفع الملف إلى السيرفر: {When(latest)}\nتاريخ الإنشاء المسجّل داخل الملف: {(fileCreated is { } created ? When(created) : "غير مسجّل")}\n" +
+                "النسخ التي حفظتها نسخ ويندوز السابقة قد تحمل تاريخ إنشاء أقدم من وقت حفظها؛ ووقت الرفع لا يحدد الجهاز أو محتوى التعديلات.\n\n" +
+                "ستُفحص النسخة ثم تُفتح هنا، وتبقى تعديلات النسخة الحالية محفوظة على هذا الجهاز. هل تريد فتحها؟",
+                "استرجاع من السيرفر", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes) return;
             // بعد فتحها هنا يصبح هذا الجهاز على آخر نسخة، فيُسمح بالرفع بعد ذلك.
             if (await OpenBackupFile(temporary))
             {

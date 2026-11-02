@@ -19,6 +19,10 @@ public sealed record BackupSnapshot(string SourcePath, string SourceDigest, int 
 {
     /// كتب أُضيفت أو استُبدل ملفها في ويندوز: المعرّف ← مسار PDF المحلي (من LocalArchiveStore)؛ الباقي يُقرأ من ملف النسخة.
     public IReadOnlyDictionary<Guid, string>? LocalBookFiles { get; init; }
+    /// تاريخ إنشاء النسخة من manifest.json بثواني الآيفون (منذ ٢٠٠١ UTC)؛ null إن غاب أو لم يكن رقماً.
+    public double? CreatedAt { get; init; }
+    public DateTimeOffset? Created => IosDate(CreatedAt);
+    public static DateTimeOffset? IosDate(double? seconds) => seconds is { } value && double.IsFinite(value) && Math.Abs(value) < 4e9 ? new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(value) : null;
 }
 
 public static class BackupReader
@@ -27,7 +31,18 @@ public static class BackupReader
     private const int MaximumLineCharacters = 2_000_000;
     private const decimal MaximumAmount = 9_007_199_254_740_991m;
     private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true, MaxDepth = 64 };
-    private sealed record Manifest(int Version, string[] Months, int Employees, int Deductions, int Staff, int? Accounts, int? Books);
+    private sealed record Manifest(int Version, string[] Months, int Employees, int Deductions, int Staff, int? Accounts, int? Books, JsonElement? CreatedAt = null);
+    private static double? Seconds(JsonElement? value) => value is { ValueKind: JsonValueKind.Number } number && number.TryGetDouble(out var seconds) ? seconds : null;
+    /// تاريخ الإنشاء المسجّل في فهرس ملف نسخة دون قراءة بقية الملف (لعرضه قبل الاسترجاع).
+    public static DateTimeOffset? CreatedAt(string file)
+    {
+        using var zip = ZipFile.OpenRead(file);
+        var entry = zip.GetEntry("manifest.json") ?? throw new InvalidDataException("الملف ليس نسخة احتياطية من التطبيق.");
+        if (entry.Length > 1_000_000) throw new InvalidDataException("فهرس النسخة غير صالح.");
+        using var stream = entry.Open();
+        var manifest = JsonSerializer.Deserialize<Manifest>(stream, Options) ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
+        return BackupSnapshot.IosDate(Seconds(manifest.CreatedAt));
+    }
     private sealed record MonthData(string Name, int EmployeeCount, int DeductionCount);
     private sealed record EmployeeData(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
     private sealed record DeductionData(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
@@ -172,6 +187,6 @@ public static class BackupReader
             deductions.Select(d => new Deduction(d.Month, d.Name, d.Title, d.Amount, d.Note ?? "", d.Rank ?? "")).ToArray(),
             staffCount,
             accounts.Select(a => new ExecutionAccount(a.Entity, a.Iban ?? "", a.Branch ?? "", a.Swift ?? "", a.LocalAccount)).ToArray(),
-            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity, b.CreatedAt)).ToArray(), settingsPlists);
+            books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity, b.CreatedAt)).ToArray(), settingsPlists) { CreatedAt = Seconds(manifest.CreatedAt) };
     }
 }
