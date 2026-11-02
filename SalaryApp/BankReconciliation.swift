@@ -173,7 +173,8 @@ nonisolated enum BankReconciliation {
         return ledger
     }
     static func calculate(_ period: Period) throws -> Totals {
-        guard !period.month.isEmpty, day(period.start) <= day(period.end),
+        guard period.confirmedAt.map({ $0.timeIntervalSinceReferenceDate.isFinite && (0...7_000_000_000).contains($0.timeIntervalSinceReferenceDate) }) ?? true,
+              !period.month.isEmpty, day(period.start) <= day(period.end),
               period.openingBalance >= 0, period.openingBalance <= maximumAmount,
               period.memberFirst.count <= 150, period.memberSecond.count <= 150,
               [period.firstRank, period.firstPosition, period.firstDate, period.secondRank, period.secondPosition, period.secondDate].allSatisfy({ value in
@@ -248,19 +249,23 @@ nonisolated enum BankReconciliation {
     static func checkLocked(before: [Period], after: [Period]) throws {
         for old in before where old.isConfirmed {
             guard let next = after.first(where: { $0.id == old.id }) else { throw Failure.locked }
-            if next.isConfirmed && next != old { throw Failure.locked }
+            var unlocked = old
+            unlocked.confirmedAt = nil
+            guard next == old || next == unlocked else { throw Failure.locked }
         }
     }
 }
 
 /// قيمة JSON عامة لحفظ الحقول غير المعروفة في دفتر المطابقة.
 nonisolated indirect enum LedgerJSON: Codable, Equatable, Sendable {
-    case null, bool(Bool), number(Double), string(String), array([LedgerJSON]), object([String: LedgerJSON])
+    case null, bool(Bool), integer(Int64), unsigned(UInt64), decimal(Decimal), string(String), array([LedgerJSON]), object([String: LedgerJSON])
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() { self = .null }
         else if let value = try? container.decode(Bool.self) { self = .bool(value) }
-        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+        else if let value = try? container.decode(UInt64.self) { self = .unsigned(value) }
+        else if let value = try? container.decode(Decimal.self) { self = .decimal(value) }
         else if let value = try? container.decode(String.self) { self = .string(value) }
         else if let value = try? container.decode([LedgerJSON].self) { self = .array(value) }
         else { self = .object(try container.decode([String: LedgerJSON].self)) }
@@ -270,7 +275,9 @@ nonisolated indirect enum LedgerJSON: Codable, Equatable, Sendable {
         switch self {
         case .null: try container.encodeNil()
         case .bool(let value): try container.encode(value)
-        case .number(let value): try container.encode(value)
+        case .integer(let value): try container.encode(value)
+        case .unsigned(let value): try container.encode(value)
+        case .decimal(let value): try container.encode(value)
         case .string(let value): try container.encode(value)
         case .array(let value): try container.encode(value)
         case .object(let value): try container.encode(value)

@@ -56,6 +56,28 @@ import CryptoKit
         var reportedStatement = BankReconciliation.preparedSignatures(statement)
         reportedStatement.memberFirst = "اسم تجريبي أول"; reportedStatement.memberSecond = "اسم تجريبي ثان"
         reportedStatement.movements[1].description = "تمويل رواتب شهر ايلول"
+        var lockedStatement = statement
+        lockedStatement.confirmedAt = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        lockedStatement.extra = ["futureNumber": .integer(9_007_199_254_740_993), "futureObject": .object(["value": .bool(true)])]
+        lockedStatement.movements[0].extra = ["futureLabel": .string("قيمة وهمية")]
+        let lockedBytes = try JSONEncoder().encode(BankReconciliation.Ledger(periods: [lockedStatement]))
+        let lockedDecoded = try BankReconciliation.decode(lockedBytes)
+        try check(lockedDecoded.periods == [lockedStatement], "confirmed reconciliation and unknown fields roundtrip")
+        try BankReconciliation.checkLocked(before: [lockedStatement], after: [lockedStatement])
+        var unlocked = lockedStatement; unlocked.confirmedAt = nil
+        try BankReconciliation.checkLocked(before: [lockedStatement], after: [unlocked])
+        var modifiedUnlock = unlocked; modifiedUnlock.openingBalance += 1
+        do { try BankReconciliation.checkLocked(before: [lockedStatement], after: [modifiedUnlock]); throw Failure(errorDescription: "modified locked period accepted") }
+        catch BankReconciliation.Failure.locked { }
+        do { try BankReconciliation.checkLocked(before: [lockedStatement], after: []); throw Failure(errorDescription: "deleted locked period accepted") }
+        catch BankReconciliation.Failure.locked { }
+        let hugeValue = try JSONDecoder().decode(LedgerJSON.self, from: Data("9007199254740993".utf8))
+        try check(hugeValue == .integer(9_007_199_254_740_993), "unknown integer retains precision")
+        let hugeEncoded = try JSONEncoder().encode(hugeValue)
+        try check(String(data: hugeEncoded, encoding: .utf8) == "9007199254740993", "unknown integer encodes exactly")
+        let unknownFraction = try JSONDecoder().decode(LedgerJSON.self, from: Data("123456789.123456789".utf8))
+        let fractionRoundTrip = try JSONDecoder().decode(LedgerJSON.self, from: JSONEncoder().encode(unknownFraction))
+        try check(unknownFraction == fractionRoundTrip, "unknown decimal retains value")
         let reportedPDF = try await BankReconciliationPDF.make(reportedStatement, complete: true)
         defer { try? FileManager.default.removeItem(at: reportedPDF) }
         try check(PDFDocument(url: reportedPDF) != nil, "reconciliation PDF Arabic funding description")

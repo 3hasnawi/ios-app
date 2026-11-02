@@ -27,6 +27,7 @@ struct BankReconciliationView: View {
     @State private var showSuggestions = false
     @State private var showContractReview = false
     @State private var showConfirmPeriod = false
+    @State private var showManualConfirmation = false
     @State private var showUnconfirm = false
 
     init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
@@ -132,13 +133,18 @@ struct BankReconciliationView: View {
             Button(tr("معاينة PDF", "Preview PDF")) { preview() }
         } message: { Text(tr("راجع الرصيد والحركات غير المؤشرة مع كشف المصرف الورقي قبل اعتماد الكشف.", "Review the balance and unchecked movements against the paper bank statement before accepting the statement.")) }
         .confirmationDialog(tr("اعتماد مطابقة الفترة", "Confirm reconciliation"), isPresented: $showConfirmPeriod, titleVisibility: .visible) {
-            Button(isComplete ? tr("اعتماد وحفظ", "Confirm and save") : tr("أعتمد المطابقة يدوياً وأتحمل التنبيهات", "Confirm manually and accept the alerts")) {
-                var candidate = period; candidate.confirmedAt = Date(); persist(candidate)
+            Button(tr("متابعة الاعتماد", "Continue")) {
+                if isComplete { confirmPeriod() }
+                else { showManualConfirmation = true }
             }
         } message: {
-            Text(isComplete
-                 ? tr("راجعت الحركات والرصيد مع كشف المصرف الورقي. تُحفظ الفترة «معتمدة» وتُقفل، ويُفتح كشفها في أي وقت. للتعديل لاحقاً استخدم «إلغاء الاعتماد».", "I reviewed the movements and balance against the paper statement. The period is saved as confirmed and locked; its statement can be opened any time. Use Remove confirmation to edit later.")
-                 : tr("توجد تنبيهات ظاهرة. أؤكد أنني راجعت الحركات والمبالغ مع كشف المصرف الورقي وأتحمل مسؤولية التنبيهات. تُحفظ الفترة «معتمدة» وتُقفل.", "Alerts are shown. I confirm that I reviewed the movements against the paper statement and accept the alerts. The period is saved as confirmed and locked."))
+            Text(tr("راجعت الحركات والرصيد مع كشف المصرف الورقي. بعد الاعتماد تُقفل الفترة حتى إلغاء الاعتماد.", "I reviewed the movements and balance against the paper bank statement. Confirmation locks the period until removed."))
+        }
+        .alert(tr("تنبيهات المطابقة", "Reconciliation alerts"), isPresented: $showManualConfirmation) {
+            Button(tr("أعتمد يدوياً رغم التنبيهات", "Confirm manually despite alerts"), role: .destructive) { confirmPeriod() }
+            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(tr("توجد تنبيهات في الملخص. أؤكد أنني راجعتها مع كشف المصرف وأتحمل مسؤولية الاعتماد اليدوي.", "There are alerts in the summary. I reviewed them against the bank statement and accept responsibility for manual confirmation."))
         }
         .confirmationDialog(tr("إلغاء اعتماد الفترة", "Remove confirmation"), isPresented: $showUnconfirm, titleVisibility: .visible) {
             Button(tr("إلغاء الاعتماد للتعديل", "Remove confirmation to edit"), role: .destructive) {
@@ -370,6 +376,15 @@ struct BankReconciliationView: View {
             stored = try JSONEncoder().encode(ledger); period = value
             BackupManager.shared.markChanged(); return true
         } catch { self.error = error.localizedDescription; return false }
+    }
+    private func confirmPeriod() {
+        guard editable, totals != nil, !period.movements.isEmpty, unmatched == 0 else {
+            error = tr("تغيّرت بيانات الفترة؛ راجع الحركات قبل الاعتماد.", "The period changed; review the movements before confirming.")
+            return
+        }
+        var candidate = period
+        candidate.confirmedAt = Date()
+        persist(candidate)
     }
     private func preview() {
         guard persist(period) else { return }

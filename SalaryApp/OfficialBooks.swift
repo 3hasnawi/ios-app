@@ -261,9 +261,10 @@ final class OfficialBookStore {
         let pages = try OfficialBookPDF.pageCount(pdf)
         let fm = FileManager.default
         let destination = OfficialBookFiles.file(book.id)
-        let backup = OfficialBookFiles.root.appendingPathComponent("old-\(UUID().uuidString).pdf")
+        let backup = OfficialBookFiles.root.deletingLastPathComponent().appendingPathComponent("OfficialBook-recovery-\(UUID().uuidString).pdf")
         try fm.copyItem(at: destination, to: backup)
-        defer { try? fm.removeItem(at: backup) }
+        var keepRecovery = false
+        defer { if !keepRecovery { try? fm.removeItem(at: backup) } }
         var next = books
         next[index].pages = pages
         do {
@@ -271,9 +272,17 @@ final class OfficialBookStore {
             try OfficialBookFiles.validate(next[index])
             try OfficialBookFiles.write(next)
         } catch {
-            try? fm.removeItem(at: destination)
-            try? fm.copyItem(at: backup, to: destination)
-            throw error
+            let originalError = error
+            do {
+                let previous = try Data(contentsOf: backup)
+                try previous.write(to: destination, options: [.atomic, .completeFileProtection])
+            } catch {
+                keepRecovery = true
+                let message = tr("تعذّر استرجاع ملف الكتاب الأصلي بعد فشل الاستبدال. حُفظت نسخة الاسترجاع في: \(backup.path)", "Could not restore the original document after replacement failed. A recovery copy was kept at: \(backup.path)")
+                loadError = message
+                throw NSError(domain: "OfficialBooks", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+            }
+            throw originalError
         }
         books = next
         revision += 1
