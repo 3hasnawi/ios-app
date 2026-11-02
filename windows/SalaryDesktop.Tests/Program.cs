@@ -287,6 +287,14 @@ try
     catch (InvalidDataException) { }
     try { _ = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, []); throw new InvalidOperationException("confirmed period deleted"); }
     catch (InvalidDataException) { }
+    try { _ = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, [BankReconciliation.Unconfirm(confirmedPeriod) with { OpeningBalance = 7 }]); throw new InvalidOperationException("unconfirm with edits accepted"); }
+    catch (InvalidDataException) { }
+    using (var bigNumbers = JsonDocument.Parse("{\"futureNumber\":9007199254740993,\"futureFraction\":123456789.123456789}"))
+    {
+        var precise = confirmedPeriod with { Extra = System.Text.Json.Nodes.JsonNode.Parse(bigNumbers.RootElement.GetRawText())!.ToJsonString() };
+        var preciseRead = BankReconciliation.ReadFromBackup(iphoneLedgerSnapshot with { SettingsPlists = new Dictionary<string, byte[]> { ["bankReconciliations"] = BankReconciliation.LedgerPlist([precise]) } }).Single();
+        Check(preciseRead.Extra!.Contains("9007199254740993", StringComparison.Ordinal) && preciseRead.Extra.Contains("123456789.123456789", StringComparison.Ordinal), "unknown ledger numbers keep their exact digits");
+    }
     var lockReopened = lockStore.Save(iphoneLedgerSnapshot, lockConfirmed, [BankReconciliation.Unconfirm(confirmedPeriod)]);
     var lockEdited = lockStore.Save(iphoneLedgerSnapshot, lockReopened, [BankReconciliation.Unconfirm(confirmedPeriod) with { OpeningBalance = 5 }]);
     Check(lockEdited.Periods.Single().OpeningBalance == 5 && !lockEdited.Periods.Single().IsConfirmed, "unconfirming a period allows editing again");

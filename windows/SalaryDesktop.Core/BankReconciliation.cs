@@ -58,7 +58,8 @@ public static class BankReconciliation
         {
             var next = after.FirstOrDefault(p => p.Id == old.Id);
             if (next is null) throw Invalid($"فترة {old.Month} معتمدة؛ ألغِ اعتمادها قبل حذفها.");
-            if (next.IsConfirmed && !Same(old, next)) throw Invalid($"فترة {old.Month} معتمدة ومقفلة؛ ألغِ اعتمادها قبل تعديلها.");
+            // إلغاء الاعتماد يُحفظ وحده: لا يُقبل معه أي تغيير آخر في الفترة في الحفظ نفسه (نفس قاعدة الآيفون).
+            if (!Same(old, next) && !Same(Unconfirm(old), next)) throw Invalid($"فترة {old.Month} معتمدة ومقفلة؛ ألغِ اعتمادها أولاً ثم عدّلها.");
         }
     }
     public static bool Same(BankPeriod a, BankPeriod b) => JsonSerializer.SerializeToUtf8Bytes(a).AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(b));
