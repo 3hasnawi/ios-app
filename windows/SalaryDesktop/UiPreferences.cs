@@ -23,6 +23,8 @@ internal sealed class UiPreferences
     /// خط الواجهة (مفتاح من AppFonts.Options) وشكل الأرقام: latin أو arabic.
     public string? Font { get; set; }
     public string? Digits { get; set; }
+    /// تكبير واجهة ويندوز والخط كنسبة مئوية؛ محلي لهذا الجهاز.
+    public int? InterfaceScale { get; set; }
     public Dictionary<string, PendingChanges>? Pending { get; set; }
     /// قفل البرنامج: كلمة السر مخزنة بصمةً (PBKDF2) لا نصاً.
     public bool LockEnabled { get; set; }

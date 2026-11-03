@@ -10,7 +10,7 @@ namespace SalaryDesktop;
 /// المورد AppFont ديناميكي في كل النوافذ، فتغيير الخط يسري فوراً. الأرقام: إنجليزية (0-9) أو هندية (٠-٩) لكل النصوص المعروضة.
 public static class AppFonts
 {
-    /// Installed = خط من ويندوز نفسه (Arial مثبت في كل نسخ ويندوز ولا يُضمَّن في البرنامج)؛ Bold = كل نصوص الواجهة بالوزن العريض.
+    /// Installed = خط من ويندوز نفسه (مثل Arial وTimes New Roman، لا يُضمَّن في البرنامج)؛ Bold = كل نصوص الواجهة بالوزن العريض.
     public sealed record Option(string Key, string Name, string Family, string Note, bool Installed = false, bool Bold = false)
     {
         public FontFamily Font => Installed ? new FontFamily(Family + ", Segoe UI") : new FontFamily(new Uri("pack://application:,,,/SalaryDesktop;component/"), "./Fonts/#" + Family + ", Segoe UI");
@@ -26,6 +26,10 @@ public static class AppFonts
         new("tajawal", "Tajawal", "Tajawal", "خفيف ومرتب"),
         new("almarai", "Almarai", "Almarai", "بسيط وواضح"),
         new("plex", "IBM Plex Sans Arabic", "IBM Plex Sans Arabic", "رفيع"),
+        new("alexandria", "Alexandria", "Alexandria", "متوازن وواضح للجداول"),
+        new("readex", "Readex Pro", "Readex Pro", "واضح للقوائم والعناوين"),
+        new("rubik", "Rubik", "Rubik", "بسيط ومناسب للجداول"),
+        new("times", "Times New Roman", "Times New Roman", "خط كلاسيكي من ويندوز", Installed: true),
         new("arial", "Arial عادي", "Arial", "خط الكشوف المعتمد بوزن عادي", Installed: true),
         new("arial-bold", "Arial عريض", "Arial", "خط الكشوف المعتمد بوزن عريض لكل النصوص", Installed: true, Bold: true),
     ];
@@ -34,6 +38,33 @@ public static class AppFonts
     public static string CurrentFont { get; private set; } = DefaultFont;
     public static bool EasternDigits { get; private set; }
     private static bool hooked;
+    private static bool scaleHooked;
+    public static int InterfaceScale { get; private set; } = 100;
+    public static int NormalizeScale(int? value) => value is 90 or 100 or 110 or 120 ? value.Value : 100;
+    /// تكبير جذور النوافذ كي تكبر الأزرار والمسافات مع النص ولا تنقص الكتابة داخلها.
+    public static void ApplyScale(int? value)
+    {
+        InterfaceScale = NormalizeScale(value);
+        if (!scaleHooked)
+        {
+            scaleHooked = true;
+            EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler((sender, e) =>
+            { if (sender is Window window && ReferenceEquals(e.OriginalSource, window)) ScaleWindow(window); }));
+            EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent, new RoutedEventHandler((sender, _) =>
+            { if (sender is ContextMenu menu) ScaleElement(menu); }));
+        }
+        foreach (Window window in Application.Current.Windows) ScaleWindow(window);
+    }
+    private static void ScaleWindow(Window window)
+    {
+        if (window.Content is FrameworkElement root) ScaleElement(root);
+    }
+    private static void ScaleElement(FrameworkElement root)
+    {
+        var factor = InterfaceScale / 100d;
+        root.LayoutTransform = factor == 1 ? Transform.Identity : new ScaleTransform(factor, factor);
+    }
+
 
     public static Option Find(string? key) => Options.FirstOrDefault(o => o.Key == key) ?? Options[0];
 

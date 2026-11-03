@@ -162,6 +162,23 @@ static class Program
                 var families = Fonts.GetFontFamilies(new Uri("pack://application:,,,/SalaryDesktop;component/Fonts/")).ToArray();
                 foreach (var option in AppFonts.Options.Where(o => !o.Installed))
                     Check(families.Any(f => f.Source.Contains("#" + option.Family, StringComparison.Ordinal)), "embedded font family missing: " + option.Family);
+                foreach (var familyName in new[] { "Alexandria", "Readex Pro", "Rubik" })
+                {
+                    var family = families.First(f => f.Source.EndsWith("#" + familyName, StringComparison.Ordinal));
+                    var sizes = family.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet();
+                    Check(sizes.SetEquals([400, 500, 600]), familyName + " font weights are missing");
+                }
+                Check(AppFonts.Find("times").Family == "Times New Roman" && AppFonts.Find("times").Installed, "Windows Times New Roman option missing");
+                foreach (var key in new[] { "alexandria", "readex", "rubik", "times" })
+                {
+                    AppFonts.Apply(key, "latin");
+                    Check(AppFonts.CurrentFont == key && Application.Current.Resources["AppFont"] is FontFamily selected && selected.Source.Contains(AppFonts.Find(key).Family, StringComparison.Ordinal), "font selection did not apply: " + key);
+                }
+                AppFonts.Apply(AppFonts.DefaultFont, "latin");
+                AppFonts.ApplyScale(120);
+                Check(AppFonts.InterfaceScale == 120 && ((FrameworkElement)main.Content).LayoutTransform.Value.M11 == 1.2, "interface scale did not apply to the main window");
+                AppFonts.ApplyScale(999);
+                Check(AppFonts.InterfaceScale == 100 && ((FrameworkElement)main.Content).LayoutTransform.Value.IsIdentity, "invalid scale was not reset to the default");
                 var kufi = families.FirstOrDefault(f => f.Source.EndsWith("#Noto Kufi Arabic", StringComparison.Ordinal)) ?? families.First(f => f.Source.Contains("#Noto Kufi Arabic", StringComparison.Ordinal));
                 var weights = kufi.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet();
                 Check(weights.SetEquals([400, 500, 600]), "Noto Kufi Arabic (Regular, Medium, SemiBold) weights: " + string.Join(",", weights));
@@ -437,6 +454,14 @@ static class Program
                     servicePicker.SelectedIndex = 0; MainWindow.SaveServerToken(""); await Task.Delay(200);
                     // الخط والأرقام من الإعدادات: Cairo مع أرقام هندية ثم العودة إلى الافتراضي.
                     ((FrameworkElement)main.FindName("FontPicker")).BringIntoView(); await Task.Delay(400); Shot(main, "32-settings-font");
+                    var scalePicker = (ComboBox)main.FindName("InterfaceScalePicker");
+                    scalePicker.SelectedItem = scalePicker.Items.Cast<ComboBoxItem>().Single(i => Equals(i.Tag, "120")); await Task.Delay(400);
+                    Check(AppFonts.InterfaceScale == 120, "interface scale setting did not apply");
+                    ((FrameworkElement)main.FindName("FontPicker")).BringIntoView(); await Task.Delay(400); Shot(main, "46-settings-font-large");
+                    scalePicker.SelectedItem = scalePicker.Items.Cast<ComboBoxItem>().Single(i => Equals(i.Tag, "100")); await Task.Delay(300);
+                    Check(AppFonts.InterfaceScale == 100, "interface scale setting did not return to default");
+                    AppFonts.Apply("alexandria", "latin"); await Task.Delay(300); Shot(main, "47-settings-font-alexandria");
+                    AppFonts.Apply("times", "latin"); await Task.Delay(300); Shot(main, "48-settings-font-times");
                     AppFonts.Apply("cairo", "arabic"); await Task.Delay(300);
                     Check(((FontFamily)Application.Current.Resources["AppFont"]).Source.Contains("#Cairo", StringComparison.Ordinal) && NumberSubstitution.GetSubstitution(main) == NumberSubstitutionMethod.Traditional, "font and digits were not applied");
                     await Navigate("payroll"); await Task.Delay(700); Shot(main, "33-font-cairo-eastern");

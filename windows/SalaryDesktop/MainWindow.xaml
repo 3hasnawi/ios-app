@@ -886,6 +886,15 @@
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <TextBlock Text="حجم الواجهة والخط" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                  <ComboBox x:Name="InterfaceScalePicker" Width="160" SelectionChanged="InterfaceScaleChanged" ToolTip="يكبّر الخط والأزرار والجداول معاً؛ لا يغيّر الكشوف المصدّرة">
+                    <ComboBoxItem Tag="90" Content="صغير · ٩٠٪"/>
+                    <ComboBoxItem Tag="100" Content="عادي · ١٠٠٪"/>
+                    <ComboBoxItem Tag="110" Content="كبير · ١١٠٪"/>
+                    <ComboBoxItem Tag="120" Content="أكبر · ١٢٠٪"/>
+                  </ComboBox>
+                </StackPanel>
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Text="الأرقام" VerticalAlignment="Center" Margin="0,0,10,0"/>
                   <Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2">

@@ -22,6 +22,7 @@ public partial class MainWindow
             if (FontPicker.ItemsSource is null) FontPicker.ItemsSource = AppFonts.Options;
             FontPicker.SelectedItem = AppFonts.Find(AppFonts.CurrentFont);
             DigitsPicker.SelectedIndex = AppFonts.EasternDigits ? 1 : 0;
+            InterfaceScalePicker.SelectedItem = InterfaceScalePicker.Items.OfType<ComboBoxItem>().First(i => Equals(i.Tag, AppFonts.InterfaceScale.ToString(Numbers)));
             LockMinutesBox.SelectedItem = LockMinutesBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => Equals(i.Tag, saved.LockMinutes.ToString(Numbers))) ?? LockMinutesBox.Items[1];
         }
         finally { syncingSettings = false; }
@@ -41,6 +42,13 @@ public partial class MainWindow
         UiPreferences.Current.Font = option.Key;
         AppFonts.Apply(option.Key, UiPreferences.Current.Digits);
         SaveSettings("الخط");
+    }
+    private void InterfaceScaleChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (syncingSettings || InterfaceScalePicker.SelectedItem is not ComboBoxItem { Tag: string tag } || !int.TryParse(tag, out var size)) return;
+        UiPreferences.Current.InterfaceScale = AppFonts.NormalizeScale(size);
+        AppFonts.ApplyScale(UiPreferences.Current.InterfaceScale);
+        SaveSettings("حجم الواجهة والخط");
     }
     private void DigitsChanged(object sender, SelectionChangedEventArgs e)
     {
