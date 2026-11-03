@@ -125,7 +125,7 @@ public static class SharedPayrollCandidate
         }
         finally { try { File.Delete(merged); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
-    private static Dictionary<string, byte[]> ReadSchemas(ZipArchiveEntry entry)
+    internal static Dictionary<string, byte[]> ReadSchemas(ZipArchiveEntry entry)
     {
         var schemas = new Dictionary<string, byte[]>(StringComparer.Ordinal); long size = 0;
         using var input = entry.Open();

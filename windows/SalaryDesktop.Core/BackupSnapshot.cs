@@ -81,7 +81,12 @@ public static class BackupReader
         catch { if (created) { try { File.Delete(destination); } catch (IOException) { } } throw; }
     }
 
-    public static BackupSnapshot Read(string file, CancellationToken cancellation = default)
+    public static BackupSnapshot Read(string file, CancellationToken cancellation = default) => ReadCore(file, cancellation, allowCandidate: false);
+
+    /// قارئ تجريبي صريح للمرشح؛ لا تستخدمه واجهة الاسترجاع أو السيرفر قبل اكتمال اختبارات التبادل.
+    public static BackupSnapshot ReadCandidate(string file, CancellationToken cancellation = default) => ReadCore(file, cancellation, allowCandidate: true);
+
+    private static BackupSnapshot ReadCore(string file, CancellationToken cancellation, bool allowCandidate)
     {
         using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
         var digest = Convert.ToHexString(SHA256.HashData(stream));
@@ -117,12 +122,38 @@ public static class BackupReader
             return result;
         }
         var manifest = ReadJson<Manifest>("manifest.json");
-        if (manifest.Version is < 1 or > 6 || manifest.Months is null || manifest.Employees < 0 || manifest.Deductions < 0 || manifest.Staff < 0)
+        if (manifest.Version < 1 || manifest.Version > (allowCandidate ? 7 : 6) || manifest.Months is null || manifest.Employees < 0 || manifest.Deductions < 0 || manifest.Staff < 0)
             throw new InvalidDataException("إصدار النسخة أو فهرسها غير مدعوم.");
         if (manifest.Months.Length == 0 && manifest.Employees == 0 && manifest.Deductions == 0 && manifest.Staff == 0 && (manifest.Accounts ?? 0) == 0 && (manifest.Books ?? 0) == 0)
             throw new InvalidDataException("النسخة لا تحتوي بيانات محفوظة.");
         var months = ReadLines<MonthData>("months.jsonl");
-        var employees = ReadLines<EmployeeData>("employees.jsonl");
+        List<EmployeeData> employees;
+        if (manifest.Version == 7)
+        {
+            if (!allowCandidate) throw new InvalidDataException("إصدار النسخة غير مدعوم.");
+            using (var originalManifest = Required("v7/original-manifest.json").Open())
+            using (var currentManifest = Required("manifest.json").Open())
+            {
+                var before = System.Text.Json.Nodes.JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس المصدر غير صالح.");
+                var after = System.Text.Json.Nodes.JsonNode.Parse(currentManifest)?.AsObject() ?? throw new InvalidDataException("فهرس المرشح غير صالح.");
+                if (before["version"]?.GetValue<int>() is not (>= 1 and <= 6)) throw new InvalidDataException("إصدار فهرس المصدر غير صالح.");
+                before["version"] = 7;
+                if (!System.Text.Json.Nodes.JsonNode.DeepEquals(before, after)) throw new InvalidDataException("فهرس المرشح لا يطابق فهرس المصدر.");
+            }
+            var schemas = SharedPayrollCandidate.ReadSchemas(Required("v7/payroll-schemas.jsonl"));
+            employees = [];
+            using var packed = Required("employees.jsonl").Open();
+            foreach (var line in SharedPayrollCandidate.Lines(packed))
+            {
+                if ((employees.Count & 1023) == 0) cancellation.ThrowIfCancellationRequested();
+                var row = JsonSerializer.Deserialize<SharedPayrollBackupRow.Packed>(line) ?? throw new InvalidDataException("سجل رواتب تجريبي غير صالح.");
+                var raw = SharedPayrollBackupRow.Unpack(row, schemas);
+                if (raw.Length > 8_000_000) throw new InvalidDataException("سجل الرواتب المستعاد كبير جداً.");
+                employees.Add(JsonSerializer.Deserialize<EmployeeData>(raw, Options) ?? throw new InvalidDataException("سجل رواتب مستعاد غير صالح."));
+                if (employees.Count > manifest.Employees) throw new InvalidDataException("عدد سجلات الرواتب أكبر من الفهرس.");
+            }
+        }
+        else employees = ReadLines<EmployeeData>("employees.jsonl");
         var deductions = ReadLines<DeductionData>("deductions.jsonl");
         int CountValidatedLines(string name)
         {

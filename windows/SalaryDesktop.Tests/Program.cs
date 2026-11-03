@@ -384,6 +384,11 @@ try
     Check(SHA256.HashData(File.ReadAllBytes(salaryBackup)).AsSpan().SequenceEqual(beforeCandidate), "candidate overwrite refusal preserves source");
     try { _ = BackupReader.Read(candidatePath); throw new InvalidOperationException("old reader accepted candidate format"); }
     catch (InvalidDataException) { }
+    var candidateRead = BackupReader.ReadCandidate(candidatePath);
+    Check(candidateRead.Version == 7 && candidateRead.Months.SequenceEqual(restoredSalary.Months) &&
+          candidateRead.Deductions.SequenceEqual(restoredSalary.Deductions) && candidateRead.Employees.Count == restoredSalary.Employees.Count &&
+          candidateRead.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!.AsSpan().SequenceEqual(restoredSalary.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!),
+        "explicit candidate reader restores current snapshot and exact raw columns");
     var unpackedPath = Path.Combine(root, "candidate-restored-original.zip");
     SharedPayrollCandidate.RestoreOriginal(candidatePath, unpackedPath);
     using (var beforeZip = ZipFile.OpenRead(salaryBackup))
@@ -461,6 +466,12 @@ try
             using var a = sourceEntry.Open(); using var b = other.Open();
             Check(SHA256.HashData(a).AsSpan().SequenceEqual(SHA256.HashData(b)), "Swift candidate round-trip preserves entry bytes");
         }
+        var swiftSnapshot = BackupReader.ReadCandidate(swiftCandidate);
+        var sourceSnapshot = BackupReader.Read(swiftSource);
+        Check(swiftSnapshot.Employees.Count == sourceSnapshot.Employees.Count &&
+              swiftSnapshot.Employees.Zip(sourceSnapshot.Employees).All(pair =>
+                  (pair.First.RawColumns ?? []).AsSpan().SequenceEqual(pair.Second.RawColumns ?? [])),
+            "candidate reader accepts Swift-produced payroll without changing raw columns");
         Console.WriteLine("C# restored Swift-produced candidate archive entries exactly.");
     }
     var corruptCandidate = Path.Combine(root, "candidate-corrupt.zip"); File.Copy(candidatePath, corruptCandidate);
@@ -472,7 +483,21 @@ try
     var failedRestore = Path.Combine(root, "candidate-failed-restore.zip");
     try { SharedPayrollCandidate.RestoreOriginal(corruptCandidate, failedRestore); throw new InvalidOperationException("corrupt candidate restored"); }
     catch (InvalidDataException) { }
+    try { _ = BackupReader.ReadCandidate(corruptCandidate); throw new InvalidOperationException("corrupt schema accepted by candidate reader"); }
+    catch (InvalidDataException) { }
     Check(!File.Exists(failedRestore) && !Directory.EnumerateFiles(root, ".salary-unpack-*.tmp").Any(), "corrupt candidate leaves no output or temporary file");
+    var corruptManifest = Path.Combine(root, "candidate-manifest-corrupt.zip"); File.Copy(candidatePath, corruptManifest);
+    using (var zip = ZipFile.Open(corruptManifest, ZipArchiveMode.Update))
+    {
+        var manifestEntry = zip.GetEntry("v7/original-manifest.json")!;
+        System.Text.Json.Nodes.JsonObject original;
+        using (var input = manifestEntry.Open()) original = System.Text.Json.Nodes.JsonNode.Parse(input)!.AsObject();
+        manifestEntry.Delete();
+        original["futureField"] = "tampered";
+        Entry(zip, "v7/original-manifest.json", original.ToJsonString());
+    }
+    try { _ = BackupReader.ReadCandidate(corruptManifest); throw new InvalidOperationException("mismatched candidate manifest accepted"); }
+    catch (InvalidDataException) { }
     var largeCandidateSource = Path.Combine(root, "large-candidate-source.zip");
     var longHeaders = Enumerable.Range(0, 100).Select(i => $"عمود رواتب واستقطاعات وهمي رقم {i}").ToArray();
     using (var archive = ZipFile.Open(largeCandidateSource, ZipArchiveMode.Create))
