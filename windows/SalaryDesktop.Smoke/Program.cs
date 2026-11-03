@@ -217,6 +217,8 @@ static class Program
                 Check(MainWindow.DescribeBackupIndicator(false, true, null, true, true, false, null).Text.Contains("أحدث"), "backup indicator did not show a newer server copy");
                 Check(MainWindow.DescribeBackupIndicator(false, false, "error", true, true, false, null).Text.Contains("فشل"), "backup indicator did not show an error");
                 Check(MainWindow.DescribeBackupIndicator(false, false, null, true, true, true, null).Text.Contains("تعديلات"), "backup indicator did not show pending changes");
+                Check(MainWindow.DescribeBackupIndicator(false, false, null, false, true, false, null).Text.Contains("لا توجد بيانات"), "backup indicator did not explain missing data");
+                Check(MainWindow.DescribeBackupIndicator(false, false, null, true, false, false, null).Text.Contains("إعدادات"), "backup indicator did not explain missing configuration");
                 Check(MainWindow.DescribeBackupIndicator(false, false, null, true, true, false, DateTime.Now).Text.Contains("آخر نسخة"), "backup indicator did not show the last backup");
                 await Navigate("payroll");
                 Check((backupIndicator.TranslatePoint(new Point(0, 0), main) - backupPosition).Length < 0.5 && (themeIndicator.TranslatePoint(new Point(0, 0), main) - themePosition).Length < 0.5 && (bellIndicator.TranslatePoint(new Point(0, 0), main) - bellPosition).Length < 0.5, "header icons moved during navigation");
@@ -325,9 +327,14 @@ static class Program
                     inspectorFilter.Text = "";
                     ((Button)main.FindName("InspectorDiscardBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Check(inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Branch").EditableValue == priorBranch && ((Button)main.FindName("InspectorInlineSaveBtn")).Visibility == Visibility.Collapsed, "discard did not restore the stored account");
+                    var stableBackupPosition = backupIndicator.TranslatePoint(new Point(0, 0), main);
+                    var stableThemePosition = themeIndicator.TranslatePoint(new Point(0, 0), main);
+                    var stableBellPosition = bellIndicator.TranslatePoint(new Point(0, 0), main);
                     foreach (var (tag, name) in new[] { ("home", "01-home"), ("payroll", "02-payroll"), ("deductions", "03-deductions"), ("staff", "04-staff"), ("archive", "05-archive"), ("groups", "06-groups"), ("bank", "07-bank"), ("transfer", "08-transfer"), ("accounts", "09-accounts"), ("settings", "10-settings") })
                     {
-                        await Navigate(tag); if (tag is "staff" or "bank" or "transfer" or "archive") await Task.Delay(1200); Shot(main, name);
+                        await Navigate(tag); if (tag is "staff" or "bank" or "transfer" or "archive") await Task.Delay(1200);
+                        Check((backupIndicator.TranslatePoint(new Point(0, 0), main) - stableBackupPosition).Length < 0.5 && (themeIndicator.TranslatePoint(new Point(0, 0), main) - stableThemePosition).Length < 0.5 && (bellIndicator.TranslatePoint(new Point(0, 0), main) - stableBellPosition).Length < 0.5, "header icons moved on page " + tag);
+                        Shot(main, name);
                         if (tag == "archive") Check(((ListBox)main.FindName("ArchiveList")).Items.Count == 2, "archive list did not show the books");
                     }
                     await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
