@@ -212,6 +212,15 @@ try
     try { BackupDestination.Guard(salaryBackup, snapshot); throw new InvalidOperationException("backup file overwritten by a copy missing a month"); }
     catch (InvalidDataException) { }
     var restoredSalary = BackupReader.Read(salaryBackup);
+    var rawBefore = combinedPayroll.Snapshot.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!;
+    var rawAfter = restoredSalary.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!;
+    using (var beforeJson = JsonDocument.Parse(rawBefore))
+    using (var afterJson = JsonDocument.Parse(rawAfter))
+        Check(rawAfter.Length < rawBefore.Length && JsonElement.DeepEquals(beforeJson.RootElement, afterJson.RootElement), "backup compacts original columns without changing any values or headers");
+    var unknownRaw = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "الاسم", "الاسم", "" }, values = new[] { "اختبار", "", "س" }, future = new { note = "يبقى كما هو" } });
+    var unknownSource = combinedPayroll.Snapshot with { Employees = combinedPayroll.Snapshot.Employees.Select(e => e.Month == salaryPreview.Month ? e with { RawColumns = unknownRaw } : e).ToArray() };
+    var unknownPath = Path.Combine(root, "unknown-columns-backup.zip"); ReconciliationBackupExport.Write(unknownSource, [], unknownPath);
+    Check(BackupReader.Read(unknownPath).Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!.AsSpan().SequenceEqual(unknownRaw), "unknown original-column fields preserve their exact bytes");
     Check(restoredSalary.Months.Any(m => m.Name == "تشرين الثاني 2026" && m.EmployeeCount == 1 && m.DeductionCount == 1) &&
           restoredSalary.Employees.Single(e => e.Month == "تشرين الثاني 2026").Net == 1000m && restoredSalary.Deductions.Single(d => d.Month == "تشرين الثاني 2026").Amount == 500m,
         "imported payroll and deductions restore from backup");

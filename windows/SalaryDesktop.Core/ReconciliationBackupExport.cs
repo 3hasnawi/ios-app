@@ -16,6 +16,32 @@ public static class ReconciliationBackupExport
         SameBytes(a.Items, b.Items) && SameBytes(a.Details, b.Details) && SameBytes(a.RawColumns, b.RawColumns);
     private static bool SameBytes(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
     private static bool SameEmployees(IReadOnlyList<Employee> a, IReadOnlyList<Employee> b) => a.Count == b.Count && a.Zip(b).All(p => SameEmployee(p.First, p.Second));
+    // السجلات المعروفة فقط: JSON مكافئ بترميز UTF-8 بدلاً من تهريب كل حرف عربي.
+    // أي خصائص إضافية، عناوين مكررة كخصائص JSON، أو بنية غير متوقعة تبقى ببايتاتها الأصلية.
+    private static byte[]? CompactRawColumns(byte[]? raw)
+    {
+        if (raw is null) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return raw;
+            var props = root.EnumerateObject().ToArray();
+            if (props.Length != 2 || props.Count(p => p.NameEquals("headers")) != 1 || props.Count(p => p.NameEquals("values")) != 1) return raw;
+            var headers = root.GetProperty("headers"); var values = root.GetProperty("values");
+            if (headers.ValueKind != JsonValueKind.Array || values.ValueKind != JsonValueKind.Array || headers.GetArrayLength() != values.GetArrayLength() ||
+                headers.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.String) || values.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.String)) return raw;
+            var compact = JsonSerializer.SerializeToUtf8Bytes(root, BackupJson);
+            if (compact.Length >= raw.Length) return raw;
+            using var check = JsonDocument.Parse(compact);
+            if (!JsonElement.DeepEquals(root, check.RootElement)) return raw;
+            return compact;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException) { return raw; }
+    }
+    private static bool SameRestoredEmployees(IReadOnlyList<Employee> expected, IReadOnlyList<Employee> actual) =>
+        expected.Count == actual.Count && expected.Zip(actual).All(p =>
+            SameEmployee(p.First, p.Second) || SameEmployee(p.First with { RawColumns = CompactRawColumns(p.First.RawColumns) }, p.Second));
     private static byte[] Summary(IEnumerable<Employee> employees)
     {
         var result = new Dictionary<string, (int Count, decimal Total)>(StringComparer.Ordinal);
@@ -124,7 +150,7 @@ public static class ReconciliationBackupExport
                     else if (changedEmployees && oldEntry.FullName == "employees.jsonl")
                     {
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
-                        foreach (var e in source.Employees) writer.WriteLine(JsonSerializer.Serialize(new { month = e.Month, name = e.Name, rank = e.Rank, workplace = e.Workplace, net = e.Net, items = e.Items, details = e.Details, rawColumns = e.RawColumns }, BackupJson));
+                        foreach (var e in source.Employees) writer.WriteLine(JsonSerializer.Serialize(new { month = e.Month, name = e.Name, rank = e.Rank, workplace = e.Workplace, net = e.Net, items = e.Items, details = e.Details, rawColumns = CompactRawColumns(e.RawColumns) }, BackupJson));
                     }
                     else if (changedDeductions && oldEntry.FullName == "deductions.jsonl")
                     {
@@ -161,7 +187,7 @@ public static class ReconciliationBackupExport
             var restored = BackupReader.Read(temp);
             if (restored.Version != (settings.ContainsKey(ContractOverrides.SettingsKey) ? 6 : source.Version)) throw new InvalidDataException("تعذّر التحقق من إصدار النسخة.");
             if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
-            if (!restored.Months.SequenceEqual(source.Months) || !SameEmployees(restored.Employees, source.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
+            if (!restored.Months.SequenceEqual(source.Months) || !SameRestoredEmployees(source.Employees, restored.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
                 throw new InvalidDataException("تعذّر التحقق من بيانات الأشهر في النسخة الجديدة.");
             if (!restored.Books.Select(b => b with { CreatedAt = null }).SequenceEqual(source.Books.Select(b => b with { CreatedAt = null }))) throw new InvalidDataException("تعذّر التحقق من فهرس الأرشيف في النسخة الجديدة.");
             if (localBooks.Count > 0)
