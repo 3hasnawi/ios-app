@@ -770,7 +770,7 @@ try
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
     var footerExample = "نسخة منه الى:\n. (" + new string(' ', 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام مع التقدير.\n. مستلم (مذكور)";
     var expandedFooter = GroupLetterPdf.FooterWritingSpace(footerExample);
-    Check(expandedFooter.Contains("(" + new string('\u00A0', 32) + ")", StringComparison.Ordinal) && expandedFooter.Contains("(مذكور)", StringComparison.Ordinal) && GroupLetterPdf.FooterWritingSpace(expandedFooter) == expandedFooter,
+    Check(expandedFooter.Contains("(" + new string('\u00A0', 40) + ")", StringComparison.Ordinal) && expandedFooter.Contains("(مذكور)", StringComparison.Ordinal) && GroupLetterPdf.FooterWritingSpace(expandedFooter) == expandedFooter,
         "group footer reserves the empty writing space without changing filled parentheses");
     var footerPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { Footer = footerExample.Replace("\n. مستلم (مذكور)", "", StringComparison.Ordinal) }, fontBytes, fontBytes, logoBytes);
     using (var footerDocument = UglyToad.PdfPig.PdfDocument.Open(footerPdf))
