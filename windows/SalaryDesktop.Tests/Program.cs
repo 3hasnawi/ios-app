@@ -245,6 +245,37 @@ try
     try { SharedPayrollOverlay.Create(snapshot with { SourceDigest = new string('A', 64) }, combinedPayroll, staleOverlay); throw new InvalidOperationException("stale source accepted"); }
     catch (InvalidDataException) { }
     Check(!File.Exists(staleOverlay), "stale source does not create a candidate");
+    var overlayUnknownSource = Path.Combine(root, "overlay-unknown-source.zip"); File.Copy(valid, overlayUnknownSource);
+    using (var zip = ZipFile.Open(overlayUnknownSource, ZipArchiveMode.Update))
+    {
+        var oldRows = zip.GetEntry("employees.jsonl")!;
+        string[] lines;
+        using (var reader = new StreamReader(oldRows.Open(), Encoding.UTF8)) lines = reader.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        oldRows.Delete();
+        var node = System.Text.Json.Nodes.JsonNode.Parse(lines[0])!.AsObject();
+        node["futureEmployeeField"] = System.Text.Json.Nodes.JsonNode.Parse("{\"large\":9007199254740993,\"nested\":[\"محفوظ\"]}");
+        lines[0] = node.ToJsonString();
+        Entry(zip, "employees.jsonl", string.Join("\n", lines) + "\n");
+        Entry(zip, "future-unknown.bin", "محتوى مستقبلي وهمي");
+    }
+    var unknownOverlaySource = BackupReader.Read(overlayUnknownSource);
+    var unknownOverlayStore = new LocalPayrollImports(Path.Combine(root, "overlay-unknown-imports"));
+    var unknownOverlayState = unknownOverlayStore.Import(unknownOverlaySource, unknownOverlayStore.Load(unknownOverlaySource), salaryPreview, false);
+    var unknownOverlayCandidate = Path.Combine(root, "overlay-unknown-candidate.zip"); var unknownOverlayRestored = Path.Combine(root, "overlay-unknown-restored.zip");
+    SharedPayrollOverlay.Create(unknownOverlaySource, unknownOverlayState, unknownOverlayCandidate);
+    SharedPayrollCandidate.RestoreOriginal(unknownOverlayCandidate, unknownOverlayRestored);
+    using (var originalZip = ZipFile.OpenRead(overlayUnknownSource))
+    using (var restoredZip = ZipFile.OpenRead(unknownOverlayRestored))
+    {
+        using var originalRows = new StreamReader(originalZip.GetEntry("employees.jsonl")!.Open(), Encoding.UTF8);
+        using var restoredRows = new StreamReader(restoredZip.GetEntry("employees.jsonl")!.Open(), Encoding.UTF8);
+        Check(originalRows.ReadLine() == restoredRows.ReadLine(), "overlay preserves unknown employee fields and exact original bytes");
+        using var unknownBefore = originalZip.GetEntry("future-unknown.bin")!.Open(); using var unknownAfter = restoredZip.GetEntry("future-unknown.bin")!.Open();
+        Check(SHA256.HashData(unknownBefore).AsSpan().SequenceEqual(SHA256.HashData(unknownAfter)), "overlay retains unknown archive files");
+        using var manifestReader = restoredZip.GetEntry("manifest.json")!.Open();
+        using var restoredManifest = JsonDocument.Parse(manifestReader);
+        Check(restoredManifest.RootElement.GetProperty("futureField").GetProperty("big").GetInt64() == 12345678901234567L, "overlay retains unknown manifest fields");
+    }
     try { _ = payrollStore.Import(snapshot, originalPayroll, salaryPreview, true); throw new InvalidOperationException("stale payroll import accepted"); }
     catch (InvalidDataException) { }
     try { _ = payrollStore.Import(snapshot, combinedPayroll, salaryPreview, false); throw new InvalidOperationException("unreviewed salary replacement accepted"); }
