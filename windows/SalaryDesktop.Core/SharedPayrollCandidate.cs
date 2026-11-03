@@ -50,6 +50,62 @@ public static class SharedPayrollCandidate
         entry.LastWriteTime = source.LastWriteTime; entry.ExternalAttributes = source.ExternalAttributes;
         using var input = source.Open(); using var output = entry.Open(); input.CopyTo(output);
     }
+
+    /// يختبر إدخال ملفات محدثة إلى نسخة مؤقتة قبل الترحيل. المنتج للمحتوى مسؤول عن تجهيز جميع
+    /// السجلات والفهارس والإعدادات بعد دمج التعديلات؛ هذه الدالة وحدها لا تقرأ الاستيرادات المحلية.
+    public static void CreateMerged(string source, string destination, IReadOnlyDictionary<string, Action<Stream>> replacements)
+    {
+        var original = Path.GetFullPath(source); var target = Path.GetFullPath(destination);
+        if (string.Equals(original, target, StringComparison.OrdinalIgnoreCase) || File.Exists(target)) throw new InvalidDataException("اختر ملفاً جديداً لحماية النسخة الأصلية.");
+        var directory = Path.GetDirectoryName(target) ?? throw new InvalidDataException("مجلد غير صالح.");
+        var merged = Path.Combine(directory, ".salary-merge-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            using var originalFile = new FileStream(original, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var sourceHash = Hash(originalFile); originalFile.Position = 0;
+            using var originalZip = new ZipArchive(originalFile, ZipArchiveMode.Read, true);
+            var old = Unique(originalZip);
+            if (replacements.Keys.Any(name => !old.ContainsKey(name) || name is SchemasName or OriginalManifestName))
+                throw new InvalidDataException("أحد ملفات التعديلات غير موجود في النسخة الأصلية.");
+            var expected = new Dictionary<string, string>(StringComparer.Ordinal);
+            using (var output = new FileStream(merged, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65_536, FileOptions.WriteThrough))
+            {
+                using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
+                {
+                    foreach (var entry in originalZip.Entries)
+                    {
+                        if (!replacements.TryGetValue(entry.FullName, out var write)) { Copy(entry, zip); continue; }
+                        var replacement = zip.CreateEntry(entry.FullName, CompressionLevel.Optimal);
+                        replacement.LastWriteTime = entry.LastWriteTime; replacement.ExternalAttributes = entry.ExternalAttributes;
+                        using var stream = replacement.Open(); using var hash = SHA256.Create();
+                        using (var hashed = new CryptoStream(stream, hash, CryptoStreamMode.Write, leaveOpen: true))
+                        { write(hashed); hashed.FlushFinalBlock(); }
+                        expected.Add(entry.FullName, Convert.ToHexString(hash.Hash ?? throw new InvalidDataException("تعذّر حساب بصمة التعديلات.")));
+                    }
+                }
+                output.Flush(true);
+            }
+            using (var mergedZip = ZipFile.OpenRead(merged))
+            {
+                var result = Unique(mergedZip);
+                if (result.Count != old.Count) throw new InvalidDataException("ملفات النسخة المدمجة غير مكتملة.");
+                foreach (var (name, oldEntry) in old)
+                {
+                    if (!result.TryGetValue(name, out var entry)) throw new InvalidDataException("ملف مفقود في النسخة المدمجة.");
+                    using var written = entry.Open(); var actual = Hash(written);
+                    if (expected.TryGetValue(name, out var changed))
+                    {
+                        if (actual != changed) throw new InvalidDataException("تعذّر التحقق من محتوى التعديلات.");
+                    }
+                    else { using var previous = oldEntry.Open(); if (actual != Hash(previous)) throw new InvalidDataException("تغيّر ملف خارج التعديلات."); }
+                }
+            }
+            originalFile.Position = 0;
+            if (Hash(originalFile) != sourceHash) throw new InvalidDataException("تغيّرت النسخة الأصلية أثناء الدمج.");
+            Create(merged, target);
+        }
+        finally { try { File.Delete(merged); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
+    }
     private static Dictionary<string, byte[]> ReadSchemas(ZipArchiveEntry entry)
     {
         var schemas = new Dictionary<string, byte[]>(StringComparer.Ordinal); long size = 0;

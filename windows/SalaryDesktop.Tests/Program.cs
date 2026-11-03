@@ -336,6 +336,56 @@ try
         }
     }
     Check(BackupReader.Read(unpackedPath).Employees.Count == combinedPayroll.Snapshot.Employees.Count, "restored legacy backup opens normally");
+    var overlayActions = new Dictionary<string, Action<Stream>>(StringComparer.Ordinal);
+    overlayActions["manifest.json"] = output =>
+    {
+        using var zip = ZipFile.OpenRead(salaryBackup); using var input = zip.GetEntry("manifest.json")!.Open();
+        var node = System.Text.Json.Nodes.JsonNode.Parse(input)!.AsObject();
+        node["employees"] = node["employees"]!.GetValue<int>() + 1;
+        node["deductions"] = node["deductions"]!.GetValue<int>() + 1;
+        JsonSerializer.Serialize(output, node);
+    };
+    overlayActions["months.jsonl"] = output =>
+    {
+        using var zip = ZipFile.OpenRead(salaryBackup); using var input = zip.GetEntry("months.jsonl")!.Open();
+        using var reader = new StreamReader(input, Encoding.UTF8); using var writer = new StreamWriter(output, new UTF8Encoding(false), 4096, true);
+        while (reader.ReadLine() is { } line)
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(line)!.AsObject();
+            if (node["name"]!.GetValue<string>() == salaryPreview.Month)
+            {
+                node["employeeCount"] = node["employeeCount"]!.GetValue<int>() + 1;
+                node["deductionCount"] = node["deductionCount"]!.GetValue<int>() + 1;
+            }
+            writer.WriteLine(node.ToJsonString());
+        }
+    };
+    overlayActions["employees.jsonl"] = output =>
+    {
+        using var zip = ZipFile.OpenRead(salaryBackup); using var input = zip.GetEntry("employees.jsonl")!.Open(); input.CopyTo(output);
+        var raw = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "الاسم", "الصافي", "ملاحظة" }, values = new[] { "إضافة وهمية", "700", "" } });
+        using var writer = new StreamWriter(output, new UTF8Encoding(false), 4096, true);
+        writer.WriteLine(JsonSerializer.Serialize(new { month = salaryPreview.Month, name = "إضافة وهمية", rank = "شرطي", workplace = "قسم وهمي", net = 700, items = (byte[]?)null, details = (byte[]?)null, rawColumns = raw }));
+    };
+    overlayActions["deductions.jsonl"] = output =>
+    {
+        using var zip = ZipFile.OpenRead(salaryBackup); using var input = zip.GetEntry("deductions.jsonl")!.Open(); input.CopyTo(output);
+        using var writer = new StreamWriter(output, new UTF8Encoding(false), 4096, true);
+        writer.WriteLine(JsonSerializer.Serialize(new { month = salaryPreview.Month, name = "إضافة وهمية", title = "جهة وهمية", amount = 30, note = "", rank = "شرطي" }));
+    };
+    var mergedCandidate = Path.Combine(root, "merged-candidate.zip");
+    SharedPayrollCandidate.CreateMerged(salaryBackup, mergedCandidate, overlayActions);
+    var mergedRestored = Path.Combine(root, "merged-restored.zip"); SharedPayrollCandidate.RestoreOriginal(mergedCandidate, mergedRestored);
+    var mergedSnapshot = BackupReader.Read(mergedRestored);
+    Check(mergedSnapshot.Employees.Any(e => e.Month == salaryPreview.Month && e.Name == "إضافة وهمية" && e.Net == 700m) &&
+          mergedSnapshot.Deductions.Any(d => d.Month == salaryPreview.Month && d.Name == "إضافة وهمية" && d.Amount == 30m) &&
+          mergedSnapshot.Employees.Count == combinedPayroll.Snapshot.Employees.Count + 1 && mergedSnapshot.Deductions.Count == combinedPayroll.Snapshot.Deductions.Count + 1,
+        "candidate merges explicit fictional payroll and deduction changes before compacting");
+    var failedMerge = Path.Combine(root, "failed-merge.zip");
+    try { SharedPayrollCandidate.CreateMerged(salaryBackup, failedMerge, new Dictionary<string, Action<Stream>> { ["employees.jsonl"] = s => { s.WriteByte(65); throw new IOException("simulated interruption"); } }); throw new InvalidOperationException("interrupted merge accepted"); }
+    catch (IOException) { }
+    Check(!File.Exists(failedMerge) && !Directory.EnumerateFiles(root, ".salary-merge-*.tmp").Any() && SHA256.HashData(File.ReadAllBytes(salaryBackup)).AsSpan().SequenceEqual(beforeCandidate),
+        "interrupted merge preserves source and cleans temporary output");
     if (Environment.GetEnvironmentVariable("SALARY_SWIFT_CANDIDATE_PATH") is { Length: > 0 } swiftCandidate &&
         Environment.GetEnvironmentVariable("SALARY_SWIFT_SOURCE_PATH") is { Length: > 0 } swiftSource)
     {
