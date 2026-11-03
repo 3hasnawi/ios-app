@@ -812,7 +812,7 @@
                     <Button x:Name="BackupExport" Content="حفظ نسخة في مكان آخر…" Click="ExportBackup" IsEnabled="False" ContentTemplate="{StaticResource ExportActionContent}"/>
                   </WrapPanel>
                   <CheckBox x:Name="BackupAutoBox" Content="نسخ تلقائي بعد كل استيراد" Click="BackupOptionChanged" Margin="0,0,0,10"/>
-                  <CheckBox x:Name="CloseToTrayBox" Content="عند الضغط على ✕ يبقى البرنامج يعمل في الخلفية بجانب الساعة (للنسخ وفحص السيرفر)" Click="CloseToTrayChanged" Margin="0,0,0,10" ToolTip="الإغلاق النهائي من أيقونة البرنامج بجانب الساعة ← الزر الأيمن ← «إغلاق البرنامج نهائياً»"/>
+                  <CheckBox x:Name="CloseToTrayBox" Visibility="Collapsed" IsEnabled="False" Content="الإغلاق إلى الخلفية" Click="CloseToTrayChanged"/>
                   <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                     <TextBlock Text="نسخ دوري" VerticalAlignment="Center" Margin="0,0,10,0"/>
                     <Border Background="{DynamicResource TbgE8EEED}" CornerRadius="9" Padding="2">

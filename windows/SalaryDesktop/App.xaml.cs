@@ -26,15 +26,14 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // نسخة واحدة فقط لكل مستخدم: البرنامج قد يعمل مخفياً بجانب الساعة، فتشغيله مرة ثانية يُظهر النافذة الموجودة
-        // بدل فتح نسخة أخرى تكتب في البيانات المحلية نفسها.
+        // نسخة واحدة فقط لكل مستخدم؛ تشغيله مرة ثانية ينشّط النافذة الموجودة.
         if (!Unattended)
         {
             instance = new Mutex(true, @"Local\SalaryDesktop.Instance", out var first);
             showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SalaryDesktop.Show");
             if (!first) { showSignal.Set(); Environment.Exit(0); return; }
             ThreadPool.RegisterWaitForSingleObject(showSignal, (_, _) => Dispatcher.BeginInvoke(() => (MainWindow as MainWindow)?.ShowFromTray()), null, Timeout.Infinite, false);
-            // إيقاف ويندوز أو برنامج التثبيت يغلق البرنامج فعلاً ولا يخفيه.
+            // إيقاف ويندوز أو برنامج التثبيت يسمح بإغلاق البرنامج.
             SessionEnding += (_, _) => (MainWindow as MainWindow)?.AllowExit();
         }
         Themes.Apply(UiPreferences.Current.Theme ?? "light");

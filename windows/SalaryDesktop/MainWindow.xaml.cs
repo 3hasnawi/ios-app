@@ -56,12 +56,11 @@ public partial class MainWindow : Window
         VersionText.Text = $"نسخة ويندوز · الإصدار {Updates.Current}";
         Loaded += async (_, _) =>
         {
-            ShowTheme(); Locker.Start(); StartBackupTimer(); HookNotifications(); InitTray();
+            ShowTheme(); Locker.Start(); StartBackupTimer(); HookNotifications();
             await LoadStoredSnapshot(); RestorePage(); RenderPage();
             if (!App.Unattended) await FindUpdate(false);
         };
         Closing += WindowClosing;
-        Closed += (_, _) => { tray?.Dispose(); tray = null; }; 
         Closed += (_, _) => { TrustPanel.Content = null; trustController?.Close(); trustController = null; };
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }

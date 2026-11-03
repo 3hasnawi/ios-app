@@ -209,6 +209,15 @@ static class Program
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility == Visibility.Visible, "standalone start was not visible on empty data");
                 typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);
                 await Task.Delay(500);
+                var preferences = typeof(MainWindow).Assembly.GetType("SalaryDesktop.UiPreferences")!;
+                var currentPreferences = preferences.GetProperty("Current", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(null)!;
+                var closeToTray = currentPreferences.GetType().GetProperty("CloseToTray")!;
+                var oldCloseToTray = closeToTray.GetValue(currentPreferences);
+                closeToTray.SetValue(currentPreferences, true);
+                var closingArgs = new System.ComponentModel.CancelEventArgs();
+                typeof(MainWindow).GetMethod("WindowClosing", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [main, closingArgs]);
+                closeToTray.SetValue(currentPreferences, oldCloseToTray);
+                Check(!closingArgs.Cancel && ((FrameworkElement)main.FindName("CloseToTrayBox")).Visibility == Visibility.Collapsed, "old close-to-tray preference blocked exit");
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility != Visibility.Visible, "standalone start remained visible over existing data");
                 async Task Navigate(string tag)
                 {

@@ -13,7 +13,48 @@ public sealed class LocalPayrollImports(string directory)
     private readonly string root = Path.GetFullPath(directory);
     private static string Digest(string digest) => digest.Length == 64 && digest.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F') ? digest : throw new InvalidDataException("بصمة بيانات الرواتب غير صالحة.");
     private string Folder(BackupSnapshot source) => Path.Combine(root, Digest(source.SourceDigest));
-    private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+    private static string Hash(Stream stream) => Convert.ToHexString(SHA256.HashData(stream));
+    private static Pointer ReadPointer(string path)
+    {
+        using var input = File.OpenRead(path);
+        var pointer = JsonSerializer.Deserialize<Pointer>(input) ?? throw new JsonException();
+        if (pointer.Version != 1) throw new InvalidDataException("إصدار بيانات الرواتب المحلية غير مدعوم.");
+        _ = Digest(pointer.Revision);
+        return pointer;
+    }
+
+    // لا نجمع ملف الأشهر في مصفوفة واحدة: يُكتب كل سجل على حدة إلى الملف وبصمته بالتتابع.
+    private static string WriteImportFile(string path, string sourceDigest, IReadOnlyList<MonthImport> imports)
+    {
+        using var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.WriteThrough);
+        using var hash = SHA256.Create();
+        using (var hashed = new CryptoStream(output, hash, CryptoStreamMode.Write, leaveOpen: true))
+        {
+            using (var writer = new Utf8JsonWriter(hashed))
+            {
+                writer.WriteStartObject(); writer.WriteNumber("Version", 1); writer.WriteString("SourceDigest", sourceDigest);
+                writer.WriteStartArray("Months");
+                foreach (var month in imports)
+                {
+                    writer.WriteStartObject(); writer.WriteString("Month", month.Month);
+                    void WriteItems<T>(string name, List<T>? items)
+                    {
+                        if (items is null) { writer.WriteNull(name); return; }
+                        writer.WriteStartArray(name);
+                        var count = 0;
+                        foreach (var item in items) { JsonSerializer.Serialize(writer, item); if (++count % 256 == 0) writer.Flush(); }
+                        writer.WriteEndArray();
+                    }
+                    WriteItems("Employees", month.Employees); WriteItems("Deductions", month.Deductions);
+                    writer.WriteEndObject(); writer.Flush();
+                }
+                writer.WriteEndArray(); writer.WriteEndObject(); writer.Flush();
+            }
+            hashed.FlushFinalBlock();
+        }
+        output.Flush(true);
+        return Convert.ToHexString(hash.Hash ?? throw new InvalidDataException("تعذّر حساب بصمة بيانات الشهر."));
+    }
     private static BackupSnapshot Apply(BackupSnapshot source, IReadOnlyList<MonthImport> imports)
     {
         if (imports.Count > 5000 || imports.Select(i => i.Month).Distinct(StringComparer.Ordinal).Count() != imports.Count) throw new InvalidDataException("أشهر الاستيراد مكررة.");
@@ -41,11 +82,11 @@ public sealed class LocalPayrollImports(string directory)
         if (!File.Exists(pointerPath)) return new(source, [], null);
         try
         {
-            var pointer = JsonSerializer.Deserialize<Pointer>(File.ReadAllBytes(pointerPath)) ?? throw new JsonException();
-            if (pointer.Version != 1) throw new InvalidDataException("إصدار بيانات الرواتب المحلية غير مدعوم.");
-            var bytes = File.ReadAllBytes(Path.Combine(folder, Digest(pointer.Revision) + ".json"));
-            if (Hash(bytes) != pointer.Revision) throw new InvalidDataException("تغيّر ملف بيانات الرواتب المحلية.");
-            var data = JsonSerializer.Deserialize<Saved>(bytes) ?? throw new JsonException();
+            var pointer = ReadPointer(pointerPath);
+            using var input = new FileStream(Path.Combine(folder, pointer.Revision + ".json"), FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
+            if (Hash(input) != pointer.Revision) throw new InvalidDataException("تغيّر ملف بيانات الرواتب المحلية.");
+            input.Position = 0;
+            var data = JsonSerializer.DeserializeAsync<Saved>(input).AsTask().GetAwaiter().GetResult() ?? throw new JsonException();
             if (data.Version != 1 || data.SourceDigest != source.SourceDigest || data.Months is null) throw new InvalidDataException("بيانات الرواتب المحلية غير صالحة.");
             return new(Apply(source, data.Months), data.Months, pointer.Revision);
         }
@@ -59,8 +100,15 @@ public sealed class LocalPayrollImports(string directory)
             throw new InvalidDataException("راجع أخطاء الملف والأشهر قبل الحفظ.");
         var folder = Folder(source); Directory.CreateDirectory(folder);
         using var guard = new FileStream(Path.Combine(folder, ".payroll.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        var current = Load(source);
-        if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت بيانات الرواتب في نافذة أخرى؛ أعد فتح الملف.");
+        var pointerPath = Path.Combine(folder, "current.json");
+        var revision = File.Exists(pointerPath) ? ReadPointer(pointerPath).Revision : null;
+        if (revision != expected.Revision || expected.Snapshot.SourceDigest != source.SourceDigest) throw new InvalidDataException("تغيّرت بيانات الرواتب في نافذة أخرى؛ أعد فتح الملف.");
+        if (revision is not null)
+        {
+            using var existing = File.OpenRead(Path.Combine(folder, revision + ".json"));
+            if (Hash(existing) != revision) throw new InvalidDataException("تغيّر ملف بيانات الرواتب المحلية.");
+        }
+        var current = expected;
         if (!replaceExisting && previews.Any(preview => preview.Employees.Count > 0 && current.Snapshot.Employees.Any(e => e.Month == preview.Month) || preview.Deductions.Count > 0 && current.Snapshot.Deductions.Any(d => d.Month == preview.Month)))
             throw new InvalidDataException("توجد بيانات محفوظة لأحد الأشهر؛ يجب مراجعة الاستبدال أولاً.");
         var imports = current.Imports.ToList();
@@ -71,18 +119,18 @@ public sealed class LocalPayrollImports(string directory)
                 preview.Deductions.Count > 0 ? preview.Deductions.ToList() : existing?.Deductions);
             imports.RemoveAll(m => m.Month == preview.Month); imports.Add(change);
         }
-        var updated = Apply(source, imports); var bytes = JsonSerializer.SerializeToUtf8Bytes(new Saved(1, source.SourceDigest, imports));
-        var digest = Hash(bytes); var versionPath = Path.Combine(folder, digest + ".json"); var temp = Path.Combine(folder, ".import-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var updated = Apply(source, imports); var temp = Path.Combine(folder, ".import-" + Guid.NewGuid().ToString("N") + ".tmp");
         var pointerTemp = Path.Combine(folder, ".pointer-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
+            var digest = WriteImportFile(temp, source.SourceDigest, imports);
+            using (var input = File.OpenRead(temp)) if (Hash(input) != digest) throw new InvalidDataException("تعذّر التحقق من بيانات الشهر.");
+            var versionPath = Path.Combine(folder, digest + ".json");
             if (!File.Exists(versionPath))
             {
-                using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.WriteThrough)) { output.Write(bytes); output.Flush(true); }
-                using (var input = File.OpenRead(temp)) if (!SHA256.HashData(input).AsSpan().SequenceEqual(SHA256.HashData(bytes))) throw new InvalidDataException("تعذّر التحقق من بيانات الشهر.");
                 File.Move(temp, versionPath, false);
             }
-            else { using var existingFile = File.OpenRead(versionPath); if (Convert.ToHexString(SHA256.HashData(existingFile)) != digest) throw new InvalidDataException("ملف بيانات الشهر المحفوظ تالف."); }
+            else { using var existingFile = File.OpenRead(versionPath); if (Hash(existingFile) != digest) throw new InvalidDataException("ملف بيانات الشهر المحفوظ تالف."); }
             using (var output = new FileStream(pointerTemp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough)) { JsonSerializer.Serialize(output, new Pointer(1, digest)); output.Flush(true); }
             File.Move(pointerTemp, Path.Combine(folder, "current.json"), true);
             return new(updated, imports, digest);

@@ -158,6 +158,34 @@ try
     try { _ = payrollStore.Import(snapshot, combinedPayroll, PayrollSpreadsheet.Read(invalidSalary, "تشرين الثاني 2026"), true); throw new InvalidOperationException("invalid payroll import accepted"); }
     catch (InvalidDataException) { }
     Check(payrollStore.Load(snapshot).Revision == combinedPayroll.Revision, "invalid payroll import preserves previous data");
+    // صيغة الإصدار السابق وبصمته تبقيان قابلة للقراءة دون تحويل أو استبدال الملف.
+    var legacyRoot = Path.Combine(root, "legacy-payroll"); var legacyFolder = Path.Combine(legacyRoot, snapshot.SourceDigest); Directory.CreateDirectory(legacyFolder);
+    var legacyBytes = JsonSerializer.SerializeToUtf8Bytes(new { Version = 1, SourceDigest = snapshot.SourceDigest, Months = combinedPayroll.Imports });
+    var legacyHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(legacyBytes));
+    Check(legacyHash == combinedPayroll.Revision, "streamed payroll preserves the existing JSON representation and revision");
+    File.WriteAllBytes(Path.Combine(legacyFolder, legacyHash + ".json"), legacyBytes);
+    File.WriteAllText(Path.Combine(legacyFolder, "current.json"), JsonSerializer.Serialize(new { Version = 1, Revision = legacyHash }));
+    var legacyPayrollStore = new LocalPayrollImports(legacyRoot); var legacyLoaded = legacyPayrollStore.Load(snapshot);
+    Check(legacyLoaded.Revision == legacyHash && legacyLoaded.Snapshot.Deductions.Any(d => d.Month == deductionPreview.Month), "streaming reader accepts old payroll files");
+    // ملف مؤقت من عملية انقطعت لا يغيّر المؤشر أو البيانات المعتمدة.
+    File.WriteAllText(Path.Combine(legacyFolder, ".import-interrupted.tmp"), "{incomplete");
+    Check(legacyPayrollStore.Load(snapshot).Revision == legacyHash, "interrupted temporary file is ignored");
+    var legacyPath = Path.Combine(legacyFolder, legacyHash + ".json");
+    File.AppendAllText(legacyPath, " ");
+    try { _ = legacyPayrollStore.Import(snapshot, legacyLoaded, salaryPreview, true); throw new InvalidOperationException("corrupted payroll file accepted"); }
+    catch (InvalidDataException) { }
+    Check(File.ReadAllText(Path.Combine(legacyFolder, "current.json")).Contains(legacyHash, StringComparison.Ordinal), "corrupted source does not change payroll pointer");
+    File.WriteAllBytes(legacyPath, legacyBytes);
+    Check(legacyPayrollStore.Load(snapshot).Revision == legacyHash, "original payroll remains recoverable after failed import");
+    // عدد كبير من سجلات تحتوي حقولاً ثنائية، ليتجاوز ناتج JSON المخزن عشرات الميغابايت.
+    var largeRoot = Path.Combine(root, "large-payroll"); var largeStore = new LocalPayrollImports(largeRoot);
+    var payload = new byte[2048]; new Random(123).NextBytes(payload);
+    var largeRows = Enumerable.Range(0, 8000).Select(i => new Employee(salaryPreview.Month, $"منتسب وهمي {i}", "شرطي", "قسم وهمي", 1000m, payload, null, null)).ToArray();
+    var largePreview = salaryPreview with { Employees = largeRows, Deductions = [] };
+    var largeSaved = largeStore.Import(snapshot, largeStore.Load(snapshot), largePreview, false);
+    var largeFile = Path.Combine(largeRoot, snapshot.SourceDigest, largeSaved.Revision + ".json");
+    Check(new FileInfo(largeFile).Length > 20_000_000 && largeStore.Load(snapshot).Imports.Single().Employees!.Count == largeRows.Length,
+        "large streamed payroll survives save and reload");
     var replacement = salaryPreview with { Employees = [salaryPreview.Employees.Single() with { Net = 1001m }] };
     var replacedPayroll = payrollStore.Import(snapshot, combinedPayroll, replacement, true);
     Check(Directory.GetFiles(Path.Combine(root, "payroll-data", snapshot.SourceDigest), "*.json").Length >= 4 && replacedPayroll.Snapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m && replacedPayroll.Snapshot.Deductions.Any(d => d.Month == replacement.Month), "reviewed salary replacement preserves deduction records and earlier versions");
