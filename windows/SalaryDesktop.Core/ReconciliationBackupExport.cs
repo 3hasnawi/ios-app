@@ -15,7 +15,7 @@ public static class ReconciliationBackupExport
     private static bool SameEmployee(Employee a, Employee b) => a.Month == b.Month && a.Name == b.Name && a.Rank == b.Rank && a.Workplace == b.Workplace && a.Net == b.Net &&
         SameBytes(a.Items, b.Items) && SameBytes(a.Details, b.Details) && SameBytes(a.RawColumns, b.RawColumns);
     private static bool SameBytes(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
-    private static bool SameEmployees(IReadOnlyList<Employee> a, IReadOnlyList<Employee> b) => a.Count == b.Count && a.Zip(b).All(p => SameEmployee(p.First, p.Second));
+    internal static bool SameEmployees(IReadOnlyList<Employee> a, IReadOnlyList<Employee> b) => a.Count == b.Count && a.Zip(b).All(p => SameEmployee(p.First, p.Second));
     // السجلات المعروفة فقط: JSON مكافئ بترميز UTF-8 بدلاً من تهريب كل حرف عربي.
     // أي خصائص إضافية، عناوين مكررة كخصائص JSON، أو بنية غير متوقعة تبقى ببايتاتها الأصلية.
     private static byte[]? CompactRawColumns(byte[]? raw)
@@ -55,7 +55,7 @@ public static class ReconciliationBackupExport
     }
     private static string BookEntry(Guid id) => $"books/{id.ToString().ToUpperInvariant()}.pdf";
     /// فهرس الكتب بصيغة الآيفون (OfficialBook): تُبقى حقول كل كتاب الأصلية (ومنها createdAt) وتُحدَّث الاسم والشهر والجهة والصفحات.
-    private static byte[] BookIndex(Stream original, IReadOnlyList<ArchiveBook> books)
+    internal static byte[] BookIndex(Stream original, IReadOnlyList<ArchiveBook> books)
     {
         var old = new Dictionary<Guid, JsonObject>();
         if (JsonNode.Parse(original) is not JsonArray array) throw new InvalidDataException("فهرس الأرشيف غير صالح.");

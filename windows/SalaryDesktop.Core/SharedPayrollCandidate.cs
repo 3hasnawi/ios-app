@@ -53,7 +53,8 @@ public static class SharedPayrollCandidate
 
     /// يختبر إدخال ملفات محدثة إلى نسخة مؤقتة قبل الترحيل. المنتج للمحتوى مسؤول عن تجهيز جميع
     /// السجلات والفهارس والإعدادات بعد دمج التعديلات؛ هذه الدالة وحدها لا تقرأ الاستيرادات المحلية.
-    public static void CreateMerged(string source, string destination, IReadOnlyDictionary<string, Action<Stream>> replacements, string? expectedSourceDigest = null)
+    public static void CreateMerged(string source, string destination, IReadOnlyDictionary<string, Action<Stream>> replacements, string? expectedSourceDigest = null,
+        IReadOnlyDictionary<string, Action<Stream>>? additions = null, IReadOnlySet<string>? removals = null)
     {
         var original = Path.GetFullPath(source); var target = Path.GetFullPath(destination);
         if (string.Equals(original, target, StringComparison.OrdinalIgnoreCase) || File.Exists(target)) throw new InvalidDataException("اختر ملفاً جديداً لحماية النسخة الأصلية.");
@@ -67,39 +68,55 @@ public static class SharedPayrollCandidate
                 throw new InvalidDataException("تغيّرت النسخة الأصلية؛ أعد فتحها قبل الدمج.");
             using var originalZip = new ZipArchive(originalFile, ZipArchiveMode.Read, true);
             var old = Unique(originalZip);
+            additions ??= new Dictionary<string, Action<Stream>>(StringComparer.Ordinal);
+            removals ??= new HashSet<string>(StringComparer.Ordinal);
+            static bool BookName(string name) => name.StartsWith("books/", StringComparison.Ordinal) && name.EndsWith(".pdf", StringComparison.Ordinal) &&
+                Guid.TryParseExact(name[6..^4], "D", out var id) && name == "books/" + id.ToString().ToUpperInvariant() + ".pdf";
             if (replacements.Keys.Any(name => !old.ContainsKey(name) || name is SchemasName or OriginalManifestName))
                 throw new InvalidDataException("أحد ملفات التعديلات غير موجود في النسخة الأصلية.");
+            if (removals.Any(name => !BookName(name) || !old.ContainsKey(name) || replacements.ContainsKey(name)) ||
+                additions.Keys.Any(name => !BookName(name) || replacements.ContainsKey(name) || old.ContainsKey(name) && !removals.Contains(name)))
+                throw new InvalidDataException("إضافة أو استبدال ملفات الأرشيف غير صالح.");
             var expected = new Dictionary<string, string>(StringComparer.Ordinal);
             using (var output = new FileStream(merged, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65_536, FileOptions.WriteThrough))
             {
                 using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
                 {
-                    foreach (var entry in originalZip.Entries)
+                    void WriteReplacement(string name, Action<Stream> write, ZipArchiveEntry? previous = null)
                     {
-                        if (!replacements.TryGetValue(entry.FullName, out var write)) { Copy(entry, zip); continue; }
-                        var replacement = zip.CreateEntry(entry.FullName, CompressionLevel.Optimal);
-                        replacement.LastWriteTime = entry.LastWriteTime; replacement.ExternalAttributes = entry.ExternalAttributes;
+                        var replacement = zip.CreateEntry(name, CompressionLevel.Optimal);
+                        if (previous is not null) { replacement.LastWriteTime = previous.LastWriteTime; replacement.ExternalAttributes = previous.ExternalAttributes; }
                         using var stream = replacement.Open(); using var hash = SHA256.Create();
                         using (var hashed = new CryptoStream(stream, hash, CryptoStreamMode.Write, leaveOpen: true))
                         { write(hashed); hashed.FlushFinalBlock(); }
-                        expected.Add(entry.FullName, Convert.ToHexString(hash.Hash ?? throw new InvalidDataException("تعذّر حساب بصمة التعديلات.")));
+                        expected.Add(name, Convert.ToHexString(hash.Hash ?? throw new InvalidDataException("تعذّر حساب بصمة التعديلات.")));
                     }
+                    foreach (var entry in originalZip.Entries)
+                    {
+                        if (removals.Contains(entry.FullName)) continue;
+                        if (!replacements.TryGetValue(entry.FullName, out var write)) { Copy(entry, zip); continue; }
+                        WriteReplacement(entry.FullName, write, entry);
+                    }
+                    foreach (var (name, write) in additions) WriteReplacement(name, write, old.GetValueOrDefault(name));
                 }
                 output.Flush(true);
             }
             using (var mergedZip = ZipFile.OpenRead(merged))
             {
                 var result = Unique(mergedZip);
-                if (result.Count != old.Count) throw new InvalidDataException("ملفات النسخة المدمجة غير مكتملة.");
-                foreach (var (name, oldEntry) in old)
+                if (result.Count != old.Count - removals.Count + additions.Count) throw new InvalidDataException("ملفات النسخة المدمجة غير مكتملة.");
+                foreach (var (name, entry) in result)
                 {
-                    if (!result.TryGetValue(name, out var entry)) throw new InvalidDataException("ملف مفقود في النسخة المدمجة.");
                     using var written = entry.Open(); var actual = Hash(written);
                     if (expected.TryGetValue(name, out var changed))
                     {
                         if (actual != changed) throw new InvalidDataException("تعذّر التحقق من محتوى التعديلات.");
                     }
-                    else { using var previous = oldEntry.Open(); if (actual != Hash(previous)) throw new InvalidDataException("تغيّر ملف خارج التعديلات."); }
+                    else
+                    {
+                        if (!old.TryGetValue(name, out var oldEntry) || removals.Contains(name)) throw new InvalidDataException("ملف غير متوقع في النسخة المدمجة.");
+                        using var previous = oldEntry.Open(); if (actual != Hash(previous)) throw new InvalidDataException("تغيّر ملف خارج التعديلات.");
+                    }
                 }
             }
             originalFile.Position = 0;

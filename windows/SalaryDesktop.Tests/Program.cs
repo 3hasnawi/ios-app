@@ -579,6 +579,62 @@ try
     var repay = new BankMovement(Guid.NewGuid(), new DateOnly(2026, 10, 27), "إعادة المسترجع", 150, MovementDirection.Debit, RefundOf: refund.Id, Matched: true);
     var spending = new BankMovement(Guid.NewGuid(), new DateOnly(2026, 10, 27), "مصروف تجريبي", 1050, MovementDirection.Debit, SourceId: "source", SourceLineIds: ["line"]);
     var period = new BankPeriod(Guid.NewGuid(), "أيلول 2026", funding.Date, spending.Date, 0, "", "", null, null, [funding, refund, repay, spending]);
+    var overlaySettings = combinedPayroll.Snapshot.SettingsPlists.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+    using (var futureSetting = new MemoryStream())
+    {
+        PropertyListParser.SaveAsBinary(new NSData(Encoding.UTF8.GetBytes("قيمة وهمية محفوظة")), futureSetting);
+        overlaySettings["futureSetting"] = futureSetting.ToArray();
+    }
+    var overlayActive = combinedPayroll.Snapshot with
+    {
+        Accounts = combinedPayroll.Snapshot.Accounts.Append(new ExecutionAccount("جهة وهمية مضافة", "IQ00TEST", "فرع وهمي", "", null)).ToArray(),
+        SettingsPlists = overlaySettings
+    };
+    var settingsCandidate = Path.Combine(root, "settings-overlay-v7.zip"); var settingsRestored = Path.Combine(root, "settings-overlay-restored.zip");
+    SharedPayrollOverlay.CreateIncludingSettings(snapshot, combinedPayroll, overlayActive, [period], new SalaryTrustLedger(1, [], true), settingsCandidate);
+    SharedPayrollCandidate.RestoreOriginal(settingsCandidate, settingsRestored);
+    var settingsRead = BackupReader.Read(settingsRestored);
+    Check(settingsRead.Accounts.Any(a => a.Entity == "جهة وهمية مضافة") &&
+          settingsRead.SettingsPlists["futureSetting"].AsSpan().SequenceEqual(overlaySettings["futureSetting"]) &&
+          BankReconciliation.ReadFromBackup(settingsRead).Single().Id == period.Id && SalaryTrust.ReadFromBackup(settingsRead).OpeningImported,
+        "settings overlay preserves accounts, unknown setting, reconciliation and trust");
+    var rejectedArchiveCandidate = Path.Combine(root, "rejected-archive-overlay.zip");
+    var missingBook = new ArchiveBook(Guid.NewGuid(), "كتاب وهمي مفقود", salaryPreview.Month, 1, null);
+    try { SharedPayrollOverlay.CreateIncludingSettings(snapshot, combinedPayroll, overlayActive with { Books = [missingBook] }, [period], null, rejectedArchiveCandidate); throw new InvalidOperationException("archive change silently ignored"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(rejectedArchiveCandidate), "unsupported archive changes block the candidate");
+    var newBook = new ArchiveBook(Guid.NewGuid(), "كتاب وهمي مضاف", salaryPreview.Month, 1, "جهة وهمية");
+    var oldBook = snapshot.Books.Single();
+    var replacedPdf = Path.Combine(root, "replaced-local-book.pdf"); var addedPdf = Path.Combine(root, "added-local-book.pdf");
+    File.WriteAllText(replacedPdf, "%PDF-1.4\nreplaced fictional"); File.WriteAllText(addedPdf, "%PDF-1.4\nadded fictional");
+    var archiveActive = overlayActive with
+    {
+        Books = [oldBook with { Title = "عنوان معدل وهمي" }, newBook],
+        LocalBookFiles = new Dictionary<Guid, string> { [oldBook.Id] = replacedPdf, [newBook.Id] = addedPdf }
+    };
+    var archiveCandidate = Path.Combine(root, "archive-overlay-v7.zip"); var archiveRestored = Path.Combine(root, "archive-overlay-restored.zip");
+    SharedPayrollOverlay.CreateIncludingSettings(snapshot, combinedPayroll, archiveActive, [period], new SalaryTrustLedger(1, [], true), archiveCandidate);
+    SharedPayrollCandidate.RestoreOriginal(archiveCandidate, archiveRestored);
+    var overlayArchiveRead = BackupReader.Read(archiveRestored);
+    Check(overlayArchiveRead.Books.Count == 2 && overlayArchiveRead.Books.Single(b => b.Id == oldBook.Id).Title == "عنوان معدل وهمي" && overlayArchiveRead.Books.Any(b => b.Id == newBook.Id),
+        "archive overlay preserves existing book identity and includes added book");
+    var oldCopy = Path.Combine(root, "overlay-replaced-copy.pdf"); var newCopy = Path.Combine(root, "overlay-added-copy.pdf");
+    BackupReader.CopyBook(overlayArchiveRead, overlayArchiveRead.Books.Single(b => b.Id == oldBook.Id), oldCopy);
+    BackupReader.CopyBook(overlayArchiveRead, overlayArchiveRead.Books.Single(b => b.Id == newBook.Id), newCopy);
+    Check(File.ReadAllBytes(oldCopy).AsSpan().SequenceEqual(File.ReadAllBytes(replacedPdf)) && File.ReadAllBytes(newCopy).AsSpan().SequenceEqual(File.ReadAllBytes(addedPdf)),
+        "archive overlay retains exact added and replacement PDF bytes");
+    var deletionCandidate = Path.Combine(root, "archive-deletion-v7.zip"); var deletionRestored = Path.Combine(root, "archive-deletion-restored.zip");
+    SharedPayrollOverlay.CreateIncludingSettings(snapshot, combinedPayroll, overlayActive with { Books = [] }, [period], null, deletionCandidate);
+    SharedPayrollCandidate.RestoreOriginal(deletionCandidate, deletionRestored);
+    var deletionRead = BackupReader.Read(deletionRestored);
+    using (var deletionZip = ZipFile.OpenRead(deletionRestored))
+        Check(deletionRead.Books.Count == 0 && !deletionZip.Entries.Any(e => e.FullName.EndsWith(".pdf", StringComparison.Ordinal)),
+            "explicitly removed book is absent from the candidate and restored archive");
+    var failedBookCandidate = Path.Combine(root, "missing-book-file-v7.zip");
+    var missingBookActive = overlayActive with { Books = [.. snapshot.Books, missingBook], LocalBookFiles = new Dictionary<Guid, string> { [missingBook.Id] = Path.Combine(root, "missing-book.pdf") } };
+    try { SharedPayrollOverlay.CreateIncludingSettings(snapshot, combinedPayroll, missingBookActive, [period], null, failedBookCandidate); throw new InvalidOperationException("missing local book accepted"); }
+    catch (IOException) { }
+    Check(!File.Exists(failedBookCandidate) && !Directory.EnumerateFiles(root, ".salary-merge-*.tmp").Any(), "missing archive file prevents incomplete backup");
     var totals = BankReconciliation.Calculate(period);
     var font = OperatingSystem.IsWindows() ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf") : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
     var testPdf = ReconciliationPdf.Generate(period with { FirstMember = "عضو تجريبي أول", SecondMember = "عضو تجريبي ثان" }, font);
