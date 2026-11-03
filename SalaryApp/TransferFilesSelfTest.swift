@@ -532,6 +532,14 @@ import CryptoKit
             month: group.month, payer: "دافع وهمي", payerIBAN: iban)
         let groupText = TransferWordGroupDraft.LetterText(header: "ترويسة وهمية", fixedNumber: "رقم وهمي",
             committee: ["عضو أول", "عضو ثان", "عضو ثالث"], footer: "هامش وهمي")
+        let emptyFooter = "نسخة منه الى:\n. (" + String(repeating: " ", count: 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام.\n. مستلم (مذكور)"
+        let expandedFooter = TransferWordGroupDraft.footerWritingSpace(emptyFooter)
+        try check(expandedFooter.contains("(" + String(repeating: "\u{00A0}", count: 20) + ")") && expandedFooter.contains("(مذكور)") && TransferWordGroupDraft.footerWritingSpace(expandedFooter) == expandedFooter, "group footer keeps a visible handwriting gap without changing filled parentheses")
+        let spacedText = TransferWordGroupDraft.LetterText(header: groupText.header, fixedNumber: groupText.fixedNumber, committee: groupText.committee, footer: emptyFooter)
+        let spacedDraft = FileManager.default.temporaryDirectory.appendingPathComponent("group-footer-\(UUID().uuidString).docx")
+        defer { try? FileManager.default.removeItem(at: spacedDraft) }
+        try TransferWordGroupDraft.write(plan: wordGroup, month: group.month, payerIBAN: iban, text: spacedText, destination: spacedDraft)
+        try TransferWordVerification.verify(url: spacedDraft, month: group.month, amount: wordGroup.total, payerIBAN: iban, text: spacedText, table: wordGroup.table, footerOverride: expandedFooter)
         let groupDraft = FileManager.default.temporaryDirectory.appendingPathComponent("group-word-\(UUID().uuidString).docx")
         defer { try? FileManager.default.removeItem(at: groupDraft) }
         try TransferWordGroupDraft.write(plan: wordGroup, month: group.month, payerIBAN: iban, text: groupText, destination: groupDraft)

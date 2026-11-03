@@ -53,6 +53,12 @@ nonisolated enum TransferWordGroupDraft {
         let writingSpace = adaptivePDF ? String(repeating: "\u{00A0}", count: 14) : " "
         return "العدد: \(number)\nالتاريخ:\(writingSpace)\(date)"
     }
+    /// تبقى مساحة الكتابة بين القوسين عند رسم PDF أو فتح Word.
+    static func footerWritingSpace(_ footer: String) -> String {
+        footer.replacingOccurrences(of: "\\([ \t\u{00A0}]*\\)",
+                                    with: "(" + String(repeating: "\u{00A0}", count: 20) + ")",
+                                    options: .regularExpression)
+    }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
                       text: LetterText, destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
         func nonempty(_ s: String) -> Bool { !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -88,7 +94,7 @@ nonisolated enum TransferWordGroupDraft {
         }
         blocks += [
             .table(signatures),
-            .paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)),
+            .paragraph(.init(text: footerWritingSpace(text.footer), halfPoints: 24, bold: adaptivePDF)),
             .pageBreak,
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(bodyNumber(year, adaptivePDF: adaptivePDF)))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)

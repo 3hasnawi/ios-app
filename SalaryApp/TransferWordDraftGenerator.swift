@@ -42,7 +42,7 @@ nonisolated enum TransferWordDraftGenerator {
                 for row in plan.table.rows.dropLast() { checks.append(row[2]); checks.append(row[4]) }
                 try TransferAdaptivePDF.verify(letter, required: checks)
             } else { try TransferWordVerification.verify(url: letter, month: plan.month, amount: plan.total, payerIBAN: plan.payerIBAN,
-                text: text, table: plan.table) }
+                text: text, table: plan.table, footerOverride: TransferWordGroupDraft.footerWritingSpace(text.footer)) }
             let csv = root.appendingPathComponent(category == .rafidain ? "Rafidain.csv" : "OtherBanks.csv")
             try plan.csv.write(to: csv, options: [.atomic, .completeFileProtection])
             guard try Data(contentsOf: csv) == plan.csv else { throw Failure.changed }

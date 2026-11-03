@@ -56,7 +56,7 @@ nonisolated enum TransferWordVerification {
                        text: TransferWordGroupDraft.LetterText, table: TransferWordDocument.Table?,
                        beneficiaryName: String? = nil, beneficiaryAccount: String? = nil,
                        bank: String? = nil, personName: String? = nil, personRank: String? = nil,
-                       contractReference: String? = nil) throws {
+                       contractReference: String? = nil, footerOverride: String? = nil) throws {
         let archive = try Archive(url: url, accessMode: .read)
         guard let entry = archive["word/document.xml"], entry.type == .file,
               entry.uncompressedSize <= 80_000_000 else { throw Failure.mismatch }
@@ -78,7 +78,7 @@ nonisolated enum TransferWordVerification {
               body.contains("(\(numeric))"), body.contains("(\(words))"), body.contains("(\(payerIBAN))"),
               body.contains("(\(monthName) / \(year))"), reader.paragraphs.contains(text.header),
               reader.paragraphs.contains(where: { $0.contains("العدد: \(text.fixedNumber)") }),
-              reader.paragraphs.contains(text.footer) else { throw Failure.mismatch }
+              reader.paragraphs.contains(footerOverride ?? text.footer) else { throw Failure.mismatch }
         for value in [beneficiaryName, beneficiaryAccount, bank, personName, personRank, contractReference].compactMap({ $0 }) {
             guard !value.isEmpty, body.contains(value) else { throw Failure.mismatch }
         }
