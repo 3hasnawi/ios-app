@@ -5,7 +5,7 @@ import CoreText
 /// كشف المطابقة مستقل عن إثبات التحويل، ويحافظ على مسافة التوقيع في آخر صفحة.
 nonisolated enum BankReconciliationPDF {
     enum Failure: LocalizedError {
-        case empty, tooLong, damaged, missingImages
+        case empty, tooLong, damaged
         case verification(page: Int, area: String, row: Int)
         #if targetEnvironment(simulator)
         case debugVerification(actual: String, expected: String, column: Int)
@@ -15,7 +15,6 @@ nonisolated enum BankReconciliationPDF {
             case .empty: tr("لا توجد حركات لعرضها في الكشف.", "There are no movements to display.")
             case .tooLong: tr("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.", "A movement does not fit clearly; shorten its description and try again.")
             case .damaged: tr("تعذّر فتح ملف كشف المطابقة بعد إنشائه.", "Could not open the generated reconciliation statement.")
-            case .missingImages: tr("تعذّر تحميل شعار الوزارة للكشف.", "Could not load the ministry logo for the statement.")
             #if targetEnvironment(simulator)
             case .debugVerification(let actual, let expected, let column):
                 "PDF verification debug column \(column): actual=[\(actual)] expected=[\(expected)]"
@@ -88,16 +87,6 @@ nonisolated enum BankReconciliationPDF {
         let readText = String(actual.dropFirst(digits.count))
         return TransferAnbarTablePDF.matchesExtractedCell(readText, expected: text)
     }
-    /// سياق المطبوع يستخدم إحداثيات UIKit؛ تعكس الصورة كي يظهر الشعار باتجاهه الصحيح.
-    private static func drawImage(_ image: CGImage, in rect: CGRect, alpha: CGFloat, context: CGContext) {
-        context.saveGState()
-        context.setAlpha(alpha)
-        context.interpolationQuality = .high
-        context.translateBy(x: 0, y: page.height)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(image, in: CGRect(x: rect.minX, y: page.height - rect.maxY, width: rect.width, height: rect.height))
-        context.restoreGState()
-    }
     static func make(_ period: BankReconciliation.Period, complete: Bool = false, account: BankReconciliation.AccountDetails = .init()) async throws -> URL {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
@@ -116,7 +105,6 @@ nonisolated enum BankReconciliationPDF {
             let shade = UIColor(red: 0xF3 / 255, green: 0xF7 / 255, blue: 0xFB / 255, alpha: 1)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
-            guard let watermark = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { throw Failure.missingImages }
             func value(_ raw: String) throws -> String {
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard trimmed.count <= 100, !trimmed.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
@@ -204,8 +192,6 @@ nonisolated enum BankReconciliationPDF {
                 var index = 0, finalDrawn = false
                 repeat {
                     context.beginPage()
-                    // يبقى الشعار خلف الحركات ولا يغيّر بيانات الكشف أو حساباته.
-                    drawImage(watermark, in: CGRect(x: 120, y: 280, width: 355, height: 355), alpha: 0.06, context: cg)
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
                     for (index, value) in organization.enumerated() {

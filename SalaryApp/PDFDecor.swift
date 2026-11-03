@@ -1,20 +1,15 @@
 import UIKit
 
-/// لمسة أخيرة لكل كشف PDF: شعار الوزارة علامة مائية شفافة في وسط كل صفحة،
-/// وتذييل في أسفل كل صفحة: يميناً اسم القسم، وفي الوسط رقم الصفحة، ويساراً تاريخ ووقت التصدير.
+/// تذييل أسفل كل صفحة: يميناً اسم القسم، وفي الوسط رقم الصفحة، ويساراً تاريخ ووقت التصدير.
 /// يعمل على الملف بعد كتابته، فيشمل كل الكشوف (القوائم، صندوق الشهداء، عقد الإطعام، الرعاية الصحية).
 nonisolated enum PDFDecor {
     static let footerText = "( قيادة شرطة محافظة الانبار - قسم الحسابات )"
-    /// شفافية الشعار: واضح ولا يغطي الأرقام.
-    static let watermarkAlpha: CGFloat = 0.10
-
-    /// يعيد كتابة الملف: العلامة المائية تحت محتوى كل صفحة، والتذييل فوقه.
+    /// يعيد كتابة الملف مع التذييل فقط.
     static func apply(to url: URL, date: Date = .now, footer: String = footerText) throws {
         guard let source = CGPDFDocument(url as CFURL), source.numberOfPages > 0 else { return }
         let temp = url.deletingLastPathComponent().appendingPathComponent(".decor-\(UUID().uuidString).pdf")
         var mediaBox = CGRect(x: 0, y: 0, width: 595, height: 842)
         guard let context = CGContext(temp as CFURL, mediaBox: &mediaBox, nil) else { return }
-        let logo = watermark
         let stamp = stampText(date)
         let pages = source.numberOfPages
         for index in 1...pages { autoreleasepool {
@@ -22,7 +17,6 @@ nonisolated enum PDFDecor {
             var box = page.getBoxRect(.mediaBox)
             let info = [kCGPDFContextMediaBox as String: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary
             context.beginPDFPage(info)
-            if let logo { drawWatermark(logo, in: box, context: context) }
             context.saveGState()
             context.drawPDFPage(page)
             context.restoreGState()
@@ -39,31 +33,6 @@ nonisolated enum PDFDecor {
         f.locale = Locale(identifier: "ar_IQ@numbers=arab")
         f.dateFormat = "yyyy/MM/dd   h:mm a"
         return f.string(from: date)
-    }
-
-    /// الشعار مصغّراً إلى ٨٠٠ نقطة كحد أقصى (يكفي لطباعة واضحة، ويقلل حجم الملف للمشاركة).
-    private static let watermark: CGImage? = {
-        guard let source = UIImage(named: "WatermarkLogo")?.cgImage ?? UIImage(named: "HomeLogo")?.cgImage else { return nil }
-        let scale = min(1, 800 / CGFloat(max(source.width, source.height)))
-        guard scale < 1 else { return source }
-        let w = Int(CGFloat(source.width) * scale), h = Int(CGFloat(source.height) * scale)
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return source }
-        ctx.interpolationQuality = .high
-        ctx.draw(source, in: CGRect(x: 0, y: 0, width: w, height: h))
-        return ctx.makeImage() ?? source
-    }()
-
-    private static func drawWatermark(_ logo: CGImage, in box: CGRect, context: CGContext) {
-        let side = min(box.width, box.height) * 0.62
-        let aspect = CGFloat(logo.height) / CGFloat(max(logo.width, 1))
-        let rect = CGRect(x: box.midX - side / 2, y: box.midY - side * aspect / 2, width: side, height: side * aspect)
-        context.saveGState()
-        context.setAlpha(watermarkAlpha)
-        context.interpolationQuality = .high
-        context.draw(logo, in: rect)
-        context.restoreGState()
     }
 
     private static func drawFooter(in box: CGRect, page: Int, of pages: Int, stamp: String, footer: String, context: CGContext) {

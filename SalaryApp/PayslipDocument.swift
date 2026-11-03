@@ -62,16 +62,6 @@ struct PayslipDocument: View {
                 netRow
             }
             .padding(16)
-            .background {
-                if style == .screen {
-                    Image("HomeLogo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 230)
-                        .opacity(0.05)
-                        .accessibilityHidden(true)
-                }
-            }
         }
         .foregroundStyle(Color.black)
         .background(Self.paper)

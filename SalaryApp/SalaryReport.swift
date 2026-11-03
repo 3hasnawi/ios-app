@@ -178,7 +178,7 @@ nonisolated struct SalaryReport: Sendable {
 // MARK: - PDF
 
 nonisolated enum SalaryReportPDF {
-    /// صفحة A4 لكل شهر، ثم العلامة المائية والتذييل.
+    /// صفحة A4 لكل شهر، ثم التذييل.
     static func write(_ reports: [SalaryReport], to url: URL) throws {
         let page = CGRect(x: 0, y: 0, width: 595, height: 842)
         let renderer = UIGraphicsPDFRenderer(bounds: page)
