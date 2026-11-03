@@ -770,13 +770,14 @@ try
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
     var footerExample = "نسخة منه الى:\n. (" + new string(' ', 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام مع التقدير.\n. مستلم (مذكور)";
     var expandedFooter = GroupLetterPdf.FooterWritingSpace(footerExample);
-    Check(expandedFooter.Contains("(" + new string('\u00A0', 20) + ")", StringComparison.Ordinal) && expandedFooter.Contains("(مذكور)", StringComparison.Ordinal) && GroupLetterPdf.FooterWritingSpace(expandedFooter) == expandedFooter,
+    Check(expandedFooter.Contains("(" + new string('\u00A0', 32) + ")", StringComparison.Ordinal) && expandedFooter.Contains("(مذكور)", StringComparison.Ordinal) && GroupLetterPdf.FooterWritingSpace(expandedFooter) == expandedFooter,
         "group footer reserves the empty writing space without changing filled parentheses");
     var footerPdf = GroupLetterPdf.Generate(groupLetter, letterSettings with { Footer = footerExample.Replace("\n. مستلم (مذكور)", "", StringComparison.Ordinal) }, fontBytes, fontBytes, logoBytes);
     using (var footerDocument = UglyToad.PdfPig.PdfDocument.Open(footerPdf))
     {
         var brackets = footerDocument.GetPage(1).Letters.Where(l => (l.Value == "(" || l.Value == ")") && l.GlyphRectangle.Bottom < 110).ToArray();
-        Check(brackets.Length == 2 && brackets.Max(l => l.GlyphRectangle.Left) - brackets.Min(l => l.GlyphRectangle.Left) > 35, "printed group footer has a visible handwriting gap");
+        Check(brackets.Length == 2 && brackets.Max(l => l.GlyphRectangle.Left) - brackets.Min(l => l.GlyphRectangle.Left) > 55 &&
+              Math.Abs(brackets[0].GlyphRectangle.Bottom - brackets[1].GlyphRectangle.Bottom) < 1, "printed group footer has a long handwriting gap on the same line");
     }
     var namedEntry = entry with { Title = "صندوق شهداء الشرطة (تبرعات)", Account = transferAccount with { Branch = "مصرف الرافدين فرع 12" } };
     var namedPlan = GroupLetterPreparation.Prepare(transfer with { Entries = [namedEntry] }, TransferGroup.Rafidain, new DateOnly(2026, 10, 31));

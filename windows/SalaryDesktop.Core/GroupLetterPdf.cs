@@ -9,7 +9,7 @@ public static class GroupLetterPdf
 {
     /// القوس الفارغ في نسخة التبليغ مساحة للكتابة اليدوية، لا مسافات عادية تُطوى عند الرسم.
     public static string FooterWritingSpace(string footer) => Regex.Replace(footer, @"\([ \t\u00A0]*\)",
-        _ => "(" + new string('\u00A0', 20) + ")", RegexOptions.CultureInvariant);
+        _ => "(" + new string('\u00A0', 32) + ")", RegexOptions.CultureInvariant);
     private static readonly string[] Months = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
     public const string DefaultBodyTemplate = "نرجو تحويل مبلغ قدره ({{المبلغ}}) ({{المبلغ كتابة}}) لا غيرها من حسابنا المرقم ({{حسابنا}}) المفتوح لديكم إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر ({{الشهر}} / {{السنة}}) وتزويدنا بالإشعار اللازم بذلك.";
     private static string Eastern(string value) => AdaptiveLetterPdf.Eastern(value);
