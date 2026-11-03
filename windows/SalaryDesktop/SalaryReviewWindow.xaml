@@ -1,6 +1,6 @@
 <Window x:Class="SalaryDesktop.SalaryReviewWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="تدقيق الرواتب" Width="1260" Height="820" MinWidth="980" MinHeight="600" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft"
-        FontFamily="{DynamicResource AppFont}" FontSize="14" Foreground="{DynamicResource Ink}" Background="{DynamicResource Page}">
+        FontFamily="{DynamicResource AppFont}" FontSize="14" Foreground="{DynamicResource Ink}" Background="{DynamicResource Page}" UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType" Typography.NumeralAlignment="Tabular">
   <!-- التدقيق (التصميم المعتمد 2026-11-02): الأنواع يميناً بعددها وشدتها، ثم حالات النوع (التكرار حالة لكل رقم)، والنقر يفتح «مكمن الخلل» وجدول المقارنة والخطوة المقترحة. -->
   <Window.Resources>
     <Style x:Key="ToneChip" TargetType="Border">

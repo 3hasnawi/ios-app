@@ -1,6 +1,6 @@
 <Window x:Class="SalaryDesktop.SalaryTrustWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="أمانات الرواتب" Width="1200" Height="800" MinWidth="940" MinHeight="580" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
-        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" SnapsToDevicePixels="True" TextOptions.TextRenderingMode="ClearType" Typography.NumeralAlignment="Tabular">
   <Grid Margin="22">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <!-- الرأس وبطاقة المتبقي المؤكد (مثل بطاقة الأمانات في الآيفون). -->
@@ -46,7 +46,7 @@
 
     <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Padding="0">
       <Grid>
-        <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown">
+        <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
           <DataGrid.Columns>
             <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
             <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="0.8*"/>

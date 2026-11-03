@@ -1,6 +1,6 @@
 <Window x:Class="SalaryDesktop.SalaryTrustEntryWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="تفاصيل الأمانة" Width="760" Height="820" MinWidth="620" MinHeight="560" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}" FontSize="14"
-        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" SnapsToDevicePixels="True" TextOptions.TextRenderingMode="ClearType" Typography.NumeralAlignment="Tabular">
   <DockPanel Margin="22">
     <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
       <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>

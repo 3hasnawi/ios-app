@@ -39,6 +39,7 @@ public partial class App : Application
         }
         Themes.Apply(UiPreferences.Current.Theme ?? "light");
         AppFonts.Apply(UiPreferences.Current.Font, UiPreferences.Current.Digits);
+        DialogStyleHelper.AttachFluentDialogBehavior();
         ScreenFit.Register();
         SmoothWheel.Register();
         base.OnStartup(e);
