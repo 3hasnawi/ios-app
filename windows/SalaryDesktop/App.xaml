@@ -462,6 +462,11 @@
     </Style>
 
     <!-- الجداول: صفوف أعلى، خطوط أفقية خفيفة، وتمرير بالبكسل مع إعادة استخدام الصفوف. -->
+    <Style x:Key="CompactTableText" TargetType="TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    </Style>
     <Style x:Key="AccountingNumberText" TargetType="TextBlock">
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
@@ -739,7 +744,14 @@
       <Setter Property="Background" Value="{DynamicResource TbgFFFFFF}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource TbgD3DCDD}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Padding" Value="3"/>
+      <Setter Property="Padding" Value="4"/>
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="ContextMenu">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+            <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter/></ScrollViewer>
+          </Border>
+        </ControlTemplate></Setter.Value>
+      </Setter>
     </Style>
     <Style TargetType="MenuItem">
       <Setter Property="Padding" Value="8,6"/>

@@ -558,6 +558,43 @@ try
     var ibanAudit = IbanAudit.Prepare(reviewSource with { Employees = ibanPeople }, reviewMonth);
     Check(ibanAudit.Rows.Count == 5 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Duplicate) == 2 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Valid) == 1 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Invalid) == 1 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Missing) == 1, "IBAN audit normalizes accounts, detects shared accounts and restricts its results to selected month");
     Check(!IbanAudit.Valid("IQABTEST123000000000001") && !IbanAudit.Valid("IQ06TES1123000000000001") && !IbanAudit.Valid("IQ06TEST12300000000000A") && IbanAudit.Valid(fakeReceiver), "IBAN audit checks Iraqi structure and checksum");
+    var comparisonRows = new[] {
+        new Deduction("أيلول 2026", "موظف وهمي أ", "جهة ألف", 10m, "١٢", "موظف"),
+        new Deduction("أيلول 2026", "موظف وهمي أ", "جهة ألف", 5m, "١٢", "موظف"),
+        new Deduction(reviewMonth, "موظف وهمي أ", "جهة ألف", 20m, "12", "موظف"),
+        new Deduction("أيلول 2026", "موظف وهمي ب", "جهة باء", 15m, "", "موظف"),
+        new Deduction(reviewMonth, "موظف وهمي ج", "جهة جيم", 12m, "", "موظف"),
+        new Deduction("أيلول 2026", "موظف وهمي د", "جهة دال", 20m, "", "موظف"),
+        new Deduction(reviewMonth, "موظف وهمي د", "جهة دال", 10m, "", "موظف"),
+        new Deduction("أيلول 2026", "موظف وهمي هـ", "جهة هاء", 9m, "", "موظف"),
+        new Deduction(reviewMonth, "موظف وهمي هـ", "جهة هاء", 9m, "", "موظف")
+    };
+    var comparisonSource = reviewSource with { Deductions = comparisonRows };
+    var comparison = DeductionComparison.Compare(comparisonSource, "أيلول 2026", reviewMonth);
+    Check(new DeductionChange("اختبار", "جهة", "", 500.125m, 501.375m, DeductionChangeKind.Increased).BeforeText == "500.125", "deduction comparison must not round monetary values");
+    Check(comparison.Entries.Count == 5 && comparison.Entries.Single(x => x.Name == "موظف وهمي أ") is { Before: 15m, After: 20m, Kind: DeductionChangeKind.Increased } && Enum.GetValues<DeductionChangeKind>().All(k => comparison.Entries.Any(x => x.Kind == k)), "deduction comparison groups duplicates and covers all change states");
+    try { DeductionComparison.Compare(comparisonSource with { Deductions = [comparisonRows[0]] }, "أيلول 2026", reviewMonth); throw new InvalidOperationException("empty comparison month accepted without confirmation"); } catch (InvalidDataException) { }
+    Check(DeductionComparison.Compare(comparisonSource with { Deductions = [comparisonRows[0]] }, "أيلول 2026", reviewMonth, true).Entries.Single().Kind == DeductionChangeKind.Stopped, "confirmed empty comparison month");
+    try { DeductionComparison.Compare(comparisonSource with { Deductions = [comparisonRows[0], comparisonRows[2] with { Amount = null }] }, "أيلول 2026", reviewMonth); throw new InvalidOperationException("missing amount accepted in comparison"); } catch (InvalidDataException) { }
+    try { DeductionComparison.Compare(comparisonSource, reviewMonth, "أيلول 2026"); throw new InvalidOperationException("reverse month comparison accepted"); } catch (InvalidDataException) { }
+    var preciseComparison = new DeductionChange("اسم وهمي", "جهة وهمية", "١٢", 500.125m, 1234567890123456m, DeductionChangeKind.Increased);
+    var compareColumns = new[] { "الاسم", "الجهة", "الإضبارة", "السابق", "الحالي", "الفرق", "الحالة" }.Select(t => new ReportColumn(t, 15, ReportColumnKind.Text)).ToArray();
+    string ExactComparisonAmount(decimal n) => n.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture);
+    var comparisonSheet = new ReportSheet("تجريبي", "مقارنة تجريبية", compareColumns, [new[] { preciseComparison.Name, preciseComparison.Entity, preciseComparison.Note, ExactComparisonAmount(preciseComparison.Before), ExactComparisonAmount(preciseComparison.After), ExactComparisonAmount(preciseComparison.Difference), preciseComparison.Status }], [], false);
+    var comparisonExcel = DeductionComparisonReport.Excel(comparisonSheet, [preciseComparison]);
+    using (var compareZip = new ZipArchive(new MemoryStream(comparisonExcel), ZipArchiveMode.Read))
+    {
+        using var worksheet = new StreamReader(compareZip.GetEntry("xl/worksheets/sheet1.xml")!.Open()); var xml = worksheet.ReadToEnd();
+        using var styles = new StreamReader(compareZip.GetEntry("xl/styles.xml")!.Open()); var styleXml = styles.ReadToEnd();
+        Check(xml.Contains("<c r=\"D4\" s=\"6\"><v>500.125</v></c>") && xml.Contains("r=\"E4\" s=\"4\" t=\"inlineStr\"") && xml.Contains("1234567890123456") && styleXml.Contains("#,##0.############################"), "comparison Excel preserves decimal display and stores high-precision values as text");
+    }
+    try { DeductionComparisonReport.Excel(comparisonSheet, [preciseComparison with { Before = 501m }]); throw new InvalidOperationException("comparison export accepted mismatched data"); } catch (InvalidDataException) { }
+    var referenceChanged = comparisonSource with { Deductions = [comparisonRows[0], comparisonRows[2] with { Amount = 10m, Note = "إضبارة جديدة" }] };
+    var referenceComparison = DeductionComparison.Compare(referenceChanged, "أيلول 2026", reviewMonth);
+    Check(referenceComparison.People.Single().Kind == DeductionChangeKind.Unchanged && referenceComparison.Entries.Count == 2 && referenceComparison.Entries.Any(x => x.Kind == DeductionChangeKind.Stopped) && referenceComparison.Entries.Any(x => x.Kind == DeductionChangeKind.Started), "changed case reference must not appear as a stopped employee");
+    var zeroRecord = comparisonSource with { Deductions = [comparisonRows[0], comparisonRows[2] with { Amount = 0m }] };
+    Check(DeductionComparison.Compare(zeroRecord, "أيلول 2026", reviewMonth).Entries.Single().Kind == DeductionChangeKind.Stopped, "zero deductions must not count as active amounts");
+    try { DeductionComparison.Compare(comparisonSource with { Deductions = [comparisonRows[0], comparisonRows[2] with { Amount = -1m }] }, "أيلول 2026", reviewMonth); throw new InvalidOperationException("negative amount accepted in comparison"); } catch (InvalidDataException) { }
     var review = SalaryReview.Prepare(reviewSource, reviewMonth);
     Check(review.PreviousMonth == "أيلول 2026" && review.Rows.Any(r => r.Kind == "تغيّر الصافي" && r.Name == reviewNew.Name && r.Before == 1000 && r.After == 1200) && review.Rows.Any(r => r.Kind == "تغيّرت الرتبة") && review.Rows.Any(r => r.Kind == "تغيّر محل العمل"), "salary review compares unique employees to previous month");
     Check(review.ExcludedAmbiguous == 1 && review.Rows.Any(r => r.Kind == "أسماء مكررة") && !review.Rows.Any(r => r.Kind == "جديد في الرواتب" && r.Name == duplicateNew.Name), "ambiguous duplicate names never cause automatic comparison");

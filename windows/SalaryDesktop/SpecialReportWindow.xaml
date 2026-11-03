@@ -135,22 +135,22 @@
         <Grid>
           <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0">
             <TabItem x:Name="NamesTab" Header="الأسماء">
-              <DataGrid x:Name="Names" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0"  EnableRowVirtualization="True" Margin="0,8,0,0" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+              <DataGrid x:Name="Names" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0"  EnableRowVirtualization="True" Margin="0,8,0,0" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
                 <DataGrid.Columns>
-                  <DataGridTextColumn Header="ت" Binding="{Binding Index}" Width="55"/>
-                  <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/>
-                  <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
-                  <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="*"/>
-                  <DataGridTextColumn x:Name="ExtraColumn" Header="محل العمل" Binding="{Binding Extra}" Width="1.8*"/>
+                  <DataGridTextColumn Header="ت" Binding="{Binding Index}" Width="55" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn x:Name="ExtraColumn" Header="محل العمل" Binding="{Binding Extra}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
                 </DataGrid.Columns>
               </DataGrid>
             </TabItem>
             <TabItem x:Name="OthersTab" Header="غير المشتركين" Visibility="Collapsed">
-              <DataGrid x:Name="Others" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0"  EnableRowVirtualization="True" Margin="0,8,0,0" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+              <DataGrid x:Name="Others" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" HeadersVisibility="Column" RowHeaderWidth="0"  EnableRowVirtualization="True" Margin="0,8,0,0" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
                 <DataGrid.Columns>
-                  <DataGridTextColumn Header="ت" Binding="{Binding Index}" Width="55"/>
-                  <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="*"/>
-                  <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
+                  <DataGridTextColumn Header="ت" Binding="{Binding Index}" Width="55" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+                  <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
                 </DataGrid.Columns>
               </DataGrid>
             </TabItem>

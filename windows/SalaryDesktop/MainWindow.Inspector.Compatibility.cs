@@ -76,7 +76,7 @@ public partial class MainWindow
     }
     private void InspectorCompatibilityTabChanged(object sender, RoutedEventArgs e) => FilterInspectorCompatibility();
     private void InspectorCompatibilityKeyDown(object sender, KeyEventArgs e) { if (!Locker.IsLocked && !e.Handled) WindowPreviewKeyDown(sender, e); }
-    private void OpenInspectorClick(object sender, RoutedEventArgs e) => UpdateInspectorFromSelection();
+    private void OpenInspectorClick(object sender, RoutedEventArgs e) { if (page != "deductions") UpdateInspectorFromSelection(); }
     private void CloseInspector()
     {
         if (InspectorDrawer is not null) InspectorDrawer.Visibility = Visibility.Collapsed;

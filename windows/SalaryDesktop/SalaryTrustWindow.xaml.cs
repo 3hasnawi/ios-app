@@ -13,12 +13,18 @@ namespace SalaryDesktop;
 public partial class SalaryTrustWindow : Window
 {
     public sealed record Row(SalaryTrustEntry Entry, string Name, string Rank, string Month, int Period, string Amount, long AmountValue, string Paid,
-        string Remaining, long RemainingValue, string CaseStatus, string Status, string Kind, string Documents);
+        string Remaining, long RemainingValue, string CaseStatus, string Status, string Kind, string Documents)
+    {
+        public IReadOnlyDictionary<Guid, string> BookNames { get; init; } = new Dictionary<Guid, string>();
+        public string Books => string.Join(" · ", (Entry.BookIds ?? []).Select(id => Guid.TryParse(id, out var key) && BookNames.TryGetValue(key, out var title) ? title : "كتاب غير متاح"));
+        public string PaymentDetails => string.Join(" · ", Entry.Payments.Select(p => string.Join(" / ", new[] { Number(p.Amount), p.BookNumber, p.BookDate, p.Note }.Where(v => !string.IsNullOrWhiteSpace(v)))));
+    }
     public sealed record MonthOption(int Key, string Label);
     public sealed record StatusOption(SalaryTrustFilter Filter, string Title);
 
     private readonly BackupSnapshot source;
     private readonly LocalSalaryTrustStore store;
+    private readonly IReadOnlyDictionary<Guid, string> bookNames;
     private readonly Func<bool> current;
     private SalaryTrustSnapshot state;
     private bool syncing;
@@ -28,7 +34,7 @@ public partial class SalaryTrustWindow : Window
     public SalaryTrustWindow(BackupSnapshot source, LocalSalaryTrustStore store, Func<bool> current)
     {
         InitializeComponent();
-        this.source = source; this.store = store; this.current = current; state = store.Load(source);
+        this.source = source; this.store = store; this.current = current; bookNames = source.Books.ToDictionary(b => b.Id, b => b.Title); state = store.Load(source);
         syncing = true;
         StatusPicker.ItemsSource = SalaryTrust.Filters.Select(f => new StatusOption(f.Filter, f.Title)).ToArray();
         StatusPicker.SelectedIndex = 0;
@@ -68,7 +74,7 @@ public partial class SalaryTrustWindow : Window
         Table.ItemsSource = shown.Select(e => new Row(e, e.Name, e.Rank, SalaryTrust.MonthLabel(e.Year, e.Month), e.Year * 100 + e.Month, Number(e.Amount), e.Amount,
             e.ReviewPending ? "—" : Number(SalaryTrust.Paid(e)), e.ReviewPending ? "—" : Number(SalaryTrust.Remaining(e)), e.ReviewPending ? -1 : SalaryTrust.Remaining(e),
             e.CaseStatus, SalaryTrust.PaymentStatus(e), e.ReviewPending ? "review" : SalaryTrust.Remaining(e) == 0 ? "paid" : SalaryTrust.Paid(e) > 0 ? "partial" : "unpaid",
-            (e.BookIds?.Count ?? 0) == 0 ? "" : (e.BookIds!.Count).ToString(CultureInfo.InvariantCulture))).ToArray();
+            (e.BookIds?.Count ?? 0) == 0 ? "" : (e.BookIds!.Count).ToString(CultureInfo.InvariantCulture)) { BookNames = bookNames }).ToArray();
         EmptyText.Text = state.Ledger.Entries.Count == 0
             ? "لا توجد أمانات بعد. استورد الملف الافتتاحي على جهاز واحد (هنا أو في الآيفون)، ثم انقل نسخته الاحتياطية إلى الجهاز الآخر."
             : "لا توجد قيود مطابقة للمرشحات.";
@@ -169,6 +175,9 @@ public partial class SalaryTrustWindow : Window
     }
 
     // ——— القيد ———
+    private void SelectContextRow(object sender, MouseButtonEventArgs e) => TableContextSelection.Select(Table, e);
+    private void GuardTableContext(object sender, ContextMenuEventArgs e) => TableContextSelection.Guard(Table, e);
+    private void OpenSelectedClick(object sender, RoutedEventArgs e) => OpenSelected();
     private void TableDoubleClick(object sender, MouseButtonEventArgs e) => OpenSelected();
     private void TableKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; OpenSelected(); } }
     private void OpenSelected()

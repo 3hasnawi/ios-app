@@ -77,6 +77,7 @@ public partial class MainWindow
         columnsPage = current;
         DataTable.ItemsSource = null;
         DataTable.Columns.Clear();
+        DataTable.RowHeight = double.NaN; DataTable.MinRowHeight = 38;
         var spec = Tables.GetValueOrDefault(current);
         if (spec is not null)
         {
@@ -86,10 +87,14 @@ public partial class MainWindow
                 var binding = new Binding(column.Key) { TargetNullValue = "—", StringFormat = column.Number ? "{0:#,0.##}" : null, ConverterCulture = Numbers };
                 var col = new DataGridTextColumn
                 {
-                    Header = column.Title, Binding = binding, SortMemberPath = column.Key, Width = new DataGridLength(column.Weight, DataGridLengthUnitType.Star),
+                    Header = column.Title, Binding = binding, SortMemberPath = column.Key, Width = DataGridLength.Auto,
+                    MinWidth = 56, MaxWidth = column.Number ? 190 : 320,
+                    ElementStyle = column.Number ? null : (Style)FindResource("CompactTableText"),
                     Visibility = column == spec.Columns[0] || (shown is null ? column.Shown : shown.Contains(column.Key)) ? Visibility.Visible : Visibility.Collapsed
                 };
                 ApplyAccountingColumnStyle(col, col.Header?.ToString() ?? "");
+                if (UiPreferences.Current.ColumnWidths?.GetValueOrDefault(current)?.GetValueOrDefault(column.Key) is double width && double.IsFinite(width) && width >= col.MinWidth && width <= col.MaxWidth)
+                    col.Width = new DataGridLength(width);
                 DataTable.Columns.Add(col);
             }
         }
@@ -104,6 +109,9 @@ public partial class MainWindow
         SecondRowMenu.Header = current == "payroll" ? "تفاصيل الراتب بكل الأعمدة" : "سجل الملاك الكامل";
         SecondRowMenu.Visibility = current is "payroll" or "staff" ? Visibility.Visible : Visibility.Collapsed;
         RowEntityMenu.Visibility = current is "groups" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
+        RowInspectorMenu.Visibility = current == "deductions" ? Visibility.Collapsed : Visibility.Visible;
+        RowEmployeeDeductionMenu.Visibility = current == "deductions" ? Visibility.Visible : Visibility.Collapsed;
+        DeductionCompareButton.Visibility = current == "deductions" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ApplyAccountingColumnStyle(DataGridTextColumn column, string headerOrKey)
@@ -117,6 +125,28 @@ public partial class MainWindow
         var amount = numeric || headerOrKey.Contains("الاسمي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("مخصصات", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("المبلغ", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Amount", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Salary", StringComparison.OrdinalIgnoreCase);
         var key = net ? "AccountingNetText" : deduction ? "AccountingDeductionText" : amount ? "AccountingNumberText" : null;
         if (key is not null && TryFindResource(key) is Style style) column.ElementStyle = style;
+    }
+
+    private void SaveUserColumnWidths(object sender, MouseButtonEventArgs e)
+    {
+        if (columnsPage is not { } current || e.OriginalSource is not DependencyObject node) return;
+        while (node is not null && node is not System.Windows.Controls.Primitives.DataGridColumnHeader)
+            node = node is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        if (node is null) return;
+        PersistColumnWidths(current);
+    }
+    private void PersistColumnWidths(string current)
+    {
+        var saved = UiPreferences.Current.ColumnWidths ??= new(StringComparer.Ordinal);
+        var widths = saved.GetValueOrDefault(current) ?? new Dictionary<string, double>(StringComparer.Ordinal);
+        bool changed = false;
+        foreach (var column in DataTable.Columns.Where(c => c.Width.IsAbsolute && !string.IsNullOrWhiteSpace(c.SortMemberPath)))
+        {
+            var value = column.Width.Value;
+            if (!double.IsFinite(value) || value < column.MinWidth || value > column.MaxWidth) continue;
+            if (!widths.TryGetValue(column.SortMemberPath, out var before) || Math.Abs(before - value) > .5) { widths[column.SortMemberPath] = value; changed = true; }
+        }
+        if (changed) { saved[current] = widths; if (UiPreferences.Save() is { } error) StatusBar.Text = "تعذّر حفظ عروض الأعمدة: " + error; }
     }
 
     private static Dictionary<string, string[]> ShownColumns => UiPreferences.Current.Columns!;
@@ -402,12 +432,29 @@ public partial class MainWindow
         ExportCopyMenu.Header = DataTable.SelectedItems.Count > 0 ? $"نسخ الصفوف المحددة ({DataTable.SelectedItems.Count:N0}) للصقها في Excel" : "نسخ المعروض للصقه في Excel";
         ExportMenu.PlacementTarget = ExportButton; ExportMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom; ExportMenu.IsOpen = true;
     }
+    private void SelectContextRow(object sender, MouseButtonEventArgs e) { if (sender is DataGrid grid) TableContextSelection.Select(grid, e); }
+    private void GuardTableContext(object sender, ContextMenuEventArgs e) { if (sender is DataGrid grid) TableContextSelection.Guard(grid, e); }
     private void RowMenuOpened(object sender, RoutedEventArgs e)
     {
+        RowEmployeeDeductionMenu.IsEnabled = page == "deductions" && DataTable.SelectedItems.Count == 1 && DataTable.SelectedItem is Deduction;
         RefreshEntityMenus();
         CopyRowsMenu.Header = DataTable.SelectedItems.Count > 1 ? $"نسخ الصفوف المحددة ({DataTable.SelectedItems.Count:N0})" : "نسخ الصف";
         CopyRowsMenu.IsEnabled = DataTable.SelectedItems.Count > 0;
     }
+    private void OpenDeductionComparison(object sender, RoutedEventArgs e)
+    {
+        if (snapshot is not { } source) { Ui.Message(this, "افتح نسخة بيانات أولاً.", "مقارنة الاستقطاعات"); return; }
+        new DeductionComparisonWindow(source, SelectedMonth, () => ReferenceEquals(source, snapshot) && !loading && !backingUp) { Owner = this }.ShowDialog();
+    }
+
+    private void OpenSelectedDeductionStatement(object sender, RoutedEventArgs e)
+    {
+        if (snapshot is not { } source || page != "deductions" || DataTable.SelectedItems.Count != 1 || DataTable.SelectedItem is not Deduction row) return;
+        var key = PersonProfiles.Key(row.Name);
+        if (key.Length == 0 || string.IsNullOrWhiteSpace(row.Title)) { Ui.Message(this, "بيانات المنتسب أو الجهة ناقصة؛ راجع القيد.", "كشف الاستقطاع"); return; }
+        new EmployeeDeductionWindow(source, new DeductionPerson(key, row.Name, row.Rank), row.Title) { Owner = this }.ShowDialog();
+    }
+
     private (ReportSheet Sheet, string Name)? EntitySheet()
     {
         var source = snapshot; var month = SelectedMonth;

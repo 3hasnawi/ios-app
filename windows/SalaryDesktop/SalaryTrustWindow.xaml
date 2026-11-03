@@ -46,15 +46,17 @@
 
     <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0" Padding="0">
       <Grid>
-        <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+        <DataGrid x:Name="Table" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" CanUserAddRows="False" BorderThickness="0" MouseDoubleClick="TableDoubleClick" SelectionChanged="SelectionChanged" KeyDown="TableKeyDown" PreviewMouseRightButtonDown="SelectContextRow" ContextMenuOpening="GuardTableContext" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+          <DataGrid.ContextMenu><ContextMenu><MenuItem Header="فتح تفاصيل الأمانة" Click="OpenSelectedClick"/><MenuItem Header="ربط المحدد بكتاب" Click="LinkArchive"/><Separator/><MenuItem Header="معاينة القيود المعروضة" Click="PreviewReport"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem><MenuItem Header="تصدير القيود المعروضة PDF" Click="ExportPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem><MenuItem Header="تصدير القيود المعروضة Excel" Click="ExportExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}"/></MenuItem.Icon></MenuItem></ContextMenu></DataGrid.ContextMenu>
           <DataGrid.Columns>
-            <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="2.4*"/>
-            <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="0.8*"/>
-            <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="1.5*" MinWidth="130" SortMemberPath="Period"/>
-            <DataGridTextColumn Header="الأمانة" Binding="{Binding Amount}" Width="*" SortMemberPath="AmountValue"/>
-            <DataGridTextColumn Header="المصروف" Binding="{Binding Paid}" Width="*"/>
-            <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="*" SortMemberPath="RemainingValue"/>
-            <DataGridTextColumn Header="الحالة" Binding="{Binding CaseStatus}" Width="1.6*"/>
+            <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="Auto" MaxWidth="280" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="محل العمل" Binding="{Binding Entry.Workplace}" Width="Auto" MaxWidth="240" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="Auto" MinWidth="130" SortMemberPath="Period" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="الأمانة" Binding="{Binding Amount}" Width="Auto" SortMemberPath="AmountValue" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="المصروف" Binding="{Binding Paid}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="Auto" SortMemberPath="RemainingValue" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="الحالة" Binding="{Binding CaseStatus}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             <DataGridTemplateColumn Header="الصرف" Width="1.1*" SortMemberPath="Status">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
@@ -69,7 +71,12 @@
                 </DataTemplate>
               </DataGridTemplateColumn.CellTemplate>
             </DataGridTemplateColumn>
-            <DataGridTextColumn Header="كتب" Binding="{Binding Documents}" Width="0.5*"/>
+            <DataGridTextColumn Header="كتب" Binding="{Binding Documents}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="عناوين الكتب" Binding="{Binding Books}" Width="Auto" MaxWidth="300" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="تفاصيل الدفعات" Binding="{Binding PaymentDetails}" Width="Auto" MaxWidth="300" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="ملاحظات" Binding="{Binding Entry.Note}" Width="Auto" MaxWidth="240" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="حالة الاستيراد" Binding="{Binding Entry.ImportedStatus}" Width="Auto" MaxWidth="200" ElementStyle="{StaticResource CompactTableText}"/>
+            <DataGridTextColumn Header="عدد دفعات الصرف" Binding="{Binding Entry.Payments.Count}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
           </DataGrid.Columns>
         </DataGrid>
         <TextBlock x:Name="EmptyText" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="460" Visibility="Collapsed"/>

@@ -20,6 +20,7 @@ public partial class MainWindow
     }
     private sealed record ToolTile(string Key, string Glyph, string Title, string Tint, string Hint, bool Pinned)
     {
+        public bool CanCustomize => Key != "add";
         public string PinText => Pinned ? "إلغاء التثبيت" : "تثبيت في البداية";
         public Visibility PinVisibility => Pinned ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -27,19 +28,24 @@ public partial class MainWindow
     /// كل أدوات الرئيسية بترتيبها الافتراضي؛ يظهر منها ستّ: المثبتة أولاً ثم الأكثر استخداماً.
     private static readonly (string Key, string Glyph, string Title, string Tint, string Hint)[] ToolCatalog =
     [
-        ("groups", "", "جهات التنفيذ", "primary", "مبالغ الاستقطاع لكل جهة وقوائمها المعتمدة"),
+        ("groups", "", "جهات التنفيذ", "primary", "مبالغ الاستقطاع لكل جهة وقوائمها"),
+        ("compare", "", "مقارنة الاستقطاعات", "accent", "مقارنة شهرين حسب المنتسب والجهة والإضبارة"),
+        ("mobile", "", "شركة عراق الجوال", "primary", "فتح استقطاعات الجهة"),
+        ("fund", "", "صندوق الشهداء", "warn", "الكشف الخاص بالشكل المعتمد"),
+        ("health", "", "الرعاية الصحية", "warn", "الكشف الخاص بالشكل المعتمد"),
+        ("audit", "", "تدقيق الرواتب", "warn", "ملاحظات الرواتب ومقارنة الشهر السابق"),
+        ("payroll", "", "الرواتب", "primary", "جدول رواتب الشهر"),
+        ("staff", "", "الملاك", "accent", "سجلات الملاك للتدقيق"),
+        ("deductions", "", "الاستقطاعات", "warn", "قيود استقطاعات الشهر"),
         ("employee", "", "كشف استقطاعات موظف", "accent", "استقطاع جهة واحدة لموظف عبر الأشهر"),
         ("items", "", "بنود الرواتب", "accent", "بنود الرواتب للشهر المختار"),
-        ("fund", "", "صندوق الشهداء", "warn", "الكشف الخاص بالشكل المعتمد"),
         ("trust", "", "أمانات الرواتب", "primary", "أمانات رواتب الكاش غير المستلمة"),
         ("transfer", "", "ملفات التحويل", "primary", "ملفات المصارف والكتب للشهر المختار"),
-        ("health", "", "الرعاية الصحية", "warn", "الكشف الخاص بالشكل المعتمد"),
         ("food", "", "عقد الإطعام", "warn", "الكشف الخاص بالشكل المعتمد"),
-        ("audit", "", "تدقيق الرواتب", "warn", "ملاحظات الشهر ومقارنته بالشهر السابق"),
         ("ledger", "", "دفتر المطابقة", "primary", "فترات مطابقة حساب البنك وكشوفها"),
         ("bank", "", "كشف البنك", "primary", "مبالغ الشهر للمراجعة مع المصرف"),
         ("archive", "", "الأرشيف", "accent", "الكتب والإشعارات"),
-        ("accounts", "", "حسابات الجهات", "accent", "IBAN والفروع المحفوظة لجهات التنفيذ"),
+        ("accounts", "", "حسابات الجهات", "accent", "IBAN والفروع المحفوظة"),
     ];
 
     private HomeStep? nextStep;
@@ -66,7 +72,7 @@ public partial class MainWindow
             HomeCategories.ItemsSource = FundReport.Categories.Select(c => new CategoryTile(c.Name, 0)).ToArray();
             RenderNextSteps(); return;
         }
-        var people = staffDigest == source.SourceDigest ? staff : null;
+        IReadOnlyList<StaffMember>? people = null; // الرئيسية لا تعرض تنبيهات الملاك؛ يبقى التدقيق التفصيلي مستقلاً.
         var cached = homeCache is { } hit && ReferenceEquals(hit.Source, source) && hit.Month == month && ReferenceEquals(hit.People, people) ? hit : ((BackupSnapshot, string, IReadOnlyList<StaffMember>?, MonthSummary, HomeOverview)?)null;
         if (cached is null) { BeginLoading("home", "جارٍ احتساب ملخص الشهر…"); RenderNextSteps(); }
         try
@@ -213,7 +219,7 @@ public partial class MainWindow
         var digest = snapshot?.SourceDigest;
         var items = digest is null ? Array.Empty<RecentChip>() : UiPreferences.Current.Recent!.Where(r => r.Digest == digest).Take(5).Select(r => new RecentChip(r)).ToArray();
         RecentItems.ItemsSource = items;
-        RecentRow.Visibility = items.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RecentRow.Visibility = Visibility.Collapsed;
     }
     private async void OpenRecent(object sender, RoutedEventArgs e)
     {
@@ -250,7 +256,8 @@ public partial class MainWindow
         var pinned = saved.ToolPins!.Where(index.ContainsKey).ToList();
         var rest = ToolCatalog.Where(t => !pinned.Contains(t.Key) && !saved.ToolHidden!.Contains(t.Key))
             .OrderByDescending(t => saved.ToolUse!.GetValueOrDefault(t.Key)).ThenBy(t => index[t.Key]).Select(t => t.Key);
-        HomeTools.ItemsSource = pinned.Concat(rest).Take(6).Select(key => Tile(key, pinned.Contains(key))).ToArray();
+        HomeTools.ItemsSource = pinned.Concat(rest).Take(Math.Max(7, pinned.Count)).Select(key => Tile(key, pinned.Contains(key)))
+            .Append(new ToolTile("add", "", "إضافة بطاقة", "primary", "اختيار البطاقات وتثبيتها", false)).ToArray();
     }
     private static ToolTile Tile(string key, bool pinned)
     {
@@ -263,12 +270,21 @@ public partial class MainWindow
     }
     private async Task RunTool(string key)
     {
+        if (key == "add") { ShowAllTools(this, new RoutedEventArgs()); return; }
         var use = UiPreferences.Current.ToolUse!;
         use[key] = use.GetValueOrDefault(key) + 1; UiPreferences.Save();
         switch (key)
         {
-            case "groups": case "transfer": case "bank": case "archive": case "accounts":
+            case "groups": case "transfer": case "bank": case "archive": case "accounts": case "payroll": case "staff": case "deductions":
                 if (NavItems.FirstOrDefault(item => Equals(item.Tag, key)) is { } radio) radio.IsChecked = true; break;
+            case "compare": OpenDeductionComparison(this, new RoutedEventArgs()); break;
+            case "mobile":
+                if (snapshot is not { } mobileSource) { Ui.Message(this, "افتح البيانات واختر الشهر أولاً.", "عراق الجوال"); break; }
+                var mobileTitles = mobileSource.Deductions.Where(d => d.Month == SelectedMonth && PayrollAnalysis.Normalize(d.Title).Contains("عراق الجوال", StringComparison.Ordinal)).Select(d => d.Title).Distinct(StringComparer.Ordinal).ToArray();
+                if (mobileTitles.Length == 1) ShowEntity(mobileTitles[0]);
+                else if (mobileTitles.Length > 1) { NavGroups.IsChecked = true; Ui.Message(this, "توجد أكثر من جهة باسم عراق الجوال؛ اختر الجهة من القائمة.", "عراق الجوال"); }
+                else Ui.Message(this, "لم تُعثر جهة عراق الجوال في استقطاعات الشهر المختار.", "عراق الجوال");
+                break;
             case "employee": OpenEmployeeDeductions(this, new RoutedEventArgs()); break;
             case "items": await ShowSalaryItems(null); break;
             case "fund": case "health": case "food": await ShowSalaryItems(key); break;
@@ -308,8 +324,17 @@ public partial class MainWindow
         {
             var key = tool.Key;
             var item = new MenuItem { Header = tool.Title + (hidden.Contains(key) ? "  (مخفية)" : ""), Icon = new TextBlock { Text = tool.Glyph, Style = (Style)FindResource("Icon") } };
-            item.Click += async (_, _) => await RunTool(key);
-            menu.Items.Add(item);
+            var pin = new MenuItem { Header = UiPreferences.Current.ToolPins!.Contains(key) ? "إلغاء التثبيت" : "إضافة وتثبيت في البداية" };
+            pin.Click += (_, _) =>
+            {
+                var pins = UiPreferences.Current.ToolPins!;
+                if (!pins.Remove(key)) pins.Add(key);
+                UiPreferences.Current.ToolHidden!.Remove(key);
+                UiPreferences.Save(); RenderTools();
+            };
+            var open = new MenuItem { Header = "فتح" };
+            open.Click += async (_, _) => await RunTool(key);
+            item.Items.Add(pin); item.Items.Add(open); menu.Items.Add(item);
         }
         if (hidden.Count > 0)
         {

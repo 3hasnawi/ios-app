@@ -45,7 +45,7 @@ public partial class MainWindow
     private void InitializeInspectorEvents() => DataTable.SelectionChanged += DataTable_InspectorSelectionChanged;
     private void DataTable_InspectorSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (DataTable.SelectedItem is null) { CloseInspector(); return; }
+        if (DataTable.SelectedItem is null || page == "deductions") { CloseInspector(); return; }
         RefreshInspectorCompatibility();
     }
     private void UpdateInspectorFromSelection() => RefreshInspectorCompatibility();

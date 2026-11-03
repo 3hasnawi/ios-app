@@ -172,12 +172,12 @@
       <TabItem Header="الاستقطاعات عبر الأشهر">
         <DockPanel Margin="0,14,0,0">
           <TextBlock x:Name="HistoryStatus" DockPanel.Dock="Bottom" Foreground="{DynamicResource Muted}" Margin="2,8,0,0"/>
-          <DataGrid x:Name="HistoryTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+          <DataGrid x:Name="HistoryTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="*"/>
-              <DataGridTextColumn Header="جهة التنفيذ" Binding="{Binding Title}" Width="2*"/>
-              <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:#,0.##}, TargetNullValue=غير محتسب}" Width="*"/>
-              <DataGridTextColumn Header="الملاحظة" Binding="{Binding Note}" Width="2*"/>
+              <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="جهة التنفيذ" Binding="{Binding Title}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:#,0.##}, TargetNullValue=غير محتسب}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="الملاحظة" Binding="{Binding Note}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             </DataGrid.Columns>
           </DataGrid>
         </DockPanel>
@@ -185,11 +185,11 @@
       <TabItem x:Name="StaffTab" Header="سجل الملاك">
         <DockPanel Margin="0,14,0,0">
           <TextBlock x:Name="StaffStatus" DockPanel.Dock="Top" Foreground="{DynamicResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
-          <DataGrid x:Name="StaffTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+          <DataGrid x:Name="StaffTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="القسم" Binding="{Binding Section}" Width="*"/>
-              <DataGridTextColumn Header="الحقل" Binding="{Binding Label}" Width="1.4*"/>
-              <DataGridTextColumn Header="القيمة" Binding="{Binding Value}" Width="2*"/>
+              <DataGridTextColumn Header="القسم" Binding="{Binding Section}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="الحقل" Binding="{Binding Label}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="القيمة" Binding="{Binding Value}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             </DataGrid.Columns>
           </DataGrid>
         </DockPanel>
@@ -197,12 +197,12 @@
       <TabItem x:Name="ChangesTab" Header="التغيّرات مع الشهر السابق">
         <DockPanel Margin="0,14,0,0">
           <TextBlock x:Name="ChangesStatus" DockPanel.Dock="Top" Foreground="{DynamicResource Muted}" Margin="2,0,0,8" TextWrapping="Wrap"/>
-          <DataGrid x:Name="ChangesTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="40" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
+          <DataGrid x:Name="ChangesTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Extended" ClipboardCopyMode="IncludeHeader" RowHeight="NaN" MinRowHeight="38" ColumnHeaderHeight="42" AlternatingRowBackground="{DynamicResource AccountingGridAlternate}" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{DynamicResource AccountingGridLines}">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="البند" Binding="{Binding Title}" Width="2*"/>
-              <DataGridTextColumn Header="الشهر السابق" Binding="{Binding Before}" Width="*"/>
-              <DataGridTextColumn Header="الشهر المعروض" Binding="{Binding After}" Width="*"/>
-              <DataGridTextColumn Header="الفرق" Binding="{Binding Difference}" Width="*"/>
+              <DataGridTextColumn Header="البند" Binding="{Binding Title}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="الشهر السابق" Binding="{Binding Before}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="الشهر المعروض" Binding="{Binding After}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
+              <DataGridTextColumn Header="الفرق" Binding="{Binding Difference}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             </DataGrid.Columns>
           </DataGrid>
         </DockPanel>

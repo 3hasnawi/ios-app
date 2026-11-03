@@ -33,58 +33,46 @@
                 <TextBlock x:Name="SidebarData" Text="لا توجد بيانات مفتوحة" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Tfg38504C}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                 <TextBlock x:Name="SidebarBackup" Text="محفوظة محلياً في حساب ويندوز" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
               </StackPanel>
-              <RadioButton x:Name="NavSettings" Grid.Column="2" Style="{StaticResource NavGear}" Tag="settings" Checked="Navigate" ToolTip="الإعدادات · Ctrl+0" Margin="8,0,0,0">
-                <TextBlock Style="{StaticResource Icon}" Text="&#xE713;" FontSize="15"/>
-              </RadioButton>
+
             </Grid>
           </Border>
           <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
             <StackPanel>
-              <RadioButton x:Name="NavHome" IsChecked="True" Margin="0,0,0,8" Style="{StaticResource NavItem}" Tag="home" Checked="Navigate" ToolTip="الرئيسية · Ctrl+1">
+<RadioButton GroupName="SalaryNav" x:Name="NavHome" IsChecked="True" Margin="0,0,0,8" Style="{StaticResource NavItem}" Tag="home" Checked="Navigate" ToolTip="الرئيسية · Ctrl+1">
                 <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xE80F;"/></Border><TextBlock Text="الرئيسية" VerticalAlignment="Center"/></StackPanel>
               </RadioButton>
-              <Border Style="{StaticResource NavGroupBox}">
-                <StackPanel>
-                  <TextBlock Style="{StaticResource NavHeader}" Text="البيانات"/>
-                <RadioButton x:Name="NavPayroll" Style="{StaticResource NavItem}" Tag="payroll" Checked="Navigate" ToolTip="الرواتب · Ctrl+2">
-                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource AccentSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Accent}" Text="&#xE8C7;"/></Border><TextBlock Text="الرواتب" VerticalAlignment="Center"/></StackPanel>
-                </RadioButton>
-                <RadioButton x:Name="NavDeductions" Style="{StaticResource NavItem}" Tag="deductions" Checked="Navigate" ToolTip="الاستقطاعات · Ctrl+3">
+<RadioButton GroupName="SalaryNav" x:Name="NavDeductions" Style="{StaticResource NavItem}" Tag="deductions" Checked="Navigate" ToolTip="الاستقطاعات · Ctrl+3">
                   <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource WarnSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Warn}" Text="&#xE738;"/></Border><TextBlock Text="الاستقطاعات" VerticalAlignment="Center"/></StackPanel>
                 </RadioButton>
-                <RadioButton x:Name="NavStaff" Style="{StaticResource NavItem}" Tag="staff" Checked="Navigate" ToolTip="الملاك · Ctrl+4">
-                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource VioletSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Violet}" Text="&#xE716;"/></Border><TextBlock Text="الملاك" VerticalAlignment="Center"/></StackPanel>
-                </RadioButton>
-                <RadioButton x:Name="NavArchive" Style="{StaticResource NavItem}" Tag="archive" Checked="Navigate" ToolTip="الأرشيف · Ctrl+5">
-                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource AccentSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Accent}" Text="&#xE7B8;"/></Border><TextBlock Text="الأرشيف" VerticalAlignment="Center"/></StackPanel>
-                </RadioButton>
-                  <Button Style="{StaticResource NavButton}" Click="OpenSalaryTrust" ToolTip="أمانات رواتب الكاش غير المستلمة (الدفتر المشترك مع الآيفون)">
-                    <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xEA18;"/></Border><TextBlock Text="أمانات الرواتب" VerticalAlignment="Center"/></StackPanel>
-                  </Button>
-                </StackPanel>
-              </Border>
-              <Border Style="{StaticResource NavGroupBox}">
-                <StackPanel>
-                  <TextBlock Style="{StaticResource NavHeader}" Text="التقارير"/>
-                <RadioButton x:Name="NavGroups" Style="{StaticResource NavItem}" Tag="groups" Checked="Navigate" ToolTip="جهات التنفيذ · Ctrl+6">
-                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xE8F1;"/></Border><TextBlock Text="جهات التنفيذ" VerticalAlignment="Center"/></StackPanel>
-                </RadioButton>
-                <RadioButton x:Name="NavBank" Style="{StaticResource NavItem}" Tag="bank" Checked="Navigate" ToolTip="كشف البنك · Ctrl+7">
+<RadioButton GroupName="SalaryNav" x:Name="NavBank" Style="{StaticResource NavItem}" Tag="bank" Checked="Navigate" ToolTip="كشف البنك · Ctrl+7">
                   <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource WarnSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Warn}" Text="&#xE8EF;"/></Border><TextBlock Text="كشف البنك" VerticalAlignment="Center"/><Border x:Name="BankBadge" Background="{DynamicResource WarnSoft}" CornerRadius="8" Padding="7,0" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="فترات مطابقة قيد العمل"><TextBlock x:Name="BankBadgeText" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Warn}"/></Border></StackPanel>
                 </RadioButton>
-                </StackPanel>
-              </Border>
-              <Border Style="{StaticResource NavGroupBox}">
-                <StackPanel>
-                  <TextBlock Style="{StaticResource NavHeader}" Text="التحويلات"/>
-                <RadioButton x:Name="NavTransfer" Style="{StaticResource NavItem}" Tag="transfer" Checked="Navigate" ToolTip="ملفات التحويل · Ctrl+8">
+<RadioButton GroupName="SalaryNav" x:Name="NavTransfer" Style="{StaticResource NavItem}" Tag="transfer" Checked="Navigate" ToolTip="ملفات التحويل · Ctrl+8">
                   <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xE8AB;"/></Border><TextBlock Text="ملفات التحويل" VerticalAlignment="Center"/></StackPanel>
                 </RadioButton>
-                <RadioButton x:Name="NavAccounts" Style="{StaticResource NavItem}" Tag="accounts" Checked="Navigate" ToolTip="حسابات الجهات · Ctrl+9">
+<RadioButton GroupName="SalaryNav" x:Name="NavArchive" Style="{StaticResource NavItem}" Tag="archive" Checked="Navigate" ToolTip="الأرشيف · Ctrl+5">
+                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource AccentSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Accent}" Text="&#xE7B8;"/></Border><TextBlock Text="الأرشيف" VerticalAlignment="Center"/></StackPanel>
+                </RadioButton>
+<Button Style="{StaticResource NavButton}" Click="OpenSalaryTrust" ToolTip="أمانات رواتب الكاش غير المستلمة (الدفتر المشترك مع الآيفون)">
+                    <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xEA18;"/></Border><TextBlock Text="أمانات الرواتب" VerticalAlignment="Center"/></StackPanel>
+                  </Button>
+<RadioButton GroupName="SalaryNav" x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="settings" Checked="Navigate" ToolTip="الإعدادات · Ctrl+0">
+                <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xE713;"/></Border><TextBlock Text="الإعدادات" VerticalAlignment="Center"/></StackPanel>
+              </RadioButton>
+              <StackPanel Visibility="Collapsed">
+<RadioButton GroupName="SalaryNav" x:Name="NavPayroll" Style="{StaticResource NavItem}" Tag="payroll" Checked="Navigate" ToolTip="الرواتب · Ctrl+2">
+                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource AccentSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Accent}" Text="&#xE8C7;"/></Border><TextBlock Text="الرواتب" VerticalAlignment="Center"/></StackPanel>
+                </RadioButton>
+<RadioButton GroupName="SalaryNav" x:Name="NavStaff" Style="{StaticResource NavItem}" Tag="staff" Checked="Navigate" ToolTip="الملاك · Ctrl+4">
+                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource VioletSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Violet}" Text="&#xE716;"/></Border><TextBlock Text="الملاك" VerticalAlignment="Center"/></StackPanel>
+                </RadioButton>
+<RadioButton GroupName="SalaryNav" x:Name="NavGroups" Style="{StaticResource NavItem}" Tag="groups" Checked="Navigate" ToolTip="جهات التنفيذ · Ctrl+6">
+                  <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xE8F1;"/></Border><TextBlock Text="جهات التنفيذ" VerticalAlignment="Center"/></StackPanel>
+                </RadioButton>
+<RadioButton GroupName="SalaryNav" x:Name="NavAccounts" Style="{StaticResource NavItem}" Tag="accounts" Checked="Navigate" ToolTip="حسابات الجهات · Ctrl+9">
                   <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource VioletSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Violet}" Text="&#xE825;"/></Border><TextBlock Text="حسابات الجهات" VerticalAlignment="Center"/></StackPanel>
                 </RadioButton>
-                </StackPanel>
-              </Border>
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
         </DockPanel>
@@ -151,7 +139,7 @@
         <!-- الرئيسية «ماذا أفعل الآن»: بحث كبير وما فُتح مؤخراً، ثم الخطوة التالية المقترحة من حالة الشهر، ثم أرقام الشهر، ثم أدواتك بالأكثر استخداماً. -->
         <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel MaxWidth="1240">
-            <Button x:Name="HomeSearch" Style="{StaticResource HomeTile}" Click="OpenGlobalSearch" Height="54" MaxWidth="860" BorderBrush="{DynamicResource Primary}" BorderThickness="1.5" Padding="18,0" Margin="0,4,0,0" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
+            <Button x:Name="HomeSearch" Visibility="Collapsed" Style="{StaticResource HomeTile}" Click="OpenGlobalSearch" Height="54" MaxWidth="860" BorderBrush="{DynamicResource Primary}" BorderThickness="1.5" Padding="18,0" Margin="0,4,0,0" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" FontSize="17" Foreground="{DynamicResource Primary}" Margin="0,0,12,0"/>
@@ -178,6 +166,62 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </WrapPanel>
+
+            <!-- أرقام الشهر في سطر واحد؛ النقر على رقم يفتح قسمه. -->
+            <Border Style="{StaticResource Card}" Padding="0" Margin="0,16,0,0">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Background="{StaticResource HeroGradient}" CornerRadius="14" Margin="4">
+                  <Button Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب" Foreground="White">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource Icon}" Text="&#xE8C7;" Foreground="White" FontSize="16" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                      <TextBlock x:Name="NetLabel" Text="صافي الرواتب" Foreground="#E3F1ED" FontSize="13" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock x:Name="NetAmount" Text="—" Foreground="White" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
+                      <TextBlock x:Name="DeltaNet" FontSize="12.5" Foreground="#E3F1ED" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Button>
+                </Border>
+                <Rectangle Grid.Column="1" Fill="{DynamicResource Line}" Margin="0,14"/>
+                <Button Grid.Column="2" Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE716;" Foreground="{DynamicResource Primary}" FontSize="16" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                    <TextBlock Text="المنتسبون" Foreground="{DynamicResource Muted}" FontSize="13"/>
+                    <TextBlock x:Name="PeopleCount" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
+                    <WrapPanel>
+                      <TextBlock x:Name="DeltaPeople" FontSize="12.5" Foreground="{DynamicResource Primary}" Margin="0,0,6,0"/>
+                      <ItemsControl x:Name="HomeCategories" Focusable="False">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate><TextBlock Text="{Binding Text}" FontSize="12.5" Foreground="{DynamicResource Muted}" Margin="0,0,8,0"/></DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </WrapPanel>
+                  </StackPanel>
+                </Button>
+                <Rectangle Grid.Column="3" Fill="{DynamicResource Line}" Margin="0,14"/>
+                <Button Grid.Column="4" Style="{StaticResource StatCell}" Tag="deductions" Click="Navigate" ToolTip="فتح الاستقطاعات">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE738;" Foreground="{DynamicResource Primary}" FontSize="16" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                    <TextBlock Text="الاستقطاعات" Foreground="{DynamicResource Muted}" FontSize="13"/>
+                    <TextBlock x:Name="DeductionTotal" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
+                    <TextBlock x:Name="DeductionDetail" FontSize="12.5" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                </Button>
+                <Rectangle Grid.Column="5" Fill="{DynamicResource Line}" Margin="0,14"/>
+                <Button Grid.Column="6" Style="{StaticResource StatCell}" Tag="bank" Click="Navigate" ToolTip="فتح كشف البنك">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE8EF;" Foreground="{DynamicResource Primary}" FontSize="16" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                    <TextBlock Text="للمراجعة مع المصرف" Foreground="{DynamicResource Muted}" FontSize="13"/>
+                    <TextBlock x:Name="BankHomeTotal" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock x:Name="BankHomeIcon" Style="{StaticResource Icon}" Text="&#xE73E;" FontSize="12" Foreground="{DynamicResource Primary}" Margin="0,0,6,0" Visibility="Collapsed"/>
+                      <TextBlock x:Name="BankHomeHint" FontSize="12.5" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="DataWarning" TextWrapping="Wrap" Foreground="{DynamicResource Warn}" FontSize="12.5" Margin="4,8,4,0" Visibility="Collapsed"/>
 
             <!-- الخطوة التالية: إجراء واحد مقترح وزره، وتحته حتى ثلاث خطوات أخرى. -->
             <Border x:Name="NextCard" CornerRadius="16" Padding="22,18" Margin="0,16,0,0" Background="{DynamicResource TbgFFFFFF}" BorderBrush="{DynamicResource WarnLine}" BorderThickness="1.5">
@@ -220,74 +264,24 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- أرقام الشهر في سطر واحد؛ النقر على رقم يفتح قسمه. -->
-            <Border Style="{StaticResource Card}" Padding="0" Margin="0,16,0,0">
-              <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <Border Background="{StaticResource HeroGradient}" CornerRadius="14" Margin="4">
-                  <Button Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب" Foreground="White">
-                    <StackPanel>
-                      <TextBlock x:Name="NetLabel" Text="صافي الرواتب" Foreground="#E3F1ED" FontSize="13" TextTrimming="CharacterEllipsis"/>
-                      <TextBlock x:Name="NetAmount" Text="—" Foreground="White" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
-                      <TextBlock x:Name="DeltaNet" FontSize="12.5" Foreground="#E3F1ED" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                  </Button>
-                </Border>
-                <Rectangle Grid.Column="1" Fill="{DynamicResource Line}" Margin="0,14"/>
-                <Button Grid.Column="2" Style="{StaticResource StatCell}" Tag="payroll" Click="Navigate" ToolTip="فتح الرواتب">
-                  <StackPanel>
-                    <TextBlock Text="المنتسبون" Foreground="{DynamicResource Muted}" FontSize="13"/>
-                    <TextBlock x:Name="PeopleCount" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
-                    <WrapPanel>
-                      <TextBlock x:Name="DeltaPeople" FontSize="12.5" Foreground="{DynamicResource Primary}" Margin="0,0,6,0"/>
-                      <ItemsControl x:Name="HomeCategories" Focusable="False">
-                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate><TextBlock Text="{Binding Text}" FontSize="12.5" Foreground="{DynamicResource Muted}" Margin="0,0,8,0"/></DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                    </WrapPanel>
-                  </StackPanel>
-                </Button>
-                <Rectangle Grid.Column="3" Fill="{DynamicResource Line}" Margin="0,14"/>
-                <Button Grid.Column="4" Style="{StaticResource StatCell}" Tag="deductions" Click="Navigate" ToolTip="فتح الاستقطاعات">
-                  <StackPanel>
-                    <TextBlock Text="الاستقطاعات" Foreground="{DynamicResource Muted}" FontSize="13"/>
-                    <TextBlock x:Name="DeductionTotal" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
-                    <TextBlock x:Name="DeductionDetail" FontSize="12.5" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
-                  </StackPanel>
-                </Button>
-                <Rectangle Grid.Column="5" Fill="{DynamicResource Line}" Margin="0,14"/>
-                <Button Grid.Column="6" Style="{StaticResource StatCell}" Tag="bank" Click="Navigate" ToolTip="فتح كشف البنك">
-                  <StackPanel>
-                    <TextBlock Text="للمراجعة مع المصرف" Foreground="{DynamicResource Muted}" FontSize="13"/>
-                    <TextBlock x:Name="BankHomeTotal" Text="—" FontSize="21" FontWeight="SemiBold" Margin="0,3,0,2"/>
-                    <StackPanel Orientation="Horizontal">
-                      <TextBlock x:Name="BankHomeIcon" Style="{StaticResource Icon}" Text="&#xE73E;" FontSize="12" Foreground="{DynamicResource Primary}" Margin="0,0,6,0" Visibility="Collapsed"/>
-                      <TextBlock x:Name="BankHomeHint" FontSize="12.5" Foreground="{DynamicResource Muted}" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                  </StackPanel>
-                </Button>
-              </Grid>
-            </Border>
-            <TextBlock x:Name="DataWarning" TextWrapping="Wrap" Foreground="{DynamicResource Warn}" FontSize="12.5" Margin="4,8,4,0" Visibility="Collapsed"/>
+
 
             <!-- أدواتك: الأكثر استخداماً أولاً؛ الزر الأيمن يثبّت الأداة في البداية أو يخفيها. -->
             <Grid Margin="2,18,2,8">
-              <TextBlock Text="أدواتك · الأكثر استخداماً أولاً (الزر الأيمن: تثبيت أو إخفاء)" FontSize="12.5" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
+              <TextBlock Text="بطاقاتك · الزر الأيمن للتثبيت أو الإخفاء" FontSize="12.5" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
               <Button x:Name="AllToolsButton" Style="{StaticResource QuietButton}" HorizontalAlignment="Right" Click="ShowAllTools" Padding="6,2" MinHeight="0" FontSize="12.5" FontWeight="Normal">
-                <StackPanel Orientation="Horizontal"><TextBlock Text="كل الأدوات"/><TextBlock Style="{StaticResource Icon}" Text="&#xE76B;" FontSize="10" Margin="6,0,0,0" Foreground="{DynamicResource Accent}"/></StackPanel>
+                <StackPanel Orientation="Horizontal"><TextBlock Text="إضافة أو تخصيص البطاقات"/><TextBlock Style="{StaticResource Icon}" Text="&#xE76B;" FontSize="10" Margin="6,0,0,0" Foreground="{DynamicResource Accent}"/></StackPanel>
               </Button>
             </Grid>
             <ItemsControl x:Name="HomeTools" Margin="0,0,-10,14">
-              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="6"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <Button Style="{StaticResource HomeTile}" Click="RunTool" Margin="0,0,10,10" Padding="10,14" HorizontalContentAlignment="Center" ToolTip="{Binding Hint}">
                     <Button.ContextMenu>
                       <ContextMenu>
-                        <MenuItem Header="{Binding PinText}" Click="PinTool"/>
-                        <MenuItem Header="إخفاء من الرئيسية" Click="HideTool"/>
+                        <MenuItem Header="{Binding PinText}" IsEnabled="{Binding CanCustomize}" Click="PinTool"/>
+                        <MenuItem Header="إخفاء من الرئيسية" IsEnabled="{Binding CanCustomize}" Click="HideTool"/>
                         <Separator/>
                         <MenuItem Header="الترتيب الافتراضي وإظهار كل الأدوات" Click="ResetTools"/>
                       </ContextMenu>
@@ -350,6 +344,7 @@
                   </ContextMenu>
                 </Button.ContextMenu>
               </Button>
+              <Button x:Name="DeductionCompareButton" Content="مقارنة الاستقطاعات بين الأشهر" Click="OpenDeductionComparison" Visibility="Collapsed" Margin="10,0,0,0"/>
               <Button x:Name="StaffReloadButton" Content="إعادة قراءة الملاك" Click="ReloadStaff" Margin="10,0,0,0" Visibility="Collapsed"/>
             </WrapPanel>
           </Grid>
@@ -362,15 +357,17 @@
           </WrapPanel>
           <TextBlock x:Name="TableStatus" Grid.Row="2" Foreground="{DynamicResource Muted}" Margin="2,10,0,10" TextWrapping="Wrap"/>
           <DataGrid x:Name="DataTable" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="True" EnableColumnVirtualization="True"
-                    SelectionMode="Extended" SelectionUnit="FullRow" MouseDoubleClick="OpenArchiveBook" PreviewKeyDown="TableKeyDown" SelectionChanged="TableSelectionChanged">
+                    SelectionMode="Extended" SelectionUnit="FullRow" PreviewMouseRightButtonDown="SelectContextRow" ContextMenuOpening="GuardTableContext" PreviewMouseLeftButtonUp="SaveUserColumnWidths" MouseDoubleClick="OpenArchiveBook" PreviewKeyDown="TableKeyDown" SelectionChanged="TableSelectionChanged">
             <DataGrid.ContextMenu>
               <ContextMenu Opened="RowMenuOpened">
                 <MenuItem x:Name="OpenRowMenu" Header="فتح التفاصيل" Click="OpenSelectedRow" FontWeight="SemiBold"/>
-                <MenuItem Header="عرض التفاصيل الجانبية" Click="OpenInspectorClick"/>
+                <MenuItem x:Name="RowInspectorMenu" Header="عرض التفاصيل الجانبية" Click="OpenInspectorClick"/>
+                <MenuItem x:Name="RowEmployeeDeductionMenu" Header="كشف استقطاع المنتسب لهذه الجهة" Click="OpenSelectedDeductionStatement" Visibility="Collapsed"/>
                 <MenuItem x:Name="SecondRowMenu" Header="تفاصيل أخرى" Click="OpenSecondRow"/>
                 <Separator/>
                 <MenuItem x:Name="CopyRowsMenu" Header="نسخ الصفوف المحددة" InputGestureText="Ctrl+C" Click="CopyRows"/>
                 <MenuItem x:Name="RowEntityMenu" Header="قائمة استقطاعات الجهة المعتمدة">
+                  <MenuItem Header="معاينة" Click="PreviewEntity"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem>
                   <MenuItem Header="Excel" Click="ExportEntityExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}"/></MenuItem.Icon></MenuItem>
                   <MenuItem Header="PDF" Click="ExportEntityPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem>
                   <MenuItem Header="طباعة" Click="PrintEntity"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
@@ -699,8 +696,8 @@
           </Border>
           <Grid Grid.Row="2">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="236"/></Grid.ColumnDefinitions>
-            <DataGrid x:Name="TransferTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single">
-              <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="2*" MinWidth="130"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="Auto" MinWidth="90"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="1.5*" MinWidth="90"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="2*" MinWidth="120"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="1.5*" MinWidth="90"/></DataGrid.Columns>
+            <DataGrid x:Name="TransferTable" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" SelectionMode="Single" PreviewMouseRightButtonDown="SelectContextRow" ContextMenuOpening="GuardTableContext" RowHeight="NaN" MinRowHeight="38">
+              <DataGrid.Columns><DataGridTextColumn Header="الجهة" Binding="{Binding Title}" Width="Auto" MinWidth="130" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="Auto" MinWidth="90" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/><DataGridTextColumn Header="المصرف والفرع" Binding="{Binding Branch}" Width="Auto" MinWidth="90" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/><DataGridTextColumn Header="IBAN" Binding="{Binding Iban}" Width="Auto" MinWidth="120" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/><DataGridTextColumn Header="المراجعة" Binding="{Binding Issues}" Width="Auto" MinWidth="90" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/></DataGrid.Columns>
               <DataGrid.ContextMenu>
                 <ContextMenu FlowDirection="RightToLeft">
                   <MenuItem Header="ربط حساب الجهة" Click="LinkTransferAccount"/>

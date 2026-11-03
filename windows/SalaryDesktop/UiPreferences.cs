@@ -14,6 +14,7 @@ internal sealed record RecentItem(string Digest, string Kind, string Key, string
 internal sealed class UiPreferences
 {
     public Dictionary<string, string[]>? Columns { get; set; }
+    public Dictionary<string, Dictionary<string, double>>? ColumnWidths { get; set; }
     public Dictionary<string, BackupMark>? Backups { get; set; }
     public string? Theme { get; set; }
     public double[]? Window { get; set; }
@@ -79,6 +80,7 @@ internal sealed class UiPreferences
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException) { loaded = null; }
         loaded ??= new UiPreferences();
         loaded.Columns = loaded.Columns is null ? new(StringComparer.Ordinal) : new(loaded.Columns, StringComparer.Ordinal);
+        loaded.ColumnWidths = loaded.ColumnWidths is null ? new(StringComparer.Ordinal) : new(loaded.ColumnWidths, StringComparer.Ordinal);
         loaded.Backups = loaded.Backups is null ? new(StringComparer.Ordinal) : new(loaded.Backups, StringComparer.Ordinal);
         loaded.Pending = loaded.Pending is null ? new(StringComparer.Ordinal) : new(loaded.Pending, StringComparer.Ordinal);
         loaded.Recent = loaded.Recent?.Where(r => r is { Digest: not null, Kind: not null, Key: not null, Label: not null }).Take(40).ToList() ?? [];

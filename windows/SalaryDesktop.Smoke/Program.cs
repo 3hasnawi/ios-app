@@ -146,6 +146,16 @@ static class Program
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(Path.Combine(folder, name + ".png")); encoder.Save(file);
     }
+    private static void ShotElement(FrameworkElement element, string name)
+    {
+        var folder = Environment.GetEnvironmentVariable("SCREENSHOT_DIR");
+        if (string.IsNullOrEmpty(folder)) return;
+        element.UpdateLayout();
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth), (int)Math.Ceiling(element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(Path.Combine(folder, name + ".png")); encoder.Save(file);
+    }
     [STAThread]
     private static int Main()
     {
@@ -202,7 +212,8 @@ static class Program
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility != Visibility.Visible, "standalone start remained visible over existing data");
                 async Task Navigate(string tag)
                 {
-                    var item = Children<RadioButton>(main).Single(b => Equals(b.Tag, tag)); item.IsChecked = true; await Task.Delay(800);
+                    var name = tag switch { "home" => "NavHome", "payroll" => "NavPayroll", "deductions" => "NavDeductions", "staff" => "NavStaff", "archive" => "NavArchive", "groups" => "NavGroups", "bank" => "NavBank", "transfer" => "NavTransfer", "accounts" => "NavAccounts", "settings" => "NavSettings", _ => throw new InvalidOperationException("unknown page") };
+                    var item = (RadioButton)main.FindName(name); item.IsChecked = true; await Task.Delay(800);
                     Check(item.IsChecked == true, $"navigation item {tag} was not selected");
                 }
                 var table = (DataGrid)main.FindName("DataTable");
@@ -226,7 +237,7 @@ static class Program
                 backupIndicator.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(300);
                 Check(((FrameworkElement)main.FindName("SettingsPanel")).Visibility == Visibility.Visible, "backup indicator did not open backup settings");
                 await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
-                Check(main.Content is Grid { ColumnDefinitions.Count: 3 } && table.RowHeight == 42 && table.ColumnHeaderHeight == 44, "workspace columns or grid density do not match the design");
+                Check(main.Content is Grid { ColumnDefinitions.Count: 3 } && double.IsNaN(table.RowHeight) && table.ColumnHeaderHeight == 44, "workspace columns or grid density do not match the design");
                 var netColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Net");
                 var deductionColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "TotalDeductions");
                 Check(ReferenceEquals(netColumn.ElementStyle, application.FindResource("AccountingNetText")) &&
@@ -261,11 +272,15 @@ static class Program
                 Check(Children<ComboBox>(filterHost).Count() == 3 && Children<ComboBox>(filterHost).First().Items.Count == 2, "payroll quick filters were not built");
                 Check(((TextBlock)main.FindName("TotalsShown")).Text.Contains("500", StringComparison.Ordinal), "payroll totals row did not show the net sum");
                 Children<ComboBox>(filterHost).Last().SelectedIndex = 1; await Task.Delay(700); Check(table.Items.Count == 1, "payment filter hid the matching row");
+                table.Columns.Single(c => c.SortMemberPath == "Name").Width = new DataGridLength(210);
+                typeof(MainWindow).GetMethod("PersistColumnWidths", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, ["payroll"]);
+                await Navigate("deductions"); await Navigate("payroll");
+                Check(table.Columns.Single(c => c.SortMemberPath == "Name").Width.IsAbsolute && Math.Abs(table.Columns.Single(c => c.SortMemberPath == "Name").Width.Value - 210) < .1, "manually chosen column width was not restored");
                 await Navigate("deductions"); Check(table.Items.Count == 1, "deductions page did not show the synthetic entry");
                 var deductionAmount = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Amount");
                 Check(ReferenceEquals(deductionAmount.ElementStyle, application.FindResource("AccountingDeductionText")), "deduction amount did not receive its accounting style");
                 table.SelectedIndex = 0; await Task.Delay(150);
-                Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "المبلغ" && ((Button)main.FindName("InspectorSecondaryActionBtn")).Visibility == Visibility.Collapsed, "deduction inspector showed an unavailable action or mislabeled the amount");
+                Check(inspector.Visibility == Visibility.Collapsed && ((MenuItem)main.FindName("RowEmployeeDeductionMenu")).Visibility == Visibility.Visible && ((Button)main.FindName("DeductionCompareButton")).Visibility == Visibility.Visible, "deductions should expose direct actions without opening the inspector");
                 await Navigate("staff"); await Task.Delay(1200); Check(table.Items.Count == 1 && table.Items[0] is StaffMember, "staff page did not load its synthetic record");
                 await Navigate("bank"); Check(((FrameworkElement)main.FindName("BankPanel")).Visibility == Visibility.Visible, "bank page was not visible");
                 await Navigate("transfer"); Check(((FrameworkElement)main.FindName("TransferPanel")).Visibility == Visibility.Visible, "transfer page was not visible");
@@ -306,6 +321,18 @@ static class Program
                 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCREENSHOT_DIR")))
                 {
                     var richPath = Path.Combine(directory, "rich.zip"); RichFixture(richPath); var rich = BackupReader.Read(richPath);
+                    var navNames = new[] { "NavHome", "NavDeductions", "NavBank", "NavTransfer", "NavArchive", "NavSettings" };
+                    Check(navNames.All(n => ((FrameworkElement)main.FindName(n)).IsVisible) && new[] { "NavPayroll", "NavStaff", "NavGroups", "NavAccounts" }.All(n => !((FrameworkElement)main.FindName(n)).IsVisible), "sidebar did not show the requested navigation items");
+                    var compareWindow = Fit(new DeductionComparisonWindow(rich, "أيلول 2026", () => true) { Owner = main }, 1100, 720);
+                    compareWindow.Show(); await Task.Delay(400);
+                    ((Button)compareWindow.FindName("CompareRunButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    var comparisonGrid = (DataGrid)compareWindow.FindName("Rows");
+                    for (int i = 0; i < 50 && comparisonGrid.Items.Count == 0; i++) await Task.Delay(100);
+                    Check(comparisonGrid.Items.Count > 0, "deduction comparison did not show rows for two populated months");
+                    Shot(compareWindow, "49-deduction-comparison");
+                    ((ComboBox)compareWindow.FindName("ToMonth")).SelectedIndex = 0; await Task.Delay(100);
+                    Check(comparisonGrid.Items.Count == 0, "changing comparison months left stale results visible");
+                    compareWindow.Close();
                     main.WindowState = WindowState.Normal; Fit(main, 1460, 860);
                     Console.WriteLine($"Screen work area: {SystemParameters.WorkArea.Width}x{SystemParameters.WorkArea.Height}");
                     typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [rich]);
@@ -342,6 +369,19 @@ static class Program
                         var subtitleBottom = subtitle.TranslatePoint(new Point(0, subtitle.ActualHeight), header).Y;
                         Check(subtitleBottom <= header.ActualHeight + 0.5, $"header clipped its subtitle on page {tag}: bottom {subtitleBottom:F1}, header {header.ActualHeight:F1}, subtitle height {subtitle.ActualHeight:F1}");
                         Shot(main, name);
+                        if (tag == "deductions")
+                        {
+                            table.UpdateLayout();
+                            var clickedRow = table.ItemContainerGenerator.ContainerFromIndex(1) as DataGridRow ?? throw new InvalidOperationException("second deduction row not realized");
+                            table.SelectedIndex = 0;
+                            var rightClick = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) { Source = clickedRow };
+                            typeof(MainWindow).GetMethod("SelectContextRow", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [table, rightClick]);
+                            Check(ReferenceEquals(table.SelectedItem, clickedRow.Item), "right-click actions were not targeted to the clicked deduction");
+                            var menu = table.ContextMenu ?? throw new InvalidOperationException("deduction context menu missing");
+                            menu.PlacementTarget = table; menu.IsOpen = true; await Task.Delay(300);
+                            Check(((MenuItem)main.FindName("RowEmployeeDeductionMenu")).IsEnabled, "employee deduction statement action was not enabled");
+                            ShotElement(menu, "50-deduction-context"); menu.IsOpen = false;
+                        }
                         if (tag == "archive") Check(((ListBox)main.FindName("ArchiveList")).Items.Count == 2, "archive list did not show the books");
                     }
                     await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
@@ -450,13 +490,14 @@ static class Program
                         Trust("منتسب وهمي رابع", 8, 910000, "قطع علاقة", false, true), Trust("منتسب وهمي خامس", 9, 560000, "سفر", false, false, Pay(560000, "كتاب 9", "", ""))], true);
                     trustStore.Save(rich, trustStore.Load(rich), fictionalTrust);
                     var trustWindow = Fit(new SalaryTrustWindow(rich, trustStore, () => true) { Owner = main }, 1200, 800); trustWindow.Show(); await Task.Delay(800);
-                    Check(((DataGrid)trustWindow.FindName("Table")).Items.Count == 5, "salary trust rows were not shown"); Shot(trustWindow, "43-salary-trust");
+                    var trustTable = (DataGrid)trustWindow.FindName("Table");
+                    Check(trustTable.Items.Count == 5 && new[] { "محل العمل", "ملاحظات", "حالة الاستيراد", "تفاصيل الدفعات", "عناوين الكتب" }.All(h => trustTable.Columns.Any(c => Equals(c.Header, h))), "salary trust details were not shown"); Shot(trustWindow, "43-salary-trust");
                     var trustEntryWindow = Fit(new SalaryTrustEntryWindow(trustWindow, trustWindow.Latest(partialTrust.Id)!, rich.Books) { Owner = trustWindow }, 760, 820); trustEntryWindow.Show(); await Task.Delay(600);
                     Shot(trustEntryWindow, "44-salary-trust-entry"); trustEntryWindow.Close(); trustWindow.Close();
                     // الرئيسية: الخطوة التالية والفئات والأدوات، ولا تذكير حفظ لأن النسخة الوهمية بلا تعديلات محلية.
                     Check(((TextBlock)main.FindName("NextTitle")).Text.Length > 0 && ((FrameworkElement)main.FindName("NextButton")).Visibility == Visibility.Visible, "home next step was not shown");
                     Check(((ItemsControl)main.FindName("HomeCategories")).Items.Count == 4, "home categories were not shown");
-                    Check(((ItemsControl)main.FindName("HomeTools")).Items.Count == 6, "home tools were not shown");
+                    Check(((ItemsControl)main.FindName("HomeTools")).Items.Count == 8, "home tools were not shown");
                     // القائمة الجانبية الثابتة: الإعدادات زر في بطاقة الحالة، والشارة على كشف البنك.
                     Check(((FrameworkElement)main.FindName("NavSettings")).IsVisible && ((FrameworkElement)main.FindName("SidebarBackup")).IsVisible, "sidebar status card was not shown");
                     Check(((FrameworkElement)main.FindName("BackupReminder")).Visibility == Visibility.Collapsed, "backup reminder shown without local changes");
