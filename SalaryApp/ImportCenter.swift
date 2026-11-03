@@ -328,7 +328,11 @@ final class ImportCenter {
         for c in candidates {
             switch c.kind {
             case .payrollAndDeductions, .payroll:
-                if (saved[c.month]?.employeeCount ?? 0) > 0 { lines.append(tr("رواتب \(c.month)", "payroll of \(c.month)")) }
+                let salaryMonths = saved.values.filter { $0.employeeCount > 0 }
+                let keep = try? PayrollRetention.monthsToKeep(existing: salaryMonths.map(\.name), incoming: c.month)
+                for previous in salaryMonths where previous.name == c.month || (keep != nil && !keep!.contains(previous.name)) {
+                    lines.append(tr("رواتب \(previous.name)", "payroll of \(previous.name)"))
+                }
                 if c.kind == .payrollAndDeductions, (saved[c.month]?.deductionCount ?? 0) > 0 {
                     lines.append(tr("استقطاعات \(c.month)", "deductions of \(c.month)"))
                 }
@@ -382,6 +386,10 @@ final class ImportCenter {
         let jobs = candidates.filter { $0.kind != .skip }
             // الملف الجامع أولاً حتى لا يمحو ملفاً منفصلاً لنفس الشهر.
             .sorted { Self.order($0.kind) < Self.order($1.kind) }
+        if jobs.filter({ $0.kind == .payroll || $0.kind == .payrollAndDeductions }).count > 1 {
+            message = tr("اختر ملف رواتب واحداً فقط؛ يحتفظ التطبيق بآخر شهرين من الرواتب. تبقى الاستقطاعات محفوظة.", "Choose only one payroll file; the app retains the latest two payroll months. Deductions are preserved.")
+            return
+        }
         let annualMonths = Set(jobs.filter(\.annualSource).map(\.month))
         if jobs.contains(where: { job in
             annualMonths.contains(job.month) && job.kind != .payroll && jobs.filter { $0.month == job.month && $0.kind != .payroll }.count > 1
@@ -594,8 +602,13 @@ struct ImportReviewSheet: View {
                 if !replaced.isEmpty {
                     Section {
                         Label {
-                            Text(tr("سيُستبدل: \(replaced.joined(separator: "، "))", "Will replace: \(replaced.joined(separator: ", "))"))
-                                .font(.subheadline)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(tr("سيُستبدل: \(replaced.joined(separator: "، "))", "Will replace: \(replaced.joined(separator: ", "))"))
+                                if center.candidates.contains(where: { $0.kind == .payroll || $0.kind == .payrollAndDeductions }) {
+                                    Text(tr("تبقى استقطاعات الأشهر الأخرى محفوظة. احتفظ بنسخة احتياطية قبل الاستبدال.", "Deductions from other months are preserved. Keep a backup before replacing payroll."))
+                                }
+                            }
+                            .font(.subheadline)
                         } icon: {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         }

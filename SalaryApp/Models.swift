@@ -8,6 +8,30 @@ nonisolated enum AnnualDeductionImportError: LocalizedError {
     }
 }
 
+nonisolated enum PayrollReplacementError: LocalizedError {
+    case emptyPayroll, unknownMonth, ambiguousMonth, olderMonth
+    var errorDescription: String? {
+        switch self {
+        case .emptyPayroll: tr("لم يتضمن الملف رواتب صالحة؛ بقيت الرواتب السابقة كما هي.", "The file contained no valid payroll records; existing payroll was preserved.")
+        case .unknownMonth: tr("تعذّر تحديد تاريخ أحد أشهر الرواتب؛ لم تُحذف أي بيانات. راجع أسماء الأشهر أولاً.", "A payroll month could not be dated; no data was deleted. Check month names first.")
+        case .ambiguousMonth: tr("يوجد اسمان مختلفان لشهر الرواتب نفسه؛ لم تُحذف أي بيانات. راجع الأشهر أولاً.", "Different names identify the same payroll month; no data was deleted. Check the months first.")
+        case .olderMonth: tr("الشهر المختار أقدم من آخر شهرين محفوظين؛ لم تُستبدل الرواتب.", "The selected month is older than the latest two; payroll was not replaced.")
+        }
+    }
+}
+
+nonisolated enum PayrollRetention {
+    static func monthsToKeep(existing: [String], incoming: String) throws -> Set<String> {
+        let names = Set(existing + [incoming])
+        let keyed = names.map { (name: $0, key: MonthName.sortKey($0)) }
+        guard keyed.allSatisfy({ $0.key > 0 }) else { throw PayrollReplacementError.unknownMonth }
+        guard Set(keyed.map(\.key)).count == keyed.count else { throw PayrollReplacementError.ambiguousMonth }
+        let keep = Set(keyed.sorted { $0.key > $1.key }.prefix(2).map(\.name))
+        guard keep.contains(incoming) else { throw PayrollReplacementError.olderMonth }
+        return keep
+    }
+}
+
 /// شهر رواتب واحد = ملف Excel واحد، واسمه هو اسم الملف (مثل "تشرين الاول 2026").
 @Model
 final class PayrollMonth {
@@ -159,12 +183,14 @@ final class Deduction {
 /// يحفظ نتيجة الاستيراد في الخلفية حتى لا تتجمد الواجهة مع عشرات آلاف الصفوف.
 @ModelActor
 actor DataImporter {
-    /// يستبدل بيانات الشهر نفسه فقط، وتبقى الأشهر الأخرى كما هي.
+    /// يحتفظ بآخر شهرين رواتب ويستبدل استقطاعات الشهر المستورد فقط.
     func replace(month: String, with imported: ImportResult, progress: ProgressSink? = nil) throws {
+        guard !imported.employees.isEmpty else { throw PayrollReplacementError.emptyPayroll }
         // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
         modelContext.autosaveEnabled = false
         var committed = false
         defer { if !committed { modelContext.rollback() } }
+        try trimPayroll(replacing: month)
         try removeData(of: month)
         // حفظ واحد حتى تبقى بيانات الشهر السابقة عند الفشل.
         let total = Double(max(1, imported.employees.count + imported.deductions.count))
@@ -189,13 +215,14 @@ actor DataImporter {
         progress?(1)
     }
 
-    /// ملف رواتب فقط: يستبدل رواتب الشهر وتبقى استقطاعاته.
+    /// ملف رواتب فقط: يحتفظ بآخر شهرين وتبقى الاستقطاعات لكل الأشهر.
     func replacePayroll(month: String, with employees: [ImportedEmployee], progress: ProgressSink? = nil) throws {
+        guard !employees.isEmpty else { throw PayrollReplacementError.emptyPayroll }
         // لا يُحفظ الحذف منفرداً؛ أي فشل يعيد التغييرات غير المحفوظة.
         modelContext.autosaveEnabled = false
         var committed = false
         defer { if !committed { modelContext.rollback() } }
-        for item in try modelContext.fetch(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })) { modelContext.delete(item) }
+        try trimPayroll(replacing: month)
         let total = Double(max(1, employees.count))
         for (i, e) in employees.enumerated() {
             modelContext.insert(Employee(month: month, name: e.name, rank: e.rank, workplace: e.workplace, netSalary: e.netSalary, items: e.items, details: e.details, rawColumnsData: e.rawColumnsData))
@@ -205,6 +232,18 @@ actor DataImporter {
         try modelContext.save()
         committed = true
         progress?(1)
+    }
+
+    private func trimPayroll(replacing month: String) throws {
+        let employees = try modelContext.fetch(FetchDescriptor<Employee>())
+        let keep = try PayrollRetention.monthsToKeep(existing: employees.map(\.month), incoming: month)
+        for item in employees where item.month == month || !keep.contains(item.month) { modelContext.delete(item) }
+        for record in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) {
+            if record.name == month || !keep.contains(record.name) {
+                record.employeeCount = 0
+                record.itemSummaryData = nil
+            }
+        }
     }
 
     /// ملف استقطاعات فقط: يستبدل استقطاعات الشهر وتبقى رواتبه.

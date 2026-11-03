@@ -74,6 +74,33 @@ enum EmployeeDeductionSelfTest {
         let file = try await EmployeeDeductionPDF.make(long, logo: nil)
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         try require(PDFDocument(url: file)?.pageCount == 2, "Four years must span two pages")
+        let replacementContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let seed = ModelContext(replacementContainer)
+        for month in [jan, feb] {
+            let record = PayrollMonth(name: month, employeeCount: 1, deductionCount: 1)
+            record.itemSummaryData = Data([1, 2, 3])
+            seed.insert(record)
+            seed.insert(Employee(month: month, name: "قديم وهمي", rank: "", workplace: "", netSalary: 1))
+            seed.insert(Deduction(month: month, employeeName: "قديم وهمي", title: "استقطاع وهمي", amount: 10, note: ""))
+        }
+        try seed.save()
+        let replacement = DataImporter(modelContainer: replacementContainer)
+        do {
+            try await replacement.replacePayroll(month: april, with: [])
+            throw Failure(message: "Empty payroll erased existing records")
+        } catch PayrollReplacementError.emptyPayroll { }
+        try await replacement.replacePayroll(month: april, with: [ImportedEmployee(name: "جديد وهمي", rank: "", workplace: "", netSalary: 2)])
+        let verify = ModelContext(replacementContainer)
+        let remaining = try verify.fetch(FetchDescriptor<Employee>())
+        let deductionsAfter = try verify.fetch(FetchDescriptor<Deduction>())
+        let savedMonths = try verify.fetch(FetchDescriptor<PayrollMonth>())
+        try require(remaining.count == 2 && Set(remaining.map(\.month)) == Set([feb, april]) && remaining.contains { $0.month == april && $0.name == "جديد وهمي" }, "Latest two payroll months were not preserved")
+        try require(deductionsAfter.count == 2 && Set(deductionsAfter.map(\.month)) == Set([jan, feb]), "Previous deductions were not preserved")
+        try require(savedMonths.contains { $0.name == jan && $0.employeeCount == 0 && $0.itemSummaryData == nil && $0.deductionCount == 1 } && savedMonths.contains { $0.name == feb && $0.employeeCount == 1 && $0.deductionCount == 1 }, "Previous payroll month metadata is stale")
+        do {
+            try await replacement.replacePayroll(month: jan, with: [ImportedEmployee(name: "قديم جداً وهمي", rank: "", workplace: "", netSalary: 3)])
+            throw Failure(message: "Older payroll displaced a recent month")
+        } catch PayrollReplacementError.olderMonth { }
         return "employeeDeduction=ok sums=ok missing=ok duplicates=ok pdfPages=2"
     }
 }
