@@ -83,6 +83,37 @@ let escapedPacked = try SharedPayrollBackupRow.pack(escapedRow, schemas: &rowSch
 precondition(escapedPacked.schemaID != nil)
 let escapedRestored = try SharedPayrollBackupRow.unpack(escapedPacked, schemas: rowSchemas, digest: digest)
 precondition(escapedRestored == escapedRow)
+do {
+    let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("salary-writer-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let source = folder.appendingPathComponent("source"), rows = folder.appendingPathComponent("rows"), schemas = folder.appendingPathComponent("schemas")
+    let original = escapedRow + Data([10]) + escapedRow
+    try original.write(to: source)
+    try SharedPayrollCandidateWriter.write(source: source, rows: rows, schemas: schemas, digest: digest)
+    let definitions = try SharedPayrollCandidateReader.schemas(from: schemas, digest: digest)
+    var restored = Data()
+    try SharedPayrollCandidateReader.rows(from: rows, schemas: definitions, digest: digest) { restored.append($0) }
+    precondition(restored == original && definitions.count == 1)
+    do {
+        try SharedPayrollCandidateWriter.write(source: source, rows: rows, schemas: schemas, digest: digest)
+        fatalError("writer replaced existing files")
+    } catch { }
+    let sourceAfter = try Data(contentsOf: source)
+    precondition(sourceAfter == original)
+    let rows2 = folder.appendingPathComponent("rows2")
+    do {
+        try SharedPayrollCandidateWriter.write(source: source, rows: rows2, schemas: schemas, digest: digest)
+        fatalError("writer replaced existing schema")
+    } catch { }
+    precondition(!FileManager.default.fileExists(atPath: rows2.path))
+    let schemas2 = folder.appendingPathComponent("schemas2")
+    do {
+        try SharedPayrollCandidateWriter.write(source: folder.appendingPathComponent("missing"), rows: rows2, schemas: schemas2, digest: digest)
+        fatalError("missing input accepted")
+    } catch { }
+    precondition(!FileManager.default.fileExists(atPath: rows2.path) && !FileManager.default.fileExists(atPath: schemas2.path))
+}
 if let fixturePath = ProcessInfo.processInfo.environment["SALARY_SHARED_FIXTURE_PATH"] {
     struct Fixture: Codable {
         let Row: SharedPayrollBackupRow.Packed

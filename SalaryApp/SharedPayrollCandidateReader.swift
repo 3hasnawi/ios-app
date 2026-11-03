@@ -37,3 +37,53 @@ enum SharedPayrollCandidateReader {
         }
     }
 }
+
+/// كاتب تجريبي فقط؛ لا يغيّر نسخة المستخدم ولا يُستخدم في واجهة النسخ.
+enum SharedPayrollCandidateWriter {
+    private struct SchemaLine: Encodable {
+        let id: String
+        let data: Data
+        enum CodingKeys: String, CodingKey { case id = "Id", data = "Data" }
+    }
+
+    static func write(source: URL, rows: URL, schemas: URL, digest: (Data) -> String) throws {
+        let paths = [source, rows, schemas].map { $0.standardizedFileURL.path }
+        guard Set(paths).count == 3 else { throw CocoaError(.fileWriteFileExists) }
+        let fm = FileManager.default
+        var madeRows = false, madeSchemas = false
+        do {
+            try Data().write(to: rows, options: .withoutOverwriting)
+            madeRows = true
+            try Data().write(to: schemas, options: .withoutOverwriting)
+            madeSchemas = true
+            let rowFile = try FileHandle(forWritingTo: rows)
+            defer { try? rowFile.close() }
+            let schemaFile = try FileHandle(forWritingTo: schemas)
+            defer { try? schemaFile.close() }
+            let encoder = JSONEncoder()
+            var definitions: [String: Data] = [:]
+            var schemaBytes = 0
+            try BackupLineReader.read(source, includeNewlines: true, maxLineBytes: 8_000_000) { line in
+                let previousCount = definitions.count
+                let packed = try SharedPayrollBackupRow.pack(line, schemas: &definitions, digest: digest)
+                if definitions.count != previousCount, let id = packed.schemaID, let definition = definitions[id] {
+                    guard definitions.count <= 100_000, definition.count <= 128 * 1024 * 1024 - schemaBytes else {
+                        throw CocoaError(.fileWriteOutOfSpace)
+                    }
+                    schemaBytes += definition.count
+                    var encoded = try encoder.encode(SchemaLine(id: id, data: definition))
+                    encoded.append(10)
+                    try schemaFile.write(contentsOf: encoded)
+                }
+                var encoded = try encoder.encode(packed)
+                guard encoded.count < 16 * 1024 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }
+                encoded.append(10)
+                try rowFile.write(contentsOf: encoded)
+            }
+        } catch {
+            if madeRows { try? fm.removeItem(at: rows) }
+            if madeSchemas { try? fm.removeItem(at: schemas) }
+            throw error
+        }
+    }
+}
