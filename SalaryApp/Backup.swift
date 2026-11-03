@@ -443,12 +443,7 @@ final class BackupManager {
         Task {
             defer { isWorking = false; version += 1 }
             do {
-                let (prepared, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
-                defer { try? FileManager.default.removeItem(at: prepared) }
-                // اسم مستقل يمنع استبدال نسخة سابقة بالاسم الافتراضي عند الحفظ اليدوي.
-                let stamp = ISO8601DateFormatter().string(from: .now).replacingOccurrences(of: ":", with: "-")
-                let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(BackupFormat.prefix) \(stamp) \(UUID().uuidString.prefix(8)).zip")
-                try FileManager.default.moveItem(at: prepared, to: url)
+                let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
                 defer { try? FileManager.default.removeItem(at: url) }
                 let size = try Self.archiveSize(url)
                 await FilePicker.waitUntilSettled()
