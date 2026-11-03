@@ -327,6 +327,9 @@ static class Program
                     inspectorFilter.Text = "";
                     ((Button)main.FindName("InspectorDiscardBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     Check(inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Branch").EditableValue == priorBranch && ((Button)main.FindName("InspectorInlineSaveBtn")).Visibility == Visibility.Collapsed, "discard did not restore the stored account");
+                    var drawer = (FrameworkElement)main.FindName("InspectorDrawer");
+                    var headerAboveDrawer = (FrameworkElement)main.FindName("HeaderGrid");
+                    Check(drawer.Visibility == Visibility.Visible && drawer.TranslatePoint(new Point(0, 0), main).Y >= headerAboveDrawer.TranslatePoint(new Point(0, headerAboveDrawer.ActualHeight), main).Y, "inspector drawer covered the fixed header");
                     var stableBackupPosition = backupIndicator.TranslatePoint(new Point(0, 0), main);
                     var stableThemePosition = themeIndicator.TranslatePoint(new Point(0, 0), main);
                     var stableBellPosition = bellIndicator.TranslatePoint(new Point(0, 0), main);
@@ -334,6 +337,9 @@ static class Program
                     {
                         await Navigate(tag); if (tag is "staff" or "bank" or "transfer" or "archive") await Task.Delay(1200);
                         Check((backupIndicator.TranslatePoint(new Point(0, 0), main) - stableBackupPosition).Length < 0.5 && (themeIndicator.TranslatePoint(new Point(0, 0), main) - stableThemePosition).Length < 0.5 && (bellIndicator.TranslatePoint(new Point(0, 0), main) - stableBellPosition).Length < 0.5, "header icons moved on page " + tag);
+                        var header = (FrameworkElement)main.FindName("HeaderGrid");
+                        var subtitle = (TextBlock)main.FindName("PageSubtitle");
+                        Check(subtitle.TranslatePoint(new Point(0, subtitle.ActualHeight), header).Y <= header.ActualHeight + 0.5, "header clipped its subtitle on page " + tag);
                         Shot(main, name);
                         if (tag == "archive") Check(((ListBox)main.FindName("ArchiveList")).Items.Count == 2, "archive list did not show the books");
                     }

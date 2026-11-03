@@ -94,7 +94,7 @@
     <!-- المحتوى -->
     <Grid Grid.Column="1" Margin="22,20,28,14">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-      <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,14" Height="54">
+      <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,14" Height="72">
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
           <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
@@ -1012,8 +1012,8 @@
       </DockPanel>
     </Grid>
           <!-- تفاصيل الصف المحدد، فوق الجدول مع بقاء أحداث الجدول الأصلية. -->
-          <Border x:Name="InspectorDrawer" Grid.Column="2" Panel.ZIndex="40" Width="390" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
-                  HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="10,12,12,12" Visibility="Collapsed" Style="{StaticResource FluentCard}" Padding="0"
+          <Border x:Name="InspectorDrawer" Grid.Column="1" Panel.ZIndex="40" Width="390" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
+                  HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="10,110,12,12" Visibility="Collapsed" Style="{StaticResource FluentCard}" Padding="0"
                   AutomationProperties.Name="تفاصيل السجل المحدد">
             <Border.RenderTransform><TranslateTransform x:Name="InspectorSlide"/></Border.RenderTransform>
             <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="3" Opacity="0.20"/></Border.Effect>
