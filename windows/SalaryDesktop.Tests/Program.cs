@@ -102,11 +102,47 @@ static void Reject(string path, string reason)
     throw new InvalidOperationException(reason);
 }
 var root = Path.Combine(Path.GetTempPath(), "salary-desktop-tests-" + Guid.NewGuid());
+var sharedSamples = new[]
+{
+    "{\"headers\":[\"الاسم\",\"الاسم\",\"\"],\"values\":[\"أ\",\"\",\"س\"],\"future\":{\"keep\":7}}",
+    "  { \"headers\" : [\"أ\\\"ب\", \"ملاحظة\"], \"values\": [\"\\u0627\", \"\"] } \n",
+    "{\"headers\":[],\"values\":[]}",
+};
+foreach (var sample in sharedSamples)
+{
+    var bytes = Encoding.UTF8.GetBytes(sample);
+    var parts = SharedPayrollColumns.Split(bytes) ?? throw new InvalidOperationException("supported shared header rejected");
+    if (sample == sharedSamples[0]) Check(parts.SchemaId == "B79027BCD83268724B64B144A3453C144FDAC6741E1552E0ACA97AF6B17E3651", "shared schema matches cross-platform hash vector");
+    Check(SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Tail).AsSpan().SequenceEqual(bytes), "shared payroll columns round-trip exact bytes");
+    try { _ = SharedPayrollColumns.Join(parts.SchemaId, [.. parts.Prefix, 32], parts.Tail); throw new InvalidOperationException("corrupt schema accepted"); }
+    catch (InvalidDataException) { }
+}
+foreach (var sample in new[] { "not-json", "{\"values\":[\"x\"],\"headers\":[\"a\"]}", "{\"headers\":[\"a\"],\"values\":[]}", "{\"headers\":[1],\"values\":[\"x\"]}" })
+    Check(SharedPayrollColumns.Split(Encoding.UTF8.GetBytes(sample)) is null, "unsupported columns require exact original fallback");
+string? sharedID = null;
+for (var i = 0; i < 5000; i++)
+{
+    var raw = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "الاسم", "الاسم", "ملاحظة" }, values = new[] { $"منتسب {i}", "", "\"نص\\وهمي\"" }, future = new { id = i } });
+    var parts = SharedPayrollColumns.Split(raw) ?? throw new InvalidOperationException("generated shared header rejected");
+    sharedID ??= parts.SchemaId;
+    Check(parts.SchemaId == sharedID && SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Tail).AsSpan().SequenceEqual(raw), "shared schema preserves generated record bytes");
+}
 Directory.CreateDirectory(root);
 try
 {
     string valid = Path.Combine(root, "valid.zip"), wrong = Path.Combine(root, "wrong.zip"), duplicate = Path.Combine(root, "duplicate.zip"), missing = Path.Combine(root, "missing.zip");
     MakeBackup(valid); MakeBackup(wrong, wrongCount: true); MakeBackup(duplicate, duplicate: true); MakeBackup(missing, omitPdf: true);
+    var futureBackup = Path.Combine(root, "future-backup.zip"); MakeBackup(futureBackup);
+    using (var zip = ZipFile.Open(futureBackup, ZipArchiveMode.Update))
+    {
+        var manifest = zip.GetEntry("manifest.json")!;
+        using var reader = new StreamReader(manifest.Open(), Encoding.UTF8);
+        var future = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!.AsObject();
+        reader.Close(); manifest.Delete(); future["version"] = 7;
+        Entry(zip, "manifest.json", future.ToJsonString());
+    }
+    try { _ = BackupReader.Read(futureBackup); throw new InvalidOperationException("unknown future backup accepted"); }
+    catch (InvalidDataException ex) { Check(ex.Message.Contains("الإصدار", StringComparison.Ordinal) || ex.Message.Contains("إصدار", StringComparison.Ordinal), "future backup version refused"); }
     var before = SHA256.HashData(File.ReadAllBytes(valid));
     var snapshot = BackupReader.Read(valid);
     Check(before.SequenceEqual(SHA256.HashData(File.ReadAllBytes(valid))), "backup was changed");

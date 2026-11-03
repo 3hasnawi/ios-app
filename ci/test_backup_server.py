@@ -24,6 +24,13 @@ try:
 except ValueError:
     pass
 server_module.ensure_no_missing_data({"version": 6, "months": ["test"], "employees": 1}, {"version": 6, "months": ["test"], "employees": 1})
+# صيغة مستقبلية: لا يُسمح لنسخة v6 باستبدال v7 حتى إن تطابقت الأعداد.
+try:
+    server_module.ensure_no_missing_data({"version": 6, "months": ["test"], "employees": 1}, {"version": 7, "months": ["test"], "employees": 1})
+    raise AssertionError("legacy backup replaced v7")
+except ValueError:
+    pass
+server_module.ensure_no_missing_data({"version": 7, "months": ["test"], "employees": 1}, {"version": 7, "months": ["test"], "employees": 1})
 
 with tempfile.TemporaryDirectory() as directory:
     server_module.DATA = Path(directory)
@@ -172,6 +179,15 @@ with tempfile.TemporaryDirectory() as directory:
     downgrade_headers = {**auth, "X-Content-SHA256": hashlib.sha256(data).hexdigest(), "X-Base-SHA256": hashlib.sha256(protected_data).hexdigest()}
     assert request("POST", "/v2/backups", data, downgrade_headers)[0] == 400
     assert (server_module.DATA / "backup-current.zip").read_bytes() == protected_data
+    future = io.BytesIO()
+    with zipfile.ZipFile(future, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 7, "months": ["test"], "employees": 1}))
+    future_data = future.getvalue()
+    future_headers = {**auth, "X-Content-SHA256": hashlib.sha256(future_data).hexdigest(), "X-Base-SHA256": hashlib.sha256(protected_data).hexdigest()}
+    assert request("POST", "/v2/backups", future_data, future_headers)[0] == 201
+    old_headers = {**auth, "X-Content-SHA256": hashlib.sha256(protected_data).hexdigest(), "X-Base-SHA256": hashlib.sha256(future_data).hexdigest()}
+    assert request("POST", "/v2/backups", protected_data, old_headers)[0] == 400
+    assert (server_module.DATA / "backup-current.zip").read_bytes() == future_data
     assert json.loads(request("GET", "/v1/status", headers=auth)[1])["backup_format_guard"] is True
     server.edit_sync_enabled = False
     assert request("POST", "/v1/backups", data, headers)[0] == 409
