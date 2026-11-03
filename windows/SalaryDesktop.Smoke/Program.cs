@@ -244,8 +244,14 @@ static class Program
                 var person = new PersonWindow(snapshot, profile, "أيلول 2026") { Owner = main }; person.Show(); await Task.Delay(300);
                 Check(((TextBlock)person.FindName("NetText")).Text == "500" && ((DataGrid)person.FindName("HistoryTable")).Items.Count == 1, "member profile did not show the payslip and deductions"); person.Close();
                 var search = new SearchWindow(snapshot, Task.FromResult<IReadOnlyList<StaffMember>?>(StaffRecords.Read(snapshot))) { Owner = main }; search.Show(); await Task.Delay(800);
-                ((TextBox)search.FindName("Query")).Text = "123"; await Task.Delay(200);
-                Check(((ListBox)search.FindName("Results")).Items.Count == 1, "global search did not find the member by unified number"); search.Close();
+                Check(((Border)search.FindName("ResultsContainer")).Visibility == Visibility.Collapsed, "empty search should stay compact");
+                var compactSearchHeight = search.ActualHeight;
+                ((TextBox)search.FindName("Query")).Text = "123"; await Task.Delay(300);
+                Check(((ListBox)search.FindName("Results")).Items.Count == 1, "global search did not find the member by unified number");
+                Check(((Border)search.FindName("ResultsContainer")).Visibility == Visibility.Visible && search.ActualHeight > compactSearchHeight, "search window did not expand to show its result");
+                ((TextBox)search.FindName("Query")).Text = "لا توجد نتيجة وهمية"; await Task.Delay(200);
+                Check(((ListBox)search.FindName("Results")).Items.Count == 0 && ((Border)search.FindName("ResultsContainer")).Visibility == Visibility.Collapsed, "empty results did not collapse");
+                search.Close();
                 await Navigate("home");
                 Check(SalaryDesktop.App.UnhandledCount == 0, "an unexpected UI error was reported");
                 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SCREENSHOT_DIR")))
@@ -303,6 +309,7 @@ static class Program
                     // البحث الشامل، ملف المنتسب، التصفية والمجاميع، وكشوف PDF/Excel المعتمدة للمراجعة البصرية.
                     var richStaff = StaffRecords.Read(rich);
                     var richSearch = Fit(new SearchWindow(rich, Task.FromResult<IReadOnlyList<StaffMember>?>(richStaff)) { Owner = main }); richSearch.Show(); await Task.Delay(900);
+                    Shot(richSearch, "16-global-search-empty");
                     ((TextBox)richSearch.FindName("Query")).Text = "علي محمد"; await Task.Delay(300); Shot(richSearch, "16-global-search"); richSearch.Close();
                     var richPerson = Fit(new PersonWindow(rich, PersonProfiles.Build(rich, rich.Employees[3].Name, richStaff), "أيلول 2026") { Owner = main }); richPerson.Show(); await Task.Delay(800); Shot(richPerson, "17-person-payslip");
                     var tabs = Children<TabControl>(richPerson).First();

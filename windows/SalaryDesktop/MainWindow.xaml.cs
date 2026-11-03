@@ -191,9 +191,7 @@ public partial class MainWindow : Window
             if (e.Key == Key.L) { e.Handled = true; LockNow(this, new RoutedEventArgs()); return; }
             var index = e.Key switch { >= Key.D0 and <= Key.D9 => e.Key - Key.D0, >= Key.NumPad0 and <= Key.NumPad9 => e.Key - Key.NumPad0, _ => -1 };
             if (index >= 0) { NavItems[index == 0 ? 9 : index - 1].IsChecked = true; e.Handled = true; return; }
-            if (e.Key == Key.K) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
-            if (e.Key == Key.F && DataPanel.Visibility == Visibility.Visible) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
-            else if (e.Key == Key.F && ArchivePanel.Visibility == Visibility.Visible) { ArchiveSearch.Focus(); ArchiveSearch.SelectAll(); e.Handled = true; }
+            if (e.Key is Key.K or Key.F) { e.Handled = true; OpenGlobalSearch(this, new RoutedEventArgs()); return; }
             else if (e.Key == Key.O) { e.Handled = true; ImportFiles(this, new RoutedEventArgs()); }
         }
         else if (e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)

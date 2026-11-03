@@ -19,7 +19,7 @@ public sealed record SearchItem(SearchKind Kind, string Title, string Subtitle, 
     public string KindText => Kind switch { SearchKind.Person => "منتسب", SearchKind.Entity => "جهة تنفيذ", _ => "قسم" };
 }
 
-/// البحث الشامل (Ctrl+K): المنتسب بالاسم أو اسم الأم أو الرقم الموحد/الإحصائي، وجهات التنفيذ، والأقسام.
+/// البحث الشامل (Ctrl+F أو Ctrl+K): المنتسب بالاسم أو اسم الأم أو الرقم الموحد/الإحصائي، وجهات التنفيذ، والأقسام.
 public partial class SearchWindow : Window
 {
     private static readonly (string Title, string Tag, string Icon, string Words)[] Sections =
@@ -40,7 +40,7 @@ public partial class SearchWindow : Window
         InitializeComponent();
         this.source = source;
         Render();
-        Loaded += async (_, _) => { Query.Focus(); await Build(staff); };
+        Loaded += async (_, _) => { Results.MaxHeight = Math.Clamp((Owner?.ActualHeight ?? SystemParameters.WorkArea.Height) * .45, 100, 400); Query.Focus(); await Build(staff); };
     }
 
     private async Task Build(Task<IReadOnlyList<StaffMember>?>? staffTask)
@@ -92,8 +92,8 @@ public partial class SearchWindow : Window
         var tokens = PayrollAnalysis.Normalize(Query.Text).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0)
         {
-            Results.ItemsSource = index.Where(i => i.Kind == SearchKind.Page).ToArray();
-            if (source is not null && people + entities > 0) Status.Text = $"اكتب للبحث في {people:N0} منتسب و{entities:N0} جهة، أو اختر قسماً.";
+            Results.ItemsSource = Array.Empty<SearchItem>();
+            Status.Text = source is not null && people + entities > 0 ? $"اكتب للبحث في {people:N0} منتسب و{entities:N0} جهة أو قسم." : "اكتب اسم منتسب أو جهة أو قسماً للبحث.";
         }
         else
         {
@@ -105,6 +105,7 @@ public partial class SearchWindow : Window
             Status.Text = matches.Length == 0 ? "لا توجد نتائج؛ جرّب جزءاً من الاسم أو الرقم الموحد." :
                 matches.Length > Limit ? $"{matches.Length:N0} نتيجة · تُعرض أول {Limit}؛ أضف كلمة أخرى لتضييق البحث." : $"{matches.Length:N0} نتيجة";
         }
+        ResultsContainer.Visibility = Results.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (Results.Items.Count > 0) Results.SelectedIndex = 0;
     }
 
@@ -113,6 +114,7 @@ public partial class SearchWindow : Window
         if (Results.SelectedItem is not SearchItem item) return;
         Result = item; DialogResult = true;
     }
+    private void CloseSearchClick(object sender, RoutedEventArgs e) => Close();
     private void ResultsDoubleClick(object sender, MouseButtonEventArgs e) { if (e.OriginalSource is DependencyObject node && ItemsControl.ContainerFromElement(Results, node) is ListBoxItem) Choose(); }
 
     private void WindowKeyDown(object sender, KeyEventArgs e)

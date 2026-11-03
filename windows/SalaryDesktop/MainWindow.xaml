@@ -100,12 +100,12 @@
           <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="SemiBold"/>
           <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
         </StackPanel>
-        <Button x:Name="GlobalSearchButton" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="{DynamicResource TbgCFD9DA}" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+K)">
+        <Button x:Name="GlobalSearchButton" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="{DynamicResource TbgCFD9DA}" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="{DynamicResource Tfg7A8D8A}" Margin="0,0,9,0"/>
             <TextBlock Grid.Column="1" Text="ابحث عن منتسب أو جهة…" Foreground="{DynamicResource Tfg8A9B98}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <Border Grid.Column="2" Background="{DynamicResource TbgF1F5F4}" BorderBrush="{DynamicResource TbgE1E8E7}" BorderThickness="1" CornerRadius="5" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="11.5" Foreground="{DynamicResource Tfg5D716E}"/></Border>
+            <Border Grid.Column="2" Background="{DynamicResource TbgF1F5F4}" BorderBrush="{DynamicResource TbgE1E8E7}" BorderThickness="1" CornerRadius="5" Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="11.5" Foreground="{DynamicResource Tfg5D716E}"/></Border>
           </Grid>
         </Button>
         <Border Grid.Column="2" Background="{DynamicResource TbgFFFFFF}" BorderBrush="{DynamicResource TbgCFD9DA}" BorderThickness="1" CornerRadius="9" Margin="0,0,10,0" VerticalAlignment="Center">
@@ -145,12 +145,12 @@
         <!-- الرئيسية «ماذا أفعل الآن»: بحث كبير وما فُتح مؤخراً، ثم الخطوة التالية المقترحة من حالة الشهر، ثم أرقام الشهر، ثم أدواتك بالأكثر استخداماً. -->
         <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel MaxWidth="1240">
-            <Button x:Name="HomeSearch" Style="{StaticResource HomeTile}" Click="OpenGlobalSearch" Height="54" MaxWidth="860" BorderBrush="{DynamicResource Primary}" BorderThickness="1.5" Padding="18,0" Margin="0,4,0,0" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+K)">
+            <Button x:Name="HomeSearch" Style="{StaticResource HomeTile}" Click="OpenGlobalSearch" Height="54" MaxWidth="860" BorderBrush="{DynamicResource Primary}" BorderThickness="1.5" Padding="18,0" Margin="0,4,0,0" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" FontSize="17" Foreground="{DynamicResource Primary}" Margin="0,0,12,0"/>
                 <TextBlock Grid.Column="1" Text="اكتب اسم منتسب أو رقمه الموحد أو جهة أو قسماً…" FontSize="15.5" Foreground="{DynamicResource Tfg8A9B98}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                <Border Grid.Column="2" Background="{DynamicResource TbgF1F5F4}" BorderBrush="{DynamicResource TbgE1E8E7}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="11.5" Foreground="{DynamicResource Tfg5D716E}"/></Border>
+                <Border Grid.Column="2" Background="{DynamicResource TbgF1F5F4}" BorderBrush="{DynamicResource TbgE1E8E7}" BorderThickness="1" CornerRadius="5" Padding="7,1" Margin="10,0,0,0" VerticalAlignment="Center"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="11.5" Foreground="{DynamicResource Tfg5D716E}"/></Border>
               </Grid>
             </Button>
             <WrapPanel x:Name="RecentRow" HorizontalAlignment="Center" Margin="0,10,0,0" Visibility="Collapsed">
@@ -316,7 +316,7 @@
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Grid>
-              <TextBox x:Name="SearchBox" Height="38" Padding="34,6,10,6" TextChanged="SearchChanged" Tag="ابحث بالاسم أو الجهة… (Ctrl+F)" KeyDown="SearchKeyDown"/>
+              <TextBox x:Name="SearchBox" Height="38" Padding="34,6,10,6" TextChanged="SearchChanged" Tag="ابحث بالاسم أو الجهة…" KeyDown="SearchKeyDown"/>
               <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="{DynamicResource Tfg8A9B98}" FontSize="14" HorizontalAlignment="Left" Margin="12,0,0,0" IsHitTestVisible="False"/>
             </Grid>
             <WrapPanel Grid.Column="1">
@@ -400,7 +400,7 @@
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
               <Grid Width="290">
-                <TextBox x:Name="ArchiveSearch" Height="38" Padding="34,6,10,6" TextChanged="ArchiveFilterChanged" Tag="ابحث باسم الكتاب أو الجهة… (Ctrl+F)"/>
+                <TextBox x:Name="ArchiveSearch" Height="38" Padding="34,6,10,6" TextChanged="ArchiveFilterChanged" Tag="ابحث باسم الكتاب أو الجهة…"/>
                 <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="{DynamicResource Tfg8A9B98}" FontSize="14" HorizontalAlignment="Left" Margin="12,0,0,0" IsHitTestVisible="False"/>
               </Grid>
               <ComboBox x:Name="ArchiveMonthFilter" Width="170" Height="38" Margin="8,0,0,0" VerticalContentAlignment="Center" SelectionChanged="ArchiveFilterChanged" ToolTip="عرض كتب شهر واحد"/>
@@ -918,7 +918,7 @@
                 <StackPanel Margin="0,8,0,0">
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+1 … Ctrl+9" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="التنقل بين الأقسام بترتيب القائمة" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+0" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="الإعدادات" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
-                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث في الجدول" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
+                  <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+F" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث الشامل عن منتسب أو جهة أو قسم" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+K" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="البحث الشامل عن منتسب أو جهة أو قسم" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+C" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="نسخ الصفوف المحددة للصقها في Excel" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
                   <Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Background="{DynamicResource TbgF1F5F4}" CornerRadius="6" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="Ctrl+O" FlowDirection="LeftToRight" FontSize="12.5"/></Border><TextBlock Grid.Column="1" Text="استيراد الملفات (نسخة احتياطية أو Excel)" Foreground="{DynamicResource Tfg3A524F}" VerticalAlignment="Center"/></Grid>
