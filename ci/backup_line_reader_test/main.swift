@@ -11,6 +11,10 @@ input.append(try encoder.encode(expected[0])); input.append(Data([13, 10, 10]))
 input.append(try encoder.encode(expected[1])); input.append(10)
 input.append(try encoder.encode(expected[2])) // no trailing newline
 try input.write(to: file)
+do {
+    try BackupLineReader.read(file, chunkSize: 7, maxLineBytes: 4) { _ in }
+    fatalError("oversized line accepted")
+} catch is CocoaError { }
 for chunkSize in [1, 2, 17, 1024, 65_536, input.count + 1] {
     var actual: [Row] = []
     var copied = Data()
@@ -19,6 +23,9 @@ for chunkSize in [1, 2, 17, 1024, 65_536, input.count + 1] {
     }
     precondition(actual == expected, "decoded rows differ at chunk size \(chunkSize)")
     precondition(copied == input, "chunk hash input differs")
+    var rebuilt = Data()
+    try BackupLineReader.read(file, chunkSize: chunkSize, includeNewlines: true) { rebuilt.append($0) }
+    precondition(rebuilt == input, "exact line endings changed")
 }
 var calls = 0
 do {

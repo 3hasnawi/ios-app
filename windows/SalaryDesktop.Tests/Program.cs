@@ -132,6 +132,39 @@ for (var i = 0; i < 5000; i++)
     sharedID ??= parts.SchemaId;
     Check(parts.SchemaId == sharedID && SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Before, parts.Tail).AsSpan().SequenceEqual(raw), "shared schema preserves generated record bytes");
 }
+var rowSchemas = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+SharedPayrollBackupRow.Packed? firstPacked = null;
+byte[]? firstSharedRow = null;
+for (var i = 0; i < 1000; i++)
+{
+    var columns = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "اسم المنتسب", "رقم العمل", "الملاحظات", "الملاحظات" }, values = new[] { $"موظف {i}", "123", "", "وهمي" }, future = new { keep = true } });
+    var row = JsonSerializer.SerializeToUtf8Bytes(new { month = "أيلول 2026", name = $"موظف {i}", rawColumns = columns, future = new { id = i, money = 12345678901234567L } });
+    var packed = SharedPayrollBackupRow.Pack(row, rowSchemas);
+    Check(packed.SchemaId is not null && SharedPayrollBackupRow.Unpack(packed, rowSchemas).AsSpan().SequenceEqual(row), "packed payroll row keeps exact original bytes");
+    if (firstPacked is null) { firstPacked = packed; firstSharedRow = row; }
+}
+Check(rowSchemas.Count == 1, "identical payroll headers are stored once");
+if (Environment.GetEnvironmentVariable("SALARY_SHARED_FIXTURE_PATH") is { Length: > 0 } sharedFixture)
+    File.WriteAllBytes(sharedFixture, JsonSerializer.SerializeToUtf8Bytes(new { Row = firstPacked, Schemas = rowSchemas, Original = firstSharedRow }));
+var corruptRow = firstPacked! with { After = [.. firstPacked!.After!, 32] };
+try { _ = SharedPayrollBackupRow.Unpack(corruptRow, rowSchemas); throw new InvalidOperationException("corrupt payroll row accepted"); }
+catch (InvalidDataException) { }
+try { _ = SharedPayrollBackupRow.Unpack(firstPacked!, new Dictionary<string, byte[]>()); throw new InvalidOperationException("missing payroll schema accepted"); }
+catch (InvalidDataException) { }
+var damagedSchemas = rowSchemas.ToDictionary(p => p.Key, p => p.Value.Concat(new byte[] { 32 }).ToArray(), StringComparer.Ordinal);
+try { _ = SharedPayrollBackupRow.Unpack(firstPacked!, damagedSchemas); throw new InvalidOperationException("corrupted payroll schema accepted"); }
+catch (InvalidDataException) { }
+var unrecognizedRow = Encoding.UTF8.GetBytes("{\"rawColumns\":null,\"future\":\"محفوظ\"}");
+var fallbackRow = SharedPayrollBackupRow.Pack(unrecognizedRow, rowSchemas);
+Check(fallbackRow.SchemaId is null && SharedPayrollBackupRow.Unpack(fallbackRow, rowSchemas).AsSpan().SequenceEqual(unrecognizedRow), "unrecognized payroll row is retained verbatim");
+var escapedColumns = Encoding.UTF8.GetBytes("{\"headers\":[\"࿿࿿࿿࿿࿿࿿࿿࿿࿿࿿\"],\"values\":[\"x\"]}");
+var encodedEscapedColumns = Convert.ToBase64String(escapedColumns);
+Check(encodedEscapedColumns.Contains('/') && encodedEscapedColumns.Contains('+'), "escape fixture includes base64 punctuation");
+var escapedRow = Encoding.UTF8.GetBytes("{\"rawColumns\":\"" + encodedEscapedColumns.Replace("/", "\\/").Replace("+", "\\u002B") + "\",\"future\":true}");
+var escapedPacked = SharedPayrollBackupRow.Pack(escapedRow, rowSchemas);
+Check(escapedPacked.SchemaId is not null && SharedPayrollBackupRow.Unpack(escapedPacked, rowSchemas).AsSpan().SequenceEqual(escapedRow), "escaped Base64 JSON bytes round-trip exactly");
+if (Environment.GetEnvironmentVariable("SALARY_ESCAPED_FIXTURE_PATH") is { Length: > 0 } escapedFixture)
+    File.WriteAllBytes(escapedFixture, JsonSerializer.SerializeToUtf8Bytes(new { Row = escapedPacked, Schemas = rowSchemas, Original = escapedRow }));
 Directory.CreateDirectory(root);
 try
 {
@@ -253,6 +286,147 @@ try
     try { BackupDestination.Guard(salaryBackup, snapshot); throw new InvalidOperationException("backup file overwritten by a copy missing a month"); }
     catch (InvalidDataException) { }
     var restoredSalary = BackupReader.Read(salaryBackup);
+    var candidatePath = Path.Combine(root, "candidate-v7.zip");
+    var beforeCandidate = SHA256.HashData(File.ReadAllBytes(salaryBackup));
+    SharedPayrollCandidate.Create(salaryBackup, candidatePath);
+    if (Environment.GetEnvironmentVariable("SALARY_CANDIDATE_FIXTURE_DIR") is { Length: > 0 } candidateFixtureDir)
+    {
+        Directory.CreateDirectory(candidateFixtureDir);
+        File.Copy(candidatePath, Path.Combine(candidateFixtureDir, "candidate-v7.zip"), true);
+        File.Copy(salaryBackup, Path.Combine(candidateFixtureDir, "candidate-source.zip"), true);
+    }
+    Check(SHA256.HashData(File.ReadAllBytes(salaryBackup)).AsSpan().SequenceEqual(beforeCandidate), "candidate generation preserves original backup");
+    using (var originalZip = ZipFile.OpenRead(salaryBackup))
+    using (var candidateZip = ZipFile.OpenRead(candidatePath))
+    {
+        using var schemasReader = new StreamReader(candidateZip.GetEntry("v7/payroll-schemas.jsonl")!.Open(), Encoding.UTF8);
+        var candidateSchemas = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        while (schemasReader.ReadLine() is { } line)
+        {
+            using var schema = JsonDocument.Parse(line);
+            candidateSchemas.Add(schema.RootElement.GetProperty("Id").GetString()!, schema.RootElement.GetProperty("Data").GetBytesFromBase64());
+        }
+        using var rows = new StreamReader(candidateZip.GetEntry("employees.jsonl")!.Open(), Encoding.UTF8);
+        using var recovered = new MemoryStream();
+        while (rows.ReadLine() is { } line)
+        {
+            var row = JsonSerializer.Deserialize<SharedPayrollBackupRow.Packed>(line)!;
+            recovered.Write(SharedPayrollBackupRow.Unpack(row, candidateSchemas));
+        }
+        using var originalRows = originalZip.GetEntry("employees.jsonl")!.Open();
+        Check(SHA256.HashData(recovered.ToArray()).AsSpan().SequenceEqual(SHA256.HashData(originalRows)), "candidate restores every employee byte");
+        Check(candidateSchemas.Count > 0, "candidate stored shared headers");
+    }
+    try { SharedPayrollCandidate.Create(salaryBackup, candidatePath); throw new InvalidOperationException("candidate overwrote existing file"); }
+    catch (InvalidDataException) { }
+    Check(SHA256.HashData(File.ReadAllBytes(salaryBackup)).AsSpan().SequenceEqual(beforeCandidate), "candidate overwrite refusal preserves source");
+    try { _ = BackupReader.Read(candidatePath); throw new InvalidOperationException("old reader accepted candidate format"); }
+    catch (InvalidDataException) { }
+    var unpackedPath = Path.Combine(root, "candidate-restored-original.zip");
+    SharedPayrollCandidate.RestoreOriginal(candidatePath, unpackedPath);
+    using (var beforeZip = ZipFile.OpenRead(salaryBackup))
+    using (var afterZip = ZipFile.OpenRead(unpackedPath))
+    {
+        Check(beforeZip.Entries.Count == afterZip.Entries.Count, "restored candidate retains all archive entries");
+        foreach (var originalEntry in beforeZip.Entries)
+        {
+            var restoredEntry = afterZip.GetEntry(originalEntry.FullName) ?? throw new InvalidOperationException("restored entry missing");
+            using var a = originalEntry.Open(); using var b = restoredEntry.Open();
+            Check(SHA256.HashData(a).AsSpan().SequenceEqual(SHA256.HashData(b)), "candidate round-trip preserves each entry");
+        }
+    }
+    Check(BackupReader.Read(unpackedPath).Employees.Count == combinedPayroll.Snapshot.Employees.Count, "restored legacy backup opens normally");
+    if (Environment.GetEnvironmentVariable("SALARY_SWIFT_CANDIDATE_PATH") is { Length: > 0 } swiftCandidate &&
+        Environment.GetEnvironmentVariable("SALARY_SWIFT_SOURCE_PATH") is { Length: > 0 } swiftSource)
+    {
+        var swiftRestored = Path.Combine(root, "swift-candidate-restored.zip");
+        SharedPayrollCandidate.RestoreOriginal(swiftCandidate, swiftRestored);
+        using var sourceZip = ZipFile.OpenRead(swiftSource); using var restoredZip = ZipFile.OpenRead(swiftRestored);
+        Check(sourceZip.Entries.Count == restoredZip.Entries.Count, "Swift candidate keeps every original archive entry");
+        foreach (var sourceEntry in sourceZip.Entries)
+        {
+            var other = restoredZip.GetEntry(sourceEntry.FullName) ?? throw new InvalidOperationException("Swift candidate entry missing");
+            using var a = sourceEntry.Open(); using var b = other.Open();
+            Check(SHA256.HashData(a).AsSpan().SequenceEqual(SHA256.HashData(b)), "Swift candidate round-trip preserves entry bytes");
+        }
+        Console.WriteLine("C# restored Swift-produced candidate archive entries exactly.");
+    }
+    var corruptCandidate = Path.Combine(root, "candidate-corrupt.zip"); File.Copy(candidatePath, corruptCandidate);
+    using (var zip = ZipFile.Open(corruptCandidate, ZipArchiveMode.Update))
+    {
+        zip.GetEntry("v7/payroll-schemas.jsonl")!.Delete();
+        Entry(zip, "v7/payroll-schemas.jsonl", "{\"Id\":\"BAD\",\"Data\":\"YQ==\"}\n");
+    }
+    var failedRestore = Path.Combine(root, "candidate-failed-restore.zip");
+    try { SharedPayrollCandidate.RestoreOriginal(corruptCandidate, failedRestore); throw new InvalidOperationException("corrupt candidate restored"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(failedRestore) && !Directory.EnumerateFiles(root, ".salary-unpack-*.tmp").Any(), "corrupt candidate leaves no output or temporary file");
+    var largeCandidateSource = Path.Combine(root, "large-candidate-source.zip");
+    var longHeaders = Enumerable.Range(0, 100).Select(i => $"عمود رواتب واستقطاعات وهمي رقم {i}").ToArray();
+    using (var archive = ZipFile.Open(largeCandidateSource, ZipArchiveMode.Create))
+    {
+        Entry(archive, "manifest.json", "{\"version\":5,\"future\":{\"kept\":true}}");
+        Entry(archive, "future-unknown.bin", "محتوى وهمي محفوظ");
+        var candidateEmployees = archive.CreateEntry("employees.jsonl", CompressionLevel.Optimal);
+        using var writer = new StreamWriter(candidateEmployees.Open(), new UTF8Encoding(false));
+        for (var i = 0; i < 3000; i++)
+        {
+            var values = Enumerable.Range(0, 100).Select(n => n == 0 ? $"منتسب وهمي {i}" : "").ToArray();
+            var raw = JsonSerializer.SerializeToUtf8Bytes(new { headers = longHeaders, values });
+            writer.WriteLine(JsonSerializer.Serialize(new { name = $"منتسب وهمي {i}", rawColumns = raw, future = new { id = i } }));
+        }
+    }
+    var largeCandidatePath = Path.Combine(root, "large-candidate-v7.zip");
+    SharedPayrollCandidate.Create(largeCandidateSource, largeCandidatePath);
+    using (var sourceZip = ZipFile.OpenRead(largeCandidateSource))
+    using (var compactZip = ZipFile.OpenRead(largeCandidatePath))
+    {
+        var originalSize = sourceZip.GetEntry("employees.jsonl")!.Length;
+        var compactSize = compactZip.GetEntry("employees.jsonl")!.Length + compactZip.GetEntry("v7/payroll-schemas.jsonl")!.Length;
+        Check(compactSize < originalSize * 0.7, "candidate reduces repeated headers on a larger fictional dataset");
+        Console.WriteLine($"Fictional candidate: {originalSize:N0} to {compactSize:N0} uncompressed bytes across 3000 rows.");
+    }
+    var invalidCandidatePath = Path.Combine(root, "candidate-duplicate.zip");
+    try { SharedPayrollCandidate.Create(duplicate, invalidCandidatePath); throw new InvalidOperationException("duplicate source accepted for candidate"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(invalidCandidatePath) && !Directory.EnumerateFiles(root, ".salary-compact-*.tmp").Any(), "failed candidate leaves no destination or temporary file");
+    var interruptedSource = Path.Combine(root, "candidate-interrupted-source.zip");
+    using (var zip = ZipFile.Open(interruptedSource, ZipArchiveMode.Create))
+    {
+        Entry(zip, "manifest.json", "{\"version\":5}");
+        var employeeFile = zip.CreateEntry("employees.jsonl", CompressionLevel.Optimal);
+        using var output = employeeFile.Open(); output.Write("{}\n"u8);
+        var chunk = Enumerable.Repeat((byte)'x', 1024 * 1024).ToArray();
+        for (var i = 0; i < 17; i++) output.Write(chunk);
+    }
+    var interruptedHash = SHA256.HashData(File.ReadAllBytes(interruptedSource));
+    var interruptedTarget = Path.Combine(root, "candidate-interrupted-output.zip");
+    try { SharedPayrollCandidate.Create(interruptedSource, interruptedTarget); throw new InvalidOperationException("oversized record accepted"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(interruptedTarget) && !Directory.EnumerateFiles(root, ".salary-compact-*.tmp").Any() && SHA256.HashData(File.ReadAllBytes(interruptedSource)).AsSpan().SequenceEqual(interruptedHash),
+        "failure after starting candidate write preserves source and removes incomplete output");
+    if (Environment.GetEnvironmentVariable("SALARY_RUN_LARGE_CANDIDATE") == "1")
+    {
+        var stressSource = Path.Combine(root, "stress-source.zip"); var stressCandidate = Path.Combine(root, "stress-candidate.zip");
+        using (var stressZip = ZipFile.Open(stressSource, ZipArchiveMode.Create))
+        {
+            Entry(stressZip, "manifest.json", "{\"version\":5,\"future\":{\"kept\":true}}");
+            var stressEntry = stressZip.CreateEntry("employees.jsonl", CompressionLevel.Optimal);
+            using var writer = new StreamWriter(stressEntry.Open(), new UTF8Encoding(false));
+            for (var i = 0; i < 102_000; i++)
+            {
+                var values = Enumerable.Range(0, 100).Select(n => n == 0 ? $"منتسب وهمي {i}" : "").ToArray();
+                var raw = JsonSerializer.SerializeToUtf8Bytes(new { headers = longHeaders, values });
+                writer.WriteLine(JsonSerializer.Serialize(new { name = $"منتسب وهمي {i}", rawColumns = raw, future = new { id = i } }));
+            }
+        }
+        SharedPayrollCandidate.Create(stressSource, stressCandidate);
+        using var inputZip = ZipFile.OpenRead(stressSource); using var outputZip = ZipFile.OpenRead(stressCandidate);
+        var stressBefore = inputZip.GetEntry("employees.jsonl")!.Length;
+        var stressAfter = outputZip.GetEntry("employees.jsonl")!.Length + outputZip.GetEntry("v7/payroll-schemas.jsonl")!.Length;
+        Check(stressBefore > 2_274_462_462 && stressAfter < stressBefore * 0.7, "large candidate checks a workload above the reported size");
+        Console.WriteLine($"Large fictional candidate: {stressBefore:N0} to {stressAfter:N0} uncompressed bytes; peak working set {System.Diagnostics.Process.GetCurrentProcess().PeakWorkingSet64:N0} bytes.");
+    }
     var rawBefore = combinedPayroll.Snapshot.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!;
     var rawAfter = restoredSalary.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!;
     using (var beforeJson = JsonDocument.Parse(rawBefore))
