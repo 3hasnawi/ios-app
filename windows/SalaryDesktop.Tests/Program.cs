@@ -546,6 +546,18 @@ try
     var reviewNew = reviewOld with { Month = reviewMonth, Net = 1200, Rank = "نقيب", Workplace = "قسم ثان" };
     var duplicateOld = reviewOld with { Name = "اسم مكرر وهمي" }; var duplicateNew = duplicateOld with { Month = reviewMonth };
     var reviewSource = snapshot with { Employees = [reviewOld, duplicateOld, reviewNew, duplicateNew, duplicateNew] };
+    byte[] IbanDetails(string iban) => JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["IBAN"] = iban });
+    var ibanPeople = new[] {
+        reviewNew with { Name = "موظف أ", Details = IbanDetails("iq06 test 1230 0000 0000 001") },
+        reviewNew with { Name = "موظف ب", Details = IbanDetails(fakePayer) },
+        reviewNew with { Name = "موظف ج", Details = IbanDetails(fakeReceiver) },
+        reviewNew with { Name = "موظف د", Details = IbanDetails("IQ00TEST000000000000000") },
+        reviewNew with { Name = "موظف هـ", Details = null },
+        reviewOld with { Name = "شهر آخر", Details = IbanDetails(fakeReceiver) }
+    };
+    var ibanAudit = IbanAudit.Prepare(reviewSource with { Employees = ibanPeople }, reviewMonth);
+    Check(ibanAudit.Rows.Count == 5 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Duplicate) == 2 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Valid) == 1 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Invalid) == 1 && ibanAudit.Rows.Count(x => x.Status == IbanAuditStatus.Missing) == 1, "IBAN audit normalizes accounts, detects shared accounts and restricts its results to selected month");
+    Check(!IbanAudit.Valid("IQABTEST123000000000001") && !IbanAudit.Valid("IQ06TES1123000000000001") && !IbanAudit.Valid("IQ06TEST12300000000000A") && IbanAudit.Valid(fakeReceiver), "IBAN audit checks Iraqi structure and checksum");
     var review = SalaryReview.Prepare(reviewSource, reviewMonth);
     Check(review.PreviousMonth == "أيلول 2026" && review.Rows.Any(r => r.Kind == "تغيّر الصافي" && r.Name == reviewNew.Name && r.Before == 1000 && r.After == 1200) && review.Rows.Any(r => r.Kind == "تغيّرت الرتبة") && review.Rows.Any(r => r.Kind == "تغيّر محل العمل"), "salary review compares unique employees to previous month");
     Check(review.ExcludedAmbiguous == 1 && review.Rows.Any(r => r.Kind == "أسماء مكررة") && !review.Rows.Any(r => r.Kind == "جديد في الرواتب" && r.Name == duplicateNew.Name), "ambiguous duplicate names never cause automatic comparison");

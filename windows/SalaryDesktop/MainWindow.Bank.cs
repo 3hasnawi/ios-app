@@ -25,6 +25,18 @@ public partial class MainWindow
         public bool InSheet { get; init; } = true;
         public Visibility ManualVisibility => ManualKey is null ? Visibility.Collapsed : Visibility.Visible;
     }
+    private async void OpenIbanAudit(object sender, RoutedEventArgs e)
+    {
+        var source = snapshot; var month = SelectedMonth;
+        if (source is null || string.IsNullOrWhiteSpace(month)) { Ui.Message(this, "افتح نسخة واختر شهر الرواتب أولاً.", "تدقيق الحسابات"); return; }
+        try
+        {
+            var result = await Task.Run(() => IbanAudit.Prepare(source, month));
+            if (!ReferenceEquals(source, snapshot) || month != SelectedMonth) { Ui.Message(this, "تغيّرت البيانات أو الشهر. أعد فتح التدقيق.", "تدقيق الحسابات"); return; }
+            new IbanAuditWindow(result) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or System.Text.Json.JsonException) { Ui.Message(this, ex.Message, "تدقيق الحسابات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private BankSummary? bankSummary;
     private string bankSummaryMonth = "";
 
