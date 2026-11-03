@@ -6,7 +6,7 @@ nonisolated enum BankReconciliation {
     static let maximumAmount: Int64 = 9_007_199_254_740_991
 
     enum Failure: LocalizedError {
-        case invalid, duplicated, outOfPeriod, refundMismatch, overflow, incompatibleVersion, locked
+        case invalid, duplicated, outOfPeriod, refundMismatch, overflow, incompatibleVersion, locked, differentDay
         var errorDescription: String? {
             switch self {
             case .invalid: tr("تحقق من الفترة والمبلغ والبيان قبل الحفظ.", "Check the period, amount and description before saving.")
@@ -16,6 +16,7 @@ nonisolated enum BankReconciliation {
             case .overflow: tr("مجموع الحركات يتجاوز الحد المدعوم؛ لم يُحفظ التغيير.", "The movement total exceeds the supported limit; the change was not saved.")
             case .incompatibleVersion: tr("تعذّر قراءة بيانات المطابقة المحفوظة؛ لم تُستبدل البيانات.", "Could not read saved reconciliation data; it was not replaced.")
             case .locked: tr("الفترة معتمدة ومقفلة؛ ألغِ اعتمادها قبل تعديلها أو حذفها.", "This period is confirmed and locked; remove the confirmation before editing or deleting it.")
+            case .differentDay: tr("يمكن ترتيب الحركات داخل اليوم نفسه فقط؛ تبقى الأيام مرتبة حسب التاريخ.", "Movements can only be reordered within the same day; days remain in date order.")
             }
         }
     }
@@ -154,6 +155,20 @@ nonisolated enum BankReconciliation {
         return month == 1 ? (year - 1) * 100 + 12 : year * 100 + month - 1
     }
     static func day(_ value: Date) -> Date { dayCalendar.startOfDay(for: value) }
+    static func reorder(_ period: Period, sourceID: UUID, targetID: UUID) throws -> Period {
+        guard !period.isConfirmed else { throw Failure.locked }
+        var ordered = try calculate(period).lines.map(\.movement)
+        guard let source = ordered.firstIndex(where: { $0.id == sourceID }),
+              let target = ordered.firstIndex(where: { $0.id == targetID }) else { throw Failure.invalid }
+        guard day(ordered[source].date) == day(ordered[target].date) else { throw Failure.differentDay }
+        guard source != target else { return period }
+        let moved = ordered.remove(at: source)
+        ordered.insert(moved, at: target)
+        var result = period
+        result.movements = ordered
+        _ = try calculate(result)
+        return result
+    }
     static func signatureDate(_ date: Date) -> String {
         let components = dayCalendar.dateComponents([.month, .year], from: date)
         return ReportSheet.easternDigits(" / \(components.month ?? 0) / \(components.year ?? 0)")

@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
 
 /// دفتر محلي للمراجعة مقابل كشف المصرف الورقي، لا يثبت حصول الحركات آلياً.
 struct BankReconciliationView: View {
@@ -29,6 +31,7 @@ struct BankReconciliationView: View {
     @State private var showConfirmPeriod = false
     @State private var showManualConfirmation = false
     @State private var showUnconfirm = false
+    @State private var draggedMovementID: UUID?
 
     init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
         self.month = month; self.summary = summary; self.manual = manual; self.figures = figures; self.figuresFailure = figuresFailure; self.entities = entities
@@ -112,7 +115,6 @@ struct BankReconciliationView: View {
         .environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current)
         .navigationTitle(tr("مطابقة حساب المصرف", "Bank account reconciliation"))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { EditButton() } }
         .onAppear(perform: load)
         .sheet(item: $editor) { draft in
             NavigationStack {
@@ -249,21 +251,61 @@ struct BankReconciliationView: View {
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.buttonStyle(.plain).disabled(!editable)
                     Text(Money.format(Double(movement.amount))).font(.subheadline.monospacedDigit())
+                    if editable {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 8)
+                            .accessibilityLabel(tr("اسحب لترتيب الحركة في اليوم نفسه", "Drag to reorder the movement within the same day"))
+                            .onDrag {
+                                draggedMovementID = movement.id
+                                return NSItemProvider(object: movement.id.uuidString as NSString)
+                            }
+                    }
                 }
+                .contentShape(Rectangle())
+                .contextMenu {
+                    if editable {
+                        Button(tr("تعديل الحركة", "Edit movement"), systemImage: "pencil") { editor = MovementDraft(movement) }
+                        Button(movement.matched ? tr("إلغاء تأشير المطابقة", "Uncheck movement") : tr("تأشير المطابقة", "Check movement"), systemImage: movement.matched ? "circle" : "checkmark.circle") {
+                            var candidate = period
+                            if let index = candidate.movements.firstIndex(where: { $0.id == movement.id }) {
+                                candidate.movements[index].matched.toggle()
+                                persist(candidate)
+                            }
+                        }
+                        if let index = visibleMovements.firstIndex(where: { $0.id == movement.id }) {
+                            if index > 0 && BankReconciliation.day(visibleMovements[index - 1].date) == BankReconciliation.day(movement.date) {
+                                Button(tr("تحريك للأعلى", "Move up"), systemImage: "arrow.up") { moveMovement(movement.id, to: visibleMovements[index - 1].id) }
+                            }
+                            if index + 1 < visibleMovements.count && BankReconciliation.day(visibleMovements[index + 1].date) == BankReconciliation.day(movement.date) {
+                                Button(tr("تحريك للأسفل", "Move down"), systemImage: "arrow.down") { moveMovement(movement.id, to: visibleMovements[index + 1].id) }
+                            }
+                        }
+                    }
+                    Button(tr("نسخ المبلغ", "Copy amount"), systemImage: "doc.on.doc") { UIPasteboard.general.string = String(movement.amount) }
+                    Button(tr("نسخ البيان", "Copy description"), systemImage: "doc.on.doc") { UIPasteboard.general.string = movement.description }
+                    if editable {
+                        Button(tr("حذف الحركة", "Delete movement"), systemImage: "trash", role: .destructive) {
+                            var candidate = period; candidate.movements.removeAll { $0.id == movement.id }; persist(candidate)
+                        }
+                    }
+                }
+                .onDrop(of: [UTType.text], delegate: ReconciliationMovementDrop(target: movement.id, dragging: $draggedMovementID) { source, target in
+                    moveMovement(source, to: target)
+                })
                 .swipeActions {
                     Button(role: .destructive) {
                         var candidate = period; candidate.movements.removeAll { $0.id == movement.id }; persist(candidate)
                     } label: { Label(tr("حذف", "Delete"), systemImage: "trash") }.disabled(!editable)
                 }
             }
-            .onMove { offsets, destination in
-                guard editable, let lines = totals?.lines else { return }
-                var sorted = lines.map(\.movement)
-                sorted.move(fromOffsets: offsets, toOffset: destination)
-                var candidate = period; candidate.movements = sorted
-                persist(candidate)
-            }
-        } header: { Text(tr("الحركات", "Movements")) } footer: { Text(tr("اضغط الدائرة بعد التأكد من الحركة في كشف المصرف الورقي. استخدم تعديل لترتيب حركات اليوم نفسه كما ظهرت في الكشف.", "Check the circle after verifying the movement on paper. Use Edit to order movements on the same day as they appear on the statement.")) }
+        } header: { Text(tr("الحركات", "Movements")) } footer: { Text(tr("اضغط الدائرة بعد مراجعة الحركة. اسحب علامة الترتيب لحركات اليوم نفسه، أو اضغط مطولاً لخيارات الحركة.", "Check the circle after review. Drag the handle to reorder movements on the same day, or long-press for options.")) }
+    }
+
+    private func moveMovement(_ sourceID: UUID, to targetID: UUID) {
+        guard editable, sourceID != targetID else { return }
+        do { persist(try BankReconciliation.reorder(period, sourceID: sourceID, targetID: targetID)) }
+        catch { self.error = error.localizedDescription }
     }
     @ViewBuilder private var finishSection: some View {
         Group {
@@ -405,6 +447,28 @@ struct BankReconciliationView: View {
                 pdfPeriod = snapshot; pdfAccount = accountSnapshot; pdfSources = sources; pdfComplete = complete; pdf = url
             } catch { self.error = error.localizedDescription }
         }
+    }
+}
+
+private struct ReconciliationMovementDrop: DropDelegate {
+    let target: UUID
+    @Binding var dragging: UUID?
+    let move: (UUID, UUID) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        dragging != nil && info.hasItemsConforming(to: [UTType.text])
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let source = dragging, let provider = info.itemProviders(for: [UTType.text]).first else { return false }
+        dragging = nil
+        _ = provider.loadObject(ofClass: NSString.self) { value, _ in
+            guard let value, String(value) == source.uuidString else { return }
+            DispatchQueue.main.async { move(source, target) }
+        }
+        return true
     }
 }
 

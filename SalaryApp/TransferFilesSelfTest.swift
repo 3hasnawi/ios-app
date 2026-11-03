@@ -26,6 +26,17 @@ import CryptoKit
         statement.movements = [outgoing, incoming]
         let calculated = try BankReconciliation.calculate(statement)
         try check(calculated.funding == 1_000_000 && calculated.credits == 1_000_000 && calculated.debits == 1_000_000 && calculated.balance == 0 && calculated.lines.first?.balance == 1_000_000, "bank reconciliation running balance")
+        var sameDay = statement
+        var second = outgoing; second.id = UUID(); second.description = "حركة ثانية وهمية"; second.sourceID = "second"; second.amount = 20
+        sameDay.movements.append(second)
+        let reordered = try BankReconciliation.reorder(sameDay, sourceID: second.id, targetID: outgoing.id)
+        let reorderedTotals = try BankReconciliation.calculate(reordered)
+        try check(reorderedTotals.lines.map(\.movement.id) == [incoming.id, second.id, outgoing.id] && reorderedTotals.balance == -20 && sameDay.movements.last?.id == second.id, "reordering changes only same-day order")
+        do { _ = try BankReconciliation.reorder(sameDay, sourceID: second.id, targetID: incoming.id); throw Failure(errorDescription: "different-day reorder accepted") }
+        catch BankReconciliation.Failure.differentDay { }
+        var lockedOrder = sameDay; lockedOrder.confirmedAt = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        do { _ = try BankReconciliation.reorder(lockedOrder, sourceID: second.id, targetID: outgoing.id); throw Failure(errorDescription: "locked reorder accepted") }
+        catch BankReconciliation.Failure.locked { }
         var duplicate = statement
         duplicate.movements.append(outgoing)
         do { _ = try BankReconciliation.calculate(duplicate); throw Failure(errorDescription: "duplicate movement accepted") }
