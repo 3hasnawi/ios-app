@@ -34,7 +34,8 @@ nonisolated enum BackupServerConfig {
         else { UserDefaults.standard.removeObject(forKey: seenUploadKey) }
     }
     private static let account = "salary-backup-server-token"
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    // أوقف المالك استخدام السيرفر؛ تبقى إعداداته محفوظة دون اتصال أو حذف.
+    static var enabled: Bool { false }
     static var address: String { UserDefaults.standard.string(forKey: addressKey) ?? "" }
     static var token: String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account,

@@ -101,6 +101,15 @@ enum EmployeeDeductionSelfTest {
             try await replacement.replacePayroll(month: jan, with: [ImportedEmployee(name: "قديم جداً وهمي", rank: "", workplace: "", netSalary: 3)])
             throw Failure(message: "Older payroll displaced a recent month")
         } catch PayrollReplacementError.olderMonth { }
+        var combined = ImportResult()
+        combined.employees = [ImportedEmployee(name: "مشترك وهمي", rank: "", workplace: "", netSalary: 4)]
+        combined.deductions = [ImportedDeduction(employeeName: "مشترك وهمي", title: "استقطاع جديد", amount: 15, note: "")]
+        try await replacement.replace(month: april, with: combined)
+        let afterCombined = ModelContext(replacementContainer)
+        let finalEmployees = try afterCombined.fetch(FetchDescriptor<Employee>())
+        let finalDeductions = try afterCombined.fetch(FetchDescriptor<Deduction>())
+        try require(Set(finalEmployees.map(\.month)) == Set([feb, april]), "Combined import changed the two retained months")
+        try require(finalDeductions.count == 3 && Set(finalDeductions.map(\.month)) == Set([jan, feb, april]), "Combined import lost earlier deductions")
         return "employeeDeduction=ok sums=ok missing=ok duplicates=ok pdfPages=2"
     }
 }
