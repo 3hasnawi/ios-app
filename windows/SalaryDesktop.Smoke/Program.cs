@@ -177,6 +177,7 @@ static class Program
                 }
                 var table = (DataGrid)main.FindName("DataTable");
                 await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
+                Check(main.Content is Grid { ColumnDefinitions.Count: 3 } && table.RowHeight == 42 && table.ColumnHeaderHeight == 44, "workspace columns or grid density do not match the design");
                 var netColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Net");
                 var deductionColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "TotalDeductions");
                 Check(ReferenceEquals(netColumn.ElementStyle, application.FindResource("AccountingNetText")) &&
@@ -189,12 +190,20 @@ static class Program
                 Themes.Apply(oldTheme);
                 table.SelectedIndex = 0; await Task.Delay(150);
                 var inspector = (Border)main.FindName("InspectorDrawer");
+                Check(Grid.GetColumn(inspector) == 2, "inspector was not placed in the third workspace column");
                 Check(inspector.Visibility == Visibility.Visible && ((TextBlock)main.FindName("InspectorTitleText")).Text == ((PayrollRow)table.Items[0]).Name, "inspector did not show the selected payroll record");
                 Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector did not display record fields");
                 Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "صافي الراتب المستحق" && ((TextBlock)main.FindName("InspectorNetAmountText")).Text.Contains("500", StringComparison.Ordinal), "inspector payroll amount was not labeled as net pay");
                 Check(((Button)main.FindName("InspectorSecondaryActionBtn")).Visibility == Visibility.Visible, "payroll detail action was not available");
                 ((RadioButton)main.FindName("InspectorTabBank")).IsChecked = true;
                 Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector tab lost the selected record");
+                var originalRows = table.ItemsSource;
+                table.ItemsSource = new[] { PayrollRows.Row(snapshot.Employees[0] with { Net = 500.125m }) };
+                table.SelectedIndex = 0; await Task.Delay(150);
+                Check(((TextBlock)main.FindName("InspectorNetAmountText")).Text.Contains("500.125", StringComparison.Ordinal), "inspector rounded a fractional accounting amount");
+                ((RadioButton)main.FindName("InspectorTabSummary")).IsChecked = true;
+                Check(((TextBlock)main.FindName("InspectorNetAmountText")).Text.Contains("500.125", StringComparison.Ordinal), "inspector tab change rounded an accounting amount");
+                table.ItemsSource = originalRows; table.SelectedIndex = 0; await Task.Delay(150);
                 var source = PresentationSource.FromVisual(main) ?? throw new InvalidOperationException("main window has no input source");
                 var escape = new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
                 main.RaiseEvent(escape);

@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeInspectorEvents();
+        InitializeInspectorCompatibility();
         searchDelay.Tick += (_, _) => { searchDelay.Stop(); RenderPage(); };
         // أي رسالة جديدة تعيد إظهار الشريط بعد إخفائه.
         DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock)).AddValueChanged(SourceMessage, (_, _) => SourceBanner.Visibility = Visibility.Visible);

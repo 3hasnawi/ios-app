@@ -14,6 +14,9 @@ public static class Themes
     {
         ["Primary"] = ("#135148", "#4CB8A2"),
         ["SurfaceSubtle"] = ("#F8FAFA", "#1C2826"),
+        ["AccountingGridHover"] = ("#EDF5F3", "#203831"),
+        ["AccountingGridLines"] = ("#EEF2F2", "#283735"),
+        ["AccountingGridAlternate"] = ("#F9FBFA", "#1A2825"),
         ["PrimarySoft"] = ("#E3EFEC", "#183A34"),
         ["Accent"] = ("#0877E8", "#4C9DF5"),
         ["AccentSoft"] = ("#E7F1FD", "#16304D"),

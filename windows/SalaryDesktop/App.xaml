@@ -5,6 +5,9 @@
     <SolidColorBrush x:Key="PrimaryHover" Color="#0D3B34"/>
     <SolidColorBrush x:Key="Surface" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="SurfaceSubtle" Color="#F8FAFA"/>
+    <SolidColorBrush x:Key="AccountingGridHover" Color="#EDF5F3"/>
+    <SolidColorBrush x:Key="AccountingGridLines" Color="#EEF2F2"/>
+    <SolidColorBrush x:Key="AccountingGridAlternate" Color="#F9FBFA"/>
     <LinearGradientBrush x:Key="HeroGradient" StartPoint="0,0" EndPoint="1,1">
       <GradientStop Color="#135148" Offset="0.0"/>
       <GradientStop Color="#0D3832" Offset="0.55"/>
@@ -487,14 +490,22 @@
       </Setter>
       <Style.Triggers>
         <Trigger Property="IsSelected" Value="True">
-          <Setter Property="Background" Value="{DynamicResource TbgD9EAFB}"/>
-          <Setter Property="Foreground" Value="{DynamicResource Tfg0D2A3D}"/>
+          <Setter Property="Background" Value="Transparent"/>
+          <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
         </Trigger>
       </Style.Triggers>
     </Style>
     <Style TargetType="DataGridRow">
+      <Setter Property="BorderThickness" Value="0,0,3,0"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
       <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource TbgEFF6F5}"/></Trigger>
+        <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource AccountingGridHover}"/></Trigger>
+        <Trigger Property="IsSelected" Value="True">
+          <Setter Property="Background" Value="{DynamicResource PrimarySoft}"/>
+          <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+          <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+          <Setter Property="FontWeight" Value="SemiBold"/>
+        </Trigger>
       </Style.Triggers>
     </Style>
     <Style TargetType="DataGrid">
@@ -505,11 +516,15 @@
       <Setter Property="RowHeaderWidth" Value="0"/>
       <Setter Property="HeadersVisibility" Value="Column"/>
       <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-      <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource TbgEDF1F2}"/>
+      <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource AccountingGridLines}"/>
+      <Setter Property="RowHeight" Value="42"/>
+      <Setter Property="ColumnHeaderHeight" Value="44"/>
+      <Setter Property="UseLayoutRounding" Value="True"/>
+      <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
       <Setter Property="MinRowHeight" Value="30"/>
       <Setter Property="AlternationCount" Value="2"/>
       <Setter Property="RowBackground" Value="{DynamicResource TbgFFFFFF}"/>
-      <Setter Property="AlternatingRowBackground" Value="{DynamicResource TbgFAFCFC}"/>
+      <Setter Property="AlternatingRowBackground" Value="{DynamicResource AccountingGridAlternate}"/>
       <Setter Property="CanUserResizeRows" Value="False"/>
       <Setter Property="EnableRowVirtualization" Value="True"/>
       <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>

@@ -1,105 +1,189 @@
-using System.Globalization;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media.Animation;
+using System.Windows.Input;
 
 namespace SalaryDesktop;
 
 public partial class MainWindow
 {
-    private List<KeyValuePair<string, string>> inspectorFields = [];
-
     private void InitializeInspectorEvents()
     {
-        DataTable.SelectionChanged -= DataTable_InspectorSelectionChanged;
-        DataTable.SelectionChanged += DataTable_InspectorSelectionChanged;
+        if (DataTable != null)
+        {
+            DataTable.SelectionChanged -= DataTable_InspectorSelectionChanged;
+            DataTable.SelectionChanged += DataTable_InspectorSelectionChanged;
+        }
     }
 
     private void DataTable_InspectorSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (DataTable.SelectedItem is null) { CloseInspector(); return; }
         UpdateInspectorFromSelection();
     }
 
     private void UpdateInspectorFromSelection()
     {
-        if (InspectorDrawer is null || InspectorFieldsList is null || DataTable?.SelectedItem is not { } selected ||
-            Tables.GetValueOrDefault(page) is not { } spec) return;
-
-        // تعريفات الجدول تعرف أنواع الصفوف وعناوينها وتنسيق المبالغ المعتمد.
-        // لا نعرض كائنات داخلية أو حقولاً انعكاسية غير مرتبطة بالقسم.
-        var fields = new List<KeyValuePair<string, string>>();
-        foreach (var column in spec.Columns)
+        if (InspectorDrawer == null || DataTable?.SelectedItem == null)
         {
-            var value = column.Value(selected);
-            if (value is null) continue;
-            var display = Cell(value);
-            if (!string.IsNullOrWhiteSpace(display)) fields.Add(new(column.Title, display));
+            return;
         }
-        if (fields.Count == 0) { CloseInspector(); return; }
-        inspectorFields = fields;
 
-        var title = FindFirstMatch(fields, "الاسم", "جهة التنفيذ", "الجهة", "عنوان الكتاب") ?? "سجل محدد";
-        InspectorTitleText.Text = title;
-        InspectorCodeText.Text = FindFirstMatch(fields, "الرقم الموحد", "الرقم الإحصائي") ?? "";
-        InspectorCodeBadge.Visibility = InspectorCodeText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        InspectorSubtitleText.Text = FindFirstMatch(fields, "محل العمل", "الرتبة", "المصرف والفرع") ?? PageTitle.Text;
-        var amount = page == "payroll" ? FindFirstMatch(fields, "الصافي") : FindFirstMatch(fields, "المبلغ");
-        InspectorAmountCard.Visibility = amount is null ? Visibility.Collapsed : Visibility.Visible;
-        InspectorAmountLabel.Text = page == "payroll" ? "صافي الراتب المستحق" : "المبلغ";
-        InspectorNetAmountText.Text = amount ?? "—";
-        InspectorTabAll.Content = page == "payroll" ? "ملخص الراتب" : "الملخص";
-        InspectorPrimaryActionBtn.Content = OpenRowMenu.Header;
-        InspectorPrimaryActionBtn.IsEnabled = OpenRowMenu.IsEnabled;
-        InspectorSecondaryActionBtn.Content = SecondRowMenu.Header;
-        InspectorSecondaryActionBtn.Visibility = SecondRowMenu.Visibility;
-        InspectorAvatarText.Text = GetArabicInitials(title);
-        FilterInspectorFields();
+        var selected = DataTable.SelectedItem;
+        var props = ExtractRowProperties(selected);
+        if (props.Count == 0)
+        {
+            return;
+        }
 
-        var wasClosed = InspectorDrawer.Visibility != Visibility.Visible;
         InspectorDrawer.Visibility = Visibility.Visible;
-        if (wasClosed)
-        {
-            InspectorSlide.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty,
-                new DoubleAnimation(-20, 0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
-        }
+
+        string title = FindFirstMatch(props, "الاسم", "اسم المنتسب", "الموظف", "Name", "EmployeeName", "AccountName") ?? "سجل محدد";
+        string code = FindFirstMatch(props, "الرمز", "الرقم الوظيفي", "ت", "ID", "Code") ?? "#";
+        string subtitle = FindFirstMatch(props, "القسم", "الدرجة", "العنوان الوظيفي", "Department", "Grade", "Bank") ?? PageTitle?.Text ?? "";
+        string net = FindFirstMatch(props, "الصافي", "صافي الراتب", "المبلغ الصافي", "المبلغ", "Net", "NetSalary", "Amount") ?? "—";
+
+        if (InspectorTitleText != null) InspectorTitleText.Text = title;
+        if (InspectorCodeText != null) InspectorCodeText.Text = code;
+        if (InspectorSubtitleText != null) InspectorSubtitleText.Text = subtitle;
+        if (InspectorNetAmountText != null) InspectorNetAmountText.Text = net;
+        if (InspectorAvatarText != null) InspectorAvatarText.Text = GetArabicInitials(title);
+
+        FilterInspectorFields(props);
     }
 
-    private void FilterInspectorFields()
+    private void FilterInspectorFields(List<KeyValuePair<string, string>> allProps)
     {
-        if (InspectorFieldsList is null) return;
-        IEnumerable<KeyValuePair<string, string>> filtered = inspectorFields;
+        if (InspectorFieldsList == null) return;
+
+        IEnumerable<KeyValuePair<string, string>> filtered = allProps;
+
         if (InspectorTabDeductions?.IsChecked == true)
-            filtered = inspectorFields.Where(p => p.Key.Contains("استقطاع") || p.Key.Contains("سلفة") || p.Key.Contains("تقاعد") || p.Key.Contains("ضريبة") || p.Key.Contains("غياب"));
+        {
+            filtered = allProps.Where(p =>
+                p.Key.Contains("استقطاع") ||
+                p.Key.Contains("سلفة") ||
+                p.Key.Contains("تقاعد") ||
+                p.Key.Contains("ضريبة") ||
+                p.Key.Contains("غياب") ||
+                p.Key.Contains("Deduction", StringComparison.OrdinalIgnoreCase));
+        }
         else if (InspectorTabBank?.IsChecked == true)
-            filtered = inspectorFields.Where(p => p.Key.Contains("مصرف") || p.Key.Contains("حساب") || p.Key.Contains("IBAN", StringComparison.OrdinalIgnoreCase) || p.Key.Contains("حالة"));
+        {
+            filtered = allProps.Where(p =>
+                p.Key.Contains("مصرف") ||
+                p.Key.Contains("حساب") ||
+                p.Key.Contains("آيبان") ||
+                p.Key.Contains("IBAN", StringComparison.OrdinalIgnoreCase) ||
+                p.Key.Contains("Bank", StringComparison.OrdinalIgnoreCase) ||
+                p.Key.Contains("حالة"));
+        }
+
         var list = filtered.ToList();
-        InspectorFieldsList.ItemsSource = list.Count == 0 ? inspectorFields : list;
+        if (list.Count == 0)
+        {
+            list = allProps;
+        }
+
+        InspectorFieldsList.ItemsSource = list;
     }
 
     private void InspectorTabChanged(object sender, RoutedEventArgs e)
     {
-        if (InspectorDrawer is not null && InspectorDrawer.Visibility == Visibility.Visible) FilterInspectorFields();
+        if (DataTable?.SelectedItem != null)
+        {
+            UpdateInspectorFromSelection();
+        }
     }
 
-    private void OpenInspectorClick(object sender, RoutedEventArgs e) => UpdateInspectorFromSelection();
-    private void CloseInspectorClick(object sender, RoutedEventArgs e) => CloseInspector();
-    private void CloseInspector()
+    private void CloseInspectorClick(object sender, RoutedEventArgs e)
     {
-        if (InspectorDrawer is not null) InspectorDrawer.Visibility = Visibility.Collapsed;
+        if (InspectorDrawer != null)
+        {
+            InspectorDrawer.Visibility = Visibility.Collapsed;
+        }
     }
 
-    private static string? FindFirstMatch(List<KeyValuePair<string, string>> fields, params string[] names)
+    private void WindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        foreach (var name in names)
-            if (fields.FirstOrDefault(field => field.Key.Equals(name, StringComparison.OrdinalIgnoreCase)) is { Value.Length: > 0 } match) return match.Value;
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.K)
+        {
+            e.Handled = true;
+            if (GlobalSearchButton != null && GlobalSearchButton.IsEnabled)
+            {
+                OpenGlobalSearch(GlobalSearchButton, new RoutedEventArgs());
+            }
+            return;
+        }
+
+        if (e.Key == Key.Escape && InspectorDrawer?.Visibility == Visibility.Visible)
+        {
+            InspectorDrawer.Visibility = Visibility.Collapsed;
+            e.Handled = true;
+        }
+    }
+
+    private static List<KeyValuePair<string, string>> ExtractRowProperties(object item)
+    {
+        var result = new List<KeyValuePair<string, string>>();
+        if (item == null) return result;
+
+        if (item is DataRowView drv)
+        {
+            foreach (DataColumn col in drv.Row.Table.Columns)
+            {
+                var val = drv[col.ColumnName]?.ToString() ?? "";
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    result.Add(new KeyValuePair<string, string>(col.ColumnName, val));
+                }
+            }
+            return result;
+        }
+
+        var type = item.GetType();
+        foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (prop.GetIndexParameters().Length > 0) continue;
+            var valObj = prop.GetValue(item);
+            if (valObj == null) continue;
+
+            string val = valObj is IFormattable fmt
+                ? fmt.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+                : valObj.ToString() ?? "";
+
+            if (!string.IsNullOrWhiteSpace(val))
+            {
+                result.Add(new KeyValuePair<string, string>(prop.Name, val));
+            }
+        }
+        return result;
+    }
+
+    private static string? FindFirstMatch(List<KeyValuePair<string, string>> props, params string[] keys)
+    {
+        foreach (var k in keys)
+        {
+            var hit = props.FirstOrDefault(p => p.Key.Contains(k, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(hit.Value))
+            {
+                return hit.Value;
+            }
+        }
         return null;
     }
 
     private static string GetArabicInitials(string fullName)
     {
+        if (string.IsNullOrWhiteSpace(fullName)) return "م";
         var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return "م";
-        return string.Concat(parts.Take(2).Select(part => StringInfo.GetNextTextElement(part)));
+        if (parts.Length >= 2)
+        {
+            return $"{parts[0][0]}{parts[1][0]}";
+        }
+        return fullName.Length >= 2 ? fullName.Substring(0, 2) : fullName;
     }
 }
