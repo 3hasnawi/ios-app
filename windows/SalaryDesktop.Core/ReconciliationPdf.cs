@@ -58,13 +58,12 @@ public static class ReconciliationPdf
     }
 
     private static readonly string[] Organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"];
-    private static readonly float[] Widths = [78, 189, 88, 88, 88];   // من اليمين: التاريخ، البيان، دائن، مدين، الرصيد
     private const float Margin = 32, TotalHeight = 26, HeaderHeight = 26, SignatureWidth = 245;
     private static string Amount(long value) => (value < 0 ? "−" : "") + Math.Abs(value).ToString("N0", CultureInfo.GetCultureInfo("en-US"));
     private static string EasternDate(DateOnly date) => ReportSheet.Eastern(date.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture));
 
     /// كشف مطابقة حساب البنك: ترويسة الوزارة يميناً، العنوان والفترة في الوسط، وبيانات الحساب أسفلهما على سطرين في وسط الصفحة
-    /// (تعديل المالك 2026-11-02)، ثم جدول التاريخ/البيان/دائن/مدين/الرصيد مع الرصيد الافتتاحي والمجموع، وتوقيع عضوي اللجنة (عريض 16) في آخر صفحة.
+    /// ثم جدول الحركات وتوقيع عضوي اللجنة (عريض 14) في آخر صفحة.
     /// complete = false يضيف «مسودة · المطابقة غير مكتملة».
     public static byte[] Statement(BankPeriod period, BankAccountDetails account, bool complete, ReportAssets assets)
     {
@@ -87,10 +86,10 @@ public static class ReconciliationPdf
         }
 
         // الأحجام (طلب المالك 2026-11-02): Arial لكل الكشف؛ الترويسة 11 والعنوان 14، رؤوس الأعمدة والمبالغ والمجموع عريض 11،
-        // البيان 10.5، والصف لا يقل عن 24 مع تظليل متناوب؛ تواقيع اللجنة عريض 16 بلا إطار.
+        // البيان 10.5 مع تظليل متناوب؛ تواقيع اللجنة عريض 14 بلا إطار.
         using var heading = Font(14, true); using var organization = Font(11, true);
         using var labelFont = Font(10.5f, true); using var valueFont = Font(10.5f, false);
-        using var periodFont = Font(11, true); using var bold = Font(11, true); using var signatureFont = Font(16, true);
+        using var periodFont = Font(11, true); using var bold = Font(11, true); using var signatureFont = Font(14, true);
         using var amountFont = Font(11, true);
         const string title = "كشف مطابقة حساب البنك";
         var periodText = $"الــفــتــرة مــن {EasternDate(period.Start)} إلــى {EasternDate(period.End)}";
@@ -120,14 +119,14 @@ public static class ReconciliationPdf
         var periodTop = contentBottom + (complete ? 10 : 26);
         var tableTop = periodTop + periodHeight; var rowTop = tableTop + HeaderHeight;
 
-        // تواقيع اللجنة: عريض 16 في عمودين أسفل آخر صفحة، والسطر الطويل (المنصب) ينزل إلى سطر ثانٍ.
+        // أسطر التوقيع متتابعة بارتفاع الخط نفسه، دون هوامش إضافية بين الأسطر.
         var signatures = new[] { BankReconciliation.SignatureLines(period, true), BankReconciliation.SignatureLines(period, false) };
         var signatureLayout = signatures.Select(lines => lines.Select(text =>
         {
             if (text.Any(char.IsControl)) throw new InvalidDataException("بيانات التوقيع غير صالحة.");
             var wrapped = Lines(text, signatureFont, SignatureWidth - 8);
             if (wrapped.Count > 2) throw new InvalidDataException("أحد أسطر التوقيع طويل جداً؛ اختصره من بيانات اللجنة.");
-            return (Lines: wrapped, Height: Math.Max(24, MathF.Ceiling(wrapped.Count * signatureFont.FontSpacing + 4)));
+            return (Lines: wrapped, Height: wrapped.Count * signatureFont.FontSpacing);
         }).ToArray()).ToArray();
         var signatureHeight = signatureLayout.Max(column => column.Sum(l => l.Height));
         if (signatureHeight > 170) throw new InvalidDataException("بيانات التوقيع طويلة جداً للكشف.");
@@ -143,19 +142,28 @@ public static class ReconciliationPdf
             values.Add([EasternDate(m.Date), m.Description, m.Direction == MovementDirection.Credit ? Amount(m.Amount) : "—", m.Direction == MovementDirection.Debit ? Amount(m.Amount) : "—", Amount(line.Balance)]);
         }
         string[] totalRow = ["", "المجموع", Amount(totals.Credits), Amount(totals.Debits), Amount(totals.Balance)];
-        // البيان ينزل إلى سطر آخر بدل تصغير الخط، والكشف يمتد على صفحات.
+        // تُقاس التواريخ والمبالغ الفعلية؛ ويأخذ البيان المساحة المتبقية ويلتف دون قص أو تصغير.
         using var rowFont = Font(10.5f, false);
+        string[] labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"];
+        var widths = new float[5];
+        for (int c = 0; c < 5; c++)
+        {
+            if (c == 1) continue;
+            var column = c;
+            var paint = c == 0 ? rowFont : amountFont;
+            widths[c] = MathF.Ceiling(Math.Max(W(labels[c], bold), Math.Max(W(totalRow[c], bold), values.Max(row => W(row[column], paint)))) + 12);
+        }
+        widths[1] = 595 - 2 * Margin - widths.Sum();
+        if (widths[1] < 100) throw new InvalidDataException("المبالغ طويلة جداً لتنسيق جدول الكشف بوضوح.");
         var rows = new List<(string[] Values, List<string> Description, float Height)>();
         foreach (var row in values)
         {
-            var description = Lines(row[1], rowFont, Widths[1] - 8);
-            if (description.Count > 5 || W(row[0], rowFont) > Widths[0] - 8) throw new InvalidDataException("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.");
-            for (int c = 2; c < 5; c++) if (W(row[c], amountFont) > Widths[c] - 8) throw new InvalidDataException("أحد المبالغ لا يتسع في الجدول.");
-            var height = Math.Max(24, MathF.Ceiling(description.Count * rowFont.FontSpacing + 6));
+            var description = Lines(row[1], rowFont, widths[1] - 8);
+            var height = MathF.Ceiling(Math.Max(rowFont.FontSpacing * description.Count, amountFont.FontSpacing) + 6);
             if (height > tableBottom - rowTop - TotalHeight) throw new InvalidDataException("أحد بيانات الحركة لا يتسع بوضوح؛ اختصر البيان ثم حاول مجدداً.");
             rows.Add((row, description, height));
         }
-        for (int c = 0; c < 5; c++) if (W(totalRow[c], bold) > Widths[c] - 6) throw new InvalidDataException("مجموع الكشف لا يتسع في الجدول.");
+        for (int c = 0; c < 5; c++) if (W(totalRow[c], bold) > widths[c] - 6) throw new InvalidDataException("مجموع الكشف لا يتسع في الجدول.");
 
         var gray = new SKColor(237, 237, 237); var dark = new SKColor(85, 85, 85);
         using var cellStroke = new SKPaint { Color = dark, Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true };
@@ -178,7 +186,7 @@ public static class ReconciliationPdf
                     DrawRight(canvas, shaper, paint, lines[i], right, top + i * spacing + ascent - 1);
                 }
             }
-            float[] lefts = new float[5]; { var x = 595f - Margin; for (int c = 0; c < 5; c++) { x -= Widths[c]; lefts[c] = x; } }
+            float[] lefts = new float[5]; { var x = 595f - Margin; for (int c = 0; c < 5; c++) { x -= widths[c]; lefts[c] = x; } }
             int index = 0, pages = 0; var finished = false;
             do
             {
@@ -208,10 +216,9 @@ public static class ReconciliationPdf
                 var periodBar = SKRect.Create(lefts[4], periodTop, 595f - Margin - lefts[4], periodHeight);
                 canvas.DrawRect(periodBar, shade); canvas.DrawRect(periodBar, cellStroke);
                 Draw([periodText], periodFont, periodBar, 1);
-                string[] labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"];
                 for (int c = 0; c < 5; c++)
                 {
-                    var cell = SKRect.Create(lefts[c], tableTop, Widths[c], HeaderHeight);
+                    var cell = SKRect.Create(lefts[c], tableTop, widths[c], HeaderHeight);
                     canvas.DrawRect(cell, fill); canvas.DrawRect(cell, cellStroke);
                     Draw([labels[c]], bold, cell, 1);
                 }
@@ -222,7 +229,7 @@ public static class ReconciliationPdf
                     if (index % 2 == 1) canvas.DrawRect(SKRect.Create(lefts[4], y, 595f - Margin - lefts[4], height), shade);
                     for (int c = 0; c < 5; c++)
                     {
-                        var cell = SKRect.Create(lefts[c], y, Widths[c], height);
+                        var cell = SKRect.Create(lefts[c], y, widths[c], height);
                         canvas.DrawRect(cell, cellStroke);
                         var inner = SKRect.Create(cell.Left + 4, cell.Top + 2, cell.Width - 8, cell.Height - 4);
                         if (c == 1) Draw(description, rowFont, inner, 0); else Draw([row[c]], c == 0 ? rowFont : amountFont, inner, 1);
@@ -233,7 +240,7 @@ public static class ReconciliationPdf
                 {
                     for (int c = 0; c < 5; c++)
                     {
-                        var cell = SKRect.Create(lefts[c], y, Widths[c], TotalHeight);
+                        var cell = SKRect.Create(lefts[c], y, widths[c], TotalHeight);
                         canvas.DrawRect(cell, fill); canvas.DrawRect(cell, cellStroke);
                         Draw([totalRow[c]], bold, cell, 1);
                     }

@@ -204,6 +204,12 @@ try
     if (Environment.GetEnvironmentVariable("SALARY_TEST_PDF") is { Length: > 0 } pdfPath) File.WriteAllBytes(pdfPath, testPdf);
     var longPeriod = period with { Movements = Enumerable.Range(0, 75).Select(i => new BankMovement(Guid.NewGuid(), period.Start, "حركة اختبارية ذات بيان طويل للتأكد من ظهور النص بوضوح في الكشف الورقي", 100, MovementDirection.Debit)).ToArray() };
     var longPdf = ReconciliationPdf.Generate(longPeriod, font);
+    var wideAmountPeriod = period with { Movements = [funding with { Amount = 123456789012345, Description = string.Join(" ", Enumerable.Repeat("بيان طويل لاختبار التفاف النص", 5)) }] };
+    using (var wideDocument = UglyToad.PdfPig.PdfDocument.Open(ReconciliationPdf.Generate(wideAmountPeriod, font)))
+    {
+        var text = string.Join(" ", wideDocument.GetPages().SelectMany(page => page.GetWords()).Select(word => word.Text));
+        Check(text.Contains("123,456,789,012,345", StringComparison.Ordinal), "reconciliation table retains large amounts and wrapped descriptions");
+    }
     using (var longDocument = UglyToad.PdfPig.PdfDocument.Open(longPdf))
     {
         var longPages = longDocument.GetPages().ToArray();
