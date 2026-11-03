@@ -56,7 +56,7 @@ nonisolated enum TransferWordGroupDraft {
     /// تبقى مساحة الكتابة بين القوسين عند رسم PDF أو فتح Word.
     static func footerWritingSpace(_ footer: String) -> String {
         footer.replacingOccurrences(of: "\\([ \t\u{00A0}]*\\)",
-                                    with: "(" + String(repeating: "\u{00A0}", count: 40) + ")",
+                                    with: "(" + String(repeating: "\u{00A0}", count: 50) + ")",
                                     options: .regularExpression)
     }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
