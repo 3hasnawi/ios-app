@@ -339,7 +339,8 @@ static class Program
                         Check((backupIndicator.TranslatePoint(new Point(0, 0), main) - stableBackupPosition).Length < 0.5 && (themeIndicator.TranslatePoint(new Point(0, 0), main) - stableThemePosition).Length < 0.5 && (bellIndicator.TranslatePoint(new Point(0, 0), main) - stableBellPosition).Length < 0.5, "header icons moved on page " + tag);
                         var header = (FrameworkElement)main.FindName("HeaderGrid");
                         var subtitle = (TextBlock)main.FindName("PageSubtitle");
-                        Check(subtitle.TranslatePoint(new Point(0, subtitle.ActualHeight), header).Y <= header.ActualHeight + 0.5, "header clipped its subtitle on page " + tag);
+                        var subtitleBottom = subtitle.TranslatePoint(new Point(0, subtitle.ActualHeight), header).Y;
+                        Check(subtitleBottom <= header.ActualHeight + 0.5, $"header clipped its subtitle on page {tag}: bottom {subtitleBottom:F1}, header {header.ActualHeight:F1}, subtitle height {subtitle.ActualHeight:F1}");
                         Shot(main, name);
                         if (tag == "archive") Check(((ListBox)main.FindName("ArchiveList")).Items.Count == 2, "archive list did not show the books");
                     }

@@ -97,8 +97,8 @@
       <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,14" Height="72">
         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
-          <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-          <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" Foreground="{DynamicResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+          <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="22" FontWeight="SemiBold" LineHeight="34" LineStackingStrategy="BlockLineHeight" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" FontSize="12.5" LineHeight="22" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
         </StackPanel>
         <Button x:Name="GlobalSearchButton" Visibility="Collapsed" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="{DynamicResource TbgCFD9DA}" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
           <Grid>
