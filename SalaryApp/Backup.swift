@@ -4,6 +4,7 @@ import SwiftData
 import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
+import CryptoKit
 
 /// النسخ الاحتياطي: ملف zip واحد فيه كل البيانات (الأشهر، الرواتب، الاستقطاعات، الملاك، الكتب المصوّرة) والإعدادات.
 /// يُحفظ في أي مكان من نافذة "الملفات" (iCloud Drive، OneDrive، Google Drive)،
@@ -84,9 +85,9 @@ actor BackupActor {
         defer { try? fm.removeItem(at: dir) }
         let encoder = JSONEncoder()
 
-        func writeLines<T: Encodable>(_ name: String, _ items: [T], from: Double, to: Double) throws {
+        func writeLines<S: Sequence>(_ name: String, _ items: S, count: Int, from: Double, to: Double) throws where S.Element: Encodable {
             let url = dir.appendingPathComponent(name)
-            fm.createFile(atPath: url.path, contents: nil)
+            _ = fm.createFile(atPath: url.path, contents: nil)
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
             var buffer = Data()
@@ -94,35 +95,35 @@ actor BackupActor {
                 buffer.append(try encoder.encode(item))
                 buffer.append(0x0A)
                 if buffer.count > 1_000_000 { handle.write(buffer); buffer.removeAll(keepingCapacity: true) }
-                if i % 2000 == 0 { progress?(from + (to - from) * Double(i) / Double(max(1, items.count))) }
+                if i % 2000 == 0 { progress?(from + (to - from) * Double(i) / Double(max(1, count))) }
             }
             handle.write(buffer)
         }
 
         let months = try modelContext.fetch(FetchDescriptor<PayrollMonth>())
-        try writeLines("months.jsonl", months.map {
+        try writeLines("months.jsonl", months.lazy.map {
             BackupFormat.MonthRecord(name: $0.name, importedAt: $0.importedAt, employeeCount: $0.employeeCount,
                                      deductionCount: $0.deductionCount, summary: $0.itemSummaryData)
-        }, from: 0, to: 0.02)
+        }, count: months.count, from: 0, to: 0.02)
         let employees = try modelContext.fetch(FetchDescriptor<Employee>())
-        try writeLines("employees.jsonl", employees.map {
+        try writeLines("employees.jsonl", employees.lazy.map {
             BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData, details: $0.detailsData, rawColumns: $0.rawColumnsData)
-        }, from: 0.02, to: 0.4)
+        }, count: employees.count, from: 0.02, to: 0.4)
         let employeeCount = employees.count
         let deductions = try modelContext.fetch(FetchDescriptor<Deduction>())
-        try writeLines("deductions.jsonl", deductions.map {
+        try writeLines("deductions.jsonl", deductions.lazy.map {
             BackupFormat.DeductionRecord(month: $0.month, name: $0.employeeName, title: $0.title, amount: $0.amount, note: $0.note, rank: $0.rank)
-        }, from: 0.4, to: 0.5)
+        }, count: deductions.count, from: 0.4, to: 0.5)
         let deductionCount = deductions.count
         let staff = try modelContext.fetch(FetchDescriptor<StaffMember>())
-        try writeLines("staff.jsonl", staff.map {
+        try writeLines("staff.jsonl", staff.lazy.map {
             BackupFormat.StaffRecord(name: $0.name, mother: $0.motherKey, stat: $0.statNumber, unified: $0.unifiedNumber,
                                      rank: $0.rank, status: $0.status, workplace: $0.workplace, details: $0.detailsData)
-        }, from: 0.5, to: 0.8)
+        }, count: staff.count, from: 0.5, to: 0.8)
         let accounts = try ExecutionAccountStore.load()
-        try writeLines("accounts.jsonl", accounts.map {
+        try writeLines("accounts.jsonl", accounts.lazy.map {
             BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
-        }, from: 0.8, to: 0.82)
+        }, count: accounts.count, from: 0.8, to: 0.82)
         let books = try OfficialBookFiles.stage(into: dir.appendingPathComponent("books", isDirectory: true))
         if let serialized = settings[SalaryTrust.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
@@ -157,21 +158,44 @@ actor BackupActor {
     /// يستبدل كل البيانات بمحتوى النسخة. يعيد الإعدادات المحفوظة فيها.
     func restore(from folder: URL, progress: ProgressSink?) throws -> [String: Data] {
         let decoder = JSONDecoder()
-        func lines(_ name: String) throws -> [Data] {
-            let data = try Data(contentsOf: folder.appendingPathComponent(name), options: .alwaysMapped)
-            return data.split(separator: 0x0A).map { Data($0) }
+        func records<T: Decodable>(_ name: String, _ type: T.Type) throws -> [T] {
+            var result: [T] = []
+            try BackupLineReader.read(folder.appendingPathComponent(name)) { line in
+                result.append(try decoder.decode(type, from: line))
+            }
+            return result
+        }
+        // فحص كامل بالتدفق قبل حذف أي سجل. البصمة تُقارَن أثناء القراءة الثانية قبل حفظ المعاملة.
+        func validate<T: Decodable>(_ name: String, _ type: T.Type) throws -> (count: Int, hash: Data) {
+            var count = 0
+            var hash = SHA256()
+            try BackupLineReader.read(folder.appendingPathComponent(name), onChunk: { hash.update(data: $0) }) { line in
+                _ = try decoder.decode(type, from: line)
+                count += 1
+            }
+            return (count, Data(hash.finalize()))
+        }
+        func insertRecords<T: Decodable>(_ name: String, _ type: T.Type, expected: (count: Int, hash: Data),
+                                          insert: (Int, T) throws -> Void) throws {
+            var count = 0
+            var hash = SHA256()
+            try BackupLineReader.read(folder.appendingPathComponent(name), onChunk: { hash.update(data: $0) }) { line in
+                try insert(count, decoder.decode(type, from: line))
+                count += 1
+            }
+            guard count == expected.count, Data(hash.finalize()) == expected.hash else { throw BackupError.notBackup }
         }
         // نفحص النسخة كاملة قبل لمس البيانات الحالية.
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
         guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
         guard manifest.hasData else { throw BackupError.emptyRestore }
-        let months = try lines("months.jsonl").map { try decoder.decode(BackupFormat.MonthRecord.self, from: $0) }
-        let employees = try lines("employees.jsonl").map { try decoder.decode(BackupFormat.EmployeeRecord.self, from: $0) }
-        let deductions = try lines("deductions.jsonl").map { try decoder.decode(BackupFormat.DeductionRecord.self, from: $0) }
-        let staff = try lines("staff.jsonl").map { try decoder.decode(BackupFormat.StaffRecord.self, from: $0) }
+        let months = try records("months.jsonl", BackupFormat.MonthRecord.self)
+        let employees = try validate("employees.jsonl", BackupFormat.EmployeeRecord.self)
+        let deductions = try validate("deductions.jsonl", BackupFormat.DeductionRecord.self)
+        let staff = try validate("staff.jsonl", BackupFormat.StaffRecord.self)
         let accounts: [BackupFormat.AccountRecord]
         if manifest.version >= 2 {
-            accounts = try lines("accounts.jsonl").map { try decoder.decode(BackupFormat.AccountRecord.self, from: $0) }
+            accounts = try records("accounts.jsonl", BackupFormat.AccountRecord.self)
         } else {
             accounts = []
         }
@@ -248,7 +272,7 @@ actor BackupActor {
             m.itemSummaryData = r.summary
             modelContext.insert(m)
         }
-        for (i, r) in employees.enumerated() {
+        try insertRecords("employees.jsonl", BackupFormat.EmployeeRecord.self, expected: employees) { i, r in
             let e = Employee(month: r.month, name: r.name, rank: r.rank, workplace: r.workplace, netSalary: r.net)
             e.itemsData = r.items
             e.detailsData = r.details
@@ -256,11 +280,11 @@ actor BackupActor {
             modelContext.insert(e)
             if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, employees.count))) }
         }
-        for (i, r) in deductions.enumerated() {
+        try insertRecords("deductions.jsonl", BackupFormat.DeductionRecord.self, expected: deductions) { i, r in
             modelContext.insert(Deduction(month: r.month, employeeName: r.name, title: r.title, amount: r.amount, note: r.note, rank: r.rank))
             if i % 1000 == 0 { progress?(0.6 + 0.1 * Double(i) / Double(max(1, deductions.count))) }
         }
-        for (i, r) in staff.enumerated() {
+        try insertRecords("staff.jsonl", BackupFormat.StaffRecord.self, expected: staff) { i, r in
             let s = StaffMember(name: r.name, mother: "", statNumber: r.stat, unifiedNumber: r.unified,
                                 rank: r.rank, status: r.status, workplace: r.workplace, sections: [])
             s.motherKey = r.mother
