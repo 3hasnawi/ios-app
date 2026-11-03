@@ -419,6 +419,19 @@
     </Style>
 
     <!-- الجداول: صفوف أعلى، خطوط أفقية خفيفة، وتمرير بالبكسل مع إعادة استخدام الصفوف. -->
+    <Style x:Key="AccountingNumberText" TargetType="TextBlock">
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+    <Style x:Key="AccountingNetText" TargetType="TextBlock" BasedOn="{StaticResource AccountingNumberText}">
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+    </Style>
+    <Style x:Key="AccountingDeductionText" TargetType="TextBlock" BasedOn="{StaticResource AccountingNumberText}">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource Danger}"/>
+    </Style>
     <Style x:Key="HeaderGripper" TargetType="Thumb">
       <Setter Property="Width" Value="8"/>
       <Setter Property="Background" Value="Transparent"/>

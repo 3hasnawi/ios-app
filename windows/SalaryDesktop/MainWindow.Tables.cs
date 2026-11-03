@@ -84,11 +84,13 @@ public partial class MainWindow
             foreach (var column in spec.Columns)
             {
                 var binding = new Binding(column.Key) { TargetNullValue = "—", StringFormat = column.Number ? "{0:#,0.##}" : null, ConverterCulture = Numbers };
-                DataTable.Columns.Add(new DataGridTextColumn
+                var textColumn = new DataGridTextColumn
                 {
                     Header = column.Title, Binding = binding, SortMemberPath = column.Key, Width = new DataGridLength(column.Weight, DataGridLengthUnitType.Star),
                     Visibility = column == spec.Columns[0] || (shown is null ? column.Shown : shown.Contains(column.Key)) ? Visibility.Visible : Visibility.Collapsed
-                });
+                };
+                ApplyAccountingColumnStyle(textColumn, column.Key + " " + column.Title, column.Number, current);
+                DataTable.Columns.Add(textColumn);
             }
         }
         BuildFilters(spec);
@@ -102,6 +104,16 @@ public partial class MainWindow
         SecondRowMenu.Header = current == "payroll" ? "تفاصيل الراتب بكل الأعمدة" : "سجل الملاك الكامل";
         SecondRowMenu.Visibility = current is "payroll" or "staff" ? Visibility.Visible : Visibility.Collapsed;
         RowEntityMenu.Visibility = current is "groups" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ApplyAccountingColumnStyle(DataGridTextColumn column, string headerOrKey, bool numeric, string current)
+    {
+        if (string.IsNullOrWhiteSpace(headerOrKey)) return;
+        var net = headerOrKey.Contains("صافي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("الصافي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Net", StringComparison.OrdinalIgnoreCase);
+        var deduction = headerOrKey.Contains("استقطاع", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("سلفة", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Deduction", StringComparison.OrdinalIgnoreCase) || (current == "deductions" && numeric && column.SortMemberPath == "Amount");
+        var amount = numeric || headerOrKey.Contains("الاسمي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("مخصصات", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("المبلغ", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Amount", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Salary", StringComparison.OrdinalIgnoreCase);
+        var key = net ? "AccountingNetText" : deduction ? "AccountingDeductionText" : amount ? "AccountingNumberText" : null;
+        if (key is not null && TryFindResource(key) is Style style) column.ElementStyle = style;
     }
 
     private static Dictionary<string, string[]> ShownColumns => UiPreferences.Current.Columns!;

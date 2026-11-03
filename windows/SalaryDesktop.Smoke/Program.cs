@@ -177,6 +177,16 @@ static class Program
                 }
                 var table = (DataGrid)main.FindName("DataTable");
                 await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
+                var netColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Net");
+                var deductionColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "TotalDeductions");
+                Check(ReferenceEquals(netColumn.ElementStyle, application.FindResource("AccountingNetText")) &&
+                      ReferenceEquals(deductionColumn.ElementStyle, application.FindResource("AccountingDeductionText")), "payroll accounting columns did not receive their styles");
+                table.UpdateLayout();
+                var netText = netColumn.GetCellContent(table.Items[0]) as TextBlock ?? throw new InvalidOperationException("net cell was not realized");
+                var oldTheme = Themes.Current;
+                Themes.Apply("dark");
+                Check(Equals(netText.Foreground, application.FindResource("Primary")), "net text did not follow the dark theme");
+                Themes.Apply(oldTheme);
                 table.SelectedIndex = 0; await Task.Delay(150);
                 var inspector = (Border)main.FindName("InspectorDrawer");
                 Check(inspector.Visibility == Visibility.Visible && ((TextBlock)main.FindName("InspectorTitleText")).Text == ((PayrollRow)table.Items[0]).Name, "inspector did not show the selected payroll record");
@@ -194,6 +204,8 @@ static class Program
                 Check(((TextBlock)main.FindName("TotalsShown")).Text.Contains("500", StringComparison.Ordinal), "payroll totals row did not show the net sum");
                 Children<ComboBox>(filterHost).Last().SelectedIndex = 1; await Task.Delay(700); Check(table.Items.Count == 1, "payment filter hid the matching row");
                 await Navigate("deductions"); Check(table.Items.Count == 1, "deductions page did not show the synthetic entry");
+                var deductionAmount = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Amount");
+                Check(ReferenceEquals(deductionAmount.ElementStyle, application.FindResource("AccountingDeductionText")), "deduction amount did not receive its accounting style");
                 table.SelectedIndex = 0; await Task.Delay(150);
                 Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "المبلغ" && ((Button)main.FindName("InspectorSecondaryActionBtn")).Visibility == Visibility.Collapsed, "deduction inspector showed an unavailable action or mislabeled the amount");
                 await Navigate("staff"); await Task.Delay(1200); Check(table.Items.Count == 1 && table.Items[0] is StaffMember, "staff page did not load its synthetic record");
