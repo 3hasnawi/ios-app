@@ -946,6 +946,9 @@ try
     var changedAccount = snapshot.Accounts.Single() with { Iban = fakeReceiver, Swift = "TESTIQBAAAA", Branch = "الرافدين فرع وهمي" };
     var editedAccountState = accountStore.SaveAccount(snapshot, initialAccountState, snapshot.Accounts.Single(), changedAccount);
     Check(accountStore.Load(snapshot).Snapshot.Accounts.Single().Iban == fakeReceiver && snapshot.Accounts.Single().Iban != fakeReceiver, "account edits persist locally without changing backup");
+    try { _ = accountStore.SaveAccount(snapshot, initialAccountState, snapshot.Accounts.Single(), snapshot.Accounts.Single() with { Branch = "فرع قديم وهمي" }); throw new InvalidOperationException("stale inline edit accepted"); }
+    catch (InvalidDataException) { }
+    Check(accountStore.Load(snapshot).Revision == editedAccountState.Revision && accountStore.Load(snapshot).Snapshot.Accounts.Single() == changedAccount, "stale edit cannot overwrite a newer account or partially change it");
     Check(TransferPreparation.Prepare(editedAccountState.Snapshot, "أيلول 2026").Entries.First(e => e.Title == "جهة وهمية") is { Group: TransferGroup.Rafidain, Account.Iban: fakeReceiver }, "edited account updates transfer classification");
     try { _ = accountStore.SaveAccount(snapshot, editedAccountState, changedAccount, changedAccount with { Iban = "IQ00" }); throw new InvalidOperationException("invalid account accepted"); }
     catch (InvalidDataException) { }

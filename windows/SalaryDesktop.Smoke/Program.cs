@@ -94,7 +94,7 @@ static class Program
                 }
             }
         var accounts = entities.Select((entity, i) => new { entity, iban = $"IQ00TEST{i:D3}000000000000", branch = entity.Contains("الرشيد") ? "مصرف الرشيد / فرع الأنبار" : "مصرف الرافدين / فرع الرمادي", swift = "TESTIQBAAAA", localAccount = (string?)null }).ToArray();
-        var books = new[] { new { id = Guid.Parse("11111111-1111-1111-1111-111111111111"), title = "إشعار تحويل وهمي", month = "أيلول 2026", pages = 1, entity = "شركة عراق الجوال" }, new { id = Guid.Parse("22222222-2222-2222-2222-222222222222"), title = "كتاب وهمي للمراجعة", month = "آب 2026", pages = 2, entity = (string?)null } };
+        var books = new[] { new { id = Guid.Parse("11111111-1111-1111-1111-111111111111"), title = "إشعار تحويل وهمي", month = "أيلول 2026", pages = 1, entity = (string?)"شركة عراق الجوال" }, new { id = Guid.Parse("22222222-2222-2222-2222-222222222222"), title = "كتاب وهمي للمراجعة", month = "آب 2026", pages = 2, entity = (string?)null } };
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         Entry(zip, "manifest.json", JsonSerializer.Serialize(new { version = 5, months, employees = employees.Count, deductions = deductions.Count, staff = staff.Count, accounts = accounts.Length, books = books.Length }));
         Entry(zip, "months.jsonl", Lines(months.Select(month => new { name = month, employeeCount = 64, deductionCount = deductions.Count / 2 })));
@@ -255,6 +255,23 @@ static class Program
                     Console.WriteLine($"Screen work area: {SystemParameters.WorkArea.Width}x{SystemParameters.WorkArea.Height}");
                     typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [rich]);
                     await Task.Delay(1200);
+                    await Navigate("accounts");
+                    table.SelectedIndex = 0; await Task.Delay(200);
+                    var inspectorList = (ItemsControl)main.FindName("InspectorFieldsList");
+                    var editableBranch = inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Branch");
+                    Check(editableBranch.IsEditable && inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Entity").IsEditable == false, "inspector must edit only authorized account fields");
+                    var priorBranch = editableBranch.Value;
+                    editableBranch.EditableValue = "مصرف وهمي جديد";
+                    Check(((Button)main.FindName("InspectorInlineSaveBtn")).Visibility == Visibility.Visible, "inspector did not show the pending save action");
+                    Shot(main, "34-inspector-inline-edit");
+                    table.SelectedIndex = 1; await Task.Delay(100); table.SelectedIndex = 0; await Task.Delay(100);
+                    Check(inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Branch").EditableValue == "مصرف وهمي جديد", "switching rows discarded an unsaved draft");
+                    var inspectorFilter = (TextBox)main.FindName("InspectorFilterBox");
+                    inspectorFilter.Text = "IBAN";
+                    Check(inspectorList.Items.Count == 1 && ((InspectorFieldItem)inspectorList.Items[0]).RawPropertyName == "Iban", "inspector search did not filter fields");
+                    inspectorFilter.Text = "";
+                    ((Button)main.FindName("InspectorDiscardBtn")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Check(inspectorList.Items.Cast<InspectorFieldItem>().Single(f => f.RawPropertyName == "Branch").EditableValue == priorBranch && ((Button)main.FindName("InspectorInlineSaveBtn")).Visibility == Visibility.Collapsed, "discard did not restore the stored account");
                     foreach (var (tag, name) in new[] { ("home", "01-home"), ("payroll", "02-payroll"), ("deductions", "03-deductions"), ("staff", "04-staff"), ("archive", "05-archive"), ("groups", "06-groups"), ("bank", "07-bank"), ("transfer", "08-transfer"), ("accounts", "09-accounts"), ("settings", "10-settings") })
                     {
                         await Navigate(tag); if (tag is "staff" or "bank" or "transfer" or "archive") await Task.Delay(1200); Shot(main, name);

@@ -37,6 +37,7 @@ public partial class MainWindow
             HideToTray();
             return;
         }
+        if (!ConfirmDiscardInspectorChanges()) { e.Cancel = true; return; }
         SavePlacement();
     }
 
@@ -82,6 +83,7 @@ public partial class MainWindow
 
     private void ExitApplication()
     {
+        if (!ConfirmDiscardInspectorChanges()) return;
         exiting = true;
         tray?.Dispose(); tray = null;
         Close();

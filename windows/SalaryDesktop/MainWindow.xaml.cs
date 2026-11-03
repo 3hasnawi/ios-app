@@ -315,6 +315,11 @@ public partial class MainWindow : Window
             var sorted = DataTable.Columns.FirstOrDefault(c => c.SortDirection is not null);
             var direction = sorted?.SortDirection;
             DataTable.ItemsSource = result.Rows;
+            if (current == "accounts" && inspectorReselectEntity is { } entity)
+            {
+                inspectorReselectEntity = null;
+                DataTable.SelectedItem = result.Rows.Cast<object>().OfType<ExecutionAccount>().FirstOrDefault(a => a.Entity == entity);
+            }
             if (sorted is not null && direction is { } d && !string.IsNullOrEmpty(sorted.SortMemberPath))
             {
                 var view = CollectionViewSource.GetDefaultView(DataTable.ItemsSource);

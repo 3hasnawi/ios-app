@@ -995,7 +995,7 @@
       </DockPanel>
     </Grid>
           <!-- تفاصيل الصف المحدد، فوق الجدول مع بقاء أحداث الجدول الأصلية. -->
-          <Border x:Name="InspectorDrawer" Grid.Column="2" Panel.ZIndex="40" Width="380" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
+          <Border x:Name="InspectorDrawer" Grid.Column="2" Panel.ZIndex="40" Width="390" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
                   HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="10,12,12,12" Visibility="Collapsed" Style="{StaticResource FluentCard}" Padding="0"
                   AutomationProperties.Name="تفاصيل السجل المحدد">
             <Border.RenderTransform><TranslateTransform x:Name="InspectorSlide"/></Border.RenderTransform>
@@ -1033,12 +1033,18 @@
                     <TextBlock x:Name="InspectorNetAmountText" Grid.Column="1" Foreground="{DynamicResource Primary}" FontSize="17" FontWeight="Bold" Typography.NumeralAlignment="Tabular"/>
                   </Grid>
                 </Border>
+                <TextBlock x:Name="InspectorStatusHintText" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,8"/>
+                <TextBox x:Name="InspectorFilterBox" TextChanged="InspectorFilterBox_TextChanged" Tag="فلترة حقول السجل…" Padding="10,6" Margin="0,0,0,10"/>
                 <ItemsControl x:Name="InspectorFieldsList">
                   <ItemsControl.ItemTemplate><DataTemplate>
                     <Border Background="{DynamicResource SurfaceSubtle}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="10" Padding="12,9" Margin="0,0,0,8">
-                      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1.4*"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding Key}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{DynamicResource Ink}" FontSize="13" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" TextWrapping="Wrap" TextAlignment="Left"/>
+                      <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <DockPanel>
+                          <Button DockPanel.Dock="Left" Content="نسخ" Tag="{Binding}" Click="CopyInspectorFieldClick" Style="{StaticResource QuietButton}" Padding="6,1" FontSize="11" ToolTip="نسخ قيمة الحقل"/>
+                          <TextBlock Text="{Binding Key}" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                        </DockPanel>
+                        <TextBlock Grid.Row="1" Text="{Binding Value}" Visibility="{Binding ReadOnlyVisibility}" Foreground="{DynamicResource Ink}" FontSize="13" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" TextWrapping="Wrap"/>
+                        <TextBox Grid.Row="1" Text="{Binding EditableValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Tag="{Binding Key}" Visibility="{Binding EditorVisibility}" Padding="8,5" FontSize="13" Typography.NumeralAlignment="Tabular"/>
                       </Grid>
                     </Border>
                   </DataTemplate></ItemsControl.ItemTemplate>
@@ -1046,10 +1052,14 @@
                 </StackPanel>
               </ScrollViewer>
               <Border Grid.Row="3" Background="{DynamicResource NavGroup}" Padding="14,12" CornerRadius="0,0,16,16" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">
+                <StackPanel>
+                  <Button x:Name="InspectorInlineSaveBtn" Click="SaveInspectorInlineChangesClick" Content="حفظ التعديلات (Ctrl+S)" Style="{StaticResource ActionButton}" Visibility="Collapsed" Margin="0,0,0,8"/>
+                  <Button x:Name="InspectorDiscardBtn" Click="DiscardInspectorChangesClick" Content="التراجع عن التعديلات" Visibility="Collapsed" Margin="0,0,0,8"/>
                 <UniformGrid Columns="2">
                   <Button x:Name="InspectorPrimaryActionBtn" Click="OpenSelectedRow" Content="فتح التفاصيل الكاملة" Margin="0,0,4,0" Padding="10,8" Background="{DynamicResource Primary}" Foreground="White" FontWeight="SemiBold"/>
                   <Button x:Name="InspectorSecondaryActionBtn" Click="OpenSecondRow" Content="تفاصيل أخرى" Margin="4,0,0,0" Padding="10,8"/>
                 </UniformGrid>
+                </StackPanel>
               </Border>
             </Grid>
           </Border>
