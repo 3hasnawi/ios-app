@@ -107,17 +107,22 @@ var sharedSamples = new[]
     "{\"headers\":[\"الاسم\",\"الاسم\",\"\"],\"values\":[\"أ\",\"\",\"س\"],\"future\":{\"keep\":7}}",
     "  { \"headers\" : [\"أ\\\"ب\", \"ملاحظة\"], \"values\": [\"\\u0627\", \"\"] } \n",
     "{\"headers\":[],\"values\":[]}",
+    "{\"values\":[\"x\"],\"headers\":[\"a\"]}",
+    "{\"future\":{\"headers\":[\"متداخل\"]},\"values\":[\"text \\\"headers\\\": [x]\"],\"headers\":[\"a\"]}",
 };
 foreach (var sample in sharedSamples)
 {
     var bytes = Encoding.UTF8.GetBytes(sample);
     var parts = SharedPayrollColumns.Split(bytes) ?? throw new InvalidOperationException("supported shared header rejected");
-    if (sample == sharedSamples[0]) Check(parts.SchemaId == "B79027BCD83268724B64B144A3453C144FDAC6741E1552E0ACA97AF6B17E3651", "shared schema matches cross-platform hash vector");
-    Check(SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Tail).AsSpan().SequenceEqual(bytes), "shared payroll columns round-trip exact bytes");
-    try { _ = SharedPayrollColumns.Join(parts.SchemaId, [.. parts.Prefix, 32], parts.Tail); throw new InvalidOperationException("corrupt schema accepted"); }
+    if (sample == sharedSamples[0]) Check(parts.SchemaId == "A4760FF0B92D6CA8158C9517118F6B68BC798793BF5DF760141CBB2966A60A48", "shared schema matches cross-platform hash vector");
+    Check(SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Before, parts.Tail).AsSpan().SequenceEqual(bytes), "shared payroll columns round-trip exact bytes");
+    try { _ = SharedPayrollColumns.Join(parts.SchemaId, [.. parts.Prefix, 32], parts.Before, parts.Tail); throw new InvalidOperationException("corrupt schema accepted"); }
     catch (InvalidDataException) { }
 }
-foreach (var sample in new[] { "not-json", "{\"values\":[\"x\"],\"headers\":[\"a\"]}", "{\"headers\":[\"a\"],\"values\":[]}", "{\"headers\":[1],\"values\":[\"x\"]}" })
+var ordered = SharedPayrollColumns.Split(Encoding.UTF8.GetBytes("{\"headers\":[\"a\"],\"values\":[\"x\"]}"))!;
+var reordered = SharedPayrollColumns.Split(Encoding.UTF8.GetBytes("{\"values\":[\"x\"],\"headers\":[\"a\"]}"))!;
+Check(ordered.SchemaId == reordered.SchemaId, "shared schema does not depend on JSON property order");
+foreach (var sample in new[] { "not-json", "{\"headers\":[\"a\"],\"values\":[]}", "{\"headers\":[1],\"values\":[\"x\"]}" })
     Check(SharedPayrollColumns.Split(Encoding.UTF8.GetBytes(sample)) is null, "unsupported columns require exact original fallback");
 string? sharedID = null;
 for (var i = 0; i < 5000; i++)
@@ -125,7 +130,7 @@ for (var i = 0; i < 5000; i++)
     var raw = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "الاسم", "الاسم", "ملاحظة" }, values = new[] { $"منتسب {i}", "", "\"نص\\وهمي\"" }, future = new { id = i } });
     var parts = SharedPayrollColumns.Split(raw) ?? throw new InvalidOperationException("generated shared header rejected");
     sharedID ??= parts.SchemaId;
-    Check(parts.SchemaId == sharedID && SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Tail).AsSpan().SequenceEqual(raw), "shared schema preserves generated record bytes");
+    Check(parts.SchemaId == sharedID && SharedPayrollColumns.Join(parts.SchemaId, parts.Prefix, parts.Before, parts.Tail).AsSpan().SequenceEqual(raw), "shared schema preserves generated record bytes");
 }
 Directory.CreateDirectory(root);
 try
