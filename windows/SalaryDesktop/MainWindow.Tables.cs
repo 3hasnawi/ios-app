@@ -84,13 +84,13 @@ public partial class MainWindow
             foreach (var column in spec.Columns)
             {
                 var binding = new Binding(column.Key) { TargetNullValue = "—", StringFormat = column.Number ? "{0:#,0.##}" : null, ConverterCulture = Numbers };
-                var textColumn = new DataGridTextColumn
+                var col = new DataGridTextColumn
                 {
                     Header = column.Title, Binding = binding, SortMemberPath = column.Key, Width = new DataGridLength(column.Weight, DataGridLengthUnitType.Star),
                     Visibility = column == spec.Columns[0] || (shown is null ? column.Shown : shown.Contains(column.Key)) ? Visibility.Visible : Visibility.Collapsed
                 };
-                ApplyAccountingColumnStyle(textColumn, column.Key + " " + column.Title, column.Number, current);
-                DataTable.Columns.Add(textColumn);
+                ApplyAccountingColumnStyle(col, col.Header?.ToString() ?? "");
+                DataTable.Columns.Add(col);
             }
         }
         BuildFilters(spec);
@@ -106,8 +106,11 @@ public partial class MainWindow
         RowEntityMenu.Visibility = current is "groups" or "deductions" ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void ApplyAccountingColumnStyle(DataGridTextColumn column, string headerOrKey, bool numeric, string current)
+    private void ApplyAccountingColumnStyle(DataGridTextColumn column, string headerOrKey)
     {
+        var current = columnsPage ?? "";
+        var numeric = Tables.GetValueOrDefault(current)?.Columns.FirstOrDefault(c => c.Key == column.SortMemberPath)?.Number ?? false;
+        headerOrKey = headerOrKey + " " + column.SortMemberPath;
         if (string.IsNullOrWhiteSpace(headerOrKey)) return;
         var net = headerOrKey.Contains("صافي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("الصافي", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Net", StringComparison.OrdinalIgnoreCase);
         var deduction = headerOrKey.Contains("استقطاع", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("سلفة", StringComparison.OrdinalIgnoreCase) || headerOrKey.Contains("Deduction", StringComparison.OrdinalIgnoreCase) || (current == "deductions" && numeric && column.SortMemberPath == "Amount");
