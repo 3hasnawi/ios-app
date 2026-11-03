@@ -134,9 +134,9 @@
                   <Button x:Name="PdfButton" Style="{StaticResource ActionButton}" Click="OpenPayslipMenu" HorizontalContentAlignment="Center" Margin="0,0,0,8" ToolTip="قسيمة الشهر المعروض: معاينة أو حفظ PDF أو طباعة">
                     <Button.ContextMenu>
                       <ContextMenu x:Name="PayslipMenu">
-                        <MenuItem Header="معاينة القسيمة" Click="PreviewPayslip"/>
-                        <MenuItem Header="حفظ القسيمة PDF…" Click="ExportPayslip"/>
-                        <MenuItem Header="طباعة القسيمة" Click="PrintPayslip"/>
+                        <MenuItem Header="معاينة القسيمة" Click="PreviewPayslip"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem Header="حفظ القسيمة PDF…" Click="ExportPayslip"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem Header="طباعة القسيمة" Click="PrintPayslip"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
                       </ContextMenu>
                     </Button.ContextMenu>
                     <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="القسيمة PDF"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="9" Margin="7,1,0,0" Foreground="White"/></StackPanel>
@@ -147,9 +147,9 @@
                         <MenuItem x:Name="HideZerosItem" Header="إخفاء البنود الصفرية" IsCheckable="True" Click="ReportOptionChanged"/>
                         <MenuItem x:Name="HidePersonalItem" Header="إخفاء IBAN والأرقام الشخصية" IsCheckable="True" Click="ReportOptionChanged"/>
                         <Separator/>
-                        <MenuItem Header="معاينة تقرير الراتب" Click="PreviewSalaryReport"/>
-                        <MenuItem Header="حفظ تقرير الراتب PDF…" Click="SaveSalaryReport"/>
-                        <MenuItem Header="طباعة تقرير الراتب" Click="PrintSalaryReport"/>
+                        <MenuItem Header="معاينة تقرير الراتب" Click="PreviewSalaryReport"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem Header="حفظ تقرير الراتب PDF…" Click="SaveSalaryReport"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem Header="طباعة تقرير الراتب" Click="PrintSalaryReport"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
                       </ContextMenu>
                     </Button.ContextMenu>
                     <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="تقرير الراتب"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="9" Margin="7,1,0,0"/></StackPanel>

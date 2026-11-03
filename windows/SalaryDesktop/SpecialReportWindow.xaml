@@ -164,11 +164,11 @@
       <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Padding="20,8"/>
       <TextBlock x:Name="Notice" DockPanel.Dock="Left" Foreground="{DynamicResource Warn}" VerticalAlignment="Center" Margin="12,0" TextWrapping="Wrap"/>
       <WrapPanel x:Name="Actions" IsEnabled="False">
-        <Button Click="PreviewReport" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE7B3;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel></Button>
-        <Button Style="{StaticResource ActionButton}" Click="ExportExcel" Margin="0,0,8,0" Content="Excel"/>
-        <Button Style="{StaticResource ActionButton}" Click="ExportPdf" Margin="0,0,8,0" Content="PDF"/>
-        <Button Click="PrintReport" Margin="0,0,18,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
-        <Button Click="PreviewNames" ToolTip="قائمة أسماء البند بالشكل المعتمد" Content="معاينة قائمة الأسماء"/>
+        <Button Click="PreviewReport" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel></Button>
+        <Button Style="{StaticResource ActionButton}" Click="ExportExcel" Margin="0,0,8,0" Content="Excel" ContentTemplate="{StaticResource ExcelActionContent}"/>
+        <Button Style="{StaticResource ActionButton}" Click="ExportPdf" Margin="0,0,8,0" Content="PDF" ContentTemplate="{StaticResource PdfActionContent}"/>
+        <Button Click="PrintReport" Margin="0,0,18,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
+        <Button Click="PreviewNames" ToolTip="قائمة أسماء البند بالشكل المعتمد" Content="معاينة قائمة الأسماء" ContentTemplate="{StaticResource PreviewActionContent}"/>
       </WrapPanel>
     </DockPanel>
   </Grid>

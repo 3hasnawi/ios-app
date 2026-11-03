@@ -43,8 +43,8 @@
           <TextBox x:Name="Search" Height="36" Padding="32,6,10,6" TextChanged="SearchChanged" Tag="بحث بالاسم أو الرقم أو IBAN…"/>
           <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" FontSize="13" Foreground="{DynamicResource Tfg8A9B98}" HorizontalAlignment="Left" Margin="12,0,0,0" IsHitTestVisible="False"/>
         </Grid>
-        <Button Click="ExportExcel" Margin="8,0,0,0" ToolTip="كل الحالات وتشخيصها في Excel"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE9F9;" FontSize="13" Margin="0,0,7,0" Foreground="{DynamicResource Primary}"/><TextBlock Text="Excel"/></StackPanel></Button>
-        <Button Click="ExportPdf" Margin="8,0,0,0" ToolTip="الكشف الشامل PDF بالشكل المعتمد"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="{DynamicResource TfgB03A2E}"/><TextBlock Text="PDF"/></StackPanel></Button>
+        <Button Click="ExportExcel" Margin="8,0,0,0" ToolTip="كل الحالات وتشخيصها في Excel"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}" FontSize="13" Margin="0,0,7,0" Foreground="{DynamicResource Primary}"/><TextBlock Text="Excel"/></StackPanel></Button>
+        <Button Click="ExportPdf" Margin="8,0,0,0" ToolTip="الكشف الشامل PDF بالشكل المعتمد"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" FontSize="13" Margin="0,0,7,0" Foreground="{DynamicResource TfgB03A2E}"/><TextBlock Text="PDF"/></StackPanel></Button>
       </StackPanel>
     </Grid>
 

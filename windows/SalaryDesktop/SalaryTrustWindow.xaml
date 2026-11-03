@@ -24,10 +24,10 @@
     <!-- الإجراءات: الافتتاح، كاش الشهر، الربط بكتاب؛ والكشف يساراً. -->
     <DockPanel Grid.Row="1" Margin="0,16,0,0">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <Button Click="PreviewReport" Margin="0,0,8,0" ToolTip="معاينة كشف القيود المعروضة بعد المرشحات"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="معاينة"/></StackPanel></Button>
-        <Button Click="PrintReport" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
-        <Button Click="ExportExcel" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE9F9;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="Excel"/></StackPanel></Button>
-        <Button Style="{StaticResource ActionButton}" Click="ExportPdf"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="PDF"/></StackPanel></Button>
+        <Button Click="PreviewReport" Margin="0,0,8,0" ToolTip="معاينة كشف القيود المعروضة بعد المرشحات"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="معاينة"/></StackPanel></Button>
+        <Button Click="PrintReport" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
+        <Button Click="ExportExcel" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="Excel"/></StackPanel></Button>
+        <Button Style="{StaticResource ActionButton}" Click="ExportPdf"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" FontSize="13" Margin="0,0,7,0" Foreground="White"/><TextBlock Text="PDF"/></StackPanel></Button>
       </StackPanel>
       <WrapPanel>
         <Button x:Name="ImportButton" Click="ImportOpening" Margin="0,0,8,0" ToolTip="ملف الأمانات الافتتاحي حتى أيلول 2026؛ يُستورد مرة واحدة على جهاز واحد"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8B5;" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="استيراد الملف الافتتاحي"/></StackPanel></Button>

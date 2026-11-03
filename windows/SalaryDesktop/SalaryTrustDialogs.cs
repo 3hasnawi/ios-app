@@ -70,7 +70,7 @@ internal static class TrustDialogs
         }
         search.TextChanged += (_, _) => Filter(); Filter();
         var bar = Buttons(window, "ربط الكتاب", () => list.SelectedItem is BookChoice);
-        var preview = new Button { Content = "معاينة الكتاب", Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(14, 6, 14, 6) };
+        var preview = new Button { Content = "معاينة الكتاب", ContentTemplate = (DataTemplate)Application.Current.FindResource("PreviewActionContent"), Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(14, 6, 14, 6) };
         preview.Click += (_, _) => { if (list.SelectedItem is BookChoice c) open(window, c.Book); };
         DockPanel.SetDock(preview, Dock.Left); bar.Children.Insert(1, preview);
         DockPanel.SetDock(bar, Dock.Bottom); panel.Children.Add(bar);

@@ -182,6 +182,19 @@ static class Program
                 var kufi = families.FirstOrDefault(f => f.Source.EndsWith("#Noto Kufi Arabic", StringComparison.Ordinal)) ?? families.First(f => f.Source.Contains("#Noto Kufi Arabic", StringComparison.Ordinal));
                 var weights = kufi.GetTypefaces().Select(t => t.Weight.ToOpenTypeWeight()).ToHashSet();
                 Check(weights.SetEquals([400, 500, 600]), "Noto Kufi Arabic (Regular, Medium, SemiBold) weights: " + string.Join(",", weights));
+                var escapeDialog = new Window { Owner = main, Width = 200, Height = 120, Content = new TextBox() };
+                bool keepOpen = true;
+                escapeDialog.Closing += (_, e) => { if (keepOpen) e.Cancel = true; };
+                escapeDialog.Show(); await Task.Delay(150);
+                void PressEscape(Window window)
+                {
+                    var source = PresentationSource.FromVisual(window) ?? throw new InvalidOperationException("dialog has no presentation source");
+                    window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Escape) { RoutedEvent = Keyboard.KeyDownEvent });
+                }
+                PressEscape(escapeDialog);
+                Check(escapeDialog.IsVisible, "Escape bypassed the window's closing guard");
+                keepOpen = false; PressEscape(escapeDialog);
+                Check(!escapeDialog.IsVisible && main.IsVisible, "Escape did not close only the secondary window");
                 await Task.Delay(300);
                 Check(((Button)main.FindName("StartFromExcelButton")).Visibility == Visibility.Visible, "standalone start was not visible on empty data");
                 typeof(MainWindow).GetMethod("SetSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [snapshot]);
@@ -321,7 +334,14 @@ static class Program
                     {
                         if (richGroups.FirstOrDefault(g => SalaryItemsWindow.Special(g.Title) == kind) is not { } specialGroup) { Console.WriteLine("No fixture item for " + kind); continue; }
                         var specialWindow = Fit(new SpecialReportWindow(rich, "أيلول 2026", kind, specialGroup) { Owner = main }); specialWindow.Show(); await Task.Delay(1200);
-                        Check(((FrameworkElement)specialWindow.FindName("Actions")).IsEnabled, "special report page did not finish loading: " + kind); Shot(specialWindow, shot); specialWindow.Close();
+                        Check(((FrameworkElement)specialWindow.FindName("Actions")).IsEnabled, "special report page did not finish loading: " + kind);
+                        var reportButtons = Children<Button>((FrameworkElement)specialWindow.FindName("Actions")).ToArray();
+                        foreach (var (label, key) in new[] { ("Excel", "ExcelActionGlyph"), ("PDF", "PdfActionGlyph") })
+                        {
+                            var button = reportButtons.Single(b => Equals(b.Content, label));
+                            Check(Children<TextBlock>(button).Any(t => t.Text == (string)Application.Current.FindResource(key)), "report action icon missing: " + label);
+                        }
+                        Shot(specialWindow, shot); specialWindow.Close();
                     }
                     // البحث الشامل، ملف المنتسب، التصفية والمجاميع، وكشوف PDF/Excel المعتمدة للمراجعة البصرية.
                     var richStaff = StaffRecords.Read(rich);

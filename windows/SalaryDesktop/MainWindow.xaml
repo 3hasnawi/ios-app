@@ -325,21 +325,21 @@
                 <Button.ContextMenu><ContextMenu x:Name="ColumnsMenu"/></Button.ContextMenu>
               </Button>
               <Button x:Name="ExportButton" Click="ShowExportMenu" Margin="10,0,0,0" ToolTip="تصدير الجدول المعروض بالشكل المعتمد أو طباعته">
-                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="تصدير وطباعة"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="10" Foreground="{DynamicResource Tfg7A8D8A}" Margin="8,0,0,0"/></StackPanel>
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExportActionGlyph}" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="تصدير وطباعة"/><TextBlock Style="{StaticResource Icon}" Text="&#xE70D;" FontSize="10" Foreground="{DynamicResource Tfg7A8D8A}" Margin="8,0,0,0"/></StackPanel>
                 <Button.ContextMenu>
                   <ContextMenu x:Name="ExportMenu">
-                    <MenuItem Header="معاينة الكشف" Click="PreviewTable"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE7B3;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="Excel بالشكل المعتمد" Click="ExportTableExcel"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="PDF بالشكل المعتمد" Click="ExportTablePdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="طباعة" Click="PrintTable"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="معاينة الكشف" Click="PreviewTable"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="Excel بالشكل المعتمد" Click="ExportTableExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="PDF بالشكل المعتمد" Click="ExportTablePdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="طباعة" Click="PrintTable"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
                     <Separator/>
                     <MenuItem x:Name="ExportCopyMenu" Header="نسخ الصفوف المحددة للصقها في Excel" InputGestureText="Ctrl+C" Click="CopyRows"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8C8;"/></MenuItem.Icon></MenuItem>
                     <Separator x:Name="EntityExportSeparator"/>
                     <MenuItem x:Name="EntityExportMenu" Header="قائمة استقطاعات الجهة المعتمدة">
-                      <MenuItem Header="معاينة" Click="PreviewEntity"/>
-                      <MenuItem Header="Excel" Click="ExportEntityExcel"/>
-                      <MenuItem Header="PDF" Click="ExportEntityPdf"/>
-                      <MenuItem Header="طباعة" Click="PrintEntity"/>
+                      <MenuItem Header="معاينة" Click="PreviewEntity"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem>
+                      <MenuItem Header="Excel" Click="ExportEntityExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}"/></MenuItem.Icon></MenuItem>
+                      <MenuItem Header="PDF" Click="ExportEntityPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem>
+                      <MenuItem Header="طباعة" Click="PrintEntity"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
                     </MenuItem>
                   </ContextMenu>
                 </Button.ContextMenu>
@@ -365,9 +365,9 @@
                 <Separator/>
                 <MenuItem x:Name="CopyRowsMenu" Header="نسخ الصفوف المحددة" InputGestureText="Ctrl+C" Click="CopyRows"/>
                 <MenuItem x:Name="RowEntityMenu" Header="قائمة استقطاعات الجهة المعتمدة">
-                  <MenuItem Header="Excel" Click="ExportEntityExcel"/>
-                  <MenuItem Header="PDF" Click="ExportEntityPdf"/>
-                  <MenuItem Header="طباعة" Click="PrintEntity"/>
+                  <MenuItem Header="Excel" Click="ExportEntityExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}"/></MenuItem.Icon></MenuItem>
+                  <MenuItem Header="PDF" Click="ExportEntityPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}"/></MenuItem.Icon></MenuItem>
+                  <MenuItem Header="طباعة" Click="PrintEntity"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
                 </MenuItem>
               </ContextMenu>
             </DataGrid.ContextMenu>
@@ -466,8 +466,8 @@
                   <ListBox.ContextMenu>
                     <ContextMenu x:Name="ArchiveMenu" Opened="ArchiveMenuOpened">
                       <MenuItem x:Name="ArchiveOpenItem" Header="فتح الكتاب" Click="ArchiveOpen" FontWeight="SemiBold" InputGestureText="Enter"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
-                      <MenuItem x:Name="ArchivePrintItem" Header="طباعة" Click="ArchivePrint"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
-                      <MenuItem x:Name="ArchiveSaveItem" Header="حفظ نسخة PDF…" Click="ArchiveSaveCopy"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                      <MenuItem x:Name="ArchivePrintItem" Header="طباعة" Click="ArchivePrint"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
+                      <MenuItem x:Name="ArchiveSaveItem" Header="حفظ نسخة PDF…" Click="ArchiveSaveCopy"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
                       <Separator/>
                       <MenuItem x:Name="ArchiveEditItem" Header="تعديل الاسم والشهر والجهة…" Click="ArchiveEdit" InputGestureText="F2"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE70F;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
                       <MenuItem x:Name="ArchiveReplaceItem" Header="استبدال ملف الكتاب">
@@ -500,9 +500,9 @@
                       <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="White" Margin="0,0,7,0"/><TextBlock Text="فتح الكتاب"/></StackPanel>
                     </Button>
                     <UniformGrid Columns="2">
-                      <Button Click="ArchivePrint" Margin="0,0,4,8" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE749;" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
+                      <Button Click="ArchivePrint" Margin="0,0,4,8" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}" Margin="0,0,7,0"/><TextBlock Text="طباعة"/></StackPanel></Button>
                       <Button Click="ArchiveEdit" Margin="4,0,0,8" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE70F;" Margin="0,0,7,0"/><TextBlock Text="تعديل"/></StackPanel></Button>
-                      <Button Click="ArchiveSaveCopy" Margin="0,0,4,0" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE74E;" Margin="0,0,7,0"/><TextBlock Text="حفظ نسخة"/></StackPanel></Button>
+                      <Button Click="ArchiveSaveCopy" Margin="0,0,4,0" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Margin="0,0,7,0"/><TextBlock Text="حفظ نسخة"/></StackPanel></Button>
                       <Button Click="ArchiveDelete" Margin="4,0,0,0" HorizontalContentAlignment="Center"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE74D;" Foreground="{DynamicResource TfgB4362A}" Margin="0,0,7,0"/><TextBlock Text="حذف" Foreground="{DynamicResource TfgB4362A}"/></StackPanel></Button>
                     </UniformGrid>
                   </StackPanel>
@@ -540,7 +540,7 @@
                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE713;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="بيانات الحساب والمبالغ اليدوية"/></StackPanel>
               </Button>
               <Button Click="PreviewBankStatement" Margin="8,0,0,0" ToolTip="كشف الشهر بالشكل المعتمد؛ الطباعة والحفظ من الزر الأيمن على الجدول">
-                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel>
+                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel>
               </Button>
               <Button x:Name="OpenReconciliationButton" Click="OpenReconciliation" Margin="8,0,0,0" IsEnabled="False" Background="{DynamicResource Primary}" BorderBrush="{DynamicResource Primary}" Foreground="White" ToolTip="فترات المطابقة وحركاتها واعتمادها">
                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="White" Margin="0,0,7,0"/><TextBlock Text="دفتر المطابقة"/></StackPanel>
@@ -636,10 +636,10 @@
                     <Separator/>
                     <MenuItem Header="تعديل المبلغ النهائي للعقود…" Click="EditContractOverride"/>
                     <MenuItem Header="بيانات الحساب والمبالغ اليدوية…" Click="EditBankDetails"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE713;"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="معاينة الكشف" Click="PreviewBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="طباعة الكشف" Click="PrintBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="حفظ الكشف PDF…" Click="SaveBankStatementPdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
-                    <MenuItem Header="حفظ الكشف Excel…" Click="SaveBankStatementExcel"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8A5;" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="معاينة الكشف" Click="PreviewBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="طباعة الكشف" Click="PrintBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="حفظ الكشف PDF…" Click="SaveBankStatementPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                    <MenuItem Header="حفظ الكشف Excel…" Click="SaveBankStatementExcel"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExcelActionGlyph}" Foreground="{DynamicResource Tfg1E7145}"/></MenuItem.Icon></MenuItem>
                     <Separator/>
                     <MenuItem Header="فتح دفتر المطابقة" Click="OpenReconciliation"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
                   </ContextMenu>
@@ -661,9 +661,9 @@
                     <ListBox.ContextMenu>
                       <ContextMenu Opened="BankPeriodMenuOpened">
                         <MenuItem x:Name="BankPeriodOpenItem" Header="فتح الفترة في دفتر المطابقة" Click="OpenSelectedBankPeriod" FontWeight="SemiBold"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE82D;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
-                        <MenuItem x:Name="BankPeriodPreviewItem" Header="معاينة كشف الفترة" Click="PreviewBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;"/></MenuItem.Icon></MenuItem>
-                        <MenuItem x:Name="BankPeriodPrintItem" Header="طباعة كشف الفترة" Click="PrintBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
-                        <MenuItem x:Name="BankPeriodSaveItem" Header="حفظ كشف الفترة PDF…" Click="SaveBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodPreviewItem" Header="معاينة كشف الفترة" Click="PreviewBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodPrintItem" Header="طباعة كشف الفترة" Click="PrintBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
+                        <MenuItem x:Name="BankPeriodSaveItem" Header="حفظ كشف الفترة PDF…" Click="SaveBankPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
                         <Separator/>
                         <MenuItem Header="فترة جديدة…" Click="NewReconciliationPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE710;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
                       </ContextMenu>
@@ -714,7 +714,7 @@
                 <Border x:Name="GroupCard" Style="{StaticResource Card}" Padding="14,4,14,10" Margin="0,0,0,10">
                   <StackPanel>
                     <TextBlock x:Name="GroupCardTitle" Style="{StaticResource SectionLabel}" Text="المجموعة المصرفية"/>
-                    <Button x:Name="TransferExport" Style="{StaticResource PanelAction}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False"/>
+                    <Button x:Name="TransferExport" Style="{StaticResource PanelAction}" Content="تصدير ملف التحويل CSV" Click="ExportTransfer" IsEnabled="False" ContentTemplate="{StaticResource ExportActionContent}"/>
                     <Button Style="{StaticResource PanelButton}" Content="كتاب المجموعة (مسودة)" Click="OpenGroupLetter" ToolTip="مسودة PDF لكتاب المجموعة المختارة"/>
                     <Button Style="{StaticResource PanelButton}" Content="تدقيق إصدار المجموعة" Click="OpenGroupIssuance"/>
                   </StackPanel>
@@ -747,7 +747,7 @@
             <Border Style="{StaticResource Card}">
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <Border Width="44" Height="44" CornerRadius="11" Background="{DynamicResource PrimarySoft}" VerticalAlignment="Top"><TextBlock Style="{StaticResource Icon}" Text="&#xE8B5;" FontSize="18" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/></Border>
+                <Border Width="44" Height="44" CornerRadius="11" Background="{DynamicResource PrimarySoft}" VerticalAlignment="Top"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource ExportActionGlyph}" FontSize="18" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/></Border>
                 <StackPanel Grid.Column="1" Margin="14,0,0,0">
                   <TextBlock Style="{StaticResource CardTitle}" Text="استيراد الملفات"/>
                   <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,12" Text="اختر ملفاً أو أكثر معاً، أو اسحبها إلى نافذة البرنامج. يتعرف البرنامج على نوع كل ملف ويفرزه، ثم يُراجع كل ملف قبل حفظه. الملفات الأصلية لا تتغير."/>
@@ -805,7 +805,7 @@
                   <WrapPanel Margin="0,0,0,12">
                     <Button x:Name="BackupNowButton2" Style="{StaticResource ActionButton}" Click="BackupNow" Margin="0,0,8,0"><StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE74E;" Foreground="White" FontSize="13" Margin="0,0,8,0"/><TextBlock Text="نسخ الآن"/></StackPanel></Button>
                     <Button x:Name="ChooseFileButton" Content="اختيار ملف النسخة…" Click="ChooseBackupFile" Margin="0,0,8,0"/>
-                    <Button x:Name="BackupExport" Content="حفظ نسخة في مكان آخر…" Click="ExportBackup" IsEnabled="False"/>
+                    <Button x:Name="BackupExport" Content="حفظ نسخة في مكان آخر…" Click="ExportBackup" IsEnabled="False" ContentTemplate="{StaticResource ExportActionContent}"/>
                   </WrapPanel>
                   <CheckBox x:Name="BackupAutoBox" Content="نسخ تلقائي بعد كل استيراد" Click="BackupOptionChanged" Margin="0,0,0,10"/>
                   <CheckBox x:Name="CloseToTrayBox" Content="عند الضغط على ✕ يبقى البرنامج يعمل في الخلفية بجانب الساعة (للنسخ وفحص السيرفر)" Click="CloseToTrayChanged" Margin="0,0,0,10" ToolTip="الإغلاق النهائي من أيقونة البرنامج بجانب الساعة ← الزر الأيمن ← «إغلاق البرنامج نهائياً»"/>

@@ -10,7 +10,7 @@
           <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE710;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="فترة جديدة"/></StackPanel>
         </Button>
         <Button x:Name="PreviewButton" Click="PreviewPdf" Margin="8,0,0,0" ToolTip="كشف الفترة بالشكل المعتمد">
-          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel>
+          <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" Foreground="{DynamicResource Primary}" Margin="0,0,7,0"/><TextBlock Text="معاينة الكشف"/></StackPanel>
         </Button>
       </StackPanel>
       <Grid>
@@ -32,9 +32,9 @@
                  ItemTemplate="{StaticResource PeriodCardTemplate}" ItemContainerStyle="{StaticResource PeriodCardItem}">
           <ListBox.ContextMenu>
             <ContextMenu Opened="PeriodMenuOpened">
-              <MenuItem x:Name="PeriodPreviewItem" Header="فتح كشف الفترة" Click="PreviewPdf" FontWeight="SemiBold"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
-              <MenuItem x:Name="PeriodPrintItem" Header="طباعة" Click="PrintPdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>
-              <MenuItem x:Name="PeriodSaveItem" Header="حفظ PDF…" Click="ExportPdf"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xEA90;" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
+              <MenuItem x:Name="PeriodPreviewItem" Header="فتح كشف الفترة" Click="PreviewPdf" FontWeight="SemiBold"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PreviewActionGlyph}" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
+              <MenuItem x:Name="PeriodPrintItem" Header="طباعة" Click="PrintPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PrintActionGlyph}"/></MenuItem.Icon></MenuItem>
+              <MenuItem x:Name="PeriodSaveItem" Header="حفظ PDF…" Click="ExportPdf"><MenuItem.Icon><TextBlock Style="{StaticResource ReportActionIcon}" Text="{StaticResource PdfActionGlyph}" Foreground="{DynamicResource TfgB03A2E}"/></MenuItem.Icon></MenuItem>
               <Separator/>
               <MenuItem x:Name="PeriodConfirmItem" Header="اعتماد مطابقة الفترة…" Click="ConfirmPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FB;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
               <MenuItem x:Name="PeriodUnconfirmItem" Header="إلغاء الاعتماد للتعديل…" Click="UnconfirmPeriod"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE7A7;"/></MenuItem.Icon></MenuItem>
