@@ -374,7 +374,7 @@ static class Program
                             table.UpdateLayout();
                             var clickedRow = table.ItemContainerGenerator.ContainerFromIndex(1) as DataGridRow ?? throw new InvalidOperationException("second deduction row not realized");
                             table.SelectedIndex = 0;
-                            var rightClick = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) { Source = clickedRow };
+                            var rightClick = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Right) { RoutedEvent = UIElement.PreviewMouseRightButtonDownEvent, Source = clickedRow };
                             typeof(MainWindow).GetMethod("SelectContextRow", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [table, rightClick]);
                             Check(ReferenceEquals(table.SelectedItem, clickedRow.Item), "right-click actions were not targeted to the clicked deduction");
                             var menu = table.ContextMenu ?? throw new InvalidOperationException("deduction context menu missing");
