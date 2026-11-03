@@ -91,8 +91,10 @@ public static class BackupReader
         foreach (var entry in archive.Entries)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (!entries.TryAdd(entry.FullName, entry) || entry.Length > MaximumEntryBytes)
-                throw new InvalidDataException("النسخة تحتوي ملفاً مكرراً أو يتجاوز الحجم المدعوم.");
+            if (!entries.TryAdd(entry.FullName, entry))
+                throw new InvalidDataException($"يوجد ملف مكرر داخل النسخة: {entry.FullName}. لم تُعتمد النسخة.");
+            if (entry.Length > MaximumEntryBytes)
+                throw new InvalidDataException($"الملف {entry.FullName} داخل النسخة حجمه بعد فك الضغط {entry.Length:N0} بايت، ويتجاوز الحد المدعوم {MaximumEntryBytes:N0} بايت. لم تُعتمد النسخة.");
         }
         ZipArchiveEntry Required(string name) => entries.TryGetValue(name, out var entry) ? entry
             : throw new InvalidDataException($"الملف المطلوب غير موجود في النسخة: {name}");

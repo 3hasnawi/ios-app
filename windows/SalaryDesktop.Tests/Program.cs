@@ -190,6 +190,24 @@ try
     var replacedPayroll = payrollStore.Import(snapshot, combinedPayroll, replacement, true);
     Check(Directory.GetFiles(Path.Combine(root, "payroll-data", snapshot.SourceDigest), "*.json").Length >= 4 && replacedPayroll.Snapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m && replacedPayroll.Snapshot.Deductions.Any(d => d.Month == replacement.Month), "reviewed salary replacement preserves deduction records and earlier versions");
     var salaryBackup = Path.Combine(root, "salary-import-backup.zip"); ReconciliationBackupExport.Write(combinedPayroll.Snapshot, [], salaryBackup);
+    using (var archive = ZipFile.OpenRead(salaryBackup))
+    using (var reader = new StreamReader(archive.GetEntry("employees.jsonl")!.Open(), Encoding.UTF8))
+    {
+        var rows = reader.ReadToEnd();
+        Check(rows.Contains("منتسب تجريبي", StringComparison.Ordinal), "rewritten backup keeps Arabic names as compact UTF-8");
+    }
+    try { _ = BackupReader.Read(duplicate); throw new InvalidOperationException("duplicate ZIP entry accepted"); }
+    catch (InvalidDataException ex) { Check(ex.Message.Contains("مكرر", StringComparison.Ordinal) && ex.Message.Contains("manifest.json", StringComparison.Ordinal), "duplicate backup entry is identified separately"); }
+    // محاكاة فهرس ZIP يعلن حجماً كبيراً دون إنشاء ملف حجمه 1.5 غيغابايت.
+    var oversizePath = Path.Combine(root, "oversize-metadata.zip");
+    using (var zip = ZipFile.Open(oversizePath, ZipArchiveMode.Create)) Entry(zip, "employees.jsonl", "x");
+    var oversizeBytes = File.ReadAllBytes(oversizePath);
+    var central = oversizeBytes.AsSpan().IndexOf(new byte[] { 0x50, 0x4b, 0x01, 0x02 });
+    Check(central >= 0, "ZIP central directory exists");
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(oversizeBytes.AsSpan(central + 24, 4), 1_500_000_001);
+    File.WriteAllBytes(oversizePath, oversizeBytes);
+    try { _ = BackupReader.Read(oversizePath); throw new InvalidOperationException("oversized ZIP entry accepted"); }
+    catch (InvalidDataException ex) { Check(ex.Message.Contains("employees.jsonl", StringComparison.Ordinal) && ex.Message.Contains("بايت", StringComparison.Ordinal), "oversized entry is identified with its size"); }
     BackupDestination.Guard(salaryBackup, combinedPayroll.Snapshot); BackupDestination.Guard(Path.Combine(root, "not-yet.zip"), snapshot);
     try { BackupDestination.Guard(salaryBackup, snapshot); throw new InvalidOperationException("backup file overwritten by a copy missing a month"); }
     catch (InvalidDataException) { }

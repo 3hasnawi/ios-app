@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Encodings.Web;
 using System.Text;
 using Claunia.PropertyList;
 
@@ -9,6 +10,8 @@ namespace SalaryDesktop.Core;
 
 public static class ReconciliationBackupExport
 {
+    // JSON في أرشيف النسخة بيانات لا تُعرض في HTML؛ حفظ العربية مباشرة يمنع تضخم السجلات بـ \\uXXXX.
+    private static readonly JsonSerializerOptions BackupJson = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     private static bool SameEmployee(Employee a, Employee b) => a.Month == b.Month && a.Name == b.Name && a.Rank == b.Rank && a.Workplace == b.Workplace && a.Net == b.Net &&
         SameBytes(a.Items, b.Items) && SameBytes(a.Details, b.Details) && SameBytes(a.RawColumns, b.RawColumns);
     private static bool SameBytes(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
@@ -99,7 +102,7 @@ public static class ReconciliationBackupExport
                     else if (changedAccounts && oldEntry.FullName == "accounts.jsonl")
                     {
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
-                        foreach (var account in source.Accounts) writer.WriteLine(JsonSerializer.Serialize(new { entity = account.Entity, iban = account.Iban, branch = account.Branch, swift = account.Swift, localAccount = account.LocalAccount }));
+                        foreach (var account in source.Accounts) writer.WriteLine(JsonSerializer.Serialize(new { entity = account.Entity, iban = account.Iban, branch = account.Branch, swift = account.Swift, localAccount = account.LocalAccount }, BackupJson));
                     }
                     else if (changedMonths && oldEntry.FullName == "months.jsonl")
                     {
@@ -115,18 +118,18 @@ public static class ReconciliationBackupExport
                             var currentEmployees = source.Employees.Where(e => e.Month == month.Name).ToArray();
                             var oldEmployees = original.Employees.Where(e => e.Month == month.Name).ToArray();
                             if (!SameEmployees(oldEmployees, currentEmployees)) node["summary"] = Convert.ToBase64String(Summary(currentEmployees));
-                            writer.WriteLine(node.ToJsonString());
+                            writer.WriteLine(node.ToJsonString(BackupJson));
                         }
                     }
                     else if (changedEmployees && oldEntry.FullName == "employees.jsonl")
                     {
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
-                        foreach (var e in source.Employees) writer.WriteLine(JsonSerializer.Serialize(new { month = e.Month, name = e.Name, rank = e.Rank, workplace = e.Workplace, net = e.Net, items = e.Items, details = e.Details, rawColumns = e.RawColumns }));
+                        foreach (var e in source.Employees) writer.WriteLine(JsonSerializer.Serialize(new { month = e.Month, name = e.Name, rank = e.Rank, workplace = e.Workplace, net = e.Net, items = e.Items, details = e.Details, rawColumns = e.RawColumns }, BackupJson));
                     }
                     else if (changedDeductions && oldEntry.FullName == "deductions.jsonl")
                     {
                         using var writer = new StreamWriter(outStream, new UTF8Encoding(false), 4096, true);
-                        foreach (var d in source.Deductions) writer.WriteLine(JsonSerializer.Serialize(new { month = d.Month, name = d.Name, title = d.Title, amount = d.Amount, note = d.Note, rank = d.Rank }));
+                        foreach (var d in source.Deductions) writer.WriteLine(JsonSerializer.Serialize(new { month = d.Month, name = d.Name, title = d.Title, amount = d.Amount, note = d.Note, rank = d.Rank }, BackupJson));
                     }
                     else if (changedBooks && oldEntry.FullName == "books/index.json")
                     {
