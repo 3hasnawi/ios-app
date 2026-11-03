@@ -42,7 +42,7 @@ public static class ReconciliationBackupExport
     private static bool SameRestoredEmployees(IReadOnlyList<Employee> expected, IReadOnlyList<Employee> actual) =>
         expected.Count == actual.Count && expected.Zip(actual).All(p =>
             SameEmployee(p.First, p.Second) || SameEmployee(p.First with { RawColumns = CompactRawColumns(p.First.RawColumns) }, p.Second));
-    private static byte[] Summary(IEnumerable<Employee> employees)
+    internal static byte[] Summary(IEnumerable<Employee> employees)
     {
         var result = new Dictionary<string, (int Count, decimal Total)>(StringComparer.Ordinal);
         foreach (var employee in employees)

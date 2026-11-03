@@ -18,7 +18,7 @@ public static class SharedPayrollCandidate
     private sealed record SchemaLine(string Id, byte[] Data);
     private static string Hash(Stream stream) => Convert.ToHexString(SHA256.HashData(stream));
 
-    private static IEnumerable<byte[]> Lines(Stream input)
+    internal static IEnumerable<byte[]> Lines(Stream input)
     {
         var buffer = new byte[65_536];
         using var pending = new MemoryStream();
@@ -53,7 +53,7 @@ public static class SharedPayrollCandidate
 
     /// يختبر إدخال ملفات محدثة إلى نسخة مؤقتة قبل الترحيل. المنتج للمحتوى مسؤول عن تجهيز جميع
     /// السجلات والفهارس والإعدادات بعد دمج التعديلات؛ هذه الدالة وحدها لا تقرأ الاستيرادات المحلية.
-    public static void CreateMerged(string source, string destination, IReadOnlyDictionary<string, Action<Stream>> replacements)
+    public static void CreateMerged(string source, string destination, IReadOnlyDictionary<string, Action<Stream>> replacements, string? expectedSourceDigest = null)
     {
         var original = Path.GetFullPath(source); var target = Path.GetFullPath(destination);
         if (string.Equals(original, target, StringComparison.OrdinalIgnoreCase) || File.Exists(target)) throw new InvalidDataException("اختر ملفاً جديداً لحماية النسخة الأصلية.");
@@ -63,6 +63,8 @@ public static class SharedPayrollCandidate
         {
             using var originalFile = new FileStream(original, FileMode.Open, FileAccess.Read, FileShare.Read);
             var sourceHash = Hash(originalFile); originalFile.Position = 0;
+            if (expectedSourceDigest is not null && !string.Equals(sourceHash, expectedSourceDigest, StringComparison.Ordinal))
+                throw new InvalidDataException("تغيّرت النسخة الأصلية؛ أعد فتحها قبل الدمج.");
             using var originalZip = new ZipArchive(originalFile, ZipArchiveMode.Read, true);
             var old = Unique(originalZip);
             if (replacements.Keys.Any(name => !old.ContainsKey(name) || name is SchemasName or OriginalManifestName))

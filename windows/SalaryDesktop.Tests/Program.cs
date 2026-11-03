@@ -224,6 +224,27 @@ try
     var salaryState = payrollStore.Import(snapshot, originalPayroll, salaryPreview, false);
     var combinedPayroll = payrollStore.Import(snapshot, salaryState, deductionPreview, false);
     Check(combinedPayroll.Snapshot.Employees.Count == snapshot.Employees.Count + 1 && combinedPayroll.Snapshot.Deductions.Count == snapshot.Deductions.Count + 1 && payrollStore.Load(snapshot).Snapshot.Months.Count == snapshot.Months.Count + 1, "new month imports and persists both workbook types");
+    var overlayCandidatePath = Path.Combine(root, "payroll-overlay-candidate.zip");
+    SharedPayrollOverlay.Create(snapshot, combinedPayroll, overlayCandidatePath);
+    var overlayRestoredPath = Path.Combine(root, "payroll-overlay-restored.zip");
+    SharedPayrollCandidate.RestoreOriginal(overlayCandidatePath, overlayRestoredPath);
+    var overlaySnapshot = BackupReader.Read(overlayRestoredPath);
+    Check(overlaySnapshot.Months.SequenceEqual(combinedPayroll.Snapshot.Months) &&
+          overlaySnapshot.Employees.Count == combinedPayroll.Snapshot.Employees.Count && overlaySnapshot.Deductions.SequenceEqual(combinedPayroll.Snapshot.Deductions) &&
+          overlaySnapshot.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!.AsSpan().SequenceEqual(combinedPayroll.Snapshot.Employees.Single(e => e.Month == salaryPreview.Month).RawColumns!),
+        "payroll overlay candidate includes pending imported months and retains their original columns");
+    using (var beforeZip = ZipFile.OpenRead(snapshot.SourcePath))
+    using (var afterZip = ZipFile.OpenRead(overlayRestoredPath))
+    using (var beforeRows = beforeZip.GetEntry("employees.jsonl")!.Open())
+    using (var afterRows = afterZip.GetEntry("employees.jsonl")!.Open())
+    {
+        using var firstBefore = new StreamReader(beforeRows, Encoding.UTF8); using var firstAfter = new StreamReader(afterRows, Encoding.UTF8);
+        Check(firstBefore.ReadLine() == firstAfter.ReadLine(), "payroll overlay preserves original unrelated employee rows");
+    }
+    var staleOverlay = Path.Combine(root, "stale-overlay.zip");
+    try { SharedPayrollOverlay.Create(snapshot with { SourceDigest = new string('A', 64) }, combinedPayroll, staleOverlay); throw new InvalidOperationException("stale source accepted"); }
+    catch (InvalidDataException) { }
+    Check(!File.Exists(staleOverlay), "stale source does not create a candidate");
     try { _ = payrollStore.Import(snapshot, originalPayroll, salaryPreview, true); throw new InvalidOperationException("stale payroll import accepted"); }
     catch (InvalidDataException) { }
     try { _ = payrollStore.Import(snapshot, combinedPayroll, salaryPreview, false); throw new InvalidOperationException("unreviewed salary replacement accepted"); }
@@ -262,6 +283,16 @@ try
         "large streamed payroll survives save and reload");
     var replacement = salaryPreview with { Employees = [salaryPreview.Employees.Single() with { Net = 1001m }] };
     var replacedPayroll = payrollStore.Import(snapshot, combinedPayroll, replacement, true);
+    var replaceOverlay = Path.Combine(root, "replace-overlay-v7.zip");
+    var replaceOverlayRestored = Path.Combine(root, "replace-overlay-restored.zip");
+    SharedPayrollOverlay.Create(snapshot, replacedPayroll, replaceOverlay);
+    SharedPayrollCandidate.RestoreOriginal(replaceOverlay, replaceOverlayRestored);
+    var replaceOverlaySnapshot = BackupReader.Read(replaceOverlayRestored);
+    Check(replaceOverlaySnapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m &&
+          replaceOverlaySnapshot.Deductions.Any(d => d.Month == replacement.Month) &&
+          replaceOverlaySnapshot.Employees.Count == replacedPayroll.Snapshot.Employees.Count &&
+          replaceOverlaySnapshot.Deductions.Count == replacedPayroll.Snapshot.Deductions.Count,
+        "replacing a salary month in overlay keeps its separately imported deductions");
     Check(Directory.GetFiles(Path.Combine(root, "payroll-data", snapshot.SourceDigest), "*.json").Length >= 4 && replacedPayroll.Snapshot.Employees.Single(e => e.Month == replacement.Month).Net == 1001m && replacedPayroll.Snapshot.Deductions.Any(d => d.Month == replacement.Month), "reviewed salary replacement preserves deduction records and earlier versions");
     var salaryBackup = Path.Combine(root, "salary-import-backup.zip"); ReconciliationBackupExport.Write(combinedPayroll.Snapshot, [], salaryBackup);
     using (var archive = ZipFile.OpenRead(salaryBackup))
