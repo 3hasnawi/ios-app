@@ -372,9 +372,16 @@ final class NavigationTests: XCTestCase {
             if wait(entry, "بطاقة التقارير") { entry.tap() }
             wait(app.navigationBars["التقارير"], "التقارير")
             wait(element("reportsMonthMenu"), "زر شهر التقارير")
+            let transfers = element("transferFilesButton")
+            if wait(transfers, "زر ملفات التحويل في التقارير") {
+                transfers.tap()
+                wait(app.navigationBars["ملفات التحويل"], "ملفات التحويل")
+                app.navigationBars.buttons.element(boundBy: 0).tap()
+            }
             let card = element("entitiesCard")
             if wait(card, "بطاقة جهات التنفيذ") {
                 card.tap()
+                if element("transferFilesButton").exists { issue("زر ملفات التحويل لا يزال في جهات التنفيذ") }
                 let row = element("reportGroup")
                 if wait(row, "قائمة الجهات") {
                     row.tap()

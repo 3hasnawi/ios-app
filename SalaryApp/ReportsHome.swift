@@ -13,6 +13,7 @@ enum ReportsRoute: Hashable {
     case employeeDeductions
     case salaryAudit
     case salaryTrust(SalaryTrust.PaymentFilter)
+    case transferFiles
     case group(ReportGroup)
 }
 
@@ -74,6 +75,7 @@ struct ReportsView: View {
         case .salaryAudit: SalaryAuditView(months: months.map(\.name))
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
+        case .transferFiles: TransferFilesView()
         case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
         case .group(let group): ReportDetailView(group: group)
         }
@@ -111,8 +113,15 @@ struct ReportsView: View {
                             .accessibilityIdentifier("closeReports")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !months.isEmpty { filters }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if let month {
+                        Button(tr("ملفات التحويل", "Transfer files"), systemImage: "arrow.left.arrow.right") {
+                            monthName = month.name
+                            open(.transferFiles)
+                        }
+                        .accessibilityIdentifier("transferFilesButton")
+                        filters
+                    }
                 }
             }
             .navigationDestination(for: ReportsRoute.self) { route in destination(route) }
@@ -722,7 +731,6 @@ struct EntitiesView: View {
     @State private var previewGroup: ReportGroup?
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @AppStorage("transferPayrollAccountLinks") private var accountLinksData = Data()
-    @State private var showTransfers = false
 
     private var accountsByKey: [String: SavedExecutionAccount] {
         ((try? ExecutionAccountStore.decode(accountData)) ?? []).reduce(into: [:]) { result, account in
@@ -775,14 +783,9 @@ struct EntitiesView: View {
         }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
         .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
-        .navigationDestination(isPresented: $showTransfers) { TransferFilesView() }
         .navigationTitle(tr("جهات التنفيذ", "Execution entities"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(tr("ملفات التحويل", "Transfer files"), systemImage: "arrow.left.arrow.right") { showTransfers = true }
-                    .accessibilityIdentifier("transferFilesButton")
-            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     showExport = true
