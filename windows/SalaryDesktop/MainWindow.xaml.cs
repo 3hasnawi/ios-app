@@ -25,6 +25,8 @@ public partial class MainWindow : Window
     private readonly LocalTransferLinks linkStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "TransferLinks"));
     private readonly LocalPayrollImports payrollStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "PayrollImports"));
     private readonly LocalSalaryTrustStore trustStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "SalaryTrust"));
+    private SalaryTrustWindow? trustController;
+    private BackupSnapshot? trustSource;
     private readonly LocalReconciliationStore reconciliationStore = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SalaryDesktop", "Reconciliations"));
     private string page = "home";
     private string shownPage = "";
@@ -60,6 +62,7 @@ public partial class MainWindow : Window
         };
         Closing += WindowClosing;
         Closed += (_, _) => { tray?.Dispose(); tray = null; }; 
+        Closed += (_, _) => { TrustPanel.Content = null; trustController?.Close(); trustController = null; };
         Closed += (_, _) => { if (previewFolder is not null) { try { Directory.Delete(previewFolder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } } };
     }
 
@@ -233,22 +236,25 @@ public partial class MainWindow : Window
     private void RenderPage()
     {
         if (!IsInitialized || HomePanel is null || DataTable is null) return;
+        bool enteringTrust = page == "trust" && shownPage != "trust";
         RefreshBackupReminder(); UpdateLoading(false);
         HomePanel.Visibility = page == "home" ? Visibility.Visible : Visibility.Collapsed;
         BankPanel.Visibility = page == "bank" ? Visibility.Visible : Visibility.Collapsed;
         TransferPanel.Visibility = page == "transfer" ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
         ArchivePanel.Visibility = page == "archive" ? Visibility.Visible : Visibility.Collapsed;
+        TrustPanel.Visibility = page == "trust" ? Visibility.Visible : Visibility.Collapsed;
+        NavTrustButton.Tag = page == "trust" ? "active" : null;
         bool available = DataPages.Contains(page);
         DataPanel.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
         StaffReloadButton.Visibility = page == "staff" ? Visibility.Visible : Visibility.Collapsed;
-        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && page != "archive" && !available ? Visibility.Visible : Visibility.Collapsed;
+        UnavailablePanel.Visibility = page != "home" && page != "bank" && page != "transfer" && page != "settings" && page != "archive" && page != "trust" && !available ? Visibility.Visible : Visibility.Collapsed;
         var month = SelectedMonth;
         PageTitle.Text = page switch
         {
             "payroll" => "الرواتب", "deductions" => "الاستقطاعات", "groups" => "جهات التنفيذ",
             "accounts" => "حسابات جهات التنفيذ", "staff" => "الملاك", "archive" => "الأرشيف", "bank" => "كشف حساب البنك",
-            "transfer" => "ملفات التحويل", "settings" => "الإعدادات", _ => Greeting()
+            "transfer" => "ملفات التحويل", "trust" => "أمانات الرواتب", "settings" => "الإعدادات", _ => Greeting()
         };
         PageSubtitle.Text = page switch
         {
@@ -260,7 +266,7 @@ public partial class MainWindow : Window
             "archive" => "الكتب والإشعارات: إضافة من ملف أو ماسح ضوئي، وربطها بالشهر والجهة",
             "bank" => month.Length > 0 ? $"مبالغ {month} للمراجعة مع المصرف" : "اختر شهراً",
             "transfer" => month.Length > 0 ? $"{month} · ملفات المصارف والكتب" : "اختر شهراً",
-            "settings" => "النسخ الاحتياطي والبيانات المحلية",
+            "settings" => "النسخ الاحتياطي والبيانات المحلية", "trust" => "رواتب الكاش غير المستلمة · الدفتر المشترك مع الآيفون",
             _ => HomeSubtitle(month)
         };
         GlobalSearchButton.Visibility = Visibility.Collapsed;
@@ -268,7 +274,7 @@ public partial class MainWindow : Window
         {
             CloseInspector();
             shownPage = page;
-            UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, "archive" => ArchivePanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
+            UIElement panel = page switch { "home" => HomePanel, "bank" => BankPanel, "transfer" => TransferPanel, "settings" => SettingsPanel, "archive" => ArchivePanel, "trust" => TrustPanel, _ => available ? (UIElement)DataPanel : UnavailablePanel };
             panel.BeginAnimation(OpacityProperty, new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(170)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
         }
         if (page == "home") { RenderHome(); return; }
@@ -276,6 +282,7 @@ public partial class MainWindow : Window
         if (page == "transfer") { RenderTransfers(); return; }
         if (page == "settings") { BackupExport.IsEnabled = snapshot is not null; ShowSettings(); return; }
         if (page == "archive") { RenderArchive(); return; }
+        if (page == "trust") { RenderSalaryTrust(enteringTrust); return; }
         if (!available)
         {
             UnavailableTitle.Text = PageTitle.Text;
@@ -484,11 +491,39 @@ public partial class MainWindow : Window
     /// استيراد ملف رواتب أو استقطاعات شهر؛ الشهر من اسم الملف إن عُرف، وإلا يكتبه المستخدم في نافذة المراجعة.
     private void OpenSalaryTrust(object sender, RoutedEventArgs e)
     {
+        if (page == "trust" && shownPage == page) return;
+        foreach (var item in NavItems) item.IsChecked = false;
+        page = "trust";
+        searchDelay.Stop();
+        if (SearchBox is not null) SearchBox.Text = "";
+        RenderPage();
+    }
+
+    private void RenderSalaryTrust(bool entering)
+    {
         var source = snapshot;
-        if (source is null) { Ui.Message(this, "افتح نسخة احتياطية أو استورد بيانات الرواتب أولاً.", "أمانات الرواتب"); return; }
-        try { new SalaryTrustWindow(source, trustStore, () => ReferenceEquals(snapshot, source) && !loading && !backingUp) { Owner = this }.ShowDialog(); RefreshBackupReminder(true); }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-        { Ui.Message(this, "تعذّر فتح دفتر الأمانات.\n" + ex.Message, "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        try
+        {
+            if (!ReferenceEquals(trustSource, source) || (source is not null && trustController is null))
+            {
+                TrustPanel.Content = null;
+                trustController?.Close(); trustController = null; trustSource = source;
+                if (source is not null)
+                {
+                    var controller = new SalaryTrustWindow(source, trustStore, () => ReferenceEquals(snapshot, source) && !loading && !backingUp);
+                    controller.DataChanged = () => RefreshBackupReminder(true);
+                    trustController = controller;
+                    TrustPanel.Content = controller.TakeEmbeddedView();
+                }
+            }
+            else if (entering && trustController is not null) trustController.ReloadEmbedded();
+            if (source is null) TrustPanel.Content = new TextBlock { Text = "افتح نسخة احتياطية أو استورد بيانات الرواتب أولاً.", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 16 };
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException or OverflowException)
+        {
+            TrustPanel.Content = new TextBlock { Text = "تعذّر فتح دفتر الأمانات.\n" + ex.Message, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            trustController?.Close(); trustController = null; trustSource = null;
+        }
     }
 
     private async Task<bool> ImportPayrollFrom(string path, string? month = null, bool quiet = false)

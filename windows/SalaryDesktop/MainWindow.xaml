@@ -53,7 +53,7 @@
 <RadioButton GroupName="SalaryNav" x:Name="NavArchive" Style="{StaticResource NavItem}" Tag="archive" Checked="Navigate" ToolTip="الأرشيف · Ctrl+5">
                   <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource AccentSoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Accent}" Text="&#xE7B8;"/></Border><TextBlock Text="الأرشيف" VerticalAlignment="Center"/></StackPanel>
                 </RadioButton>
-<Button Style="{StaticResource NavButton}" Click="OpenSalaryTrust" ToolTip="أمانات رواتب الكاش غير المستلمة (الدفتر المشترك مع الآيفون)">
+<Button x:Name="NavTrustButton" Style="{StaticResource NavButton}" Click="OpenSalaryTrust" ToolTip="أمانات رواتب الكاش غير المستلمة (الدفتر المشترك مع الآيفون)">
                     <StackPanel Orientation="Horizontal"><Border Style="{StaticResource NavTile}" Tag="{DynamicResource PrimarySoft}"><TextBlock Style="{StaticResource NavGlyph}" Tag="{DynamicResource Primary}" Text="&#xEA18;"/></Border><TextBlock Text="أمانات الرواتب" VerticalAlignment="Center"/></StackPanel>
                   </Button>
 <RadioButton GroupName="SalaryNav" x:Name="NavSettings" Style="{StaticResource NavItem}" Tag="settings" Checked="Navigate" ToolTip="الإعدادات · Ctrl+0">
@@ -136,6 +136,7 @@
       </Border>
 
       <Grid Grid.Row="2">
+        <ContentControl x:Name="TrustPanel" Visibility="Collapsed"/>
         <!-- الرئيسية «ماذا أفعل الآن»: بحث كبير وما فُتح مؤخراً، ثم الخطوة التالية المقترحة من حالة الشهر، ثم أرقام الشهر، ثم أدواتك بالأكثر استخداماً. -->
         <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
           <StackPanel MaxWidth="1240">

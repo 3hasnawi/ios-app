@@ -27,6 +27,22 @@ public partial class SalaryTrustWindow : Window
     private readonly IReadOnlyDictionary<Guid, string> bookNames;
     private readonly Func<bool> current;
     private SalaryTrustSnapshot state;
+    private FrameworkElement? embeddedView;
+    internal Action? DataChanged { get; set; }
+    private Window DialogOwner => embeddedView is null ? this : Window.GetWindow(embeddedView) ?? Application.Current.MainWindow ?? this;
+
+    internal FrameworkElement TakeEmbeddedView()
+    {
+        var view = (FrameworkElement)Content;
+        Content = null;
+        embeddedView = view;
+        view.Margin = new Thickness(0);
+        CloseTrustButton.IsCancel = false;
+        CloseTrustButton.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    internal void ReloadEmbedded() { state = store.Load(source); Render(); }
     private bool syncing;
     private IReadOnlyList<SalaryTrustEntry> shown = [];
     internal static string Number(long n) => n.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
@@ -93,22 +109,22 @@ public partial class SalaryTrustWindow : Window
 
     private bool Save(SalaryTrustLedger next)
     {
-        if (!current()) { Ui.Message(this, "تغيّرت النسخة المفتوحة أو توجد عملية نسخ جارية؛ أعد فتح دفتر الأمانات.", "أمانات الرواتب"); return false; }
-        try { state = store.Save(source, state, next); Render(); return true; }
+        if (!current()) { Ui.Message(DialogOwner, "تغيّرت النسخة المفتوحة أو توجد عملية نسخ جارية؛ أعد فتح دفتر الأمانات.", "أمانات الرواتب"); return false; }
+        try { state = store.Save(source, state, next); Render(); DataChanged?.Invoke(); return true; }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
-        { Ui.Message(this, ex.Message, "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
+        { Ui.Message(DialogOwner, ex.Message, "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
     }
 
     // ——— الملف الافتتاحي وكاش الأشهر ———
     private async void ImportOpening(object sender, RoutedEventArgs e)
     {
-        if (state.Ledger.OpeningImported || state.Ledger.Entries.Count > 0) { Ui.Message(this, "الدفتر غير فارغ؛ لم تُستبدل البيانات.", "أمانات الرواتب"); return; }
+        if (state.Ledger.OpeningImported || state.Ledger.Entries.Count > 0) { Ui.Message(DialogOwner, "الدفتر غير فارغ؛ لم تُستبدل البيانات.", "أمانات الرواتب"); return; }
         var dialog = new OpenFileDialog { Title = "اختيار ملف الأمانات الافتتاحي", Filter = "Excel (*.xlsx)|*.xlsx", CheckFileExists = true };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(DialogOwner) != true) return;
         try
         {
             var ledger = await Task.Run(() => SalaryTrustSpreadsheet.Read(dialog.FileName));
-            var answer = Ui.Message(this,
+            var answer = Ui.Message(DialogOwner,
                 $"عدد السجلات: {ledger.Entries.Count:N0}\nمصروف بالكامل («صرف»): {ledger.Entries.Count(x => x.LegacyPaid):N0}\nللمراجعة دون احتساب («قطع علاقة تقاعد»): {ledger.Entries.Count(x => x.ReviewPending):N0}\nالمتبقي المؤكد: {Number(SalaryTrust.Outstanding(ledger.Entries))} د.ع\n\nاستورد الملف على جهاز واحد فقط، ثم انقل نسخته الاحتياطية إلى الجهاز الآخر. لن تتغير البيانات قبل التأكيد.\n\nهل تريد الاستيراد؟",
                 "مراجعة ملف الأمانات", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes || !Save(ledger)) return;
@@ -120,49 +136,49 @@ public partial class SalaryTrustWindow : Window
                 try { state = await Task.Run(() => store.AddCash(source, month.Name)); }
                 catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException) { problems.Add(month.Name + ": " + ex.Message); }
             }
-            Render();
-            if (problems.Count > 0) Ui.Message(this, "استُورد الرصيد الافتتاحي، لكن بعض الأشهر تحتاج مراجعة:\n" + string.Join("\n", problems), "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Render(); DataChanged?.Invoke();
+            if (problems.Count > 0) Ui.Message(DialogOwner, "استُورد الرصيد الافتتاحي، لكن بعض الأشهر تحتاج مراجعة:\n" + string.Join("\n", problems), "أمانات الرواتب", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
-        { Ui.Message(this, ex.Message, "استيراد الأمانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(DialogOwner, ex.Message, "استيراد الأمانات", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private async void AddCash(object sender, RoutedEventArgs e)
     {
         if (!current()) return;
-        if (!state.Ledger.OpeningImported) { Ui.Message(this, "استورد ملف الأمانات الافتتاحي أولاً (هنا أو في الآيفون ثم افتح نسخته).", "كاش الشهر"); return; }
+        if (!state.Ledger.OpeningImported) { Ui.Message(DialogOwner, "استورد ملف الأمانات الافتتاحي أولاً (هنا أو في الآيفون ثم افتح نسخته).", "كاش الشهر"); return; }
         var months = source.Months.Where(m => MonthNames.SortKey(m.Name) > SalaryTrust.OpeningCutoff).OrderByDescending(m => MonthNames.SortKey(m.Name)).Select(m => m.Name).ToArray();
-        if (months.Length == 0) { Ui.Message(this, "لا توجد أشهر رواتب مستوردة بعد أيلول 2026.", "كاش الشهر"); return; }
-        var month = TrustDialogs.PickMonth(this, months);
+        if (months.Length == 0) { Ui.Message(DialogOwner, "لا توجد أشهر رواتب مستوردة بعد أيلول 2026.", "كاش الشهر"); return; }
+        var month = TrustDialogs.PickMonth(DialogOwner, months);
         if (month is null) return;
         try
         {
             var before = state.Ledger.Entries.Count;
-            state = await Task.Run(() => store.AddCash(source, month)); Render();
+            state = await Task.Run(() => store.AddCash(source, month)); Render(); DataChanged?.Invoke();
             var added = state.Ledger.Entries.Count - before;
-            Ui.Message(this, added > 0 ? $"أُضيف {added:N0} قيد من رواتب كاش {month} وعُدّت مودعة." : $"قائمة كاش {month} مسجلة كاملة؛ لا جديد.", "كاش الشهر");
+            Ui.Message(DialogOwner, added > 0 ? $"أُضيف {added:N0} قيد من رواتب كاش {month} وعُدّت مودعة." : $"قائمة كاش {month} مسجلة كاملة؛ لا جديد.", "كاش الشهر");
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException)
-        { Ui.Message(this, ex.Message, "كاش الشهر", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        { Ui.Message(DialogOwner, ex.Message, "كاش الشهر", MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     // ——— الربط بكتاب من الأرشيف ———
     private void LinkArchive(object sender, RoutedEventArgs e)
     {
         var selected = Table.SelectedItems.OfType<Row>().Select(r => r.Entry.Id).ToHashSet(StringComparer.Ordinal);
-        if (selected.Count == 0) { Ui.Message(this, "حدد قيداً أو مجموعة قيود أولاً.", "ربط كتاب الصرف"); return; }
+        if (selected.Count == 0) { Ui.Message(DialogOwner, "حدد قيداً أو مجموعة قيود أولاً.", "ربط كتاب الصرف"); return; }
         LinkBook(selected);
     }
     internal bool LinkBook(IReadOnlySet<string> ids)
     {
-        if (source.Books.Count == 0) { Ui.Message(this, "لا توجد كتب في أرشيف النسخة المفتوحة. امسح الكتاب في الآيفون واحفظ نسخة، ثم افتحها هنا.", "ربط كتاب الصرف"); return false; }
-        var book = TrustDialogs.PickBook(this, source, ids.Count, OpenBook);
+        if (source.Books.Count == 0) { Ui.Message(DialogOwner, "لا توجد كتب في أرشيف النسخة المفتوحة. امسح الكتاب في الآيفون واحفظ نسخة، ثم افتحها هنا.", "ربط كتاب الصرف"); return false; }
+        var book = TrustDialogs.PickBook(DialogOwner, source, ids.Count, OpenBook);
         if (book is null) return false;
         try
         {
-            if (Save(SalaryTrust.Link(state.Ledger, book.Id, ids))) { Ui.Message(this, "رُبط الكتاب بالقيود المحددة دون تسجيل صرف أو تغيير الرصيد.", "ربط كتاب الصرف"); return true; }
+            if (Save(SalaryTrust.Link(state.Ledger, book.Id, ids))) { Ui.Message(DialogOwner, "رُبط الكتاب بالقيود المحددة دون تسجيل صرف أو تغيير الرصيد.", "ربط كتاب الصرف"); return true; }
         }
-        catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "ربط كتاب الصرف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (InvalidDataException ex) { Ui.Message(DialogOwner, ex.Message, "ربط كتاب الصرف", MessageBoxButton.OK, MessageBoxImage.Warning); }
         return false;
     }
     internal void OpenBook(Window owner, ArchiveBook book)
@@ -183,14 +199,14 @@ public partial class SalaryTrustWindow : Window
     private void OpenSelected()
     {
         if (Table.SelectedItem is not Row row) return;
-        new SalaryTrustEntryWindow(this, row.Entry, source.Books) { Owner = this }.ShowDialog();
+        new SalaryTrustEntryWindow(this, row.Entry, source.Books) { Owner = DialogOwner }.ShowDialog();
     }
     /// يستبدل القيد إن لم يتغير منذ فتحه؛ يعيد القيد الجديد أو null.
     internal SalaryTrustEntry? Replace(SalaryTrustEntry original, SalaryTrustEntry changed)
     {
         var entries = state.Ledger.Entries.ToArray();
         var index = Array.FindIndex(entries, e => e.Id == original.Id);
-        if (index < 0 || !ReferenceEquals(entries[index], original)) { Ui.Message(this, "تغيّر القيد منذ فتحه؛ أعد فتحه.", "أمانات الرواتب"); return null; }
+        if (index < 0 || !ReferenceEquals(entries[index], original)) { Ui.Message(DialogOwner, "تغيّر القيد منذ فتحه؛ أعد فتحه.", "أمانات الرواتب"); return null; }
         entries[index] = changed;
         return Save(state.Ledger with { Entries = entries }) ? state.Ledger.Entries.First(e => e.Id == original.Id) : null;
     }
@@ -199,7 +215,7 @@ public partial class SalaryTrustWindow : Window
     // ——— الكشف ———
     private (ReportSheet Sheet, IReadOnlyList<SalaryTrustEntry> Entries)? Report()
     {
-        if (shown.Count == 0) { Ui.Message(this, "لا توجد قيود معروضة للتصدير.", "كشف الأمانات"); return null; }
+        if (shown.Count == 0) { Ui.Message(DialogOwner, "لا توجد قيود معروضة للتصدير.", "كشف الأمانات"); return null; }
         try
         {
             var month = (MonthPicker.SelectedItem as MonthOption)?.Label ?? "كل الأشهر";
@@ -207,10 +223,10 @@ public partial class SalaryTrustWindow : Window
             var entries = shown;
             return (SalaryTrustReports.Sheet(state.Ledger, entries, ReportSheet.HeaderFor(source), month, status, SearchBox.Text.Trim()), entries);
         }
-        catch (InvalidDataException ex) { Ui.Message(this, ex.Message, "كشف الأمانات", MessageBoxButton.OK, MessageBoxImage.Warning); return null; }
+        catch (InvalidDataException ex) { Ui.Message(DialogOwner, ex.Message, "كشف الأمانات", MessageBoxButton.OK, MessageBoxImage.Warning); return null; }
     }
-    private async void PreviewReport(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.Preview(this, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
-    private async void PrintReport(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.Print(this, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
-    private async void ExportPdf(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.SavePdf(this, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
-    private async void ExportExcel(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.SaveExcel(this, SalaryTrustReports.FileName, () => SalaryTrustReports.Excel(r.Sheet, r.Entries)); }
+    private async void PreviewReport(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.Preview(DialogOwner, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
+    private async void PrintReport(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.Print(DialogOwner, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
+    private async void ExportPdf(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.SavePdf(DialogOwner, SalaryTrustReports.FileName, assets => SalaryTrustReports.Pdf(r.Sheet, assets, DateTime.Now)); }
+    private async void ExportExcel(object sender, RoutedEventArgs e) { if (Report() is { } r) await Exports.SaveExcel(DialogOwner, SalaryTrustReports.FileName, () => SalaryTrustReports.Excel(r.Sheet, r.Entries)); }
 }

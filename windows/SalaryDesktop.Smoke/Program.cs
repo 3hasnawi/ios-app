@@ -501,6 +501,17 @@ static class Program
                     // القائمة الجانبية الثابتة: الإعدادات زر في بطاقة الحالة، والشارة على كشف البنك.
                     Check(((FrameworkElement)main.FindName("NavSettings")).IsVisible && ((FrameworkElement)main.FindName("SidebarBackup")).IsVisible, "sidebar status card was not shown");
                     Check(((FrameworkElement)main.FindName("BackupReminder")).Visibility == Visibility.Collapsed, "backup reminder shown without local changes");
+                    var mainTrustStore = (LocalSalaryTrustStore)typeof(MainWindow).GetField("trustStore", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main)!;
+                    mainTrustStore.Save(rich, mainTrustStore.Load(rich), fictionalTrust);
+                    ((Button)main.FindName("NavTrustButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(700);
+                    var embeddedTrust = (SalaryTrustWindow)typeof(MainWindow).GetField("trustController", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(main)!;
+                    var embeddedTable = (DataGrid)embeddedTrust.FindName("Table");
+                    Check(((FrameworkElement)main.FindName("TrustPanel")).IsVisible && embeddedTable.IsVisible && embeddedTable.Items.Count == 5 && !embeddedTrust.IsVisible && Window.GetWindow(embeddedTable) == main, "salary trust was not embedded in the main window");
+                    ((TextBox)embeddedTrust.FindName("SearchBox")).Text = "منتسب وهمي أول"; await Task.Delay(100);
+                    Check(embeddedTable.Items.Count == 1, "embedded trust search did not filter records");
+                    ((TextBox)embeddedTrust.FindName("SearchBox")).Text = ""; await Task.Delay(100);
+                    Shot(main, "51-salary-trust-embedded");
+                    await Navigate("home");
                     // الوضع الداكن.
                     Themes.Apply("dark"); await Task.Delay(500);
                     Check(((SolidColorBrush)Application.Current.Resources["Page"]).Color == (Color)ColorConverter.ConvertFromString("#0F1918"), "dark theme was not applied");

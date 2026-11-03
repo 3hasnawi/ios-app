@@ -174,6 +174,7 @@ public partial class MainWindow
         if (App.Unattended) return;
         if (UiPreferences.Current.Month is { } month && MonthPicker.Items.Contains(month)) MonthPicker.SelectedItem = month;
         if (UiPreferences.Current.Page is not { } last || last == "home") return;
+        if (last == "trust") { OpenSalaryTrust(this, new RoutedEventArgs()); return; }
         if (NavItems.FirstOrDefault(item => Equals(item.Tag, last)) is { } radio) radio.IsChecked = true;
     }
     private void SavePlacement()

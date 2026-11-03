@@ -84,7 +84,7 @@
     </Border>
 
     <DockPanel Grid.Row="4" Margin="0,12,0,0">
-      <Button DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>
+      <Button x:Name="CloseTrustButton" DockPanel.Dock="Left" Content="إغلاق" IsCancel="True" Click="CloseWindow" Padding="20,7"/>
       <TextBlock x:Name="ShownText" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="14,0,0,0" TextTrimming="CharacterEllipsis"/>
     </DockPanel>
   </Grid>

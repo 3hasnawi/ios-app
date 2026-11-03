@@ -262,6 +262,7 @@
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource TbgE8EEED}"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource PrimarySoft}"/></Trigger>
+              <Trigger Property="Tag" Value="active"><Setter TargetName="Pill" Property="Background" Value="{DynamicResource Primary}"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
