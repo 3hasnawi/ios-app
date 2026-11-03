@@ -57,7 +57,7 @@
             <DataGridTextColumn Header="المصروف" Binding="{Binding Paid}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             <DataGridTextColumn Header="المتبقي" Binding="{Binding Remaining}" Width="Auto" SortMemberPath="RemainingValue" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
             <DataGridTextColumn Header="الحالة" Binding="{Binding CaseStatus}" Width="Auto" MaxWidth="320" ElementStyle="{StaticResource CompactTableText}"/>
-            <DataGridTemplateColumn Header="الصرف" Width="1.1*" SortMemberPath="Status">
+            <DataGridTemplateColumn Header="الصرف" Width="Auto" MinWidth="100" MaxWidth="180" SortMemberPath="Status">
               <DataGridTemplateColumn.CellTemplate>
                 <DataTemplate>
                   <Border x:Name="Chip" CornerRadius="9" Padding="8,2" HorizontalAlignment="Left" Background="{DynamicResource TbgF1F5F4}">
