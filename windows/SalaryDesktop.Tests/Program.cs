@@ -340,8 +340,14 @@ try
         JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["الاسمي"] = "١٬٠٠١", ["توقيفات تقاعدية"] = "75", ["مجموع استقطاعات المصارف"] = "2500" }), null);
     var contractSnapshot = snapshot with { Employees = new[] { contractPerson } };
     var contractBank = BankStatementCalculator.Calculate(contractSnapshot, "أيلول 2026");
-    Check(contractBank.Cash == 500m && contractBank.ContractNominalShare == 120m && contractBank.ContractContribution == 195m &&
+    Check(contractBank.Cash == 500m && contractBank.ContractNominalShare == 121m && contractBank.ContractContribution == 196m &&
           contractBank.Breakdown["الرعاية الصحية"] == 20m && contractBank.Breakdown["شركة عراق الجوال"] == 100m, "contract rounding and deduction sources");
+    Check((contractBank with { ContractNominal = 1000m }).ContractNominalShare == 120m &&
+          (contractBank with { ContractNominal = 1001m }).ContractNominalShare == 121m &&
+          (contractBank with { ContractNominal = 1004m }).ContractNominalShare == 121m &&
+          (contractBank with { ContractNominal = 1005m }).ContractNominalShare == 121m &&
+          (contractBank with { ContractNominal = 1_000_000_000_001m }).ContractNominalShare == 120_000_000_001m,
+          "contract nominal share rounds upward once after the total, while whole amounts stay unchanged");
     var statusColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "صافي الراتب", "الملاحظات4" }, values = new[] { "500", "حالة تجريبية" } });
     var statusCash = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson with { RawColumns = statusColumns }] }, "أيلول 2026");
     Check(statusCash.Rows.Single().CaseStatus == "حالة تجريبية", "cash status comes from notes immediately after net salary");

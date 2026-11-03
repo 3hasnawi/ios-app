@@ -17,7 +17,7 @@ public sealed record BankSummary(string Month, decimal Cash, decimal Card, decim
     IReadOnlyDictionary<string, decimal> Breakdown, BankManualAmounts Manual, IReadOnlyList<string> Warnings, IReadOnlyList<string> TransferWarnings)
 {
     public decimal Net => Cash + Card + Unclassified;
-    public decimal ContractNominalShare => decimal.Truncate(ContractNominal * 12m / 100m);
+    public decimal ContractNominalShare => decimal.Ceiling(ContractNominal * 12m / 100m);
     public decimal ContractContribution => ContractNominalShare + ContractRetirement;
     public decimal BankTotal => Net + BankDeductions + Breakdown.Values.Sum() + ContractContribution + Manual.Total;
     public decimal ExecutionDifference => BankDeductions - ExecutionDeductions;
