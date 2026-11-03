@@ -1812,6 +1812,47 @@ try
     var archiveReplaced = archiveStore.Replace(archiveRaw, archiveEdited, addedBook.Id, singlePage);
     Check(archiveReplaced.Books.Single(b => b.Id == addedBook.Id).Pages == 1 && archiveReplaced.Books.Single(b => b.Id == originalBook.Id) is { Title: "كتاب وهمي بعد التعديل", Month: "تشرين الاول 2026", Entity: null }, "archive edit and file replacement");
     var archiveApplied = archiveStore.Apply(archiveRaw);
+    var capturePayrollStore = new LocalPayrollImports(Path.Combine(root, "capture-payroll"));
+    var capturePayroll = capturePayrollStore.Import(archiveApplied, capturePayrollStore.Load(archiveApplied), salaryPreview, false);
+    capturePayroll = capturePayrollStore.Import(archiveApplied, capturePayroll, deductionPreview, false);
+    var captureLinks = new LocalTransferLinks(Path.Combine(root, "capture-links"));
+    var captureLinksState = captureLinks.Load(capturePayroll.Snapshot);
+    var captureOldAccount = captureLinksState.Snapshot.Accounts[0];
+    captureLinksState = captureLinks.SaveAccount(capturePayroll.Snapshot, captureLinksState, captureOldAccount, captureOldAccount with { Iban = fakeReceiver, Branch = "فرع محفوظ وهمي", Swift = "" });
+    var captureReconciliation = new LocalReconciliationStore(Path.Combine(root, "capture-reconciliation"));
+    _ = captureReconciliation.Save(captureLinksState.Snapshot, captureReconciliation.Load(captureLinksState.Snapshot), [period]);
+    var captureTrust = new LocalSalaryTrustStore(Path.Combine(root, "capture-trust"));
+    _ = captureTrust.Save(captureLinksState.Snapshot, captureTrust.Load(captureLinksState.Snapshot), new SalaryTrustLedger(1, [], true));
+    var capture = new SharedPayrollSnapshotCapture(archiveStore, capturePayrollStore, captureLinks, captureReconciliation, captureTrust);
+    var capturedPath = Path.Combine(root, "all-local-candidate.zip"); var capturedLegacy = Path.Combine(root, "all-local-restored.zip");
+    var captureToken = capture.Create(archiveRaw, capturedPath); capture.VerifyCurrent(archiveRaw, captureToken);
+    SharedPayrollCandidate.RestoreOriginal(capturedPath, capturedLegacy);
+    var capturedRead = BackupReader.Read(capturedLegacy);
+    Check(capturedRead.Employees.Any(e => e.Month == salaryPreview.Month) && capturedRead.Deductions.Any(d => d.Month == deductionPreview.Month) &&
+          capturedRead.Accounts.Single().Branch == "فرع محفوظ وهمي" && capturedRead.Books.Any(b => b.Id == addedBook.Id) &&
+          BankReconciliation.ReadFromBackup(capturedRead).Single().Id == period.Id && SalaryTrust.ReadFromBackup(capturedRead).OpeningImported,
+        "captured candidate combines fictional payroll, deductions, links, archive, reconciliation and trust");
+    var capturedLocalBookPath = archiveReplaced.Files[addedBook.Id];
+    var capturedBookBytes = File.ReadAllBytes(capturedLocalBookPath);
+    try
+    {
+        File.AppendAllText(capturedLocalBookPath, "changed");
+        try { capture.VerifyCurrent(archiveRaw, captureToken); throw new InvalidOperationException("changed local PDF accepted as current"); }
+        catch (InvalidDataException) { }
+    }
+    finally { File.WriteAllBytes(capturedLocalBookPath, capturedBookBytes); }
+    capture.VerifyCurrent(archiveRaw, captureToken);
+    var latestLink = captureLinks.Load(capturePayroll.Snapshot);
+    var latestAccount = latestLink.Snapshot.Accounts.Single();
+    _ = captureLinks.SaveAccount(capturePayroll.Snapshot, latestLink, latestAccount, latestAccount with { Branch = "فرع مختلف وهمي" });
+    try { capture.VerifyCurrent(archiveRaw, captureToken); throw new InvalidOperationException("changed account accepted as current"); }
+    catch (InvalidDataException) { }
+    var nextCapturePath = Path.Combine(root, "all-local-candidate-next.zip");
+    var nextCaptureToken = capture.Create(archiveRaw, nextCapturePath);
+    var changedCaptureSalary = salaryPreview with { Employees = [salaryPreview.Employees.Single() with { Net = 1002m }] };
+    _ = capturePayrollStore.Import(archiveApplied, capturePayroll, changedCaptureSalary, true);
+    try { capture.VerifyCurrent(archiveRaw, nextCaptureToken); throw new InvalidOperationException("changed payroll accepted as current"); }
+    catch (InvalidDataException) { }
     var previewCopy = Path.Combine(root, "archive-local-copy.pdf");
     BackupReader.CopyBook(archiveApplied, archiveApplied.Books.Single(b => b.Id == addedBook.Id), previewCopy);
     Check(File.ReadAllBytes(previewCopy).AsSpan().SequenceEqual(singlePage), "local archive book opens from the Windows copy");

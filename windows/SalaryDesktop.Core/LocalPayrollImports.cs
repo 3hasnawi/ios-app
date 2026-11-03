@@ -93,6 +93,21 @@ public sealed class LocalPayrollImports(string directory)
         catch (Exception ex) when (ex is JsonException or ArgumentException or NullReferenceException or OverflowException)
         { throw new InvalidDataException("تعذّر فتح بيانات الرواتب المحلية؛ لم تُستبدل البيانات.", ex); }
     }
+    /// يتحقق من مراجعة الأشهر وسلامة ملفها دون تحميل جميع السجلات مرة أخرى.
+    public void VerifyRevision(BackupSnapshot source, string? expectedRevision)
+    {
+        var folder = Folder(source); var pointerPath = Path.Combine(folder, "current.json");
+        try
+        {
+            var actual = File.Exists(pointerPath) ? ReadPointer(pointerPath).Revision : null;
+            if (!string.Equals(actual, expectedRevision, StringComparison.Ordinal)) throw new InvalidDataException("تغيّرت بيانات الرواتب المحلية أثناء إعداد النسخة.");
+            if (actual is null) return;
+            using var input = File.OpenRead(Path.Combine(folder, actual + ".json"));
+            if (!string.Equals(Hash(input), actual, StringComparison.Ordinal)) throw new InvalidDataException("تغيّر ملف بيانات الرواتب المحلية.");
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or NullReferenceException or OverflowException)
+        { throw new InvalidDataException("تعذّر فحص مراجعة الرواتب المحلية.", ex); }
+    }
     public PayrollImportState Import(BackupSnapshot source, PayrollImportState expected, PayrollImportPreview preview, bool replaceExisting) => ImportBatch(source, expected, [preview], replaceExisting);
     public PayrollImportState ImportBatch(BackupSnapshot source, PayrollImportState expected, IReadOnlyList<PayrollImportPreview> previews, bool replaceExisting)
     {
