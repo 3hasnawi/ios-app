@@ -190,7 +190,7 @@ struct BankReconciliationView: View {
     @ViewBuilder private var summarySection: some View {
         if let totals {
             Section(tr("ملخص الحساب", "Account summary")) {
-                if account.isIncomplete {
+                if !period.isConfirmed && account.isIncomplete {
                     Label(tr("أكمل اسم الحساب والفرع وIBAN من إعداد الحساب لتظهر في الكشف.", "Complete the account name, branch and IBAN in Account settings so they appear on the statement."), systemImage: "info.circle")
                         .foregroundStyle(.orange)
                 }
@@ -202,23 +202,25 @@ struct BankReconciliationView: View {
                     Label(tr("متبقي من \(item.movement.description): \(Money.format(Double(item.remaining)))", "Remaining from \(item.movement.description): \(Money.format(Double(item.remaining)))"), systemImage: "arrow.uturn.backward.circle")
                         .foregroundStyle(.orange)
                 }
-                if totals.funding > 0 && !fundingDatesMatch { Label(tr("تاريخ التمويل لا يوافق بداية الفترة؛ راجعه قبل الاعتماد.", "The funding date does not match the period start; review it before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if totals.funding == 0 { Label(tr("لم تُسجّل حركة التمويل بعد.", "No funding movement has been recorded."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if totals.balance != 0 { Label(tr("الرصيد الختامي ليس صفراً.", "The closing balance is not zero."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if unresolvedCount > 0 { Label(tr("\(Num.format(unresolvedCount)) جهة لم تُصنّف؛ مجموعاتها غير مكتملة.", "\(Num.format(unresolvedCount)) entities are unclassified; their groups are incomplete."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if incompleteSources > 0 { Label(tr("\(Num.format(incompleteSources)) جهة تحتاج مراجعة بياناتها في ملفات التحويل.", "\(Num.format(incompleteSources)) entities need data review in transfer files."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if missingSuggestions > 0 { Label(tr("\(Num.format(missingSuggestions)) مبالغ مقترحة لم تُدرج؛ راجعها قبل اعتماد الكشف.", "\(Num.format(missingSuggestions)) suggested amounts were not added; review them before accepting the statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if !summary.executionMatched && (summary.executionCount > 0 || summary.bankDeductions != 0) { Label(tr("استقطاعات المصارف لا تطابق ملف جهات التنفيذ أو بيانات المطابقة ناقصة.", "Bank deductions do not match the execution data, or reconciliation data is incomplete."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if summary.missingNet > 0 || summary.missingContractNominal > 0 { Label(tr("بعض بيانات الرواتب أو اسمي العقود ناقصة؛ راجع المبالغ قبل الاعتماد.", "Some payroll or contract nominal data is missing; review amounts before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                if !staleSources.isEmpty { Label(tr("تغيّرت مصادر مبالغ مقترحة؛ احذف الحركات المتأثرة وأضفها بعد المراجعة.", "Suggested source amounts changed; remove affected movements and add them again after review."), systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
-                if unmatched > 0 { Label(tr("\(Num.format(unmatched)) حركة لم تؤشر مطابقتها مع الكشف الورقي.", "\(Num.format(unmatched)) movements are not checked against the paper statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                if !period.isConfirmed {
+                    if totals.funding > 0 && !fundingDatesMatch { Label(tr("تاريخ التمويل لا يوافق بداية الفترة؛ راجعه قبل الاعتماد.", "The funding date does not match the period start; review it before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if totals.funding == 0 { Label(tr("لم تُسجّل حركة التمويل بعد.", "No funding movement has been recorded."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if totals.balance != 0 { Label(tr("الرصيد الختامي ليس صفراً.", "The closing balance is not zero."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if unresolvedCount > 0 { Label(tr("\(Num.format(unresolvedCount)) جهة لم تُصنّف؛ مجموعاتها غير مكتملة.", "\(Num.format(unresolvedCount)) entities are unclassified; their groups are incomplete."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if incompleteSources > 0 { Label(tr("\(Num.format(incompleteSources)) جهة تحتاج مراجعة بياناتها في ملفات التحويل.", "\(Num.format(incompleteSources)) entities need data review in transfer files."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if missingSuggestions > 0 { Label(tr("\(Num.format(missingSuggestions)) مبالغ مقترحة لم تُدرج؛ راجعها قبل اعتماد الكشف.", "\(Num.format(missingSuggestions)) suggested amounts were not added; review them before accepting the statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if !summary.executionMatched && (summary.executionCount > 0 || summary.bankDeductions != 0) { Label(tr("استقطاعات المصارف لا تطابق ملف جهات التنفيذ أو بيانات المطابقة ناقصة.", "Bank deductions do not match the execution data, or reconciliation data is incomplete."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if summary.missingNet > 0 || summary.missingContractNominal > 0 { Label(tr("بعض بيانات الرواتب أو اسمي العقود ناقصة؛ راجع المبالغ قبل الاعتماد.", "Some payroll or contract nominal data is missing; review amounts before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if !staleSources.isEmpty { Label(tr("تغيّرت مصادر مبالغ مقترحة؛ احذف الحركات المتأثرة وأضفها بعد المراجعة.", "Suggested source amounts changed; remove affected movements and add them again after review."), systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+                    if unmatched > 0 { Label(tr("\(Num.format(unmatched)) حركة لم تؤشر مطابقتها مع الكشف الورقي.", "\(Num.format(unmatched)) movements are not checked against the paper statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                }
             }
         } else {
             Section { Text(tr("الفترة أو بيانات الحركات غير صالحة؛ راجعها قبل التصدير.", "The period or movement data is invalid; review it before exporting.")).foregroundStyle(.red) }
         }
     }
     @ViewBuilder private var addMovementSection: some View {
-        if let figuresFailure {
+        if !period.isConfirmed, let figuresFailure {
             Section { Text(tr("تعذّر تحميل بعض مبالغ الكتب: \(figuresFailure)", "Some letter amounts could not be loaded: \(figuresFailure)")).foregroundStyle(.orange) }
         }
         Section {
@@ -241,7 +243,7 @@ struct BankReconciliationView: View {
                     Button { editor = MovementDraft(movement) } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(movement.description).foregroundStyle(.primary)
-                            if staleSources.contains(where: { $0.id == movement.id }) { Text(tr("تغيّر المصدر؛ احذف الحركة وأعد إضافتها.", "Source changed; delete and re-add this movement.")).font(.caption).foregroundStyle(.red) }
+                            if !period.isConfirmed && staleSources.contains(where: { $0.id == movement.id }) { Text(tr("تغيّر المصدر؛ احذف الحركة وأعد إضافتها.", "Source changed; delete and re-add this movement.")).font(.caption).foregroundStyle(.red) }
                             Text("\(movement.date.formatted(date: .numeric, time: .omitted)) · \(movement.direction.title)")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
