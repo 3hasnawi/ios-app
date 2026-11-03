@@ -80,6 +80,10 @@ struct TransferLetterDraftView: View {
     }
     private var current: Bool {
         let record = months.first { $0.name == month }
+        if kind == .contracts {
+            do { if try ContractOverrides.read(month: month) != figures.contractOverrideSnapshot { return false } }
+            catch { return false }
+        }
         return record != nil && figures.month == month && currentAccounts == sourceAccounts && currentCategories == sourceCategories &&
             currentLinks == sourceLinks && currentReferences == references &&
             currentPayerName == payerName && currentPayerIBAN == payerIBAN && currentBoldFont == boldFont && currentRegularFont == regularFont &&
@@ -154,6 +158,9 @@ struct TransferLetterDraftView: View {
                 }
                 ForEach(customWarnings(currentCustomization), id: \.self) { warning in
                     Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                }
+                if kind == .contracts && figures.contractOverrideStale {
+                    Label(tr("تغيّر أساس العقود بعد التعديل اليدوي؛ راجع المبلغ من كشف البنك قبل إصدار الكتاب.", "The contract basis changed after the manual adjustment; review it in the bank statement before issuing the letter."), systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                 }
                 if kind == .contracts && figures.missingContractNominal > 0 {
                     Text(tr("يوجد \(Num.format(figures.missingContractNominal)) عقد بلا اسمي مقروء. مبلغ ١٢٪ أدناه محسوب من الاسمي المتوفر فقط؛ الاسمي المفقود غير محتسب.", "\(Num.format(figures.missingContractNominal)) contracts lack nominal pay. The 12% below uses available nominal pay only; missing amounts are excluded."))

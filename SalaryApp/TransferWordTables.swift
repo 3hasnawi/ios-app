@@ -33,6 +33,13 @@ nonisolated enum TransferWordTables {
     static func contracts(_ figures: TransferLetterFigures, eastern: Bool = false) throws -> TransferWordDocument.Table {
         guard (figures.missingContractNominal == 0 || figures.contractNominalReviewed), let nominal = figures.effectiveContractNominalShare,
               let total = figures.contractTotal, valid(nominal), valid(figures.contractRetirement), valid(total) else { throw Failure.incomplete }
+        if let delta = figures.contractAdjustment, delta != 0 {
+            guard delta.isFinite, delta.rounded() == delta, valid(abs(delta)) else { throw Failure.incomplete }
+            let signed = (delta < 0 ? "−" : "+") + (try letterAmount(abs(delta), eastern: eastern))
+            return .init(headers: ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "التعديل اليدوي", "المجموع"], rows: [
+                [try letterAmount(figures.contractRetirement, eastern: eastern), try letterAmount(nominal, eastern: eastern), signed, try letterAmount(total, eastern: eastern)]
+            ])
+        }
         return .init(headers: ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "المجموع"], rows: [
             [try letterAmount(figures.contractRetirement, eastern: eastern), try letterAmount(nominal, eastern: eastern), try letterAmount(total, eastern: eastern)]
         ])

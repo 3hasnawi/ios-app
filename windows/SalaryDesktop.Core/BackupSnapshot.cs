@@ -115,7 +115,7 @@ public static class BackupReader
             return result;
         }
         var manifest = ReadJson<Manifest>("manifest.json");
-        if (manifest.Version is < 1 or > 5 || manifest.Months is null || manifest.Employees < 0 || manifest.Deductions < 0 || manifest.Staff < 0)
+        if (manifest.Version is < 1 or > 6 || manifest.Months is null || manifest.Employees < 0 || manifest.Deductions < 0 || manifest.Staff < 0)
             throw new InvalidDataException("إصدار النسخة أو فهرسها غير مدعوم.");
         if (manifest.Months.Length == 0 && manifest.Employees == 0 && manifest.Deductions == 0 && manifest.Staff == 0 && (manifest.Accounts ?? 0) == 0 && (manifest.Books ?? 0) == 0)
             throw new InvalidDataException("النسخة لا تحتوي بيانات محفوظة.");
@@ -181,12 +181,18 @@ public static class BackupReader
                 throw new InvalidDataException("أحد ملفات الأرشيف ليس ملف PDF صالحاً.");
         }
         var monthIndex = months.ToDictionary(m => m.Name, StringComparer.Ordinal);
-        return new BackupSnapshot(Path.GetFullPath(file), digest, manifest.Version,
+        var result = new BackupSnapshot(Path.GetFullPath(file), digest, manifest.Version,
             manifest.Months.Select(name => monthIndex[name]).Select(m => new PayrollMonth(m.Name, m.EmployeeCount, m.DeductionCount)).ToArray(),
             employees.Select(e => new Employee(e.Month, e.Name, e.Rank ?? "", e.Workplace ?? "", e.Net, e.Items, e.Details, e.RawColumns)).ToArray(),
             deductions.Select(d => new Deduction(d.Month, d.Name, d.Title, d.Amount, d.Note ?? "", d.Rank ?? "")).ToArray(),
             staffCount,
             accounts.Select(a => new ExecutionAccount(a.Entity, a.Iban ?? "", a.Branch ?? "", a.Swift ?? "", a.LocalAccount)).ToArray(),
             books.Select(b => new ArchiveBook(b.Id, b.Title, b.Month, b.Pages, b.Entity, b.CreatedAt)).ToArray(), settingsPlists) { CreatedAt = Seconds(manifest.CreatedAt) };
+        if (settingsPlists.ContainsKey(ContractOverrides.SettingsKey))
+        {
+            if (manifest.Version < 6) throw new InvalidDataException("صيغة نسخة تعديل العقود غير متوافقة.");
+            _ = ContractOverrides.Read(result, "");
+        }
+        return result;
     }
 }

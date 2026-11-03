@@ -17,6 +17,14 @@ spec = importlib.util.spec_from_file_location("backup_server", Path(__file__).re
 server_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server_module)
 
+# النسخة القديمة لا تستبدل نسخة تتضمن حقول العقود المحمية.
+try:
+    server_module.ensure_no_missing_data({"version": 5, "months": ["test"], "employees": 1}, {"version": 6, "months": ["test"], "employees": 1})
+    raise AssertionError("legacy backup replaced v6")
+except ValueError:
+    pass
+server_module.ensure_no_missing_data({"version": 6, "months": ["test"], "employees": 1}, {"version": 6, "months": ["test"], "employees": 1})
+
 with tempfile.TemporaryDirectory() as directory:
     server_module.DATA = Path(directory)
     server = server_module.ThreadingHTTPServer(("127.0.0.1", 0), server_module.Handler)
@@ -152,7 +160,35 @@ with tempfile.TemporaryDirectory() as directory:
     for thread in threads: thread.start()
     for thread in threads: thread.join()
     assert sorted(outcomes) == [201, 409]
+    # تحقق من الحماية عبر HTTP: نسخة v5 لا تستبدل نسخة v6 حتى مع بصمة المراجعة الصحيحة.
+    prior = (server_module.DATA / "backup-current.zip").read_bytes()
+    protected = io.BytesIO()
+    with zipfile.ZipFile(protected, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"version": 6, "months": ["test"], "employees": 1}))
+    protected_data = protected.getvalue()
+    auth = {"Authorization": "Bearer " + server.token}
+    protected_headers = {**auth, "X-Content-SHA256": hashlib.sha256(protected_data).hexdigest(), "X-Base-SHA256": hashlib.sha256(prior).hexdigest()}
+    assert request("POST", "/v2/backups", protected_data, protected_headers)[0] == 201
+    downgrade_headers = {**auth, "X-Content-SHA256": hashlib.sha256(data).hexdigest(), "X-Base-SHA256": hashlib.sha256(protected_data).hexdigest()}
+    assert request("POST", "/v2/backups", data, downgrade_headers)[0] == 400
+    assert (server_module.DATA / "backup-current.zip").read_bytes() == protected_data
+    assert json.loads(request("GET", "/v1/status", headers=auth)[1])["backup_format_guard"] is True
     server.edit_sync_enabled = False
     assert request("POST", "/v1/backups", data, headers)[0] == 409
     server.shutdown()
+    # خدمة v1 الفعلية ترفض أيضاً استبدال نسخة v6 بنسخة من عميل قديم.
+    server_module.DATA = Path(directory) / "v1-guard"
+    server_module.DATA.mkdir()
+    guarded_server = server_module.ThreadingHTTPServer(("127.0.0.1", 0), server_module.Handler)
+    guarded_server.token = server.token
+    guarded_server.drive = server.drive
+    threading.Thread(target=guarded_server.serve_forever, daemon=True).start()
+    def guarded_post(payload):
+        conn = http.client.HTTPConnection("127.0.0.1", guarded_server.server_port, timeout=10)
+        conn.request("POST", "/v1/backups", payload, {"Authorization": "Bearer " + guarded_server.token, "X-Content-SHA256": hashlib.sha256(payload).hexdigest()})
+        response = conn.getresponse(); code = response.status; response.read(); conn.close(); return code
+    assert guarded_post(protected_data) == 201
+    assert guarded_post(data) == 400
+    assert (server_module.DATA / "backup-current.zip").read_bytes() == protected_data
+    guarded_server.shutdown()
     print("Backup server test passed")

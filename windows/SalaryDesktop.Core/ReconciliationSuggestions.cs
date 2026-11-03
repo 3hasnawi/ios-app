@@ -35,7 +35,8 @@ public static class ReconciliationSuggestions
             Add("foodCompany", "شركة عراق الجوال", food - fund - tax, $"payroll|{month}|foodCompany");
             Add("foodTax", "ضريبة عقد الإطعام", tax, $"payroll|{month}|foodTax");
             Add("treasury", "الضريبة والحماية الاجتماعية", summary.Breakdown["الضريبة"] + summary.Breakdown["الحماية الاجتماعية"], $"payroll|{month}|incomeTax", $"payroll|{month}|socialProtection");
-            if (summary.MissingContractNominal == 0)
+            if (summary.ContractOverrideStale) warnings.Add("تغير أساس العقود بعد التعديل اليدوي؛ لم يُقترح مبلغها.");
+            else if (summary.MissingContractNominal == 0)
                 Add("contracts", "ضمان العقود", summary.ContractContribution, $"payroll|{month}|contractNominal", $"payroll|{month}|contractRetirement");
             else warnings.Add("يوجد عقد بلا اسمي؛ لم يُقترح مبلغ ضمان العقود.");
         }

@@ -671,6 +671,24 @@ import CryptoKit
         let figures = try TransferLetterFigureRules.make(summary: summary, available: columns)
         try check(figures.foodFund == 3000 && figures.foodTax == 1746 && figures.foodCompany == 95254, "food allocation")
         try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1201 && figures.contractTotal == 1401 && figures.payrollCash == 700, "letter totals")
+        let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
+        let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
+        try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")
+        var adjustedSummary = summary
+        adjustedSummary.manualContractOverride = contractOverride
+        let adjustedFigures = try TransferLetterFigureRules.make(summary: adjustedSummary, available: columns)
+        try check(adjustedSummary.contractContribution == 1500 && adjustedFigures.contractTotal == 1500 && adjustedFigures.contractAdjustment == 99, "manual contract total is shared by bank and letter")
+        let adjustedTable = try TransferWordTables.contracts(adjustedFigures)
+        try check(adjustedTable.headers == ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "التعديل اليدوي", "المجموع"] && adjustedTable.rows[0] == ["200", "1201", "+99", "1500"], "manual difference appears in contract table")
+        adjustedSummary.contractNominal += 1
+        let staleFigures = try TransferLetterFigureRules.make(summary: adjustedSummary, available: columns)
+        try check(adjustedSummary.contractOverrideStale && staleFigures.contractTotal == nil, "changed contract basis requires manual review")
+        let futureJSON = Data("{\"شهر وهمي\":{\"total\":1500,\"nominal\":10001,\"retirement\":200,\"count\":1,\"missing\":0,\"future\":\"محفوظ\"}}".utf8)
+        let futureEdited = try ContractOverrides.setting(futureJSON, month: "شهر وهمي", value: contractOverride)
+        let futureObject = try JSONSerialization.jsonObject(with: futureEdited) as? [String: [String: Any]]
+        try check(futureObject?["شهر وهمي"]?["future"] as? String == "محفوظ", "contract adjustment preserves unknown fields")
+        let resetData = try ContractOverrides.setting(overrideData, month: group.month, value: nil)
+        try check(try ContractOverrides.decode(resetData).isEmpty, "contract override can be reset")
         var wholeContracts = summary
         wholeContracts.contractNominal = 1000
         try check(wholeContracts.contractNominalShare == 120, "whole contract share remains unchanged")

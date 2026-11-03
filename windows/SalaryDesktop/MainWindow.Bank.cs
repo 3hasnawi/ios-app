@@ -63,6 +63,12 @@ public partial class MainWindow
             Add(contracts, $"اسمي العقود · أساس الحساب ({result.ContractCount:N0})", result.ContractNominal, basis: true);
             Add(contracts, "12% من الاسمي", result.ContractNominalShare);
             Add(contracts, "توقيفات العقود", result.ContractRetirement);
+            Add(contracts, result.ContractOverrideStale ? "المبلغ اليدوي يحتاج مراجعة · تعديل" : "تعديل المبلغ النهائي للعقود", result.ManualContractOverride?.Total ?? result.CalculatedContractContribution, "contractOverride", inSheet: false);
+            if (result.ManualContractOverride is not null && !result.ContractOverrideStale)
+            {
+                Add(contracts, "التعديل اليدوي على مبلغ العقود", result.ContractContribution - result.CalculatedContractContribution);
+                Add(contracts, "المبلغ النهائي للعقود · معدل يدوياً", result.ContractContribution, inSheet: false);
+            }
             lines.Add(new BankLine { Section = "المجموع", Title = "المجموع للمراجعة مع المصرف", Amount = result.BankTotal, IsTotal = true, InSheet = false });
             var view = new ListCollectionView(lines);
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(BankLine.Section)));
@@ -139,6 +145,7 @@ public partial class MainWindow
     private (string Name, ReportSheet Sheet)? BankSheet()
     {
         if (snapshot is not { } source || bankSummary is null || BankRows.ItemsSource is not ListCollectionView view) { Ui.Message(this, "انتظر احتساب كشف الشهر أولاً.", "كشف حساب البنك"); return null; }
+        if (bankSummary.ContractOverrideStale) { Ui.Message(this, "تغيّر أساس العقود بعد التعديل اليدوي؛ راجع المبلغ قبل التصدير.", "كشف حساب البنك", MessageBoxButton.OK, MessageBoxImage.Warning); return null; }
         var lines = view.SourceCollection.Cast<BankLine>().Where(l => l.InSheet).ToArray();
         var title = $"كشف حساب البنك · {bankSummaryMonth}";
         try
@@ -155,7 +162,31 @@ public partial class MainWindow
 
     // ——— بيانات الحساب والمبالغ اليدوية ———
 
-    private void EditBankManual(object sender, RoutedEventArgs e) => EditBank(SelectedBankLine?.ManualKey);
+    private void EditBankManual(object sender, RoutedEventArgs e)
+    {
+        if (SelectedBankLine?.ManualKey == "contractOverride") EditContractOverride(sender, e);
+        else EditBank(SelectedBankLine?.ManualKey);
+    }
+    private async void EditContractOverride(object sender, RoutedEventArgs e)
+    {
+        var active = snapshot; var basis = bankSummary; var month = SelectedMonth; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
+        if (active is null || basis is null || basis.Month != month || original is null || links is null || root is null || payroll is null) { Ui.Message(this, "انتظر احتساب كشف الشهر أولاً.", "مبلغ العقود"); return; }
+        var dialog = new ContractOverrideWindow(basis) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var updated = await Task.Run(() =>
+            {
+                if (payrollStore.Load(root).Revision != payroll.Revision) throw new InvalidDataException("تغيّرت بيانات الأشهر؛ أعد فتح النافذة.");
+                return linkStore.SaveContractOverride(original, links, month, basis, dialog.Result);
+            });
+            if (!ReferenceEquals(active, snapshot) || !ReferenceEquals(root, rootSnapshot)) { Ui.Message(this, "حُفظ التعديل للنسخة السابقة؛ لم تتغير النسخة المعروضة.", "مبلغ العقود"); return; }
+            linkState = updated; snapshot = updated.Snapshot; RenderPage(); RefreshBackupReminder(true);
+            StatusBar.Text = "حُفظ مبلغ العقود لهذا الشهر؛ احفظ نسخة احتياطية لنقله للأجهزة الأخرى.";
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or OverflowException or System.Text.Json.JsonException)
+        { Ui.Message(this, "تعذّر حفظ مبلغ العقود.\n" + ex.Message, "مبلغ العقود", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
     private void EditBankDetails(object sender, RoutedEventArgs e) => EditBank(null);
     private async void EditBank(string? focus)
     {

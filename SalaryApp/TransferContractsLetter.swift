@@ -5,13 +5,14 @@ import CryptoKit
 /// إعداد أولي لكتاب ضمان العقود؛ لا يُفعّل التصدير قبل التحقق على الجهاز.
 nonisolated enum TransferContractsLetter {
     enum Failure: LocalizedError {
-        case incomplete, accountMismatch, invalidReference, missingFields
+        case incomplete, accountMismatch, invalidReference, missingFields, manualAdjustment
         var errorDescription: String? {
             switch self {
             case .incomplete: tr("بيانات ضمان العقود أو الشهر غير مكتملة.", "Contract social security or month data is incomplete.")
             case .accountMismatch: tr("رقم حساب الجهة الدافعة لا يطابق الحساب الموجود في مرجع الكتاب.", "The payer IBAN does not match the letter reference.")
             case .invalidReference: tr("مرجع كتاب ضمان العقود لا يطابق تنسيقه المعتمد.", "The contract social security letter reference does not match the approved layout.")
             case .missingFields: tr("تعذّر التحقق من مواضع البيانات القديمة في مرجع كتاب ضمان العقود.", "The old fields in the contract social security reference could not be verified.")
+            case .manualAdjustment: tr("يحتوي المبلغ على تعديل يدوي؛ استخدم مسودة PDF لعرض فرق التعديل في الجدول.", "The amount has a manual adjustment; use the PDF draft to show the adjustment in the table.")
             }
         }
     }
@@ -72,6 +73,7 @@ nonisolated enum TransferContractsLetter {
     static func make(figures: TransferLetterFigures, payerIBAN: String, references: Data, customization: TransferLetterCustomization = .init(), monthFontData: Data? = nil) async throws -> URL {
         let period = try TransferLetterPeriod(figures.month)
         guard figures.missingContractNominal == 0 || figures.contractNominalReviewed else { throw TransferLetterFigureError.missingContractNominal(figures.missingContractNominal) }
+        if let delta = figures.contractAdjustment, delta != 0 { throw Failure.manualAdjustment }
         guard let amountValue = figures.contractTotal, let nominalShare = figures.effectiveContractNominalShare else { throw Failure.incomplete }
         guard TransferRules.validIBAN(payerIBAN), amountValue.isFinite, amountValue > 0,
               amountValue.rounded() == amountValue, amountValue <= 9_007_199_254_740_991 else { throw Failure.incomplete }

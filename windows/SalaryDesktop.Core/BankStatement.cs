@@ -18,7 +18,10 @@ public sealed record BankSummary(string Month, decimal Cash, decimal Card, decim
 {
     public decimal Net => Cash + Card + Unclassified;
     public decimal ContractNominalShare => decimal.Ceiling(ContractNominal * 12m / 100m);
-    public decimal ContractContribution => ContractNominalShare + ContractRetirement;
+    public ContractOverride? ManualContractOverride { get; init; }
+    public decimal CalculatedContractContribution => ContractNominalShare + ContractRetirement;
+    public bool ContractOverrideStale => ManualContractOverride is { } manual && !manual.Matches(this);
+    public decimal ContractContribution => ManualContractOverride is { } manual && manual.Matches(this) ? manual.Total : CalculatedContractContribution;
     public decimal BankTotal => Net + BankDeductions + Breakdown.Values.Sum() + ContractContribution + Manual.Total;
     public decimal ExecutionDifference => BankDeductions - ExecutionDeductions;
     public bool ExecutionMatched => ExecutionCount > 0 && MissingExecutionAmounts == 0 && Math.Abs(ExecutionDifference) < 1m;
@@ -189,7 +192,10 @@ public static class BankStatementCalculator
         if (contractCount > 0 && !observed.Contains(PayrollAnalysis.Normalize("الاسمي"))) transferWarnings.Add("لم يُعثر على عمود اسمي العقود.");
         if (contractCount > 0 && !observed.Contains(PayrollAnalysis.Normalize("توقيفات تقاعدية")) && !observed.Contains(PayrollAnalysis.Normalize("التوقيفات التقاعدية"))) transferWarnings.Add("لم يُعثر على عمود توقيفات العقود.");
         warnings.AddRange(transferWarnings);
-        return new BankSummary(month, cash, card, unclassified, unclassifiedCount, missingNet, bank, execution, executionCount,
-            missingExecution, nominal, retirement, contractCount, missingNominal, breakdown, Manual(snapshot, month), warnings, transferWarnings);
+        var summary = new BankSummary(month, cash, card, unclassified, unclassifiedCount, missingNet, bank, execution, executionCount,
+            missingExecution, nominal, retirement, contractCount, missingNominal, breakdown, Manual(snapshot, month), warnings, transferWarnings)
+            { ManualContractOverride = ContractOverrides.Read(snapshot, month) };
+        if (summary.ContractOverrideStale) warnings.Add("تغير أساس العقود بعد التعديل اليدوي؛ راجع المبلغ قبل التصدير.");
+        return summary;
     }
 }

@@ -113,6 +113,10 @@ def activate_write_guard():
 
 
 def ensure_no_missing_data(current, previous):
+    # الإصدارات الأقدم تسقط إعدادات مبلغ العقود يدوياً؛ لا تستبدل نسخة أحدث بها.
+    if isinstance(previous.get("version"), int) and previous["version"] >= 6:
+        if not isinstance(current.get("version"), int) or current["version"] < previous["version"]:
+            raise ValueError("previous backup requires a newer app version")
     if not set(previous.get("months", [])).issubset(set(current.get("months", []))):
         raise ValueError("previous backup contains missing months")
     for key in ("employees", "deductions", "staff", "accounts", "books"):
@@ -168,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                             item.update({"upload_id": metadata.get("upload_id"), "device": metadata.get("device")})
                         backups.append(item)
                 backups.sort(key=lambda b: b["created_at"], reverse=True)
-                return self.response(200, {"service": "salary-backup", "version": 1,
+                return self.response(200, {"service": "salary-backup", "version": 1, "backup_format_guard": True,
                     "disk_total": disk.total, "disk_used": disk.used, "disk_free": disk.free,
                     "backup_count": len(backups), "backup_bytes": sum(b["size"] for b in backups),
                     "backups": backups[:200], "google_drive": self.server.drive.info()})

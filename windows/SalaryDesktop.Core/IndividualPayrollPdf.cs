@@ -51,8 +51,11 @@ public static class IndividualPayrollPdf
         else if (plan.Id == "contracts")
         {
             // ترتيب الآيفون: ٥٪ (التوقيفات) ثم ١٢٪ (حصة الاسمي) ثم المجموع، من اليمين.
-            if (plan.Lines.Count != 2) throw new InvalidDataException("بنود جدول الكتاب غير مكتملة.");
-            Table(new LetterTable(["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "المجموع"], [
+            if (plan.Lines.Count is not (2 or 3)) throw new InvalidDataException("بنود جدول الكتاب غير مكتملة.");
+            if (plan.Lines.Count == 3)
+                Table(new LetterTable(["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "التعديل اليدوي", "المجموع"], [
+                    [Number(Line("التوقيفات التقاعدية", 1)), Number(Line("حصة التقاعد من الراتب الاسمي", 0)), Number(Line("التعديل اليدوي", 2)), Number(plan.Total)]]));
+            else Table(new LetterTable(["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "المجموع"], [
                 [Number(Line("التوقيفات التقاعدية", 1)), Number(Line("حصة التقاعد من الراتب الاسمي", 0)), Number(plan.Total)]]));
         }
         blocks.Add(AdaptiveLetterPdf.Signatures(settings, date));

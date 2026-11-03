@@ -12,7 +12,7 @@ public sealed class LocalTransferLinks(string directory)
     private sealed record LinkData(int Version, string SourceDigest, Dictionary<string, string> Links, Dictionary<string, string>? Categories = null, List<ExecutionAccount>? Accounts = null, byte[]? Customizations = null, byte[]? BoldFont = null, byte[]? BookLinks = null, byte[]? BankName = null, byte[]? BankIban = null, byte[]? BankManual = null, byte[]? ReferenceArchive = null, byte[]? Issuance = null, Dictionary<string, byte[]>? Settings = null);
     private readonly string root = Path.GetFullPath(directory);
     /// إعدادات إضافية يعدّلها ويندوز وتُكتب كما هي في settings.json (قيم plist)، مثل فرع الحساب ورقمه المحلي.
-    public static readonly IReadOnlySet<string> EditableSettings = new HashSet<string>(["bankStatementBranch", "bankStatementLocalAccount"], StringComparer.Ordinal);
+    public static readonly IReadOnlySet<string> EditableSettings = new HashSet<string>(["bankStatementBranch", "bankStatementLocalAccount", ContractOverrides.SettingsKey], StringComparer.Ordinal);
     private static void ValidateSettings(IReadOnlyDictionary<string, byte[]>? settings)
     {
         if (settings is not null && settings.Any(p => !EditableSettings.Contains(p.Key) || p.Value is null || p.Value.Length > 100_000)) throw new InvalidDataException("إعدادات الحساب المحلية غير صالحة.");
@@ -301,6 +301,24 @@ public sealed class LocalTransferLinks(string directory)
         return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts,
             current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"),
             current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementAccountName"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementIBAN"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementManualAmounts"), plist.ToArray(), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey));
+    }
+    public TransferLinksSnapshot SaveContractOverride(BackupSnapshot source, TransferLinksSnapshot expected, string month, BankSummary basis, decimal? total)
+    {
+        Directory.CreateDirectory(root);
+        using var guard = new FileStream(Path.Combine(root, ".links.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        var current = Load(source);
+        if (current.Revision != expected.Revision) throw new InvalidDataException("تغيّرت بيانات الحساب؛ أعد فتح النافذة.");
+        var actual = BankStatementCalculator.Calculate(current.Snapshot, month);
+        if (actual.ContractNominal != basis.ContractNominal || actual.ContractRetirement != basis.ContractRetirement || actual.ContractCount != basis.ContractCount || actual.MissingContractNominal != basis.MissingContractNominal)
+            throw new InvalidDataException("تغيّر أساس العقود؛ أعد مراجعة المبلغ.");
+        if (total is not null && (actual.ContractCount == 0 || actual.MissingContractNominal > 0 || actual.TransferWarnings.Count > 0))
+            throw new InvalidDataException("أكمل مصادر العقود ومراجعة الاسمي قبل حفظ المبلغ اليدوي.");
+        var entry = total is null ? null : new ContractOverride(total.Value, actual.ContractNominal, actual.ContractRetirement, actual.ContractCount, actual.MissingContractNominal);
+        var value = ContractOverrides.Set(current.Snapshot.SettingsPlists.GetValueOrDefault(ContractOverrides.SettingsKey), month, entry);
+        var updated = new Dictionary<string, byte[]>(StringComparer.Ordinal) { [ContractOverrides.SettingsKey] = value };
+        return Write(source, current.Links.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Categories.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal), current.Snapshot.Accounts,
+            current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterCustomizations"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferHeaderBoldFont"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferLetterEntityLinks"),
+            current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementAccountName"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementIBAN"), current.Snapshot.SettingsPlists.GetValueOrDefault("bankStatementManualAmounts"), current.Snapshot.SettingsPlists.GetValueOrDefault("transferReferenceArchiveData"), current.Snapshot.SettingsPlists.GetValueOrDefault(GroupIssuance.SettingsKey), updated);
     }
     public TransferLinksSnapshot SaveBankDetails(BackupSnapshot source, TransferLinksSnapshot expected, string month, string name, string iban, BankManualAmounts amounts, string? branch = null, string? localAccount = null)
     {

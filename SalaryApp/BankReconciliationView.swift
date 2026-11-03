@@ -60,7 +60,7 @@ struct BankReconciliationView: View {
         }
     }
     private var availableContractAmount: Int64? {
-        guard let figures, figures.missingContractNominal > 0, let share = figures.availableContractNominalShare else { return nil }
+        guard let figures, !figures.contractOverrideStale, figures.missingContractNominal > 0, let share = figures.availableContractNominalShare else { return nil }
         let value = share + figures.contractRetirement
         guard value.isFinite, value >= 0, value.rounded() == value, value <= Double(BankReconciliation.maximumAmount) else { return nil }
         return Int64(value)

@@ -36,11 +36,18 @@ public static class IndividualLetterPreparation
                 lines.Add(new("الحماية الاجتماعية", Amount(summary.Breakdown["الحماية الاجتماعية"])));
                 lines.Add(new("ضريبة الدخل", Amount(summary.Breakdown["الضريبة"]))); break;
             case "contracts":
+                if (summary.ContractOverrideStale) throw new InvalidDataException("تغيّر أساس العقود بعد التعديل اليدوي؛ راجع المبلغ أولاً.");
                 if (summary.MissingContractNominal > 0 && !acceptMissingContractNominal)
                     throw new InvalidDataException($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ راجع المبلغ وأكد التجاوز لإعداد الكتاب.");
                 if (summary.MissingContractNominal > 0) notices.Add($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ يلزم تأكيد مراجعة المبلغ.");
                 lines.Add(new("حصة التقاعد من الراتب الاسمي", Amount(summary.ContractNominalShare)));
-                lines.Add(new("التوقيفات التقاعدية", Amount(summary.ContractRetirement))); break;
+                lines.Add(new("التوقيفات التقاعدية", Amount(summary.ContractRetirement)));
+                if (summary.ManualContractOverride is not null && summary.ContractContribution != summary.CalculatedContractContribution)
+                {
+                    lines.Add(new("التعديل اليدوي", checked((long)(summary.ContractContribution - summary.CalculatedContractContribution))));
+                    notices.Add("المبلغ النهائي معدّل يدوياً؛ يظهر فرق التعديل في الجدول.");
+                }
+                break;
             case "cash_salary":
                 if (summary.MissingNet > 0 || summary.UnclassifiedCount > 0) throw new InvalidDataException("توجد رواتب بلا صافي أو طريقة دفع؛ راجع الرواتب قبل إعداد كتاب الكاش.");
                 lines.Add(new("رواتب الكاش", Amount(summary.Cash))); break;

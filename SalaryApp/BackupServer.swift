@@ -77,6 +77,7 @@ nonisolated struct BackupServerStatus {
     var uploadID: String? = nil
     var deviceID: String? = nil
     var deviceName: String? = nil
+    var backupFormatGuard = false
     var newer: Bool {
         guard let latest else { return false }
         if let uploadID { return uploadID != UserDefaults.standard.string(forKey: BackupServerConfig.seenUploadKey) }
@@ -141,7 +142,7 @@ nonisolated enum BackupServerUpload {
         let deviceID = (device?["id"] as? String).flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
         let name = device?["name"] as? String
         let deviceName = deviceID != nil && name?.isEmpty == false && (name?.count ?? 0) <= 128 ? name : nil
-        return BackupServerStatus(count: count, size: size, free: free, latest: latest, uploadID: uploadID, deviceID: deviceID, deviceName: deviceName)
+        return BackupServerStatus(count: count, size: size, free: free, latest: latest, uploadID: uploadID, deviceID: deviceID, deviceName: deviceName, backupFormatGuard: object["backup_format_guard"] as? Bool == true)
     }
 
     /// لا نضغط مئات الميغابايتات إذا لم يكن السيرفر قابلاً للوصول؛ أي رد HTTP يكفي.

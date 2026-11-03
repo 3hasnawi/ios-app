@@ -10,7 +10,7 @@ import ZIPFoundation
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 5
+    static let version = 6
     static let prefix = "نسخة الرواتب"
 
     struct Manifest: Codable, Sendable {
@@ -37,7 +37,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               SalaryTrust.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
+                               SalaryTrust.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -129,7 +129,11 @@ actor BackupActor {
             try SalaryTrust.validateBooks(SalaryTrust.decode(data), available: Set(books.map(\.id)))
         }
 
-        let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
+        if let serialized = settings[ContractOverrides.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try ContractOverrides.decode(data)
+        }
+        let manifest = BackupFormat.Manifest(version: settings[ContractOverrides.settingsKey] == nil ? 5 : BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staff.count,
                                              accounts: accounts.count, books: books.count)
@@ -177,6 +181,14 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        if settings[ContractOverrides.settingsKey] == nil,
+           let current = try ContractOverrides.currentData(), !(try ContractOverrides.decode(current)).isEmpty {
+            throw NSError(domain: "ContractOverride", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("النسخة المختارة لا تحتوي تعديلات العقود الموجودة على الجهاز. احفظ نسخة شاملة وراجع التعديلات قبل الاسترجاع.", "The selected backup does not contain this device’s contract adjustments. Save a full backup and review the adjustments before restoring.")])
+        }
+        if let serialized = settings[ContractOverrides.settingsKey] {
+            guard manifest.version >= 6, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try ContractOverrides.decode(data)
+        }
         if settings[SalaryTrust.settingsKey] == nil,
            let saved = UserDefaults.standard.data(forKey: SalaryTrust.settingsKey),
            !(try SalaryTrust.decode(saved)).entries.isEmpty {
@@ -767,6 +779,9 @@ final class BackupManager {
             let expected = try Self.archiveSize(file)
             // أعد الفحص بعد تجهيز الملف؛ التأكيد اليدوي لا يشمل نسخة تغيّرت أثناء التجهيز.
             let beforeUpload = try await BackupServerUpload.status(base: base, token: token)
+            guard manifest.version < 6 || beforeUpload.backupFormatGuard else {
+                throw NSError(domain: "BackupServer", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("حدّث إضافة سيرفر النسخ قبل رفع نسخة تحتوي تعديل العقود، حتى لا تستبدلها نسخة قديمة.", "Update the backup server before uploading a backup with contract adjustments, to protect it from older clients.")])
+            }
             guard BackupServerConfig.ready, BackupServerConfig.address == address, BackupServerConfig.token == token else { throw CancellationError() }
             if defaults.bool(forKey: BackupServerConfig.pendingKey), beforeUpload.count > 0 {
                 defaults.removeObject(forKey: BackupServerConfig.pendingKey)

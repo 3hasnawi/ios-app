@@ -251,6 +251,8 @@ public partial class MainWindow
             });
             // فحص ثانٍ بعد تجهيز الملف (مثل الآيفون): التأكيد اليدوي لا يشمل نسخة رُفعت أثناء التجهيز.
             var beforeUpload = await BackupServer.Status(ServerHttp, url, token);
+            if ((source.Version >= 6 || source.SettingsPlists.ContainsKey(ContractOverrides.SettingsKey)) && !beforeUpload.BackupFormatGuard)
+                throw new InvalidDataException("حدّث إضافة سيرفر النسخ قبل رفع نسخة تحتوي تعديل العقود، حتى لا تستبدلها نسخة قديمة.");
             if (FirstLinkBlocked(beforeUpload)) throw new InvalidDataException(UiPreferences.Current.ServerNewerText!);
             if (IsNewer(beforeUpload) && (beforeUpload.Latest != approved || beforeUpload.UploadId != approvedId))
             {

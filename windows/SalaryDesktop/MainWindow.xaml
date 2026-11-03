@@ -633,6 +633,7 @@
                     <MenuItem x:Name="BankCopyLineItem" Header="نسخ السطر" Click="CopyBankLine"/>
                     <MenuItem Header="نسخ الكشف كاملاً" Click="CopyBankAll"/>
                     <Separator/>
+                    <MenuItem Header="تعديل المبلغ النهائي للعقود…" Click="EditContractOverride"/>
                     <MenuItem Header="بيانات الحساب والمبالغ اليدوية…" Click="EditBankDetails"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE713;"/></MenuItem.Icon></MenuItem>
                     <MenuItem Header="معاينة الكشف" Click="PreviewBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE8FF;" Foreground="{DynamicResource Primary}"/></MenuItem.Icon></MenuItem>
                     <MenuItem Header="طباعة الكشف" Click="PrintBankStatement"><MenuItem.Icon><TextBlock Style="{StaticResource Icon}" Text="&#xE749;"/></MenuItem.Icon></MenuItem>

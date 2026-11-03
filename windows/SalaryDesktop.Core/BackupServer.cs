@@ -7,7 +7,7 @@ using System.Text.Json;
 
 namespace SalaryDesktop.Core;
 
-public sealed record BackupServerStatus(int Count, long Bytes, long DiskFree, DateTimeOffset? Latest, string? UploadId = null, string? DeviceId = null, string? DeviceName = null);
+public sealed record BackupServerStatus(int Count, long Bytes, long DiskFree, DateTimeOffset? Latest, string? UploadId = null, string? DeviceId = null, string? DeviceName = null, bool BackupFormatGuard = false);
 public sealed record BackupServerReceipt(long Size, string? UploadId, DateTimeOffset? UploadedAt);
 
 /// عميل سيرفر النسخ المحلي (إضافة Home Assistant «salary_backup_server») بنفس قواعد الآيفون في BackupServer.swift:
@@ -144,7 +144,8 @@ public static class BackupServer
                 if (item.TryGetProperty("device", out var device) && device.ValueKind == JsonValueKind.Object && device.TryGetProperty("id", out var identity) && identity.ValueKind == JsonValueKind.String && Guid.TryParseExact(identity.GetString(), "D", out var deviceGuid) && device.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String && name.GetString() is { Length: > 0 and <= 128 } label)
                 { deviceId = deviceGuid.ToString("D"); deviceName = label; }
             }
-            return new BackupServerStatus((int)Long("backup_count"), Long("backup_bytes"), Long("disk_free"), latest, uploadId, deviceId, deviceName);
+            return new BackupServerStatus((int)Long("backup_count"), Long("backup_bytes"), Long("disk_free"), latest, uploadId, deviceId, deviceName,
+                root.TryGetProperty("backup_format_guard", out var guardValue) && guardValue.ValueKind == JsonValueKind.True);
         }
         catch (JsonException ex) { throw new InvalidDataException("رد السيرفر غير مفهوم.", ex); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancel.IsCancellationRequested) { throw new InvalidDataException(Unreachable, ex); }

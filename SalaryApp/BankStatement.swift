@@ -19,6 +19,7 @@ nonisolated struct BankStatementSummary: Sendable {
     var missingExecutionAmount = 0
     var missingNet = 0
     var breakdown: [String: Double] = [:]
+    var manualContractOverride: ContractOverride?
 
     var netSalary: Double { cashNet + cardNet + unclassifiedNet }
     var contractNominalShare: Double {
@@ -29,7 +30,12 @@ nonisolated struct BankStatementSummary: Sendable {
         NSDecimalRound(&whole, &calculated, 0, .up)
         return NSDecimalNumber(decimal: whole).doubleValue
     }
-    var contractContribution: Double { contractNominalShare + contractRetirement }
+    var calculatedContractContribution: Double { contractNominalShare + contractRetirement }
+    var contractOverrideStale: Bool { manualContractOverride.map { !$0.matches(self) } ?? false }
+    var contractContribution: Double {
+        if let manualContractOverride, manualContractOverride.matches(self) { return manualContractOverride.total }
+        return calculatedContractContribution
+    }
     var executionDifference: Double { bankDeductions - executionDeductions }
     var executionMatched: Bool { executionCount > 0 && missingExecutionAmount == 0 && abs(executionDifference) < 1 }
     var bankTotal: Double { netSalary + bankDeductions + breakdown.values.reduce(0, +) + contractContribution }
@@ -128,6 +134,7 @@ actor BankStatementEngine {
             else { result.missingExecutionAmount += 1 }
             result.executionCount += 1
         }
+        result.manualContractOverride = try ContractOverrides.read(month: month)
         return result
     }
 }
@@ -144,6 +151,7 @@ struct BankStatementView: View {
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
+    @State private var showContractOverride = false
     @State private var cache = BankStatementCache.shared
     @State private var requestID = UUID()
     @State private var currentWork: Task<BankStatementSummary, Error>?
@@ -186,7 +194,7 @@ struct BankStatementView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(accountName.isEmpty ? tr("حساب البنك", "Bank account") : accountName)
                                 .font(.headline).foregroundStyle(.white)
-                            Text(summary.executionMatched
+                            Text(summary.executionMatched && !summary.contractOverrideStale
                                  ? tr("المبلغ المطلوب · \(summary.month)", "Monthly amount · \(summary.month)")
                                  : tr("مبلغ أولي · \(summary.month) · يحتاج مطابقة التنفيذ", "Provisional amount · \(summary.month) · reconcile execution deductions"))
                                 .font(.caption).foregroundStyle(.white.opacity(0.8))
@@ -233,7 +241,18 @@ struct BankStatementView: View {
                         copyAmountRow(tr("مجموع الاسمي للعقود", "Contract nominal total"), amount: summary.contractNominal)
                         copyAmountRow(tr("12% من اسمي العقود", "12% of contract nominal pay"), amount: summary.contractNominalShare)
                         copyAmountRow(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), amount: summary.contractRetirement)
-                        copyAmountRow(tr("المبلغ المحتسب", "Included amount"), amount: summary.contractContribution)
+                        copyAmountRow(tr("المبلغ المحسوب تلقائياً", "Automatically calculated amount"), amount: summary.calculatedContractContribution)
+                        if let manual = summary.manualContractOverride {
+                            copyAmountRow(tr("المبلغ اليدوي المحفوظ", "Saved manual amount"), amount: manual.total)
+                            if summary.contractOverrideStale {
+                                Label(tr("تغيّر أساس العقود؛ راجع المبلغ اليدوي قبل استخدامه.", "The contract basis changed; review the manual amount before using it."), systemImage: "exclamationmark.triangle")
+                                    .font(.footnote).foregroundStyle(.orange)
+                            } else {
+                                copyAmountRow(tr("فرق التعديل اليدوي", "Manual adjustment"), amount: summary.contractContribution - summary.calculatedContractContribution)
+                            }
+                        }
+                        copyAmountRow(tr("المبلغ النهائي المستخدم", "Final included amount"), amount: summary.contractContribution)
+                        Button(tr("تعديل المبلغ النهائي للعقود", "Edit final contract amount"), systemImage: "pencil") { showContractOverride = true }
                         Menu {
                             copyAction(Num.format(summary.contractCount), title: tr("نسخ العدد", "Copy count"))
                         } label: {
@@ -319,6 +338,9 @@ struct BankStatementView: View {
                 }
             }
             .sheet(isPresented: $showSettings) { bankSettingsSheet }
+            .sheet(isPresented: $showContractOverride) {
+                if let summary { ContractOverrideEditor(summary: summary) }
+            }
             .task(id: loadKey) { await loadSummary(force: false) }
             .onChange(of: accountName) { BackupManager.shared.markSettingChanged("bankStatementAccountName") }
             .onChange(of: iban) { BackupManager.shared.markSettingChanged("bankStatementIBAN") }

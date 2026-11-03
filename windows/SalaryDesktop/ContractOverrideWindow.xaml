@@ -1,0 +1,24 @@
+<Window x:Class="SalaryDesktop.ContractOverrideWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="مبلغ ضمان العقود" Width="600" SizeToContent="Height" MaxHeight="700" WindowStartupLocation="CenterOwner" FlowDirection="RightToLeft" FontFamily="{DynamicResource AppFont}"
+        Background="{DynamicResource Page}" Foreground="{DynamicResource Ink}" UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType" Typography.NumeralAlignment="Tabular">
+  <StackPanel Margin="22">
+    <Border Style="{StaticResource DialogHeaderBanner}"><StackPanel>
+      <TextBlock Text="المبلغ النهائي للعقود" FontSize="20" FontWeight="SemiBold"/>
+      <TextBlock x:Name="MonthText" Foreground="{DynamicResource Muted}" Margin="0,4,0,0"/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource DialogSectionCard}"><StackPanel>
+      <TextBlock Text="المبلغ المحسوب تلقائياً بعد التوقيفات" Foreground="{DynamicResource Muted}"/>
+      <TextBlock x:Name="CalculatedText" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Primary}" Margin="0,4,0,12"/>
+      <TextBlock x:Name="WarningText" TextWrapping="Wrap" Foreground="{DynamicResource Warn}" Margin="0,0,0,10"/>
+      <TextBlock Text="المبلغ النهائي البديل بالدينار"/>
+      <TextBox x:Name="AmountText" Style="{StaticResource FluentFieldInput}" Margin="0,5,0,0"/>
+      <TextBlock Text="يُستخدم المبلغ في كشف البنك وكتاب العقود، ويظهر الفرق عن الحساب التلقائي." Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+      <TextBlock x:Name="StatusText" Foreground="{DynamicResource Warn}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource DialogFooterBar}"><WrapPanel>
+      <Button Content="حفظ المبلغ" Click="Save" IsDefault="True" Style="{StaticResource ActionButton}"/>
+      <Button Content="العودة للحساب التلقائي" Click="Reset" Margin="8,0,0,0"/>
+      <Button Content="إلغاء" IsCancel="True" Margin="8,0,0,0"/>
+    </WrapPanel></Border>
+  </StackPanel>
+</Window>

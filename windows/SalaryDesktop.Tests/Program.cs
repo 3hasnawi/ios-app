@@ -348,6 +348,28 @@ try
           (contractBank with { ContractNominal = 1005m }).ContractNominalShare == 121m &&
           (contractBank with { ContractNominal = 1_000_000_000_001m }).ContractNominalShare == 120_000_000_001m,
           "contract nominal share rounds upward once after the total, while whole amounts stay unchanged");
+    var manualContract = new ContractOverride(205m, contractBank.ContractNominal, contractBank.ContractRetirement, contractBank.ContractCount, contractBank.MissingContractNominal);
+    var contractPlist = ContractOverrides.Set(null, "أيلول 2026", manualContract);
+    var contractWithManual = contractSnapshot with { SettingsPlists = new Dictionary<string, byte[]>(contractSnapshot.SettingsPlists) { [ContractOverrides.SettingsKey] = contractPlist } };
+    Check(ContractOverrides.Read(contractWithManual, "أيلول 2026") == manualContract && manualContract.Matches(contractBank) && !manualContract.Matches(contractBank with { ContractNominal = 1002m }), "manual contract final roundtrip and changed basis detection");
+    var calculatedManual = BankStatementCalculator.Calculate(contractWithManual, "أيلول 2026");
+    Check(calculatedManual.ContractContribution == 205m && calculatedManual.BankTotal == contractBank.BankTotal + 9m, "manual final contract amount enters the bank total exactly once");
+    var staleManual = calculatedManual with { ContractNominal = 1002m };
+    Check(staleManual.ContractOverrideStale && staleManual.ContractContribution == staleManual.CalculatedContractContribution, "changed payroll basis marks manual amount stale");
+    var contractBackup = Path.Combine(root, "contract-override-v6.zip");
+    var backupWithContract = snapshot with { SettingsPlists = new Dictionary<string, byte[]>(snapshot.SettingsPlists) { [ContractOverrides.SettingsKey] = contractPlist } };
+    ReconciliationBackupExport.Write(backupWithContract, [], contractBackup);
+    var restoredContract = BackupReader.Read(contractBackup);
+    Check(restoredContract.Version == 6 && ContractOverrides.Read(restoredContract, "أيلول 2026") == manualContract, "manual amount roundtrips in a protected v6 backup");
+    var futureContractJson = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object> { ["أيلول 2026"] = new { total = 205, nominal = 1001, retirement = 75, count = 1, missing = 0, future = "محفوظ" } });
+    using var futureContractStream = new MemoryStream(); PropertyListParser.SaveAsBinary(new NSData(futureContractJson), futureContractStream);
+    var futureContractEdited = ContractOverrides.Set(futureContractStream.ToArray(), "أيلول 2026", manualContract with { Total = 210 });
+    var futureContractData = (NSData)PropertyListParser.Parse(futureContractEdited);
+    Check(JsonDocument.Parse(futureContractData.Bytes).RootElement.GetProperty("أيلول 2026").GetProperty("future").GetString() == "محفوظ", "contract edit preserves future fields");
+    var removedContract = ContractOverrides.Set(contractPlist, "أيلول 2026", null);
+    Check(ContractOverrides.Read(contractWithManual with { SettingsPlists = new Dictionary<string, byte[]> { [ContractOverrides.SettingsKey] = removedContract } }, "أيلول 2026") is null, "manual contract override can be removed");
+    try { _ = ContractOverrides.Set(null, "أيلول 2026", manualContract with { Total = 1.5m }); throw new InvalidOperationException("fractional override accepted"); }
+    catch (InvalidDataException) { }
     var statusColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = new[] { "صافي الراتب", "الملاحظات4" }, values = new[] { "500", "حالة تجريبية" } });
     var statusCash = CashSalaryListPreparation.Prepare(contractSnapshot with { Employees = [contractPerson with { RawColumns = statusColumns }] }, "أيلول 2026");
     Check(statusCash.Rows.Single().CaseStatus == "حالة تجريبية", "cash status comes from notes immediately after net salary");
@@ -357,6 +379,20 @@ try
     catch (InvalidDataException) { }
     string[] rawHeaders = ["مجموع استقطاعات المصارف", "صندوق الشهداء", "الرعاية الصحية", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "توقيفات تقاعدية"];
     var rawColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = rawHeaders, values = rawHeaders.Select(_ => "").ToArray() });
+    var contractRawColumns = JsonSerializer.SerializeToUtf8Bytes(new { headers = rawHeaders, values = rawHeaders.Select(_ => "").ToArray() });
+    var completeContractSource = snapshot with { Employees = [contractPerson with { RawColumns = contractRawColumns }] };
+    var contractStore = new LocalTransferLinks(Path.Combine(root, "contract-adjustment"));
+    var contractInitial = contractStore.Load(completeContractSource);
+    var contractBasis = BankStatementCalculator.Calculate(contractInitial.Snapshot, "أيلول 2026");
+    var contractSaved = contractStore.SaveContractOverride(completeContractSource, contractInitial, "أيلول 2026", contractBasis, 205m);
+    Check(BankStatementCalculator.Calculate(contractSaved.Snapshot, "أيلول 2026").ContractContribution == 205m && contractStore.Load(completeContractSource).Revision == contractSaved.Revision, "contract adjustment saves and reloads through the atomic local store");
+    var changedContractSource = completeContractSource with { Employees = [contractPerson with { RawColumns = contractRawColumns, Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["الاسمي"] = "1002", ["توقيفات تقاعدية"] = "75", ["مجموع استقطاعات المصارف"] = "2500" }) }] };
+    Check(BankStatementCalculator.Calculate(contractStore.Load(changedContractSource).Snapshot, "أيلول 2026").ContractOverrideStale, "reimported payroll makes the saved override stale");
+    try { _ = contractStore.SaveContractOverride(changedContractSource, contractSaved, "أيلول 2026", contractBasis, 210m); throw new InvalidOperationException("stale basis saved"); }
+    catch (InvalidDataException) { }
+    Check(contractStore.Load(completeContractSource).Revision == contractSaved.Revision, "stale contract save changes no data");
+    var contractReset = contractStore.SaveContractOverride(completeContractSource, contractSaved, "أيلول 2026", BankStatementCalculator.Calculate(contractSaved.Snapshot, "أيلول 2026"), null);
+    Check(BankStatementCalculator.Calculate(contractReset.Snapshot, "أيلول 2026").ContractContribution == contractBasis.CalculatedContractContribution, "reset returns to automatic contract calculation");
     var incompleteContract = contractPerson with {
         Details = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { ["طريقة الدفع"] = "كاش", ["توقيفات تقاعدية"] = "75", ["مجموع استقطاعات المصارف"] = "2500" }), RawColumns = rawColumns };
     var incompleteBank = BankStatementCalculator.Calculate(snapshot with { Employees = new[] { incompleteContract } }, "أيلول 2026");
@@ -379,6 +415,13 @@ try
     catch (InvalidDataException) { }
     var acceptedContract = IndividualLetterPreparation.Payroll("contracts", incompleteBank, "دافع وهمي", fakePayer, references, true);
     Check(acceptedContract.Total == 75 && acceptedContract.Notices.Count == 1, "explicit contract warning review remains recorded");
+    var manualLetter = IndividualLetterPreparation.Payroll("contracts", calculatedManual with { TransferWarnings = [] }, "دافع وهمي", fakePayer, references);
+    Check(manualLetter.Total == 205 && manualLetter.Lines.Sum(x => x.Amount) == 205 && manualLetter.Lines.Single(x => x.Title == "التعديل اليدوي").Amount == 9, "contract letter shows the same manual final and explicit adjustment");
+    var lowerOverride = manualContract with { Total = 180m };
+    var lowerLetter = IndividualLetterPreparation.Payroll("contracts", calculatedManual with { TransferWarnings = [], ManualContractOverride = lowerOverride }, "دافع وهمي", fakePayer, references);
+    Check(lowerLetter.Total == 180 && lowerLetter.Lines.Single(x => x.Title == "التعديل اليدوي").Amount == -16, "negative contract adjustment remains explicit");
+    try { _ = IndividualLetterPreparation.Payroll("contracts", staleManual with { TransferWarnings = [] }, "دافع وهمي", fakePayer, references); throw new InvalidOperationException("stale contract adjustment used in letter"); }
+    catch (InvalidDataException) { }
     var anbarAccount = new ExecutionAccount("جهة وهمية", fakeReceiver, "الرافدين فرع الانبار", "", null);
     var entity = new TransferEntry("deduction|جهة وهمية", "أيلول 2026", "جهة وهمية", 2500m, 1, 0, anbarAccount, TransferGroup.Anbar, null, false);
     var entityTransfer = new TransferSnapshot("أيلول 2026", "دافع وهمي", fakePayer, [entity], []);
@@ -766,6 +809,9 @@ try
     var fontBytes = File.ReadAllBytes(font); var logoBytes = File.ReadAllBytes(logoPath);
     try { GroupLetterFont.Validate(fontBytes); throw new InvalidOperationException("wrong letter font accepted"); }
     catch (InvalidDataException) { }
+    Check(IndividualPayrollPdf.Generate(manualLetter, letterSettings, fontBytes, fontBytes, logoBytes, null).Length > 0 &&
+          IndividualPayrollPdf.Generate(lowerLetter, letterSettings, fontBytes, fontBytes, logoBytes, null).Length > 0,
+          "positive and negative contract adjustments generate verifiable letters");
     var groupPdf = GroupLetterPdf.Generate(groupLetter, letterSettings, fontBytes, fontBytes, logoBytes);
     Check(groupPdf.AsSpan(0, 5).SequenceEqual("%PDF-"u8), "group PDF generated with validated table");
     var footerExample = "نسخة منه الى:\n. (" + new string(' ', 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام مع التقدير.\n. مستلم (مذكور)";
@@ -1151,8 +1197,10 @@ try
         using (var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{\"service\":\"salary-backup\",\"backup_count\":1,\"backup_bytes\":22,\"disk_free\":1000,\"backups\":[{\"id\":\"backup-current.zip\",\"size\":22,\"created_at\":\"2026-11-01T10:00:00+00:00\"}]}") })))
         {
             var serverStatus = await BackupServer.Status(http, serverBase, new string('k', 40));
-            Check(serverStatus.Count == 1 && serverStatus.Bytes == 22 && serverStatus.DiskFree == 1000 && serverStatus.Latest?.Year == 2026, "server status for connection test");
+            Check(serverStatus.Count == 1 && serverStatus.Bytes == 22 && serverStatus.DiskFree == 1000 && serverStatus.Latest?.Year == 2026 && !serverStatus.BackupFormatGuard, "legacy server status is not assumed to protect backup format");
         }
+        using (var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent("{\"service\":\"salary-backup\",\"backup_count\":0,\"backup_bytes\":0,\"disk_free\":1000,\"backups\":[],\"backup_format_guard\":true}") })))
+            Check((await BackupServer.Status(http, serverBase, new string('k', 40))).BackupFormatGuard, "server explicitly advertises backup format guard");
         var fictionalDevice = Guid.NewGuid().ToString("D"); var fictionalUpload = Guid.NewGuid().ToString("D");
         using (var http = new HttpClient(new StubHandler(r =>
         {

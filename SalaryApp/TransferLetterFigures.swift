@@ -39,7 +39,14 @@ nonisolated struct TransferLetterFigures: Sendable {
         if missingContractNominal > 0 { return contractNominalReviewed ? availableContractNominalShare : nil }
         return contractNominalShare
     }
-    var contractTotal: Double? { effectiveContractNominalShare.map { $0 + contractRetirement } }
+    var contractOverrideTotal: Double? = nil
+    var contractOverrideSnapshot: ContractOverride? = nil
+    var contractOverrideStale = false
+    var contractTotal: Double? {
+        guard !contractOverrideStale, let share = effectiveContractNominalShare else { return nil }
+        return contractOverrideTotal ?? (share + contractRetirement)
+    }
+    var contractAdjustment: Double? { guard let total = contractTotal, let share = effectiveContractNominalShare else { return nil }; return total - share - contractRetirement }
     var missingContractNominal: Int = 0
     /// حصة الاسمي الموجود فقط، ولا تُستخدم إلا بعد تأكيد المستخدم لهذا الكتاب.
     var availableContractNominalShare: Double? = nil
@@ -88,6 +95,9 @@ nonisolated enum TransferLetterFigureRules {
             contractRetirement: checked("توقيفات العقود", summary.contractRetirement),
             payrollCash: available.contains("طريقة الدفع") && summary.unclassifiedCount == 0 && summary.missingNet == 0
                 ? checked("الرواتب كاش", summary.cashNet) : nil,
+            contractOverrideTotal: summary.contractOverrideStale ? nil : summary.manualContractOverride?.total,
+            contractOverrideSnapshot: summary.manualContractOverride,
+            contractOverrideStale: summary.contractOverrideStale,
             missingContractNominal: summary.missingContractNominal,
             availableContractNominalShare: checked("حصة اسمي العقود المتوفرة", summary.contractNominalShare))
     }

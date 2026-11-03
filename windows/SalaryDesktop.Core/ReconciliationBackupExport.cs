@@ -47,7 +47,7 @@ public static class ReconciliationBackupExport
     /// كل نسخة شاملة تُكتب من ويندوز تأخذ تاريخ إنشاء جديداً في manifest.json (ثواني الآيفون منذ ٢٠٠١ بتوقيت UTC، مثل JSONEncoder)،
     /// حتى لو لم تتغير الأعداد؛ وتبقى بقية حقول الفهرس كما هي بما فيها غير المعروفة، ولا تتغير تواريخ الكتب. createdAt للاختبار فقط.
     public static double IosSeconds(DateTimeOffset moment) => (moment.UtcDateTime - new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
-    private static readonly string[] ManifestUpdated = ["createdAt", "accounts", "books", "months", "employees", "deductions"];
+    private static readonly string[] ManifestUpdated = ["createdAt", "accounts", "books", "months", "employees", "deductions", "version"];
     public static void Write(BackupSnapshot source, IReadOnlyList<BankPeriod> periods, string destination, SalaryTrustLedger? trust = null, DateTimeOffset? createdAt = null)
     {
         var created = IosSeconds(createdAt ?? DateTimeOffset.UtcNow);
@@ -138,6 +138,7 @@ public static class ReconciliationBackupExport
                         using var originalManifest = oldEntry.Open();
                         var manifest = JsonNode.Parse(originalManifest)?.AsObject() ?? throw new InvalidDataException("فهرس النسخة غير صالح.");
                         manifest["createdAt"] = created;
+                        if (settings.ContainsKey(ContractOverrides.SettingsKey)) manifest["version"] = 6;
                         if (changedAccounts || changedMonths || changedBooks) manifest["accounts"] = source.Accounts.Count;
                         if (changedBooks) manifest["books"] = source.Books.Count;
                         if (changedMonths) { manifest["months"] = new JsonArray(source.Months.Select(m => (JsonNode?)JsonValue.Create(m.Name)).ToArray()); manifest["employees"] = source.Employees.Count; manifest["deductions"] = source.Deductions.Count; }
@@ -155,6 +156,7 @@ public static class ReconciliationBackupExport
                 }
             }
             var restored = BackupReader.Read(temp);
+            if (restored.Version != (settings.ContainsKey(ContractOverrides.SettingsKey) ? 6 : source.Version)) throw new InvalidDataException("تعذّر التحقق من إصدار النسخة.");
             if (!restored.Accounts.SequenceEqual(source.Accounts)) throw new InvalidDataException("تعذّر التحقق من حسابات الجهات في النسخة الجديدة.");
             if (!restored.Months.SequenceEqual(source.Months) || !SameEmployees(restored.Employees, source.Employees) || !restored.Deductions.SequenceEqual(source.Deductions))
                 throw new InvalidDataException("تعذّر التحقق من بيانات الأشهر في النسخة الجديدة.");
