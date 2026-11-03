@@ -61,6 +61,7 @@ public partial class MainWindow
     /// بطاقة إعداد النسخ: لا يوجد ملف نسخة مختار، أو فشل آخر نسخ تلقائي.
     private void RefreshBackupSetupNotice()
     {
+        RefreshBackupIndicator();
         if (BackupSetupCard is null) return;
         var saved = UiPreferences.Current;
         // نسخة أحدث على السيرفر: بطاقة مستقلة مع زر الاسترجاع، وتُغني عن بطاقة «فشل آخر نسخ».

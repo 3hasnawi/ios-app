@@ -94,13 +94,13 @@
     <!-- المحتوى -->
     <Grid Grid.Column="1" Margin="22,20,28,14">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-      <Grid Grid.Row="0" Margin="0,0,0,14">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,14" Height="54">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
-          <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="SemiBold"/>
-          <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/>
+          <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+          <TextBlock x:Name="PageSubtitle" Text="ملخص الشهر المختار" Foreground="{DynamicResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
         </StackPanel>
-        <Button x:Name="GlobalSearchButton" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="{DynamicResource TbgCFD9DA}" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
+        <Button x:Name="GlobalSearchButton" Visibility="Collapsed" Grid.Column="1" Click="OpenGlobalSearch" Margin="0,0,10,0" Padding="12,0" Height="38" Width="270" HorizontalContentAlignment="Stretch" BorderBrush="{DynamicResource TbgCFD9DA}" VerticalAlignment="Center" ToolTip="بحث شامل عن منتسب أو جهة أو قسم (Ctrl+F أو Ctrl+K)">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Style="{StaticResource Icon}" Text="&#xE721;" Foreground="{DynamicResource Tfg7A8D8A}" Margin="0,0,9,0"/>
@@ -118,8 +118,14 @@
         <Button x:Name="ThemeToggle" Grid.Column="3" Click="ToggleTheme" Padding="0" Width="38" Height="38" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="الوضع الداكن / الفاتح">
           <TextBlock x:Name="ThemeIcon" Style="{StaticResource Icon}" Text="&#xE708;" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center"/>
         </Button>
+        <Button x:Name="BackupIndicatorButton" Grid.Column="4" Click="OpenBackupFromIndicator" Padding="0" Width="38" Height="38" Margin="0,0,10,0" VerticalAlignment="Center" ToolTip="حالة النسخ الاحتياطي" AutomationProperties.Name="حالة النسخ الاحتياطي">
+          <Grid>
+            <TextBlock x:Name="BackupIndicatorIcon" Style="{StaticResource Icon}" Text="&#xE74E;" FontSize="16" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Ellipse x:Name="BackupIndicatorDot" Width="8" Height="8" Fill="{DynamicResource Muted}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-2,-2,0,0" Stroke="{DynamicResource Page}" StrokeThickness="1"/>
+          </Grid>
+        </Button>
         <!-- جرس الإشعارات: كل التنبيهات في مكان واحد، وعليه عدّاد أحمر واضح عند وجود ما يحتاج انتباهك. -->
-        <Button x:Name="BellButton" Grid.Column="4" Click="ToggleNotifications" Padding="0" Width="38" Height="38" VerticalAlignment="Center" ToolTip="الإشعارات والتنبيهات">
+        <Button x:Name="BellButton" Grid.Column="5" Click="ToggleNotifications" Padding="0" Width="38" Height="38" VerticalAlignment="Center" ToolTip="الإشعارات والتنبيهات">
           <Grid>
             <TextBlock x:Name="BellIcon" Style="{StaticResource Icon}" Text="&#xEA8F;" FontSize="16" Foreground="{DynamicResource Primary}" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.1">
               <TextBlock.RenderTransform><RotateTransform x:Name="BellSwing"/></TextBlock.RenderTransform>

@@ -73,6 +73,37 @@ public partial class MainWindow
     {
         SidebarBackup.Text = pending ? "تعديلات لم تُحفظ في نسخة بعد" : UiPreferences.Current.BackupLast is { } last ? "آخر نسخة احتياطية " + Ago(last) : "لم تُحفظ نسخة احتياطية بعد";
         SidebarDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, pending ? "Warn" : "Primary");
+        RefreshBackupIndicator();
+    }
+
+    public sealed record BackupIndicatorInfo(string Text, string Color);
+    public static BackupIndicatorInfo DescribeBackupIndicator(bool busy, bool newer, string? error, bool hasData, bool configured, bool pending, DateTime? last)
+    {
+        if (busy) return new("جارٍ إنشاء النسخة الاحتياطية…", "Accent");
+        if (newer) return new("توجد نسخة أحدث على السيرفر؛ افتح إعدادات النسخ لمراجعتها.", "Warn");
+        if (!string.IsNullOrWhiteSpace(error)) return new("فشل آخر نسخ احتياطي؛ افتح إعدادات النسخ لمعرفة السبب.", "Warn");
+        if (!hasData) return new("لا توجد بيانات مفتوحة للنسخ.", "Muted");
+        if (!configured) return new("لم تُكتمل إعدادات النسخ الاحتياطي.", "Warn");
+        if (pending) return new("توجد تعديلات لم تُحفظ في نسخة احتياطية.", "Warn");
+        return last is { } at ? new("آخر نسخة مسجلة على هذا الجهاز: " + Ago(at) + ".", "Primary") : new("لم تُسجّل نسخة احتياطية ناجحة بعد.", "Muted");
+    }
+    private void RefreshBackupIndicator()
+    {
+        if (BackupIndicatorButton is null || BackupIndicatorIcon is null || BackupIndicatorDot is null) return;
+        var saved = UiPreferences.Current;
+        var state = DescribeBackupIndicator(backingUp, saved.ServerNewer && ServerReady, saved.BackupError,
+            snapshot is not null, HasBackupDestination, BackupReminder?.Visibility == Visibility.Visible, saved.BackupLast);
+        var text = !backingUp && saved.ServerNewer && ServerReady && !string.IsNullOrWhiteSpace(saved.ServerNewerText)
+            ? state.Text + "\n" + saved.ServerNewerText : state.Text;
+        BackupIndicatorButton.ToolTip = text;
+        System.Windows.Automation.AutomationProperties.SetName(BackupIndicatorButton, "النسخ الاحتياطي: " + text);
+        BackupIndicatorIcon.SetResourceReference(TextBlock.ForegroundProperty, state.Color);
+        BackupIndicatorDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, state.Color);
+    }
+    private void OpenBackupFromIndicator(object sender, RoutedEventArgs e)
+    {
+        NavSettings.IsChecked = true;
+        Dispatcher.BeginInvoke(() => BackupStatus?.BringIntoView());
     }
 
     private static string Ago(DateTime at)

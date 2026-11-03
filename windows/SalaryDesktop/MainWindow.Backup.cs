@@ -118,7 +118,7 @@ public partial class MainWindow
         var source = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
         var destination = UiPreferences.Current.BackupPath;
         if (source is null || original is null || links is null || root is null || payroll is null || destination is null || backingUp) return false;
-        backingUp = true; if (page == "settings") ShowBackupSettings();
+        backingUp = true; RefreshBackupIndicator(); if (page == "settings") ShowBackupSettings();
         StatusBar.Text = "جارٍ النسخ الاحتياطي…";
         try
         {

@@ -215,7 +215,7 @@ public partial class MainWindow
         var source = snapshot; var original = baseSnapshot; var links = linkState; var root = rootSnapshot; var payroll = payrollState;
         var url = BackupServer.Url(UiPreferences.Current.ServerAddress); var token = ServerToken;
         if (source is null || original is null || links is null || root is null || payroll is null || url is null || backingUp) return false;
-        backingUp = true; if (page == "settings") ShowBackupSettings();
+        backingUp = true; RefreshBackupIndicator(); if (page == "settings") ShowBackupSettings();
         StatusBar.Text = "جارٍ النسخ إلى السيرفر المحلي…";
         var temporary = Path.Combine(Path.GetTempPath(), $"salary-server-{Guid.NewGuid():N}.zip");
         try

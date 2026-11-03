@@ -263,7 +263,7 @@ public partial class MainWindow : Window
             "settings" => "النسخ الاحتياطي والبيانات المحلية",
             _ => HomeSubtitle(month)
         };
-        GlobalSearchButton.Visibility = page == "home" ? Visibility.Collapsed : Visibility.Visible;
+        GlobalSearchButton.Visibility = Visibility.Collapsed;
         if (page != shownPage)
         {
             CloseInspector();

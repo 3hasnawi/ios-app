@@ -206,6 +206,23 @@ static class Program
                     Check(item.IsChecked == true, $"navigation item {tag} was not selected");
                 }
                 var table = (DataGrid)main.FindName("DataTable");
+                var backupIndicator = (Button)main.FindName("BackupIndicatorButton");
+                var themeIndicator = (Button)main.FindName("ThemeToggle");
+                var bellIndicator = (Button)main.FindName("BellButton");
+                var backupPosition = backupIndicator.TranslatePoint(new Point(0, 0), main);
+                var themePosition = themeIndicator.TranslatePoint(new Point(0, 0), main);
+                var bellPosition = bellIndicator.TranslatePoint(new Point(0, 0), main);
+                Check(backupIndicator.Width == 38 && themeIndicator.Width == 38 && bellIndicator.Width == 38, "header icons should have equal fixed width");
+                Check(MainWindow.DescribeBackupIndicator(true, true, "error", true, true, true, null).Text.Contains("جارٍ"), "backup indicator must show progress first");
+                Check(MainWindow.DescribeBackupIndicator(false, true, null, true, true, false, null).Text.Contains("أحدث"), "backup indicator did not show a newer server copy");
+                Check(MainWindow.DescribeBackupIndicator(false, false, "error", true, true, false, null).Text.Contains("فشل"), "backup indicator did not show an error");
+                Check(MainWindow.DescribeBackupIndicator(false, false, null, true, true, true, null).Text.Contains("تعديلات"), "backup indicator did not show pending changes");
+                Check(MainWindow.DescribeBackupIndicator(false, false, null, true, true, false, DateTime.Now).Text.Contains("آخر نسخة"), "backup indicator did not show the last backup");
+                await Navigate("payroll");
+                Check((backupIndicator.TranslatePoint(new Point(0, 0), main) - backupPosition).Length < 0.5 && (themeIndicator.TranslatePoint(new Point(0, 0), main) - themePosition).Length < 0.5 && (bellIndicator.TranslatePoint(new Point(0, 0), main) - bellPosition).Length < 0.5, "header icons moved during navigation");
+                Check(((Button)main.FindName("GlobalSearchButton")).Visibility == Visibility.Collapsed, "fixed header still displayed the search bar");
+                backupIndicator.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(300);
+                Check(((FrameworkElement)main.FindName("SettingsPanel")).Visibility == Visibility.Visible, "backup indicator did not open backup settings");
                 await Navigate("payroll"); Check(table.Items.Count == 1 && table.Items[0] is PayrollRow { Payment: "كاش" }, "payroll page did not show the synthetic employee");
                 Check(main.Content is Grid { ColumnDefinitions.Count: 3 } && table.RowHeight == 42 && table.ColumnHeaderHeight == 44, "workspace columns or grid density do not match the design");
                 var netColumn = (DataGridTextColumn)table.Columns.Single(c => c.SortMemberPath == "Net");
