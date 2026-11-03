@@ -280,6 +280,15 @@ static class Program
                     await Navigate("payroll"); ((TextBox)main.FindName("SearchBox")).Text = "علي"; await Task.Delay(1200); Shot(main, "11-payroll-search");
                     var detail = Fit(new EmployeeDetailsWindow(rich.Employees[3], rich) { Owner = main }); detail.Show(); await Task.Delay(500); Shot(detail, "12-employee-details"); detail.Close();
                     var import = Fit(new PayrollImportWindow(rich, "أيلول 2026") { Owner = main }); import.Show(); await Task.Delay(500); Shot(import, "13-payroll-import"); import.Close();
+                    var ibanAudit = Fit(new IbanAuditWindow(IbanAudit.Prepare(rich, "أيلول 2026")) { Owner = main });
+                    ibanAudit.Show(); await Task.Delay(500);
+                    var ibanRows = (DataGrid)ibanAudit.FindName("Rows");
+                    Check(ibanRows.Items.Count == rich.Employees.Count(e => e.Month == "أيلول 2026"), "IBAN audit did not display the selected month's payroll");
+                    Shot(ibanAudit, "41-iban-audit");
+                    var missingFilter = Children<RadioButton>(ibanAudit).Single(r => Equals(r.Tag, "Missing"));
+                    missingFilter.IsChecked = true;
+                    Check(ibanRows.Items.Cast<IbanAuditRow>().All(r => r.Status == IbanAuditStatus.Missing), "IBAN audit missing filter showed another status");
+                    ibanAudit.Close();
                     var richReview = Fit(new SalaryReviewWindow(SalaryReview.Prepare(rich, "أيلول 2026", StaffRecords.Read(rich))) { Owner = main }); richReview.Show(); await Task.Delay(500); Shot(richReview, "14-salary-review"); richReview.Close();
                     var richGroups = SalaryItemReports.Groups(rich, "أيلول 2026"); var richItems = Fit(new SalaryItemsWindow(rich, "أيلول 2026", richGroups) { Owner = main }); richItems.Show(); await Task.Delay(300);
                     ((DataGrid)richItems.FindName("Groups")).SelectedItem = richGroups.First(g => g.Title == "صندوق الشهداء"); await Task.Delay(900);

@@ -1,6 +1,11 @@
 name: Windows desktop checks
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the Windows trial release after checks
+        type: boolean
+        default: false
 permissions:
   contents: write   # لنشر صور التصميم الوهمية في فرع windows-screenshots
 jobs:
@@ -121,6 +126,7 @@ jobs:
       # رابط تنزيل مباشر ثابت في صفحة الإصدارات (الوسم windows-latest)، ومنه يعرف البرنامج وجود إصدار أحدث.
       # الإصدار يُعلَّم «تجريبي» وليس «الأحدث» حتى لا يتأثر مصدر AltStore لإصدارات الآيفون.
       - name: Publish direct download on the releases page
+        if: ${{ inputs.publish_release }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
