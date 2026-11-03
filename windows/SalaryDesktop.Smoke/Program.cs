@@ -239,7 +239,7 @@ static class Program
                 Themes.Apply(oldTheme);
                 table.SelectedIndex = 0; await Task.Delay(150);
                 var inspector = (Border)main.FindName("InspectorDrawer");
-                Check(Grid.GetColumn(inspector) == 2, "inspector was not placed in the third workspace column");
+                Check(Grid.GetColumn(inspector) == 1 && Panel.GetZIndex(inspector) > 0, "inspector did not overlay the workspace");
                 Check(inspector.Visibility == Visibility.Visible && ((TextBlock)main.FindName("InspectorTitleText")).Text == ((PayrollRow)table.Items[0]).Name, "inspector did not show the selected payroll record");
                 Check(((ItemsControl)main.FindName("InspectorFieldsList")).Items.Count > 0, "inspector did not display record fields");
                 Check(((TextBlock)main.FindName("InspectorAmountLabel")).Text == "صافي الراتب المستحق" && ((TextBlock)main.FindName("InspectorNetAmountText")).Text.Contains("500", StringComparison.Ordinal), "inspector payroll amount was not labeled as net pay");
