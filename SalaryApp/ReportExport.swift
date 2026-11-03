@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 import ZIPFoundation
 
 /// كشف قابل للتصدير بشكل النموذج المعتمد:
@@ -22,10 +23,12 @@ nonisolated struct ReportSheet: Sendable {
     let amounts: [Double]
     /// سطر "المجموع" في آخر الجدول (يُخفى في جداول الخلاصة التي لا معنى لجمع أرقامها).
     var showTotal = true
+    /// كشف الجهة المفردة يبقى A4 عمودياً مهما طال الاسم أو رقم الإضبارة.
+    var entityDeduction = false
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
     /// A4 بالعرض إذا كان مجموع عرض الأعمدة أكبر مما تتسعه الصفحة بالطول.
-    var landscape: Bool { columns.reduce(0) { $0 + $1.width } > 96 }
+    var landscape: Bool { !entityDeduction && columns.reduce(0) { $0 + $1.width } > 96 }
 
     /// عرض كل عمود بحسب أطول قيمة فيه (مع حد أدنى وأعلى).
     func fitted() -> ReportSheet {
@@ -45,7 +48,7 @@ nonisolated struct ReportSheet: Sendable {
             let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + 3, column.kind == .serial ? 5 : 8))
             return Column(title: column.title, width: width.rounded(), kind: column.kind)
         }
-        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal)
+        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal, entityDeduction: entityDeduction)
     }
 
     /// "ايلول 2026" ← "ايلول ٢٠٢٦" كما في النموذج.
@@ -69,21 +72,21 @@ nonisolated struct ReportSheet: Sendable {
         let month = easternDigits(group.month)
         switch group.kind {
         case .deductions:
+            // لا نحذف الجهة إذا تضمن الكشف أكثر من فرع؛ يظل كل مصدر واضحاً.
+            let singleEntity = !group.byEntity && rows.allSatisfy { $0.entity.isEmpty || $0.entity == group.title }
+            let columns: [Column] = [
+                Column(title: "ت", width: 5, kind: .serial),
+                Column(title: "الرتبة", width: 11, kind: .text),
+                Column(title: "الاسم الكامل", width: 34, kind: .text),
+                Column(title: "المبلغ", width: 14, kind: .amount),
+            ] + (!singleEntity ? [Column(title: "جهة التنفيذ", width: 28, kind: .text)] : []) + [
+                Column(title: "رقم وتاريخ الاضبارة", width: 32, kind: .text),
+            ]
             return ReportSheet(
-                header: header,
-                title: "قائمة الاستقطاعات لـ شهر \(month) - \(group.title)",
-                columns: [
-                    Column(title: "ت", width: 5, kind: .serial),
-                    Column(title: "الرتبة", width: 11, kind: .text),
-                    Column(title: "الاسم الكامل", width: 34, kind: .text),
-                    Column(title: "المبلغ", width: 14, kind: .amount),
-                    Column(title: "جهة التنفيذ", width: 28, kind: .text),
-                    Column(title: "رقم وتاريخ الاضبارة", width: 32, kind: .text),
-                ],
+                header: header, title: "قائمة الاستقطاعات لـ شهر \(month) - \(group.title)", columns: columns,
                 rows: rows.enumerated().map { i, r in
-                    [String(i + 1), r.rank, r.name, "", r.entity.isEmpty ? group.title : r.entity, r.note]
-                },
-                amounts: rows.map(\.amount)
+                    [String(i + 1), r.rank, r.name, ""] + (!singleEntity ? [r.entity.isEmpty ? group.title : r.entity] : []) + [r.note]
+                }, amounts: rows.map(\.amount), entityDeduction: singleEntity
             )
         case .payroll:
             return ReportSheet(
@@ -249,10 +252,18 @@ nonisolated enum XLSXWriter {
                 switch column.kind {
                 case .serial: cells += "<c r=\"\(ref)\" s=\"5\"><v>\(i + 1)</v></c>"
                 case .amount: cells += "<c r=\"\(ref)\" s=\"6\"><v>\(number(sheet.amounts[i]))</v></c>"
-                case .text: cells += textCell(ref, values[c], style: 4)
+                case .text:
+                    let nameColumn = column.title.contains("الاسم") || column.title.hasPrefix("اسم")
+                    cells += textCell(ref, values[c], style: sheet.entityDeduction ? (nameColumn ? 11 : 10) : 4)
                 }
             }
-            rows += "<row r=\"\(r)\" ht=\"20\" customHeight=\"1\">\(cells)</row>"
+            if sheet.entityDeduction {
+                let lineCount = sheet.columns.enumerated().filter { $0.element.kind == .text }.map { index, column in
+                    max(1, Int(ceil(Double(values[index].count) / max(1, column.width - 3))))
+                }.max() ?? 1
+                let height = min(409, max(24, lineCount * 16 + 6))
+                rows += "<row r=\"\(r)\" ht=\"\(height)\" customHeight=\"1\">\(cells)</row>"
+            } else { rows += "<row r=\"\(r)\" ht=\"20\" customHeight=\"1\">\(cells)</row>" }
         }
         // سطر المجموع: "المجموع" في الأعمدة قبل المبلغ، والمبلغ بمعادلة SUM.
         let totalRow = sheet.rows.count + 4
@@ -314,7 +325,7 @@ nonisolated enum XLSXWriter {
     <border><left style="thin"><color rgb="FF9BB7D4"/></left><right style="thin"><color rgb="FF9BB7D4"/></right><top style="thin"><color rgb="FF9BB7D4"/></top><bottom style="thin"><color rgb="FF9BB7D4"/></bottom><diagonal/></border>
     </borders>
     <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-    <cellXfs count="10">
+    <cellXfs count="12">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
@@ -325,6 +336,8 @@ nonisolated enum XLSXWriter {
     <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="164" fontId="4" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
     </cellXfs>
     <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
     </styleSheet>
@@ -377,9 +390,17 @@ nonisolated enum PDFReportWriter {
 
     /// عدة كشوف في ملف واحد: كل كشف يبدأ بصفحة جديدة برأسه ومجموعه (PDF مجمّع).
     static func write(_ sheets: [ReportSheet], to url: URL) throws {
+        // نتحقق من اتساع كل صف قبل إنشاء الملف، فلا يُشارك كشف مبتور.
+        let layouts: [EntityDeductionPDF.Layout?] = try sheets.map { sheet in
+            if sheet.entityDeduction { return try EntityDeductionPDF.prepare(sheet) }
+            return nil
+        }
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
         try renderer.writePDF(to: url) { context in
-            for sheet in sheets { render(sheet, in: context) }
+            for (index, sheet) in sheets.enumerated() {
+                if let layout = layouts[index] { EntityDeductionPDF.render(sheet, layout: layout, in: context) }
+                else { render(sheet, in: context) }
+            }
         }
     }
 

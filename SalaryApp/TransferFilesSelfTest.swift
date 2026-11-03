@@ -363,6 +363,27 @@ import CryptoKit
         let backupAccount = BackupFormat.AccountRecord(entity: localOnly.entity, iban: localOnly.iban, branch: localOnly.branch, swift: localOnly.swift, localAccount: localOnly.localAccount)
         try check(try JSONDecoder().decode(BackupFormat.AccountRecord.self, from: JSONEncoder().encode(backupAccount)).localAccount == localOnly.localAccount, "local account backup roundtrip")
         let group = ReportGroup(kind: .deductions, month: "تشرين الاول 2026", title: "جهة وهمية", count: 1, total: 1200, byEntity: false)
+        let entityRows = (0..<60).map { index in
+            ReportRow(id: index, name: "اسم وهمي طويل جداً لغرض اختبار وضوح الاسم الكامل رقم \(index)", rank: "موظف", workplace: "", amount: 20, note: "رقم وتاريخ إضبارة وهمية طويلة لغرض اختبار التفاف النص", entity: "جهة وهمية")
+        }
+        let entitySheet = ReportSheet.make(group: group, rows: entityRows)
+        try check(entitySheet.entityDeduction && !entitySheet.landscape && entitySheet.columns.map(\.title) == ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "رقم وتاريخ الاضبارة"], "single-entity report portrait and columns")
+        let entityXML = XLSXWriter.worksheet(entitySheet)
+        try check(entityXML.contains("orientation=\"portrait\"") && entityXML.contains("اسم وهمي طويل") && !entityXML.contains("جهة التنفيذ"), "entity Excel retains names and portrait setup")
+        let combinedGroup = ReportGroup(kind: .deductions, month: group.month, title: group.title, count: 1, total: 1200, byEntity: true)
+        let combinedSheet = ReportSheet.make(group: combinedGroup, rows: entityRows)
+        try check(combinedSheet.columns.contains { $0.title == "جهة التنفيذ" } && combinedSheet.rows[0].contains("جهة وهمية"), "combined entities retain branch identity")
+        let mixedRow = ReportRow(id: 100, name: "منتسب وهمي", rank: "موظف", workplace: "", amount: 20, note: "", entity: "جهة أخرى")
+        let mixedSheet = ReportSheet.make(group: group, rows: entityRows + [mixedRow])
+        try check(mixedSheet.columns.contains { $0.title == "جهة التنفيذ" } && mixedSheet.rows.last?.contains("جهة أخرى") == true, "unexpected mixed entity preserves source")
+        let entityPDFURL = FileManager.default.temporaryDirectory.appendingPathComponent("entity-test-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: entityPDFURL) }
+        try PDFReportWriter.write(entitySheet, to: entityPDFURL)
+        guard let entityPDF = PDFDocument(url: entityPDFURL) else { throw Failure(errorDescription: "entity PDF could not be opened") }
+        try check(entityPDF.pageCount > 1 && (0..<entityPDF.pageCount).allSatisfy { index in
+            guard let bounds = entityPDF.page(at: index)?.bounds(for: .mediaBox) else { return false }
+            return bounds.width < bounds.height
+        }, "long entity PDF wraps across portrait pages")
         let resolvedEntities = TransferEntityResolution.make(groups: [group], missing: [:], figures: nil, accounts: [account], categories: [:], payrollLinks: [:], linksValid: true)
         try check(resolvedEntities.count == 1 && resolvedEntities.first?.category == .rafidain && resolvedEntities.first?.account?.key == account.key, "shared transfer entity classification")
         let item = TransferEntity(group: group, account: account, category: .rafidain, missingAmounts: 0)

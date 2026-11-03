@@ -1025,7 +1025,18 @@ try
         var reportAssets = ReportAssets.Load(Path.GetFullPath("SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png"));
         var stamp = new DateTime(2026, 11, 1, 10, 30, 0);
         var entityPdf = ReportPdf.Generate([entityReport], reportAssets, stamp);
-        using (var read = UglyToad.PdfPig.PdfDocument.Open(entityPdf)) Check(read.NumberOfPages == 1, "entity PDF pages");
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(entityPdf)) Check(read.NumberOfPages == 1 && read.GetPage(1).Width < read.GetPage(1).Height, "entity PDF pages use portrait A4");
+        var longEntityRows = Enumerable.Range(0, 60).Select(i => new[] { $"{i + 1}", "موظف", $"منتسب وهمي طويل الاسم للتأكد من وضوح الاسم الكامل رقم {i}", "", "ملاحظة وهمية طويلة للتحقق من التفاف رقم وتاريخ الاضبارة" }).ToArray();
+        var longEntity = (entityReport with { Rows = longEntityRows, Amounts = Enumerable.Repeat(1000m, longEntityRows.Length).ToArray() }).Fitted();
+        Check(!longEntity.Landscape && longEntity.Columns.All(c => c.Title != "جهة التنفيذ"), "entity export stays portrait without repeated entity column");
+        using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([longEntity], reportAssets, stamp)))
+            Check(read.NumberOfPages > 1 && Enumerable.Range(1, read.NumberOfPages).All(i => read.GetPage(i).Width < read.GetPage(i).Height), "long entity PDF wraps across portrait pages");
+        using (var zip = new ZipArchive(new MemoryStream(XlsxReport.Generate(longEntity)), ZipArchiveMode.Read))
+        using (var xml = new StreamReader(zip.GetEntry("xl/worksheets/sheet1.xml")!.Open()))
+        {
+            var sheetXml = xml.ReadToEnd();
+            Check(sheetXml.Contains("orientation=\"portrait\"") && sheetXml.Contains("منتسب وهمي طويل الاسم") && !sheetXml.Contains("جهة التنفيذ"), "entity Excel retains full names and portrait setup");
+        }
         var longSheet = new ReportSheet(ReportSheet.DefaultHeader, "كشف وهمي طويل", [new("ت", 5, ReportColumnKind.Serial), new("الاسم الكامل", 34, ReportColumnKind.Text), new("المبلغ", 14, ReportColumnKind.Amount)],
             Enumerable.Range(0, 120).Select(i => new[] { "", $"منتسب وهمي طويل الاسم جداً لاختبار الاختصار رقم {i}", "" }).ToArray(), Enumerable.Range(0, 120).Select(i => 1000m * i).ToArray()).Fitted();
         using (var read = UglyToad.PdfPig.PdfDocument.Open(ReportPdf.Generate([longSheet, entityReport], reportAssets, stamp))) Check(read.NumberOfPages >= 4, "multi-page PDF with several sheets");

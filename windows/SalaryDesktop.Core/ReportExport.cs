@@ -13,14 +13,14 @@ public sealed record ReportColumn(string Title, double Width, ReportColumnKind K
 
 /// كشف بالشكل المعتمد في الآيفون: رأس (اسم الجهة) ← شريط أزرق بعنوان الكشف ← رؤوس الأعمدة ← الصفوف ← سطر المجموع.
 /// قيم الصفوف نصوص، وعمود المبلغ رقم في Amounts؛ ونص غير فارغ في خانة المبلغ (مثل «غير محتسب») يُعرض بدل الرقم ومبلغه صفر.
-public sealed record ReportSheet(string Header, string Title, IReadOnlyList<ReportColumn> Columns, IReadOnlyList<string[]> Rows, IReadOnlyList<decimal> Amounts, bool ShowTotal = true)
+public sealed record ReportSheet(string Header, string Title, IReadOnlyList<ReportColumn> Columns, IReadOnlyList<string[]> Rows, IReadOnlyList<decimal> Amounts, bool ShowTotal = true, bool ForcePortrait = false)
 {
     public const string DefaultHeader = "قيادة شرطة محافظة الانبار";
     public decimal Total => Amounts.Sum();
     public int AmountColumn => Columns.ToList().FindIndex(c => c.Kind == ReportColumnKind.Amount);
     public bool HasTotal => ShowTotal && AmountColumn > 0;
     /// A4 بالعرض إذا كان مجموع عرض الأعمدة أكبر مما تتسعه الصفحة بالطول.
-    public bool Landscape => Columns.Sum(c => c.Width) > 96;
+    public bool Landscape => !ForcePortrait && Columns.Sum(c => c.Width) > 96;
 
     public static string Eastern(string text) => string.Concat(text.Select(c => c is >= '0' and <= '9' ? (char)('٠' + c - '0') : c));
     public static string Money(decimal value) => value.ToString("#,0.##", CultureInfo.GetCultureInfo("en-US"));
@@ -114,7 +114,12 @@ public static class XlsxReport
         rows.Append("</row>");
         for (int i = 0; i < sheet.Rows.Count; i++)
         {
-            var r = i + 4; rows.Append($"<row r=\"{r}\" ht=\"20\" customHeight=\"1\">");
+            var r = i + 4;
+            // في كشف الجهة العمودي تلتف الأسماء والإضبارات الطويلة داخل خلايا Excel.
+            var lines = sheet.ForcePortrait ? sheet.Columns.Select((column, c) => column.Kind == ReportColumnKind.Text
+                ? Math.Max(1, (int)Math.Ceiling(sheet.Rows[i][c].Length / Math.Max(1d, column.Width - 3))) : 1).Max() : 1;
+            var height = sheet.ForcePortrait ? Math.Min(409, Math.Max(24, lines * 16 + 6)) : 20;
+            rows.Append($"<row r=\"{r}\" ht=\"{height}\" customHeight=\"1\">");
             for (int c = 0; c < sheet.Columns.Count; c++)
             {
                 var reference = $"{Letter(c)}{r}";
@@ -122,7 +127,7 @@ public static class XlsxReport
                 {
                     ReportColumnKind.Serial => $"<c r=\"{reference}\" s=\"5\"><v>{i + 1}</v></c>",
                     ReportColumnKind.Amount => sheet.Rows[i][c].Length > 0 ? Text(reference, sheet.Rows[i][c], 4) : $"<c r=\"{reference}\" s=\"6\"><v>{Number(sheet.Amounts[i])}</v></c>",
-                    _ => Text(reference, sheet.Rows[i][c], 4)
+                    _ => Text(reference, sheet.Rows[i][c], sheet.ForcePortrait ? (ReportPdf.IsNameColumn(sheet.Columns[c]) ? 11 : 10) : 4)
                 });
             }
             rows.Append("</row>");
@@ -197,7 +202,7 @@ public static class XlsxReport
         "<fonts count=\"5\"><font><sz val=\"11\"/><name val=\"Arial\"/></font><font><b/><sz val=\"14\"/><name val=\"Arial\"/></font><font><b/><sz val=\"15\"/><color rgb=\"FFFFFFFF\"/><name val=\"Arial\"/></font><font><b/><sz val=\"11\"/><name val=\"Arial\"/></font><font><b/><sz val=\"12\"/><name val=\"Arial\"/></font></fonts>" +
         "<fills count=\"4\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF1F4E79\"/><bgColor indexed=\"64\"/></patternFill></fill><fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFDDEBF7\"/><bgColor indexed=\"64\"/></patternFill></fill></fills>" +
         "<borders count=\"2\"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style=\"thin\"><color rgb=\"FF9BB7D4\"/></left><right style=\"thin\"><color rgb=\"FF9BB7D4\"/></right><top style=\"thin\"><color rgb=\"FF9BB7D4\"/></top><bottom style=\"thin\"><color rgb=\"FF9BB7D4\"/></bottom><diagonal/></border></borders>" +
-        "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs><cellXfs count=\"10\">" +
+        "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs><cellXfs count=\"12\">" +
         "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>" +
         "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\" readingOrder=\"2\"/></xf>" +
         "<xf numFmtId=\"0\" fontId=\"2\" fillId=\"2\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\" readingOrder=\"2\"/></xf>" +
@@ -208,6 +213,8 @@ public static class XlsxReport
         "<xf numFmtId=\"0\" fontId=\"3\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\" readingOrder=\"2\"/></xf>" +
         "<xf numFmtId=\"164\" fontId=\"4\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\"/></xf>" +
         "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyFill=\"1\" applyBorder=\"1\"/>" +
+        "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\" readingOrder=\"2\" wrapText=\"1\"/></xf>" +
+        "<xf numFmtId=\"0\" fontId=\"3\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"right\" vertical=\"center\" readingOrder=\"2\" wrapText=\"1\"/></xf>" +
         "</cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>";
 }
 
@@ -397,6 +404,8 @@ public static class ReportPdf
         var flexible = Enumerable.Range(0, widths.Length).Where(i => !fixedColumns.Contains(i) && sheet.Columns[i].Kind == ReportColumnKind.Text).ToArray();
         var flexibleTotal = flexible.Sum(i => widths[i]);
         if (excess > 0 && flexibleTotal > excess) foreach (var i in flexible) widths[i] -= excess * widths[i] / flexibleTotal;
+        if (sheet.ForcePortrait && (widths.Any(w => w <= 8) || widths.Sum() > tableWidth + 0.5f))
+            throw new InvalidDataException("تعذّر احتواء الأرقام في الصفحة العمودية؛ صدّر Excel.");
         return widths;
     }
 

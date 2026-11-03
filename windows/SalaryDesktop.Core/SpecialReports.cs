@@ -30,7 +30,7 @@ public static class StandardReports
             [new("ت", 5, ReportColumnKind.Serial), new("الرتبة", 11, ReportColumnKind.Text), new("الاسم الكامل", 34, ReportColumnKind.Text),
              new("المبلغ", 14, ReportColumnKind.Amount), new("رقم وتاريخ الاضبارة", 32, ReportColumnKind.Text)],
             rows.Select((d, i) => new[] { (i + 1).ToString(CultureInfo.InvariantCulture), d.Rank.Length > 0 ? d.Rank : ranks.GetValueOrDefault(Key(d.Name), ""), d.Name, "", d.Note }).ToArray(),
-            rows.Select(d => d.Amount ?? 0m).ToArray()).Fitted();
+            rows.Select(d => d.Amount ?? 0m).ToArray(), ForcePortrait: true).Fitted();
     }
 
     /// قائمة بند من بنود الرواتب: ت، الرتبة، الاسم الكامل، المبلغ، محل العمل (بترتيب ملف الرواتب).
