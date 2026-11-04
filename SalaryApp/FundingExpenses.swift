@@ -41,7 +41,7 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
         add("عقد عراق الجوال - صافي الشركة", split.company)
         let known: Set<String> = ["الرعاية الصحية", "صندوق شهداء الشرطة", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال"]
         for key in summary.breakdown.keys.sorted() where !known.contains(key) { add(key, summary.breakdown[key] ?? 0) }
-        if summary.contractCount > 0 || summary.contractContribution != 0 { add("ضمان العقود بعد التوقيفات", summary.contractContribution) }
+        if summary.contractCount > 0 || summary.contractContribution != 0 { add("الضمان الاجتماعي للعقود", summary.contractContribution) }
         if manual.singleList != 0 { add("المفردة", manual.singleList) }
         for group in groups.sorted(by: { $0.total == $1.total ? $0.title < $1.title : $0.total > $1.total }) {
             add("جهة تنفيذ: \(group.title)", group.total)
