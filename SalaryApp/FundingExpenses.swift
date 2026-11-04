@@ -3,7 +3,16 @@ import SwiftData
 
 /// صفوف المصروفات محسوبة مرة واحدة، مع المقارنة بمجموع كشف البنك لا بحركة تمويل خارجية.
 nonisolated struct FundingExpenses: Sendable, Equatable, Codable {
-    struct Row: Sendable, Identifiable, Equatable, Codable { let id: Int; let title: String; let amount: Double }
+    struct Row: Sendable, Identifiable, Equatable, Codable {
+        let id: Int
+        let title: String
+        let amount: Double
+        /// تُزال الإضافة المرئية فقط حتى تبقى لقطات الاعتماد القديمة مطابقة لبياناتها.
+        var displayTitle: String {
+            let prefix = "جهة تنفيذ: "
+            return title.hasPrefix(prefix) ? String(title.dropFirst(prefix.count)) : title
+        }
+    }
     let month: String
     let rows: [Row]
     let bankTotal: Double
@@ -61,7 +70,7 @@ nonisolated struct FundingExpenses: Sendable, Equatable, Codable {
             prefix = isProvisional && difference != 0 ? "معتمد يدوياً مع نواقص وفرق - " : isProvisional ? "معتمد يدوياً مع نواقص - " : difference != 0 ? "معتمد يدوياً مع فرق - " : "معتمد يدوياً - "
         } else { prefix = isProvisional ? "مسودة غير مكتملة - " : "غير معتمد - " }
         let detail = ReportSheet(header: header, title: "\(prefix)تفصيل المصروفات - \(month)", columns: columns,
-                                 rows: rows.enumerated().map { [String($0.offset + 1), $0.element.title, ""] }, amounts: rows.map(\.amount), entityDeduction: true).fitted()
+                                 rows: rows.enumerated().map { [String($0.offset + 1), $0.element.displayTitle, ""] }, amounts: rows.map(\.amount), entityDeduction: true).fitted()
         let status = difference == 0 ? (isProvisional ? "تطابق البيانات المتوفرة فقط" : "متطابق") : "غير متطابق - الفرق يحتاج مراجعة"
         let message = unclassifiedCount > 0 ? "\(status) - توجد رواتب غير مصنفة" : (!hasExecutionRows ? "\(status) - لا توجد استقطاعات محفوظة" : status)
         var comparisonRows = [["1", "مجموع المصروفات", ""], ["2", "مجموع كشف البنك", ""], ["3", "الفرق (البنك ناقص المصروفات)", ""]]
@@ -195,7 +204,7 @@ struct FundingExpensesView: View {
                 }
                 .accessibilityIdentifier("fundingExpensesComparison")
                 Section(tr("تفاصيل المصروفات", "Expense details")) {
-                    ForEach(report.rows) { row in LabeledContent(row.title, value: Money.format(row.amount)) }
+                    ForEach(report.rows) { row in LabeledContent(row.displayTitle, value: Money.format(row.amount)) }
                 }
                 Section {
                     Button(displayedApproval != nil ? tr("تصدير المعتمد Excel", "Export approved Excel") : report.isProvisional ? tr("تصدير مسودة Excel", "Export Excel draft") : tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(.excel) }.accessibilityIdentifier("fundingExpensesExcel")
