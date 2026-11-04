@@ -704,9 +704,10 @@ import CryptoKit
         expenseSummary.bankDeductions = 60
         try check(try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups).difference == 10, "expense discrepancy remains visible")
         expenseSummary.missingExecutionAmount = 1
-        do { _ = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups); throw Failure(errorDescription: "incomplete expense data accepted") }
-        catch is Failure { throw Failure(errorDescription: "incomplete expense data accepted") }
-        catch { }
+        expenseSummary.missingNet = 2; expenseSummary.missingContractNominal = 3
+        let expenseDraft = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups)
+        let (draftDetails, draftComparison) = expenseDraft.sheets()
+        try check(expenseDraft.isProvisional && expenseDraft.missingNet == 2 && expenseDraft.missingContractNominal == 3 && expenseDraft.missingExecutionAmount == 1 && draftDetails.title.hasPrefix("مسودة غير مكتملة") && draftComparison.title.hasPrefix("مسودة غير مكتملة") && draftComparison.amounts.suffix(3) == [2, 3, 1], "incomplete expense report is explicitly marked and includes missing counts")
         let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
         let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
         try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")

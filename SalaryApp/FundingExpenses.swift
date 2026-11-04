@@ -9,16 +9,17 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
     let bankTotal: Double
     let unclassifiedCount: Int
     let hasExecutionRows: Bool
+    let missingNet: Int
+    let missingContractNominal: Int
+    let missingExecutionAmount: Int
+    let contractOverrideStale: Bool
+    var isProvisional: Bool { missingNet > 0 || missingContractNominal > 0 || missingExecutionAmount > 0 || contractOverrideStale || unclassifiedCount > 0 }
     var total: Double { rows.reduce(0) { $0 + $1.amount } }
     var difference: Double { bankTotal - total }
 
     static func build(summary: BankStatementSummary, manual: BankManualAmounts, groups: [ReportGroup]) throws -> Self {
         func fail(_ text: String) -> NSError { NSError(domain: "FundingExpenses", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
         guard summary.payrollCount > 0 else { throw fail(tr("لا توجد رواتب محفوظة للشهر المختار.", "No payroll is saved for the selected month.")) }
-        guard summary.missingNet == 0, summary.missingContractNominal == 0, !summary.contractOverrideStale else {
-            throw fail(tr("توجد بيانات صافي أو اسمي عقود ناقصة، أو تعديل عقود يحتاج مراجعة. أكملها قبل إعداد الكشف.", "Net pay or contract nominal data is missing, or a contract override requires review."))
-        }
-        guard summary.missingExecutionAmount == 0 else { throw fail(tr("توجد استقطاعات جهات بمبالغ ناقصة؛ راجع الملف قبل إعداد الكشف.", "Some execution deductions have missing amounts; review the file.")) }
         guard groups.allSatisfy({ $0.kind == .deductions && $0.month == summary.month }) else { throw fail(tr("بيانات الجهات لا تطابق الشهر المختار.", "The entity data does not match the selected month.")) }
         let values = [summary.cashNet, summary.cardNet, summary.unclassifiedNet, summary.bankDeductions,
                       summary.contractContribution, manual.accumulatedLeave, manual.employeeRewards, manual.singleList] + Array(summary.breakdown.values) + groups.map(\.total)
@@ -46,7 +47,8 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
         for group in groups.sorted(by: { $0.total == $1.total ? $0.title < $1.title : $0.total > $1.total }) {
             add("جهة تنفيذ: \(group.title)", group.total)
         }
-        let report = Self(month: summary.month, rows: result, bankTotal: summary.bankTotal + manual.total, unclassifiedCount: summary.unclassifiedCount, hasExecutionRows: summary.executionCount > 0)
+        let report = Self(month: summary.month, rows: result, bankTotal: summary.bankTotal + manual.total, unclassifiedCount: summary.unclassifiedCount, hasExecutionRows: summary.executionCount > 0,
+                          missingNet: summary.missingNet, missingContractNominal: summary.missingContractNominal, missingExecutionAmount: summary.missingExecutionAmount, contractOverrideStale: summary.contractOverrideStale)
         guard report.total.isFinite, report.bankTotal.isFinite, report.total <= 9_007_199_254_740_991, report.bankTotal <= 9_007_199_254_740_991 else { throw fail(tr("إجمالي الكشف يتجاوز الحد المدعوم.", "The statement total exceeds the supported limit.")) }
         return report
     }
@@ -54,16 +56,21 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
     func sheets() -> (ReportSheet, ReportSheet) {
         let columns: [ReportSheet.Column] = [.init(title: "ت", width: 5, kind: .serial), .init(title: "البيان", width: 42, kind: .text), .init(title: "المبلغ", width: 20, kind: .amount)]
         let header = UserDefaults.standard.string(forKey: ReportSheet.headerKey) ?? ReportSheet.defaultHeader
-        let detail = ReportSheet(header: header, title: "تفصيل المصروفات - \(month)", columns: columns,
+        let prefix = isProvisional ? "مسودة غير مكتملة - " : ""
+        let detail = ReportSheet(header: header, title: "\(prefix)تفصيل المصروفات - \(month)", columns: columns,
                                  rows: rows.enumerated().map { [String($0.offset + 1), $0.element.title, ""] }, amounts: rows.map(\.amount), entityDeduction: true).fitted()
-        let status = difference == 0 ? "متطابق" : "غير متطابق - الفرق يحتاج مراجعة"
+        let status = difference == 0 ? (isProvisional ? "تطابق البيانات المتوفرة فقط" : "متطابق") : "غير متطابق - الفرق يحتاج مراجعة"
         let message = unclassifiedCount > 0 ? "\(status) - توجد رواتب غير مصنفة" : (!hasExecutionRows ? "\(status) - لا توجد استقطاعات محفوظة" : status)
         var comparisonRows = [["1", "مجموع المصروفات", ""], ["2", "مجموع كشف البنك", ""], ["3", "الفرق (البنك ناقص المصروفات)", ""]]
         var comparisonValues = [total, bankTotal, difference]
         if unclassifiedCount > 0 { comparisonRows.append(["", "تنبيه: عدد الرواتب غير المصنفة", ""]); comparisonValues.append(Double(unclassifiedCount)) }
         if !hasExecutionRows { comparisonRows.append(["", "تنبيه: عدد سجلات الاستقطاعات المحفوظة", ""]); comparisonValues.append(0) }
+        if missingNet > 0 { comparisonRows.append(["", "تنبيه: عدد الرواتب بلا صافي", ""]); comparisonValues.append(Double(missingNet)) }
+        if missingContractNominal > 0 { comparisonRows.append(["", "تنبيه: عدد العقود بلا اسمي", ""]); comparisonValues.append(Double(missingContractNominal)) }
+        if missingExecutionAmount > 0 { comparisonRows.append(["", "تنبيه: عدد الاستقطاعات بلا مبلغ", ""]); comparisonValues.append(Double(missingExecutionAmount)) }
+        if contractOverrideStale { comparisonRows.append(["", "تنبيه: تعديل العقود السابق يحتاج مراجعة", ""]); comparisonValues.append(1) }
         let comparisonColumns: [ReportSheet.Column] = [.init(title: "ت", width: 5, kind: .serial), .init(title: "البيان", width: 42, kind: .text), .init(title: "المبلغ / العدد", width: 20, kind: .amount)]
-        let summary = ReportSheet(header: header, title: "مطابقة كشف البنك - \(month) - \(message)", columns: comparisonColumns,
+        let summary = ReportSheet(header: header, title: "\(prefix)مطابقة كشف البنك - \(month) - \(message)", columns: comparisonColumns,
                                   rows: comparisonRows, amounts: comparisonValues, showTotal: false, entityDeduction: true).fitted()
         return (detail, summary)
     }
@@ -72,6 +79,7 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
 struct FundingExpensesView: View {
     let month: String
     let revision: String
+    @Query private var months: [PayrollMonth]
     @AppStorage("bankStatementManualAmounts") private var manualData = Data()
     @State private var report: FundingExpenses?
     @State private var error: String?
@@ -84,12 +92,31 @@ struct FundingExpensesView: View {
             if loading { ProgressView(tr("جارٍ حساب المصروفات", "Calculating expenses")) }
             else if let error { Text(error).foregroundStyle(.red) }
             else if let report {
+                if report.isProvisional {
+                    Section(tr("بيانات تحتاج مراجعة", "Data requiring review")) {
+                        Label(tr("مسودة غير مكتملة: المبالغ المعروضة للبيانات المتوفرة فقط ولا تمثل مبلغاً نهائياً.", "Incomplete draft: amounts reflect available data only and are not final."), systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        if report.missingNet > 0 { Text(tr("\(Num.format(report.missingNet)) سجل رواتب بلا صافي. راجع ملف الرواتب وأعد استيراده.", "\(report.missingNet) payroll records have no net amount. Review and reimport the payroll file.")) }
+                        if report.missingContractNominal > 0 {
+                            Text(tr("\(Num.format(report.missingContractNominal)) عقد بلا اسمي؛ حصة ١٢٪ محسوبة من الاسمي المتوفر فقط.", "\(report.missingContractNominal) contracts have no nominal pay; the 12% uses available nominal pay only."))
+                            if let record = months.first(where: { $0.name == month }) {
+                                NavigationLink(tr("عرض العقود بلا اسمي", "View contracts with missing nominal pay")) {
+                                    ContractNominalReviewView(month: month,
+                                        sourceKey: "\(String(describing: Optional(record.persistentModelID)))|\(record.name)|\(record.importedAt.timeIntervalSince1970)",
+                                        expected: report.missingContractNominal)
+                                }
+                            }
+                        }
+                        if report.missingExecutionAmount > 0 { Text(tr("\(Num.format(report.missingExecutionAmount)) استقطاع بلا مبلغ؛ راجع ملف جهات التنفيذ.", "\(report.missingExecutionAmount) deductions have no amount; review the execution file.")) }
+                        if report.contractOverrideStale { Text(tr("تغيّر أساس حساب العقود؛ المبلغ اليدوي السابق غير مستخدم. راجعه من كشف البنك.", "The contract basis changed; the previous manual amount is not used. Review it in the bank statement.")) }
+                    }
+                }
                 Section(tr("المطابقة مع كشف البنك", "Bank statement comparison")) {
-                    LabeledContent(tr("مجموع المصروفات", "Total expenses"), value: Money.format(report.total))
-                    LabeledContent(tr("مجموع كشف البنك", "Bank statement total"), value: Money.format(report.bankTotal))
+                    LabeledContent(report.isProvisional ? tr("مجموع المصروفات المتوفرة", "Available expenses") : tr("مجموع المصروفات", "Total expenses"), value: Money.format(report.total))
+                    LabeledContent(report.isProvisional ? tr("مجموع البنك المتوفر", "Available bank total") : tr("مجموع كشف البنك", "Bank statement total"), value: Money.format(report.bankTotal))
                     LabeledContent(tr("الفرق: البنك ناقص المصروفات", "Difference: bank minus expenses"), value: Money.format(report.difference))
-                    Label(report.difference == 0 ? tr("المبلغان متطابقان", "Amounts match") : tr("المبلغان غير متطابقين؛ راجع الجهات والمبالغ.", "Amounts differ; review entities and amounts."), systemImage: report.difference == 0 ? "checkmark.circle" : "exclamationmark.triangle")
-                        .foregroundStyle(report.difference == 0 ? .green : .orange)
+                    Label(report.difference == 0 ? (report.isProvisional ? tr("تطابق حسابي للبيانات المتوفرة فقط", "Numerical match for available data only") : tr("المبلغان متطابقان", "Amounts match")) : tr("المبلغان غير متطابقين؛ راجع الجهات والمبالغ.", "Amounts differ; review entities and amounts."), systemImage: report.difference == 0 && !report.isProvisional ? "checkmark.circle" : "exclamationmark.triangle")
+                        .foregroundStyle(report.difference == 0 && !report.isProvisional ? .green : .orange)
                     if report.unclassifiedCount > 0 { Text(tr("توجد رواتب غير مصنفة حسب طريقة الدفع؛ راجعها.", "Some salaries have no classified payment method; review them.")).foregroundStyle(.orange) }
                     if !report.hasExecutionRows { Text(tr("لا توجد سجلات استقطاعات محفوظة للشهر؛ تأكد من ملف جهات التنفيذ.", "No deduction records are saved for this month; check the execution file.")).foregroundStyle(.orange) }
                     Text(tr("تساوي المبلغين حسابياً لا يؤكد اكتمال ملفات المصدر؛ راجع بيانات الشهر.", "A numerical match does not verify source-file completeness; review the monthly data.")).font(.footnote).foregroundStyle(.secondary)
@@ -99,8 +126,8 @@ struct FundingExpensesView: View {
                     ForEach(report.rows) { row in LabeledContent(row.title, value: Money.format(row.amount)) }
                 }
                 Section {
-                    Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(.excel) }.accessibilityIdentifier("fundingExpensesExcel")
-                    Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(.pdf) }.accessibilityIdentifier("fundingExpensesPDF")
+                    Button(report.isProvisional ? tr("تصدير مسودة Excel", "Export Excel draft") : tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { export(.excel) }.accessibilityIdentifier("fundingExpensesExcel")
+                    Button(report.isProvisional ? tr("تصدير مسودة PDF", "Export PDF draft") : tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { export(.pdf) }.accessibilityIdentifier("fundingExpensesPDF")
                 }.disabled(exporter.isWorking)
             }
         }
