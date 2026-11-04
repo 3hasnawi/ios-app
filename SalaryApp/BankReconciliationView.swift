@@ -465,7 +465,7 @@ private struct ReconciliationMovementDrop: DropDelegate {
         guard let source = dragging, let provider = info.itemProviders(for: [UTType.text]).first else { return false }
         dragging = nil
         _ = provider.loadObject(ofClass: NSString.self) { value, _ in
-            guard let value, String(value) == source.uuidString else { return }
+            guard let value = value as? NSString, value as String == source.uuidString else { return }
             DispatchQueue.main.async { move(source, target) }
         }
         return true
