@@ -689,6 +689,7 @@ import CryptoKit
         let expenseManual = BankManualAmounts(accumulatedLeave: 10, employeeRewards: 5, singleList: 2)
         let expenseReport = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups)
         try check(expenseReport.difference == 0 && expenseReport.total == expenseSummary.bankTotal + expenseManual.total, "expense rows match bank total without duplicate deductions")
+        try check(expenseReport.rows.firstIndex(where: { $0.title == "مكافآت المنتسبين" }) == (expenseReport.rows.firstIndex(where: { $0.title == "الإجازات المتراكمة" }) ?? -2) + 1 && expenseReport.rows.filter { $0.title == "مكافآت المنتسبين" }.map(\.amount) == [5], "rewards follow accumulated leave and are counted once")
         try check(expenseReport.rows.first(where: { $0.title.contains("صافي الشركة") })?.amount == 95254 && expenseReport.rows.filter { $0.title.hasPrefix("جهة تنفيذ:") }.count == 2, "expense rows include company split and both entities")
         let (expenseDetails, expenseComparison) = expenseReport.sheets()
         try check(expenseDetails.total == expenseReport.total && expenseComparison.amounts == [expenseReport.total, expenseReport.bankTotal, 0] && !expenseComparison.showTotal, "expense exports preserve totals and comparison")

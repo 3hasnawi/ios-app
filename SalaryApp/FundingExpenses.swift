@@ -31,6 +31,7 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
         add("رواتب الكاش", summary.cashNet)
         if summary.unclassifiedCount > 0 { add("رواتب غير مصنفة حسب طريقة الدفع", summary.unclassifiedNet) }
         add("الإجازات المتراكمة", manual.accumulatedLeave)
+        add("مكافآت المنتسبين", manual.employeeRewards)
         add("الرعاية الصحية", summary.breakdown["الرعاية الصحية"] ?? 0)
         add("صندوق شهداء الشرطة", summary.breakdown["صندوق شهداء الشرطة"] ?? 0)
         add("الضريبة", summary.breakdown["الضريبة"] ?? 0)
@@ -41,7 +42,6 @@ nonisolated struct FundingExpenses: Sendable, Equatable {
         let known: Set<String> = ["الرعاية الصحية", "صندوق شهداء الشرطة", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال"]
         for key in summary.breakdown.keys.sorted() where !known.contains(key) { add(key, summary.breakdown[key] ?? 0) }
         if summary.contractCount > 0 || summary.contractContribution != 0 { add("ضمان العقود بعد التوقيفات", summary.contractContribution) }
-        if manual.employeeRewards != 0 { add("مكافآت المنتسبين", manual.employeeRewards) }
         if manual.singleList != 0 { add("المفردة", manual.singleList) }
         for group in groups.sorted(by: { $0.total == $1.total ? $0.title < $1.title : $0.total > $1.total }) {
             add("جهة تنفيذ: \(group.title)", group.total)
