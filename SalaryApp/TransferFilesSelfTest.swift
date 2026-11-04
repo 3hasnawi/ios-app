@@ -708,6 +708,20 @@ import CryptoKit
         let expenseDraft = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups)
         let (draftDetails, draftComparison) = expenseDraft.sheets()
         try check(expenseDraft.isProvisional && expenseDraft.missingNet == 2 && expenseDraft.missingContractNominal == 3 && expenseDraft.missingExecutionAmount == 1 && draftDetails.title.hasPrefix("مسودة غير مكتملة") && draftComparison.title.hasPrefix("مسودة غير مكتملة") && draftComparison.amounts.suffix(3) == [2, 3, 1], "incomplete expense report is explicitly marked and includes missing counts")
+        let approvalDate = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let approval = FundingApproval.Record(id: UUID(), confirmedAt: approvalDate, snapshot: expenseDraft, sourceRevision: "123|1|2", header: "ترويسة وهمية")
+        var approvalLedger = FundingApproval.Ledger(records: [approval])
+        let approvalData = try FundingApproval.encoded(approvalLedger)
+        let approvalRoundTrip = try FundingApproval.decode(approvalData)
+        try check(FundingApproval.latest(in: approvalRoundTrip, month: group.month) == approval, "expense approval preserves the exact incomplete snapshot and source revision")
+        let (approvedDetails, approvedComparison) = expenseDraft.sheets(confirmedAt: approvalDate, headerOverride: approval.header)
+        try check(approvedDetails.header == approval.header && approvedDetails.title.hasPrefix("معتمد يدوياً مع نواقص وفرق") && approvedComparison.title.hasPrefix("معتمد يدوياً مع نواقص وفرق"), "approved exports retain the snapshot header and disclose warnings")
+        approvalLedger.records.append(.init(id: UUID(), confirmedAt: approvalDate, snapshot: expenseDraft, sourceRevision: "123|1|2", header: "ترويسة وهمية", revokedAt: approvalDate))
+        try check(FundingApproval.latest(in: approvalLedger, month: group.month) == nil, "revoking the latest expense approval never revives an older approval")
+        do { _ = try FundingApproval.decode(Data("invalid".utf8)); throw Failure(errorDescription: "invalid expense approvals accepted") }
+        catch is Failure { throw Failure(errorDescription: "invalid expense approvals accepted") }
+        catch { }
+        try check(BackupFormat.supports(1) && BackupFormat.supports(6) && !BackupFormat.supports(7) && BackupFormat.supports(8) && !BackupFormat.supports(9) && BackupFormat.exportVersion(for: [:]) == 5 && BackupFormat.exportVersion(for: [ContractOverrides.settingsKey: Data()]) == 6 && BackupFormat.exportVersion(for: [FundingApproval.settingsKey: Data()]) == 8 && BackupFormat.settingsKeys.contains(FundingApproval.settingsKey), "expense approvals use version 8 without enabling experimental version 7")
         let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
         let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
         try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")

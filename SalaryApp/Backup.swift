@@ -11,7 +11,12 @@ import CryptoKit
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 6
+    static let version = 8
+    /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 }
+    static func exportVersion(for settings: [String: Data]) -> Int {
+        settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6)
+    }
     static let prefix = "نسخة الرواتب"
 
     struct Manifest: Codable, Sendable {
@@ -38,7 +43,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               SalaryTrust.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
+                               SalaryTrust.settingsKey, FundingApproval.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -134,7 +139,12 @@ actor BackupActor {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try ContractOverrides.decode(data)
         }
-        let manifest = BackupFormat.Manifest(version: settings[ContractOverrides.settingsKey] == nil ? 5 : BackupFormat.version, createdAt: .now,
+        if let serialized = settings[FundingApproval.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try FundingApproval.decode(data)
+        }
+        let formatVersion = BackupFormat.exportVersion(for: settings)
+        let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staff.count,
                                              accounts: accounts.count, books: books.count)
@@ -187,7 +197,7 @@ actor BackupActor {
         }
         // نفحص النسخة كاملة قبل لمس البيانات الحالية.
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-        guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
         guard manifest.hasData else { throw BackupError.emptyRestore }
         let months = try records("months.jsonl", BackupFormat.MonthRecord.self)
         let employees = try validate("employees.jsonl", BackupFormat.EmployeeRecord.self)
@@ -205,6 +215,10 @@ actor BackupActor {
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        if let serialized = settings[FundingApproval.settingsKey] {
+            guard manifest.version == 8, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try FundingApproval.decode(data)
+        } else if manifest.version == 8 { throw BackupError.notBackup }
         if settings[ContractOverrides.settingsKey] == nil,
            let current = try ContractOverrides.currentData(), !(try ContractOverrides.decode(current)).isEmpty {
             throw NSError(domain: "ContractOverride", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("النسخة المختارة لا تحتوي تعديلات العقود الموجودة على الجهاز. احفظ نسخة شاملة وراجع التعديلات قبل الاسترجاع.", "The selected backup does not contain this device’s contract adjustments. Save a full backup and review the adjustments before restoring.")])
@@ -547,7 +561,7 @@ final class BackupManager {
         }
         if let error = coordinationError ?? readError { throw error }
         guard let previous else { throw BackupError.folderUnavailable }
-        guard previous.version <= BackupFormat.version else { throw BackupError.newerVersion }
+        guard BackupFormat.supports(previous.version) else { throw BackupError.newerVersion }
         try checkMissingData(current, previous: previous)
     }
 
@@ -993,7 +1007,7 @@ final class BackupManager {
                 }
                 let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self,
                     from: Data(contentsOf: dir.appendingPathComponent("manifest.json")))
-                guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+                guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
                 guard manifest.hasData else { throw BackupError.emptyRestore }
                 if manifest.version >= 3 {
                     guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
@@ -1017,7 +1031,7 @@ final class BackupManager {
                 return dir
             }.value
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-            guard manifest.version <= BackupFormat.version else { throw BackupError.newerVersion }
+            guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
             if manifest.version >= 2, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("accounts.jsonl").path) {
                 throw BackupError.notBackup
             }
