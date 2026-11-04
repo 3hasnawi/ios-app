@@ -14,6 +14,7 @@ enum ReportsRoute: Hashable {
     case salaryAudit
     case salaryTrust(SalaryTrust.PaymentFilter)
     case transferFiles
+    case fundingExpenses
     case group(ReportGroup)
 }
 
@@ -76,6 +77,7 @@ struct ReportsView: View {
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .transferFiles: TransferFilesView()
+        case .fundingExpenses: FundingExpensesView(month: month?.name ?? "", revision: loadKey)
         case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
         case .group(let group): ReportDetailView(group: group)
         }
@@ -91,6 +93,7 @@ struct ReportsView: View {
                 } else {
                     VStack(spacing: 12) {
                         summaryCard
+                        fundingExpensesCard
                         auditCard
                         employeeDeductionsCard
                         entitiesCard
@@ -404,6 +407,29 @@ struct ReportsView: View {
         .buttonBorderShape(.circle)
     }
 
+    private var fundingExpensesCard: some View {
+        Button { open(.fundingExpenses) } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "list.bullet.rectangle.portrait")
+                    .font(.title2).foregroundStyle(.teal)
+                    .frame(width: 46, height: 46)
+                    .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(tr("تفصيل المصروفات والتمويل", "Expenses and funding details")).font(.headline).foregroundStyle(.primary)
+                    Text(tr("الرواتب والاستقطاعات والجهات مع مطابقة كشف البنك", "Payroll, deductions and entities compared with the bank statement"))
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.backward").foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("fundingExpensesCard")
+    }
+
     private func loadDeductions() async {
         guard let month else { return }
         let key = loadKey
@@ -615,7 +641,7 @@ struct PayrollItemsView: View {
 
 // MARK: - التصدير السريع
 
-enum ExportFormat { case excel, pdf }
+enum ExportFormat: Sendable { case excel, pdf }
 
 /// يجهّز ملف التصدير في الخلفية ثم يفتح نافذة المشاركة.
 @MainActor @Observable

@@ -42,7 +42,7 @@ nonisolated struct BankStatementSummary: Sendable {
 }
 
 /// مبالغ تُدخل يدوياً لكل شهر ولا تتأثر بإعادة استيراد ملف الرواتب.
-nonisolated struct BankManualAmounts: Codable, Equatable {
+nonisolated struct BankManualAmounts: Codable, Equatable, Sendable {
     var accumulatedLeave = 0.0
     var employeeRewards = 0.0
     var singleList = 0.0

@@ -682,6 +682,30 @@ import CryptoKit
         let figures = try TransferLetterFigureRules.make(summary: summary, available: columns)
         try check(figures.foodFund == 3000 && figures.foodTax == 1746 && figures.foodCompany == 95254, "food allocation")
         try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1200 && figures.contractTotal == 1400 && figures.payrollCash == 700, "letter totals")
+        var expenseSummary = summary
+        expenseSummary.bankDeductions = 50; expenseSummary.executionDeductions = 50; expenseSummary.executionCount = 2
+        let expenseGroups = [ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية أ", count: 1, total: 20, byEntity: false),
+                             ReportGroup(kind: .deductions, month: group.month, title: "جهة وهمية ب", count: 1, total: 30, byEntity: false)]
+        let expenseManual = BankManualAmounts(accumulatedLeave: 10, employeeRewards: 5, singleList: 2)
+        let expenseReport = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups)
+        try check(expenseReport.difference == 0 && expenseReport.total == expenseSummary.bankTotal + expenseManual.total, "expense rows match bank total without duplicate deductions")
+        try check(expenseReport.rows.first(where: { $0.title.contains("صافي الشركة") })?.amount == 95254 && expenseReport.rows.filter { $0.title.hasPrefix("جهة تنفيذ:") }.count == 2, "expense rows include company split and both entities")
+        let (expenseDetails, expenseComparison) = expenseReport.sheets()
+        try check(expenseDetails.total == expenseReport.total && expenseComparison.amounts == [expenseReport.total, expenseReport.bankTotal, 0] && !expenseComparison.showTotal, "expense exports preserve totals and comparison")
+        let expenseFolder = FileManager.default.temporaryDirectory.appendingPathComponent("expense-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: expenseFolder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: expenseFolder) }
+        let expensePDF = expenseFolder.appendingPathComponent("expenses.pdf"), expenseExcel = expenseFolder.appendingPathComponent("expenses.xlsx")
+        try PDFReportWriter.write([expenseDetails, expenseComparison], to: expensePDF)
+        try XLSXWriter.writeWorkbook([(name: "المصروفات", sheet: expenseDetails), (name: "المطابقة", sheet: expenseComparison)], to: expenseExcel)
+        let expenseArchive = try Archive(url: expenseExcel, accessMode: .read)
+        try check((PDFDocument(url: expensePDF)?.pageCount ?? 0) >= 2 && expenseArchive["xl/worksheets/sheet1.xml"] != nil && expenseArchive["xl/worksheets/sheet2.xml"] != nil, "expense PDF and Excel contain details and comparison")
+        expenseSummary.bankDeductions = 60
+        try check(try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups).difference == 10, "expense discrepancy remains visible")
+        expenseSummary.missingExecutionAmount = 1
+        do { _ = try FundingExpenses.build(summary: expenseSummary, manual: expenseManual, groups: expenseGroups); throw Failure(errorDescription: "incomplete expense data accepted") }
+        catch is Failure { throw Failure(errorDescription: "incomplete expense data accepted") }
+        catch { }
         let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
         let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
         try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")

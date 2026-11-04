@@ -378,6 +378,14 @@ final class NavigationTests: XCTestCase {
                 wait(app.navigationBars["ملفات التحويل"], "ملفات التحويل")
                 app.navigationBars.buttons.element(boundBy: 0).tap()
             }
+            let expenses = element("fundingExpensesCard")
+            if wait(expenses, "بطاقة تفصيل المصروفات") {
+                if !expenses.isHittable { app.swipeUp() }
+                expenses.tap()
+                wait(app.navigationBars["تفصيل المصروفات"], "تفصيل المصروفات")
+                app.navigationBars.buttons.element(boundBy: 0).tap()
+                app.swipeDown()
+            }
             let card = element("entitiesCard")
             if wait(card, "بطاقة جهات التنفيذ") {
                 card.tap()
