@@ -23,12 +23,12 @@ nonisolated struct BankStatementSummary: Sendable {
 
     var netSalary: Double { cashNet + cardNet + unclassifiedNet }
     var contractNominalShare: Double {
-        // تُقرّب حصة 12% من مجموع الاسمي إلى الدينار الأعلى قبل إضافة التوقيفات.
+        // تُقرّب حصة 12% من مجموع الاسمي إلى أقرب عشرة قبل إضافة التوقيفات؛ النصف للأعلى.
         let nominal = Decimal(string: String(contractNominal), locale: Locale(identifier: "en_US_POSIX")) ?? 0
-        var calculated = nominal * 12 / 100
-        var whole = Decimal()
-        NSDecimalRound(&whole, &calculated, 0, .up)
-        return NSDecimalNumber(decimal: whole).doubleValue
+        var tens = nominal * 12 / 1000
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &tens, 0, .plain)
+        return NSDecimalNumber(decimal: rounded * 10).doubleValue
     }
     var calculatedContractContribution: Double { contractNominalShare + contractRetirement }
     var contractOverrideStale: Bool { manualContractOverride.map { !$0.matches(self) } ?? false }

@@ -681,16 +681,16 @@ import CryptoKit
         let columns: Set<String> = ["الرعاية الصحية", "صندوق شهداء الشرطة", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال", "الاسمي", "التوقيفات التقاعدية", "طريقة الدفع"]
         let figures = try TransferLetterFigureRules.make(summary: summary, available: columns)
         try check(figures.foodFund == 3000 && figures.foodTax == 1746 && figures.foodCompany == 95254, "food allocation")
-        try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1201 && figures.contractTotal == 1401 && figures.payrollCash == 700, "letter totals")
+        try check(figures.treasuryTotal == 900 && figures.contractNominalShare == 1200 && figures.contractTotal == 1400 && figures.payrollCash == 700, "letter totals")
         let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
         let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
         try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")
         var adjustedSummary = summary
         adjustedSummary.manualContractOverride = contractOverride
         let adjustedFigures = try TransferLetterFigureRules.make(summary: adjustedSummary, available: columns)
-        try check(adjustedSummary.contractContribution == 1500 && adjustedFigures.contractTotal == 1500 && adjustedFigures.contractAdjustment == 99, "manual contract total is shared by bank and letter")
+        try check(adjustedSummary.contractContribution == 1500 && adjustedFigures.contractTotal == 1500 && adjustedFigures.contractAdjustment == 100, "manual contract total is shared by bank and letter")
         let adjustedTable = try TransferWordTables.contracts(adjustedFigures)
-        try check(adjustedTable.headers == ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "التعديل اليدوي", "المجموع"] && adjustedTable.rows[0] == ["200", "1201", "+99", "1500"], "manual difference appears in contract table")
+        try check(adjustedTable.headers == ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪", "التعديل اليدوي", "المجموع"] && adjustedTable.rows[0] == ["200", "1200", "+100", "1500"], "manual difference appears in contract table")
         adjustedSummary.contractNominal += 1
         let staleFigures = try TransferLetterFigureRules.make(summary: adjustedSummary, available: columns)
         try check(adjustedSummary.contractOverrideStale && staleFigures.contractTotal == nil, "changed contract basis requires manual review")
@@ -703,23 +703,25 @@ import CryptoKit
         var wholeContracts = summary
         wholeContracts.contractNominal = 1000
         try check(wholeContracts.contractNominalShare == 120, "whole contract share remains unchanged")
-        wholeContracts.contractNominal = 1001
-        try check(wholeContracts.contractNominalShare == 121, "contract share rounds any positive fraction upward")
-        wholeContracts.contractNominal = 1004
-        try check(wholeContracts.contractNominalShare == 121, "contract share rounds smaller fractions upward")
-        wholeContracts.contractNominal = 1005
-        try check(wholeContracts.contractNominalShare == 121, "contract share rounds larger fractions upward")
+        wholeContracts.contractNominal = 1041
+        try check(wholeContracts.contractNominalShare == 120, "contract share rounds below half down")
+        wholeContracts.contractNominal = 1042
+        try check(wholeContracts.contractNominalShare == 130, "contract share rounds above half up")
+        wholeContracts.contractNominal = 1125
+        try check(wholeContracts.contractNominalShare == 140, "contract share rounds exact half up")
+        wholeContracts.contractNominal = 178_723_001
+        try check(wholeContracts.contractNominalShare == 21_446_760, "contract share uses precise rounding for large values")
         var missingNominal = summary
         missingNominal.missingContractNominal = 1
         let partialFigures = try TransferLetterFigureRules.make(summary: missingNominal, available: columns)
         try check(partialFigures.contractNominalShare == nil && partialFigures.contractTotal == nil && partialFigures.missingContractNominal == 1, "missing nominal must not become a partial contract total")
         try check(partialFigures.foodCompany == figures.foodCompany && partialFigures.treasuryTotal == figures.treasuryTotal, "missing contract nominal must not block unrelated figures")
-        try check(partialFigures.availableContractNominalShare == 1201, "available nominal share preserved for review")
+        try check(partialFigures.availableContractNominalShare == 1200, "available nominal share preserved for review")
         var reviewedContracts = partialFigures
         reviewedContracts.contractNominalReviewed = true
-        try check(reviewedContracts.contractTotal == 1401 && reviewedContracts.missingContractNominal == 1, "explicit review uses available total and preserves warning")
+        try check(reviewedContracts.contractTotal == 1400 && reviewedContracts.missingContractNominal == 1, "explicit review uses available total and preserves warning")
         let reviewedTable = try TransferWordTables.contracts(reviewedContracts)
-        try check(reviewedTable.rows == [["200", "1201", "1401"]] && (try TransferWordValues.payrollAmount(bookID: "contracts", figures: reviewedContracts)) == 1401, "reviewed contract table and total")
+        try check(reviewedTable.rows == [["200", "1200", "1400"]] && (try TransferWordValues.payrollAmount(bookID: "contracts", figures: reviewedContracts)) == 1400, "reviewed contract table and total")
         var unavailable = reviewedContracts
         unavailable.availableContractNominalShare = nil
         try check(unavailable.contractTotal == nil, "review cannot invent a missing amount")
@@ -801,7 +803,7 @@ import CryptoKit
         context.insert(Employee(month: group.month, name: "صفر وهمي", rank: "موظف", workplace: "قسم وهمي", netSalary: 0, details: ["طريقة الدفع": "كاش"]))
         try context.save()
         let cashList = try await TransferCashListEngine(modelContainer: container).list(month: group.month)
-        try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1401 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1 && cashList.employees.allSatisfy({ $0.amount > 0 }), "payroll data integration")
+        try check(actual.treasuryTotal == 900 && actual.foodCompany == 95254 && actual.contractTotal == 1400 && actual.payrollCash == 1000 && cashList.total == 1000 && cashList.employees.count == 1 && cashList.employees.allSatisfy({ $0.amount > 0 }), "payroll data integration")
         let compactRows = (1...36).map { i in TransferCashEmployee(id: i, name: "منتسب وهمي \(i)", rank: "موظف", workplace: "قسم تجريبي", amount: 1000) }
         let compactList = TransferCashList(month: group.month, employees: compactRows)
         let compactPDF = try await TransferCashListPDF.make(compactList)
