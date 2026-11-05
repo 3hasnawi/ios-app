@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import CoreText
 
 /// مسودة للمراجعة فقط؛ لا تثبت عدد صفحات جدول Word ولا تصلح وحدها للاعتماد.
 nonisolated enum TransferWordGroupDraft {
@@ -54,10 +56,42 @@ nonisolated enum TransferWordGroupDraft {
         return "العدد: \(number)\nالتاريخ:\(writingSpace)\(date)"
     }
     /// تبقى مساحة الكتابة بين القوسين عند رسم PDF أو فتح Word.
-    static func footerWritingSpace(_ footer: String) -> String {
-        footer.replacingOccurrences(of: "\\([ \t\u{00A0}]*\\)",
-                                    with: "(" + String(repeating: "\u{00A0}", count: 50) + ")",
-                                    options: .regularExpression)
+    static func footerWritingSpace(_ footer: String, adaptivePDF: Bool = false) -> String {
+        let fontName = adaptivePDF ? "TimesNewRomanPS-BoldMT" : "TimesNewRomanPSMT"
+        guard let font = UIFont(name: fontName, size: 12) else {
+            return footer.replacingOccurrences(of: "\\([ \t\u{00A0}]*\\)",
+                                                with: "(" + String(repeating: "\u{00A0}", count: 50) + ")",
+                                                options: .regularExpression)
+        }
+        let face = CTFontCreateWithName(font.fontName as CFString, 12, nil)
+        let available: Double = adaptivePDF ? 519.3 : 510.3
+        return fittedFooter(footer, width: available) { text in
+            let value = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): face])
+            return CTLineGetTypographicBounds(CTLineCreateWithAttributedString(value), nil, nil, nil)
+        }
+    }
+
+    /// قياس السطر كاملاً يحافظ على النص المخصص ويملأ القوسين حتى قريب من حافة مساحة الطباعة.
+    static func fittedFooter(_ footer: String, width: Double, measure: (String) -> Double) -> String {
+        guard width.isFinite, width > 16, let pattern = try? NSRegularExpression(pattern: "\\([ \t\u{00A0}]*\\)") else { return footer }
+        return footer.components(separatedBy: "\n").map { line in
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            guard line.contains("التقدير"), let match = pattern.firstMatch(in: line, range: range) else {
+                return line.replacingOccurrences(of: "\\([ \t\u{00A0}]*\\)",
+                                                 with: "(" + String(repeating: "\u{00A0}", count: 50) + ")",
+                                                 options: .regularExpression)
+            }
+            func candidate(_ count: Int) -> String {
+                (line as NSString).replacingCharacters(in: match.range, with: "(" + String(repeating: "\u{00A0}", count: count) + ")")
+            }
+            var low = 0, high = 256
+            while low < high {
+                let middle = (low + high + 1) / 2
+                let measured = measure(candidate(middle))
+                if measured.isFinite && measured <= width - 8 { low = middle } else { high = middle - 1 }
+            }
+            return candidate(low)
+        }.joined(separator: "\n")
     }
     static func write(plan: TransferWordGroupPlan, month: String, payerIBAN: String,
                       text: LetterText, destination: URL, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws {
@@ -94,7 +128,7 @@ nonisolated enum TransferWordGroupDraft {
         }
         blocks += [
             .table(signatures),
-            .paragraph(.init(text: footerWritingSpace(text.footer), halfPoints: 24, bold: adaptivePDF)),
+            .paragraph(.init(text: footerWritingSpace(text.footer, adaptivePDF: adaptivePDF), halfPoints: 24, bold: adaptivePDF)),
             .pageBreak,
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(bodyNumber(year, adaptivePDF: adaptivePDF)))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)

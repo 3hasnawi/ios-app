@@ -5,6 +5,7 @@ import ZIPFoundation
 import PDFKit
 import UIKit
 import CryptoKit
+import CoreText
 
 /// يتحقق من صيغة الملف وقواعد التصنيف باستخدام حسابات وهمية فقط.
 @MainActor enum TransferFilesSelfTest {
@@ -546,6 +547,21 @@ import CryptoKit
         let emptyFooter = "نسخة منه الى:\n. (" + String(repeating: " ", count: 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام.\n. مستلم (مذكور)"
         let expandedFooter = TransferWordGroupDraft.footerWritingSpace(emptyFooter)
         try check(expandedFooter.contains("(" + String(repeating: "\u{00A0}", count: 50) + ")") && expandedFooter.contains("(مذكور)") && TransferWordGroupDraft.footerWritingSpace(expandedFooter) == expandedFooter, "group footer keeps a visible handwriting gap without changing filled parentheses")
+        let wideFooter = "نسخة منه الى:\n. () للتفضل بالاطلاع وإعلامنا الاستلام... مع التقدير.\n. جهة (مذكورة)"
+        let measuredFooter = TransferWordGroupDraft.fittedFooter(wideFooter, width: 160) { Double($0.count) }
+        let fittedLine = measuredFooter.components(separatedBy: "\n")[1]
+        try check(fittedLine.count <= 152 && fittedLine.count > 150 && fittedLine.contains("مع التقدير") && measuredFooter.contains("(مذكورة)") && TransferWordGroupDraft.fittedFooter(measuredFooter, width: 160, measure: { Double($0.count) }) == measuredFooter, "group footer fills available width without moving the ending or changing filled parentheses")
+        for (pdf, fontName, width) in [(false, "TimesNewRomanPSMT", 510.3), (true, "TimesNewRomanPS-BoldMT", 519.3)] {
+            guard let font = UIFont(name: fontName, size: 12) else { throw Failure(errorDescription: "group footer font unavailable") }
+            let result = TransferWordGroupDraft.footerWritingSpace(wideFooter, adaptivePDF: pdf)
+            let line = result.components(separatedBy: "\n")[1]
+            let face = CTFontCreateWithName(font.fontName as CFString, 12, nil)
+            func measured(_ text: String) -> Double {
+                let value = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): face])
+                return CTLineGetTypographicBounds(CTLineCreateWithAttributedString(value), nil, nil, nil)
+            }
+            try check(measured(line) <= width - 8 + 0.5 && measured(line) >= width - 16, "group footer visually approaches the printable edge without overflow")
+        }
         let spacedText = TransferWordGroupDraft.LetterText(header: groupText.header, fixedNumber: groupText.fixedNumber, committee: groupText.committee, footer: emptyFooter)
         let spacedDraft = FileManager.default.temporaryDirectory.appendingPathComponent("group-footer-\(UUID().uuidString).docx")
         defer { try? FileManager.default.removeItem(at: spacedDraft) }
