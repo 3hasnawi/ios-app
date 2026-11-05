@@ -762,6 +762,8 @@ import CoreText
         customTemplate.bodyAlignment = .center
         customTemplate.bodySpacing = .wide
         customTemplate.bodyBold = true
+        customTemplate.signatureVerticalOffset = -20
+        customTemplate.signatureHorizontalOffset = 15
         let customData = try CustomTransferTemplate.encode([customTemplate])
         try check(try CustomTransferTemplate.decode(customData) == [customTemplate], "custom letter backup roundtrip")
         try check(try customTemplate.render(["المبلغ": "1000", "الحساب": "123"]) == "المبلغ 1000 والحساب 123", "custom letter placeholders")
@@ -772,7 +774,12 @@ import CoreText
         try check(CustomTransferTemplate.formatBodyNumbers("حساب " + spacedAccount) == "حساب " + spacedAccount, "spaced IBAN remains unchanged")
         var legacyTemplate = customTemplate
         legacyTemplate.bodyAlignment = nil; legacyTemplate.bodySpacing = nil; legacyTemplate.bodyBold = nil
+        legacyTemplate.signatureVerticalOffset = nil; legacyTemplate.signatureHorizontalOffset = nil
         try check(try CustomTransferTemplate.decode(CustomTransferTemplate.encode([legacyTemplate])) == [legacyTemplate], "legacy custom letter remains readable")
+        var invalidOffsetTemplate = customTemplate
+        invalidOffsetTemplate.signatureHorizontalOffset = 31
+        do { _ = try CustomTransferTemplate.encode([invalidOffsetTemplate]); throw Failure(errorDescription: "out-of-range signature offset accepted") }
+        catch is Failure { throw Failure(errorDescription: "out-of-range signature offset accepted") } catch { }
         let letterSignatures = try CustomTransferTemplate.signatureCells(["صفة أولى\nاسم أول\nمنصب أول", "صفة ثانية\nاسم ثان\nمنصب ثان", "صفة ثالثة\nاسم ثالث\nمنصب ثالث"], date: " / ١٠ / ٢٠٢٦")
         try check(letterSignatures[0] == "صفة أولى\nاسم أول\nمنصب أول\n / ١٠ / ٢٠٢٦" && letterSignatures[2].hasSuffix("تشرين الأول / ٢٠٢٦"), "custom signature lines and automatic dates")
         try check(try CustomTransferTemplate.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦") == TransferWordGroupDraft.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true), "legacy signatures retain their titles")

@@ -140,6 +140,16 @@ private struct CustomTransferTemplateEditor: View {
                 Text(tr("العضو الثالث", "Third member")).font(.headline)
                 TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.thirdSigner, axis: .vertical).lineLimit(3...5)
                 Text(tr("لكل عضو: اكتب العنوان الوظيفي ثم الاسم ثم المنصب، كل واحد في سطر. يُضاف التاريخ تلقائياً أسفل التوقيع. الأسماء المحفوظة سابقاً تبقى بصفاتها المعتمدة.", "For each member, enter the job title, name and position on separate lines. The date is added automatically. Previously saved names retain their existing titles.")).font(.footnote).foregroundStyle(.secondary)
+                Stepper(value: Binding(get: { template.signatureVerticalOffset ?? 0 }, set: { template.signatureVerticalOffset = $0 }), in: -60...60, step: 5) {
+                    LabeledContent(tr("تحريك التواقيع عمودياً", "Move signatures vertically"), value: verticalOffsetLabel(template.signatureVerticalOffset ?? 0))
+                }
+                Stepper(value: Binding(get: { template.signatureHorizontalOffset ?? 0 }, set: { template.signatureHorizontalOffset = $0 }), in: -30...30, step: 5) {
+                    LabeledContent(tr("تحريك التواقيع أفقياً", "Move signatures horizontally"), value: horizontalOffsetLabel(template.signatureHorizontalOffset ?? 0))
+                }
+                Button(tr("إعادة موضع التواقيع للأصل", "Reset signature position")) {
+                    template.signatureVerticalOffset = 0; template.signatureHorizontalOffset = 0
+                }
+                Text(tr("يُطبّق التحريك على التواقيع الثلاثة معاً. راجع النتيجة في المعاينة؛ يمنع التطبيق تداخلها مع المتن أو الهامش.", "The three signatures move together. Review the preview; overlap with the body or footer is prevented.")).font(.footnote).foregroundStyle(.secondary)
             }
             Section(tr("نسخة منه إلى", "Copies to")) {
                 TextField(tr("النص", "Text"), text: $template.footer, axis: .vertical).lineLimit(2...8)
@@ -166,6 +176,12 @@ private struct CustomTransferTemplateEditor: View {
                 groups = try await TransferDataEngine(modelContainer: container).read(month: monthName).0
             } catch { sourceError = error.localizedDescription }
         }
+    }
+    private func verticalOffsetLabel(_ value: Int) -> String {
+        value == 0 ? tr("الموضع الأصلي", "Original position") : "\(Num.format(abs(value))) " + (value < 0 ? tr("أعلى", "up") : tr("أسفل", "down"))
+    }
+    private func horizontalOffsetLabel(_ value: Int) -> String {
+        value == 0 ? tr("الموضع الأصلي", "Original position") : "\(Num.format(abs(value))) " + (value < 0 ? tr("يسار", "left") : tr("يمين", "right"))
     }
 }
 
@@ -301,7 +317,8 @@ private struct CustomTransferLetterView: View {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let url = dir.appendingPathComponent("كتاب مخصص.pdf")
                 do {
-                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false)
+                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false,
+                        signatureOffset: selected.signatureVerticalOffset ?? 0, signatureHorizontalOffset: selected.signatureHorizontalOffset ?? 0)
                     var checks: [String] = []
                     if selected.body.contains("{{المبلغ}}"), let value = values["المبلغ"] { checks.append(value) }
                     if !account.isEmpty { checks.append(account) }

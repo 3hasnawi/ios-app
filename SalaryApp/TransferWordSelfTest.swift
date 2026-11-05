@@ -380,7 +380,7 @@ import CryptoKit
                 .paragraph(.init(text: "م / تجربة", centered: true)),
                 .paragraph(.init(text: "المبلغ التجريبي ١,٢٣٤,٥٦٧ ديناراً بتاريخ ٢٠٢٦/١٠/٠٥.", halfPoints: 28, bold: true, alignment: alignment, lineSpacing: 8)),
                 .table(fixedSignatures), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
-            ], destination: url, sakkalBold: nil, group: false)
+            ], destination: url, sakkalBold: nil, group: false, signatureOffset: -10, signatureHorizontalOffset: 15)
             try check(PDFDocument(url: url)?.pageCount == 1, "custom body PDF alignment")
             try TransferAdaptivePDF.verify(url, required: ["١,٢٣٤,٥٦٧"])
         }

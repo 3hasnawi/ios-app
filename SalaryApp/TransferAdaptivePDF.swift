@@ -95,8 +95,8 @@ nonisolated enum TransferAdaptivePDF {
     }
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
                       sakkalBold: Data?, group: Bool, signatureOffset: Int = 0,
-                      verifyNumericTableCells: Bool = false) throws {
-        guard (-60...60).contains(signatureOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
+                      verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0) throws {
+        guard (-60...60).contains(signatureOffset), (-30...30).contains(signatureHorizontalOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
               let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
         let headerFont = try font(header, sakkal: sakkalBold)
@@ -211,9 +211,9 @@ nonisolated enum TransferAdaptivePDF {
                 let tableWidth = contentWidth * CGFloat(table.widthFraction)
                 let widths = weights.map { tableWidth * CGFloat($0) / CGFloat(sum) }
                 guard widths.allSatisfy({ $0 > 10 }) else { throw fitFailure("column-width") }
-                let tableRight = table.alignRight ? page.width - margin : margin + (contentWidth + tableWidth) / 2
                 let groupTable = group && afterBreak
                 let signature = !table.showBorders
+                let tableRight = (table.alignRight ? page.width - margin : margin + (contentWidth + tableWidth) / 2) + (signature ? CGFloat(signatureHorizontalOffset) : 0)
                 var chosenHalfPoints = table.halfPoints
                 var fonts: [Int: CTFont] = [:]
                 func layout(_ values: [String], bold: Bool, halfPoints: Int) throws -> ([[TextLine]], CGFloat) {
