@@ -51,3 +51,19 @@ ordinary.consume(["الاسم", "المبلغ", "جهة التنفيذ"])
 ordinary.consume(["اسم وهمي", "0", "جهة وهمية"])
 ordinary.finish()
 precondition(ordinary.result.deductions.count == 1 && ordinary.result.deductions[0].amount == 0)
+
+let names = ["يوسف وهمي", "إياد وهمي", "باسم وهمي", "أحمد وهمي", "محمد وهمي"]
+let orderedNames = names.sorted { ArabicText.alphabeticalOrder($0, $1) == .orderedAscending }
+precondition(orderedNames == ["أحمد وهمي", "إياد وهمي", "باسم وهمي", "محمد وهمي", "يوسف وهمي"])
+precondition(ArabicText.alphabeticalOrder("أحمد", "احمد") != .orderedSame)
+precondition(ArabicText.alphabeticalOrder("أحمد", "أحمد") == .orderedSame)
+print("Arabic alphabetical ordering passed")
+
+let records = [
+    ReportRow(id: 3, name: "محمد وهمي", rank: "مفوض", workplace: "", amount: 300, note: "إضبارة ٣", entity: "جهة وهمية"),
+    ReportRow(id: 2, name: "أحمد وهمي", rank: "شرطي", workplace: "", amount: 200, note: "إضبارة ٢", entity: "جهة وهمية"),
+    ReportRow(id: 1, name: "أحمد وهمي", rank: "ضابط", workplace: "", amount: 100, note: "إضبارة ١", entity: "جهة وهمية")
+].sorted(by: ReportRow.nameOrder)
+precondition(records.map(\.id) == [1, 2, 3])
+precondition(records.map(\.amount) == [100, 200, 300])
+precondition(records.map(\.note) == ["إضبارة ١", "إضبارة ٢", "إضبارة ٣"])

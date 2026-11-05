@@ -20,6 +20,15 @@ nonisolated enum ArabicText {
             .joined(separator: " ")
     }
 
+    /// ترتيب الأسماء العربية بعد توحيد الهمزات والتشكيل، مع كسر التعادل دون دمج السجلات.
+    static func alphabeticalOrder(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = normalize(lhs), right = normalize(rhs)
+        let order = left.compare(right, options: [.numeric, .caseInsensitive], locale: Locale(identifier: "ar_IQ"))
+        if order != .orderedSame { return order }
+        if lhs == rhs { return .orderedSame }
+        return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
     /// نص البحث كما يكتبه المستخدم أو يمليه بالصوت: الإملاء الصوتي يضيف نقطة أو فاصلة أو علامة استفهام
     /// ("أحمد علي.") فلا يطابق أي اسم. تُحذف علامات الترقيم والرموز وتُوحّد المسافات.
     static func cleanQuery(_ text: String) -> String {

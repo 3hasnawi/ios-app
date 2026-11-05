@@ -42,6 +42,11 @@ nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
     let note: String
     /// جهة الاستقطاع (الفرع) لهذا السطر.
     var entity: String = ""
+
+    static func nameOrder(_ left: ReportRow, _ right: ReportRow) -> Bool {
+        let order = ArabicText.alphabeticalOrder(left.name, right.name)
+        return order == .orderedSame ? left.id < right.id : order == .orderedAscending
+    }
 }
 
 /// حسابات التقارير في الخلفية.
@@ -100,7 +105,7 @@ actor ReportEngine {
                 rows.append(ReportRow(id: i, name: item.employeeName, rank: rank, workplace: workplace,
                                       amount: item.amount ?? 0, note: item.note, entity: item.title))
             }
-            return rows.sorted { $0.name < $1.name }
+            return rows.sorted(by: ReportRow.nameOrder)
         case .payroll:
             e.propertiesToFetch = [\.name, \.rank, \.workplace, \.itemsData]
             var rows: [ReportRow] = []

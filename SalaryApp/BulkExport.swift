@@ -72,7 +72,7 @@ extension ReportEngine {
             result[key, default: []].append(ReportRow(id: i, name: item.employeeName, rank: rank, workplace: workplace,
                                                       amount: item.amount ?? 0, note: item.note, entity: item.title))
         }
-        for key in result.keys { result[key]?.sort { $0.name < $1.name } }
+        for key in result.keys { result[key]?.sort(by: ReportRow.nameOrder) }
         return result
     }
 }
