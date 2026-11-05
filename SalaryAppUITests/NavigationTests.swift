@@ -357,10 +357,18 @@ final class NavigationTests: XCTestCase {
             let menu = element("homeMonthMenu")
             guard wait(menu, "زر الأشهر") else { return }
             menu.tap()
-            let months = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND hittable == true", "2026"))
-            if wait(months.firstMatch, "شهر محفوظ في القائمة") { months.allElementsBoundByIndex.last?.tap() }
+            let months = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "2026"))
+            if wait(months.firstMatch, "شهر محفوظ في القائمة") {
+                let visibleMonths = months.allElementsBoundByIndex.filter { $0.isHittable }
+                XCTAssertFalse(visibleMonths.isEmpty, "لا توجد أشهر قابلة للاختيار")
+                visibleMonths.last?.tap()
+            }
             menu.tap()
-            if wait(months.firstMatch, "قائمة الأشهر مرة ثانية") { months.firstMatch.tap() }
+            if wait(months.firstMatch, "قائمة الأشهر مرة ثانية") {
+                let visibleMonths = months.allElementsBoundByIndex.filter { $0.isHittable }
+                XCTAssertFalse(visibleMonths.isEmpty, "لا توجد أشهر قابلة للاختيار")
+                visibleMonths.first?.tap()
+            }
         }
         step("فتح الإعدادات من الشريط السفلي") {
             settingsTab.tap()
