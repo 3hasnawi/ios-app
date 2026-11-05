@@ -317,7 +317,7 @@ private struct CustomTransferLetterView: View {
                     .paragraph(.init(text: body, halfPoints: 28, bold: selected.bodyBold ?? false, alignment: alignment, lineSpacing: spacing))
                 ]
                 if let attachments = selected.attachmentParagraph {
-                    blocks.append(.paragraph(.init(text: attachments, halfPoints: 24)))
+                    blocks.append(.paragraph(.init(text: attachments, halfPoints: 22)))
                 }
                 blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
                 blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: 24, bold: true)))
