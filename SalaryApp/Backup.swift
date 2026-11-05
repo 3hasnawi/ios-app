@@ -1161,9 +1161,12 @@ final class BackupManager {
         let before = counts()
         #if targetEnvironment(simulator)
         let previousTemplate = UserDefaults.standard.object(forKey: CustomTransferTemplate.settingsKey)
+        let previousUnified = UserDefaults.standard.object(forKey: TransferLetterCustomizationStore.settingsKey)
         defer {
             if let previousTemplate { UserDefaults.standard.set(previousTemplate, forKey: CustomTransferTemplate.settingsKey) }
             else { UserDefaults.standard.removeObject(forKey: CustomTransferTemplate.settingsKey) }
+            if let previousUnified { UserDefaults.standard.set(previousUnified, forKey: TransferLetterCustomizationStore.settingsKey) }
+            else { UserDefaults.standard.removeObject(forKey: TransferLetterCustomizationStore.settingsKey) }
         }
         var fixtureTemplate = CustomTransferTemplate()
         fixtureTemplate.title = "قالب وهمي للنسخة"
@@ -1172,6 +1175,17 @@ final class BackupManager {
             LaunchOptions.writeReport("backup=failed customTemplateSetup=failed"); return
         }
         UserDefaults.standard.set(fixtureTemplateData, forKey: CustomTransferTemplate.settingsKey)
+        var unifiedFixture = CustomTransferTemplate()
+        unifiedFixture.title = "كتاب وهمي"; unifiedFixture.header = "ترويسة وهمية"; unifiedFixture.number = "عدد وهمي"
+        unifiedFixture.recipient = "جهة وهمية"; unifiedFixture.subject = "موضوع وهمي"; unifiedFixture.footer = "هامش وهمي"
+        unifiedFixture.body = TransferLetterBody.template(for: "food_tax") ?? ""
+        unifiedFixture.firstSigner = "صفة وهمية\nاسم وهمي\nمنصب وهمي"; unifiedFixture.signatureHorizontalOffset = 10
+        var unifiedStore = TransferLetterCustomizationStore()
+        unifiedStore.apply(.init(letterTemplate: unifiedFixture), to: "food_tax")
+        guard let unifiedFixtureData = try? JSONEncoder().encode(unifiedStore) else {
+            LaunchOptions.writeReport("backup=failed unifiedTemplateSetup=failed"); return
+        }
+        UserDefaults.standard.set(unifiedFixtureData, forKey: TransferLetterCustomizationStore.settingsKey)
         #endif
         do {
             let old = Date(timeIntervalSince1970: 100), newer = Date(timeIntervalSince1970: 200)
@@ -1204,7 +1218,7 @@ final class BackupManager {
             let start = Date()
             let (url, testManifest) = try await makeBackup(title: "test")
             #if targetEnvironment(simulator)
-            guard testManifest.version == 9 || testManifest.version == 10 else { LaunchOptions.writeReport("backup=failed customTemplateVersion=failed"); return }
+            guard testManifest.version == 10 else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
             #endif
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.
@@ -1273,12 +1287,28 @@ final class BackupManager {
             guard templateRejected, counts() == before else {
                 cancelRestore(); LaunchOptions.writeReport("backup=failed corruptTemplateGuard=failed"); return
             }
+            var damagedUnifiedSettings = try JSONDecoder().decode([String: Data].self, from: originalSettings)
+            damagedUnifiedSettings[TransferLetterCustomizationStore.settingsKey] = try PropertyListSerialization.data(fromPropertyList: Data("invalid unified template".utf8), format: .binary, options: 0)
+            try JSONEncoder().encode(damagedUnifiedSettings).write(to: settingsFile)
+            var unifiedRejected = false
+            do {
+                _ = try await Task.detached {
+                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: nil)
+                }.value
+            } catch { unifiedRejected = true }
+            try originalSettings.write(to: settingsFile)
+            guard unifiedRejected, counts() == before else {
+                cancelRestore(); LaunchOptions.writeReport("backup=failed corruptUnifiedTemplateGuard=failed"); return
+            }
             #endif
             confirmRestore()
             while isWorking || pendingRestore != nil { try? await Task.sleep(for: .milliseconds(200)) }
             #if targetEnvironment(simulator)
             guard UserDefaults.standard.data(forKey: CustomTransferTemplate.settingsKey) == fixtureTemplateData else {
                 LaunchOptions.writeReport("backup=failed customTemplateRestore=failed"); return
+            }
+            guard UserDefaults.standard.data(forKey: TransferLetterCustomizationStore.settingsKey) == unifiedFixtureData else {
+                LaunchOptions.writeReport("backup=failed unifiedTemplateRestore=failed"); return
             }
             #endif
             let after = counts()
