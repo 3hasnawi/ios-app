@@ -782,6 +782,12 @@ import CoreText
         catch is Failure { throw Failure(errorDescription: "out-of-range signature offset accepted") } catch { }
         let letterSignatures = try CustomTransferTemplate.signatureCells(["صفة أولى\nاسم أول\nمنصب أول", "صفة ثانية\nاسم ثان\nمنصب ثان", "صفة ثالثة\nاسم ثالث\nمنصب ثالث"], date: " / ١٠ / ٢٠٢٦")
         try check(letterSignatures[0] == "صفة أولى\nاسم أول\nمنصب أول\n / ١٠ / ٢٠٢٦" && letterSignatures[2].hasSuffix("تشرين الأول / ٢٠٢٦"), "custom signature lines and automatic dates")
+        let oneSignature = try CustomTransferTemplate.signatureCells(["صفة\nاسم واحد\nمنصب", "", ""], date: " / ١٠ / ٢٠٢٦")
+        try check(oneSignature[0].isEmpty && oneSignature[1].isEmpty && oneSignature[2].contains("اسم واحد"), "single signature is placed in left column")
+        let twoSignatures = try CustomTransferTemplate.signatureCells(["صفة\nاسم أول\nمنصب", "", "صفة\nاسم ثالث\nمنصب"], date: " / ١٠ / ٢٠٢٦")
+        try check(twoSignatures[0].contains("اسم أول") && twoSignatures[1].isEmpty && twoSignatures[2].contains("اسم ثالث"), "two signatures occupy the outside columns")
+        do { _ = try CustomTransferTemplate.signatureCells(["", "  ", ""], date: " / ١٠ / ٢٠٢٦"); throw Failure(errorDescription: "empty signatures accepted") }
+        catch is Failure { throw Failure(errorDescription: "empty signatures accepted") } catch { }
         try check(try CustomTransferTemplate.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦") == TransferWordGroupDraft.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true), "legacy signatures retain their titles")
         do { _ = try CustomTransferTemplate.signatureCells(["صفة\nاسم", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦"); throw Failure(errorDescription: "incomplete signature accepted") }
         catch is Failure { throw Failure(errorDescription: "incomplete signature accepted") } catch { }

@@ -139,7 +139,7 @@ private struct CustomTransferTemplateEditor: View {
                 TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.secondSigner, axis: .vertical).lineLimit(3...5)
                 Text(tr("العضو الثالث", "Third member")).font(.headline)
                 TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.thirdSigner, axis: .vertical).lineLimit(3...5)
-                Text(tr("لكل عضو: اكتب العنوان الوظيفي ثم الاسم ثم المنصب، كل واحد في سطر. يُضاف التاريخ تلقائياً أسفل التوقيع. الأسماء المحفوظة سابقاً تبقى بصفاتها المعتمدة.", "For each member, enter the job title, name and position on separate lines. The date is added automatically. Previously saved names retain their existing titles.")).font(.footnote).foregroundStyle(.secondary)
+                Text(tr("أدخل توقيعاً واحداً على الأقل واترك البقية فارغة عند عدم الحاجة. يظهر التوقيع المنفرد يسار الكتاب. اكتب العنوان الوظيفي ثم الاسم ثم المنصب، كل واحد في سطر؛ ويُضاف التاريخ تلقائياً. الأسماء المحفوظة سابقاً تبقى بصفاتها المعتمدة.", "Enter at least one signature; leave the others blank if not needed. A single signature appears on the left. Enter the job title, name and position on separate lines; the date is added automatically. Previously saved names retain their existing titles.")).font(.footnote).foregroundStyle(.secondary)
                 Stepper(value: Binding(get: { template.signatureVerticalOffset ?? 0 }, set: { template.signatureVerticalOffset = $0 }), in: -60...60, step: 5) {
                     LabeledContent(tr("تحريك التواقيع عمودياً", "Move signatures vertically"), value: verticalOffsetLabel(template.signatureVerticalOffset ?? 0))
                 }
@@ -149,7 +149,7 @@ private struct CustomTransferTemplateEditor: View {
                 Button(tr("إعادة موضع التواقيع للأصل", "Reset signature position")) {
                     template.signatureVerticalOffset = 0; template.signatureHorizontalOffset = 0
                 }
-                Text(tr("يُطبّق التحريك على التواقيع الثلاثة معاً. راجع النتيجة في المعاينة؛ يمنع التطبيق تداخلها مع المتن أو الهامش.", "The three signatures move together. Review the preview; overlap with the body or footer is prevented.")).font(.footnote).foregroundStyle(.secondary)
+                Text(tr("تتحرك التواقيع المدخلة معاً. راجع النتيجة في المعاينة؛ يمنع التطبيق تداخلها مع المتن أو الهامش.", "The entered signatures move together. Review the preview; overlap with the body or footer is prevented.")).font(.footnote).foregroundStyle(.secondary)
             }
             Section(tr("نسخة منه إلى", "Copies to")) {
                 TextField(tr("النص", "Text"), text: $template.footer, axis: .vertical).lineLimit(2...8)
@@ -289,8 +289,8 @@ private struct CustomTransferLetterView: View {
                 var formattedTemplate = selected
                 formattedTemplate.body = CustomTransferTemplate.formatBodyNumbers(selected.body)
                 let body = try formattedTemplate.render(values)
-                let required = [selected.header, selected.number, selected.recipient, selected.subject, body, selected.footer, selected.firstSigner, selected.secondSigner, selected.thirdSigner]
-                guard required.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw CustomTransferTemplate.invalid(tr("أكمل الترويسة والعدد والجهة والموضوع والمتن والتواقيع والنسخة منه إلى.", "Complete the header, reference, recipient, subject, body, signatures and copies.")) }
+                let required = [selected.header, selected.number, selected.recipient, selected.subject, body, selected.footer]
+                guard required.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw CustomTransferTemplate.invalid(tr("أكمل الترويسة والعدد والجهة والموضوع والمتن والنسخة منه إلى.", "Complete the header, reference, recipient, subject, body and copies.")) }
                 let date = ReportSheet.easternDigits(period.signatureDate)
                 let alignment: TransferWordDocument.Paragraph.Alignment = switch selected.bodyAlignment ?? .justified {
                 case .justified: .justified

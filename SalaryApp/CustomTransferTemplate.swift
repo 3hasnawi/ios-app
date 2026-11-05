@@ -53,10 +53,13 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     }
     /// القوالب القديمة تخزن الاسم فقط، أما الحقل الجديد فيحتوي الصفة والاسم والمنصب.
     static func signatureCells(_ signers: [String], date: String) throws -> [String] {
-        guard signers.count == 3 else { throw invalid("أكمل بيانات أعضاء اللجنة الثلاثة.") }
+        guard signers.count == 3 else { throw invalid("راجع حقول التواقيع.") }
+        let active = signers.enumerated().filter { !$0.element.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !active.isEmpty else { throw invalid("أدخل توقيعاً واحداً على الأقل.") }
         let legacy = TransferWordGroupDraft.signatureCells(signers, date: date, adaptivePDF: true)
-        return try signers.enumerated().map { index, signer in
+        let rendered = try active.map { index, signer in
             let normalized = signer.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let parts = normalized.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
             if parts.count == 1 && !parts[0].isEmpty { return legacy[index] }
             guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty }) else {
@@ -64,6 +67,11 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
             }
             let signatureDate = index == 2 ? TransferWordGroupDraft.thirdMemberDate(date) : date
             return parts.joined(separator: "\n") + "\n" + signatureDate
+        }
+        switch rendered.count {
+        case 1: return ["", "", rendered[0]] // العمود الأخير على يسار صفحة الكتاب.
+        case 2: return [rendered[0], "", rendered[1]]
+        default: return rendered
         }
     }
     func validate() throws {

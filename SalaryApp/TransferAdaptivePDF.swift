@@ -232,6 +232,10 @@ nonisolated enum TransferAdaptivePDF {
                     for index in values.indices {
                         let cell: [TextLine]
                         if signature {
+                            if values[index].isEmpty {
+                                cells.append([])
+                                continue
+                            }
                             let parts = values[index].components(separatedBy: "\n")
                             guard parts.count == 4 else { throw Failure.signatureDoesNotFit }
                             var singleLines: [TextLine] = []

@@ -384,6 +384,24 @@ import CryptoKit
             try check(PDFDocument(url: url)?.pageCount == 1, "custom body PDF alignment")
             try TransferAdaptivePDF.verify(url, required: ["١,٢٣٤,٥٦٧"])
         }
+        phase = "custom-single-signature"
+        let oneSignatureCells = try CustomTransferTemplate.signatureCells(["وظيفة\nSOLO SIGNER\nمنصب", "", ""], date: " / ١٠ / ٢٠٢٦")
+        let oneSignature = TransferWordDocument.Table(headers: [], rows: [oneSignatureCells], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
+        let singlePDF = documents.appendingPathComponent("single-signature-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: singlePDF) }
+        try TransferAdaptivePDF.write(blocks: [
+            .paragraph(.init(text: "ترويسة وهمية", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: ٢٠٢٦ / ١٠ /", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / جهة وهمية", centered: true)),
+            .paragraph(.init(text: "م / تجربة", centered: true)),
+            .paragraph(.init(text: "متن كتاب وهمي", halfPoints: 28)),
+            .table(oneSignature), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
+        ], destination: singlePDF, sakkalBold: nil, group: false)
+        guard let singleDocument = PDFDocument(url: singlePDF), let singlePage = singleDocument.page(at: 0),
+              let signatureSelection = singleDocument.findString("SOLO SIGNER", withOptions: .caseInsensitive).first else {
+            throw Failure(errorDescription: "single signature missing from PDF")
+        }
+        try check(signatureSelection.bounds(for: singlePage).midX < singlePage.bounds(for: .mediaBox).midX, "single signature is on the left of the PDF")
         phase = "treasury-letter-drafts"
         let fakeRow = ReportRow(id: 42, name: "اسم وهمي", rank: "رتبة وهمية", workplace: "", amount: 1000, note: "")
         let schoolRow = ReportRow(id: 43, name: "اسم آخر وهمي", rank: "رتبة وهمية", workplace: "", amount: 600, note: "")
