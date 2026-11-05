@@ -351,16 +351,16 @@ struct TreasuryLetterView: View {
         else { signatures = try CustomTransferTemplate.signatureCells(signers, date: date) }
         let footer = "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم."
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: template?.header ?? header, font: template != nil && hasSpecialFont ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.header) } ?? header, font: template != nil && hasSpecialFont ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
             .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(template?.number ?? number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-            .paragraph(.init(text: "إلى / " + (template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: "م / " + (template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "إلى / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.recipient) } ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "م / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.subject) } ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: template))
         ]
         if let attachment = template?.attachmentParagraph { blocks.append(.paragraph(.init(text: attachment, halfPoints: 22))) }
         blocks.append(.table(table))
         blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
-        blocks.append(.paragraph(.init(text: template?.footer ?? footer, halfPoints: 24, bold: true)))
+        blocks.append(.paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.footer) } ?? footer, halfPoints: 24, bold: true)))
         let required = [payer, beneficiary, amount]
         return (blocks, required)
     }

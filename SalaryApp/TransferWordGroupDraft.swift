@@ -23,10 +23,15 @@ nonisolated enum TransferWordGroupDraft {
         if adaptivePDF, let template = custom.letterTemplate {
             try template.validate()
             _ = try CustomTransferTemplate.signatureCells([template.firstSigner, template.secondSigner, template.thirdSigner], date: " / ١ / ٢٠٢٦")
-            return LetterText(header: template.header, fixedNumber: template.number,
-                committee: [template.firstSigner, template.secondSigner, template.thirdSigner], footer: template.footer,
+            var formatted = template
+            formatted.header = CustomTransferTemplate.formatBodyNumbers(template.header)
+            formatted.recipient = CustomTransferTemplate.formatBodyNumbers(template.recipient)
+            formatted.subject = CustomTransferTemplate.formatBodyNumbers(template.subject)
+            formatted.footer = CustomTransferTemplate.formatBodyNumbers(template.footer)
+            return LetterText(header: formatted.header, fixedNumber: template.number,
+                committee: [template.firstSigner, template.secondSigner, template.thirdSigner], footer: formatted.footer,
                 bodyTemplate: template.body, signatureOffset: template.signatureVerticalOffset ?? 0,
-                bodyMonth: custom.bodyMonth, outgoingMonth: custom.outgoingMonth, template: template)
+                bodyMonth: custom.bodyMonth, outgoingMonth: custom.outgoingMonth, template: formatted)
         }
         guard let header = custom.header, let fixedNumber = custom.fixedNumber,
               let first = custom.committeeFirst, let second = custom.committeeSecond,

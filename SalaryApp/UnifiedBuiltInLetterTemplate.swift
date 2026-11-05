@@ -45,12 +45,12 @@ struct UnifiedBuiltInLetterTemplate: View {
             if custom.letterTemplate == nil {
                 let fallback = isTreasury ? store.effective(for: "food_tax") : custom
                 form.title = title
-                form.header = custom.header ?? fallback.header ?? ""; form.number = custom.fixedNumber ?? fallback.fixedNumber ?? ""
+                form.header = fallback.header ?? ""; form.number = fallback.fixedNumber ?? ""
                 form.recipient = "مصرف الرافدين / فرع الأنبار"; form.subject = "تحويل مبلغ"
                 form.body = custom.bodyTemplate ?? TransferLetterBody.template(for: bookID) ?? ""
-                form.footer = custom.footer ?? (isTreasury ? "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم." : "")
-                form.firstSigner = custom.committeeFirst ?? fallback.committeeFirst ?? ""; form.secondSigner = custom.committeeSecond ?? fallback.committeeSecond ?? ""; form.thirdSigner = custom.committeeThird ?? fallback.committeeThird ?? ""
-                form.signatureVerticalOffset = custom.signatureOffset
+                form.footer = isTreasury ? "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم." : (custom.footer ?? "")
+                form.firstSigner = fallback.committeeFirst ?? ""; form.secondSigner = fallback.committeeSecond ?? ""; form.thirdSigner = fallback.committeeThird ?? ""
+                form.signatureVerticalOffset = isTreasury ? nil : custom.signatureOffset
             }
             if bookID == "food_company" || bookID == "food_tax" { form.foodContractReference = custom.foodContractReference }
             if !isTreasury { form.bodyMonth = custom.bodyMonth; form.outgoingMonth = custom.outgoingMonth }
