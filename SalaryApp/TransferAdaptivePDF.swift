@@ -102,10 +102,28 @@ nonisolated enum TransferAdaptivePDF {
         let refFont = try font(reference, sakkal: sakkalBold)
         let headingWidth: CGFloat = 190
         let headerLines = try lines(header.text, font: headerFont, width: headingWidth)
-        let refLines = try lines(reference.text, font: refFont, width: headingWidth)
-        guard !headerLines.isEmpty, !refLines.isEmpty,
-              headerLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 123,
-              refLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 58 else { throw fitFailure("heading-reference") }
+        guard !headerLines.isEmpty, headerLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 123 else { throw fitFailure("heading") }
+        // الفراغ بعد «التاريخ» للكتابة فقط، وليس جزءاً من الرقم أو التاريخ؛ نقلله عند حاجة الخط للمساحة.
+        var referenceText = reference.text
+        func trimDateSpace() -> Bool {
+            guard let marker = referenceText.range(of: "التاريخ:"), marker.upperBound < referenceText.endIndex,
+                  referenceText[marker.upperBound] == "\u{00A0}" else { return false }
+            referenceText.remove(at: marker.upperBound)
+            return true
+        }
+        var refLines: [TextLine]
+        while true {
+            do {
+                let candidate = try lines(referenceText, font: refFont, width: headingWidth)
+                if !candidate.isEmpty && candidate.reduce(CGFloat.zero, { $0 + $1.height }) <= 58 {
+                    refLines = candidate; break
+                }
+                guard trimDateSpace() else { throw fitFailure("reference-height") }
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                guard trimDateSpace() else { throw error }
+            }
+        }
         var pages: [[Draw]] = [[]]
         var y: CGFloat = 23
         // يترك المتن مساحة ثابتة للتواقيع والنسخ أسفل صفحة الكتاب.
