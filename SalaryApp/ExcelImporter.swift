@@ -306,7 +306,7 @@ nonisolated final class SheetParser {
         static let netSalary = ["صافي الراتب", "الراتب الصافي", "الصافي", "صافي", "net salary", "net"]
         static let workplace = ["محل العمل", "مكان العمل", "جهة العمل", "NO_markaz", "المركز", "القسم", "الوحدة", "الدائرة", "اسم المديرية", "workplace"]
         static let amount = ["مبلغ الاستقطاع", "مبلغ القسط", "المبلغ", "مبلغ", "القسط", "amount"]
-        static let title = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف",
+        static let title = ["جهة التنفيذ", "نوع الاستقطاع", "جهة الاستقطاع", "اسم الفرع", "الفرع", "الجهة المستفيدة", "الجهة", "اسم المصرف", "المصرف",
                             "اسم الاستقطاع", "الاستقطاع", "البيان", "السبب", "type"]
         static let note = ["رقم وتاريخ الاضبارة", "رقم الاضبارة", "الاضبارة", "الملاحظات", "ملاحظات", "ملاحظة", "note"]
         /// صفوف المجاميع في آخر الكشوف ليست أسماء موظفين.
@@ -354,6 +354,7 @@ nonisolated final class SheetParser {
         var note: Int?
         var rank: Int?
         var month: Int?
+        var skipEmptyAmount: Bool
     }
 
     private struct AccountColumns {
@@ -456,11 +457,17 @@ nonisolated final class SheetParser {
             return .employees(columns)
         }
         if let amount = Self.column(Synonyms.amount, in: headers, used: &used) {
-            let title = Self.column(Synonyms.title, in: headers, used: &used)
+            // كشف التنفيذ والمصارف يحتوي اسم المصرف واسم الفرع معاً؛ الفرع هو الجهة الكاملة.
+            let branchFormat = headers.contains(ArabicText.normalize("اسم المصرف")) &&
+                headers.contains(ArabicText.normalize("الرتبة")) &&
+                headers.contains(ArabicText.normalize("الملاحظات"))
+            let branch = branchFormat ? Self.column(["اسم الفرع", "الفرع"], in: headers, used: &used, exactOnly: true) : nil
+            let title = branch ?? Self.column(Synonyms.title, in: headers, used: &used)
             let note = Self.column(Synonyms.note, in: headers, used: &used)
             let rank = Self.column(Synonyms.rank, in: headers, used: &used)
             let month = Self.column(["شهر", "الشهر", "month"], in: headers, used: &used, exactOnly: true)
-            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note, rank: rank, month: month))
+            return .deductions(DeductionColumns(name: name, amount: amount, title: title, note: note, rank: rank, month: month,
+                                                 skipEmptyAmount: branch != nil && month == nil))
         }
         return .skip
     }
@@ -508,6 +515,8 @@ nonisolated final class SheetParser {
 
         let amountText = cell(row, columns.amount)
         let amount = columns.month == nil ? ArabicText.number(from: amountText) : AnnualDeductionAmount.parse(amountText)
+        // لا تُسجّل الأسطر الخالية أو الصفرية في كشف التنفيذ الشهري؛ تبقى القيم غير المفهومة للمراجعة.
+        if columns.skipEmptyAmount && (amountText.isEmpty || amount == 0) { return }
         let title = cell(row, columns.title)
         if let monthColumn = columns.month {
             guard let year = annualYear else {
