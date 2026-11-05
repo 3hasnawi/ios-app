@@ -145,7 +145,12 @@ final class NavigationTests: XCTestCase {
         let field = searchField
         guard wait(field, "حقل البحث") else { return }
         field.tap()
-        field.typeText(text)
+        // Allow SwiftUI's search results to settle between words on a loaded simulator.
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        for (index, word) in words.enumerated() {
+            field.typeText((index == 0 ? "" : " ") + word)
+            if index + 1 < words.count { usleep(400_000) }
+        }
         let value = field.value as? String ?? ""
         if !value.contains(text.trimmingCharacters(in: .whitespaces)) {
             issue("الكتابة في حقل البحث لم تنجح (القيمة: \(value))")
@@ -382,6 +387,10 @@ final class NavigationTests: XCTestCase {
             }
             wait(element("backupStatus"), "صفحة النسخ الاحتياطي")
             app.navigationBars.buttons.element(boundBy: 0).tap()
+            wait(app.navigationBars["الإعدادات"], "العودة إلى الإعدادات")
+            if !app.tabBars.buttons["الرئيسية"].exists && !app.buttons["الرئيسية"].exists {
+                app.swipeDown()
+            }
         }
         step("التقارير: بطاقة جهات التنفيذ ثم المعاينة") {
             homeTab.tap()
