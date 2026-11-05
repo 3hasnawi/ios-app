@@ -17,8 +17,6 @@ struct TransferLetterSettingsView: View {
     }
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse)]) private var months: [PayrollMonth]
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var storedData = Data()
-    @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldData = Data()
-    @AppStorage(TransferHeaderFont.regularSettingsKey) private var regularData = Data()
     @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
@@ -207,15 +205,6 @@ struct TransferLetterSettingsView: View {
                         .disabled(busy)
                 }
             } header: { Text(tr("الحقول", "Fields")) } footer: { Text(tr("لتعديل متن كتاب محدد، افتح التخصيص من داخل الكتاب. تظهر القيم المشتركة عندما تتطابق في جميع الكتب.", "To edit a letter body, open settings from that letter. Shared values appear when they match across all letters.")) }
-            Section {
-                Button { importFont(.bold) } label: {
-                    Label(boldData.isEmpty ? tr("استيراد الخط العريض", "Import bold font") : tr("استبدال الخط العريض", "Replace bold font"), systemImage: "textformat")
-                }.disabled(busy)
-                Button { importFont(.regular) } label: {
-                    Label(regularData.isEmpty ? tr("استيراد الخط العادي", "Import regular font") : tr("استبدال الخط العادي", "Replace regular font"), systemImage: "textformat")
-                }.disabled(busy)
-                if importing { ProgressView() }
-            } header: { Text(tr("خط الترويسة الخاص", "Private header font")) } footer: { Text(tr("يُحفظ الخط ضمن نسختك الاحتياطية، وقد يُضمّن العريض في ملف Word إذا سمح الخط بذلك.", "The font is kept in your backup, and the bold font may be embedded in the Word file when permitted.")) }
         }
         .navigationTitle(tr("تخصيص الكتب", "Customize letters"))
         .navigationBarTitleDisplayMode(.inline)
@@ -389,30 +378,6 @@ struct TransferLetterSettingsView: View {
                     merged.wordReferenceHashes = imported.referenceHashes
                     storedData = try JSONEncoder().encode(merged)
                     BackupManager.shared.markChanged(); loadTarget(); saved = true
-                } catch { self.error = error.localizedDescription }
-            }
-        }
-    }
-    private func importFont(_ style: TransferHeaderFont.Style) {
-        guard !busy else { return }
-        FilePicker.present(types: [UTType(filenameExtension: "ttf") ?? .data], multiple: false) { urls in
-            guard let url = urls.first else { return }
-            importing = true
-            Task {
-                defer { importing = false }
-                do {
-                    let bytes = try await Task.detached(priority: .userInitiated) {
-                        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                        guard size > 0, size <= 3_000_000 else { throw TransferHeaderFont.Failure.invalidFont }
-                        let data = try Data(contentsOf: url)
-                        _ = try TransferHeaderFont.make(data: data, style: style, size: 18)
-                        return data
-                    }.value
-                    guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
-                        throw NSError(domain: "TransferHeaderFont", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("انتظر انتهاء العملية الحالية ثم أعد اختيار الخط.", "Wait for the current operation, then select the font again.")])
-                    }
-                    if style == .bold { boldData = bytes } else { regularData = bytes }
-                    BackupManager.shared.markChanged()
                 } catch { self.error = error.localizedDescription }
             }
         }

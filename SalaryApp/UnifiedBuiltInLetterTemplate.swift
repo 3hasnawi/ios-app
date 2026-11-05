@@ -163,7 +163,6 @@ struct UnifiedLetterTemplateList: View {
                     CustomTransferTemplatesView(monthName: months.first?.name ?? "")
                 }
             }
-            PrivateLetterFontSection()
         }
         .navigationTitle(tr("قالب الكتاب", "Letter template"))
         .navigationBarTitleDisplayMode(.inline)

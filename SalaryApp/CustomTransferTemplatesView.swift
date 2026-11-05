@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 import PDFKit
-import UniformTypeIdentifiers
 
 struct CustomTransferTemplatesView: View {
     let monthName: String
@@ -178,7 +177,6 @@ struct CustomTransferTemplateEditor: View {
             Section(tr("نسخة منه إلى", "Copies to")) {
                 TextField(tr("النص", "Text"), text: $template.footer, axis: .vertical).lineLimit(2...8)
             }
-            PrivateLetterFontSection()
         }
         .navigationTitle(tr("قالب الكتاب", "Letter template"))
         .sheet(isPresented: $choosingAccount) {
@@ -220,11 +218,10 @@ private struct CustomTransferLetterView: View {
     @State private var snapshot = ""
     @State private var working = false
     @State private var bankCache = BankStatementCache.shared
-    @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldFont = Data()
     private var month: PayrollMonth? { months.first { $0.name == monthName } }
     private var sourceKey: String {
         guard let month else { return "" }
-        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)|\(boldFont.hashValue)"
+        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)"
     }
     var body: some View {
         List {
@@ -275,7 +272,7 @@ private struct CustomTransferLetterView: View {
     }
     private func prepare() {
         guard let month, !working, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
-        let key = sourceKey, summaryData = month.itemSummaryData, manual = manualAmount, selected = template, font = boldFont
+        let key = sourceKey, summaryData = month.itemSummaryData, manual = manualAmount, selected = template
         working = true
         Task {
             defer { working = false }
@@ -320,7 +317,7 @@ private struct CustomTransferLetterView: View {
                 let date = ReportSheet.easternDigits(period.signatureDate)
                 let signatures = try CustomTransferTemplate.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date)
                 var blocks: [TransferWordDocument.Block] = [
-                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: font.isEmpty ? "Times New Roman" : "Sakkal Majalla", halfPoints: 32, bold: true)),
+                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: 32, bold: true)),
                     .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
                     .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: 32, bold: true, centered: true)),
                     .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: 32, bold: true, centered: true)),
@@ -335,7 +332,7 @@ private struct CustomTransferLetterView: View {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let url = dir.appendingPathComponent("كتاب مخصص.pdf")
                 do {
-                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: font.isEmpty ? nil : font, group: false,
+                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false,
                         signatureOffset: selected.signatureVerticalOffset ?? 0, signatureHorizontalOffset: selected.signatureHorizontalOffset ?? 0)
                     var checks: [String] = []
                     if selected.body.contains("{{المبلغ}}"), let value = values["المبلغ"] { checks.append(value) }

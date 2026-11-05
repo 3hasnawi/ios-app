@@ -11,7 +11,7 @@ nonisolated enum TransferAdaptivePDF {
         var errorDescription: String? {
             switch self {
             case .invalid: tr("بيانات الكتاب غير مكتملة.", "The letter data is incomplete.")
-            case .noFont: tr("استورد خط ساكال العريض والشعار قبل إعداد الكتاب.", "Import the bold Sakkal font and logo before preparing the letter.")
+            case .noFont: tr("تعذّر تحميل الخط أو الشعار اللازم لإعداد الكتاب.", "Could not load the font or logo needed to prepare the letter.")
             case .doesNotFit: tr("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.", "A field or the group table does not fit legibly; review the data.")
             case .diagnostic(let area): "PDF layout test: \(area)"
             case .groupTableDoesNotFit: tr("جدول المجموعة لا يتسع في صفحة واحدة بوضوح؛ راجع أطوال الأسماء وعدد الجهات.", "The group table does not fit legibly on one page; review entity names and count.")

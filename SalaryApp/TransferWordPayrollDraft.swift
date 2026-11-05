@@ -29,8 +29,8 @@ nonisolated enum TransferWordPayrollDraft {
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, font: adaptivePDF ? (text.template != nil && sakkalBold != nil ? "Sakkal Majalla" : "Times New Roman") : "Sakkal Majalla", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
-            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
+            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
             .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: text.template))
@@ -45,6 +45,6 @@ nonisolated enum TransferWordPayrollDraft {
         blocks.append(.table(signatures))
         blocks.append(.paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)))
         if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0) }
-        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
+        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: nil) }
     }
 }

@@ -224,7 +224,7 @@ import CryptoKit
             if id == "cash_salary" { try check(!xml.contains("موظف وهمي") && xml.contains("المرفقات:") && xml.contains("قائمة أسماء عدد (١)"), "Word cash letter identifies separate list") }
             if id == "food_tax" {
                 let embedded = try Archive(url: result.letter, accessMode: .read)
-                try check(embedded["word/fonts/sakkal-bold.ttf"] != nil, "Word draft embedded font")
+                try check(embedded["word/fonts/sakkal-bold.ttf"] == nil, "Word draft should not embed the old font")
             }
             if id == "food_company" {
                 do {
@@ -245,7 +245,7 @@ import CryptoKit
             let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [], entity: nil,
                 individualPlan: nil, cashList: id == "cash_salary" ? cash : nil, references: references,
                 accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: unifiedCustomization(id),
-                sakkalBold: syntheticFont, adaptivePDF: true)
+                sakkalBold: nil, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 1, "Unified template payroll \(id)")
             generated += 1
@@ -309,7 +309,7 @@ import CryptoKit
             phase = "unified-group-\(id)"
             let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: groupEntities, entity: nil,
                 individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
-                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: syntheticFont, adaptivePDF: true)
+                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: nil, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 2 && unifiedPDF.csv != nil, "Unified template group \(id)")
             generated += 1
@@ -378,7 +378,7 @@ import CryptoKit
             phase = "unified-entity-\(id)"
             let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [entity], entity: entity,
                 individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
-                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: syntheticFont, adaptivePDF: true)
+                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: nil, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 1, "Unified template entity \(id)")
             generated += 1

@@ -178,10 +178,6 @@ struct TransferLetterDraftView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !current { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).foregroundStyle(.orange) }
-                if boldFont.isEmpty {
-                    Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد العدد والتاريخ.", "Import the bold Sakkal font in letter settings to prepare the reference and date."))
-                        .font(.footnote).foregroundStyle(.orange)
-                }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!current || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working || (kind.requiresEntity && selectedEntity == nil) || (kind == .contracts && preparedFigures.contractTotal == nil))
             } footer: { Text(tr("راجع البيانات والتواقيع وعدد الصفحات في المعاينة قبل تصدير الكتاب.", "Review the details, signatures and pages in the preview before exporting the letter.")) }

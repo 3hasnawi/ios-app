@@ -64,7 +64,6 @@ struct TransferCompanyLetterView: View {
                 if references.isEmpty { Text(tr("استورد حزمة مراجع الكتب من صفحة ملفات التحويل.", "Import the letter reference package from transfer files.")).font(.footnote).foregroundStyle(.secondary) }
                 if !TransferRules.validIBAN(payerIBAN) { Text(tr("أدخل IBAN الجهة الدافعة من إعدادات ملفات التحويل.", "Enter the payer IBAN in transfer settings.")).font(.footnote).foregroundStyle(.secondary) }
                 if !sourceIsCurrent { Text(tr("تغيّرت البيانات؛ ارجع إلى ملفات التحويل لإعادة التحميل.", "Data changed; return to transfer files to reload.")).font(.footnote).foregroundStyle(.orange) }
-                if currentBoldFont.isEmpty { Text(tr("استورد خط ساكال العريض من تخصيص الكتب لإعداد العدد والتاريخ.", "Import the bold Sakkal font in letter settings to prepare the reference and date.")).font(.footnote).foregroundStyle(.orange) }
                 Text(tr("اضبط بيانات الكتاب من التخصيص، ثم راجع المعاينة قبل تصدير PDF.", "Customize the letter details, then review the preview before exporting the PDF.")).font(.footnote).foregroundStyle(.secondary)
             }
         }

@@ -101,7 +101,7 @@ nonisolated enum TransferWordGroupDraft {
     static func bodyNumber(_ value: String, adaptivePDF: Bool) -> String {
         adaptivePDF ? ReportSheet.easternDigits(value) : value
     }
-    /// عرض ١٤ مسافة غير قابلة للكسر يقارب عرض خمسة أرقام بخط ساكال المعتمد.
+    /// مساحة قابلة للكتابة اليدوية قبل التاريخ.
     static func referenceText(number: String, date: String, adaptivePDF: Bool) -> String {
         let writingSpace = adaptivePDF ? String(repeating: "\u{00A0}", count: 14) : " "
         return "العدد: \(number)\nالتاريخ:\(writingSpace)\(date)"
@@ -167,8 +167,8 @@ nonisolated enum TransferWordGroupDraft {
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, font: text.template != nil && sakkalBold != nil ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
+            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
             .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
             .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
             .paragraph(Self.bodyParagraph(body, template: text.template))
@@ -187,6 +187,6 @@ nonisolated enum TransferWordGroupDraft {
             .table(plan.table)
         ]
         if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0) }
-        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
+        else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: nil) }
     }
 }
