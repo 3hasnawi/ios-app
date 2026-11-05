@@ -54,7 +54,10 @@ final class NavigationTests: XCTestCase {
         let changed = element("deductionTile-changed")
         guard wait(changed, "بطاقة تغيّر المبلغ") else { return }
         changed.tap()
-        guard wait(element("deductionChangeList"), "قائمة تغيّر المبلغ", timeout: 45) else { return }
+        guard element("deductionChangeList").waitForExistence(timeout: 45) else {
+            XCTFail("لم تظهر قائمة تغيّر المبلغ بعد الضغط: \(app.debugDescription)")
+            return
+        }
         XCTAssertTrue(app.navigationBars["تغيّر المبلغ"].exists || app.staticTexts["تغيّر المبلغ"].exists)
     }
 
