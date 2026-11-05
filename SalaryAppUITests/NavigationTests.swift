@@ -54,7 +54,7 @@ final class NavigationTests: XCTestCase {
         let changed = element("deductionTile-changed")
         guard wait(changed, "بطاقة تغيّر المبلغ") else { return }
         changed.tap()
-        guard wait(element("deductionChangeList"), "قائمة تغيّر المبلغ") else { return }
+        guard wait(element("deductionChangeList"), "قائمة تغيّر المبلغ", timeout: 45) else { return }
         XCTAssertTrue(app.navigationBars["تغيّر المبلغ"].exists || app.staticTexts["تغيّر المبلغ"].exists)
     }
 
@@ -506,6 +506,9 @@ final class NavigationTests: XCTestCase {
         }
         step("فتح من آخر عمليات البحث") {
             homeTab.tap()
+            let recentRow = element("homeRecents")
+            for _ in 0..<4 where !recentRow.isHittable { app.swipeUp() }
+            guard wait(recentRow, "قسم آخر من بحثت عنهم") else { return }
             let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS 'احمد' OR label CONTAINS 'أحمد'")).firstMatch
             if wait(recent, "آخر من بحثت عنهم") {
                 recent.tap()

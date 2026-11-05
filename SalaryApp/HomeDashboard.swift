@@ -237,6 +237,9 @@ struct HomeDashboard: View {
                                    openReports: { route = .reports },
                                    openRoute: { route = $0 },
                                    openEntities: { openReports(.entities, month: current) })
+                    if !recents.isEmpty && !hidden.contains(.recents) {
+                        recentRow
+                    }
                 } else { welcome }
             }
             .padding(.horizontal, 16)
