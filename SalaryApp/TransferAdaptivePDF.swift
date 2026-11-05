@@ -94,7 +94,8 @@ nonisolated enum TransferAdaptivePDF {
         return result
     }
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
-                      sakkalBold: Data?, group: Bool, signatureOffset: Int = 0) throws {
+                      sakkalBold: Data?, group: Bool, signatureOffset: Int = 0,
+                      verifyNumericTableCells: Bool = false) throws {
         guard (-60...60).contains(signatureOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
               let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
@@ -125,6 +126,8 @@ nonisolated enum TransferAdaptivePDF {
             }
         }
         var pages: [[Draw]] = [[]]
+        // تحفظ حدود خلايا المبالغ للتحقق من كل مبلغ في موضعه، حتى إن فصل PDFKit الأرقام بفواصل أسطر.
+        var numericCells: [(page: Int, rect: CGRect, expected: String)] = []
         var y: CGFloat = 23
         // يترك المتن مساحة ثابتة للتواقيع والنسخ أسفل صفحة الكتاب.
         var limit: CGFloat = 590
@@ -250,6 +253,11 @@ nonisolated enum TransferAdaptivePDF {
                         right -= widths[index]
                         let rect = CGRect(x: right, y: y, width: widths[index], height: height)
                         if table.showBorders { add(.box(rect, bold)) }
+                        let value = values[index]
+                        if verifyNumericTableCells && table.showBorders && value.contains(where: \.isNumber) &&
+                            value.allSatisfy({ $0.isNumber || $0.isWhitespace || $0 == "," || $0 == "٬" }) {
+                            numericCells.append((pages.count - 1, rect, value))
+                        }
                         var baseline = y + (height - cells[index].reduce(CGFloat.zero) { $0 + $1.height }) / 2
                         for line in cells[index] {
                             add(.line(line, CGRect(x: right + 4, y: baseline, width: widths[index] - 8, height: line.height), 0.5))
@@ -357,6 +365,18 @@ nonisolated enum TransferAdaptivePDF {
                   guard let page = document.page(at: index), let text = page.string, !text.isEmpty else { return false }
                   return abs(page.bounds(for: .mediaBox).width - Self.page.width) < 2 && abs(page.bounds(for: .mediaBox).height - Self.page.height) < 2
               }) else { throw Failure.damaged }
+        if verifyNumericTableCells && numericCells.isEmpty { throw Failure.damaged }
+        func digits(_ value: String) -> String {
+            ArabicText.latinDigits(value).filter { $0.isASCII && $0.isNumber }
+        }
+        for cell in numericCells {
+            try Task.checkCancellation()
+            guard let output = document.page(at: cell.page) else { throw Failure.damaged }
+            let box = CGRect(x: cell.rect.minX + 0.2, y: page.height - cell.rect.maxY + 0.2,
+                             width: cell.rect.width - 0.4, height: cell.rect.height - 0.4)
+            let actual = digits(output.selection(for: box)?.string ?? "")
+            guard !actual.isEmpty, actual == digits(cell.expected) else { throw Failure.damaged }
+        }
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
         complete = true
     }

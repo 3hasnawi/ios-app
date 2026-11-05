@@ -388,7 +388,7 @@ import CryptoKit
             let url = documents.appendingPathComponent("treasury-test-\(UUID().uuidString).pdf")
             defer { try? FileManager.default.removeItem(at: url) }
             phase = "treasury-\(label)-write"
-            try TransferAdaptivePDF.write(blocks: draft.blocks, destination: url, sakkalBold: nil, group: false)
+            try TransferAdaptivePDF.write(blocks: draft.blocks, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
             try check(PDFDocument(url: url)?.pageCount == 1, "treasury PDF fits one page")
             for index in draft.required.indices {
                 phase = "treasury-\(label)-verify-\(index)"

@@ -228,7 +228,7 @@ struct TreasuryLetterView: View {
                         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                         let url = dir.appendingPathComponent("كتاب الخزينة.pdf")
                         do {
-                            try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false)
+                            try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
                             guard let document = PDFDocument(url: url), document.pageCount == 1 else { throw TreasuryLetterRules.Failure.pageCount }
                             try TransferAdaptivePDF.verify(url, required: required)
                             return url
@@ -301,7 +301,7 @@ struct TreasuryLetterView: View {
             .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
             .paragraph(.init(text: footer, halfPoints: 24, bold: true))
         ]
-        let required = [payer, beneficiary, amount] + (kind == .schools ? [try TransferWordValues.groupedAmount(firstAmount), try TransferWordValues.groupedAmount(secondAmount)] : [])
+        let required = [payer, beneficiary, amount]
         return (blocks, required)
     }
 }
