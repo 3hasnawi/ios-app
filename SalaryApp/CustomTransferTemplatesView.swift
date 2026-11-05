@@ -180,7 +180,7 @@ struct CustomTransferTemplateEditor: View {
             }
             PrivateLetterFontSection()
         }
-        .navigationTitle(tr("قالب كتاب", "Letter template"))
+        .navigationTitle(tr("قالب الكتاب", "Letter template"))
         .sheet(isPresented: $choosingAccount) {
             SavedLetterAccountPicker(accounts: accounts) { account in
                 template.account = account.iban.isEmpty ? (account.localAccount ?? "") : account.iban
