@@ -83,6 +83,7 @@ jobs:
           .venv/bin/python ci/make_test_xlsx.py "test-files/أيلول 2026.xlsx" sep.txt 3000 previous
           .venv/bin/python ci/make_test_iban.py
           .venv/bin/python ci/make_test_annual_deductions.py
+          .venv/bin/python ci/make_test_deduction_format.py test-files
           .venv/bin/python ci/make_test_word_font.py test-files/synthetic-word-font.ttf
           # المجموع المتوقع للملفين معاً
           cat oct.txt sep.txt | python3 -c '

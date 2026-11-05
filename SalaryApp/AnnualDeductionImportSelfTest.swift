@@ -15,6 +15,13 @@ nonisolated enum AnnualDeductionImportSelfTest {
         try require(feb.contains { $0.amount == 50 }, "Amount not preserved")
         try require(AnnualDeductionAmount.parse("١٢٬٣٤٥") == 12345 && AnnualDeductionAmount.parse("موقوف 2024") == nil,
                     "Unsafe amount interpretation")
+        for (filename, payrollCount) in [("branch-only.xlsx", 0), ("branch-combined.xlsx", 1)] {
+            let parsed = try ExcelImporter.load(url: documents.appendingPathComponent(filename))
+            try require(parsed.employees.count == payrollCount && parsed.deductions.count == 1, "Branch workbook classification or empty amount filtering failed")
+            let record = parsed.deductions[0]
+            try require(record.rank == "شرطي" && record.employeeName == "موظف وهمي" && record.amount == 250 &&
+                        record.title == "فرع وهمي" && record.note == "إضبارة وهمية", "Branch workbook column mapping failed")
+        }
         for filename in ["annual-invalid.xlsx", "annual-2025.xlsx"] {
             do {
                 _ = try ExcelImporter.load(url: documents.appendingPathComponent(filename))

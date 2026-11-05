@@ -1136,6 +1136,20 @@ final class BackupManager {
             return "employees=\(e) deductions=\(d) months=\(m) staff=\(s) accounts=\(a)"
         }
         let before = counts()
+        #if targetEnvironment(simulator)
+        let previousTemplate = UserDefaults.standard.object(forKey: CustomTransferTemplate.settingsKey)
+        defer {
+            if let previousTemplate { UserDefaults.standard.set(previousTemplate, forKey: CustomTransferTemplate.settingsKey) }
+            else { UserDefaults.standard.removeObject(forKey: CustomTransferTemplate.settingsKey) }
+        }
+        var fixtureTemplate = CustomTransferTemplate()
+        fixtureTemplate.title = "قالب وهمي للنسخة"
+        fixtureTemplate.body = "مبلغ وهمي {{المبلغ}}"
+        guard let fixtureTemplateData = try? CustomTransferTemplate.encode([fixtureTemplate]) else {
+            LaunchOptions.writeReport("backup=failed customTemplateSetup=failed"); return
+        }
+        UserDefaults.standard.set(fixtureTemplateData, forKey: CustomTransferTemplate.settingsKey)
+        #endif
         do {
             let old = Date(timeIntervalSince1970: 100), newer = Date(timeIntervalSince1970: 200)
             let restored = try PropertyListSerialization.data(fromPropertyList: "قيمة وهمية", format: .binary, options: 0)
@@ -1165,7 +1179,10 @@ final class BackupManager {
                 return
             }
             let start = Date()
-            let (url, _) = try await makeBackup(title: "test")
+            let (url, testManifest) = try await makeBackup(title: "test")
+            #if targetEnvironment(simulator)
+            guard testManifest.version == 9 else { LaunchOptions.writeReport("backup=failed customTemplateVersion=failed"); return }
+            #endif
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.
             let serverCopy = FileManager.default.temporaryDirectory.appendingPathComponent("server-time-test-\(UUID().uuidString).zip")
@@ -1218,8 +1235,29 @@ final class BackupManager {
                 LaunchOptions.writeReport("backup=failed corruptReferenceGuard=failed")
                 return
             }
+            #if targetEnvironment(simulator)
+            // قالب تالف يجب رفضه قبل استبدال البيانات، ثم استرجاع النسخة السليمة.
+            var damagedTemplateSettings = try JSONDecoder().decode([String: Data].self, from: originalSettings)
+            damagedTemplateSettings[CustomTransferTemplate.settingsKey] = try PropertyListSerialization.data(fromPropertyList: Data("invalid template".utf8), format: .binary, options: 0)
+            try JSONEncoder().encode(damagedTemplateSettings).write(to: settingsFile)
+            var templateRejected = false
+            do {
+                _ = try await Task.detached {
+                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: nil)
+                }.value
+            } catch { templateRejected = true }
+            try originalSettings.write(to: settingsFile)
+            guard templateRejected, counts() == before else {
+                cancelRestore(); LaunchOptions.writeReport("backup=failed corruptTemplateGuard=failed"); return
+            }
+            #endif
             confirmRestore()
             while isWorking || pendingRestore != nil { try? await Task.sleep(for: .milliseconds(200)) }
+            #if targetEnvironment(simulator)
+            guard UserDefaults.standard.data(forKey: CustomTransferTemplate.settingsKey) == fixtureTemplateData else {
+                LaunchOptions.writeReport("backup=failed customTemplateRestore=failed"); return
+            }
+            #endif
             let after = counts()
             LaunchOptions.writeReport("backup=\(before == after ? "ok" : "mismatch") corruptRestore=ok corruptReferenceGuard=ok serverTime=ok before[\(before)] after[\(after)] size=\(size) seconds=\(Int(Date().timeIntervalSince(start)))")
         } catch {
