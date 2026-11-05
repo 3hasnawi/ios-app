@@ -11,6 +11,7 @@ struct TreasuryLetterView: View {
     @AppStorage(ExecutionAccountStore.storageKey) private var accountsData = Data()
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var customizationData = Data()
     @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
+    @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldFont = Data()
     @State private var bankCache = BankStatementCache.shared
     @State private var firstItem = ""
     @State private var secondItem = ""
@@ -19,6 +20,7 @@ struct TreasuryLetterView: View {
     @State private var secondRows: [ReportRow] = []
     @State private var notes: [Int: String] = [:]
     @State private var beneficiaryIBAN = ""
+    @State private var automaticallySelectedAccount: String?
     @State private var guaranteeReason = "مبالغ الإيراد النهائي لتضمين الأسلحة لمنسوبي قيادتنا المدرجة أسماؤهم أدناه"
     @State private var header = ""
     @State private var number = ""
@@ -36,6 +38,11 @@ struct TreasuryLetterView: View {
     @State private var previewRevision = ""
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } }
+    private var templateID: String { kind == .guarantee ? "treasury_guarantee" : "treasury_schools" }
+    private var savedTemplate: CustomTransferTemplate? {
+        guard let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: customizationData) else { return nil }
+        return store.effective(for: templateID).letterTemplate
+    }
     private var summary: [String: PayrollItems.Summary]? { PayrollItems.decodeSummary(month?.itemSummaryData) }
     private var itemNames: [String] { (summary.map { Array($0.keys) } ?? []).sorted() }
     private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountsData)) ?? [] }
@@ -44,7 +51,7 @@ struct TreasuryLetterView: View {
         return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)"
     }
     private var loadKey: String { sourceRevision + "|" + firstItem + "|" + secondItem }
-    private var previewKey: String { loadKey + "|" + payerIBAN + "|" + beneficiaryIBAN }
+    private var previewKey: String { loadKey + "|" + payerIBAN + "|" + beneficiaryIBAN + "|\(customizationData.hashValue)|\(boldFont.hashValue)" }
     private var isReady: Bool {
         !sourceRevision.isEmpty && loadedItems == loadKey && !firstRows.isEmpty &&
             (kind == .guarantee || (!secondRows.isEmpty && firstItem != secondItem))
@@ -65,8 +72,15 @@ struct TreasuryLetterView: View {
             Button(tr("إلغاء", "Cancel"), role: .cancel) { pendingFirstItem = nil }
         }
         .onAppear { initialize() }
-        .onChange(of: payerIBAN) { _, _ in loadTreasuryAccountIfAvailable() }
-        .onChange(of: referenceData) { _, _ in loadTreasuryAccountIfAvailable() }
+        .onChange(of: payerIBAN) { _, _ in refreshAutomaticallySelectedAccount() }
+        .onChange(of: referenceData) { _, _ in refreshAutomaticallySelectedAccount() }
+        .onChange(of: customizationData) { _, _ in
+            if let template = savedTemplate {
+                automaticallySelectedAccount = nil
+                beneficiaryIBAN = template.account
+                if beneficiaryIBAN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { loadTreasuryAccountIfAvailable() }
+            }
+        }
         .task(id: loadKey) { await loadRows() }
         .sheet(isPresented: $choosingAccount) {
             SavedLetterAccountPicker(accounts: accounts.filter { !$0.iban.isEmpty }) { beneficiaryIBAN = $0.iban }
@@ -147,11 +161,12 @@ struct TreasuryLetterView: View {
     @ViewBuilder private var detailsSection: some View {
             Section(tr("بيانات الكتاب والتواقيع", "Letter details and signatures")) {
                 if kind == .guarantee { TextField(tr("سبب التضمين في متن الكتاب", "Reason in the letter"), text: $guaranteeReason, axis: .vertical).lineLimit(2...5) }
-                TextField(tr("الترويسة", "Header"), text: $header, axis: .vertical).lineLimit(2...6)
-                TextField(tr("العدد", "Reference number"), text: $number)
-                TextField(tr("اسم العضو الأول", "First member"), text: $firstSigner)
-                TextField(tr("اسم العضو الثاني", "Second member"), text: $secondSigner)
-                TextField(tr("اسم العضو الثالث", "Third member"), text: $thirdSigner)
+                NavigationLink {
+                    UnifiedBuiltInLetterTemplate(bookID: templateID, title: title, month: monthName)
+                } label: { Label(tr("قالب الكتاب", "Letter template"), systemImage: "slider.horizontal.3") }
+                if savedTemplate == nil {
+                    Text(tr("افتح قالب الكتاب لضبط الترويسة والتواقيع والمتن.", "Open the letter template to configure the header, signatures and body.")).font(.footnote).foregroundStyle(.secondary)
+                }
             }
     }
 
@@ -174,6 +189,7 @@ struct TreasuryLetterView: View {
     }
     private func initialize() {
         guard !initialized else { return }; initialized = true
+        if let account = savedTemplate?.account, !account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { beneficiaryIBAN = account }
         loadTreasuryAccountIfAvailable()
         if let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: customizationData) {
             // نستخدم ترويسة وتواقيع كتاب الخزينة الموجود مع الإعدادات المشتركة.
@@ -197,8 +213,13 @@ struct TreasuryLetterView: View {
             guard referenceData == references, payerIBAN == payer,
                   beneficiaryIBAN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   let account else { return }
-            beneficiaryIBAN = account
+            beneficiaryIBAN = account; automaticallySelectedAccount = account
         }
+    }
+    private func refreshAutomaticallySelectedAccount() {
+        if let previous = automaticallySelectedAccount, beneficiaryIBAN == previous { beneficiaryIBAN = "" }
+        automaticallySelectedAccount = nil
+        loadTreasuryAccountIfAvailable()
     }
     private func loadRows() async {
         let key = loadKey, selected = kind == .schools ? [firstItem, secondItem] : [firstItem]
@@ -235,9 +256,12 @@ struct TreasuryLetterView: View {
     private func prepare() {
         guard isReady, !working, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
         do {
+            let settings = customizationData, font = boldFont
+            let store = try (settings.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: settings))
+            let template = store.effective(for: templateID).letterTemplate
             let draft = try TreasuryLetterDraft.make(kind: kind, monthName: monthName, payerIBAN: payerIBAN, beneficiaryIBAN: beneficiaryIBAN,
                 header: header, number: number, firstSigner: firstSigner, secondSigner: secondSigner, thirdSigner: thirdSigner,
-                guaranteeReason: guaranteeReason, firstRows: firstRows, secondRows: secondRows, notes: notes)
+                guaranteeReason: guaranteeReason, firstRows: firstRows, secondRows: secondRows, notes: notes, template: template, hasSpecialFont: !font.isEmpty)
             let blocks = draft.blocks, required = draft.required
             let key = loadKey, payerSnapshot = payerIBAN, accountSnapshot = beneficiaryIBAN
             working = true; error = nil
@@ -250,7 +274,9 @@ struct TreasuryLetterView: View {
                         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                         let url = dir.appendingPathComponent("كتاب الخزينة.pdf")
                         do {
-                            try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+                            try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: font.isEmpty ? nil : font, group: false,
+                                signatureOffset: template?.signatureVerticalOffset ?? 0, verifyNumericTableCells: true,
+                                signatureHorizontalOffset: template?.signatureHorizontalOffset ?? 0)
                             guard let document = PDFDocument(url: url), document.pageCount == 1 else { throw TreasuryLetterRules.Failure.pageCount }
                             try TransferAdaptivePDF.verify(url, required: required)
                             return url
@@ -258,7 +284,7 @@ struct TreasuryLetterView: View {
                     }
                     let url = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
                     temporary = url
-                    guard !Task.isCancelled, key == loadKey, payerSnapshot == payerIBAN, accountSnapshot == beneficiaryIBAN,
+                    guard !Task.isCancelled, key == loadKey, payerSnapshot == payerIBAN, accountSnapshot == beneficiaryIBAN, customizationData == settings, boldFont == font,
                           !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { throw TreasuryLetterRules.Failure.sourceChanged }
                     previewRevision = previewKey; preview = url; temporary = nil
                 } catch {
@@ -275,9 +301,11 @@ struct TreasuryLetterView: View {
 @MainActor enum TreasuryLetterDraft {
     static func make(kind: TreasuryLetterView.Kind, monthName: String, payerIBAN: String, beneficiaryIBAN: String,
                      header: String, number: String, firstSigner: String, secondSigner: String, thirdSigner: String,
-                     guaranteeReason: String, firstRows: [ReportRow], secondRows: [ReportRow], notes: [Int: String]) throws
+                     guaranteeReason: String, firstRows: [ReportRow], secondRows: [ReportRow], notes: [Int: String],
+                     template: CustomTransferTemplate? = nil, hasSpecialFont: Bool = false) throws
         -> (blocks: [TransferWordDocument.Block], required: [String]) {
-        let values = [header, number, firstSigner, secondSigner, thirdSigner] + (kind == .guarantee ? [guaranteeReason] : [])
+        let signers = template.map { [$0.firstSigner, $0.secondSigner, $0.thirdSigner] } ?? [firstSigner, secondSigner, thirdSigner]
+        let values = [template?.header ?? header, template?.number ?? number] + (template == nil ? signers : []) + (kind == .guarantee ? [guaranteeReason] : [])
         guard values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               TransferRules.validIBAN(payerIBAN), TransferRules.validIBAN(beneficiaryIBAN) else { throw TreasuryLetterRules.Failure.incomplete }
         let payer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
@@ -294,7 +322,14 @@ struct TreasuryLetterView: View {
         let reason = kind == .guarantee
             ? "عن \(guaranteeReason)"
             : "عن مبالغ الإيراد النهائي لرسم الطابع الضريبي وبناء المدارس المحسومة من منتسبي قيادتنا وحسب الجدول أدناه"
-        let body = "نرجو تحويل مبلغ قدره (\(ReportSheet.easternDigits(amount))) (\(words)) لا غيرها من حسابنا المرقم (\(payer)) المفتوح لديكم إلى حساب (مديرية خزينة الأنبار) المرقم (\(beneficiary)) (مصرف الرافدين / فرع الأنبار) وذلك \(reason) لشهر (\(month) / \(ReportSheet.easternDigits(year))) وتزويدنا بالإشعار اللازم بذلك."
+        let body: String
+        if let template {
+            let id = kind == .guarantee ? "treasury_guarantee" : "treasury_schools"
+            body = try TransferLetterBody.render(id: id, custom: CustomTransferTemplate.formatBodyNumbers(template.body), values: ["المبلغ": ReportSheet.easternDigits(amount), "المبلغ كتابة": words,
+                "حسابنا": payer, "حساب المستفيد": beneficiary, "الشهر": month, "السنة": ReportSheet.easternDigits(year), "سبب التضمين": guaranteeReason])
+        } else {
+            body = "نرجو تحويل مبلغ قدره (\(ReportSheet.easternDigits(amount))) (\(words)) لا غيرها من حسابنا المرقم (\(payer)) المفتوح لديكم إلى حساب (مديرية خزينة الأنبار) المرقم (\(beneficiary)) (مصرف الرافدين / فرع الأنبار) وذلك \(reason) لشهر (\(month) / \(ReportSheet.easternDigits(year))) وتزويدنا بالإشعار اللازم بذلك."
+        }
         let table: TransferWordDocument.Table
         if kind == .guarantee {
             var rows: [[String]] = []
@@ -311,18 +346,21 @@ struct TreasuryLetterView: View {
                           font: "Times New Roman", halfPoints: 28, columnWeights: [4, 3], boldLastRow: true, widthFraction: 0.5, alignRight: true)
         }
         let date = ReportSheet.easternDigits(period.signatureDate)
-        let signatures = TransferWordGroupDraft.signatureCells([firstSigner, secondSigner, thirdSigner], date: date, adaptivePDF: true)
+        let signatures: [String]
+        if template == nil { signatures = TransferWordGroupDraft.signatureCells(signers, date: date, adaptivePDF: true) }
+        else { signatures = try CustomTransferTemplate.signatureCells(signers, date: date) }
         let footer = "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم."
-        let blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: header, font: "Times New Roman", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: body, halfPoints: 28)),
-            .table(table),
-            .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
-            .paragraph(.init(text: footer, halfPoints: 24, bold: true))
+        var blocks: [TransferWordDocument.Block] = [
+            .paragraph(.init(text: template?.header ?? header, font: template != nil && hasSpecialFont ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(template?.number ?? number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / " + (template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "م / " + (template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: template))
         ]
+        if let attachment = template?.attachmentParagraph { blocks.append(.paragraph(.init(text: attachment, halfPoints: 22))) }
+        blocks.append(.table(table))
+        blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
+        blocks.append(.paragraph(.init(text: template?.footer ?? footer, halfPoints: 24, bold: true)))
         let required = [payer, beneficiary, amount]
         return (blocks, required)
     }

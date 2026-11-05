@@ -17,7 +17,7 @@ nonisolated enum TransferWordDraftGenerator {
                      entity: TransferEntity?, individualPlan: TransferIndividualPlan?, cashList: TransferCashList?,
                      references: Data, accountLinks: Data, payerName: String, payerIBAN: String,
                      customization: TransferLetterCustomization, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws -> Result {
-        let text = try TransferWordGroupDraft.letterText(from: customization)
+        let text = try TransferWordGroupDraft.letterText(from: customization, adaptivePDF: adaptivePDF)
         if !adaptivePDF, bookID != "rafidain_group", bookID != "other_banks_group", let sakkalBold {
             let font = try TransferHeaderFont.make(data: sakkalBold, style: .bold, size: 18)
             let header = text.header.filter { !$0.isNewline }

@@ -52,9 +52,9 @@ struct TransferCompanyLetterView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView(bookID: "food_company", currentMonth: figures.month)
+                    UnifiedBuiltInLetterTemplate(bookID: "food_company", title: tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), month: figures.month)
                 } label: {
-                    Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
+                    Label(tr("قالب الكتاب", "Letter template"), systemImage: "slider.horizontal.3")
                 }
                 Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepareWord() }
                     .disabled(!sourceIsCurrent || references.isEmpty || !TransferRules.validIBAN(payerIBAN) || working)

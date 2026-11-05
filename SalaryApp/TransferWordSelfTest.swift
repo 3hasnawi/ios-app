@@ -176,6 +176,23 @@ import CryptoKit
         let custom = TransferLetterCustomization(header: "ترويسة وهمية", committeeFirst: "عضو وهمي أول",
             committeeSecond: "عضو وهمي ثان", committeeThird: "عضو وهمي ثالث", footer: "هامش وهمي",
             fixedNumber: "رقم وهمي", foodContractReference: "عقد وهمي")
+        func unifiedCustomization(_ id: String) -> TransferLetterCustomization {
+            var value = custom
+            var form = CustomTransferTemplate()
+            form.title = "كتاب وهمي"; form.header = "ترويسة وهمية"; form.number = "عدد وهمي"
+            form.recipient = "مصرف وهمي"; form.subject = "تحويل تجريبي"; form.footer = "هامش وهمي"
+            form.body = TransferLetterBody.template(for: id) ?? ""
+            form.firstSigner = "صفة وهمية\nاسم وهمي\nمنصب وهمي"; form.secondSigner = ""; form.thirdSigner = ""
+            form.bodyAlignment = .center; form.bodySpacing = .compact; form.signatureHorizontalOffset = 10
+            form.attachments = "قائمة وهمية إضافية"
+            value.letterTemplate = form
+            return value
+        }
+        let mergedAttachmentsText = try TransferWordGroupDraft.letterText(from: unifiedCustomization("rafidain_group"), adaptivePDF: true)
+        var attachmentBlocks: [TransferWordDocument.Block] = [.paragraph(.init(text: "المرفقات:\nقائمة إلزامية", halfPoints: 24))]
+        TransferWordGroupDraft.appendAttachments(mergedAttachmentsText, to: &attachmentBlocks)
+        guard attachmentBlocks.count == 1, case let .paragraph(combinedAttachment) = attachmentBlocks[0] else { throw Failure(errorDescription: "attachments were not combined") }
+        try check(combinedAttachment.text.contains("قائمة إلزامية") && combinedAttachment.text.contains("قائمة وهمية إضافية"), "mandatory and custom attachments are preserved")
         let letterText = try TransferWordGroupDraft.letterText(from: custom)
         let fixedRoles = TransferWordGroupDraft.signatureCells(letterText.committee, date: "2026 / 10 /", adaptivePDF: true)
         try check(fixedRoles.count == 3 && fixedRoles[0].contains("معاون مدير تدقيق") &&
@@ -224,6 +241,13 @@ import CryptoKit
                 sakkalBold: syntheticFont, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF payroll \(id)")
+            phase = "unified-payroll-\(id)"
+            let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [], entity: nil,
+                individualPlan: nil, cashList: id == "cash_salary" ? cash : nil, references: references,
+                accountLinks: Data(), payerName: "دافع وهمي", payerIBAN: payer, customization: unifiedCustomization(id),
+                sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 1, "Unified template payroll \(id)")
             generated += 1
         }
         var reviewed = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
@@ -282,6 +306,12 @@ import CryptoKit
                 payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: pdf.letter)?.pageCount == 2 && pdf.csv != nil, "Adaptive PDF group \(id)")
+            phase = "unified-group-\(id)"
+            let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: groupEntities, entity: nil,
+                individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 2 && unifiedPDF.csv != nil, "Unified template group \(id)")
             generated += 1
         }
         for (id, category, count) in [("rafidain_group", TransferCategory.rafidain, 29), ("other_banks_group", TransferCategory.otherBanks, 39)] {
@@ -345,6 +375,12 @@ import CryptoKit
                 payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
             defer { try? FileManager.default.removeItem(at: pdf.letter.deletingLastPathComponent()) }
             try check(PDFDocument(url: pdf.letter)?.pageCount == 1, "Adaptive PDF entity \(id)")
+            phase = "unified-entity-\(id)"
+            let unifiedPDF = try TransferWordDraftGenerator.make(bookID: id, figures: figures, entities: [entity], entity: entity,
+                individualPlan: plan, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
+                payerIBAN: payer, customization: unifiedCustomization(id), sakkalBold: syntheticFont, adaptivePDF: true)
+            defer { try? FileManager.default.removeItem(at: unifiedPDF.letter.deletingLastPathComponent()) }
+            try check(PDFDocument(url: unifiedPDF.letter)?.pageCount == 1, "Unified template entity \(id)")
             generated += 1
         }
         var adjusted = custom
@@ -438,6 +474,17 @@ import CryptoKit
                 let sample = PDFDocument(url: url)?.page(at: 0)?.string ?? ""
                 throw Failure(errorDescription: "synthetic PDF extraction: \(sample)")
             }
+            phase = "unified-treasury-\(label)"
+            let id = kind == .guarantee ? "treasury_guarantee" : "treasury_schools"
+            let unified = try TreasuryLetterDraft.make(kind: kind, monthName: month, payerIBAN: payer, beneficiaryIBAN: beneficiary,
+                header: "", number: "", firstSigner: "", secondSigner: "", thirdSigner: "",
+                guaranteeReason: "تضمين وهمي", firstRows: [fakeRow], secondRows: kind == .schools ? [schoolRow] : [],
+                notes: [42: "إضبارة وهمية"], template: unifiedCustomization(id).letterTemplate)
+            let unifiedURL = documents.appendingPathComponent("unified-treasury-\(UUID().uuidString).pdf")
+            defer { try? FileManager.default.removeItem(at: unifiedURL) }
+            try TransferAdaptivePDF.write(blocks: unified.blocks, destination: unifiedURL, sakkalBold: nil, group: false, verifyNumericTableCells: true, signatureHorizontalOffset: 10)
+            try TransferAdaptivePDF.verify(unifiedURL, required: unified.required)
+            try check(PDFDocument(url: unifiedURL)?.pageCount == 1, "Unified template treasury \(label)")
         }
         // معاينة منشأة بالكامل بأسماء وهمية، دون استخدام اسم جهة حقيقية في الصور.
         let fixture = documents.appendingPathComponent("word-preview-fixture.docx")

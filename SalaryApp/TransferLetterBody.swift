@@ -12,6 +12,9 @@ nonisolated enum TransferLetterBody {
         let start = "نرجو تحويل مبلغ قدره ({{المبلغ}}) ({{المبلغ كتابة}}) لا غيرها من حسابنا المرقم ({{حسابنا}}) المفتوح لديكم "
         let end = " لشهر ({{الشهر}} / {{السنة}}) وتزويدنا بالإشعار اللازم بذلك."
         switch id {
+        case "treasury_guarantee", "treasury_schools":
+            let reason = id == "treasury_guarantee" ? "عن {{سبب التضمين}}" : "عن مبالغ الإيراد النهائي لرسم الطابع الضريبي وبناء المدارس المحسومة من منتسبي قيادتنا وحسب الجدول أدناه"
+            return start + "إلى حساب (مديرية خزينة الأنبار) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) وذلك " + reason + end
         case "rafidain_group", "other_banks_group":
             return start + "إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر ({{الشهر}} / {{السنة}}) وتزويدنا بالإشعار اللازم بذلك."
         case "food_company", "food_tax", "tax_social", "contracts", "cash_salary":
@@ -42,6 +45,10 @@ nonisolated enum TransferLetterBody {
         let pattern = try! NSRegularExpression(pattern: "\\{\\{[^{}]+\\}\\}")
         let range = NSRange(text.startIndex..., in: text)
         return pattern.matches(in: text, range: range).compactMap { Range($0.range, in: text).map { String(text[$0]) } }
+    }
+    static func fieldNames(for id: String) -> [String] {
+        guard let value = template(for: id) else { return [] }
+        return Array(Set(tokens(value).map { String($0.dropFirst(2).dropLast(2)) })).sorted()
     }
     static func validate(_ text: String, for id: String) throws {
         guard let original = template(for: id), text.count <= 4000,

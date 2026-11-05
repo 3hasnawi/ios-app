@@ -407,7 +407,7 @@ struct TransferFilesView: View {
                         }.disabled(importingReferences)
                         if !referenceData.isEmpty { Label(tr("مراجع الكتب محفوظة", "Letter references saved"), systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                         if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
-                        NavigationLink { TransferLetterSettingsView() } label: { Label(tr("تخصيص الكتب", "Customize letters"), systemImage: "slider.horizontal.3") }
+                        NavigationLink { UnifiedLetterTemplateList() } label: { Label(tr("قالب الكتاب", "Letter template"), systemImage: "slider.horizontal.3") }
                     } footer: { Text(tr("تُحفظ المراجع ضمن النسخة الاحتياطية.", "References are included in the backup.")) }
                     if let figures, error == nil {
                         Section {

@@ -26,6 +26,9 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     var signatureVerticalOffset: Int? = nil
     var signatureHorizontalOffset: Int? = nil
     var attachments: String? = nil
+    var foodContractReference: String? = nil
+    var bodyMonth: String? = nil
+    var outgoingMonth: String? = nil
 
     static let settingsKey = "customTransferTemplatesV1"
     private struct Archive: Codable { var version: Int; var templates: [CustomTransferTemplate] }
@@ -33,7 +36,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         if data.isEmpty { return [] }
         guard data.count <= 2_000_000 else { throw invalid() }
         // لا نكتب فوق حقول أضافها إصدار أحدث لا يفهمه هذا الإصدار.
-        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments"]
+        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments", "foodContractReference", "bodyMonth", "outgoingMonth"]
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(root.keys).isSubset(of: ["version", "templates"]),
               let records = root["templates"] as? [[String: Any]],
@@ -76,7 +79,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         }
     }
     func validate() throws {
-        let values = [title, header, number, recipient, subject, body, footer, firstSigner, secondSigner, thirdSigner, sourceName, account, attachments ?? ""]
+        let values = [title, header, number, recipient, subject, body, footer, firstSigner, secondSigner, thirdSigner, sourceName, account, attachments ?? "", foodContractReference ?? "", bodyMonth ?? "", outgoingMonth ?? ""]
         guard (-60...60).contains(signatureVerticalOffset ?? 0), (-30...30).contains(signatureHorizontalOffset ?? 0),
               values.allSatisfy({ $0.utf8.count <= 12_000 && !$0.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 && $0.value != 13 && $0.value != 9 }) }),
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.invalid() }

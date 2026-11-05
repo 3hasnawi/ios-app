@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PDFKit
+import UniformTypeIdentifiers
 
 struct CustomTransferTemplatesView: View {
     let monthName: String
@@ -58,7 +59,7 @@ struct CustomTransferTemplatesView: View {
     }
 }
 
-private struct CustomTransferTemplateEditor: View {
+struct CustomTransferTemplateEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
@@ -68,10 +69,12 @@ private struct CustomTransferTemplateEditor: View {
     @State private var saveError: String?
     @State private var choosingAccount = false
     let monthName: String
+    let bookID: String?
+    let canEditAccount: Bool
     let save: (CustomTransferTemplate) throws -> Void
 
-    init(template: CustomTransferTemplate, monthName: String, save: @escaping (CustomTransferTemplate) throws -> Void) {
-        _template = State(initialValue: template); self.monthName = monthName; self.save = save
+    init(template: CustomTransferTemplate, monthName: String, bookID: String? = nil, canEditAccount: Bool = true, save: @escaping (CustomTransferTemplate) throws -> Void) {
+        _template = State(initialValue: template); self.monthName = monthName; self.bookID = bookID; self.canEditAccount = canEditAccount; self.save = save
     }
     private var payrollNames: [String] {
         Array((PayrollItems.decodeSummary(months.first { $0.name == monthName }?.itemSummaryData) ?? [:]).keys).sorted()
@@ -99,13 +102,14 @@ private struct CustomTransferTemplateEditor: View {
                 }
                 Toggle(tr("متن عريض", "Bold body"), isOn: Binding(get: { template.bodyBold ?? false }, set: { template.bodyBold = $0 }))
                 Text(tr("يُطبّق التنسيق على المتن كاملاً في معاينة الكتاب.", "Formatting applies to the entire body in the letter preview.")).font(.footnote).foregroundStyle(.secondary)
+                if bookID != nil { Text(tr("احتفظ بالحقول المحاسبية بين {{ }} كما هي؛ يملؤها التطبيق تلقائياً من بيانات الكتاب.", "Keep the accounting fields in {{ }} intact; the app fills them from the letter data.")).font(.footnote).foregroundStyle(.secondary) }
                 Menu(tr("إضافة حقل إلى المتن", "Insert field into body")) {
-                    ForEach(["المبلغ", "المبلغ كتابة", "الشهر", "السنة", "الحساب"], id: \.self) { key in
+                    ForEach(bookID.map { TransferLetterBody.fieldNames(for: $0) } ?? ["المبلغ", "المبلغ كتابة", "الشهر", "السنة", "الحساب"], id: \.self) { key in
                         Button(key) { template.body += "{{\(key)}}" }
                     }
                 }
             }
-            Section(tr("مصدر المبلغ", "Amount source")) {
+            if bookID == nil { Section(tr("مصدر المبلغ", "Amount source")) {
                 Picker(tr("المصدر", "Source"), selection: $template.source) {
                     Text(tr("بدون ربط", "None")).tag(CustomTransferTemplate.Source.none)
                     Text(tr("مبلغ يدوي", "Manual amount")).tag(CustomTransferTemplate.Source.manual)
@@ -124,14 +128,29 @@ private struct CustomTransferTemplateEditor: View {
                     }
                     if let sourceError { Text(sourceError).foregroundStyle(.red) }
                 }
+            } } else { Section(tr("مصدر المبلغ", "Amount source")) { Text(tr("يُحسب المبلغ من بيانات الكتاب والشهر المختار تلقائياً.", "The amount is calculated from the letter data and selected month.")).foregroundStyle(.secondary) } }
+            if let bookID, !bookID.hasPrefix("treasury_") {
+                Section(tr("الشهر والتاريخ", "Month and date")) {
+                    TextField(tr("شهر المتن، أو اتركه تلقائياً", "Body month, or leave automatic"), text: Binding(get: { template.bodyMonth ?? "" }, set: { template.bodyMonth = $0 }))
+                    TextField(tr("رقم شهر الصادر، أو اتركه تلقائياً", "Outgoing month number, or leave automatic"), text: Binding(get: { template.outgoingMonth ?? "" }, set: { template.outgoingMonth = $0 })).keyboardType(.numberPad)
+                    Text(tr("تغيير شهر المتن لا يغيّر شهر المبالغ أو ملف التحويل.", "Changing the body month does not change the amounts or transfer file month.")).font(.footnote).foregroundStyle(.secondary)
+                }
             }
-            Section(tr("الحساب المرتبط اختيارياً", "Optional linked account")) {
+            if bookID == "food_company" || bookID == "food_tax" {
+                Section(tr("عقد الإطعام", "Food contract")) {
+                    TextField(tr("رقم العقد وتاريخه", "Contract number and date"), text: Binding(get: { template.foodContractReference ?? "" }, set: { template.foodContractReference = $0 }))
+                    Text(tr("يُستخدم هذا المرجع لكتابي الشركة وضريبة عقد الإطعام.", "This reference is shared by the company and food contract tax letters.")).font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if bookID == nil || canEditAccount { Section(tr("الحساب المرتبط اختيارياً", "Optional linked account")) {
                 TextField(tr("رقم الحساب أو IBAN", "Account number or IBAN"), text: $template.account).textInputAutocapitalization(.characters).autocorrectionDisabled()
                 if !accounts.isEmpty {
                     Button(tr("اختيار من الحسابات المحفوظة", "Choose a saved account")) { choosingAccount = true }
                 }
                 Text(tr("تأكد من رقم الحساب عند كل إصدار للكتاب.", "Verify the account number for each letter.")).font(.footnote).foregroundStyle(.secondary)
-            }
+            } } else { Section(tr("الحساب المرتبط", "Linked account")) {
+                Text(tr("يُحدّد الحساب من بيانات الكتاب أو الجهة؛ لتعديله افتح القالب من الكتاب بعد اختيار الجهة وتوفّر المراجع.", "The account comes from the letter or beneficiary. To change it, open the template from the letter after selecting the beneficiary and loading references.")).font(.footnote).foregroundStyle(.secondary)
+            } }
             Section(tr("المرفقات", "Attachments")) {
                 TextField(tr("وصف المرفقات، مثل: قائمة أسماء عدد ١", "Attachment description, for example: one list of names"),
                           text: Binding(get: { template.attachments ?? "" }, set: { template.attachments = $0.isEmpty ? nil : $0 }), axis: .vertical).lineLimit(2...6)
@@ -159,6 +178,7 @@ private struct CustomTransferTemplateEditor: View {
             Section(tr("نسخة منه إلى", "Copies to")) {
                 TextField(tr("النص", "Text"), text: $template.footer, axis: .vertical).lineLimit(2...8)
             }
+            PrivateLetterFontSection()
         }
         .navigationTitle(tr("قالب كتاب", "Letter template"))
         .sheet(isPresented: $choosingAccount) {
@@ -168,14 +188,14 @@ private struct CustomTransferTemplateEditor: View {
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { do { try save(template) } catch { saveError = error.localizedDescription } } }
+            ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { do { try save(template); if bookID != nil { dismiss() } } catch { saveError = error.localizedDescription } } }
         }
         .alert(tr("تعذّر حفظ القالب", "Couldn't save template"), isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
         .onChange(of: template.source) { _, _ in template.sourceName = "" }
         .task(id: monthName) {
-            guard !monthName.isEmpty else { return }
+            guard bookID == nil, !monthName.isEmpty else { return }
             do {
                 let container = SharedModel.container
                 groups = try await TransferDataEngine(modelContainer: container).read(month: monthName).0
@@ -200,10 +220,11 @@ private struct CustomTransferLetterView: View {
     @State private var snapshot = ""
     @State private var working = false
     @State private var bankCache = BankStatementCache.shared
+    @AppStorage(TransferHeaderFont.boldSettingsKey) private var boldFont = Data()
     private var month: PayrollMonth? { months.first { $0.name == monthName } }
     private var sourceKey: String {
         guard let month else { return "" }
-        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)"
+        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)|\(boldFont.hashValue)"
     }
     var body: some View {
         List {
@@ -254,7 +275,7 @@ private struct CustomTransferLetterView: View {
     }
     private func prepare() {
         guard let month, !working, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
-        let key = sourceKey, summaryData = month.itemSummaryData, manual = manualAmount, selected = template
+        let key = sourceKey, summaryData = month.itemSummaryData, manual = manualAmount, selected = template, font = boldFont
         working = true
         Task {
             defer { working = false }
@@ -297,24 +318,13 @@ private struct CustomTransferLetterView: View {
                 let required = [selected.header, selected.number, selected.recipient, selected.subject, body, selected.footer]
                 guard required.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw CustomTransferTemplate.invalid(tr("أكمل الترويسة والعدد والجهة والموضوع والمتن والنسخة منه إلى.", "Complete the header, reference, recipient, subject, body and copies.")) }
                 let date = ReportSheet.easternDigits(period.signatureDate)
-                let alignment: TransferWordDocument.Paragraph.Alignment = switch selected.bodyAlignment ?? .justified {
-                case .justified: .justified
-                case .right: .right
-                case .center: .center
-                case .left: .left
-                }
-                let spacing: Int = switch selected.bodySpacing ?? .medium {
-                case .compact: 0
-                case .medium: 3
-                case .wide: 8
-                }
                 let signatures = try CustomTransferTemplate.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date)
                 var blocks: [TransferWordDocument.Block] = [
-                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: 32, bold: true)),
+                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: font.isEmpty ? "Times New Roman" : "Sakkal Majalla", halfPoints: 32, bold: true)),
                     .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
                     .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: 32, bold: true, centered: true)),
                     .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                    .paragraph(.init(text: body, halfPoints: 28, bold: selected.bodyBold ?? false, alignment: alignment, lineSpacing: spacing))
+                    .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: selected))
                 ]
                 if let attachments = selected.attachmentParagraph {
                     blocks.append(.paragraph(.init(text: attachments, halfPoints: 22)))
@@ -325,7 +335,7 @@ private struct CustomTransferLetterView: View {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let url = dir.appendingPathComponent("كتاب مخصص.pdf")
                 do {
-                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false,
+                    try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: font.isEmpty ? nil : font, group: false,
                         signatureOffset: selected.signatureVerticalOffset ?? 0, signatureHorizontalOffset: selected.signatureHorizontalOffset ?? 0)
                     var checks: [String] = []
                     if selected.body.contains("{{المبلغ}}"), let value = values["المبلغ"] { checks.append(value) }

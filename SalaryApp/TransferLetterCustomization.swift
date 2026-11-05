@@ -20,6 +20,8 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
     var beneficiarySource: String? = nil
     var beneficiaryOriginal: String? = nil
     var beneficiaryReference: String? = nil
+    /// قالب الكتاب الموحد؛ nil يبقي تخصيصات الإصدارات السابقة كما هي.
+    var letterTemplate: CustomTransferTemplate? = nil
 
     func applying(over base: Self) -> Self {
         var result = base
@@ -41,6 +43,7 @@ nonisolated struct TransferLetterCustomization: Codable, Equatable, Sendable {
         result.beneficiarySource = beneficiarySource ?? base.beneficiarySource
         result.beneficiaryOriginal = beneficiaryOriginal ?? base.beneficiaryOriginal
         result.beneficiaryReference = beneficiaryReference ?? base.beneficiaryReference
+        result.letterTemplate = letterTemplate ?? base.letterTemplate
         return result
     }
 }
@@ -53,6 +56,26 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
     var individual: [String: TransferLetterCustomization] = [:]
     /// بصمات المراجع التي استُخرجت منها الإعدادات؛ تحفظ مع النسخة الاحتياطية.
     var wordReferenceHashes: [String: String]? = nil
+
+    var hasUnifiedTemplates: Bool { common.letterTemplate != nil || individual.values.contains { $0.letterTemplate != nil } }
+
+    func validateUnifiedTemplates() throws {
+        if let template = common.letterTemplate { try template.validate() }
+        for (id, value) in individual {
+            if let template = value.letterTemplate {
+                try template.validate()
+                guard [template.header, template.number, template.recipient, template.subject, template.footer].allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw CustomTransferTemplate.invalid() }
+                try TransferLetterBody.validate(template.body, for: id)
+                _ = try CustomTransferTemplate.signatureCells([template.firstSigner, template.secondSigner, template.thirdSigner], date: " / ١ / ٢٠٢٦")
+                if !id.hasPrefix("treasury_") {
+                    _ = try TransferLetterCustomValues.outgoingDate(template.outgoingMonth, sourceMonth: "كانون الثاني 2026", eastern: false)
+                    if let month = template.bodyMonth, !month.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        _ = try TransferLetterCustomValues.bodyMonth(month, source: month)
+                    }
+                }
+            }
+        }
+    }
 
     func effective(for id: String) -> TransferLetterCustomization {
         var result = (individual[id] ?? TransferLetterCustomization()).applying(over: common)
@@ -82,6 +105,7 @@ nonisolated struct TransferLetterCustomizationStore: Codable, Equatable, Sendabl
             if changes.committeeDateSecond != nil { value.committeeDateSecond = nil }
             if changes.committeeDateThird != nil { value.committeeDateThird = nil }
             if changes.beneficiaryAccount != nil { value.beneficiaryAccount = nil; value.beneficiarySource = nil; value.beneficiaryOriginal = nil; value.beneficiaryReference = nil }
+            if changes.letterTemplate != nil { value.letterTemplate = nil }
             individual[key] = value
         }
     }

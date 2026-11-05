@@ -151,10 +151,10 @@ struct TransferLetterDraftView: View {
             }
             Section {
                 NavigationLink {
-                    TransferLetterSettingsView(bookID: kind.rawValue, currentMonth: month, entityTitle: selectedEntity?.group.title,
+                    UnifiedBuiltInLetterTemplate(bookID: kind.rawValue, title: kind.title, month: month, entityTitle: selectedEntity?.group.title,
                         entityAccount: entityAccountForSettings, entityAccountKey: selectedEntity?.account?.key)
                 } label: {
-                    Label(tr("تخصيص بيانات الكتب", "Customize letter details"), systemImage: "slider.horizontal.3")
+                    Label(tr("قالب الكتاب", "Letter template"), systemImage: "slider.horizontal.3")
                 }
                 ForEach(customWarnings(currentCustomization), id: \.self) { warning in
                     Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)

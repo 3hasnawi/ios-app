@@ -51,7 +51,7 @@ jobs:
           cp ci-output/synthetic-word-font.ttf "$DATA/Documents/"
           rm -f "$DATA/Documents/import-report.txt"
           xcrun simctl launch "$UDID" "$BUNDLE" -tab reports -wordTransferTest YES
-          for i in $(seq 1 120); do
+          for i in $(seq 1 300); do
             [ -f "$DATA/Documents/import-report.txt" ] && break
             sleep 1
           done

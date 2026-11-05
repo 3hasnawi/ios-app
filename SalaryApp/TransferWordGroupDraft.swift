@@ -13,12 +13,21 @@ nonisolated enum TransferWordGroupDraft {
         var signatureOffset: Int = 0
         var bodyMonth: String? = nil
         var outgoingMonth: String? = nil
+        var template: CustomTransferTemplate? = nil
     }
     enum Failure: LocalizedError {
         case incomplete
         var errorDescription: String? { tr("تأكد من ترويسة الكتاب والعدد وأسماء اللجنة قبل إعداد المسودة.", "Check the letter header, reference number and committee names before preparing the draft.") }
     }
-    static func letterText(from custom: TransferLetterCustomization) throws -> LetterText {
+    static func letterText(from custom: TransferLetterCustomization, adaptivePDF: Bool = false) throws -> LetterText {
+        if adaptivePDF, let template = custom.letterTemplate {
+            try template.validate()
+            _ = try CustomTransferTemplate.signatureCells([template.firstSigner, template.secondSigner, template.thirdSigner], date: " / ١ / ٢٠٢٦")
+            return LetterText(header: template.header, fixedNumber: template.number,
+                committee: [template.firstSigner, template.secondSigner, template.thirdSigner], footer: template.footer,
+                bodyTemplate: template.body, signatureOffset: template.signatureVerticalOffset ?? 0,
+                bodyMonth: custom.bodyMonth, outgoingMonth: custom.outgoingMonth, template: template)
+        }
         guard let header = custom.header, let fixedNumber = custom.fixedNumber,
               let first = custom.committeeFirst, let second = custom.committeeSecond,
               let third = custom.committeeThird, let footer = custom.footer,
@@ -29,6 +38,34 @@ nonisolated enum TransferWordGroupDraft {
         }
         return LetterText(header: header, fixedNumber: fixedNumber, committee: [first, second, third], footer: footer,
             bodyTemplate: custom.bodyTemplate, signatureOffset: custom.signatureOffset ?? 0, bodyMonth: custom.bodyMonth, outgoingMonth: custom.outgoingMonth)
+    }
+    static func signatures(for text: LetterText, date: String, adaptivePDF: Bool) throws -> [String] {
+        if adaptivePDF, text.template != nil { return try CustomTransferTemplate.signatureCells(text.committee, date: date) }
+        return signatureCells(text.committee, date: date, adaptivePDF: adaptivePDF)
+    }
+    static func bodyParagraph(_ body: String, template: CustomTransferTemplate?) -> TransferWordDocument.Paragraph {
+        guard let template else { return .init(text: body, halfPoints: 28) }
+        let alignment: TransferWordDocument.Paragraph.Alignment = switch template.bodyAlignment ?? .justified {
+        case .right: .right
+        case .center: .center
+        case .left: .left
+        case .justified: .justified
+        }
+        let spacing: Int = switch template.bodySpacing ?? .medium {
+        case .compact: 0
+        case .medium: 3
+        case .wide: 8
+        }
+        return .init(text: body, halfPoints: 28, bold: template.bodyBold ?? false, alignment: alignment, lineSpacing: spacing)
+    }
+    static func appendAttachments(_ text: LetterText, to blocks: inout [TransferWordDocument.Block]) {
+        guard let attachment = text.template?.attachmentParagraph else { return }
+        if let index = blocks.indices.last, case .paragraph(var previous) = blocks[index], previous.text.hasPrefix("المرفقات:") {
+            let additional = String(attachment.dropFirst("المرفقات:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !additional.isEmpty { previous.text += "\n" + additional; blocks[index] = .paragraph(previous) }
+        } else {
+            blocks.append(.paragraph(.init(text: attachment, halfPoints: 22)))
+        }
     }
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
     static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool, dates: [String]? = nil) -> [String] {
@@ -108,7 +145,7 @@ nonisolated enum TransferWordGroupDraft {
         let normalizedPayer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
         guard TransferRules.validIBAN(payerIBAN), normalizedPayer == plan.payerIBAN, month == plan.month,
               nonempty(text.header), nonempty(text.fixedNumber),
-              text.committee.count == 3, text.committee.allSatisfy(nonempty) else { throw Failure.incomplete }
+              text.committee.count == 3, (text.template == nil ? text.committee.allSatisfy(nonempty) : text.committee.contains(where: nonempty)) else { throw Failure.incomplete }
         let signatureDate = try TransferLetterCustomValues.outgoingDate(adaptivePDF ? text.outgoingMonth : nil, sourceMonth: month, eastern: adaptivePDF)
         let letterNumber = adaptivePDF ? ReportSheet.easternDigits(text.fixedNumber) : text.fixedNumber
         let values = try TransferWordValues.make(month: month, amount: plan.total, custom: .init(),
@@ -117,24 +154,26 @@ nonisolated enum TransferWordGroupDraft {
               let monthName = values["MONTH"], let year = values["YEAR"] else { throw Failure.incomplete }
         let bodyPeriod = try Self.bodyValues(for: text, sourceMonth: month, amount: plan.total, adaptivePDF: adaptivePDF)
         guard let bodyMonth = bodyPeriod["MONTH"], let bodyYear = bodyPeriod["YEAR"] else { throw Failure.incomplete }
-        let body = try TransferLetterBody.render(id: plan.category == .rafidain ? "rafidain_group" : "other_banks_group", custom: adaptivePDF ? text.bodyTemplate : nil, values: [
+        let bodyTemplate = text.template == nil ? text.bodyTemplate : text.bodyTemplate.map(CustomTransferTemplate.formatBodyNumbers)
+        let body = try TransferLetterBody.render(id: plan.category == .rafidain ? "rafidain_group" : "other_banks_group", custom: adaptivePDF ? bodyTemplate : nil, values: [
             "المبلغ": bodyNumber(amount, adaptivePDF: adaptivePDF), "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": bodyMonth, "السنة": bodyNumber(bodyYear, adaptivePDF: adaptivePDF)
         ])
-        let signatureCells = Self.signatureCells(text.committee, date: signatureDate, adaptivePDF: adaptivePDF)
+        let signatureCells = try Self.signatures(for: text, date: signatureDate, adaptivePDF: adaptivePDF)
         let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: text.header, font: text.template != nil && sakkalBold != nil ? "Sakkal Majalla" : "Times New Roman", halfPoints: 32, bold: true)),
             .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: adaptivePDF ? "Sakkal Majalla" : "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
-            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
-            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: body, halfPoints: 28))
+            .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
+            .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(Self.bodyParagraph(body, template: text.template))
         ]
         if adaptivePDF {
             let count = plan.table.rows.count - 1
             guard count > 0 else { throw Failure.incomplete }
             blocks.append(.paragraph(.init(text: "المرفقات:\nقائمة أسماء الحسابات من تسلسل (1) لغاية تسلسل (\(count))\nقرص (CSV).", halfPoints: 24, bold: true)))
         }
+        Self.appendAttachments(text, to: &blocks)
         blocks += [
             .table(signatures),
             .paragraph(.init(text: footerWritingSpace(text.footer, adaptivePDF: adaptivePDF), halfPoints: 24, bold: adaptivePDF)),
@@ -142,7 +181,7 @@ nonisolated enum TransferWordGroupDraft {
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(bodyNumber(year, adaptivePDF: adaptivePDF)))", halfPoints: 28, bold: true, centered: true)),
             .table(plan.table)
         ]
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset) }
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold) }
     }
 }

@@ -753,7 +753,7 @@ import CoreText
         do { _ = try FundingApproval.decode(Data("invalid".utf8)); throw Failure(errorDescription: "invalid expense approvals accepted") }
         catch is Failure { throw Failure(errorDescription: "invalid expense approvals accepted") }
         catch { }
-        try check(BackupFormat.supports(1) && BackupFormat.supports(6) && !BackupFormat.supports(7) && BackupFormat.supports(8) && BackupFormat.supports(9) && !BackupFormat.supports(10) && BackupFormat.exportVersion(for: [:]) == 5 && BackupFormat.exportVersion(for: [ContractOverrides.settingsKey: Data()]) == 6 && BackupFormat.exportVersion(for: [FundingApproval.settingsKey: Data()]) == 8 && BackupFormat.exportVersion(for: [CustomTransferTemplate.settingsKey: Data()]) == 9 && BackupFormat.settingsKeys.contains(CustomTransferTemplate.settingsKey) && BackupFormat.settingsKeys.contains(FundingApproval.settingsKey), "expense approvals use version 8 without enabling experimental version 7")
+        try check(BackupFormat.supports(1) && BackupFormat.supports(6) && !BackupFormat.supports(7) && BackupFormat.supports(8) && BackupFormat.supports(9) && BackupFormat.supports(10) && !BackupFormat.supports(11) && BackupFormat.exportVersion(for: [:]) == 5 && BackupFormat.exportVersion(for: [ContractOverrides.settingsKey: Data()]) == 6 && BackupFormat.exportVersion(for: [FundingApproval.settingsKey: Data()]) == 8 && BackupFormat.exportVersion(for: [CustomTransferTemplate.settingsKey: Data()]) == 9 && BackupFormat.settingsKeys.contains(CustomTransferTemplate.settingsKey) && BackupFormat.settingsKeys.contains(FundingApproval.settingsKey), "backup versions preserve supported legacy formats")
         var customTemplate = CustomTransferTemplate()
         customTemplate.title = "قالب وهمي"
         customTemplate.source = .payroll
@@ -767,6 +767,23 @@ import CoreText
         customTemplate.attachments = "قائمة أسماء عدد 2"
         let customData = try CustomTransferTemplate.encode([customTemplate])
         try check(try CustomTransferTemplate.decode(customData) == [customTemplate], "custom letter backup roundtrip")
+        var builtinTemplate = customTemplate
+        builtinTemplate.header = "ترويسة وهمية"; builtinTemplate.number = "عدد وهمي"; builtinTemplate.recipient = "جهة وهمية"; builtinTemplate.subject = "موضوع وهمي"; builtinTemplate.footer = "هامش وهمي"
+        builtinTemplate.body = TransferLetterBody.template(for: "food_tax") ?? ""
+        builtinTemplate.firstSigner = "عضو وهمي"; builtinTemplate.secondSigner = ""; builtinTemplate.thirdSigner = ""
+        var builtinStore = TransferLetterCustomizationStore()
+        builtinStore.apply(.init(letterTemplate: builtinTemplate), to: "food_tax")
+        try builtinStore.validateUnifiedTemplates()
+        let builtinJSON = try JSONEncoder().encode(builtinStore)
+        let builtinPropertyList = try PropertyListSerialization.data(fromPropertyList: builtinJSON, format: .binary, options: 0)
+        try check(BackupFormat.exportVersion(for: [TransferLetterCustomizationStore.settingsKey: builtinPropertyList]) == 10, "unified templates require compatible backup version")
+        try check(try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: builtinJSON).effective(for: "food_tax").letterTemplate == builtinTemplate, "built-in unified template persists")
+        var invalidBuiltin = builtinTemplate
+        invalidBuiltin.body = invalidBuiltin.body.replacingOccurrences(of: "{{المبلغ}}", with: "")
+        var invalidStore = TransferLetterCustomizationStore()
+        invalidStore.apply(.init(letterTemplate: invalidBuiltin), to: "food_tax")
+        do { try invalidStore.validateUnifiedTemplates(); throw Failure(errorDescription: "missing required accounting field accepted") }
+        catch is Failure { throw Failure(errorDescription: "missing required accounting field accepted") } catch { }
         try check(customTemplate.attachmentParagraph == "المرفقات: قائمة أسماء عدد ٢", "custom attachment description and digits")
         customTemplate.attachments = "المرفقات: قائمة وهمية"
         try check(customTemplate.attachmentParagraph == "المرفقات: قائمة وهمية", "attachment label is not duplicated")

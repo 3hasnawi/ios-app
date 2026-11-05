@@ -11,11 +11,16 @@ import CryptoKit
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 9
+    static let version = 10
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 }
     static func exportVersion(for settings: [String: Data]) -> Int {
-        settings[CustomTransferTemplate.settingsKey] != nil ? 9 : (settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6))
+        if let raw = settings[TransferLetterCustomizationStore.settingsKey],
+           let data = try? PropertyListSerialization.propertyList(from: raw, format: nil) as? Data, !data.isEmpty {
+            guard let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data) else { return 10 }
+            if store.hasUnifiedTemplates { return 10 }
+        }
+        return settings[CustomTransferTemplate.settingsKey] != nil ? 9 : (settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6))
     }
     static let prefix = "نسخة الرواتب"
 
@@ -147,6 +152,10 @@ actor BackupActor {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try CustomTransferTemplate.decode(data)
         }
+        if let serialized = settings[TransferLetterCustomizationStore.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            if !data.isEmpty { try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data).validateUnifiedTemplates() }
+        }
         let formatVersion = BackupFormat.exportVersion(for: settings)
         let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
@@ -220,13 +229,20 @@ actor BackupActor {
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         if let serialized = settings[FundingApproval.settingsKey] {
-            guard (manifest.version == 8 || manifest.version == 9), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.version == 8 || manifest.version == 9 || manifest.version == 10), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
         } else if manifest.version == 8 { throw BackupError.notBackup }
         if let serialized = settings[CustomTransferTemplate.settingsKey] {
-            guard manifest.version == 9, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.version == 9 || manifest.version == 10), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try CustomTransferTemplate.decode(data)
         } else if manifest.version == 9 { throw BackupError.notBackup }
+        if let serialized = settings[TransferLetterCustomizationStore.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            let templates = try (data.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data))
+            try templates.validateUnifiedTemplates()
+            if templates.hasUnifiedTemplates && manifest.version < 10 { throw BackupError.notBackup }
+            if !templates.hasUnifiedTemplates && manifest.version == 10 { throw BackupError.notBackup }
+        } else if manifest.version == 10 { throw BackupError.notBackup }
         if settings[ContractOverrides.settingsKey] == nil,
            let current = try ContractOverrides.currentData(), !(try ContractOverrides.decode(current)).isEmpty {
             throw NSError(domain: "ContractOverride", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("النسخة المختارة لا تحتوي تعديلات العقود الموجودة على الجهاز. احفظ نسخة شاملة وراجع التعديلات قبل الاسترجاع.", "The selected backup does not contain this device’s contract adjustments. Save a full backup and review the adjustments before restoring.")])
@@ -1188,7 +1204,7 @@ final class BackupManager {
             let start = Date()
             let (url, testManifest) = try await makeBackup(title: "test")
             #if targetEnvironment(simulator)
-            guard testManifest.version == 9 else { LaunchOptions.writeReport("backup=failed customTemplateVersion=failed"); return }
+            guard testManifest.version == 9 || testManifest.version == 10 else { LaunchOptions.writeReport("backup=failed customTemplateVersion=failed"); return }
             #endif
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.
