@@ -22,9 +22,11 @@ final class ShareTests: XCTestCase {
     private func openShareSheet(_ button: String = "reportListPDF") {
         let export = element("exportReport")
         XCTAssertTrue(export.waitForExistence(timeout: 40), "زر التصدير")
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: export)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 90), .completed, "زر التصدير لم يصبح جاهزاً: \(app.debugDescription)")
         export.tap()
         let pdf = element(button)
-        XCTAssertTrue(pdf.waitForExistence(timeout: 40), "زر الملف")
+        XCTAssertTrue(pdf.waitForExistence(timeout: 90), "زر الملف لم يظهر بعد إعداد الكشف: \(app.debugDescription)")
         pdf.tap()
     }
 

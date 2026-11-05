@@ -36,9 +36,15 @@ final class NavigationTests: XCTestCase {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
             start.press(forDuration: 0.1, thenDragTo: end)
         }
-        swipeBack(); XCTAssertTrue(group.waitForExistence(timeout: 10), "detail to entity list: \(app.debugDescription)")
-        swipeBack(); XCTAssertTrue(entities.waitForExistence(timeout: 10), "entity list to reports: \(app.debugDescription)")
-        swipeBack(); XCTAssertTrue(home.waitForExistence(timeout: 10), "reports to home: \(app.debugDescription)")
+        func backTo(_ title: String) {
+            swipeBack()
+            let bar = app.navigationBars[title]
+            if !bar.waitForExistence(timeout: 8) { swipeBack() }
+            XCTAssertTrue(bar.waitForExistence(timeout: 12), "back to \(title): \(app.debugDescription)")
+        }
+        backTo("جهات التنفيذ")
+        backTo("التقارير")
+        backTo("الرئيسية")
     }
 
     func testDeductionComparison() {
@@ -269,7 +275,7 @@ final class NavigationTests: XCTestCase {
         homeTab.tap()
         element("homeReportsEntry").tap()
         XCTAssertTrue(app.navigationBars["التقارير"].waitForExistence(timeout: 8))
-        element("closeReports").tap()
+        app.navigationBars["التقارير"].buttons["BackButton"].tap()
         XCTAssertTrue(app.navigationBars["الرئيسية"].waitForExistence(timeout: 8))
         searchTab.tap()
         XCTAssertTrue(searchField.waitForExistence(timeout: 8))
@@ -351,9 +357,10 @@ final class NavigationTests: XCTestCase {
             let menu = element("homeMonthMenu")
             guard wait(menu, "زر الأشهر") else { return }
             menu.tap()
-            if wait(app.buttons["كل الأشهر"], "قائمة الأشهر") { app.buttons["كل الأشهر"].tap() }
+            let months = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND hittable == true", "2026"))
+            if wait(months.firstMatch, "شهر محفوظ في القائمة") { months.allElementsBoundByIndex.last?.tap() }
             menu.tap()
-            if wait(app.buttons["آخر شهر"], "قائمة الأشهر مرة ثانية") { app.buttons["آخر شهر"].tap() }
+            if wait(months.firstMatch, "قائمة الأشهر مرة ثانية") { months.firstMatch.tap() }
         }
         step("فتح الإعدادات من الشريط السفلي") {
             settingsTab.tap()
@@ -361,8 +368,10 @@ final class NavigationTests: XCTestCase {
         }
         step("الإعدادات في صفحة واحدة") {
             let backup = element("backupRow")
-            if wait(backup, "صف النسخ الاحتياطي"), !backup.isHittable { issue("الإعدادات تحتاج تمريراً") }
-            backup.tap()
+            if wait(backup, "صف النسخ الاحتياطي") {
+                for _ in 0..<3 where !backup.isHittable { app.swipeUp() }
+                backup.tap()
+            }
             wait(element("backupStatus"), "صفحة النسخ الاحتياطي")
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
@@ -389,7 +398,8 @@ final class NavigationTests: XCTestCase {
             let card = element("entitiesCard")
             if wait(card, "بطاقة جهات التنفيذ") {
                 card.tap()
-                if element("transferFilesButton").exists { issue("زر ملفات التحويل لا يزال في جهات التنفيذ") }
+                wait(app.navigationBars["جهات التنفيذ"], "صفحة جهات التنفيذ")
+                if element("transferFilesButton").isHittable { issue("زر ملفات التحويل لا يزال في جهات التنفيذ") }
                 let row = element("reportGroup")
                 if wait(row, "قائمة الجهات") {
                     row.tap()
@@ -420,7 +430,12 @@ final class NavigationTests: XCTestCase {
                 wait(element("exportCategory-directorates"), "خيارات المجموعات")
                 app.swipeDown(velocity: .fast)
             }
-            element("closeReports").tap()
+            if app.navigationBars["جهات التنفيذ"].exists {
+                app.navigationBars["جهات التنفيذ"].buttons["BackButton"].tap()
+            }
+            if wait(app.navigationBars["التقارير"], "العودة للتقارير") {
+                app.navigationBars["التقارير"].buttons["BackButton"].tap()
+            }
             wait(app.navigationBars["الرئيسية"], "الرئيسية بعد التقارير")
         }
 

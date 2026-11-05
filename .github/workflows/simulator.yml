@@ -642,7 +642,7 @@ jobs:
           for i in $(seq 1 300); do grep -q backup "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "backup=failed no report"; } | tee ci-output/backup-report.txt
           grep -q "backup=ok" ci-output/backup-report.txt && echo "::notice::Backup OK: $(cat ci-output/backup-report.txt)" \
-            || echo "::error::Backup round trip failed: $(cat ci-output/backup-report.txt)"
+            || { echo "::error::Backup round trip failed: $(cat ci-output/backup-report.txt)"; exit 1; }
           grep -q "corruptRestore=ok" ci-output/backup-report.txt || { echo "::error::Corrupt backup changed existing data"; exit 1; }
           grep -q "serverTime=ok" ci-output/backup-report.txt || { echo "::error::Server restore time was not preserved or cleared"; exit 1; }
           # النسخ التلقائي إلى مجلد التطبيق (نسخة واحدة تُستبدل)
@@ -652,7 +652,7 @@ jobs:
           for i in $(seq 1 300); do grep -q autobackup "$DATA/Documents/import-report.txt" 2>/dev/null && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "autobackup=failed no report"; } | tee ci-output/autobackup-report.txt
           grep -q "autobackup=ok" ci-output/autobackup-report.txt && echo "::notice::Auto backup OK: $(cat ci-output/autobackup-report.txt)" \
-            || echo "::error::Auto backup failed: $(cat ci-output/autobackup-report.txt)"
+            || { echo "::error::Auto backup failed: $(cat ci-output/autobackup-report.txt)"; exit 1; }
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
           xcrun simctl launch "$UDID" "$BUNDLE" -AppleLanguages "(ar)" -openSettings YES -openBackup YES
           sleep 6
