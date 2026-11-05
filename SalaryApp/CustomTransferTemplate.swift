@@ -3,6 +3,8 @@ import Foundation
 /// قالب المستخدم مستقل عن مبالغ الشهر؛ تُقرأ المبالغ مجدداً عند إعداد كل كتاب.
 nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sendable {
     enum Source: String, Codable, CaseIterable, Sendable { case none, manual, payroll, execution }
+    enum BodyAlignment: String, Codable, CaseIterable, Sendable { case justified, right, center, left }
+    enum BodySpacing: String, Codable, CaseIterable, Sendable { case compact, medium, wide }
     var id = UUID()
     var title = ""
     var header = ""
@@ -17,6 +19,10 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     var source: Source = .none
     var sourceName = ""
     var account = ""
+    // Optional fields keep templates created by older versions readable.
+    var bodyAlignment: BodyAlignment? = nil
+    var bodySpacing: BodySpacing? = nil
+    var bodyBold: Bool? = nil
 
     static let settingsKey = "customTransferTemplatesV1"
     private struct Archive: Codable { var version: Int; var templates: [CustomTransferTemplate] }
@@ -24,7 +30,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         if data.isEmpty { return [] }
         guard data.count <= 2_000_000 else { throw invalid() }
         // لا نكتب فوق حقول أضافها إصدار أحدث لا يفهمه هذا الإصدار.
-        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account"]
+        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodySpacing", "bodyBold"]
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(root.keys).isSubset(of: ["version", "templates"]),
               let records = root["templates"] as? [[String: Any]],
@@ -42,6 +48,21 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     }
     static func invalid(_ message: String = "تعذّرت قراءة قالب الكتاب أو بياناته؛ لم تُستبدل البيانات.") -> NSError {
         NSError(domain: "CustomTransferTemplate", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    /// القوالب القديمة تخزن الاسم فقط، أما الحقل الجديد فيحتوي الصفة والاسم والمنصب.
+    static func signatureCells(_ signers: [String], date: String) throws -> [String] {
+        guard signers.count == 3 else { throw invalid("أكمل بيانات أعضاء اللجنة الثلاثة.") }
+        let legacy = TransferWordGroupDraft.signatureCells(signers, date: date, adaptivePDF: true)
+        return try signers.enumerated().map { index, signer in
+            let normalized = signer.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+            let parts = normalized.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 1 && !parts[0].isEmpty { return legacy[index] }
+            guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty }) else {
+                throw invalid("اكتب لكل عضو ثلاثة أسطر: العنوان الوظيفي، ثم الاسم، ثم المنصب.")
+            }
+            let signatureDate = index == 2 ? TransferWordGroupDraft.thirdMemberDate(date) : date
+            return parts.joined(separator: "\n") + "\n" + signatureDate
+        }
     }
     func validate() throws {
         let values = [title, header, number, recipient, subject, body, footer, firstSigner, secondSigner, thirdSigner, sourceName, account]
@@ -63,5 +84,39 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         let output = result as String
         guard !output.contains("{{"), !output.contains("}}") else { throw Self.invalid("راجع الحقول بين الأقواس في متن الكتاب.") }
         return output
+    }
+
+    /// تنسيق أرقام المتن المكتوبة يدوياً مع إبقاء IBAN وأرقام الحسابات الطويلة كما هي.
+    static func formatBodyNumbers(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "[0-9٠-٩۰-۹]+(?:[,٬][0-9٠-٩۰-۹]{3})*") else { return text }
+        let source = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: source.length))
+        let ibanPattern = try? NSRegularExpression(pattern: "(?i)(?<![A-Z0-9])IQ(?:[\\s-]*[A-Z0-9]){21}(?![A-Z0-9])")
+        let latinText = ArabicText.latinDigits(text)
+        let ibanRanges = ibanPattern?.matches(in: latinText, range: NSRange(location: 0, length: (latinText as NSString).length)).map(\.range) ?? []
+        let output = NSMutableString(string: text)
+        let asciiLetters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        for match in matches.reversed() {
+            let range = match.range
+            if ibanRanges.contains(where: { NSIntersectionRange($0, range).length > 0 }) { continue }
+            let before = range.location > 0 ? source.substring(with: NSRange(location: range.location - 1, length: 1)) : ""
+            let afterIndex = NSMaxRange(range)
+            let after = afterIndex < source.length ? source.substring(with: NSRange(location: afterIndex, length: 1)) : ""
+            if before.rangeOfCharacter(from: asciiLetters) != nil || after.rangeOfCharacter(from: asciiLetters) != nil { continue }
+            let original = source.substring(with: range)
+            let digits = ArabicText.latinDigits(original).replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "٬", with: "")
+            guard digits.count < 13 else { continue }
+            let prefix = source.substring(to: range.location).trimmingCharacters(in: .whitespaces)
+            let suffix = source.substring(from: afterIndex).trimmingCharacters(in: .whitespaces)
+            let datePart = prefix.hasSuffix("/") || suffix.hasPrefix("/") || prefix.hasSuffix("-") || suffix.hasPrefix("-")
+            let nearby = String(prefix.suffix(32))
+            let amountContext = ["مبلغ", "قيمته", "قيمتها", "مقداره", "دينار"].contains(where: { nearby.contains($0) }) || suffix.hasPrefix("دينار")
+            let yearContext = ["سنة", "سنه", "عام"].contains(where: { prefix.hasSuffix($0) })
+            var formatted = digits
+            if digits.count >= 4 && (amountContext || original.contains(",") || original.contains("٬")) && !yearContext && !datePart,
+               let amount = Double(digits), let grouped = try? TransferWordValues.groupedAmount(amount) { formatted = grouped }
+            output.replaceCharacters(in: range, with: ReportSheet.easternDigits(formatted))
+        }
+        return output as String
     }
 }

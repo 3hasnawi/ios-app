@@ -759,9 +759,25 @@ import CoreText
         customTemplate.source = .payroll
         customTemplate.sourceName = "بند وهمي"
         customTemplate.body = "المبلغ {{المبلغ}} والحساب {{الحساب}}"
+        customTemplate.bodyAlignment = .center
+        customTemplate.bodySpacing = .wide
+        customTemplate.bodyBold = true
         let customData = try CustomTransferTemplate.encode([customTemplate])
         try check(try CustomTransferTemplate.decode(customData) == [customTemplate], "custom letter backup roundtrip")
         try check(try customTemplate.render(["المبلغ": "1000", "الحساب": "123"]) == "المبلغ 1000 والحساب 123", "custom letter placeholders")
+        let formattedBody = CustomTransferTemplate.formatBodyNumbers("المبلغ 1234567 بتاريخ 2026/11/05 والحساب IQ00TEST123456789012345")
+        try check(formattedBody == "المبلغ ١,٢٣٤,٥٦٧ بتاريخ ٢٠٢٦/١١/٠٥ والحساب IQ00TEST123456789012345", "custom letter numbers and IBAN preservation")
+        try check(CustomTransferTemplate.formatBodyNumbers("مبلغ قدره 5000 دينار في سنة 2026") == "مبلغ قدره ٥,٠٠٠ دينار في سنة ٢٠٢٦", "four-digit amount and year formatting")
+        let spacedAccount = "IQ 00 TEST 123456789012345"
+        try check(CustomTransferTemplate.formatBodyNumbers("حساب " + spacedAccount) == "حساب " + spacedAccount, "spaced IBAN remains unchanged")
+        var legacyTemplate = customTemplate
+        legacyTemplate.bodyAlignment = nil; legacyTemplate.bodySpacing = nil; legacyTemplate.bodyBold = nil
+        try check(try CustomTransferTemplate.decode(CustomTransferTemplate.encode([legacyTemplate])) == [legacyTemplate], "legacy custom letter remains readable")
+        let letterSignatures = try CustomTransferTemplate.signatureCells(["صفة أولى\nاسم أول\nمنصب أول", "صفة ثانية\nاسم ثان\nمنصب ثان", "صفة ثالثة\nاسم ثالث\nمنصب ثالث"], date: " / ١٠ / ٢٠٢٦")
+        try check(letterSignatures[0] == "صفة أولى\nاسم أول\nمنصب أول\n / ١٠ / ٢٠٢٦" && letterSignatures[2].hasSuffix("تشرين الأول / ٢٠٢٦"), "custom signature lines and automatic dates")
+        try check(try CustomTransferTemplate.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦") == TransferWordGroupDraft.signatureCells(["اسم أول", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦", adaptivePDF: true), "legacy signatures retain their titles")
+        do { _ = try CustomTransferTemplate.signatureCells(["صفة\nاسم", "اسم ثان", "اسم ثالث"], date: " / ١٠ / ٢٠٢٦"); throw Failure(errorDescription: "incomplete signature accepted") }
+        catch is Failure { throw Failure(errorDescription: "incomplete signature accepted") } catch { }
         do { _ = try customTemplate.render(["المبلغ": "1000"]); throw Failure(errorDescription: "missing account accepted") }
         catch is Failure { throw Failure(errorDescription: "missing account accepted") }
         catch { }

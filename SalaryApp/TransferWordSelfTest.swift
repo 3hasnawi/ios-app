@@ -369,6 +369,21 @@ import CryptoKit
             .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
         ], destination: longPDF, sakkalBold: syntheticFont, group: false)
         try check((PDFDocument(url: longPDF)?.pageCount ?? 0) > 1, "Adaptive PDF long text pagination")
+        phase = "custom-body-layouts"
+        for alignment: TransferWordDocument.Paragraph.Alignment in [.right, .left, .center, .justified] {
+            let url = documents.appendingPathComponent("custom-layout-\(UUID().uuidString).pdf")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try TransferAdaptivePDF.write(blocks: [
+                .paragraph(.init(text: "ترويسة وهمية", halfPoints: 32, bold: true)),
+                .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: ٢٠٢٦ / ١٠ /", halfPoints: 30, bold: true)),
+                .paragraph(.init(text: "إلى / جهة وهمية", centered: true)),
+                .paragraph(.init(text: "م / تجربة", centered: true)),
+                .paragraph(.init(text: "المبلغ التجريبي ١,٢٣٤,٥٦٧ ديناراً بتاريخ ٢٠٢٦/١٠/٠٥.", halfPoints: 28, bold: true, alignment: alignment, lineSpacing: 8)),
+                .table(fixedSignatures), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
+            ], destination: url, sakkalBold: nil, group: false)
+            try check(PDFDocument(url: url)?.pageCount == 1, "custom body PDF alignment")
+            try TransferAdaptivePDF.verify(url, required: ["١,٢٣٤,٥٦٧"])
+        }
         phase = "treasury-letter-drafts"
         let fakeRow = ReportRow(id: 42, name: "اسم وهمي", rank: "رتبة وهمية", workplace: "", amount: 1000, note: "")
         let schoolRow = ReportRow(id: 43, name: "اسم آخر وهمي", rank: "رتبة وهمية", workplace: "", amount: 600, note: "")

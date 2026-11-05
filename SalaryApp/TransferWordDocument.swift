@@ -4,11 +4,14 @@ import ZIPFoundation
 /// منشئ مستند Word مرن. يبقى التحقق من البيانات وتخطيط صفحات الجداول على عاتق المستدعي.
 nonisolated enum TransferWordDocument {
     struct Paragraph: Sendable {
+        enum Alignment: Equatable, Sendable { case right, center, left, justified }
         var text: String
         var font: String = "Times New Roman"
         var halfPoints: Int = 28
         var bold = false
         var centered = false
+        var alignment: Alignment? = nil
+        var lineSpacing: Int? = nil
     }
     struct Table: Sendable {
         var headers: [String]
@@ -47,10 +50,17 @@ nonisolated enum TransferWordDocument {
     }
     private static func paragraph(_ p: Paragraph) throws -> String {
         guard !p.font.isEmpty, p.font.count <= 100, (12...96).contains(p.halfPoints) else { throw Failure.invalidContent }
-        let alignment = p.centered ? "center" : "right"
+        let alignment: String = switch p.alignment {
+        case .right: "right"
+        case .center: "center"
+        case .left: "left"
+        case .justified: "both"
+        case nil: p.centered ? "center" : "right"
+        }
         let bold = p.bold ? "<w:b/><w:bCs/>" : ""
         let font = escape(p.font)
-        return "<w:p><w:pPr><w:bidi/><w:spacing w:before=\"0\" w:after=\"0\"/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
+        let spacing = p.lineSpacing.map { " w:line=\"\(240 + max(0, min($0, 12)) * 12)\" w:lineRule=\"auto\"" } ?? ""
+        return "<w:p><w:pPr><w:bidi/><w:spacing w:before=\"0\" w:after=\"0\"\(spacing)/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
     }
     private static func table(_ t: Table) throws -> String {
         let columns = t.headers.isEmpty ? (t.rows.first?.count ?? 0) : t.headers.count

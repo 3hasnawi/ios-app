@@ -66,6 +66,7 @@ private struct CustomTransferTemplateEditor: View {
     @State private var groups: [ReportGroup] = []
     @State private var sourceError: String?
     @State private var saveError: String?
+    @State private var choosingAccount = false
     let monthName: String
     let save: (CustomTransferTemplate) throws -> Void
 
@@ -85,6 +86,19 @@ private struct CustomTransferTemplateEditor: View {
                 TextField(tr("إلى", "To"), text: $template.recipient)
                 TextField(tr("الموضوع", "Subject"), text: $template.subject)
                 TextField(tr("المتن", "Body"), text: $template.body, axis: .vertical).lineLimit(4...12)
+                Picker(tr("محاذاة المتن", "Body alignment"), selection: Binding(get: { template.bodyAlignment ?? .justified }, set: { template.bodyAlignment = $0 })) {
+                    Text(tr("ضبط الطرفين", "Justified")).tag(CustomTransferTemplate.BodyAlignment.justified)
+                    Text(tr("يمين", "Right")).tag(CustomTransferTemplate.BodyAlignment.right)
+                    Text(tr("توسيط", "Center")).tag(CustomTransferTemplate.BodyAlignment.center)
+                    Text(tr("يسار", "Left")).tag(CustomTransferTemplate.BodyAlignment.left)
+                }
+                Picker(tr("تباعد أسطر المتن", "Body line spacing"), selection: Binding(get: { template.bodySpacing ?? .medium }, set: { template.bodySpacing = $0 })) {
+                    Text(tr("صغير", "Compact")).tag(CustomTransferTemplate.BodySpacing.compact)
+                    Text(tr("متوسط", "Medium")).tag(CustomTransferTemplate.BodySpacing.medium)
+                    Text(tr("كبير", "Large")).tag(CustomTransferTemplate.BodySpacing.wide)
+                }
+                Toggle(tr("متن عريض", "Bold body"), isOn: Binding(get: { template.bodyBold ?? false }, set: { template.bodyBold = $0 }))
+                Text(tr("يُطبّق التنسيق على المتن كاملاً في معاينة الكتاب.", "Formatting applies to the entire body in the letter preview.")).font(.footnote).foregroundStyle(.secondary)
                 Menu(tr("إضافة حقل إلى المتن", "Insert field into body")) {
                     ForEach(["المبلغ", "المبلغ كتابة", "الشهر", "السنة", "الحساب"], id: \.self) { key in
                         Button(key) { template.body += "{{\(key)}}" }
@@ -114,25 +128,29 @@ private struct CustomTransferTemplateEditor: View {
             Section(tr("الحساب المرتبط اختيارياً", "Optional linked account")) {
                 TextField(tr("رقم الحساب أو IBAN", "Account number or IBAN"), text: $template.account).textInputAutocapitalization(.characters).autocorrectionDisabled()
                 if !accounts.isEmpty {
-                    Menu(tr("اختيار من الحسابات المحفوظة", "Choose a saved account")) {
-                        ForEach(accounts) { account in
-                            Button(account.entity) { template.account = account.iban.isEmpty ? (account.localAccount ?? "") : account.iban }
-                        }
-                    }
+                    Button(tr("اختيار من الحسابات المحفوظة", "Choose a saved account")) { choosingAccount = true }
                 }
                 Text(tr("تأكد من رقم الحساب عند كل إصدار للكتاب.", "Verify the account number for each letter.")).font(.footnote).foregroundStyle(.secondary)
             }
             Section(tr("التواقيع", "Signatures")) {
-                TextField(tr("اسم العضو الأول", "First member"), text: $template.firstSigner)
-                TextField(tr("اسم العضو الثاني", "Second member"), text: $template.secondSigner)
-                TextField(tr("اسم العضو الثالث", "Third member"), text: $template.thirdSigner)
-                Text(tr("تستخدم صفات اللجنة المعتمدة في كتب التطبيق.", "The existing committee titles are used.")).font(.footnote).foregroundStyle(.secondary)
+                Text(tr("العضو الأول", "First member")).font(.headline)
+                TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.firstSigner, axis: .vertical).lineLimit(3...5)
+                Text(tr("العضو الثاني", "Second member")).font(.headline)
+                TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.secondSigner, axis: .vertical).lineLimit(3...5)
+                Text(tr("العضو الثالث", "Third member")).font(.headline)
+                TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.thirdSigner, axis: .vertical).lineLimit(3...5)
+                Text(tr("لكل عضو: اكتب العنوان الوظيفي ثم الاسم ثم المنصب، كل واحد في سطر. يُضاف التاريخ تلقائياً أسفل التوقيع. الأسماء المحفوظة سابقاً تبقى بصفاتها المعتمدة.", "For each member, enter the job title, name and position on separate lines. The date is added automatically. Previously saved names retain their existing titles.")).font(.footnote).foregroundStyle(.secondary)
             }
             Section(tr("نسخة منه إلى", "Copies to")) {
                 TextField(tr("النص", "Text"), text: $template.footer, axis: .vertical).lineLimit(2...8)
             }
         }
         .navigationTitle(tr("قالب كتاب", "Letter template"))
+        .sheet(isPresented: $choosingAccount) {
+            SavedLetterAccountPicker(accounts: accounts) { account in
+                template.account = account.iban.isEmpty ? (account.localAccount ?? "") : account.iban
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
             ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { do { try save(template) } catch { saveError = error.localizedDescription } } }
@@ -240,10 +258,10 @@ private struct CustomTransferLetterView: View {
                 }
                 var values: [String: String] = [:]
                 let names = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
-                values["الشهر"] = names[period.month - 1]; values["السنة"] = String(period.year)
+                values["الشهر"] = names[period.month - 1]; values["السنة"] = ReportSheet.easternDigits(String(period.year))
                 if let amount {
                     let numbers = try TransferWordValues.make(month: monthName, amount: amount, custom: .init(), requested: ["AMOUNT", "AMOUNT_WORDS"])
-                    values["المبلغ"] = numbers["AMOUNT"]; values["المبلغ كتابة"] = numbers["AMOUNT_WORDS"]
+                    values["المبلغ"] = numbers["AMOUNT"].map(ReportSheet.easternDigits); values["المبلغ كتابة"] = numbers["AMOUNT_WORDS"]
                     guard selected.body.contains("{{المبلغ}}") || selected.body.contains("{{المبلغ كتابة}}") else { throw CustomTransferTemplate.invalid(tr("أضف حقل المبلغ إلى متن الكتاب.", "Add the amount field to the letter body.")) }
                 }
                 let account = ArabicText.latinDigits(selected.account).uppercased().filter { !$0.isWhitespace && $0 != "-" }
@@ -252,19 +270,32 @@ private struct CustomTransferLetterView: View {
                     guard selected.body.contains("{{الحساب}}") else { throw CustomTransferTemplate.invalid(tr("أضف حقل الحساب إلى متن الكتاب أو أزل الحساب المرتبط.", "Add the account field to the body or remove the linked account.")) }
                     values["الحساب"] = account
                 }
-                let body = try selected.render(values)
+                var formattedTemplate = selected
+                formattedTemplate.body = CustomTransferTemplate.formatBodyNumbers(selected.body)
+                let body = try formattedTemplate.render(values)
                 let required = [selected.header, selected.number, selected.recipient, selected.subject, body, selected.footer, selected.firstSigner, selected.secondSigner, selected.thirdSigner]
                 guard required.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else { throw CustomTransferTemplate.invalid(tr("أكمل الترويسة والعدد والجهة والموضوع والمتن والتواقيع والنسخة منه إلى.", "Complete the header, reference, recipient, subject, body, signatures and copies.")) }
-                let date = period.signatureDate
-                let signatures = TransferWordGroupDraft.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date, adaptivePDF: true)
+                let date = ReportSheet.easternDigits(period.signatureDate)
+                let alignment: TransferWordDocument.Paragraph.Alignment = switch selected.bodyAlignment ?? .justified {
+                case .justified: .justified
+                case .right: .right
+                case .center: .center
+                case .left: .left
+                }
+                let spacing: Int = switch selected.bodySpacing ?? .medium {
+                case .compact: 0
+                case .medium: 3
+                case .wide: 8
+                }
+                let signatures = try CustomTransferTemplate.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date)
                 let blocks: [TransferWordDocument.Block] = [
-                    .paragraph(.init(text: selected.header, font: "Times New Roman", halfPoints: 32, bold: true)),
-                    .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: selected.number, date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-                    .paragraph(.init(text: "إلى / " + selected.recipient, font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                    .paragraph(.init(text: "م / " + selected.subject, font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                    .paragraph(.init(text: body, halfPoints: 28)),
+                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: 32, bold: true)),
+                    .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
+                    .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+                    .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+                    .paragraph(.init(text: body, halfPoints: 28, bold: selected.bodyBold ?? false, alignment: alignment, lineSpacing: spacing)),
                     .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
-                    .paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(selected.footer, adaptivePDF: true), halfPoints: 24, bold: true))
+                    .paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: 24, bold: true))
                 ]
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("custom-letter-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

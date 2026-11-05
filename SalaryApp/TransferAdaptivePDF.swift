@@ -176,10 +176,17 @@ nonisolated enum TransferAdaptivePDF {
                     y += 7; needsClosing = true
                 }
                 let face = try font(p, sakkal: sakkalBold)
+                let justify = p.alignment == .justified || (p.alignment == nil && blockIndex == 2)
+                let flush: CGFloat = switch p.alignment {
+                case .left: 0
+                case .center: 0.5
+                case .right, .justified: 1
+                case nil: p.centered ? 0.5 : 1
+                }
                 let ls = try lines(p.text, font: face, width: contentWidth,
                                    underline: p.centered && p.text.hasPrefix("م /"),
-                                   justify: blockIndex == 2,
-                                   spacing: expectingFooter ? 0 : 3)
+                                   justify: justify,
+                                   spacing: expectingFooter ? 0 : CGFloat(p.lineSpacing ?? 3))
                 if expectingFooter {
                     let footerHeight = ls.reduce(CGFloat.zero, { $0 + $1.height })
                     let footerBottom: CGFloat = 832
@@ -188,7 +195,7 @@ nonisolated enum TransferAdaptivePDF {
                     guard y >= signatureEnd + 8 else { throw Failure.signaturePlacement }
                     expectingFooter = false
                 }
-                try addLines(ls, x: margin, width: contentWidth, flush: p.centered ? 0.5 : 1)
+                try addLines(ls, x: margin, width: contentWidth, flush: flush)
                 if !ls.isEmpty { y += 6 }
             case .table(let table):
                 if needsClosing && table.showBorders && !afterBreak {

@@ -10,6 +10,7 @@ struct TreasuryLetterView: View {
     @AppStorage("bankStatementIBAN") private var payerIBAN = ""
     @AppStorage(ExecutionAccountStore.storageKey) private var accountsData = Data()
     @AppStorage(TransferLetterCustomizationStore.settingsKey) private var customizationData = Data()
+    @AppStorage(TransferReferencePack.settingsKey) private var referenceData = Data()
     @State private var bankCache = BankStatementCache.shared
     @State private var firstItem = ""
     @State private var secondItem = ""
@@ -27,6 +28,7 @@ struct TreasuryLetterView: View {
     @State private var pendingFirstItem: String?
     @State private var confirmDiscardNotes = false
     @State private var initialized = false
+    @State private var choosingAccount = false
     @State private var loading = false
     @State private var working = false
     @State private var error: String?
@@ -63,7 +65,12 @@ struct TreasuryLetterView: View {
             Button(tr("إلغاء", "Cancel"), role: .cancel) { pendingFirstItem = nil }
         }
         .onAppear { initialize() }
+        .onChange(of: payerIBAN) { _, _ in loadTreasuryAccountIfAvailable() }
+        .onChange(of: referenceData) { _, _ in loadTreasuryAccountIfAvailable() }
         .task(id: loadKey) { await loadRows() }
+        .sheet(isPresented: $choosingAccount) {
+            SavedLetterAccountPicker(accounts: accounts.filter { !$0.iban.isEmpty }) { beneficiaryIBAN = $0.iban }
+        }
         .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { closePreview() } })) {
             NavigationStack {
                 if let preview {
@@ -130,10 +137,10 @@ struct TreasuryLetterView: View {
                 LabeledContent(tr("حساب الجهة الدافعة", "Payer account"), value: payerIBAN.isEmpty ? "—" : payerIBAN).privacySensitive()
                 TextField(tr("IBAN خزينة الأنبار", "Treasury IBAN"), text: $beneficiaryIBAN).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
                 if !accounts.isEmpty {
-                    Menu(tr("اختيار من الحسابات المحفوظة", "Choose saved account")) {
-                        ForEach(accounts) { account in Button(account.entity) { beneficiaryIBAN = account.iban } }
-                    }
+                    Button(tr("اختيار من الحسابات المحفوظة", "Choose saved account")) { choosingAccount = true }
                 }
+                Text(tr("يُملأ حساب الخزينة من مرجع كتاب الضريبة والحماية عند توفره ومطابقة حساب الدفع؛ وإلا اختره أو أدخله بعد التحقق.", "The treasury account is read from the tax and social protection letter reference when available and the payer matches. Otherwise select or enter it after verification."))
+                    .font(.footnote).foregroundStyle(.secondary)
             }
     }
 
@@ -167,6 +174,7 @@ struct TreasuryLetterView: View {
     }
     private func initialize() {
         guard !initialized else { return }; initialized = true
+        loadTreasuryAccountIfAvailable()
         if let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: customizationData) {
             // نستخدم ترويسة وتواقيع كتاب الخزينة الموجود مع الإعدادات المشتركة.
             let common = store.effective(for: "food_tax")
@@ -176,6 +184,20 @@ struct TreasuryLetterView: View {
         if kind == .guarantee {
             let matches = itemNames.filter { ArabicText.normalize($0) == ArabicText.normalize("تضمين") }
             if matches.count == 1 { firstItem = matches[0] }
+        }
+    }
+    private func loadTreasuryAccountIfAvailable() {
+        guard beneficiaryIBAN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let references = referenceData, payer = payerIBAN
+        guard !references.isEmpty, TransferRules.validIBAN(payer) else { return }
+        Task {
+            let account = await Task.detached(priority: .userInitiated) {
+                try? TransferWordReferenceAccounts.beneficiary(bookID: "tax_social", references: references, payerIBAN: payer)
+            }.value
+            guard referenceData == references, payerIBAN == payer,
+                  beneficiaryIBAN.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let account else { return }
+            beneficiaryIBAN = account
         }
     }
     private func loadRows() async {

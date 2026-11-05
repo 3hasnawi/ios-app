@@ -349,14 +349,6 @@ struct TransferFilesView: View {
     var body: some View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
-            Section(tr("كتب الخزينة", "Treasury letters")) {
-                NavigationLink { TreasuryLetterView(kind: .guarantee, monthName: month?.name ?? "") } label: {
-                    Label(tr("كتاب التضمين", "Guarantee letter"), systemImage: "doc.text")
-                }
-                NavigationLink { TreasuryLetterView(kind: .schools, monthName: month?.name ?? "") } label: {
-                    Label(tr("رسم الطابع وبناء المدارس", "Stamp duty and school construction"), systemImage: "doc.text")
-                }
-            }
             Section {
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
                     Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")
@@ -561,6 +553,7 @@ private struct TransferCategoryView: View {
                 } else {
                     Section {
                         Label(figuresError ?? tr("تعذّر تحميل مبالغ الرواتب للشهر المختار.", "Could not load payroll amounts for the selected month."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                        treasuryBooks
                         Label(tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), systemImage: "doc.text").foregroundStyle(.secondary)
                         ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }) { kind in
                             Label(kind.title, systemImage: "doc.text").foregroundStyle(.secondary)
@@ -758,6 +751,7 @@ private struct TransferCategoryView: View {
             } footer: { Text(tr("يمكن مراجعة المبلغ وتجاوز التنبيه داخل كتاب ضمان العقود.", "You can review the amount and accept the warning inside the contract letter.")) }
         }
         Section {
+            treasuryBooks
             NavigationLink {
                 TransferCompanyLetterView(figures: context.figures, sourceKey: context.sourceKey,
                     payerIBAN: context.payerIBAN, references: context.references)
@@ -788,6 +782,14 @@ private struct TransferCategoryView: View {
             NavigationLink {
                 TransferListsView(month: month, sourceKey: sourceKey, entities: context.entities)
             } label: { Label(tr("القوائم", "Lists"), systemImage: "list.bullet.rectangle") }
+        }
+    }
+    @ViewBuilder private var treasuryBooks: some View {
+        NavigationLink { TreasuryLetterView(kind: .guarantee, monthName: month) } label: {
+            Label(tr("كتاب التضمين", "Guarantee letter"), systemImage: "doc.text")
+        }
+        NavigationLink { TreasuryLetterView(kind: .schools, monthName: month) } label: {
+            Label(tr("رسم الطابع وبناء المدارس", "Stamp duty and school construction"), systemImage: "doc.text")
         }
     }
     @ViewBuilder private func bookSource(_ kind: TransferLetterDraftKind, figures: TransferLetterFigures) -> some View {
