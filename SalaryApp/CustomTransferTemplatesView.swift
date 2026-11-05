@@ -132,6 +132,11 @@ private struct CustomTransferTemplateEditor: View {
                 }
                 Text(tr("تأكد من رقم الحساب عند كل إصدار للكتاب.", "Verify the account number for each letter.")).font(.footnote).foregroundStyle(.secondary)
             }
+            Section(tr("المرفقات", "Attachments")) {
+                TextField(tr("وصف المرفقات، مثل: قائمة أسماء عدد ١", "Attachment description, for example: one list of names"),
+                          text: Binding(get: { template.attachments ?? "" }, set: { template.attachments = $0.isEmpty ? nil : $0 }), axis: .vertical).lineLimit(2...6)
+                Text(tr("اختياري؛ يظهر الوصف أسفل عبارة للتفضل بالاطلاع وقبل التوقيع.", "Optional; the description appears after the closing and before the signatures.")).font(.footnote).foregroundStyle(.secondary)
+            }
             Section(tr("التواقيع", "Signatures")) {
                 Text(tr("العضو الأول", "First member")).font(.headline)
                 TextField(tr("العنوان الوظيفي\nالاسم\nالمنصب", "Job title\nName\nPosition"), text: $template.firstSigner, axis: .vertical).lineLimit(3...5)
@@ -304,15 +309,18 @@ private struct CustomTransferLetterView: View {
                 case .wide: 8
                 }
                 let signatures = try CustomTransferTemplate.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date)
-                let blocks: [TransferWordDocument.Block] = [
+                var blocks: [TransferWordDocument.Block] = [
                     .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: 32, bold: true)),
                     .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
                     .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: 32, bold: true, centered: true)),
                     .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                    .paragraph(.init(text: body, halfPoints: 28, bold: selected.bodyBold ?? false, alignment: alignment, lineSpacing: spacing)),
-                    .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
-                    .paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: 24, bold: true))
+                    .paragraph(.init(text: body, halfPoints: 28, bold: selected.bodyBold ?? false, alignment: alignment, lineSpacing: spacing))
                 ]
+                if let attachments = selected.attachmentParagraph {
+                    blocks.append(.paragraph(.init(text: attachments, halfPoints: 24)))
+                }
+                blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
+                blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: 24, bold: true)))
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("custom-letter-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let url = dir.appendingPathComponent("كتاب مخصص.pdf")

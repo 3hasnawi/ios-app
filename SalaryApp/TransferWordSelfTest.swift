@@ -394,14 +394,19 @@ import CryptoKit
             .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: ٢٠٢٦ / ١٠ /", halfPoints: 30, bold: true)),
             .paragraph(.init(text: "إلى / جهة وهمية", centered: true)),
             .paragraph(.init(text: "م / تجربة", centered: true)),
-            .paragraph(.init(text: "متن كتاب وهمي", halfPoints: 28)),
+            .paragraph(.init(text: "متن كتاب وهمي BODYTOKEN", halfPoints: 28)),
+            .paragraph(.init(text: "المرفقات: ATTACHMENTTOKEN", halfPoints: 24)),
             .table(oneSignature), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
         ], destination: singlePDF, sakkalBold: nil, group: false)
         guard let singleDocument = PDFDocument(url: singlePDF), let singlePage = singleDocument.page(at: 0),
-              let signatureSelection = singleDocument.findString("SOLO SIGNER", withOptions: .caseInsensitive).first else {
-            throw Failure(errorDescription: "single signature missing from PDF")
+              let signatureSelection = singleDocument.findString("SOLO SIGNER", withOptions: .caseInsensitive).first,
+              let bodySelection = singleDocument.findString("BODYTOKEN", withOptions: .caseInsensitive).first,
+              let attachmentSelection = singleDocument.findString("ATTACHMENTTOKEN", withOptions: .caseInsensitive).first else {
+            throw Failure(errorDescription: "custom letter body, attachment or signature missing from PDF")
         }
         try check(signatureSelection.bounds(for: singlePage).midX < singlePage.bounds(for: .mediaBox).midX, "single signature is on the left of the PDF")
+        try check(bodySelection.bounds(for: singlePage).midY > attachmentSelection.bounds(for: singlePage).midY &&
+                  attachmentSelection.bounds(for: singlePage).midY > signatureSelection.bounds(for: singlePage).midY, "attachment appears after body and before signature")
         phase = "treasury-letter-drafts"
         let fakeRow = ReportRow(id: 42, name: "اسم وهمي", rank: "رتبة وهمية", workplace: "", amount: 1000, note: "")
         let schoolRow = ReportRow(id: 43, name: "اسم آخر وهمي", rank: "رتبة وهمية", workplace: "", amount: 600, note: "")

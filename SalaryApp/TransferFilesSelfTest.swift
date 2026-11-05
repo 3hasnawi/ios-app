@@ -764,8 +764,14 @@ import CoreText
         customTemplate.bodyBold = true
         customTemplate.signatureVerticalOffset = -20
         customTemplate.signatureHorizontalOffset = 15
+        customTemplate.attachments = "قائمة أسماء عدد 2"
         let customData = try CustomTransferTemplate.encode([customTemplate])
         try check(try CustomTransferTemplate.decode(customData) == [customTemplate], "custom letter backup roundtrip")
+        try check(customTemplate.attachmentParagraph == "المرفقات: قائمة أسماء عدد ٢", "custom attachment description and digits")
+        customTemplate.attachments = "المرفقات: قائمة وهمية"
+        try check(customTemplate.attachmentParagraph == "المرفقات: قائمة وهمية", "attachment label is not duplicated")
+        customTemplate.attachments = "  "
+        try check(customTemplate.attachmentParagraph == nil, "blank attachments omitted")
         try check(try customTemplate.render(["المبلغ": "1000", "الحساب": "123"]) == "المبلغ 1000 والحساب 123", "custom letter placeholders")
         let formattedBody = CustomTransferTemplate.formatBodyNumbers("المبلغ 1234567 بتاريخ 2026/11/05 والحساب IQ00TEST123456789012345")
         try check(formattedBody == "المبلغ ١,٢٣٤,٥٦٧ بتاريخ ٢٠٢٦/١١/٠٥ والحساب IQ00TEST123456789012345", "custom letter numbers and IBAN preservation")
@@ -775,6 +781,7 @@ import CoreText
         var legacyTemplate = customTemplate
         legacyTemplate.bodyAlignment = nil; legacyTemplate.bodySpacing = nil; legacyTemplate.bodyBold = nil
         legacyTemplate.signatureVerticalOffset = nil; legacyTemplate.signatureHorizontalOffset = nil
+        legacyTemplate.attachments = nil
         try check(try CustomTransferTemplate.decode(CustomTransferTemplate.encode([legacyTemplate])) == [legacyTemplate], "legacy custom letter remains readable")
         var invalidOffsetTemplate = customTemplate
         invalidOffsetTemplate.signatureHorizontalOffset = 31
