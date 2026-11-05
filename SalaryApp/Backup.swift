@@ -942,6 +942,13 @@ final class BackupManager {
 
     /// اختبار المحاكي (-autoBackupTest YES): ملف تجريبي بدل iCloud، نسختان فوق نفس الملف.
     func autoBackupSelfTest() async {
+        // لا تعتمد نتيجة الاختبار على خدمة النسخ التي اختارتها اختبارات الواجهة السابقة.
+        let savedDestination = UserDefaults.standard.object(forKey: "backupDestinationChoice")
+        UserDefaults.standard.removeObject(forKey: "backupDestinationChoice")
+        defer {
+            if let savedDestination { UserDefaults.standard.set(savedDestination, forKey: "backupDestinationChoice") }
+            else { UserDefaults.standard.removeObject(forKey: "backupDestinationChoice") }
+        }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let folder = docs.appendingPathComponent("icloud-test", isDirectory: true).appendingPathComponent(Self.subfolder, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
