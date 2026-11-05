@@ -50,64 +50,11 @@ struct TreasuryLetterView: View {
     private var title: String { kind == .guarantee ? tr("كتاب التضمين", "Guarantee letter") : tr("رسم الطابع وبناء المدارس", "Stamp duty and school construction") }
     var body: some View {
         Form {
-            Section(tr("الشهر ومصدر المبلغ", "Month and amount source")) {
-                LabeledContent(tr("الشهر", "Month"), value: monthName.isEmpty ? "—" : monthName)
-                itemPicker(kind == .guarantee ? tr("بند التضمين", "Guarantee item") : tr("بند رسم الطابع", "Stamp duty item"), selection: Binding(get: { firstItem }, set: { value in
-                    if kind == .guarantee && value != firstItem && notes.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-                        pendingFirstItem = value; confirmDiscardNotes = true
-                    } else { firstItem = value }
-                }))
-                if kind == .schools { itemPicker(tr("بند بناء المدارس", "School construction item"), selection: $secondItem) }
-                if loading { ProgressView() }
-                if isReady {
-                    LabeledContent(kind == .guarantee ? tr("مبلغ التضمين", "Guarantee amount") : tr("رسم الطابع", "Stamp duty"), value: Money.format(firstRows.reduce(0) { $0 + $1.amount }))
-                    if kind == .schools {
-                        LabeledContent(tr("بناء المدارس", "School construction"), value: Money.format(secondRows.reduce(0) { $0 + $1.amount }))
-                        LabeledContent(tr("مجموع الكتاب", "Letter total"), value: Money.format((firstRows + secondRows).reduce(0) { $0 + $1.amount }))
-                    }
-                }
-                if kind == .schools {
-                    Text(tr("اختر بنداً مستقلاً لكل مبلغ؛ لا تُحسب نسبة تلقائية.", "Select a separate payroll item for each amount; no percentage is applied.")).font(.footnote).foregroundStyle(.secondary)
-                    if !firstItem.isEmpty && firstItem == secondItem { Text(tr("اختر بندين مختلفين لتجنب تكرار المبلغ.", "Choose two different items to avoid counting the same amount twice.")).foregroundStyle(.red) }
-                }
-                if summary == nil { Text(tr("ملخص بنود هذا الشهر غير متاح؛ راجع استيراد الرواتب.", "The payroll item summary is unavailable for this month; review the payroll import.")).foregroundStyle(.orange) }
-                if let error { Text(error).foregroundStyle(.red) }
-            }
-            if kind == .guarantee && isReady {
-                Section {
-                    ForEach(firstRows) { row in
-                        VStack(alignment: .leading) {
-                            Text("\(row.rank) · \(row.name)")
-                            LabeledContent(tr("المبلغ", "Amount"), value: Money.format(row.amount))
-                            TextField(tr("رقم وتاريخ الإضبارة أو الملاحظة", "File number, date or note"), text: Binding(get: { notes[row.id] ?? "" }, set: { notes[row.id] = $0 }))
-                        }
-                    }
-                } header: { Text(tr("الأسماء والإضبارة", "Names and file numbers")) }
-                footer: { Text(tr("الإضبارات التي تدخلها تخص هذه المسودة وتبقى أثناء فتح الصفحة فقط؛ راجعها قبل المشاركة.", "File numbers apply to this draft and remain while this page is open; review them before sharing.")) }
-            }
-            Section(tr("حسابات الكتاب", "Letter accounts")) {
-                LabeledContent(tr("حساب الجهة الدافعة", "Payer account"), value: payerIBAN.isEmpty ? "—" : payerIBAN).privacySensitive()
-                TextField(tr("IBAN خزينة الأنبار", "Treasury IBAN"), text: $beneficiaryIBAN).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
-                if !accounts.isEmpty {
-                    Menu(tr("اختيار من الحسابات المحفوظة", "Choose saved account")) {
-                        ForEach(accounts) { account in Button(account.entity) { beneficiaryIBAN = account.iban } }
-                    }
-                }
-            }
-            Section(tr("بيانات الكتاب والتواقيع", "Letter details and signatures")) {
-                if kind == .guarantee { TextField(tr("سبب التضمين في متن الكتاب", "Reason in the letter"), text: $guaranteeReason, axis: .vertical).lineLimit(2...5) }
-                TextField(tr("الترويسة", "Header"), text: $header, axis: .vertical).lineLimit(2...6)
-                TextField(tr("العدد", "Reference number"), text: $number)
-                TextField(tr("اسم العضو الأول", "First member"), text: $firstSigner)
-                TextField(tr("اسم العضو الثاني", "Second member"), text: $secondSigner)
-                TextField(tr("اسم العضو الثالث", "Third member"), text: $thirdSigner)
-            }
-            Section {
-                Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepare() }
-                    .disabled(!isReady || loading || working)
-                Text(tr("راجع الشهر والبنود والمبالغ والحسابات والأسماء والتواقيع قبل مشاركة المسودة.", "Review the month, items, amounts, accounts, names and signatures before sharing the draft."))
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
+            amountSection
+            namesSection
+            accountsSection
+            detailsSection
+            previewSection
         }
         .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
         .overlay { if working { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
@@ -137,6 +84,79 @@ struct TreasuryLetterView: View {
             }
         }
     }
+    @ViewBuilder private var amountSection: some View {
+            Section(tr("الشهر ومصدر المبلغ", "Month and amount source")) {
+                LabeledContent(tr("الشهر", "Month"), value: monthName.isEmpty ? "—" : monthName)
+                itemPicker(kind == .guarantee ? tr("بند التضمين", "Guarantee item") : tr("بند رسم الطابع", "Stamp duty item"), selection: Binding(get: { firstItem }, set: { value in
+                    if kind == .guarantee && value != firstItem && notes.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                        pendingFirstItem = value; confirmDiscardNotes = true
+                    } else { firstItem = value }
+                }))
+                if kind == .schools { itemPicker(tr("بند بناء المدارس", "School construction item"), selection: $secondItem) }
+                if loading { ProgressView() }
+                if isReady {
+                    LabeledContent(kind == .guarantee ? tr("مبلغ التضمين", "Guarantee amount") : tr("رسم الطابع", "Stamp duty"), value: Money.format(firstRows.reduce(0) { $0 + $1.amount }))
+                    if kind == .schools {
+                        LabeledContent(tr("بناء المدارس", "School construction"), value: Money.format(secondRows.reduce(0) { $0 + $1.amount }))
+                        LabeledContent(tr("مجموع الكتاب", "Letter total"), value: Money.format((firstRows + secondRows).reduce(0) { $0 + $1.amount }))
+                    }
+                }
+                if kind == .schools {
+                    Text(tr("اختر بنداً مستقلاً لكل مبلغ؛ لا تُحسب نسبة تلقائية.", "Select a separate payroll item for each amount; no percentage is applied.")).font(.footnote).foregroundStyle(.secondary)
+                    if !firstItem.isEmpty && firstItem == secondItem { Text(tr("اختر بندين مختلفين لتجنب تكرار المبلغ.", "Choose two different items to avoid counting the same amount twice.")).foregroundStyle(.red) }
+                }
+                if summary == nil { Text(tr("ملخص بنود هذا الشهر غير متاح؛ راجع استيراد الرواتب.", "The payroll item summary is unavailable for this month; review the payroll import.")).foregroundStyle(.orange) }
+                if let error { Text(error).foregroundStyle(.red) }
+            }
+    }
+
+    @ViewBuilder private var namesSection: some View {
+            if kind == .guarantee && isReady {
+                Section {
+                    ForEach(firstRows) { row in
+                        VStack(alignment: .leading) {
+                            Text("\(row.rank) · \(row.name)")
+                            LabeledContent(tr("المبلغ", "Amount"), value: Money.format(row.amount))
+                            TextField(tr("رقم وتاريخ الإضبارة أو الملاحظة", "File number, date or note"), text: Binding(get: { notes[row.id] ?? "" }, set: { notes[row.id] = $0 }))
+                        }
+                    }
+                } header: { Text(tr("الأسماء والإضبارة", "Names and file numbers")) }
+                footer: { Text(tr("الإضبارات التي تدخلها تخص هذه المسودة وتبقى أثناء فتح الصفحة فقط؛ راجعها قبل المشاركة.", "File numbers apply to this draft and remain while this page is open; review them before sharing.")) }
+            }
+    }
+
+    @ViewBuilder private var accountsSection: some View {
+            Section(tr("حسابات الكتاب", "Letter accounts")) {
+                LabeledContent(tr("حساب الجهة الدافعة", "Payer account"), value: payerIBAN.isEmpty ? "—" : payerIBAN).privacySensitive()
+                TextField(tr("IBAN خزينة الأنبار", "Treasury IBAN"), text: $beneficiaryIBAN).textInputAutocapitalization(.characters).autocorrectionDisabled().privacySensitive()
+                if !accounts.isEmpty {
+                    Menu(tr("اختيار من الحسابات المحفوظة", "Choose saved account")) {
+                        ForEach(accounts) { account in Button(account.entity) { beneficiaryIBAN = account.iban } }
+                    }
+                }
+            }
+    }
+
+    @ViewBuilder private var detailsSection: some View {
+            Section(tr("بيانات الكتاب والتواقيع", "Letter details and signatures")) {
+                if kind == .guarantee { TextField(tr("سبب التضمين في متن الكتاب", "Reason in the letter"), text: $guaranteeReason, axis: .vertical).lineLimit(2...5) }
+                TextField(tr("الترويسة", "Header"), text: $header, axis: .vertical).lineLimit(2...6)
+                TextField(tr("العدد", "Reference number"), text: $number)
+                TextField(tr("اسم العضو الأول", "First member"), text: $firstSigner)
+                TextField(tr("اسم العضو الثاني", "Second member"), text: $secondSigner)
+                TextField(tr("اسم العضو الثالث", "Third member"), text: $thirdSigner)
+            }
+    }
+
+    @ViewBuilder private var previewSection: some View {
+            Section {
+                Button(tr("معاينة مسودة PDF", "Preview PDF draft"), systemImage: "doc.text.magnifyingglass") { prepare() }
+                    .disabled(!isReady || loading || working)
+                Text(tr("راجع الشهر والبنود والمبالغ والحسابات والأسماء والتواقيع قبل مشاركة المسودة.", "Review the month, items, amounts, accounts, names and signatures before sharing the draft."))
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+    }
+
     @ViewBuilder private func itemPicker(_ label: String, selection: Binding<String>) -> some View {
         let options = kind == .guarantee ? itemNames.filter { ArabicText.normalize($0).contains(ArabicText.normalize("تضمين")) } : itemNames
         Picker(label, selection: selection) {
