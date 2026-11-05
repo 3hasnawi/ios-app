@@ -349,6 +349,11 @@ struct TransferFilesView: View {
     var body: some View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
+            Section {
+                NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
+                    Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")
+                }
+            }
             if let month {
                 Section { LabeledContent(tr("الشهر المختار", "Selected month"), value: month.name) }
             }

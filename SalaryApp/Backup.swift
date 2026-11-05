@@ -11,11 +11,11 @@ import CryptoKit
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 8
+    static let version = 9
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 }
     static func exportVersion(for settings: [String: Data]) -> Int {
-        settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6)
+        settings[CustomTransferTemplate.settingsKey] != nil ? 9 : (settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6))
     }
     static let prefix = "نسخة الرواتب"
 
@@ -43,7 +43,7 @@ nonisolated enum BackupFormat {
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
-                               SalaryTrust.settingsKey, FundingApproval.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
+                               SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
@@ -143,6 +143,10 @@ actor BackupActor {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
         }
+        if let serialized = settings[CustomTransferTemplate.settingsKey] {
+            guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try CustomTransferTemplate.decode(data)
+        }
         let formatVersion = BackupFormat.exportVersion(for: settings)
         let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
@@ -216,9 +220,13 @@ actor BackupActor {
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         if let serialized = settings[FundingApproval.settingsKey] {
-            guard manifest.version == 8, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.version == 8 || manifest.version == 9), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
         } else if manifest.version == 8 { throw BackupError.notBackup }
+        if let serialized = settings[CustomTransferTemplate.settingsKey] {
+            guard manifest.version == 9, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            _ = try CustomTransferTemplate.decode(data)
+        } else if manifest.version == 9 { throw BackupError.notBackup }
         if settings[ContractOverrides.settingsKey] == nil,
            let current = try ContractOverrides.currentData(), !(try ContractOverrides.decode(current)).isEmpty {
             throw NSError(domain: "ContractOverride", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("النسخة المختارة لا تحتوي تعديلات العقود الموجودة على الجهاز. احفظ نسخة شاملة وراجع التعديلات قبل الاسترجاع.", "The selected backup does not contain this device’s contract adjustments. Save a full backup and review the adjustments before restoring.")])
