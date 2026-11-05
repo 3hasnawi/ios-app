@@ -33,14 +33,23 @@ nonisolated enum TransferWordGroupDraft {
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
     static func signatureCells(_ committee: [String], date: String, adaptivePDF: Bool, dates: [String]? = nil) -> [String] {
         guard committee.count == 3 else { return [] }
-        guard adaptivePDF else { return committee.map { $0 + "\n" + date } }
-        let signatureDates = (dates?.count == 3 ? dates : nil) ?? [date, date, date]
+        var signatureDates = (dates?.count == 3 ? dates : nil) ?? [date, date, date]
+        signatureDates[2] = thirdMemberDate(signatureDates[2])
+        guard adaptivePDF else { return committee.enumerated().map { $0.element + "\n" + signatureDates[$0.offset] } }
         let names = committee.map { $0.replacingOccurrences(of: "ـ", with: "").split(whereSeparator: \.isWhitespace).joined(separator: " ") }
         return [
             "معاون مدير تدقيق\n\(names[0])\nالمصروفات\n\(signatureDates[0])",
             "العميد\n\(names[1])\nمدير الحسابات\n\(signatureDates[1])",
             "لواء الشرطة الحقوقي\n\(names[2])\nقائد شرطة محافظة الأنبار\n\(signatureDates[2])"
         ]
+    }
+    /// يُكتب اسم شهر العضو الثالث فقط؛ يبقى اليوم والسنة كما في تاريخ التوقيع الأصلي.
+    static func thirdMemberDate(_ date: String) -> String {
+        let pieces = date.components(separatedBy: "/").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let months = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
+        guard pieces.count == 3, let month = Int(ArabicText.latinDigits(pieces[1])), (1...12).contains(month),
+              let year = Int(ArabicText.latinDigits(pieces[2])), (1900...2200).contains(year) else { return date }
+        return "\(pieces[0]) / \(months[month - 1]) / \(pieces[2])"
     }
     static func bodyValues(for text: LetterText, sourceMonth: String, amount: Double, adaptivePDF: Bool) throws -> [String: String] {
         let displayedMonth = try TransferLetterCustomValues.bodyMonth(adaptivePDF ? text.bodyMonth : nil, source: sourceMonth)

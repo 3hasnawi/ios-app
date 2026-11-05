@@ -83,7 +83,7 @@ nonisolated enum TransferWordVerification {
             guard !value.isEmpty, body.contains(value) else { throw Failure.mismatch }
         }
         let date = try TransferLetterPeriod(month).signatureDate
-        let signatures = [text.committee.map { $0 + "\n" + date }]
+        let signatures = [TransferWordGroupDraft.signatureCells(text.committee, date: date, adaptivePDF: false)]
         guard reader.tables.filter({ $0 == signatures }).count == 1 else { throw Failure.mismatch }
         if let table {
             let expected = (table.headers.isEmpty ? [] : [table.headers]) + table.rows

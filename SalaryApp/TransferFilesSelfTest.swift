@@ -194,7 +194,18 @@ import CoreText
             throw Failure(errorDescription: "invalid outgoing month accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid outgoing month accepted") } catch { }
         let sharedDates = TransferWordGroupDraft.signatureCells(["عضو أول", "عضو ثان", "عضو ثالث"], date: outgoingDate, adaptivePDF: true)
-        try check(sharedDates.count == 3 && sharedDates.allSatisfy { $0.contains(outgoingDate) }, "all committee dates use outgoing month")
+        try check(sharedDates.count == 3 && sharedDates[0].contains(outgoingDate) && sharedDates[1].contains(outgoingDate) && sharedDates[2].contains(" / تشرين الثاني / ٢٠٢٦"), "only third signature spells the outgoing month")
+        let wordDates = TransferWordGroupDraft.signatureCells(["عضو أول", "عضو ثان", "عضو ثالث"], date: " / 10 / 2026", adaptivePDF: false)
+        try check(wordDates[0].contains(" / 10 / 2026") && wordDates[1].contains(" / 10 / 2026") && wordDates[2].contains(" / تشرين الأول / 2026"), "Word third signature spells the month and preserves year")
+        try check(TransferWordGroupDraft.thirdMemberDate("15 / ١٢ / ٢٠٢٦") == "15 / كانون الأول / ٢٠٢٦" && TransferWordGroupDraft.thirdMemberDate("تاريخ غير معروف") == "تاريخ غير معروف", "third signature preserves a specified day, year and unknown dates")
+        let iraqiMonths = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
+        for (index, name) in iraqiMonths.enumerated() {
+            let date = " / \(index + 1) / 2026"
+            for pdf in [false, true] {
+                let cells = TransferWordGroupDraft.signatureCells(["أول", "ثان", "ثالث"], date: date, adaptivePDF: pdf)
+                try check(cells.count == 3 && cells[0].contains(date) && cells[1].contains(date) && cells[2].contains(" / \(name) / 2026"), "signature month name and unchanged first members for all months")
+            }
+        }
         try check(TransferWordGroupDraft.referenceText(number: "١", date: outgoingDate, adaptivePDF: true).contains(outgoingDate), "reference date uses outgoing month")
         var monthSettings = TransferLetterCustomizationStore()
         monthSettings.apply(.init(outgoingMonth: "11"), to: "contracts")
