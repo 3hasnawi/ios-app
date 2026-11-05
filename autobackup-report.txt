@@ -1,0 +1,1 @@
+autobackup=ok serverDates=true trust=true trustPDF=true size=15090184 recorded=15090184 due=true zip=true files=1 line=☁️ حُفظت نسخة احتياطية: icloud-test › نسخ الرواتب. again=☁️ حُفظت نسخة احتياطية: icloud-test › نسخ الرواتب.

@@ -1,0 +1,1 @@
+deductionAudit=ok people=7 started=1 stopped=1 increased=1 decreased=1 unchanged=3 entityStopped=3 entityStarted=2 duplicates=1 totals=1250/1030 invalid=ok empty=ok export=ok
