@@ -369,6 +369,26 @@ import CryptoKit
             .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
         ], destination: longPDF, sakkalBold: syntheticFont, group: false)
         try check((PDFDocument(url: longPDF)?.pageCount ?? 0) > 1, "Adaptive PDF long text pagination")
+        phase = "treasury-letter-drafts"
+        let fakeRow = ReportRow(id: 42, name: "اسم وهمي", rank: "رتبة وهمية", workplace: "", amount: 1000, note: "")
+        let schoolRow = ReportRow(id: 43, name: "اسم آخر وهمي", rank: "رتبة وهمية", workplace: "", amount: 600, note: "")
+        for kind: TreasuryLetterView.Kind in [.guarantee, .schools] {
+            let draft = try TreasuryLetterDraft.make(kind: kind, monthName: month, payerIBAN: payer, beneficiaryIBAN: beneficiary,
+                header: "ترويسة وهمية", number: "عدد وهمي", firstSigner: "عضو أول", secondSigner: "عضو ثان", thirdSigner: "عضو ثالث",
+                guaranteeReason: "تضمين وهمي", firstRows: [fakeRow], secondRows: kind == .schools ? [schoolRow] : [],
+                notes: [42: "إضبارة وهمية"])
+            guard case let .table(table) = draft.blocks[5] else { throw Failure(errorDescription: "missing treasury table") }
+            if kind == .schools {
+                try check(table.rows.count == 3 && table.rows[0][1] == "١,٠٠٠" && table.rows[1][1] == "٦٠٠" && table.rows[2][1] == "١,٦٠٠", "school amounts and total")
+            } else {
+                try check(table.rows.count == 2 && table.rows[0][2] == "اسم وهمي" && table.rows[0][5] == "إضبارة وهمية", "guarantee name and manual note")
+            }
+            let url = documents.appendingPathComponent("treasury-test-\(UUID().uuidString).pdf")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try TransferAdaptivePDF.write(blocks: draft.blocks, destination: url, sakkalBold: nil, group: false)
+            try check(PDFDocument(url: url)?.pageCount == 1, "treasury PDF fits one page")
+            try TransferAdaptivePDF.verify(url, required: draft.required)
+        }
         // معاينة منشأة بالكامل بأسماء وهمية، دون استخدام اسم جهة حقيقية في الصور.
         let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
         try? FileManager.default.removeItem(at: fixture)

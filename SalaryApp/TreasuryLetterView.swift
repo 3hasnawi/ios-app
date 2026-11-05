@@ -193,53 +193,10 @@ struct TreasuryLetterView: View {
     private func prepare() {
         guard isReady, !working, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { return }
         do {
-            let values = [header, number, firstSigner, secondSigner, thirdSigner] + (kind == .guarantee ? [guaranteeReason] : [])
-            guard values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-                  TransferRules.validIBAN(payerIBAN), TransferRules.validIBAN(beneficiaryIBAN) else { throw TreasuryLetterRules.Failure.incomplete }
-            let payer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
-            let beneficiary = ArabicText.latinDigits(beneficiaryIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
-            guard payer != beneficiary else { throw TreasuryLetterRules.Failure.incomplete }
-            let firstAmount = try TreasuryLetterRules.total(firstRows.map(\.amount))
-            let secondAmount = kind == .schools ? try TreasuryLetterRules.total(secondRows.map(\.amount)) : 0
-            let total = kind == .schools ? try TreasuryLetterRules.total([firstAmount, secondAmount]) : firstAmount
-            let period = try TransferLetterPeriod(monthName)
-            let formatted = try TransferWordValues.make(month: monthName, amount: total, custom: .init(), requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
-            guard let amount = formatted["AMOUNT"], let words = formatted["AMOUNT_WORDS"],
-                  let month = formatted["MONTH"], let year = formatted["YEAR"] else { throw TreasuryLetterRules.Failure.incomplete }
-            func display(_ value: Double) throws -> String { ReportSheet.easternDigits(try TransferWordValues.groupedAmount(value)) }
-            let reason = kind == .guarantee
-                ? "عن \(guaranteeReason)"
-                : "عن مبالغ الإيراد النهائي لرسم الطابع الضريبي وبناء المدارس المحسومة من منتسبي قيادتنا وحسب الجدول أدناه"
-            let body = "نرجو تحويل مبلغ قدره (\(ReportSheet.easternDigits(amount))) (\(words)) لا غيرها من حسابنا المرقم (\(payer)) المفتوح لديكم إلى حساب (مديرية خزينة الأنبار) المرقم (\(beneficiary)) (مصرف الرافدين / فرع الأنبار) وذلك \(reason) لشهر (\(month) / \(ReportSheet.easternDigits(year))) وتزويدنا بالإشعار اللازم بذلك."
-            let table: TransferWordDocument.Table
-            if kind == .guarantee {
-                var rows: [[String]] = []
-                for (i, row) in firstRows.enumerated() {
-                    rows.append([ReportSheet.easternDigits(String(i + 1)), row.rank, row.name, try display(row.amount), "خزينة الأنبار", notes[row.id] ?? ""])
-                }
-                rows.append(["", "", "المجموع", try display(total), "", ""])
-                table = .init(headers: ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ", "رقم وتاريخ الإضبارة"], rows: rows,
-                              font: "Times New Roman", halfPoints: 20, columnWeights: [30, 70, 150, 80, 110, 130], boldLastRow: true)
-            } else {
-                table = .init(headers: [], rows: [["رسم طابع ضريبي", try display(firstAmount)],
-                                                   ["بناء مدارس", try display(secondAmount)],
-                                                   ["المجموع", try display(total)]],
-                              font: "Times New Roman", halfPoints: 28, columnWeights: [4, 3], boldLastRow: true, widthFraction: 0.5, alignRight: true)
-            }
-            let date = ReportSheet.easternDigits(period.signatureDate)
-            let signatures = TransferWordGroupDraft.signatureCells([firstSigner, secondSigner, thirdSigner], date: date, adaptivePDF: true)
-            let footer = "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم."
-            let blocks: [TransferWordDocument.Block] = [
-                .paragraph(.init(text: header, font: "Times New Roman", halfPoints: 32, bold: true)),
-                .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-                .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                .paragraph(.init(text: body, halfPoints: 28)),
-                .table(table),
-                .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
-                .paragraph(.init(text: footer, halfPoints: 24, bold: true))
-            ]
-            let required = [payer, beneficiary, amount] + (kind == .schools ? [try TransferWordValues.groupedAmount(firstAmount), try TransferWordValues.groupedAmount(secondAmount)] : [])
+            let draft = try TreasuryLetterDraft.make(kind: kind, monthName: monthName, payerIBAN: payerIBAN, beneficiaryIBAN: beneficiaryIBAN,
+                header: header, number: number, firstSigner: firstSigner, secondSigner: secondSigner, thirdSigner: thirdSigner,
+                guaranteeReason: guaranteeReason, firstRows: firstRows, secondRows: secondRows, notes: notes)
+            let blocks = draft.blocks, required = draft.required
             let key = loadKey, payerSnapshot = payerIBAN, accountSnapshot = beneficiaryIBAN
             working = true; error = nil
             Task {
@@ -269,5 +226,62 @@ struct TreasuryLetterView: View {
                 }
             }
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+/// يبني محتوى الكتاب نفسه للمعاينة والاختبارات دون قراءة بيانات حقيقية.
+@MainActor enum TreasuryLetterDraft {
+    static func make(kind: TreasuryLetterView.Kind, monthName: String, payerIBAN: String, beneficiaryIBAN: String,
+                     header: String, number: String, firstSigner: String, secondSigner: String, thirdSigner: String,
+                     guaranteeReason: String, firstRows: [ReportRow], secondRows: [ReportRow], notes: [Int: String]) throws
+        -> (blocks: [TransferWordDocument.Block], required: [String]) {
+        let values = [header, number, firstSigner, secondSigner, thirdSigner] + (kind == .guarantee ? [guaranteeReason] : [])
+        guard values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              TransferRules.validIBAN(payerIBAN), TransferRules.validIBAN(beneficiaryIBAN) else { throw TreasuryLetterRules.Failure.incomplete }
+        let payer = ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
+        let beneficiary = ArabicText.latinDigits(beneficiaryIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" }
+        guard payer != beneficiary else { throw TreasuryLetterRules.Failure.incomplete }
+        let firstAmount = try TreasuryLetterRules.total(firstRows.map(\.amount))
+        let secondAmount = kind == .schools ? try TreasuryLetterRules.total(secondRows.map(\.amount)) : 0
+        let total = kind == .schools ? try TreasuryLetterRules.total([firstAmount, secondAmount]) : firstAmount
+        let period = try TransferLetterPeriod(monthName)
+        let formatted = try TransferWordValues.make(month: monthName, amount: total, custom: .init(), requested: ["AMOUNT", "AMOUNT_WORDS", "MONTH", "YEAR"])
+        guard let amount = formatted["AMOUNT"], let words = formatted["AMOUNT_WORDS"],
+              let month = formatted["MONTH"], let year = formatted["YEAR"] else { throw TreasuryLetterRules.Failure.incomplete }
+        func display(_ value: Double) throws -> String { ReportSheet.easternDigits(try TransferWordValues.groupedAmount(value)) }
+        let reason = kind == .guarantee
+            ? "عن \(guaranteeReason)"
+            : "عن مبالغ الإيراد النهائي لرسم الطابع الضريبي وبناء المدارس المحسومة من منتسبي قيادتنا وحسب الجدول أدناه"
+        let body = "نرجو تحويل مبلغ قدره (\(ReportSheet.easternDigits(amount))) (\(words)) لا غيرها من حسابنا المرقم (\(payer)) المفتوح لديكم إلى حساب (مديرية خزينة الأنبار) المرقم (\(beneficiary)) (مصرف الرافدين / فرع الأنبار) وذلك \(reason) لشهر (\(month) / \(ReportSheet.easternDigits(year))) وتزويدنا بالإشعار اللازم بذلك."
+        let table: TransferWordDocument.Table
+        if kind == .guarantee {
+            var rows: [[String]] = []
+            for (i, row) in firstRows.enumerated() {
+                rows.append([ReportSheet.easternDigits(String(i + 1)), row.rank, row.name, try display(row.amount), "خزينة الأنبار", notes[row.id] ?? ""])
+            }
+            rows.append(["", "", "المجموع", try display(total), "", ""])
+            table = .init(headers: ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "جهة التنفيذ", "رقم وتاريخ الإضبارة"], rows: rows,
+                          font: "Times New Roman", halfPoints: 20, columnWeights: [30, 70, 150, 80, 110, 130], boldLastRow: true)
+        } else {
+            table = .init(headers: [], rows: [["رسم طابع ضريبي", try display(firstAmount)],
+                                               ["بناء مدارس", try display(secondAmount)],
+                                               ["المجموع", try display(total)]],
+                          font: "Times New Roman", halfPoints: 28, columnWeights: [4, 3], boldLastRow: true, widthFraction: 0.5, alignRight: true)
+        }
+        let date = ReportSheet.easternDigits(period.signatureDate)
+        let signatures = TransferWordGroupDraft.signatureCells([firstSigner, secondSigner, thirdSigner], date: date, adaptivePDF: true)
+        let footer = "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم."
+        let blocks: [TransferWordDocument.Block] = [
+            .paragraph(.init(text: header, font: "Times New Roman", halfPoints: 32, bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
+            .paragraph(.init(text: "إلى / مصرف الرافدين / فرع الأنبار", font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: body, halfPoints: 28)),
+            .table(table),
+            .table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)),
+            .paragraph(.init(text: footer, halfPoints: 24, bold: true))
+        ]
+        let required = [payer, beneficiary, amount] + (kind == .schools ? [try TransferWordValues.groupedAmount(firstAmount), try TransferWordValues.groupedAmount(secondAmount)] : [])
+        return (blocks, required)
     }
 }

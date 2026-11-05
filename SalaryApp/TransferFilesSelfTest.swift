@@ -658,8 +658,8 @@ import CoreText
         catch { }
         try check(!data.starts(with: [0xef, 0xbb, 0xbf]) && lines.count == 3 && !text.hasSuffix("\n"), "encoding")
         let first = lines[1].components(separatedBy: "|")
-        let second = lines[2].components(separatedBy: "|")
-        try check(first.count == 11 && first[0] == first[1] + "300001" && second[0] == second[1] + "300002", "references")
+        let secondCSV = lines[2].components(separatedBy: "|")
+        try check(first.count == 11 && first[0] == first[1] + "300001" && secondCSV[0] == secondCSV[1] + "300002", "references")
         try check(first[4] == "1200" && first[5] == "IQD" && first[9] == "استقطاعات \(group.month)" && first[10] == "SLEV", "fields")
         do {
             _ = try TransferRules.csv([item, item], category: .rafidain, month: group.month, payer: "دافع وهمي", payerIBAN: iban)
@@ -753,6 +753,17 @@ import CoreText
         catch is Failure { throw Failure(errorDescription: "invalid expense approvals accepted") }
         catch { }
         try check(BackupFormat.supports(1) && BackupFormat.supports(6) && !BackupFormat.supports(7) && BackupFormat.supports(8) && BackupFormat.supports(9) && !BackupFormat.supports(10) && BackupFormat.exportVersion(for: [:]) == 5 && BackupFormat.exportVersion(for: [ContractOverrides.settingsKey: Data()]) == 6 && BackupFormat.exportVersion(for: [FundingApproval.settingsKey: Data()]) == 8 && BackupFormat.exportVersion(for: [CustomTransferTemplate.settingsKey: Data()]) == 9 && BackupFormat.settingsKeys.contains(CustomTransferTemplate.settingsKey) && BackupFormat.settingsKeys.contains(FundingApproval.settingsKey), "expense approvals use version 8 without enabling experimental version 7")
+        var customTemplate = CustomTransferTemplate()
+        customTemplate.title = "قالب وهمي"
+        customTemplate.source = .payroll
+        customTemplate.sourceName = "بند وهمي"
+        customTemplate.body = "المبلغ {{المبلغ}} والحساب {{الحساب}}"
+        let customData = try CustomTransferTemplate.encode([customTemplate])
+        try check(try CustomTransferTemplate.decode(customData) == [customTemplate], "custom letter backup roundtrip")
+        try check(try customTemplate.render(["المبلغ": "1000", "الحساب": "123"]) == "المبلغ 1000 والحساب 123", "custom letter placeholders")
+        do { _ = try customTemplate.render(["المبلغ": "1000"]); throw Failure(errorDescription: "missing account accepted") }
+        catch is Failure { throw Failure(errorDescription: "missing account accepted") }
+        catch { }
         let contractOverride = ContractOverride(total: 1500, nominal: summary.contractNominal, retirement: summary.contractRetirement, count: summary.contractCount, missing: 0)
         let overrideData = try ContractOverrides.setting(nil, month: group.month, value: contractOverride)
         try check(try ContractOverrides.decode(overrideData)[group.month] == contractOverride, "contract override shared JSON roundtrip")
