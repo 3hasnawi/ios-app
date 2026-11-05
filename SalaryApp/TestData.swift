@@ -73,13 +73,17 @@ enum TestData {
         #if targetEnvironment(simulator)
         if UserDefaults.standard.bool(forKey: "retainedPayrollTest") {
             let context = SharedModel.container.mainContext
-            let older = "أيلول 2026", newer = "تشرين الاول 2026"
+            // قد تحفظ أسماء ملفات macOS الهمزة مركبة أو منفصلة؛ نستخدم اسم الشهر المحفوظ نفسه في استعلام قاعدة البيانات.
+            let storedMonths = (try? context.fetch(FetchDescriptor<PayrollMonth>())) ?? []
+            let oldMatches = storedMonths.filter { $0.sortKey == 202609 }
+            let newMatches = storedMonths.filter { $0.sortKey == 202610 }
+            let older = oldMatches.first?.name ?? "", newer = newMatches.first?.name ?? ""
             let oldRows = (try? context.fetchCount(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == older }))) ?? -1
             let newRows = (try? context.fetchCount(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == newer }))) ?? -1
             let oldDeductions = (try? context.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == older }))) ?? -1
             let newDeductions = (try? context.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == newer }))) ?? -1
-            let passed = oldRows == 3000 && newRows == 26000 && oldDeductions == 751 && newDeductions == 6502
-            LaunchOptions.writeReport("retainedPayroll=\(passed ? "ok" : "failed") old=\(oldRows) new=\(newRows) oldDeductions=\(oldDeductions) newDeductions=\(newDeductions)")
+            let passed = oldMatches.count == 1 && newMatches.count == 1 && oldRows == 3000 && newRows == 26000 && oldDeductions == 751 && newDeductions == 6502
+            LaunchOptions.writeReport("retainedPayroll=\(passed ? "ok" : "failed") old=\(oldRows) new=\(newRows) oldDeductions=\(oldDeductions) newDeductions=\(newDeductions) monthKeys=\(storedMonths.map(\.sortKey).sorted())")
         }
         #endif
         let count = UserDefaults.standard.integer(forKey: "fakeStaff")
