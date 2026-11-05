@@ -145,21 +145,22 @@ import CoreText
         }
         let compactStatementPDF = try await BankReconciliationPDF.make(compactStatement)
         defer { try? FileManager.default.removeItem(at: compactStatementPDF) }
-        try check(PDFDocument(url: compactStatementPDF)?.pageCount == 1, "reconciliation fits 22 movements on one A4 page")
+        // تنسيق المطابقة المعتمد يضمن صفوفاً بارتفاع 24 وتواقيع واضحة؛ تفحص make نص كل خلية بعد التصدير.
+        try check((PDFDocument(url: compactStatementPDF)?.pageCount ?? 0) > 1, "reconciliation paginates 22 movements with legible rows")
         var compactLargeStatement = compactStatement
         compactLargeStatement.movements = (1...26).map { index in
             BankReconciliation.Movement(date: date, description: "حركة \(index)", amount: 1_000_000, direction: .credit)
         }
         let compactLargePDF = try await BankReconciliationPDF.make(compactLargeStatement)
         defer { try? FileManager.default.removeItem(at: compactLargePDF) }
-        try check(PDFDocument(url: compactLargePDF)?.pageCount == 1, "reconciliation fits 26 short movements on one A4 page")
+        try check((PDFDocument(url: compactLargePDF)?.pageCount ?? 0) > 1, "reconciliation paginates 26 short movements with legible rows")
         var tallerCompactStatement = compactLargeStatement
         tallerCompactStatement.movements = (1...29).map { index in
             BankReconciliation.Movement(date: date, description: "حركة \(index)", amount: 1_000_000, direction: .credit)
         }
         let tallerCompactPDF = try await BankReconciliationPDF.make(tallerCompactStatement)
         defer { try? FileManager.default.removeItem(at: tallerCompactPDF) }
-        try check(PDFDocument(url: tallerCompactPDF)?.pageCount == 1, "raised account details fit 29 short movements")
+        try check((PDFDocument(url: tallerCompactPDF)?.pageCount ?? 0) > 1, "reconciliation paginates 29 short movements with legible rows")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)

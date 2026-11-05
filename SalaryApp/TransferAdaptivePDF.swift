@@ -7,17 +7,25 @@ import PDFKit
 nonisolated enum TransferAdaptivePDF {
     enum Failure: LocalizedError {
         case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, signaturePlacement, damaged
+        case diagnostic(String)
         var errorDescription: String? {
             switch self {
             case .invalid: tr("بيانات الكتاب غير مكتملة.", "The letter data is incomplete.")
             case .noFont: tr("استورد خط ساكال العريض والشعار قبل إعداد الكتاب.", "Import the bold Sakkal font and logo before preparing the letter.")
             case .doesNotFit: tr("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.", "A field or the group table does not fit legibly; review the data.")
+            case .diagnostic(let area): "PDF layout test: \(area)"
             case .groupTableDoesNotFit: tr("جدول المجموعة لا يتسع في صفحة واحدة بوضوح؛ راجع أطوال الأسماء وعدد الجهات.", "The group table does not fit legibly on one page; review entity names and count.")
             case .signatureDoesNotFit: tr("أحد أسماء اللجنة أو صفاتها لا يتسع في سطر التوقيع؛ راجع أسماء اللجنة.", "A committee name or title does not fit on its signature line; review the names.")
             case .signaturePlacement: tr("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.", "The committee overlaps the body or footer; adjust its position or shorten the text.")
             case .damaged: tr("تعذّر التحقق من صفحات مسودة الكتاب.", "The letter draft pages could not be verified.")
             }
         }
+    }
+    private static func fitFailure(_ area: String) -> Failure {
+        #if targetEnvironment(simulator)
+        if UserDefaults.standard.bool(forKey: "wordTransferTest") { return .diagnostic(area) }
+        #endif
+        return .doesNotFit
     }
     private static let page = CGRect(x: 0, y: 0, width: 595.3, height: 841.9)
     private static let margin: CGFloat = 38
@@ -72,15 +80,15 @@ nonisolated enum TransferAdaptivePDF {
         while offset < attr.length {
             if result.count.isMultiple(of: 128) { try Task.checkCancellation() }
             let count = CTTypesetterSuggestLineBreak(typesetter, offset, Double(width))
-            guard count > 0, count <= attr.length - offset else { throw Failure.doesNotFit }
+            guard count > 0, count <= attr.length - offset else { throw fitFailure("line-break") }
             let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: count))
             let measured = CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line)
-            guard measured <= Double(width) + 0.5 else { throw Failure.doesNotFit }
+            guard measured <= Double(width) + 0.5 else { throw fitFailure("line-width") }
             let value = (text as NSString).substring(with: NSRange(location: offset, length: count))
             result.append(TextLine(text: value, font: font, underline: underline,
                                    justify: justify && offset + count < attr.length && !value.hasSuffix("\n"),
                                    height: height, ascent: CTFontGetAscent(font)))
-            guard result.count <= 20_000 else { throw Failure.doesNotFit }
+            guard result.count <= 20_000 else { throw fitFailure("line-count") }
             offset += count
         }
         return result
@@ -97,7 +105,7 @@ nonisolated enum TransferAdaptivePDF {
         let refLines = try lines(reference.text, font: refFont, width: headingWidth)
         guard !headerLines.isEmpty, !refLines.isEmpty,
               headerLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 123,
-              refLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 58 else { throw Failure.doesNotFit }
+              refLines.reduce(CGFloat.zero, { $0 + $1.height }) <= 58 else { throw fitFailure("heading-reference") }
         var pages: [[Draw]] = [[]]
         var y: CGFloat = 23
         // يترك المتن مساحة ثابتة للتواقيع والنسخ أسفل صفحة الكتاب.
@@ -106,7 +114,7 @@ nonisolated enum TransferAdaptivePDF {
         var signatureEnd: CGFloat?
         func add(_ operation: Draw) { pages[pages.count - 1].append(operation) }
         func nextPage() throws {
-            guard pages.count < 4000 else { throw Failure.doesNotFit }
+            guard pages.count < 4000 else { throw fitFailure("page-count") }
             pages.append([]); y = margin
         }
         func addLines(_ items: [TextLine], x: CGFloat, width: CGFloat, flush: CGFloat) throws {
@@ -154,7 +162,7 @@ nonisolated enum TransferAdaptivePDF {
                 if expectingFooter {
                     let footerHeight = ls.reduce(CGFloat.zero, { $0 + $1.height })
                     let footerBottom: CGFloat = 832
-                    guard let signatureEnd, footerHeight <= footerBottom - margin else { throw Failure.doesNotFit }
+                    guard let signatureEnd, footerHeight <= footerBottom - margin else { throw fitFailure("footer-height") }
                     y = footerBottom - footerHeight; limit = footerBottom
                     guard y >= signatureEnd + 8 else { throw Failure.signaturePlacement }
                     expectingFooter = false
@@ -174,7 +182,7 @@ nonisolated enum TransferAdaptivePDF {
                 let sum = weights.reduce(0, +)
                 let tableWidth = contentWidth * CGFloat(table.widthFraction)
                 let widths = weights.map { tableWidth * CGFloat($0) / CGFloat(sum) }
-                guard widths.allSatisfy({ $0 > 10 }) else { throw Failure.doesNotFit }
+                guard widths.allSatisfy({ $0 > 10 }) else { throw fitFailure("column-width") }
                 let tableRight = table.alignRight ? page.width - margin : margin + (contentWidth + tableWidth) / 2
                 let groupTable = group && afterBreak
                 let signature = !table.showBorders
@@ -213,12 +221,12 @@ nonisolated enum TransferAdaptivePDF {
                     }
                     let minimumHeight = ceil(CGFloat(halfPoints) / 2 * 1.3) + padding
                     let height = max(minimumHeight, tallest + padding)
-                    guard height <= bottom - margin else { throw Failure.doesNotFit }
+                    guard height <= bottom - margin else { throw fitFailure("row-height") }
                     return (cells, height)
                 }
                 func drawRow(_ values: [String], bold: Bool) throws {
                     let (cells, height) = try layout(values, bold: bold, halfPoints: chosenHalfPoints)
-                    guard y + height <= limit else { throw Failure.doesNotFit }
+                    guard y + height <= limit else { throw fitFailure("row-position") }
                     var right = tableRight
                     for index in 0..<count {
                         right -= widths[index]
