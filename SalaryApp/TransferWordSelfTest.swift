@@ -373,6 +373,8 @@ import CryptoKit
         let fakeRow = ReportRow(id: 42, name: "اسم وهمي", rank: "رتبة وهمية", workplace: "", amount: 1000, note: "")
         let schoolRow = ReportRow(id: 43, name: "اسم آخر وهمي", rank: "رتبة وهمية", workplace: "", amount: 600, note: "")
         for kind: TreasuryLetterView.Kind in [.guarantee, .schools] {
+            let label = kind == .guarantee ? "guarantee" : "schools"
+            phase = "treasury-\(label)-plan"
             let draft = try TreasuryLetterDraft.make(kind: kind, monthName: month, payerIBAN: payer, beneficiaryIBAN: beneficiary,
                 header: "ترويسة وهمية", number: "عدد وهمي", firstSigner: "عضو أول", secondSigner: "عضو ثان", thirdSigner: "عضو ثالث",
                 guaranteeReason: "تضمين وهمي", firstRows: [fakeRow], secondRows: kind == .schools ? [schoolRow] : [],
@@ -385,9 +387,19 @@ import CryptoKit
             }
             let url = documents.appendingPathComponent("treasury-test-\(UUID().uuidString).pdf")
             defer { try? FileManager.default.removeItem(at: url) }
+            phase = "treasury-\(label)-write"
             try TransferAdaptivePDF.write(blocks: draft.blocks, destination: url, sakkalBold: nil, group: false)
             try check(PDFDocument(url: url)?.pageCount == 1, "treasury PDF fits one page")
-            try TransferAdaptivePDF.verify(url, required: draft.required)
+            for index in draft.required.indices {
+                phase = "treasury-\(label)-verify-\(index)"
+                try TransferAdaptivePDF.verify(url, required: [draft.required[index]])
+            }
+            phase = "treasury-\(label)-verify-all"
+            do { try TransferAdaptivePDF.verify(url, required: draft.required) }
+            catch {
+                let sample = PDFDocument(url: url)?.page(at: 0)?.string ?? ""
+                throw Failure(errorDescription: "synthetic PDF extraction: \(sample)")
+            }
         }
         // معاينة منشأة بالكامل بأسماء وهمية، دون استخدام اسم جهة حقيقية في الصور.
         let fixture = documents.appendingPathComponent("word-preview-fixture.docx")
