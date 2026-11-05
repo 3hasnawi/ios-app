@@ -349,6 +349,14 @@ struct TransferFilesView: View {
     var body: some View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
+            Section(tr("كتب الخزينة", "Treasury letters")) {
+                NavigationLink { TreasuryLetterView(kind: .guarantee, monthName: month?.name ?? "") } label: {
+                    Label(tr("كتاب التضمين", "Guarantee letter"), systemImage: "doc.text")
+                }
+                NavigationLink { TreasuryLetterView(kind: .schools, monthName: month?.name ?? "") } label: {
+                    Label(tr("رسم الطابع وبناء المدارس", "Stamp duty and school construction"), systemImage: "doc.text")
+                }
+            }
             Section {
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
                     Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")
