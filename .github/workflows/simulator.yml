@@ -267,13 +267,27 @@ jobs:
             shot 08h-execution-accounts 5
           }
 
+          import_two_months() {
+            for pair in 'أيلول 2026.xlsx|sep.txt' 'تشرين الاول 2026.xlsx|oct.txt'; do
+              file=${pair%%|*}; expected_file=${pair#*|}
+              rm -f "$DATA/Documents/import-report.txt"
+              launch -importFile "$DATA/Documents/$file"
+              for i in $(seq 1 300); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+              [ -f "$DATA/Documents/import-report.txt" ] || { echo "::error::Payroll import timed out: $file"; exit 1; }
+              grep -Fq "$(cat "$expected_file") months=1" "$DATA/Documents/import-report.txt" || { echo "::error::Payroll import mismatch: $file"; cat "$DATA/Documents/import-report.txt"; exit 1; }
+              if grep -q ' failed=' "$DATA/Documents/import-report.txt"; then echo "::error::Payroll import failed: $file"; exit 1; fi
+            done
+            rm -f "$DATA/Documents/import-report.txt"
+            launch -retainedPayrollTest YES
+            for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+            cat "$DATA/Documents/import-report.txt" | tee ci-output/retained-payroll-report.txt
+            grep -q '^retainedPayroll=ok' ci-output/retained-payroll-report.txt || { echo '::error::Two-month retention test failed'; exit 1; }
+            cp ci-output/expected.txt ci-output/import-report.txt
+          }
+
           if [ "$QUICK" = true ]; then
             check_accounts
-            rm -f "$DATA/Documents/import-report.txt"
-            launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
-            for i in $(seq 1 180); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
-            cat "$DATA/Documents/import-report.txt" | tee ci-output/import-report.txt
-            grep -Fq "$(cat ci-output/expected.txt)" ci-output/import-report.txt || { echo '::error::Payroll import did not complete'; exit 1; }
+            import_two_months
             if [ "$BACKUP_ONLY" = true ] || [ "$NAVIGATION_ONLY" = true ]; then exit 0; fi
             launch -tab reports -compareDeductions YES
             shot 08z-deduction-comparison 8
@@ -307,32 +321,24 @@ jobs:
           launch
           shot 01-empty
 
-          # 2) استيراد ملفين معاً (شهران) وانتظار التقرير
-          launch -importFile "$DATA/Documents/تشرين الاول 2026.xlsx|$DATA/Documents/أيلول 2026.xlsx"
-          for i in $(seq 1 300); do
-            [ -f "$DATA/Documents/import-report.txt" ] && break
-            # شريط تقدّم الاستيراد أثناء العمل
-            [ "$i" = 5 ] && xcrun simctl io "$UDID" screenshot ci-output/screenshots/01b-importing.png
-            [ "$i" = 12 ] && xcrun simctl io "$UDID" screenshot ci-output/screenshots/01c-importing.png
-            sleep 1
-          done
-          { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no report after 300s"; } | tee ci-output/import-report.txt
+          # 2) تستورد الرواتب شهراً واحداً في كل مرة، ثم نتحقق من بقاء الشهرين.
+          import_two_months
           shot 02-import-done 2
           rm -f "$DATA/Documents/import-report.txt"
           launch -rawColumnsTest YES
           for i in $(seq 1 30); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "rawColumns=failed"; } | tee ci-output/raw-columns-report.txt
-          rg -q 'rawColumns=ok' ci-output/raw-columns-report.txt
+          grep -q 'rawColumns=ok' ci-output/raw-columns-report.txt
           rm -f "$DATA/Documents/import-report.txt"
           launch -smartShortcutTest YES
           for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "smartShortcut=failed"; } | tee ci-output/smart-shortcut-report.txt
-          rg -q 'smartShortcut=ok' ci-output/smart-shortcut-report.txt
+          grep -q 'smartShortcut=ok' ci-output/smart-shortcut-report.txt
           rm -f "$DATA/Documents/import-report.txt"
           launch -staffReportTest YES
           for i in $(seq 1 60); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "staffReport=failed"; } | tee ci-output/staff-report.txt
-          rg -q 'staffReport=ok' ci-output/staff-report.txt
+          grep -q 'staffReport=ok' ci-output/staff-report.txt
           rm -f "$DATA/Documents/import-report.txt"
           check_accounts
           launch

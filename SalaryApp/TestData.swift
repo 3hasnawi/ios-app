@@ -70,6 +70,18 @@ enum TestData {
             }
         }
         #endif
+        #if targetEnvironment(simulator)
+        if UserDefaults.standard.bool(forKey: "retainedPayrollTest") {
+            let context = SharedModel.container.mainContext
+            let older = "أيلول 2026", newer = "تشرين الاول 2026"
+            let oldRows = (try? context.fetchCount(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == older }))) ?? -1
+            let newRows = (try? context.fetchCount(FetchDescriptor<Employee>(predicate: #Predicate { $0.month == newer }))) ?? -1
+            let oldDeductions = (try? context.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == older }))) ?? -1
+            let newDeductions = (try? context.fetchCount(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == newer }))) ?? -1
+            let passed = oldRows == 3000 && newRows == 26000 && oldDeductions == 751 && newDeductions == 6502
+            LaunchOptions.writeReport("retainedPayroll=\(passed ? "ok" : "failed") old=\(oldRows) new=\(newRows) oldDeductions=\(oldDeductions) newDeductions=\(newDeductions)")
+        }
+        #endif
         let count = UserDefaults.standard.integer(forKey: "fakeStaff")
         guard count > 0, StaffInfo.count == 0 else { return }
         let container = SharedModel.container
