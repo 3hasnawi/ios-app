@@ -61,7 +61,7 @@ nonisolated enum TransferWordGroupDraft {
         case .medium: 3
         case .wide: 8
         }
-        return .init(text: body, halfPoints: 28, bold: template.bodyBold ?? false, alignment: alignment, lineSpacing: spacing)
+        return .init(text: body, halfPoints: 28, bold: template.bodyBold ?? false, alignment: template.bodyKashida == nil ? alignment : .justified, lineSpacing: spacing, kashida: template.bodyKashida)
     }
     static func appendAttachments(_ text: LetterText, to blocks: inout [TransferWordDocument.Block]) {
         guard let attachment = text.template?.attachmentParagraph else { return }

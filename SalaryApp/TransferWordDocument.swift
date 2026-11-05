@@ -12,6 +12,7 @@ nonisolated enum TransferWordDocument {
         var centered = false
         var alignment: Alignment? = nil
         var lineSpacing: Int? = nil
+        var kashida: CustomTransferTemplate.Kashida? = nil
     }
     struct Table: Sendable {
         var headers: [String]
@@ -57,10 +58,16 @@ nonisolated enum TransferWordDocument {
         case .justified: "both"
         case nil: p.centered ? "center" : "right"
         }
+        let wordAlignment: String = switch p.kashida {
+        case .some(.low): "lowKashida"
+        case .some(.medium): "mediumKashida"
+        case .some(.high): "highKashida"
+        case .some(.none), nil: alignment
+        }
         let bold = p.bold ? "<w:b/><w:bCs/>" : ""
         let font = escape(p.font)
         let spacing = p.lineSpacing.map { " w:line=\"\(240 + max(0, min($0, 12)) * 12)\" w:lineRule=\"auto\"" } ?? ""
-        return "<w:p><w:pPr><w:bidi/><w:spacing w:before=\"0\" w:after=\"0\"\(spacing)/><w:jc w:val=\"\(alignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
+        return "<w:p><w:pPr><w:bidi/><w:spacing w:before=\"0\" w:after=\"0\"\(spacing)/><w:jc w:val=\"\(wordAlignment)\"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:cs=\"\(font)\"/><w:rtl/>\(bold)<w:sz w:val=\"\(p.halfPoints)\"/><w:szCs w:val=\"\(p.halfPoints)\"/></w:rPr>\(try textXML(p.text))</w:r></w:p>"
     }
     private static func table(_ t: Table) throws -> String {
         let columns = t.headers.isEmpty ? (t.rows.first?.count ?? 0) : t.headers.count

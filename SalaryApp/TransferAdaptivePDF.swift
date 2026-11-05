@@ -44,6 +44,7 @@ nonisolated enum TransferAdaptivePDF {
         let font: CTFont
         let underline: Bool
         let justify: Bool
+        let kashida: CustomTransferTemplate.Kashida?
         let height: CGFloat
         let ascent: CGFloat
     }
@@ -67,7 +68,7 @@ nonisolated enum TransferAdaptivePDF {
         guard let face = UIFont(name: name, size: size) else { throw Failure.noFont }
         return CTFontCreateWithName(face.fontName as CFString, size, nil)
     }
-    private static func lines(_ text: String, font: CTFont, width: CGFloat, underline: Bool = false, justify: Bool = false, spacing: CGFloat = 3) throws -> [TextLine] {
+    private static func lines(_ text: String, font: CTFont, width: CGFloat, underline: Bool = false, justify: Bool = false, spacing: CGFloat = 3, kashida: CustomTransferTemplate.Kashida? = nil) throws -> [TextLine] {
         guard text.utf8.count <= 100_000, width > 8 else { throw Failure.invalid }
         if text.isEmpty { return [] }
         let attr = NSAttributedString(string: text, attributes: [
@@ -87,9 +88,51 @@ nonisolated enum TransferAdaptivePDF {
             let value = (text as NSString).substring(with: NSRange(location: offset, length: count))
             result.append(TextLine(text: value, font: font, underline: underline,
                                    justify: justify && offset + count < attr.length && !value.hasSuffix("\n"),
-                                   height: height, ascent: CTFontGetAscent(font)))
+                                   kashida: kashida, height: height, ascent: CTFontGetAscent(font)))
             guard result.count <= 20_000 else { throw fitFailure("line-count") }
             offset += count
+        }
+        return result
+    }
+    /// تمديد بصري محدود لوصلات الحروف؛ لا يتغير النص المحفوظ في القالب.
+    static func stretchArabic(_ text: String, font: CTFont, width: CGFloat, mode: CustomTransferTemplate.Kashida?) -> String {
+        let fraction: CGFloat = switch mode {
+        case .some(.low): 0.2
+        case .some(.medium): 0.45
+        case .some(.high): 0.7
+        case .some(.none), nil: 0
+        }
+        guard fraction > 0, width > 0 else { return text }
+        let characters = Array(text)
+        guard characters.count >= 2, characters.count <= 4096 else { return text }
+        // الاقتصار على الوصلات العربية البسيطة يحمي الحسابات والأرقام وعلامات التشكيل.
+        let forwardJoining = Set("بتثجحخسشصضطظعغفقكلمنهيئ")
+        let letters = Set("ابتثجحخدذرزسشصضطظعغفقكلمنهويأإآؤئىة")
+        let positions = (0..<(characters.count - 1)).filter { forwardJoining.contains(characters[$0]) && letters.contains(characters[$0 + 1]) }
+        guard !positions.isEmpty else { return text }
+        func measured(_ value: String) -> CGFloat {
+            let attributed = NSAttributedString(string: value, attributes: [
+                NSAttributedString.Key(kCTFontAttributeName as String): font,
+                NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
+            ])
+            let line = CTLineCreateWithAttributedString(attributed)
+            return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line))
+        }
+        let originalWidth = measured(text)
+        let limit = min(width - 0.5, originalWidth + max(0, width - originalWidth) * fraction)
+        guard limit > originalWidth else { return text }
+        var counts = [Int](repeating: 0, count: characters.count)
+        var result = text
+        // حد أعلى للمحاولات والمد في كل موضع لتجنب التمديد المبالغ فيه.
+        for attempt in 0..<min(positions.count * 2, 48) {
+            let index = positions[attempt % positions.count]
+            counts[index] += 1
+            var candidate = ""
+            for (i, character) in characters.enumerated() {
+                candidate.append(character)
+                if counts[i] > 0 { candidate += String(repeating: "ـ", count: counts[i]) }
+            }
+            if measured(candidate) <= limit { result = candidate } else { counts[index] -= 1 }
         }
         return result
     }
@@ -186,7 +229,7 @@ nonisolated enum TransferAdaptivePDF {
                 let ls = try lines(p.text, font: face, width: contentWidth,
                                    underline: p.centered && p.text.hasPrefix("م /"),
                                    justify: justify,
-                                   spacing: expectingFooter ? 0 : CGFloat(p.lineSpacing ?? 3))
+                                   spacing: expectingFooter ? 0 : CGFloat(p.lineSpacing ?? 3), kashida: p.kashida)
                 if expectingFooter {
                     let footerHeight = ls.reduce(CGFloat.zero, { $0 + $1.height })
                     let footerBottom: CGFloat = 832
@@ -349,7 +392,8 @@ nonisolated enum TransferAdaptivePDF {
                         if shaded { UIColor(white: 0.94, alpha: 1).setFill(); cg.fill(rect) }
                         UIColor.black.setStroke(); cg.stroke(rect, width: 0.6)
                     case .line(let item, let rect, let flush):
-                        let text = NSAttributedString(string: item.text, attributes: [
+                        let displayed = item.justify ? stretchArabic(item.text, font: item.font, width: rect.width, mode: item.kashida) : item.text
+                        let text = NSAttributedString(string: displayed, attributes: [
                             NSAttributedString.Key(kCTFontAttributeName as String): item.font,
                             NSAttributedString.Key(kCTParagraphStyleAttributeName as String): rtl
                         ])

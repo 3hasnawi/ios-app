@@ -4,6 +4,7 @@ import Foundation
 nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sendable {
     enum Source: String, Codable, CaseIterable, Sendable { case none, manual, payroll, execution }
     enum BodyAlignment: String, Codable, CaseIterable, Sendable { case justified, right, center, left }
+    enum Kashida: String, Codable, CaseIterable, Sendable { case none, low, medium, high }
     enum BodySpacing: String, Codable, CaseIterable, Sendable { case compact, medium, wide }
     var id = UUID()
     var title = ""
@@ -21,6 +22,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     var account = ""
     // Optional fields keep templates created by older versions readable.
     var bodyAlignment: BodyAlignment? = nil
+    var bodyKashida: Kashida? = nil
     var bodySpacing: BodySpacing? = nil
     var bodyBold: Bool? = nil
     var signatureVerticalOffset: Int? = nil
@@ -36,7 +38,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         if data.isEmpty { return [] }
         guard data.count <= 2_000_000 else { throw invalid() }
         // لا نكتب فوق حقول أضافها إصدار أحدث لا يفهمه هذا الإصدار.
-        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments", "foodContractReference", "bodyMonth", "outgoingMonth"]
+        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodyKashida", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments", "foodContractReference", "bodyMonth", "outgoingMonth"]
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(root.keys).isSubset(of: ["version", "templates"]),
               let records = root["templates"] as? [[String: Any]],

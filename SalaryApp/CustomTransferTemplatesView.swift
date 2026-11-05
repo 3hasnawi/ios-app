@@ -88,11 +88,15 @@ struct CustomTransferTemplateEditor: View {
                 TextField(tr("إلى", "To"), text: $template.recipient)
                 TextField(tr("الموضوع", "Subject"), text: $template.subject)
                 TextField(tr("المتن", "Body"), text: $template.body, axis: .vertical).lineLimit(4...12)
-                Picker(tr("محاذاة المتن", "Body alignment"), selection: Binding(get: { template.bodyAlignment ?? .justified }, set: { template.bodyAlignment = $0 })) {
-                    Text(tr("ضبط الطرفين", "Justified")).tag(CustomTransferTemplate.BodyAlignment.justified)
-                    Text(tr("يمين", "Right")).tag(CustomTransferTemplate.BodyAlignment.right)
-                    Text(tr("توسيط", "Center")).tag(CustomTransferTemplate.BodyAlignment.center)
-                    Text(tr("يسار", "Left")).tag(CustomTransferTemplate.BodyAlignment.left)
+                Picker(tr("الكشيدة", "Kashida"), selection: Binding(get: { template.bodyKashida ?? .none }, set: { template.bodyKashida = $0; template.bodyAlignment = .justified })) {
+                    Text(tr("ضبط", "Justify")).tag(CustomTransferTemplate.Kashida.none)
+                    Text(tr("كشيدة صغيرة", "Small kashida")).tag(CustomTransferTemplate.Kashida.low)
+                    Text(tr("كشيدة متوسطة", "Medium kashida")).tag(CustomTransferTemplate.Kashida.medium)
+                    Text(tr("كشيدة كبيرة", "Large kashida")).tag(CustomTransferTemplate.Kashida.high)
+                }
+                if template.bodyKashida == nil && template.bodyAlignment != nil && template.bodyAlignment != .justified {
+                    Text(tr("المحاذاة السابقة محفوظة. اختر درجة الكشيدة لتطبيق ضبط الطرفين.", "The previous alignment is preserved. Choose a kashida level to justify the body."))
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Picker(tr("تباعد أسطر المتن", "Body line spacing"), selection: Binding(get: { template.bodySpacing ?? .medium }, set: { template.bodySpacing = $0 })) {
                     Text(tr("صغير", "Compact")).tag(CustomTransferTemplate.BodySpacing.compact)

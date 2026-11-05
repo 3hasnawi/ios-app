@@ -1,6 +1,7 @@
 #if targetEnvironment(simulator)
 import Foundation
 import UIKit
+import CoreText
 import PDFKit
 import ZIPFoundation
 import CryptoKit
@@ -24,6 +25,26 @@ import CryptoKit
         try check(!TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0002)) &&
                   !TransferWordFont.permitsEditableEmbedding(fontWithFlags(0x0200)) &&
                   !TransferWordFont.permitsEditableEmbedding(Data()), "restricted font permission")
+        phase = "kashida"
+        var oldForm = CustomTransferTemplate()
+        oldForm.title = "قالب وهمي"
+        oldForm.bodyAlignment = .right
+        let oldRoundTrip = try CustomTransferTemplate.decode(CustomTransferTemplate.encode([oldForm]))
+        try check(oldRoundTrip.first?.bodyKashida == nil && oldRoundTrip.first?.bodyAlignment == .right, "old template alignment")
+        oldForm.bodyKashida = .high
+        let newRoundTrip = try CustomTransferTemplate.decode(CustomTransferTemplate.encode([oldForm]))
+        try check(newRoundTrip.first?.bodyKashida == .high, "kashida template round trip")
+        let formatted = TransferWordGroupDraft.bodyParagraph("نرجو تحويل مبلغ إلى الحساب", template: oldForm)
+        try check(formatted.kashida == .high && formatted.alignment == .justified, "kashida body style")
+        let face = CTFontCreateWithName("TimesNewRomanPSMT" as CFString, 14, nil)
+        let sample = "نرجو تحويل مبلغ إلى الحساب IQ06TEST123000000000001 123,456"
+        let unchanged = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .none)
+        let small = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .low)
+        let large = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .high)
+        try check(unchanged == sample && small.replacingOccurrences(of: "ـ", with: "") == sample &&
+                  large.replacingOccurrences(of: "ـ", with: "") == sample && large.count >= small.count &&
+                  large.contains("IQ06TEST123000000000001") && large.contains("123,456"), "safe kashida rendering")
+        try check(TransferAdaptivePDF.stretchArabic("IQ06TEST123000000000001", font: face, width: 500, mode: .high) == "IQ06TEST123000000000001", "IBAN unchanged")
         var defaults = TransferLetterCustomizationStore()
         defaults.common = .init(header: "ترويسة وهمية", fixedNumber: "عدد وهمي", foodContractReference: "عقد وهمي")
         for id in TransferReferencePack.expected.keys {
