@@ -326,8 +326,12 @@ nonisolated final class SheetParser {
             "اسم الشهدة", "اسم الشهادة", "اسم المنصب", "اسم الصنف", "اسم المخصصات الاخرى", "اسم اللقب العلمي",
             "الرقم الوظيفي", "الرقم الموحد", "رقم الضمان الصحي", "طريقة الدفع", "توطين المصرف", "IBAN", "ملاحظات عامه", "ملاحظات",
         ]
-        static let pairs: [(String, String)] = [("اسم الاستقطاع", "مبلغ الاستقطاع"), ("2اسم الاستقطاع", "2مبلغ الاستقطاع"),
-                                                ("اسم استقطاع المؤقته", "استقطاع مؤقت"), ("اسم استقطاع المؤقتة", "استقطاع مؤقت")]
+        // يقبل الاستقطاع الثاني الرقم قبل العنوان أو بعده، بالأرقام العربية أو اللاتينية.
+        static let pairs: [([String], [String])] = [
+            (["اسم الاستقطاع"], ["مبلغ الاستقطاع"]),
+            (["2اسم الاستقطاع", "اسم الاستقطاع 2"], ["2مبلغ الاستقطاع", "مبلغ الاستقطاع 2"]),
+            (["اسم استقطاع المؤقته", "اسم استقطاع المؤقتة"], ["استقطاع مؤقت"])
+        ]
     }
 
     private struct EmployeeColumns {
@@ -421,10 +425,14 @@ nonisolated final class SheetParser {
             let workplace = Self.column(Synonyms.workplace, in: headers, used: &used)
             var columns = EmployeeColumns(name: name, rank: rank, workplace: workplace, netSalary: net)
             columns.headers = row
-            for (nameHeader, amountHeader) in Synonyms.pairs {
-                let n = ArabicText.normalize(nameHeader), a = ArabicText.normalize(amountHeader)
-                guard let nc = headers.firstIndex(of: n), let ac = headers.firstIndex(of: a),
-                      !used.contains(nc), !columns.pairs.contains(where: { $0.name == nc }) else { continue }
+            func pairKey(_ value: String) -> String {
+                ArabicText.normalize(ArabicText.latinDigits(value)).filter { !$0.isWhitespace }
+            }
+            let pairHeaders = row.map(pairKey)
+            for (nameHeaders, amountHeaders) in Synonyms.pairs {
+                let names = Set(nameHeaders.map(pairKey)), amounts = Set(amountHeaders.map(pairKey))
+                guard let nc = pairHeaders.indices.first(where: { !used.contains($0) && names.contains(pairHeaders[$0]) }),
+                      let ac = pairHeaders.indices.first(where: { !used.contains($0) && amounts.contains(pairHeaders[$0]) }) else { continue }
                 // مبلغ بلا اسم جهة يُحفظ باسم عمود المبلغ حتى لا يضيع من المجموع.
                 columns.pairs.append((nc, ac, row[ac].trimmingCharacters(in: .whitespacesAndNewlines)))
                 used.insert(nc)
@@ -437,8 +445,13 @@ nonisolated final class SheetParser {
                 columns.items.append((col, title.isEmpty ? header : title))
             }
             let fields = Dictionary(Synonyms.reportFields.map { (ArabicText.normalize($0), $0) }, uniquingKeysWith: { a, _ in a })
+            let secondName = Set(Synonyms.pairs[1].0.map(pairKey))
+            let secondAmount = Set(Synonyms.pairs[1].1.map(pairKey))
             for (col, header) in headers.enumerated() {
-                if let key = fields[header], !columns.details.contains(where: { $0.1 == key }) { columns.details.append((col, key)) }
+                // توحيد الحقلين أيضاً لتقرير الراتب الذي يستخدم الاسمين الأصليين.
+                let key = secondName.contains(pairHeaders[col]) ? "2اسم الاستقطاع" :
+                    (secondAmount.contains(pairHeaders[col]) ? "2مبلغ الاستقطاع" : fields[header])
+                if let key, !columns.details.contains(where: { $0.1 == key }) { columns.details.append((col, key)) }
             }
             return .employees(columns)
         }
