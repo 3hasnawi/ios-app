@@ -454,6 +454,41 @@ import CryptoKit
             try check(PDFDocument(url: url)?.pageCount == 1, "custom body PDF alignment")
             try TransferAdaptivePDF.verify(url, required: ["١,٢٣٤,٥٦٧"])
         }
+        phase = "kashida-pdf-review"
+        let reviewBody = "نرجو تحويل مبلغ قدره (١,٢٣٤,٥٦٧) ديناراً من حسابنا إلى حساب الجهة المستفيدة وتزويدنا بالإشعار اللازم بعد تنفيذ عملية التحويل مع فائق الاحترام والتقدير. رقم الحساب IQ06TEST123000000000001 ونؤكد صحة جميع المبالغ الواردة في هذا الكتاب التجريبي."
+        var reviewPages: [(String, UIImage)] = []
+        for (label, mode): (String, CustomTransferTemplate.Kashida) in [("JUSTIFY", .none), ("SMALL", .low), ("MEDIUM", .medium), ("LARGE", .high)] {
+            let url = documents.appendingPathComponent("kashida-review-\(label).pdf")
+            try? FileManager.default.removeItem(at: url)
+            defer { try? FileManager.default.removeItem(at: url) }
+            try TransferAdaptivePDF.write(blocks: [
+                .paragraph(.init(text: "ترويسة وهمية", halfPoints: 32, bold: true)),
+                .paragraph(.init(text: "العدد: تجريبي\nالتاريخ: ٢٠٢٦ / ١٠ /", halfPoints: 30, bold: true)),
+                .paragraph(.init(text: "إلى / جهة وهمية", centered: true)),
+                .paragraph(.init(text: "م / تجربة", centered: true)),
+                .paragraph(.init(text: reviewBody, halfPoints: 28, alignment: .justified, kashida: mode)),
+                .table(fixedSignatures), .paragraph(.init(text: "هامش وهمي", halfPoints: 24))
+            ], destination: url, sakkalBold: nil, group: false)
+            try TransferAdaptivePDF.verify(url, required: ["١,٢٣٤,٥٦٧", "IQ06TEST123000000000001"])
+            guard let pdf = PDFDocument(url: url), pdf.pageCount == 1, let page = pdf.page(at: 0) else {
+                throw Failure(errorDescription: "kashida review PDF missing \(label)")
+            }
+            reviewPages.append((label, page.thumbnail(of: CGSize(width: 595, height: 842), for: .mediaBox)))
+        }
+        let reviewSize = CGSize(width: 595, height: 900)
+        let reviewImage = UIGraphicsImageRenderer(size: reviewSize).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: reviewSize))
+            for (index, item) in reviewPages.enumerated() {
+                let top = CGFloat(index * 225)
+                (item.0 as NSString).draw(at: CGPoint(x: 12, y: top + 3), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 15)])
+                context.cgContext.saveGState()
+                context.cgContext.clip(to: CGRect(x: 0, y: top + 25, width: 595, height: 195))
+                item.1.draw(in: CGRect(x: 0, y: top + 25 - 220, width: 595, height: 842))
+                context.cgContext.restoreGState()
+            }
+        }
+        guard let reviewPNG = reviewImage.pngData() else { throw Failure(errorDescription: "kashida review image missing") }
+        try reviewPNG.write(to: documents.appendingPathComponent("kashida-review.png"), options: .atomic)
         phase = "custom-single-signature"
         let oneSignatureCells = try CustomTransferTemplate.signatureCells(["وظيفة\nSOLO SIGNER\nمنصب", "", ""], date: " / ١٠ / ٢٠٢٦")
         let oneSignature = TransferWordDocument.Table(headers: [], rows: [oneSignatureCells], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)

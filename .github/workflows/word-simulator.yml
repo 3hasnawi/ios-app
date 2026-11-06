@@ -59,6 +59,10 @@ jobs:
           grep -q '^wordTransfers=ok drafts=11 synthetic=1' ci-output/word-transfer-report.txt
           xcrun simctl terminate "$UDID" "$BUNDLE"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
+      - name: Save synthetic kashida review
+        run: |
+          cp "$DATA/Documents/kashida-review.png" ci-output/kashida-review.png
+          python3 -c 'import base64; s=base64.b64encode(open("ci-output/kashida-review.png", "rb").read()).decode(); [print("KASHIDA_CHUNK=" + s[i:i+2000]) for i in range(0,len(s),2000)]'
       - name: Verify preview inside app
         run: |
           rm -f "$DATA/Documents/import-report.txt"
