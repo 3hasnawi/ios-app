@@ -80,8 +80,21 @@ nonisolated enum TransferAdaptivePDF {
         var result: [TextLine] = [], offset = 0
         while offset < attr.length {
             if result.count.isMultiple(of: 128) { try Task.checkCancellation() }
-            let count = CTTypesetterSuggestLineBreak(typesetter, offset, Double(width))
-            guard count > 0, count <= attr.length - offset else { throw fitFailure("line-break") }
+            let fullCount = CTTypesetterSuggestLineBreak(typesetter, offset, Double(width))
+            guard fullCount > 0, fullCount <= attr.length - offset else { throw fitFailure("line-break") }
+            let fullText = (text as NSString).substring(with: NSRange(location: offset, length: fullCount))
+            let reserve: CGFloat = switch kashida {
+            case .some(.low): 12
+            case .some(.medium): 24
+            case .some(.high): 36
+            case .some(.none), nil: 0
+            }
+            // اترك مساحة للمد عند لف السطر، ولكن لا تقسّم السطر الأخير أو الفقرة المنتهية يدوياً.
+            var count = fullCount
+            if justify && reserve > 0 && offset + fullCount < attr.length && !fullText.hasSuffix("\n") {
+                let shorter = CTTypesetterSuggestLineBreak(typesetter, offset, Double(max(8, width - reserve)))
+                if shorter > 0 && shorter <= fullCount { count = shorter }
+            }
             let line = CTTypesetterCreateLine(typesetter, CFRange(location: offset, length: count))
             let measured = CTLineGetTypographicBounds(line, nil, nil, nil) - CTLineGetTrailingWhitespaceWidth(line)
             guard measured <= Double(width) + 0.5 else { throw fitFailure("line-width") }
@@ -97,9 +110,9 @@ nonisolated enum TransferAdaptivePDF {
     /// تمديد بصري محدود لوصلات الحروف؛ لا يتغير النص المحفوظ في القالب.
     static func stretchArabic(_ text: String, font: CTFont, width: CGFloat, mode: CustomTransferTemplate.Kashida?) -> String {
         let fraction: CGFloat = switch mode {
-        case .some(.low): 0.2
-        case .some(.medium): 0.45
-        case .some(.high): 0.7
+        case .some(.low): 0.6
+        case .some(.medium): 0.8
+        case .some(.high): 0.95
         case .some(.none), nil: 0
         }
         guard fraction > 0, width > 0 else { return text }

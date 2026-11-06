@@ -55,7 +55,7 @@ import CryptoKit
         let small = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .low)
         let large = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .high)
         try check(unchanged == sample && small.replacingOccurrences(of: "ـ", with: "") == sample &&
-                  large.replacingOccurrences(of: "ـ", with: "") == sample && large.count >= small.count &&
+                  large.replacingOccurrences(of: "ـ", with: "") == sample && large.count > small.count && small.count > sample.count &&
                   large.contains("IQ06TEST123000000000001") && large.contains("123,456"), "safe kashida rendering")
         try check(TransferAdaptivePDF.stretchArabic("IQ06TEST123000000000001", font: face, width: 500, mode: .high) == "IQ06TEST123000000000001", "IBAN unchanged")
         var defaults = TransferLetterCustomizationStore()
