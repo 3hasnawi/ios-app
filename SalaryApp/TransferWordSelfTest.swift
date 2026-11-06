@@ -51,9 +51,13 @@ import CryptoKit
         try check(formatted.kashida == .high && formatted.alignment == .justified, "kashida body style")
         let face = CTFontCreateWithName("TimesNewRomanPSMT" as CFString, 14, nil)
         let sample = "نرجو تحويل مبلغ إلى الحساب IQ06TEST123000000000001 123,456"
-        let unchanged = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .none)
-        let small = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .low)
-        let large = TransferAdaptivePDF.stretchArabic(sample, font: face, width: 500, mode: .high)
+        let sampleLine = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): face
+        ]))
+        let sampleWidth = CGFloat(CTLineGetTypographicBounds(sampleLine, nil, nil, nil)) + 60
+        let unchanged = TransferAdaptivePDF.stretchArabic(sample, font: face, width: sampleWidth, mode: .none)
+        let small = TransferAdaptivePDF.stretchArabic(sample, font: face, width: sampleWidth, mode: .low)
+        let large = TransferAdaptivePDF.stretchArabic(sample, font: face, width: sampleWidth, mode: .high)
         try check(unchanged == sample && small.replacingOccurrences(of: "ـ", with: "") == sample &&
                   large.replacingOccurrences(of: "ـ", with: "") == sample && large.count > small.count && small.count > sample.count &&
                   large.contains("IQ06TEST123000000000001") && large.contains("123,456"), "safe kashida rendering")
