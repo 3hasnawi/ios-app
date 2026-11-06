@@ -67,6 +67,9 @@ struct CustomTransferTemplateEditor: View {
     @State private var sourceError: String?
     @State private var saveError: String?
     @State private var choosingAccount = false
+    @State private var templatePreviewURL: URL?
+    @State private var templatePreviewError: String?
+    @State private var templatePreviewWorking = false
     @State private var fontPart: CustomTransferTemplate.FontPart = .body
     let monthName: String
     let bookID: String?
@@ -205,12 +208,37 @@ struct CustomTransferTemplateEditor: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { do { try save(template); if bookID != nil { dismiss() } } catch { saveError = error.localizedDescription } } }
+            ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() }.disabled(templatePreviewWorking) }
+            ToolbarItemGroup(placement: .confirmationAction) {
+                Button { prepareTemplatePreview() } label: { Image(systemName: "doc.text.magnifyingglass") }
+                    .accessibilityLabel(tr("معاينة تنسيق القالب", "Preview template formatting"))
+                    .disabled(templatePreviewWorking)
+                Button(tr("حفظ", "Save")) { do { try save(template); if bookID != nil { dismiss() } } catch { saveError = error.localizedDescription } }
+                    .disabled(templatePreviewWorking)
+            }
         }
         .alert(tr("تعذّر حفظ القالب", "Couldn't save template"), isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "") }
+        .interactiveDismissDisabled(templatePreviewWorking)
+        .overlay { if templatePreviewWorking { ProgressView(tr("إعداد المعاينة…", "Preparing preview…")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
+        .sheet(isPresented: Binding(get: { templatePreviewURL != nil }, set: { if !$0 { closeTemplatePreview() } })) {
+            NavigationStack {
+                if let url = templatePreviewURL {
+                    VStack(spacing: 0) {
+                        Text(tr("معاينة للتنسيق فقط؛ الحقول بين « » توضيحية، ولا تشمل الجداول أو المبالغ الفعلية.", "Formatting preview only; fields between « » are placeholders and actual tables and amounts are not included."))
+                            .font(.footnote).foregroundStyle(.secondary).padding(10)
+                        PDFPreview(url: url)
+                    }
+                    .navigationTitle(tr("معاينة القالب", "Template preview"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("العودة للتعديل", "Back to editing")) { closeTemplatePreview() } } }
+                }
+            }
+        }
+        .alert(tr("تعذّرت معاينة القالب", "Could not preview template"), isPresented: Binding(get: { templatePreviewError != nil }, set: { if !$0 { templatePreviewError = nil } })) {
+            Button(tr("حسناً", "OK"), role: .cancel) { templatePreviewError = nil }
+        } message: { Text(templatePreviewError ?? "") }
         .onChange(of: template.source) { _, _ in template.sourceName = "" }
         .task(id: monthName) {
             guard bookID == nil, !monthName.isEmpty else { return }
@@ -219,6 +247,24 @@ struct CustomTransferTemplateEditor: View {
                 groups = try await TransferDataEngine(modelContainer: container).read(month: monthName).0
             } catch { sourceError = error.localizedDescription }
         }
+    }
+    private func prepareTemplatePreview() {
+        guard !templatePreviewWorking else { return }
+        templatePreviewWorking = true
+        let snapshot = template, selectedMonth = monthName
+        Task {
+            defer { templatePreviewWorking = false }
+            do {
+                let url = try await Task.detached(priority: .userInitiated) {
+                    try LetterTemplateQuickPreview.make(template: snapshot, month: selectedMonth)
+                }.value
+                templatePreviewURL = url
+            } catch { templatePreviewError = error.localizedDescription }
+        }
+    }
+    private func closeTemplatePreview() {
+        if let url = templatePreviewURL { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        templatePreviewURL = nil
     }
     private func verticalOffsetLabel(_ value: Int) -> String {
         value == 0 ? tr("الموضع الأصلي", "Original position") : "\(Num.format(abs(value))) " + (value < 0 ? tr("أعلى", "up") : tr("أسفل", "down"))

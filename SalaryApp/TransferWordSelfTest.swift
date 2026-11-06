@@ -62,6 +62,15 @@ import CryptoKit
                   large.replacingOccurrences(of: "ـ", with: "") == sample && large.count > small.count && small.count > sample.count &&
                   large.contains("IQ06TEST123000000000001") && large.contains("123,456"), "safe kashida rendering")
         try check(TransferAdaptivePDF.stretchArabic("IQ06TEST123000000000001", font: face, width: 500, mode: .high) == "IQ06TEST123000000000001", "IBAN unchanged")
+        phase = "template-quick-preview"
+        try check(try LetterTemplateQuickPreview.body("المبلغ {{المبلغ}} والحساب {{حساب المستفيد}}") == "المبلغ «المبلغ» والحساب «حساب المستفيد»", "quick preview placeholders")
+        var quickTemplate = CustomTransferTemplate()
+        quickTemplate.body = "نص تجريبي {{المبلغ}}"
+        quickTemplate.firstSigner = "مدير\nاسم تجريبي"
+        quickTemplate.fontSizes = ["body": 18]
+        let quickURL = try LetterTemplateQuickPreview.make(template: quickTemplate, month: "")
+        defer { try? FileManager.default.removeItem(at: quickURL.deletingLastPathComponent()) }
+        try check(PDFDocument(url: quickURL)?.pageCount == 1, "unsaved and incomplete template preview")
         var defaults = TransferLetterCustomizationStore()
         defaults.common = .init(header: "ترويسة وهمية", fixedNumber: "عدد وهمي", foodContractReference: "عقد وهمي")
         for id in TransferReferencePack.expected.keys {
