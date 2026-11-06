@@ -19,6 +19,8 @@ struct TransferCompanyLetterView: View {
     @State private var showPreview = false
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
+    @State private var editTemplateFromPreview = false
+    @State private var rebuildPreviewAfterEdit = false
     @State private var wordCustomizationSnapshot = Data()
     @State private var wordBoldSnapshot = Data()
     @State private var generation: Task<Void, Never>?
@@ -91,6 +93,11 @@ struct TransferCompanyLetterView: View {
         .sheet(isPresented: $showWordPreview, onDismiss: {
             if let wordResult { try? FileManager.default.removeItem(at: wordResult.letter.deletingLastPathComponent()) }
             wordResult = nil
+            if rebuildPreviewAfterEdit {
+                rebuildPreviewAfterEdit = false
+                if sourceIsCurrent { prepareWord() }
+                else { error = tr("تغيّرت البيانات؛ أعد فتح ملفات التحويل قبل تحديث المعاينة.", "Data changed; reopen transfer files before refreshing the preview.") }
+            }
         }) {
             NavigationStack {
                 if let wordResult {
@@ -106,6 +113,10 @@ struct TransferCompanyLetterView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
                         ToolbarItem(placement: .primaryAction) {
+                            Button(tr("تعديل", "Edit"), systemImage: "pencil") { editTemplateFromPreview = true }
+                                .labelStyle(.iconOnly).disabled(!wordIsCurrent)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
                                 guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
                                 ActivityShare.present([wordResult.letter])
@@ -113,6 +124,16 @@ struct TransferCompanyLetterView: View {
                             .labelStyle(.iconOnly)
                             .disabled(!wordIsCurrent)
                             .accessibilityIdentifier("exportTransferLetterPDF")
+                        }
+                    }
+                    .sheet(isPresented: $editTemplateFromPreview, onDismiss: {
+                        if currentCustomization != wordCustomizationSnapshot {
+                            rebuildPreviewAfterEdit = true
+                            showWordPreview = false
+                        }
+                    }) {
+                        NavigationStack {
+                            UnifiedBuiltInLetterTemplate(bookID: "food_company", title: tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), month: figures.month)
                         }
                     }
                 }

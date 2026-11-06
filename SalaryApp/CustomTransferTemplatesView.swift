@@ -232,7 +232,7 @@ struct CustomTransferTemplateEditor: View {
                     }
                     .navigationTitle(tr("معاينة القالب", "Template preview"))
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("العودة للتعديل", "Back to editing")) { closeTemplatePreview() } } }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("تعديل", "Edit")) { closeTemplatePreview() } } }
                 }
             }
         }
@@ -275,8 +275,18 @@ struct CustomTransferTemplateEditor: View {
 }
 
 private struct CustomTransferLetterView: View {
-    let template: CustomTransferTemplate
+    @State private var template: CustomTransferTemplate
     let monthName: String
+    @AppStorage(CustomTransferTemplate.settingsKey) private var savedTemplateData = Data()
+    @State private var editTemplateFromPreview = false
+    @State private var editDataSnapshot = Data()
+    @State private var templateBeforeEditing: CustomTransferTemplate?
+    @State private var previewTemplateSnapshot: CustomTransferTemplate?
+    @State private var rebuildPreviewAfterEdit = false
+    init(template: CustomTransferTemplate, monthName: String) {
+        _template = State(initialValue: template)
+        self.monthName = monthName
+    }
     @Query private var months: [PayrollMonth]
     @State private var manualAmount = ""
     @State private var error: String?
@@ -312,7 +322,12 @@ private struct CustomTransferLetterView: View {
         .alert(tr("تعذّر إعداد الكتاب", "Couldn't prepare letter"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) { error = nil }
         } message: { Text(error ?? "") }
-        .sheet(isPresented: Binding(get: { previewURL != nil }, set: { if !$0 { closePreview() } })) {
+        .sheet(isPresented: Binding(get: { previewURL != nil }, set: { if !$0 { closePreview() } }), onDismiss: {
+            if rebuildPreviewAfterEdit {
+                rebuildPreviewAfterEdit = false
+                prepare()
+            }
+        }) {
             NavigationStack {
                 if let url = previewURL {
                     PDFPreview(url: url)
@@ -321,9 +336,41 @@ private struct CustomTransferLetterView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { closePreview() } }
                         ToolbarItem(placement: .primaryAction) {
+                            Button(tr("تعديل", "Edit"), systemImage: "pencil") {
+                                editDataSnapshot = savedTemplateData
+                                templateBeforeEditing = template
+                                editTemplateFromPreview = true
+                            }.labelStyle(.iconOnly).disabled(template != previewTemplateSnapshot || sourceKey != snapshot)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([url]) }
                                 .labelStyle(.iconOnly)
-                                .disabled(sourceKey != snapshot || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
+                                .disabled(sourceKey != snapshot || template != previewTemplateSnapshot || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
+                        }
+                    }
+                    .sheet(isPresented: $editTemplateFromPreview, onDismiss: {
+                        if let before = templateBeforeEditing, before != template {
+                            rebuildPreviewAfterEdit = true
+                            closePreview()
+                        }
+                        templateBeforeEditing = nil
+                    }) {
+                        NavigationStack {
+                            CustomTransferTemplateEditor(template: template, monthName: monthName) { updated in
+                                guard savedTemplateData == editDataSnapshot, !BackupManager.shared.isWorking,
+                                      !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+                                    throw CustomTransferTemplate.invalid(tr("تغيّرت البيانات؛ أعد فتح القالب.", "Data changed; reopen the template."))
+                                }
+                                var all = try CustomTransferTemplate.decode(savedTemplateData)
+                                guard let index = all.firstIndex(where: { $0.id == updated.id }) else {
+                                    throw CustomTransferTemplate.invalid(tr("لم يعد القالب موجوداً؛ لم تُحفظ التغييرات.", "The template no longer exists; changes were not saved."))
+                                }
+                                all[index] = updated
+                                savedTemplateData = try CustomTransferTemplate.encode(all)
+                                BackupManager.shared.markSettingChanged(CustomTransferTemplate.settingsKey)
+                                template = updated
+                                editTemplateFromPreview = false
+                            }
                         }
                     }
                 }
@@ -403,7 +450,7 @@ private struct CustomTransferLetterView: View {
                     if !account.isEmpty { checks.append(account) }
                     try TransferAdaptivePDF.verify(url, required: checks)
                     guard sourceKey == key, !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else { throw CustomTransferTemplate.invalid(tr("تغيّرت البيانات أثناء إعداد الكتاب؛ أعد المحاولة.", "Data changed while preparing the letter; try again.")) }
-                    snapshot = key; previewURL = url
+                    snapshot = key; previewTemplateSnapshot = selected; previewURL = url
                 } catch { try? FileManager.default.removeItem(at: dir); throw error }
             } catch { self.error = error.localizedDescription }
         }

@@ -34,6 +34,9 @@ struct TreasuryLetterView: View {
     @State private var working = false
     @State private var error: String?
     @State private var preview: URL?
+    @State private var editTemplateFromPreview = false
+    @State private var templateSnapshotForEdit = Data()
+    @State private var rebuildPreviewAfterEdit = false
     @State private var previewRevision = ""
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } }
@@ -84,7 +87,13 @@ struct TreasuryLetterView: View {
         .sheet(isPresented: $choosingAccount) {
             SavedLetterAccountPicker(accounts: accounts.filter { !$0.iban.isEmpty }) { beneficiaryIBAN = $0.iban }
         }
-        .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { closePreview() } })) {
+        .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { closePreview() } }), onDismiss: {
+            if rebuildPreviewAfterEdit {
+                rebuildPreviewAfterEdit = false
+                if isReady { prepare() }
+                else { error = tr("تغيّرت البيانات؛ أعد تحميل الكتاب قبل تحديث المعاينة.", "Data changed; reload the letter before refreshing the preview.") }
+            }
+        }) {
             NavigationStack {
                 if let preview {
                     PDFPreview(url: preview)
@@ -93,10 +102,24 @@ struct TreasuryLetterView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { closePreview() } }
                         ToolbarItem(placement: .primaryAction) {
+                            Button(tr("تعديل", "Edit"), systemImage: "pencil") {
+                                templateSnapshotForEdit = customizationData
+                                editTemplateFromPreview = true
+                            }.labelStyle(.iconOnly).disabled(previewRevision != previewKey)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([preview]) }
                                 .labelStyle(.iconOnly)
                                 .disabled(previewRevision != previewKey || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
                         }
+                    }
+                    .sheet(isPresented: $editTemplateFromPreview, onDismiss: {
+                        if customizationData != templateSnapshotForEdit {
+                            rebuildPreviewAfterEdit = true
+                            closePreview()
+                        }
+                    }) {
+                        NavigationStack { UnifiedBuiltInLetterTemplate(bookID: templateID, title: title, month: monthName) }
                     }
                 }
             }

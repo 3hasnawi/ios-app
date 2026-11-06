@@ -69,6 +69,8 @@ struct TransferLetterDraftView: View {
     @State private var wordCustomizationSnapshot = Data()
     @State private var wordResult: TransferWordDraftGenerator.Result?
     @State private var showWordPreview = false
+    @State private var editTemplateFromPreview = false
+    @State private var rebuildPreviewAfterEdit = false
     @State private var wordCSVText: String?
     @State private var wordCSVError: String?
     @State private var showWordCSV = false
@@ -263,6 +265,11 @@ struct TransferLetterDraftView: View {
             draftUsedNominalReview = false
             wordCSVText = nil; wordCSVError = nil; showWordCSV = false
             countNotice = nil
+            if rebuildPreviewAfterEdit {
+                rebuildPreviewAfterEdit = false
+                if current { prepareWord() }
+                else { error = tr("تغيّرت البيانات؛ أعد فتح ملفات التحويل قبل تحديث المعاينة.", "Data changed; reopen transfer files before refreshing the preview.") }
+            }
         }) {
             NavigationStack {
                 if let wordResult {
@@ -284,6 +291,10 @@ struct TransferLetterDraftView: View {
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
                         ToolbarItem(placement: .primaryAction) {
+                            Button(tr("تعديل", "Edit"), systemImage: "pencil") { editTemplateFromPreview = true }
+                                .labelStyle(.iconOnly).disabled(!wordIsCurrent)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
                                 guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
                                 ActivityShare.present([wordResult.letter])
@@ -296,6 +307,18 @@ struct TransferLetterDraftView: View {
                             ToolbarItem(placement: .primaryAction) {
                                 Button(tr("معاينة CSV", "Preview CSV"), systemImage: "tablecells") { prepareWordCSV() }.labelStyle(.iconOnly).disabled(!wordIsCurrent)
                             }
+                        }
+                    }
+                    .sheet(isPresented: $editTemplateFromPreview, onDismiss: {
+                        if currentCustomization != wordCustomizationSnapshot {
+                            rebuildPreviewAfterEdit = true
+                            showWordPreview = false
+                        }
+                    }) {
+                        NavigationStack {
+                            UnifiedBuiltInLetterTemplate(bookID: kind.rawValue, title: kind.title, month: month,
+                                entityTitle: selectedEntity?.group.title, entityAccount: entityAccountForSettings,
+                                entityAccountKey: selectedEntity?.account?.key)
                         }
                     }
                     .sheet(isPresented: $showWordCSV) {
