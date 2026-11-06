@@ -15,8 +15,6 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
       SALARYLOCAL_UI_TEST: '1'
-      PROOF_DIR: ${{ runner.temp }}/salarylocal-ui-proof
-      SCREENSHOT_DIR: ${{ runner.temp }}/salarylocal-ui-proof/screens
       SOURCE_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +26,10 @@ jobs:
       - name: Prepare isolated proof folder
         shell: pwsh
         run: |
+          $env:PROOF_DIR = Join-Path $env:RUNNER_TEMP 'salarylocal-ui-proof'
+          $env:SCREENSHOT_DIR = Join-Path $env:PROOF_DIR 'screens'
+          "PROOF_DIR=$env:PROOF_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SCREENSHOT_DIR=$env:SCREENSHOT_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           New-Item -ItemType Directory -Force $env:PROOF_DIR | Out-Null
           if (Test-Path (Join-Path $env:LOCALAPPDATA 'SalaryLocal')) { throw 'Refusing to use an existing application workspace.' }
           "Source commit: $env:SOURCE_COMMIT`nWindows runner: $env:RUNNER_OS`nSynthetic data only; no release publication." | Set-Content (Join-Path $env:PROOF_DIR 'environment.txt')
