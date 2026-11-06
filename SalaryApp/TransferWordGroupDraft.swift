@@ -61,7 +61,7 @@ nonisolated enum TransferWordGroupDraft {
         case .medium: 3
         case .wide: 8
         }
-        return .init(text: body, halfPoints: 28, bold: template.bodyBold ?? false, alignment: template.bodyKashida == nil ? alignment : .justified, lineSpacing: spacing, kashida: template.bodyKashida)
+        return .init(text: body, halfPoints: template.halfPoints(.body, default: 28), bold: template.bodyBold ?? false, alignment: template.bodyKashida == nil ? alignment : .justified, lineSpacing: spacing, kashida: template.bodyKashida)
     }
     static func appendAttachments(_ text: LetterText, to blocks: inout [TransferWordDocument.Block]) {
         guard let attachment = text.template?.attachmentParagraph else { return }
@@ -69,7 +69,7 @@ nonisolated enum TransferWordGroupDraft {
             let additional = String(attachment.dropFirst("المرفقات:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
             if !additional.isEmpty { previous.text += "\n" + additional; blocks[index] = .paragraph(previous) }
         } else {
-            blocks.append(.paragraph(.init(text: attachment, halfPoints: 22)))
+            blocks.append(.paragraph(.init(text: attachment, halfPoints: text.template?.halfPoints(.attachments, default: 22) ?? 22)))
         }
     }
     /// الصفات ثابتة كما ظهرت في النماذج الأصلية، والأسماء من تخصيص المستخدم.
@@ -164,29 +164,31 @@ nonisolated enum TransferWordGroupDraft {
             "المبلغ": bodyNumber(amount, adaptivePDF: adaptivePDF), "المبلغ كتابة": words, "حسابنا": normalizedPayer, "الشهر": bodyMonth, "السنة": bodyNumber(bodyYear, adaptivePDF: adaptivePDF)
         ])
         let signatureCells = try Self.signatures(for: text, date: signatureDate, adaptivePDF: adaptivePDF)
-        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: 32,
+        let signatures = TransferWordDocument.Table(headers: [], rows: [signatureCells], font: "Times New Roman", halfPoints: text.template?.halfPoints(.signatures, default: 32) ?? 32,
                                                      columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
-            .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
-            .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: text.template?.halfPoints(.header, default: 32) ?? 32, bold: true)),
+            .paragraph(.init(text: Self.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: text.template?.halfPoints(.reference, default: adaptivePDF ? 36 : 30) ?? (adaptivePDF ? 36 : 30), bold: true)),
+            .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: text.template?.halfPoints(.recipient, default: 32) ?? 32, bold: true, centered: adaptivePDF)),
+            .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: text.template?.halfPoints(.subject, default: 32) ?? 32, bold: true, centered: true)),
             .paragraph(Self.bodyParagraph(body, template: text.template))
         ]
         if adaptivePDF {
             let count = plan.table.rows.count - 1
             guard count > 0 else { throw Failure.incomplete }
-            blocks.append(.paragraph(.init(text: "المرفقات:\nقائمة أسماء الحسابات من تسلسل (1) لغاية تسلسل (\(count))\nقرص (CSV).", halfPoints: 24, bold: true)))
+            blocks.append(.paragraph(.init(text: "المرفقات:\nقائمة أسماء الحسابات من تسلسل (1) لغاية تسلسل (\(count))\nقرص (CSV).", halfPoints: text.template?.halfPoints(.attachments, default: 24) ?? 24, bold: true)))
         }
         Self.appendAttachments(text, to: &blocks)
+        var letterTable = plan.table
+        letterTable.halfPoints = text.template?.halfPoints(.table, default: letterTable.halfPoints) ?? letterTable.halfPoints
         blocks += [
             .table(signatures),
-            .paragraph(.init(text: footerWritingSpace(text.footer, adaptivePDF: adaptivePDF), halfPoints: 24, bold: adaptivePDF)),
+            .paragraph(.init(text: footerWritingSpace(text.footer, adaptivePDF: adaptivePDF), halfPoints: text.template?.halfPoints(.footer, default: 24) ?? 24, bold: adaptivePDF)),
             .pageBreak,
             .paragraph(.init(text: "استقطاعات قيادة شرطة الأنبار لشهر (\(monthName) / \(bodyNumber(year, adaptivePDF: adaptivePDF)))", halfPoints: 28, bold: true, centered: true)),
-            .table(plan.table)
+            .table(letterTable)
         ]
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0) }
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: true, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0, template: text.template) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: nil) }
     }
 }

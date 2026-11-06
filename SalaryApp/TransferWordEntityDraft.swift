@@ -29,19 +29,23 @@ nonisolated enum TransferWordEntityDraft {
         let bodyTemplate = text.template == nil ? text.bodyTemplate : text.bodyTemplate.map(CustomTransferTemplate.formatBodyNumbers)
         let body = try TransferLetterBody.render(id: plan.bookID, custom: adaptivePDF ? bodyTemplate : nil, values: fields)
         let signatures = TransferWordDocument.Table(headers: [], rows: [try TransferWordGroupDraft.signatures(for: text, date: signatureDate, adaptivePDF: adaptivePDF)],
-            font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)
+            font: "Times New Roman", halfPoints: text.template?.halfPoints(.signatures, default: 32) ?? 32, columnWeights: [1, 1, 1], showBorders: false)
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: adaptivePDF ? 32 : 36, bold: true)),
-            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: adaptivePDF ? 36 : 30, bold: true)),
-            .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: adaptivePDF)),
-            .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: text.header, font: "Times New Roman", halfPoints: text.template?.halfPoints(.header, default: adaptivePDF ? 32 : 36) ?? (adaptivePDF ? 32 : 36), bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: letterNumber, date: signatureDate, adaptivePDF: adaptivePDF), font: "Times New Roman", halfPoints: text.template?.halfPoints(.reference, default: adaptivePDF ? 36 : 30) ?? (adaptivePDF ? 36 : 30), bold: true)),
+            .paragraph(.init(text: "إلى / " + (text.template?.recipient ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: text.template?.halfPoints(.recipient, default: 32) ?? 32, bold: true, centered: adaptivePDF)),
+            .paragraph(.init(text: "م / " + (text.template?.subject ?? "تحويل مبلغ"), font: "Arial", halfPoints: text.template?.halfPoints(.subject, default: 32) ?? 32, bold: true, centered: true)),
             .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: text.template))
         ]
-        if plan.table != nil { blocks.append(.paragraph(try TransferWordTables.attachment(for: plan.table))) }
+        if plan.table != nil {
+            var attachment = try TransferWordTables.attachment(for: plan.table)
+            attachment.halfPoints = text.template?.halfPoints(.attachments, default: attachment.halfPoints) ?? attachment.halfPoints
+            blocks.append(.paragraph(attachment))
+        }
         TransferWordGroupDraft.appendAttachments(text, to: &blocks)
         blocks.append(.table(signatures))
-        blocks.append(.paragraph(.init(text: text.footer, halfPoints: 24, bold: adaptivePDF)))
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0) }
+        blocks.append(.paragraph(.init(text: text.footer, halfPoints: text.template?.halfPoints(.footer, default: 24) ?? 24, bold: adaptivePDF)))
+        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0, template: text.template) }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: nil) }
     }
 }

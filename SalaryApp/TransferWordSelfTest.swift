@@ -31,6 +31,19 @@ import CryptoKit
         oldForm.bodyAlignment = .right
         let oldRoundTrip = try CustomTransferTemplate.decode(CustomTransferTemplate.encode([oldForm]))
         try check(oldRoundTrip.first?.bodyKashida == nil && oldRoundTrip.first?.bodyAlignment == .right, "old template alignment")
+        oldForm.fontSizes = ["body": 19, "attachments": 11, "signatures": 14]
+        let sizedRoundTrip = try CustomTransferTemplate.decode(CustomTransferTemplate.encode([oldForm]))
+        try check(sizedRoundTrip.first?.halfPoints(.body, default: 28) == 38 &&
+                  sizedRoundTrip.first?.halfPoints(.attachments, default: 22) == 22 &&
+                  sizedRoundTrip.first?.halfPoints(.subject, default: 32) == 32, "font size template round trip")
+        try check(TransferWordGroupDraft.bodyParagraph("متن تجريبي", template: sizedRoundTrip.first).halfPoints == 38, "body font size applied")
+        var invalidSizes = oldForm
+        invalidSizes.fontSizes = ["body": 99]
+        do {
+            _ = try CustomTransferTemplate.encode([invalidSizes])
+            throw Failure(errorDescription: "invalid font size accepted")
+        } catch is Failure { throw Failure(errorDescription: "invalid font size accepted") }
+        catch { }
         oldForm.bodyKashida = .high
         let newRoundTrip = try CustomTransferTemplate.decode(CustomTransferTemplate.encode([oldForm]))
         try check(newRoundTrip.first?.bodyKashida == .high, "kashida template round trip")

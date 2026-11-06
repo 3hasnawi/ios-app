@@ -5,6 +5,25 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     enum Source: String, Codable, CaseIterable, Sendable { case none, manual, payroll, execution }
     enum BodyAlignment: String, Codable, CaseIterable, Sendable { case justified, right, center, left }
     enum Kashida: String, Codable, CaseIterable, Sendable { case none, low, medium, high }
+    enum FontPart: String, CaseIterable, Identifiable, Sendable {
+        case header, reference, recipient, subject, salutation, body, closing, attachments, signatures, footer, table
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .header: tr("الترويسة", "Header")
+            case .reference: tr("العدد والتاريخ", "Reference and date")
+            case .recipient: tr("الجهة المرسل إليها", "Recipient")
+            case .subject: tr("الموضوع", "Subject")
+            case .salutation: tr("التحية", "Salutation")
+            case .body: tr("المتن", "Body")
+            case .closing: tr("عبارة الختام", "Closing")
+            case .attachments: tr("المرفقات", "Attachments")
+            case .signatures: tr("التواقيع", "Signatures")
+            case .footer: tr("نسخة منه إلى", "Copies to")
+            case .table: tr("جدول الكتاب", "Letter table")
+            }
+        }
+    }
     enum BodySpacing: String, Codable, CaseIterable, Sendable { case compact, medium, wide }
     var id = UUID()
     var title = ""
@@ -23,6 +42,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
     // Optional fields keep templates created by older versions readable.
     var bodyAlignment: BodyAlignment? = nil
     var bodyKashida: Kashida? = nil
+    var fontSizes: [String: Int]? = nil
     var bodySpacing: BodySpacing? = nil
     var bodyBold: Bool? = nil
     var signatureVerticalOffset: Int? = nil
@@ -38,7 +58,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         if data.isEmpty { return [] }
         guard data.count <= 2_000_000 else { throw invalid() }
         // لا نكتب فوق حقول أضافها إصدار أحدث لا يفهمه هذا الإصدار.
-        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodyKashida", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments", "foodContractReference", "bodyMonth", "outgoingMonth"]
+        let known: Set<String> = ["id", "title", "header", "number", "recipient", "subject", "body", "footer", "firstSigner", "secondSigner", "thirdSigner", "source", "sourceName", "account", "bodyAlignment", "bodyKashida", "fontSizes", "bodySpacing", "bodyBold", "signatureVerticalOffset", "signatureHorizontalOffset", "attachments", "foodContractReference", "bodyMonth", "outgoingMonth"]
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(root.keys).isSubset(of: ["version", "templates"]),
               let records = root["templates"] as? [[String: Any]],
@@ -80,9 +100,14 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
         default: return rendered
         }
     }
+    func halfPoints(_ part: FontPart, default fallback: Int) -> Int {
+        guard let size = fontSizes?[part.rawValue], (8...24).contains(size) else { return fallback }
+        return size * 2
+    }
     func validate() throws {
         let values = [title, header, number, recipient, subject, body, footer, firstSigner, secondSigner, thirdSigner, sourceName, account, attachments ?? "", foodContractReference ?? "", bodyMonth ?? "", outgoingMonth ?? ""]
-        guard (-60...60).contains(signatureVerticalOffset ?? 0), (-30...30).contains(signatureHorizontalOffset ?? 0),
+        guard (fontSizes ?? [:]).allSatisfy({ key, value in FontPart.allCases.contains(where: { $0.rawValue == key }) && (8...24).contains(value) }),
+              (-60...60).contains(signatureVerticalOffset ?? 0), (-30...30).contains(signatureHorizontalOffset ?? 0),
               values.allSatisfy({ $0.utf8.count <= 12_000 && !$0.unicodeScalars.contains(where: { $0.value < 32 && $0.value != 10 && $0.value != 13 && $0.value != 9 }) }),
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw Self.invalid() }
     }

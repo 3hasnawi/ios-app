@@ -275,7 +275,7 @@ struct TreasuryLetterView: View {
                         do {
                             try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false,
                                 signatureOffset: template?.signatureVerticalOffset ?? 0, verifyNumericTableCells: true,
-                                signatureHorizontalOffset: template?.signatureHorizontalOffset ?? 0)
+                                signatureHorizontalOffset: template?.signatureHorizontalOffset ?? 0, template: template)
                             guard let document = PDFDocument(url: url), document.pageCount == 1 else { throw TreasuryLetterRules.Failure.pageCount }
                             try TransferAdaptivePDF.verify(url, required: required)
                             return url
@@ -329,7 +329,7 @@ struct TreasuryLetterView: View {
         } else {
             body = "نرجو تحويل مبلغ قدره (\(ReportSheet.easternDigits(amount))) (\(words)) لا غيرها من حسابنا المرقم (\(payer)) المفتوح لديكم إلى حساب (مديرية خزينة الأنبار) المرقم (\(beneficiary)) (مصرف الرافدين / فرع الأنبار) وذلك \(reason) لشهر (\(month) / \(ReportSheet.easternDigits(year))) وتزويدنا بالإشعار اللازم بذلك."
         }
-        let table: TransferWordDocument.Table
+        var table: TransferWordDocument.Table
         if kind == .guarantee {
             var rows: [[String]] = []
             for (i, row) in firstRows.enumerated() {
@@ -344,22 +344,23 @@ struct TreasuryLetterView: View {
                                                ["المجموع", try display(total)]],
                           font: "Times New Roman", halfPoints: 28, columnWeights: [4, 3], boldLastRow: true, widthFraction: 0.5, alignRight: true)
         }
+        table.halfPoints = template?.halfPoints(.table, default: table.halfPoints) ?? table.halfPoints
         let date = ReportSheet.easternDigits(period.signatureDate)
         let signatures: [String]
         if template == nil { signatures = TransferWordGroupDraft.signatureCells(signers, date: date, adaptivePDF: true) }
         else { signatures = try CustomTransferTemplate.signatureCells(signers, date: date) }
         let footer = "نسخة منه إلى:\nمديرية خزينة الأنبار للاطلاع وإعلامنا الاستلام ... مع التقدير.\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.\nالأرشيف إجراء اللازم."
         var blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.header) } ?? header, font: "Times New Roman", halfPoints: 32, bold: true)),
-            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(template?.number ?? number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-            .paragraph(.init(text: "إلى / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.recipient) } ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: "م / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.subject) } ?? "تحويل مبلغ"), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+            .paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.header) } ?? header, font: "Times New Roman", halfPoints: template?.halfPoints(.header, default: 32) ?? 32, bold: true)),
+            .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(template?.number ?? number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: template?.halfPoints(.reference, default: 30) ?? 30, bold: true)),
+            .paragraph(.init(text: "إلى / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.recipient) } ?? "مصرف الرافدين / فرع الأنبار"), font: "Arial", halfPoints: template?.halfPoints(.recipient, default: 32) ?? 32, bold: true, centered: true)),
+            .paragraph(.init(text: "م / " + (template.map { CustomTransferTemplate.formatBodyNumbers($0.subject) } ?? "تحويل مبلغ"), font: "Arial", halfPoints: template?.halfPoints(.subject, default: 32) ?? 32, bold: true, centered: true)),
             .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: template))
         ]
-        if let attachment = template?.attachmentParagraph { blocks.append(.paragraph(.init(text: attachment, halfPoints: 22))) }
+        if let attachment = template?.attachmentParagraph { blocks.append(.paragraph(.init(text: attachment, halfPoints: template?.halfPoints(.attachments, default: 22) ?? 22))) }
         blocks.append(.table(table))
-        blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
-        blocks.append(.paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.footer) } ?? footer, halfPoints: 24, bold: true)))
+        blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: template?.halfPoints(.signatures, default: 32) ?? 32, columnWeights: [1, 1, 1], showBorders: false)))
+        blocks.append(.paragraph(.init(text: template.map { CustomTransferTemplate.formatBodyNumbers($0.footer) } ?? footer, halfPoints: template?.halfPoints(.footer, default: 24) ?? 24, bold: true)))
         let required = [payer, beneficiary, amount]
         return (blocks, required)
     }

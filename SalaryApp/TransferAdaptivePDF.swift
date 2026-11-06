@@ -138,7 +138,7 @@ nonisolated enum TransferAdaptivePDF {
     }
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
                       sakkalBold: Data?, group: Bool, signatureOffset: Int = 0,
-                      verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0) throws {
+                      verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0, template: CustomTransferTemplate? = nil) throws {
         guard (-60...60).contains(signatureOffset), (-30...30).contains(signatureHorizontalOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
               let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
@@ -197,7 +197,7 @@ nonisolated enum TransferAdaptivePDF {
         var afterBreak = false
         var needsClosing = false
         func addClosing() throws {
-            let closing = TransferWordDocument.Paragraph(text: "للتفضل بالاطلاع وإجراء اللازم وإعلامنا... مع التقدير.", font: "Times New Roman", halfPoints: 32, bold: true, centered: true)
+            let closing = TransferWordDocument.Paragraph(text: "للتفضل بالاطلاع وإجراء اللازم وإعلامنا... مع التقدير.", font: "Times New Roman", halfPoints: template?.halfPoints(.closing, default: 32) ?? 32, bold: true, centered: true)
             let closingFont = try font(closing, sakkal: sakkalBold)
             y += 15
             try addLines(lines(closing.text, font: closingFont, width: contentWidth), x: margin, width: contentWidth, flush: 0.5)
@@ -213,7 +213,7 @@ nonisolated enum TransferAdaptivePDF {
                 if needsClosing && p.text.hasPrefix("المرفقات:") { try addClosing() }
                 if blockIndex == 2 {
                     y += 18
-                    let salutation = TransferWordDocument.Paragraph(text: "تحية طيبة ..", font: "Times New Roman", halfPoints: 28, bold: true)
+                    let salutation = TransferWordDocument.Paragraph(text: "تحية طيبة ..", font: "Times New Roman", halfPoints: template?.halfPoints(.salutation, default: 28) ?? 28, bold: true)
                     let salutationFont = try font(salutation, sakkal: sakkalBold)
                     try addLines(lines(salutation.text, font: salutationFont, width: contentWidth), x: margin, width: contentWidth, flush: 1)
                     y += 7; needsClosing = true
@@ -324,7 +324,7 @@ nonisolated enum TransferAdaptivePDF {
                     guard table.rows.count == 1 else { throw Failure.invalid }
                     if needsClosing { try addClosing() }
                     var found = false
-                    for size in stride(from: table.halfPoints, through: 24, by: -1) {
+                    for size in stride(from: table.halfPoints, through: min(table.halfPoints, 24), by: -1) {
                         do {
                             let height = try layout(table.rows[0], bold: true, halfPoints: size).1
                             if height <= 125 { chosenHalfPoints = size; found = true; break }
@@ -342,7 +342,7 @@ nonisolated enum TransferAdaptivePDF {
                 }
                 if groupTable {
                     var found = false
-                    for size in stride(from: min(table.halfPoints, 22), through: 14, by: -1) {
+                    for size in stride(from: template?.fontSizes?[CustomTransferTemplate.FontPart.table.rawValue] == nil ? min(table.halfPoints, 22) : table.halfPoints, through: 14, by: -1) {
                         try Task.checkCancellation()
                         var required: CGFloat = 0
                         if !table.headers.isEmpty { required += try layout(table.headers, bold: true, halfPoints: size).1 }

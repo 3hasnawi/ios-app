@@ -67,6 +67,7 @@ struct CustomTransferTemplateEditor: View {
     @State private var sourceError: String?
     @State private var saveError: String?
     @State private var choosingAccount = false
+    @State private var fontPart: CustomTransferTemplate.FontPart = .body
     let monthName: String
     let bookID: String?
     let canEditAccount: Bool
@@ -111,6 +112,21 @@ struct CustomTransferTemplateEditor: View {
                         Button(key) { template.body += "{{\(key)}}" }
                     }
                 }
+            }
+            Section(tr("حجم الخط", "Font size")) {
+                Picker(tr("جزء الكتاب", "Letter part"), selection: $fontPart) {
+                    ForEach(CustomTransferTemplate.FontPart.allCases) { part in Text(part.title).tag(part) }
+                }
+                Picker(tr("الحجم", "Size"), selection: Binding(get: { template.fontSizes?[fontPart.rawValue] ?? 0 }, set: { value in
+                    var sizes = template.fontSizes ?? [:]
+                    if value == 0 { sizes.removeValue(forKey: fontPart.rawValue) } else { sizes[fontPart.rawValue] = value }
+                    template.fontSizes = sizes.isEmpty ? nil : sizes
+                })) {
+                    Text(tr("الافتراضي", "Default")).tag(0)
+                    ForEach(8...24, id: \.self) { size in Text("\(size)").tag(size) }
+                }
+                Text(tr("اختر الجزء ثم حجم خطه. تُراجع النتيجة في المعاينة؛ قد يحتاج النص الطويل إلى حجم أصغر.", "Choose a part and its font size. Review the preview; long text may need a smaller size."))
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             if bookID == nil { Section(tr("مصدر المبلغ", "Amount source")) {
                 Picker(tr("المصدر", "Source"), selection: $template.source) {
@@ -321,23 +337,23 @@ private struct CustomTransferLetterView: View {
                 let date = ReportSheet.easternDigits(period.signatureDate)
                 let signatures = try CustomTransferTemplate.signatureCells([selected.firstSigner, selected.secondSigner, selected.thirdSigner], date: date)
                 var blocks: [TransferWordDocument.Block] = [
-                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: 32, bold: true)),
-                    .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: 30, bold: true)),
-                    .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: 32, bold: true, centered: true)),
-                    .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: 32, bold: true, centered: true)),
+                    .paragraph(.init(text: CustomTransferTemplate.formatBodyNumbers(selected.header), font: "Times New Roman", halfPoints: selected.halfPoints(.header, default: 32), bold: true)),
+                    .paragraph(.init(text: TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(selected.number), date: date, adaptivePDF: true), font: "Times New Roman", halfPoints: selected.halfPoints(.reference, default: 30), bold: true)),
+                    .paragraph(.init(text: "إلى / " + CustomTransferTemplate.formatBodyNumbers(selected.recipient), font: "Arial", halfPoints: selected.halfPoints(.recipient, default: 32), bold: true, centered: true)),
+                    .paragraph(.init(text: "م / " + CustomTransferTemplate.formatBodyNumbers(selected.subject), font: "Arial", halfPoints: selected.halfPoints(.subject, default: 32), bold: true, centered: true)),
                     .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: selected))
                 ]
                 if let attachments = selected.attachmentParagraph {
-                    blocks.append(.paragraph(.init(text: attachments, halfPoints: 22)))
+                    blocks.append(.paragraph(.init(text: attachments, halfPoints: selected.halfPoints(.attachments, default: 22))))
                 }
-                blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: 32, columnWeights: [1, 1, 1], showBorders: false)))
-                blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: 24, bold: true)))
+                blocks.append(.table(.init(headers: [], rows: [signatures], font: "Times New Roman", halfPoints: selected.halfPoints(.signatures, default: 32), columnWeights: [1, 1, 1], showBorders: false)))
+                blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(CustomTransferTemplate.formatBodyNumbers(selected.footer), adaptivePDF: true), halfPoints: selected.halfPoints(.footer, default: 24), bold: true)))
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("custom-letter-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let url = dir.appendingPathComponent("كتاب مخصص.pdf")
                 do {
                     try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false,
-                        signatureOffset: selected.signatureVerticalOffset ?? 0, signatureHorizontalOffset: selected.signatureHorizontalOffset ?? 0)
+                        signatureOffset: selected.signatureVerticalOffset ?? 0, signatureHorizontalOffset: selected.signatureHorizontalOffset ?? 0, template: selected)
                     var checks: [String] = []
                     if selected.body.contains("{{المبلغ}}"), let value = values["المبلغ"] { checks.append(value) }
                     if !account.isEmpty { checks.append(account) }
