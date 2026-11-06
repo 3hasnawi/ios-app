@@ -1,0 +1,6 @@
+TEST PREVIEW - UNSIGNED
+This installer and application are not code-signed. Windows may show an unknown-publisher or SmartScreen warning. Do not disable Windows security to install an untrusted copy. Verify the source and SHA-256 before use.
+
+This is an independent local payroll preview, not an update to SalaryDesktop. Installation does not migrate or delete old data. Uninstallation keeps payroll workspaces and backups. There is no automatic startup or network synchronization.
+
+Not yet validated on physical Windows devices. Test with synthetic data and backups before accounting use. Databases and backups are not encrypted by this application.

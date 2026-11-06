@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>SalaryLocal</AssemblyName><Version>0.6.0</Version><Product>الرواتب المحلية — مرشح اختبار 0.6</Product><Description>مرشح اختبار 0.6؛ يحل محل حساب البنك في 0.1، ويلزم فحص Windows قبل الاعتماد.</Description><ApplicationIcon>../../windows/SalaryDesktop/Assets/AppIcon.ico</ApplicationIcon></PropertyGroup>
+<ItemGroup><ProjectReference Include="../SalaryLocal.Core/SalaryLocal.Core.csproj" /></ItemGroup>
+<ItemGroup><Content Include="../../SalaryApp/Assets.xcassets/WatermarkLogo.imageset/WatermarkLogo.png" Link="WatermarkLogo.png" CopyToOutputDirectory="PreserveNewest" /></ItemGroup><ItemGroup><Content Include="../../SalaryApp/Assets.xcassets/HomeLogo.imageset/HomeLogo.png" Link="HomeLogo.png" CopyToOutputDirectory="PreserveNewest" /></ItemGroup><ItemGroup><Content Include="../../SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png" Link="IraqEmblem.png" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+<ItemGroup><PackageReference Include="Docnet.Core" Version="2.6.0" /></ItemGroup>
+</Project>

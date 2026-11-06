@@ -1,0 +1,23 @@
+{
+  "SyntheticDataOnly": true,
+  "Employees": 30000,
+  "Deductions": 7502,
+  "SourceXlsxBytes": 10202333,
+  "RepeatedRawColumnsJsonBytes": 176649521,
+  "DatabaseBytes": 75915264,
+  "BackupBytes": 22035909,
+  "HeaderSchemas": 1,
+  "UniqueEmployeeRows": 30000,
+  "RepeatedImportAddedRows": 0,
+  "RepeatedImportAddedDatabaseBytes": 0,
+  "ParseSeconds": 26.7544789,
+  "ImportSeconds": 5.553422,
+  "SummarySeconds": 0.0193161,
+  "RepeatedImportSeconds": 1.2705811,
+  "LoadMonthSeconds": 1.3555958,
+  "BackupSeconds": 14.7034144,
+  "InspectAndRestoreSeconds": 15.3366591,
+  "FullRecordRoundtrip": true,
+  "BankCalculationParity": true,
+  "SourceFileUnchanged": true
+}
