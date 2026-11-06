@@ -267,8 +267,6 @@ struct TransferLetterDraftView: View {
             NavigationStack {
                 if let wordResult {
                     VStack(spacing: 0) {
-                        Label(tr("مسودة PDF تجريبية؛ راجع النص والمبالغ والحسابات والجداول والتواقيع على الآيفون.", "Experimental PDF: review text, amounts, accounts, tables and signatures on iPhone."), systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
                         ForEach(customWarnings(wordCustomizationSnapshot), id: \.self) { warning in
                             Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange).padding(8)
                         }
@@ -281,21 +279,22 @@ struct TransferLetterDraftView: View {
                         if let wordCSVError { Text(wordCSVError).font(.footnote).foregroundStyle(.orange).padding(8) }
                         PDFPreview(url: wordResult.letter)
                     }
-                    .navigationTitle(tr("مسودة PDF", "PDF draft"))
+                    .navigationTitle(tr("معاينة الكتاب", "Letter preview"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
-                        ToolbarItem(placement: .bottomBar) {
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
                                 guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
                                 ActivityShare.present([wordResult.letter])
                             }
+                            .labelStyle(.iconOnly)
                             .disabled(!wordIsCurrent)
                             .accessibilityIdentifier("exportTransferLetterPDF")
                         }
                         if wordResult.csv != nil {
                             ToolbarItem(placement: .primaryAction) {
-                                Button(tr("معاينة CSV", "Preview CSV")) { prepareWordCSV() }.disabled(!wordIsCurrent)
+                                Button(tr("معاينة CSV", "Preview CSV"), systemImage: "tablecells") { prepareWordCSV() }.labelStyle(.iconOnly).disabled(!wordIsCurrent)
                             }
                         }
                     }

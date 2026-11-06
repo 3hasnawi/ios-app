@@ -87,16 +87,14 @@ struct TreasuryLetterView: View {
         .sheet(isPresented: Binding(get: { preview != nil }, set: { if !$0 { closePreview() } })) {
             NavigationStack {
                 if let preview {
-                    VStack(spacing: 0) {
-                        Text(tr("مسودة للمراجعة؛ تحقق من المبلغ والحساب وجدول الكتاب قبل اعتماده.", "Review the draft amount, account and table before approval."))
-                            .font(.footnote).foregroundStyle(.orange).padding()
-                        PDFPreview(url: preview)
-                    }
+                    PDFPreview(url: preview)
                     .navigationTitle(tr("معاينة الكتاب", "Letter preview"))
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { closePreview() } }
-                        ToolbarItem(placement: .bottomBar) {
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([preview]) }
+                                .labelStyle(.iconOnly)
                                 .disabled(previewRevision != previewKey || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
                         }
                     }

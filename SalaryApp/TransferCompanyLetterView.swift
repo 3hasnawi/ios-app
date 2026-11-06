@@ -95,23 +95,22 @@ struct TransferCompanyLetterView: View {
             NavigationStack {
                 if let wordResult {
                     VStack(spacing: 0) {
-                        Label(tr("مسودة تجريبية؛ راجع النص والمبلغ والحسابات والتواقيع قبل اعتمادها.", "Experimental draft: review the text, amount, accounts and signatures before approval."), systemImage: "exclamationmark.triangle")
-                            .font(.footnote).foregroundStyle(.orange).padding(10).frame(maxWidth: .infinity).background(.thinMaterial)
                         ForEach(customWarnings(wordCustomizationSnapshot), id: \.self) { warning in
                             Label(warning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange).padding(8)
                         }
                         if !wordIsCurrent { Text(tr("تغيّرت البيانات؛ أغلق المعاينة وأعد تحميل الشهر.", "Data changed; close the preview and reload the month.")).foregroundStyle(.orange).padding(8) }
                         PDFPreview(url: wordResult.letter)
                     }
-                    .navigationTitle(tr("مسودة PDF", "PDF draft"))
+                    .navigationTitle(tr("معاينة الكتاب", "Letter preview"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { showWordPreview = false } }
-                        ToolbarItem(placement: .bottomBar) {
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: "square.and.arrow.up") {
                                 guard wordIsCurrent, FileManager.default.fileExists(atPath: wordResult.letter.path) else { return }
                                 ActivityShare.present([wordResult.letter])
                             }
+                            .labelStyle(.iconOnly)
                             .disabled(!wordIsCurrent)
                             .accessibilityIdentifier("exportTransferLetterPDF")
                         }

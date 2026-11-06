@@ -315,16 +315,14 @@ private struct CustomTransferLetterView: View {
         .sheet(isPresented: Binding(get: { previewURL != nil }, set: { if !$0 { closePreview() } })) {
             NavigationStack {
                 if let url = previewURL {
-                    VStack(spacing: 0) {
-                        Text(tr("مسودة للمراجعة: تحقق من الشهر والمبلغ والحساب والتواقيع.", "Draft: check the month, amount, account and signatures."))
-                            .font(.footnote).foregroundStyle(.orange).padding()
-                        PDFPreview(url: url)
-                    }
+                    PDFPreview(url: url)
                     .navigationTitle(tr("معاينة الكتاب", "Letter preview"))
+                    .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) { Button(tr("تم", "Done")) { closePreview() } }
-                        ToolbarItem(placement: .bottomBar) {
+                        ToolbarItem(placement: .primaryAction) {
                             Button(tr("مشاركة PDF", "Share PDF"), systemImage: "square.and.arrow.up") { ActivityShare.present([url]) }
+                                .labelStyle(.iconOnly)
                                 .disabled(sourceKey != snapshot || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
                         }
                     }
