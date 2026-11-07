@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct ScannedBookDraft: Identifiable {
     let id = UUID()
     let images: [Data]
+    var replacing: OfficialBook? = nil
 }
 
 /// ملف PDF مختار من «الملفات» قبل تسميته وربطه بشهر.
@@ -134,11 +135,7 @@ struct OfficialBooksView: View {
                 replacing = nil
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(250))
-                    if let target {
-                        do { try await store.replaceFile(target, images: images) } catch { self.error = error.localizedDescription }
-                    } else {
-                        draft = ScannedBookDraft(images: images)
-                    }
+                    draft = ScannedBookDraft(images: images, replacing: target)
                 }
             }, onFailure: { message in
                 showingScanner = false
@@ -164,8 +161,9 @@ struct OfficialBooksView: View {
                                images: nil, existing: nil, pdf: file.pdf, suggestedTitle: file.suggestedTitle)
         }
         .sheet(item: $draft) { draft in
-            OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth,
-                               images: draft.images, existing: nil)
+            OfficialBookEditor(months: draft.replacing.map { book in monthNames.contains(book.month) ? monthNames : [book.month] + monthNames } ?? monthNames,
+                               initialMonth: draft.replacing?.month ?? (selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth),
+                               images: draft.images, existing: draft.replacing)
         }
         .sheet(item: $editing) { book in
             OfficialBookEditor(months: monthNames.contains(book.month) ? monthNames : [book.month] + monthNames, initialMonth: book.month, images: nil, existing: book)
@@ -211,6 +209,9 @@ struct OfficialBookEditor: View {
     @State private var rotatingPage: Int?
     @State private var retakePage: Int?
     @State private var showingRetake = false
+    @State private var scanMode: OfficialBookScanEnhancement.Mode = .gentle
+    @State private var scanQuality: OfficialBookScanEnhancement.Quality = .high
+    @State private var reviewPage: Int?
     @State private var error: String?
     @Environment(\.dismiss) private var dismiss
     @State private var store = OfficialBookStore.shared
@@ -242,28 +243,41 @@ struct OfficialBookEditor: View {
                     }
                     TextField(tr("جهة التنفيذ المرتبطة (اختياري)", "Related entity (optional)"), text: $entity)
                 }
+                .disabled(existing != nil && images != nil)
                 if let images {
+                    Section {
+                        Picker(tr("التحسين", "Enhancement"), selection: $scanMode) {
+                            ForEach(OfficialBookScanEnhancement.Mode.allCases) { mode in Text(mode.title).tag(mode) }
+                        }
+                        Picker(tr("جودة الملف", "File quality"), selection: $scanQuality) {
+                            ForEach(OfficialBookScanEnhancement.Quality.allCases) { quality in Text(quality.title).tag(quality) }
+                        }
+                        Text(tr("يُطبّق الاختيار على جميع الصفحات. التحسين الخفيف يحافظ على الألوان؛ راجع الأختام والتواقيع ويمكنك اختيار الأصل قبل الحفظ.", "The selected option applies to all pages. Gentle enhancement keeps colors; review stamps and signatures. You can choose the original before saving."))
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } header: { Text(tr("تحسين المسح", "Scan enhancement")) }
+                    .disabled(saving || rotatingPage != nil)
                     Section {
                         ForEach(images.indices, id: \.self) { index in
                             HStack(spacing: 12) {
-                                if let image = UIImage(data: images[index]) {
-                                    Image(uiImage: image)
-                                        .resizable().scaledToFit()
-                                        .frame(width: 72, height: 92)
-                                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-                                        .accessibilityHidden(true)
-                                }
+                                OfficialBookScanThumbnail(data: images[index])
+                                    .frame(width: 72, height: 92)
+                                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(tr("الصفحة \(Num.format(index + 1))", "Page \(index + 1)"))
                                         .font(.subheadline.weight(.semibold))
-                                    HStack(spacing: 18) {
-                                        Button(tr("تدوير", "Rotate"), systemImage: "rotate.right") { rotate(index) }
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Button(tr("معاينة", "Preview"), systemImage: "doc.text.magnifyingglass") { reviewPage = index }
                                             .disabled(rotatingPage != nil || saving)
-                                        Button(tr("إعادة التصوير", "Retake"), systemImage: "camera") {
-                                            retakePage = index
-                                            showingRetake = true
+                                        HStack(spacing: 14) {
+                                            Button(tr("تدوير", "Rotate"), systemImage: "rotate.right") { rotate(index) }
+                                                .disabled(rotatingPage != nil || saving)
+                                            Button(tr("إعادة التصوير", "Retake"), systemImage: "camera") {
+                                                retakePage = index
+                                                showingRetake = true
+                                            }
+                                            .disabled(rotatingPage != nil || saving)
                                         }
-                                        .disabled(rotatingPage != nil || saving)
                                     }
                                     .font(.caption)
                                     .buttonStyle(.borderless)
@@ -285,16 +299,23 @@ struct OfficialBookEditor: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle(existing == nil ? tr("حفظ الكتاب", "Save document") : tr("تعديل الكتاب", "Edit document"))
+            .disabled(saving)
+            .navigationTitle(existing == nil ? tr("حفظ الكتاب", "Save document") : (images == nil ? tr("تعديل الكتاب", "Edit document") : tr("استبدال صفحات الكتاب", "Replace document pages")))
             // الكتاب بلا اسم (مسح أو ملف باسم عام): يُكتب اسم يسهل البحث عنه.
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(saving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(tr("إلغاء", "Cancel")) { dismiss() }
+                    Button(tr("إلغاء", "Cancel")) { dismiss() }.disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(tr("حفظ", "Save")) { save() }
                         .disabled(saving || rotatingPage != nil || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || month.isEmpty)
+                }
+            }
+            .sheet(isPresented: Binding(get: { reviewPage != nil }, set: { if !$0 { reviewPage = nil } })) {
+                if let index = reviewPage, let pages = images, pages.indices.contains(index) {
+                    OfficialBookScanPreview(data: pages[index], page: index + 1, mode: $scanMode)
                 }
             }
             .sheet(isPresented: $showingRetake) {
@@ -340,21 +361,127 @@ struct OfficialBookEditor: View {
         saving = true
         Task {
             do {
-                if let existing { try store.rename(existing, to: title, month: month, entity: entity) }
-                else if let pdf {
+                if let images {
+                    let mode = scanMode, quality = scanQuality
+                    let processed = try await Task.detached(priority: .userInitiated) {
+                        try OfficialBookScanEnhancement.prepare(images, mode: mode, quality: quality)
+                    }.value
+                    if let existing {
+                        try await store.replaceFile(existing, images: processed)
+                    } else {
+                        let book = try await store.save(title: title, month: month, entity: entity, images: processed, scheduleBackup: onSaved == nil)
+                        onSaved?(book)
+                        if onSaved != nil { Task { _ = await BackupManager.shared.autoBackup() } }
+                    }
+                } else if let existing {
+                    try store.rename(existing, to: title, month: month, entity: entity)
+                } else if let pdf {
                     let book = try await store.save(title: title, month: month, entity: entity, pdf: pdf)
                     onSaved?(book)
-                }
-                else if let images {
-                    let book = try await store.save(title: title, month: month, entity: entity, images: images, scheduleBackup: onSaved == nil)
-                    onSaved?(book)
-                    if onSaved != nil { Task { _ = await BackupManager.shared.autoBackup() } }
                 }
                 saving = false
                 dismiss()
             } catch {
                 saving = false
                 self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// تصغير الصفحات في الخلفية لتجنب فك صور المستند كاملة في القائمة.
+private struct OfficialBookScanThumbnail: View {
+    let data: Data
+    @State private var thumbnail: Data?
+    var body: some View {
+        Group {
+            if let thumbnail, let image = UIImage(data: thumbnail) {
+                Image(uiImage: image).resizable().scaledToFit()
+            } else {
+                ProgressView()
+            }
+        }
+        .task(id: data) {
+            let source = data
+            let result = await Task.detached(priority: .utility) {
+                try? OfficialBookScanEnhancement.render(source, mode: .original, maxPixels: 220, jpegQuality: 0.8)
+            }.value
+            guard !Task.isCancelled else { return }
+            thumbnail = result
+        }
+    }
+}
+
+/// معاينة صفحة واحدة مع مقارنة الصورة الملتقطة والمعالجة قبل حفظ أي ملف.
+private struct OfficialBookScanPreview: View {
+    let data: Data
+    let page: Int
+    @Binding var mode: OfficialBookScanEnhancement.Mode
+    @Environment(\.dismiss) private var dismiss
+    @State private var showOriginal = false
+    @State private var originalPreview: Data?
+    @State private var enhancedPreview: Data?
+    @State private var loading = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 10) {
+                Picker(tr("التحسين", "Enhancement"), selection: $mode) {
+                    ForEach(OfficialBookScanEnhancement.Mode.allCases) { option in Text(option.title).tag(option) }
+                }
+                .pickerStyle(.segmented).disabled(loading).padding(.horizontal)
+                if mode != .original {
+                    Picker(tr("المقارنة", "Compare"), selection: $showOriginal) {
+                        Text(tr("قبل", "Before")).tag(true)
+                        Text(tr("بعد", "After")).tag(false)
+                    }
+                    .pickerStyle(.segmented).disabled(loading).padding(.horizontal)
+                }
+                Group {
+                    if loading {
+                        ProgressView(tr("إعداد المعاينة…", "Preparing preview…"))
+                    } else if let error {
+                        ContentUnavailableView(tr("تعذّرت المعاينة", "Preview unavailable"), systemImage: "exclamationmark.triangle", description: Text(error))
+                    } else if let data = (showOriginal || mode == .original ? originalPreview : enhancedPreview),
+                              let image = UIImage(data: data) {
+                        GeometryReader { geometry in
+                            ScrollView([.horizontal, .vertical]) {
+                                Image(uiImage: image).resizable().scaledToFit()
+                                    .frame(width: max(1, geometry.size.width - 16)).padding(8)
+                                    .accessibilityLabel(tr("معاينة الصفحة", "Page preview"))
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle(tr("الصفحة \(Num.format(page))", "Page \(page)"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(tr("تم", "Done")) { dismiss() } } }
+            .task(id: mode) {
+                let selected = mode, source = data
+                loading = true; error = nil
+                do {
+                    let result = try await Task.detached(priority: .userInitiated) {
+                        let original = try OfficialBookScanEnhancement.render(source, mode: .original, maxPixels: 1400, jpegQuality: 0.9)
+                        let enhanced: Data
+                        if selected == .original {
+                            enhanced = original
+                        } else {
+                            enhanced = try OfficialBookScanEnhancement.render(source, mode: selected, maxPixels: 1400, jpegQuality: 0.9)
+                        }
+                        return (original, enhanced)
+                    }.value
+                    guard !Task.isCancelled else { return }
+                    originalPreview = result.0; enhancedPreview = result.1
+                    showOriginal = false
+                    loading = false
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                    loading = false
+                }
             }
         }
     }

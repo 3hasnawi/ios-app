@@ -169,7 +169,7 @@ nonisolated enum OfficialBookImage {
             renderer.cgContext.rotate(by: .pi / 2)
             image.draw(in: CGRect(origin: .zero, size: image.size))
         }
-        guard let result = rotated.jpegData(compressionQuality: 0.86) else { throw OfficialBookError.damagedPDF }
+        guard let result = rotated.jpegData(compressionQuality: 0.94) else { throw OfficialBookError.damagedPDF }
         return result
     }
 }
@@ -383,7 +383,7 @@ struct OfficialBookScanner: UIViewControllerRepresentable {
             }
             var images: [Data] = []
             for index in 0..<scan.pageCount {
-                guard let data = scan.imageOfPage(at: index).jpegData(compressionQuality: 0.86) else {
+                guard let data = scan.imageOfPage(at: index).jpegData(compressionQuality: 0.94) else {
                     controller.dismiss(animated: true) { self.onFailure(OfficialBookError.damagedPDF.localizedDescription) }
                     return
                 }

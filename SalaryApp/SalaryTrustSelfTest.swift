@@ -4,6 +4,9 @@ import Foundation
 nonisolated enum SalaryTrustSelfTest {
     static func run() -> Bool {
         do {
+            #if targetEnvironment(simulator)
+            guard try OfficialBookScanEnhancement.selfTest() else { return false }
+            #endif
             let payment = SalaryTrust.Payment(id: UUID().uuidString, amount: 300, bookNumber: "كتاب وهمي", bookDate: "2026-11-02", note: "ملاحظة صرف وهمية")
             let entry = SalaryTrust.Entry(id: UUID().uuidString, name: "منتسب وهمي", rank: "رتبة", workplace: "قسم", year: 2026, month: 10,
                 amount: 1000, caseStatus: "حالة من الراتب", note: "ملاحظة قيد وهمية", importedStatus: "", legacyPaid: false, reviewPending: false, payments: [payment])
