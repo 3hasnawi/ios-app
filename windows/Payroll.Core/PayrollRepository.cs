@@ -40,14 +40,15 @@ public static class PayrollRepository
     {
         if (page < 0 || pageSize is < 1 or > 500 || (query?.Length ?? 0) > 200) throw new ArgumentOutOfRangeException(nameof(page));
         using var db = Open(datasetDirectory);
+        db.CreateFunction<string?, string>("arabic_search", ArabicSearch.Normalize, isDeterministic: true);
         using var command = db.CreateCommand();
         var table = deductions ? "deductions" : "employees";
         var field = deductions ? "title" : "workplace";
         var amount = deductions ? "amount" : "net";
         var note = deductions ? "note" : "''";
-        command.CommandText = $"SELECT month,name,rank,{field},{amount},{note} FROM {table} WHERE ($month='' OR month=$month) AND ($query='' OR instr(name,$query)>0 OR instr({field},$query)>0) ORDER BY name, id LIMIT $limit OFFSET $offset";
+        command.CommandText = $"SELECT month,name,rank,{field},{amount},{note} FROM {table} WHERE ($month='' OR month=$month) AND ($query='' OR instr(arabic_search(name),$query)>0 OR instr(arabic_search({field}),$query)>0) ORDER BY name, id LIMIT $limit OFFSET $offset";
         command.Parameters.AddWithValue("$month", month ?? "");
-        command.Parameters.AddWithValue("$query", query?.Trim() ?? "");
+        command.Parameters.AddWithValue("$query", ArabicSearch.Normalize(query));
         command.Parameters.AddWithValue("$limit", pageSize + 1);
         command.Parameters.AddWithValue("$offset", checked((long)page * pageSize));
         using var reader = command.ExecuteReader();

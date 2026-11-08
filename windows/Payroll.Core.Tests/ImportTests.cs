@@ -153,6 +153,26 @@ public sealed class ImportTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Fact]
+    public async Task SearchNormalizesArabicWithoutChangingStoredNames()
+    {
+        var dir = Temp();
+        try
+        {
+            var result = await IosBackupImporter.ImportAsync(Fixture(dir), Path.Combine(dir, "data"));
+            using (var db = Open(result.Directory))
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = "UPDATE deductions SET name='أَحمد فاطمة ١٢' WHERE month='أيلول 2026'";
+                cmd.ExecuteNonQuery();
+            }
+            var rows = PayrollRepository.GetPage(result.Directory, true, "أيلول 2026", "احمد فاطمه 12", 0);
+            Assert.Equal("أَحمد فاطمة ١٢", Assert.Single(rows.Rows).Name);
+            Assert.Equal("ايمان 12", ArabicSearch.Normalize("إيـمان ١٢"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     private static string Temp() { var dir = Path.Combine(Path.GetTempPath(), "payroll-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }
     private static SqliteConnection Open(string dir) { var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(dir, "data.sqlite"), Pooling = false }.ToString()); db.Open(); return db; }
     private static string Fixture(string dir, bool wrongCount = false, string? extra = null, string fileName = "source.zip", int version = 5, Guid? bookId = null)

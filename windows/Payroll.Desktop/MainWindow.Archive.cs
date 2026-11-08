@@ -48,10 +48,10 @@ public partial class MainWindow
 
     private void FilterArchivedBooks()
     {
-        var query = ArchiveSearchBox.Text.Trim();
-        var filtered = _archiveBooks.Where(b => b.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-            || b.Month.Contains(query, StringComparison.OrdinalIgnoreCase)
-            || b.Entity.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var query = ArabicSearch.Normalize(ArchiveSearchBox.Text);
+        var filtered = _archiveBooks.Where(b => ArabicSearch.Normalize(b.Title).Contains(query, StringComparison.Ordinal)
+            || ArabicSearch.Normalize(b.Month).Contains(query, StringComparison.Ordinal)
+            || ArabicSearch.Normalize(b.Entity).Contains(query, StringComparison.Ordinal)).ToArray();
         ArchiveGrid.ItemsSource = filtered;
         ArchiveHint.Text = $"{filtered.Length:N0} كتاب من أصل {_archiveBooks.Count:N0}. المعاينة تُفتح في عارض PDF على الجهاز.";
     }
