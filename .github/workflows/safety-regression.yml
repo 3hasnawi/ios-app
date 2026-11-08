@@ -1,5 +1,5 @@
 name: Application safety regression
-# Recheck validated scan images and leave the leading screen edge for system back gestures.
+# Recheck the passive search context preview after all data and report gesture checks passed.
 on:
   workflow_dispatch:
   push:
@@ -15,4 +15,4 @@ jobs:
     uses: ./.github/workflows/simulator.yml
     with:
       quick: true
-      safety_only: true
+      navigation_only: true

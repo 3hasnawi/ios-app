@@ -175,6 +175,13 @@ struct UnifiedSearchView: View {
                                     }
                                     .accessibilityIdentifier("employeeDeductionAction")
                                     Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
+                                } preview: {
+                                    // Keep the context-menu preview passive: opening the full
+                                    // NavigationLink destination can commit navigation on release.
+                                    UnifiedCard(person: person)
+                                        .padding(16)
+                                        .frame(width: 320)
+                                        .background(Color(.secondarySystemGroupedBackground))
                                 }
                             }
                         } header: {

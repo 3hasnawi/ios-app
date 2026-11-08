@@ -298,9 +298,14 @@ final class NavigationTests: XCTestCase {
         app.launch()
         let result = element("resultCard")
         XCTAssertTrue(result.waitForExistence(timeout: 20))
-        result.press(forDuration: 1.0)
-        let deductionAction = app.buttons["كشف الاستقطاعات"]
-        XCTAssertTrue(deductionAction.waitForExistence(timeout: 5))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: result)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        result.press(forDuration: 1.2)
+        let deductionAction = element("employeeDeductionAction")
+        guard deductionAction.waitForExistence(timeout: 10) else {
+            XCTFail("لم تظهر خيارات الضغط المطول: \(app.debugDescription)")
+            return
+        }
         deductionAction.tap()
         let selectedPerson = element("deductionSelectedPerson")
         XCTAssertTrue(selectedPerson.waitForExistence(timeout: 10))
