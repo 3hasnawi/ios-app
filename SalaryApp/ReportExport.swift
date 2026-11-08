@@ -35,7 +35,11 @@ nonisolated struct ReportSheet: Sendable {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.locale = Locale(identifier: "en_US")
-        let maxAmount = formatter.string(from: NSNumber(value: max(total, amounts.max() ?? 0)))?.count ?? 8
+        formatter.maximumFractionDigits = 15
+        var maxAmount = formatter.string(from: NSNumber(value: total))?.count ?? 8
+        for amount in amounts {
+            maxAmount = max(maxAmount, formatter.string(from: NSNumber(value: amount))?.count ?? 0)
+        }
         let fittedColumns = columns.enumerated().map { c, column -> Column in
             let longest: Int
             switch column.kind {
@@ -328,7 +332,7 @@ nonisolated enum XLSXWriter {
     static let styles = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-    <numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts>
+    <numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.###############"/></numFmts>
     <fonts count="7">
     <font><sz val="11"/><name val="Arial"/></font>
     <font><b/><sz val="14"/><name val="Arial"/></font>

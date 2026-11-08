@@ -22,8 +22,14 @@ precondition(xml.contains("<c r=\"B4\" s=\"11\"") && xml.contains("<c r=\"B5\" s
 precondition(xml.contains("<c r=\"C5\" s=\"13\""))
 precondition(xml.contains("SUM(C4:C5)") && xml.contains("<v>3700</v>"))
 precondition(XLSXWriter.styles.contains("FFF3F7FB") && XLSXWriter.styles.contains("11.5"))
+precondition(XLSXWriter.styles.contains("#,##0.###############"))
 precondition(XLSXWriter.number(1e30) == "1e+30")
 var bad = sheet
+bad.amounts = [0.5, 2500]
+try XLSXWriter.validate(bad)
+precondition(XLSXWriter.worksheet(bad).contains("<v>0.5</v>"))
+bad.amounts = [-999_999_999, 999_999_998]
+precondition(bad.fitted().columns[2].width >= 19)
 bad.amounts = [.infinity, 0]
 do { try XLSXWriter.validate(bad); fatalError("Nonfinite amount accepted") } catch { }
 bad = sheet

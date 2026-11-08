@@ -11,6 +11,9 @@ validation_end = source.index("    /// ملف بعدة أوراق", validation_s
 methods_start = source.index("    static func letter(_ index:")
 methods_end = source.index("    private static let contentTypes", methods_start)
 production = "import Foundation\nenum XLSXWriter {\n" + source[validation_start:validation_end] + source[methods_start:methods_end] + "\n}\n"
+fitted_start = source.index("    func fitted() -> ReportSheet")
+fitted_end = source.index('    /// "ايلول 2026"', fitted_start)
+fitted = source[fitted_start:fitted_end]
 stubs = '''import Foundation
 func tr(_ ar: String, _ en: String) -> String { ar }
 struct ReportSheet {
@@ -26,8 +29,7 @@ struct ReportSheet {
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
     var landscape: Bool { !entityDeduction && columns.reduce(0) { $0 + $1.width } > 96 }
-}
-'''
+''' + fitted + "}\n"
 with tempfile.TemporaryDirectory(prefix="salary-xlsx-layout-") as temp:
     directory = Path(temp)
     (directory / "Production.swift").write_text(production)
