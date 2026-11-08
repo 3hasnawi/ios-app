@@ -20,14 +20,20 @@ try FileManager.default.createDirectory(at: OfficialBookFiles.root,withIntermedi
 let book=OfficialBookFiles.root.appendingPathComponent("fictional.txt")
 try Data("original book".utf8).write(to:book)
 fputs("prepare checkpoint\\n", stderr)
-try RestoreSafety.prepare(store:store)
+let domain="fictional-recovery-"+UUID().uuidString
+let defaults=UserDefaults(suiteName:domain)!
+defer { defaults.removePersistentDomain(forName:domain) }
+defaults.set("original settings",forKey:"fixture")
+try RestoreSafety.prepare(store:store,defaults:defaults,domain:domain)
 precondition(RestoreSafety.pending)
 precondition(sqlite3_exec(db,"UPDATE sample SET value='partial';",nil,nil,nil) == SQLITE_OK)
 try Data("partial book".utf8).write(to:book)
+defaults.set("partial settings",forKey:"fixture")
 sqlite3_close(db)
 fputs("recover checkpoint\\n", stderr)
-try RestoreSafety.recoverIfNeeded()
+try RestoreSafety.recoverIfNeeded(defaults:defaults,domain:domain)
 precondition(!RestoreSafety.pending)
+precondition(defaults.string(forKey:"fixture") == "original settings")
 precondition(try String(contentsOf:book,encoding:.utf8) == "original book")
 precondition(sqlite3_open(store.path,&db) == SQLITE_OK)
 var stmt: OpaquePointer?
@@ -35,7 +41,7 @@ precondition(sqlite3_prepare_v2(db,"SELECT value FROM sample",-1,&stmt,nil) == S
 precondition(sqlite3_step(stmt) == SQLITE_ROW)
 precondition(String(cString:sqlite3_column_text(stmt,0)) == "original")
 sqlite3_finalize(stmt);sqlite3_close(db)
-try RestoreSafety.recoverIfNeeded()
+try RestoreSafety.recoverIfNeeded(defaults:defaults,domain:domain)
 print("Interrupted restore rolled back WAL database and books; retry is idempotent")
 '''.replace('precondition(try String(contentsOf:book,encoding:.utf8) == "original book")','let restoredBook = try String(contentsOf:book,encoding:.utf8)\nprecondition(restoredBook == "original book")'))
  subprocess.run(['swiftc','Recovery.swift','main.swift','-o','test'],cwd=p,check=True)

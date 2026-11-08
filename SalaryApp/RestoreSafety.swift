@@ -7,7 +7,7 @@ nonisolated enum RestoreSafety {
     private struct Marker: Codable { let folder: String; let store: URL; let hadBooks: Bool }
     static var root: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RestoreRecovery", isDirectory: true) }
     static var pending: Bool { FileManager.default.fileExists(atPath: root.appendingPathComponent("active.json").path) }
-    static func prepare(store: URL) throws {
+    static func prepare(store: URL, defaults: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) throws {
         guard !pending else { throw failure("يوجد استرجاع غير مكتمل؛ أغلق التطبيق وافتحه لإعادة البيانات السابقة.") }
         let fm = FileManager.default
         let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -18,7 +18,7 @@ nonisolated enum RestoreSafety {
         let books = OfficialBookFiles.root
         let hadBooks = fm.fileExists(atPath: books.path)
         if hadBooks { try fm.copyItem(at: books, to: folder.appendingPathComponent("books")) }
-        let settings = UserDefaults.standard.dictionaryRepresentation().filter { PropertyListSerialization.propertyList($0.value, isValidFor: .binary) }
+        let settings = domain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
         try PropertyListSerialization.data(fromPropertyList: settings, format: .binary, options: 0).write(to: folder.appendingPathComponent("defaults.plist"), options: .atomic)
         let marker = Marker(folder: folder.lastPathComponent, store: store, hadBooks: hadBooks)
         try JSONEncoder().encode(marker).write(to: root.appendingPathComponent("active.json"), options: .atomic)
@@ -46,7 +46,7 @@ nonisolated enum RestoreSafety {
         }
     }
     /// يُستدعى عند البدء فقط، قبل فتح أي ModelContainer للقاعدة.
-    static func recoverIfNeeded() throws {
+    static func recoverIfNeeded(defaults preferences: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) throws {
         guard pending else { return }
         let fm = FileManager.default
         let marker = try JSONDecoder().decode(Marker.self, from: Data(contentsOf: root.appendingPathComponent("active.json")))
@@ -66,9 +66,9 @@ nonisolated enum RestoreSafety {
         if fm.fileExists(atPath: OfficialBookFiles.root.path) { try fm.removeItem(at: OfficialBookFiles.root) }
         if marker.hadBooks { try fm.copyItem(at: folder.appendingPathComponent("books"), to: OfficialBookFiles.root) }
         // نستبدل مفاتيح مجال التطبيق فقط؛ لا نمس افتراضيات النظام.
-        if let bundle = Bundle.main.bundleIdentifier { UserDefaults.standard.setPersistentDomain(defaults, forName: bundle) }
-        UserDefaults.standard.set(false, forKey: "backupServerEnabled")
-        UserDefaults.standard.synchronize()
+        if let domain { preferences.setPersistentDomain(defaults, forName: domain) }
+        preferences.set(false, forKey: "backupServerEnabled")
+        preferences.synchronize()
         try finish()
     }
     static func finish() throws {

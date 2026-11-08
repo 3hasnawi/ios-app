@@ -70,7 +70,7 @@ nonisolated enum ArabicText {
         // لا نحذف رموزاً مجهولة: 3500/7000 ليس مبلغاً واحداً.
         let pattern = #"^[+-]?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"#
         guard value.range(of: pattern, options: .regularExpression) != nil,
-              let amount = Double(value.replacingOccurrences(of: ",", with: "")), amount.isFinite else { return nil }
+              let amount = Double(value.replacingOccurrences(of: ",", with: "")), amount.isFinite, abs(amount) <= 999_999_999_999_999 else { return nil }
         return amount
 
     }

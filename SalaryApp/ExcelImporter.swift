@@ -478,7 +478,7 @@ nonisolated final class SheetParser {
     private func amount(_ row: [String], _ index: Int?) -> Double? {
         let input = cell(row, index)
         let value = ArabicText.number(from: input)
-        if !input.isEmpty && value == nil && result.amountErrors.count < 20 {
+        if !["", "-", "—", "–"].contains(input) && value == nil && result.amountErrors.count < 20 {
             result.amountErrors.append(tr("\(sheetName)، السطر \(rowsRead)، العمود \((index ?? 0) + 1): مبلغ غير صالح.", "\(sheetName), row \(rowsRead), column \((index ?? 0) + 1): invalid amount."))
         }
         return value
@@ -527,8 +527,8 @@ nonisolated final class SheetParser {
         let amountText = cell(row, columns.amount)
         let amount = columns.month == nil ? ArabicText.number(from: amountText) : AnnualDeductionAmount.parse(amountText)
         // لا تُسجّل الأسطر الخالية أو الصفرية في كشف التنفيذ الشهري؛ تبقى القيم غير المفهومة للمراجعة.
-        if columns.skipEmptyAmount && (amountText.isEmpty || amount == 0) { return }
-        if columns.month == nil && !amountText.isEmpty && amount == nil && DeductionStatus.recognized(amountText) == nil && result.amountErrors.count < 20 {
+        if columns.skipEmptyAmount && (["", "-", "—", "–"].contains(amountText) || amount == 0) { return }
+        if columns.month == nil && !["", "-", "—", "–"].contains(amountText) && amount == nil && DeductionStatus.recognized(amountText) == nil && result.amountErrors.count < 20 {
             result.amountErrors.append(tr("\(sheetName)، السطر \(rowsRead): مبلغ استقطاع غير صالح.", "\(sheetName), row \(rowsRead): invalid deduction amount."))
         }
         let title = cell(row, columns.title)

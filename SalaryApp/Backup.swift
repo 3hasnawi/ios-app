@@ -324,7 +324,7 @@ actor BackupActor {
                 if booksInstalled { OfficialBookFiles.rollBackInstallation(previousBooks) }
             }
         }
-        // حذف الكائنات مؤجل مع إدخال البديل إلى حفظ واحد قابل للتراجع.
+        // الواجهة تستخدم دفعات صغيرة مع نقطة رجوع على القرص؛ الاختبارات المعزولة تحتفظ بالمعاملة الواحدة.
         func remove<T: PersistentModel>(_ type: T.Type) throws {
             var descriptor = FetchDescriptor<T>()
             if recoverable { descriptor.fetchLimit = 256 }
@@ -1075,6 +1075,8 @@ final class BackupManager {
                 // الملفات المعروفة فقط، مع فحص سلامة الضغط قبل عرض تأكيد الاسترجاع.
                 for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"] {
                     guard let entry = archive[name], entry.type == .file else { throw BackupError.notBackup }
+                    if name == "manifest.json" && entry.uncompressedSize > 1_000_000 { throw BackupError.notBackup }
+                    if name == "settings.json" && entry.uncompressedSize > 64_000_000 { throw BackupError.notBackup }
                     _ = try archive.extract(entry, to: dir.appendingPathComponent(name))
                 }
                 if let entry = archive["accounts.jsonl"], entry.type == .file {
