@@ -1,148 +1,47 @@
 name: Windows desktop checks
 on:
   workflow_dispatch:
-    inputs:
-      publish_release:
-        description: Publish the Windows trial release after checks
-        type: boolean
-        default: false
 permissions:
-  contents: write   # لنشر صور التصميم الوهمية في فرع windows-screenshots
+  contents: read
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Build Windows desktop solution
-        run: dotnet build windows/SalaryDesktop.sln -c Release --nologo -p:Version=1.0.${{ github.run_number }}
-      - name: Test backup, bank calculations and transfer files with fictional data
-        env:
-          # نماذج كتب التحويل ببيانات وهمية تُنشر مع الصور لمقارنتها بمسودة الآيفون.
-          SALARY_TEST_INDIVIDUAL_DIR: ${{ runner.temp }}/windows-screenshots/letters
-          SALARY_TEST_GROUP_PDF: ${{ runner.temp }}/windows-screenshots/letters/group.pdf
-          # كشف مطابقة حساب البنك المعتمد ببيانات وهمية.
-          SALARY_TEST_STATEMENT_PDF: ${{ runner.temp }}/windows-screenshots/letters/reconciliation-statement.pdf
-        run: dotnet run --project windows/SalaryDesktop.Tests/SalaryDesktop.Tests.csproj -c Release --no-build --no-launch-profile
-      - name: Use a desktop-sized screen for design screenshots
-        shell: pwsh
-        continue-on-error: true
-        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
-      - name: Exercise desktop screens with fictional data
-        env:
-          SCREENSHOT_DIR: ${{ runner.temp }}/windows-screenshots
+      - name: Build
+        run: dotnet build windows/PayrollWindows.sln -c Release
+      - name: Test fictional backup data
+        run: dotnet test windows/PayrollWindows.sln -c Release --no-build
+      - name: Create installer
         shell: pwsh
         run: |
-          dotnet run --project windows/SalaryDesktop.Smoke/SalaryDesktop.Smoke.csproj -c Release --no-launch-profile
-          $code = $LASTEXITCODE
-          Write-Host "Smoke process exit code: $code"
-          if ($code -ne 0) {
-            # تشخيص: أخطاء التطبيقات الأخيرة في سجل ويندوز (انهيار عند الإغلاق مثلاً).
-            Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Application Error|\.NET Runtime|Windows Error Reporting' } | Select-Object -First 6 | Format-List TimeCreated, ProviderName, Message
-            exit $code
-          }
-      - name: Publish portable Windows trial
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          ./windows/build-installer.ps1 -Version "0.1.${{ github.run_number }}"
+      - name: Smoke test installer and desktop startup
         shell: pwsh
         run: |
-          dotnet publish windows/SalaryDesktop/SalaryDesktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/SalaryDesktop-trial" --nologo -p:Version=1.0.${{ github.run_number }}
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Copy-Item windows/README.md "$env:RUNNER_TEMP/SalaryDesktop-trial/اقرأني.md"
-      - name: Check desktop startup
-        shell: pwsh
-        run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'SalaryDesktop-trial/SalaryDesktop.exe'
-          $process = Start-Process -FilePath $exe -PassThru
+          $setup = (Resolve-Path windows/installer/output/PayrollWindows-Setup.exe).Path
+          $install = Join-Path $env:RUNNER_TEMP 'PayrollInstall'
+          $process = Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$install") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          $exe = Join-Path $install 'Payroll.Desktop.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed executable is missing.' }
+          $app = Start-Process $exe -PassThru
           try {
-            Start-Sleep -Seconds 10
-            $process.Refresh()
-            if ($process.HasExited) { throw "Desktop application exited during startup with code $($process.ExitCode)." }
-            Write-Host 'Desktop process remained running during startup.'
-          }
-          finally {
-            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-          }
-      # ملف تثبيت واحد (Inno Setup) بدل مجلد بعدة ملفات.
-      - name: Build single-file installer
-        shell: pwsh
-        run: |
-          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          choco install innosetup -y --no-progress | Out-Null
-          if (-not (Test-Path $iscc)) { throw 'Inno Setup was not installed.' }
-          & $iscc /Q "/DAppVersion=1.0.${{ github.run_number }}" "/DSourceDir=$env:RUNNER_TEMP\SalaryDesktop-trial" "/DOutputDir=$env:RUNNER_TEMP\installer" windows/installer/SalaryDesktop.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-Item "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe" | Format-List Name, Length
-      - name: Check silent install and uninstall
-        shell: pwsh
-        run: |
-          $setup = "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe"
-          Start-Process -FilePath $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/TASKS=' -Wait
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs\SalaryDesktop\SalaryDesktop.exe'
-          if (-not (Test-Path $exe)) { throw "Installer did not place SalaryDesktop.exe at $exe" }
-          $version = (Get-Item $exe).VersionInfo.ProductVersion
-          Write-Host "Installed $exe ($version)"
-          $uninstaller = Get-ChildItem (Split-Path $exe) -Filter 'unins*.exe' | Select-Object -First 1
-          Start-Process -FilePath $uninstaller.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
-          Start-Sleep -Seconds 3
-          if (Test-Path $exe) { throw 'Uninstaller left SalaryDesktop.exe behind.' }
-          Write-Host 'Silent install and uninstall passed.'
-      - name: Capture installer screens for design review
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $dir = "$env:RUNNER_TEMP\windows-screenshots"; New-Item -ItemType Directory -Force $dir | Out-Null
-          function Shot($name) { $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size); $bmp.Save("$dir\$name.png"); $g.Dispose(); $bmp.Dispose() }
-          $p = Start-Process "$env:RUNNER_TEMP\installer\SalaryDesktop-Setup.exe" -ArgumentList '/CURRENTUSER' -PassThru
-          Start-Sleep -Seconds 8; Shot '40-setup-1'
-          $ws = New-Object -ComObject WScript.Shell
-          foreach ($i in 2..3) { $null = $ws.AppActivate('تطبيق الرواتب'); Start-Sleep -Milliseconds 600; $ws.SendKeys('{ENTER}'); Start-Sleep -Seconds 3; Shot "40-setup-$i" }
-          Get-Process | Where-Object { $_.ProcessName -like 'SalaryDesktop-Setup*' } | Stop-Process -Force
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
+            Start-Sleep -Seconds 8
+            $app.Refresh()
+            if ($app.HasExited) { throw "Application exited: $($app.ExitCode)" }
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+          $uninstaller = Get-ChildItem $install -Filter 'unins*.exe' | Select-Object -First 1
+          if (-not $uninstaller) { throw 'Uninstaller is missing.' }
+          $uninstall = Start-Process $uninstaller.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path $exe)) { throw 'Uninstall failed.' }
+      - uses: actions/upload-artifact@v4
         with:
-          name: SalaryDesktop-Setup
-          path: ${{ runner.temp }}/installer/SalaryDesktop-Setup.exe
-          if-no-files-found: error
+          name: windows-installer-test
+          path: windows/installer/output/PayrollWindows-Setup.exe
           retention-days: 7
-      - name: Publish design screenshots to 'windows-screenshots' branch
-        if: always()
-        shell: bash
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHOTS: ${{ runner.temp }}/windows-screenshots
-        run: |
-          SHOTS=$(cygpath -u "$SHOTS")
-          [ -d "$SHOTS" ] && ls "$SHOTS"/*.png >/dev/null 2>&1 || { echo "No screenshots"; exit 0; }
-          cd "$SHOTS"
-          git init -q -b windows-screenshots
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git add -A
-          git commit -qm "Windows screens for ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" windows-screenshots
-      # رابط تنزيل مباشر ثابت في صفحة الإصدارات (الوسم windows-latest)، ومنه يعرف البرنامج وجود إصدار أحدث.
-      # الإصدار يُعلَّم «تجريبي» وليس «الأحدث» حتى لا يتأثر مصدر AltStore لإصدارات الآيفون.
-      - name: Publish direct download on the releases page
-        if: ${{ inputs.publish_release }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = "1.0.${{ github.run_number }}"
-          $setup = Join-Path $env:RUNNER_TEMP 'installer/SalaryDesktop-Setup.exe'
-          git tag -f windows-latest $env:GITHUB_SHA
-          git push -f origin refs/tags/windows-latest
-          $title = "تطبيق الرواتب لويندوز $version"
-          $notes = "الإصدار $version من الالتزام $($env:GITHUB_SHA.Substring(0,7)).`n`nالتنزيل المباشر (ملف تثبيت واحد): https://github.com/$env:GITHUB_REPOSITORY/releases/download/windows-latest/SalaryDesktop-Setup.exe`n`nشغّل الملف واتبع الخطوات؛ لا يحتاج صلاحيات مسؤول، ويحدّث النسخة المثبتة دون المساس بالبيانات المحلية. إن ظهر تحذير ويندوز (SmartScreen) اختر «مزيد من المعلومات» ثم «تشغيل على أي حال». نسخة تجريبية؛ راجع النتائج مع الآيفون قبل الاعتماد."
-          gh release view windows-latest *> $null
-          if ($LASTEXITCODE -eq 0) { gh release edit windows-latest --title $title --notes $notes --prerelease --latest=false }
-          else { gh release create windows-latest --title $title --notes $notes --prerelease --latest=false --verify-tag }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release upload windows-latest $setup --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          # ملف واحد في الإصدار: يُحذف ملف المجلد المضغوط القديم إن وُجد.
-          gh release delete-asset windows-latest SalaryDesktop-win-x64.zip -y 2>$null
-          exit 0

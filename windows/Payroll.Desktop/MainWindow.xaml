@@ -1,0 +1,62 @@
+<Window x:Class="Payroll.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="تطبيق الرواتب - نسخة ويندوز الجديدة" Height="760" Width="1250" MinHeight="600" MinWidth="900" FlowDirection="RightToLeft" FontFamily="Segoe UI" FontSize="14" Background="#F2F6F5" Foreground="{StaticResource Ink}" UseLayoutRounding="True" WindowStartupLocation="CenterScreen">
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="225"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Grid.Column="0" Background="#103F39" Padding="14,20">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="تطبيق الرواتب" FontSize="21" FontWeight="Bold" Foreground="White" Margin="8,0,8,25"/>
+        <TextBlock DockPanel.Dock="Bottom" Text="نسخة أولية للقراءة المحلية" Foreground="#B8D5CF" TextWrapping="Wrap" Margin="8"/>
+        <StackPanel>
+          <Button x:Name="HomeButton" Content="الرئيسية" Click="Home_Click" HorizontalContentAlignment="Right"/>
+          <Button x:Name="DeductionsButton" Content="الاستقطاعات" Click="Deductions_Click" HorizontalContentAlignment="Right"/>
+          <Button x:Name="SalariesButton" Content="الرواتب" Click="Salaries_Click" HorizontalContentAlignment="Right"/>
+          <TextBlock Text="الأقسام القادمة" Foreground="#B8D5CF" Margin="8,24,8,5"/>
+          <TextBlock Text="كشف البنك · ملفات التحويل" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
+          <TextBlock Text="الأرشيف · أمانات الرواتب" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Column="1" Margin="24,18">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <DockPanel Grid.Row="0" Margin="0,0,0,16">
+        <Button x:Name="ImportButton" DockPanel.Dock="Left" Content="فتح نسخة الآيفون" Click="Import_Click" Background="{StaticResource Primary}" Foreground="White" FontWeight="SemiBold"/>
+        <TextBlock x:Name="PageTitle" Text="الرئيسية" FontSize="23" FontWeight="Bold" VerticalAlignment="Center"/>
+      </DockPanel>
+      <Grid Grid.Row="1">
+        <ScrollViewer x:Name="HomePanel" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <Border Background="White" CornerRadius="12" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="20">
+              <StackPanel><TextBlock Text="البيانات المحلية" FontWeight="Bold" FontSize="18"/><TextBlock x:Name="DatasetSummary" Margin="0,10,0,0" TextWrapping="Wrap" Text="اختر نسخة احتياطية من الآيفون لإنشاء قاعدة بيانات محلية مستقلة."/><TextBlock Margin="0,12,0,0" Foreground="#6B7774" TextWrapping="Wrap" Text="هذه المرحلة للقراءة والمراجعة. تُحفظ نسخة الملف الأصلي داخل مساحة بيانات جديدة؛ لا تُعدَّل نسخة الآيفون."/></StackPanel>
+            </Border>
+            <UniformGrid Columns="2" Margin="0,14,0,0">
+              <Button Content="عرض الاستقطاعات" Click="Deductions_Click" Height="74"/>
+              <Button Content="عرض الرواتب" Click="Salaries_Click" Height="74"/>
+            </UniformGrid>
+          </StackPanel>
+        </ScrollViewer>
+        <Grid x:Name="TablePanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <WrapPanel Grid.Row="0" Margin="0,0,0,10" VerticalAlignment="Center">
+            <TextBlock Text="الشهر" VerticalAlignment="Center" Margin="4"/>
+            <ComboBox x:Name="MonthBox" MinWidth="190" Padding="8,6" SelectionChanged="Filter_Changed"/>
+            <TextBlock Text="بحث" VerticalAlignment="Center" Margin="15,4,4,4"/>
+            <TextBox x:Name="SearchBox" Width="230" Padding="8,6" TextChanged="Search_Changed"/>
+          </WrapPanel>
+          <Border Grid.Row="1" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+            <DataGrid x:Name="RecordsGrid" AlternationCount="2" HeadersVisibility="Column" SelectionMode="Single" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="SizeToCells" MinWidth="180" MaxWidth="360"/>
+                <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="SizeToCells" MinWidth="80" MaxWidth="180"/>
+                <DataGridTextColumn x:Name="PlaceColumn" Header="الجهة" Binding="{Binding Place}" Width="SizeToCells" MinWidth="160" MaxWidth="360"/>
+                <DataGridTextColumn Header="المبلغ" Binding="{Binding AmountDisplay}" Width="SizeToCells" MinWidth="110"/>
+                <DataGridTextColumn Header="الملاحظات" Binding="{Binding Note}" Width="SizeToCells" MinWidth="100" MaxWidth="300"/>
+                <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="SizeToCells" MinWidth="140"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Border>
+          <DockPanel Grid.Row="2" Margin="0,10,0,0"><TextBlock x:Name="PageInfo" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Left"><Button x:Name="PreviousButton" Content="السابق" Click="Previous_Click"/><Button x:Name="NextButton" Content="التالي" Click="Next_Click"/></StackPanel></DockPanel>
+        </Grid>
+      </Grid>
+      <TextBlock x:Name="StatusText" Grid.Row="2" Text="جاهز" Foreground="#61736F" Margin="0,12,0,0" TextWrapping="Wrap"/>
+    </Grid>
+  </Grid>
+</Window>
