@@ -1,0 +1,1 @@
+transferFiles=ok encoding=ok classification=ok references=ok validation=ok letterFigures=ok wordTemplate=ok referencePack=ok companyLetter=ok
