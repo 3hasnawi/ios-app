@@ -1,8 +1,0 @@
-**/bin/
-**/obj/
-*.user
-*.suo
-*.zip
-*.db
-*.db-wal
-*.db-shm
