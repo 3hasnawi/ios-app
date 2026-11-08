@@ -1,4 +1,5 @@
 name: Application safety regression
+# Recheck validated scan images and leave the leading screen edge for system back gestures.
 on:
   workflow_dispatch:
   push:

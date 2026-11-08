@@ -67,8 +67,16 @@ nonisolated enum OfficialBookScanEnhancement {
 
     static func prepare(_ originals: [Data], mode: Mode, quality: Quality) throws -> [Data] {
         guard (1...3).contains(originals.count) else { throw OfficialBookError.invalidPages }
-        guard originals.allSatisfy({ !$0.isEmpty && CGImageSourceCreateWithData($0 as CFData, nil) != nil }) else {
-            throw OfficialBookError.damagedPDF
+        for data in originals {
+            try Task.checkCancellation()
+            // ImageIO can create a source object for bytes that contain no decodable image.
+            // Validate a small decoded thumbnail even when preserving the original bytes.
+            guard !data.isEmpty, let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  CGImageSourceGetCount(source) > 0,
+                  CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 32
+                  ] as CFDictionary) != nil else { throw OfficialBookError.damagedPDF }
         }
         if mode == .original && quality == .high { return originals }
         return try originals.map { data in

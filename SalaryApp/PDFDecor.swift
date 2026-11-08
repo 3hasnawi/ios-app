@@ -129,7 +129,15 @@ nonisolated enum PDFDecor {
                               y: layout.page.height - top - layout.rowHeights[row] + 1,
                               width: layout.widths[1] - 4, height: layout.rowHeights[row] - 2)
             let text = page.selection(for: rect)?.string ?? ""
-            guard ArabicText.matchKey(text).contains(ArabicText.matchKey(longName)) else {
+            // PDFKit exposes the font's Arabic presentation forms (including Persian
+            // yeh/heh glyph aliases). Compare complete text after a test-local mapping;
+            // do not alter the application's name matching or stored identities.
+            func canonical(_ value: String) -> String {
+                ArabicText.matchKey(value.precomposedStringWithCompatibilityMapping
+                    .replacingOccurrences(of: "\u{06CC}", with: "ي")
+                    .replacingOccurrences(of: "\u{06BE}", with: "ه"))
+            }
+            guard canonical(text).contains(canonical(longName)) else {
                 throw NSError(domain: "PDFDecorTest", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Wrapped name missing on page \(pageNumber + 1): \(text)"])
             }

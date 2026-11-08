@@ -56,9 +56,13 @@ nonisolated enum PerfLog {
         queue.async {
             guard let url, let data = text.data(using: .utf8) else { return }
             if let handle = try? FileHandle(forWritingTo: url) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                try? handle.close()
+                defer { try? handle.close() }
+                do {
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: data)
+                } catch {
+                    // Optional diagnostics must not terminate the app when storage is full.
+                }
             } else {
                 try? data.write(to: url)
             }

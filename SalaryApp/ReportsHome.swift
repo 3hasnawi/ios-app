@@ -632,7 +632,7 @@ struct PayrollItemsView: View {
                         .contextMenu {
                             Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { previewGroup = group }
                         }
-                        .swipeActions(edge: .leading) {
+                        .swipeActions(edge: .trailing) {
                             Button(tr("معاينة", "Preview"), systemImage: ReportSymbols.preview) { previewGroup = group }
                                 .tint(.blue)
                         }
@@ -802,7 +802,7 @@ struct EntitiesView: View {
                             Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { exporter.single(group, format: .excel) }
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { exporter.single(group, format: .pdf) }
                         }
-                        .swipeActions(edge: .leading) {
+                        .swipeActions(edge: .trailing) {
                             Button(tr("معاينة", "Preview"), systemImage: ReportSymbols.preview) { previewGroup = group }
                                 .tint(.blue)
                         }

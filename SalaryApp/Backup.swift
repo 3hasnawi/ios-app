@@ -104,10 +104,10 @@ actor BackupActor {
             for (i, item) in items.enumerated() {
                 buffer.append(try encoder.encode(item))
                 buffer.append(0x0A)
-                if buffer.count > 1_000_000 { handle.write(buffer); buffer.removeAll(keepingCapacity: true) }
+                if buffer.count > 1_000_000 { try handle.write(contentsOf: buffer); buffer.removeAll(keepingCapacity: true) }
                 if i % 2000 == 0 { progress?(from + (to - from) * Double(i) / Double(max(1, count))) }
             }
-            handle.write(buffer)
+            try handle.write(contentsOf: buffer)
         }
 
         let months = try modelContext.fetch(FetchDescriptor<PayrollMonth>())
