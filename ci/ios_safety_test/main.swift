@@ -25,3 +25,11 @@ precondition(ArabicText.cleanQuery("أحمد، علي.؟") == "أحمد علي")
 precondition(ArabicText.cleanQuery("مديرية/فرع - الرمادي") == "مديرية/فرع - الرمادي")
 precondition(ArabicText.normalize(ArabicText.cleanQuery("أَحمد، علي.")) == "احمد علي")
 print("iOS payroll retention and voice-search normalization tests passed with fictional data")
+
+for (input, expected) in [("٣٬٥٠٠", 3500.0), ("1,234.50", 1234.5), ("-12.5", -12.5), ("1.2e3", 1200.0)] {
+    precondition(ArabicText.number(from: input) == expected)
+}
+for input in ["3500/7000", "3500 7000", "1,23", "inf", "nan", "1e999", "مبلغ 3500", "3500%"] {
+    precondition(ArabicText.number(from: input) == nil, "Ambiguous amount accepted")
+}
+print("Strict monetary input tests passed")

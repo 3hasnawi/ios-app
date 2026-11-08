@@ -1,5 +1,6 @@
 name: iOS logic checks (no app build)
 'on':
+  workflow_call:
   workflow_dispatch:
     inputs:
       large_backup:
@@ -17,7 +18,11 @@ jobs:
       - name: Swift version
         run: swiftc --version
       - name: Parse changed Swift files
-        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift SalaryApp/EntityDeductionPDF.swift SalaryApp/ReportExport.swift SalaryApp/EmployeeDeductions.swift SalaryApp/EmployeeDeductionSelfTest.swift SalaryApp/HealthCareReport.swift SalaryApp/HealthCarePDFLayout.swift
+        run: swiftc -frontend -parse SalaryApp/*.swift
+      - name: Malformed Excel rejection
+        run: python3 ci/import_safety_test/run.py
+      - name: Interrupted restore recovery
+        run: python3 ci/restore_safety_test/run.py
       - name: Retention and search normalization
         run: python3 ci/ios_safety_test/run.py
       - name: Health care summary

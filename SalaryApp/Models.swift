@@ -235,7 +235,9 @@ actor DataImporter {
     }
 
     private func trimPayroll(replacing month: String) throws {
-        let employees = try modelContext.fetch(FetchDescriptor<Employee>())
+        var descriptor = FetchDescriptor<Employee>()
+        descriptor.propertiesToFetch = [\.month]
+        let employees = try modelContext.fetch(descriptor)
         let keep = try PayrollRetention.monthsToKeep(existing: employees.map(\.month), incoming: month)
         for item in employees where item.month == month || !keep.contains(item.month) { modelContext.delete(item) }
         for record in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) {

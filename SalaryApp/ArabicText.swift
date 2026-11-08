@@ -62,22 +62,17 @@ nonisolated enum ArabicText {
 
     /// يقرأ رقماً من نص الخلية، ويقبل الأرقام العربية (٠١٢) والفواصل.
     static func number(from text: String) -> Double? {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return nil }
-        if let value = Double(trimmed) { return value }
-
-        var latin = ""
-        for scalar in trimmed.unicodeScalars {
-            switch scalar.value {
-            case 0x0660...0x0669: latin.append(Character(UnicodeScalar(UInt8(scalar.value - 0x0660 + 48))))
-            case 0x06F0...0x06F9: latin.append(Character(UnicodeScalar(UInt8(scalar.value - 0x06F0 + 48))))
-            case 0x066B: latin.append(".")
-            case 0x066C, 0x2C: continue                             // فواصل الآلاف
-            default: latin.unicodeScalars.append(scalar)
-            }
+        var value = latinDigits(text).trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "٬", with: ",").replacingOccurrences(of: "٫", with: ".")
+        for currency in ["د.ع", "د.ع.", "IQD"] where value.hasSuffix(currency) {
+            value = String(value.dropLast(currency.count)).trimmingCharacters(in: .whitespaces)
         }
-        let cleaned = latin.filter { "0123456789.-".contains($0) }
-        return cleaned.isEmpty ? nil : Double(cleaned)
+        // لا نحذف رموزاً مجهولة: 3500/7000 ليس مبلغاً واحداً.
+        let pattern = #"^[+-]?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$"#
+        guard value.range(of: pattern, options: .regularExpression) != nil,
+              let amount = Double(value.replacingOccurrences(of: ",", with: "")), amount.isFinite else { return nil }
+        return amount
+
     }
 }
 

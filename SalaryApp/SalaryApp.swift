@@ -25,14 +25,13 @@ struct SalaryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppLockGate { RootView() }
+            AppLockGate { DatabaseLaunchView() }
                 .environment(\.layoutDirection, language == AppLanguage.english.rawValue ? .leftToRight : .rightToLeft)
                 .environment(\.locale, AppSettings.locale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 // حجم النص والأيقونات داخل التطبيق (من الإعدادات ← العرض)، أو حجم الآيفون.
                 .modifier(TextSizeModifier(index: textSize))
         }
-        .modelContainer(SharedModel.container)
     }
 }
 

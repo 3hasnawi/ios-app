@@ -99,6 +99,7 @@ nonisolated struct ImportResult: Sendable {
     var deductions: [ImportedDeduction] = []
     var annualDeductions: [Int: [ImportedDeduction]] = [:]
     var annualErrors: [String] = []
+    var amountErrors: [String] = []
     var accounts: [ImportedExecutionAccount] = []
     var invalidAccountDetails: [InvalidExecutionAccount] = []
     var invalidAccounts: Int { invalidAccountDetails.count }
@@ -114,6 +115,7 @@ nonisolated struct ImportResult: Sendable {
             } else { annualDeductions[month] = records }
         }
         annualErrors += other.annualErrors
+        amountErrors += other.amountErrors
         accounts += other.accounts
         invalidAccountDetails += other.invalidAccountDetails
         problems += other.problems
@@ -162,6 +164,7 @@ nonisolated enum ExcelImporter {
         default:
             try readXLSX(url, into: &result, progress: progress)
         }
+        if !result.amountErrors.isEmpty { throw ImportError.unrecognized(url.lastPathComponent, Array(result.amountErrors.prefix(20))) }
         if !result.annualErrors.isEmpty {
             throw ImportError.unrecognized(url.lastPathComponent, Array(result.annualErrors.prefix(20)))
         }
@@ -472,16 +475,24 @@ nonisolated final class SheetParser {
         return .skip
     }
 
+    private func amount(_ row: [String], _ index: Int?) -> Double? {
+        let input = cell(row, index)
+        let value = ArabicText.number(from: input)
+        if !input.isEmpty && value == nil && result.amountErrors.count < 20 {
+            result.amountErrors.append(tr("\(sheetName)، السطر \(rowsRead)، العمود \((index ?? 0) + 1): مبلغ غير صالح.", "\(sheetName), row \(rowsRead), column \((index ?? 0) + 1): invalid amount."))
+        }
+        return value
+    }
     private func readEmployee(_ row: [String], _ columns: EmployeeColumns) {
         let name = cell(row, columns.name)
         guard !name.isEmpty, !nameHeaders.contains(ArabicText.normalize(name)) else { return }
 
         var items: [String: Double] = [:]
         for (col, title) in columns.items {
-            if let v = ArabicText.number(from: cell(row, col)), v != 0 { items[title, default: 0] += v }
+            if let v = amount(row, col), v != 0 { items[title, default: 0] += v }
         }
         for pair in columns.pairs {
-            guard let v = ArabicText.number(from: cell(row, pair.amount)), v != 0 else { continue }
+            guard let v = amount(row, pair.amount), v != 0 else { continue }
             let title = cell(row, pair.name)
             if !title.isEmpty { pairNames[pair.fallback, default: [:]][title, default: 0] += 1 }
             // اسم فارغ: يُحفظ مؤقتاً باسم عمود المبلغ، ويُلحق بالجهة الغالبة بعد آخر صف.
@@ -496,7 +507,7 @@ nonisolated final class SheetParser {
             name: name,
             rank: cell(row, columns.rank),
             workplace: cell(row, columns.workplace),
-            netSalary: ArabicText.number(from: cell(row, columns.netSalary)),
+            netSalary: amount(row, columns.netSalary),
             items: items,
             details: details,
             rawColumnsData: PayrollColumnSnapshot.encode(headers: columns.headers, values: row)
@@ -517,6 +528,9 @@ nonisolated final class SheetParser {
         let amount = columns.month == nil ? ArabicText.number(from: amountText) : AnnualDeductionAmount.parse(amountText)
         // لا تُسجّل الأسطر الخالية أو الصفرية في كشف التنفيذ الشهري؛ تبقى القيم غير المفهومة للمراجعة.
         if columns.skipEmptyAmount && (amountText.isEmpty || amount == 0) { return }
+        if columns.month == nil && !amountText.isEmpty && amount == nil && DeductionStatus.recognized(amountText) == nil && result.amountErrors.count < 20 {
+            result.amountErrors.append(tr("\(sheetName)، السطر \(rowsRead): مبلغ استقطاع غير صالح.", "\(sheetName), row \(rowsRead): invalid deduction amount."))
+        }
         let title = cell(row, columns.title)
         if let monthColumn = columns.month {
             guard let year = annualYear else {
@@ -762,6 +776,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     private var fileSize: Double = 1
     private var onProgress: ((Double) -> Void)?
     private var rowsRead = 0
+    private var invalidCell = false
 
     private init(sharedStrings: [String], onRow: @escaping ([String]) -> Void) {
         self.sharedStrings = sharedStrings
@@ -778,7 +793,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
         reader.fileSize = max(1, (attributes?[.size] as? NSNumber)?.doubleValue ?? 1)
         let parser = XMLParser(stream: stream)
         parser.delegate = reader
-        guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("worksheet") }
+        guard parser.parse(), !reader.invalidCell else { throw ImportError.cannotOpen("worksheet: invalid cell reference or shared string") }
     }
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
@@ -788,7 +803,10 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
             row = []
             nextColumn = 0
         case "c":
-            column = attributes["r"].map(Self.columnIndex) ?? nextColumn
+            guard let parsed = attributes["r"].map(Self.columnIndex) ?? (nextColumn < 16_384 ? nextColumn : nil) else {
+                invalidCell = true; parser.abortParsing(); return
+            }
+            column = parsed
             type = attributes["t"]
             value = ""
         case "v", "t":
@@ -805,7 +823,10 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
         case "c":
             var text = value
             if type == "s" {
-                text = Int(value).flatMap { $0 < sharedStrings.count ? sharedStrings[$0] : nil } ?? ""
+                guard let index = Int(value), sharedStrings.indices.contains(index) else {
+                    invalidCell = true; parser.abortParsing(); return
+                }
+                text = sharedStrings[index]
             }
             if row.count <= column {
                 row += Array(repeating: "", count: column - row.count + 1)
@@ -829,12 +850,16 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     }
 
     /// "A1" → 0، "B7" → 1، "AA3" → 26
-    private static func columnIndex(_ reference: String) -> Int {
-        var index = 0
+    private static func columnIndex(_ reference: String) -> Int? {
+        var index = 0, letters = 0
         for scalar in reference.unicodeScalars {
             guard (65...90).contains(scalar.value) || (97...122).contains(scalar.value) else { break }
+            letters += 1
+            guard letters <= 3 else { return nil }
             index = index * 26 + Int(scalar.value & 0xDF) - 64
+            guard index <= 16_384 else { return nil }
         }
+        guard index > 0, let row = Int(reference.dropFirst(letters)), (1...1_048_576).contains(row) else { return nil }
         return index - 1
     }
 }

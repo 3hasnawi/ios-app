@@ -390,6 +390,12 @@ final class ImportCenter {
             message = tr("اختر ملف رواتب واحداً فقط؛ يحتفظ التطبيق بآخر شهرين من الرواتب. تبقى الاستقطاعات محفوظة.", "Choose only one payroll file; the app retains the latest two payroll months. Deductions are preserved.")
             return
         }
+        let pendingTrust = UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? []
+        if let payroll = jobs.first(where: { $0.kind == .payroll || $0.kind == .payrollAndDeductions }),
+           pendingTrust.contains(where: { $0 != payroll.month }) {
+            message = tr("لم تكتمل إضافة أمانات شهر سابق. أعد استيراد ذلك الشهر وأكمل الأمانات قبل إدخال شهر جديد: \(pendingTrust.joined(separator: "، "))", "A previous month's trust entries are pending. Reimport that month before a new payroll month: \(pendingTrust.joined(separator: ", "))")
+            return
+        }
         let annualMonths = Set(jobs.filter(\.annualSource).map(\.month))
         if jobs.contains(where: { job in
             annualMonths.contains(job.month) && job.kind != .payroll && jobs.filter { $0.month == job.month && $0.kind != .payroll }.count > 1
@@ -452,6 +458,11 @@ final class ImportCenter {
                     let kind = job.kind
                     let expectedCount = job.annualExpectedCount
                     let expectedDate = job.annualExpectedImportDate
+                    if kind != .deductions && !fromTest {
+                        var pending = Set(UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? [])
+                        pending.insert(month)
+                        UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
+                    }
                     try await Task.detached(priority: .userInitiated) {
                         let importer = DataImporter(modelContainer: container)
                         switch kind {
@@ -507,15 +518,20 @@ final class ImportCenter {
         if !fromTest { for c in candidates { Self.removeCopy(c.url) } }
         candidates = []
         progress.end()
-        isBusy = false
         if !fromTest {
             for month in trustPayrollMonths.sorted(by: { MonthName.sortKey($0) < MonthName.sortKey($1) }) {
                 do {
-                    let count = try await SalaryTrustStore.addCash(month: month)
+                    var pending = Set(UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? [])
+                    pending.insert(month)
+                    UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
+                    let count = try await SalaryTrustStore.addCash(month: month, duringImport: true)
+                    pending.remove(month)
+                    UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
                     if count > 0 { warnings.append(tr("أمانات \(month): أُضيف \(Num.format(count)) قيد كاش.", "Trust \(month): added \(count) cash entries.")) }
                 } catch { warnings.append(tr("تعذّرت إضافة كاش \(month) للأمانات: \(error.localizedDescription)", "Could not add \(month) cash to trust: \(error.localizedDescription)")) }
             }
         }
+        isBusy = false
         await BackupManager.shared.refreshIntegrityWarning()
         if let newestPayroll { lastPayrollMonth = newestPayroll.name }
 

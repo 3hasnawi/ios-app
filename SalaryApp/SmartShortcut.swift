@@ -72,6 +72,7 @@ struct SmartLookupIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        try await SharedModel.ensureReady()
         let choices = try await SmartShortcutSearch.choices(query)
         guard let first = choices.first else { throw ShortcutError.noMatch(query) }
         let choice: SmartShortcutChoice
@@ -172,6 +173,7 @@ struct SmartLookupSnippetIntent: SnippetIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ShowsSnippetView {
+        try await SharedModel.ensureReady()
         guard let item = result.payload else { throw ShortcutError.recordMissing }
         var person: PayslipSnippetData?
         if item.kind == .person {

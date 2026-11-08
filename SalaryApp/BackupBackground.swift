@@ -16,6 +16,8 @@ enum BackupBackground {
                 return
             }
             let work = Task { @MainActor in
+                do { try await SharedModel.ensureReady() }
+                catch { task.setTaskCompleted(success: false); return }
                 await BackupManager.shared.checkServerNotification()
                 await BackupManager.shared.autoBackupIfNeeded()
                 schedule()

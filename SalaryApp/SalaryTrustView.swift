@@ -6,8 +6,8 @@ import VisionKit
 /// يحفظ الدفتر كاملاً دفعة واحدة بعد الفحص، ويمنع استبداله أثناء النسخ أو الاسترجاع.
 @MainActor enum SalaryTrustStore {
     static func load() throws -> SalaryTrust.Ledger { try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) }
-    static func save(_ ledger: SalaryTrust.Ledger, expected: Data) throws {
-        guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting,
+    static func save(_ ledger: SalaryTrust.Ledger, expected: Data, duringImport: Bool = false) throws {
+        guard !BackupManager.shared.isWorking, (!ImportCenter.shared.isBusy || duringImport), !StaffImportState.shared.isImporting,
               (UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) == expected else {
             throw SalaryTrust.invalid(tr("تغيّرت البيانات أو توجد عملية جارية؛ أعد المحاولة.", "The data changed or another operation is running; try again."))
         }
@@ -26,7 +26,7 @@ import VisionKit
         try save(linked, expected: expected)
     }
     /// تُضاف قائمة الكاش مرة واحدة؛ أي تغيير أو تكرار في الشخص والشهر يوقف الإضافة للمراجعة.
-    static func addCash(month: String) async throws -> Int {
+    static func addCash(month: String, duringImport: Bool = false) async throws -> Int {
         let period = MonthName.sortKey(month)
         guard period > SalaryTrust.openingCutoff else { return 0 }
         let expected = UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()
@@ -60,7 +60,7 @@ import VisionKit
         guard !missing else { throw SalaryTrust.invalid(tr("تغيّرت قائمة كاش الشهر وفيها قيود محفوظة لم تعد موجودة؛ راجعها قبل التحديث.", "The cash list no longer contains some saved entries; review before updating.")) }
         guard !additions.isEmpty else { return 0 }
         ledger.entries.append(contentsOf: additions)
-        try save(ledger, expected: expected)
+        try save(ledger, expected: expected, duringImport: duringImport)
         return additions.count
     }
 }

@@ -8,16 +8,33 @@ import UniformTypeIdentifiers
 // وخطوة "نسخ إلى الحافظة" في تطبيق الاختصارات هي التي تنسخها (وهي تعمل دائماً).
 
 /// قاعدة بيانات واحدة يشترك فيها التطبيق واختصارات تطبيق "الاختصارات" (Shortcuts) وSiri.
-enum SharedModel {
-    @MainActor static let container: ModelContainer = {
-        let started = Date()
-        defer { PerfLog.record("container", since: started) }
-        do {
+@MainActor @Observable
+final class DatabaseHealth {
+    var restartRequired = false
+}
+@MainActor enum SharedModel {
+    static let health = DatabaseHealth()
+    private static var opened: ModelContainer?
+    private static var opening: Task<ModelContainer, Error>?
+    static var container: ModelContainer {
+        // لا تُنشأ واجهات البيانات إلا بعد ensureReady؛ الاختصارات تتحقق منه أيضاً.
+        guard let opened else { preconditionFailure("Database is not ready") }
+        return opened
+    }
+    @discardableResult static func ensureReady() async throws -> ModelContainer {
+        if health.restartRequired { throw NSError(domain: "Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "أغلق التطبيق وافتحه لإعادة نقطة الرجوع قبل متابعة العمل."]) }
+        if let opened { return opened }
+        if let opening { return try await opening.value }
+        let work = Task { @MainActor in
+            try await Task.detached(priority: .userInitiated) { try RestoreSafety.recoverIfNeeded() }.value
             return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
-        } catch {
-            fatalError("تعذّر فتح قاعدة البيانات: \(error)")
         }
-    }()
+        opening = work
+        defer { opening = nil }
+        let result = try await work.value
+        opened = result
+        return result
+    }
 }
 
 /// ينقل اسماً من اختصار "افتح البحث" إلى الشاشة الرئيسية.
@@ -75,6 +92,7 @@ struct SearchEmployeeIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
+        try await SharedModel.ensureReady()
         let matches = try EmployeeLookup.find(name, in: EmployeeLookup.monthNames(limit: range.limit))
             .prefix(50)
             .map(EmployeeEntity.init)
@@ -117,7 +135,8 @@ struct ShowPayslipIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile> & ShowsSnippetIntent {
-        try PayslipResult.make(for: employee)
+        try await SharedModel.ensureReady()
+        return try PayslipResult.make(for: employee)
     }
 }
 
@@ -145,6 +164,7 @@ struct PayslipSnippetIntent: SnippetIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ShowsSnippetView {
+        try await SharedModel.ensureReady()
         guard let record = try EmployeeLookup.employee(id: employee.id) else { throw ShortcutError.recordMissing }
         let data = PayslipSnippetData(employee: record, deductions: try EmployeeLookup.deductions(of: record))
         return .result(view: PayslipSnippetView(data: data))
@@ -179,6 +199,7 @@ struct OpenSearchIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        try await SharedModel.ensureReady()
         ShortcutRouter.shared.pendingSearch = name
         AppRouter.shared.tab = .search
         return .result()
@@ -263,11 +284,13 @@ struct EmployeeEntity: AppEntity {
 /// البحث بالاسم عند الكتابة في نافذة الاختيار (آخر شهر).
 struct EmployeeQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [EmployeeEntity] {
-        try await EmployeeLookup.entities(ids: identifiers)
+        try await SharedModel.ensureReady()
+        return try await EmployeeLookup.entities(ids: identifiers)
     }
 
     func entities(matching string: String) async throws -> [EmployeeEntity] {
-        try await EmployeeLookup.search(string)
+        try await SharedModel.ensureReady()
+        return try await EmployeeLookup.search(string)
     }
 
     func suggestedEntities() async throws -> [EmployeeEntity] { [] }

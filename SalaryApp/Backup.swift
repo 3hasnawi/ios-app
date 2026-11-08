@@ -115,21 +115,42 @@ actor BackupActor {
             BackupFormat.MonthRecord(name: $0.name, importedAt: $0.importedAt, employeeCount: $0.employeeCount,
                                      deductionCount: $0.deductionCount, summary: $0.itemSummaryData)
         }, count: months.count, from: 0, to: 0.02)
-        let employees = try modelContext.fetch(FetchDescriptor<Employee>())
-        try writeLines("employees.jsonl", employees.lazy.map {
+        func writeModels<T: PersistentModel, R: Encodable>(_ type: T.Type, file: String, from: Double, to: Double, convert: (T) -> R) throws -> Int {
+            let count = try modelContext.fetchCount(FetchDescriptor<T>())
+            let target = dir.appendingPathComponent(file)
+            _ = fm.createFile(atPath: target.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: target)
+            defer { try? handle.close() }
+            var offset = 0
+            while offset < count {
+                try Task.checkCancellation()
+                // سياق قصير العمر لكل دفعة حتى لا تحتفظ القاعدة بكل الكائنات والحقول الكبيرة.
+                try autoreleasepool {
+                    let context = ModelContext(modelContainer)
+                    var descriptor = FetchDescriptor<T>()
+                    descriptor.fetchLimit = 256; descriptor.fetchOffset = offset
+                    let items = try context.fetch(descriptor)
+                    guard !items.isEmpty else { throw BackupError.notBackup }
+                    for item in items {
+                        var data = try encoder.encode(convert(item)); data.append(0x0A)
+                        try handle.write(contentsOf: data)
+                    }
+                    offset += items.count
+                }
+                progress?(from + (to - from) * Double(offset) / Double(max(1, count)))
+            }
+            return count
+        }
+        let employeeCount = try writeModels(Employee.self, file: "employees.jsonl", from: 0.02, to: 0.4) {
             BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData, details: $0.detailsData, rawColumns: $0.rawColumnsData)
-        }, count: employees.count, from: 0.02, to: 0.4)
-        let employeeCount = employees.count
-        let deductions = try modelContext.fetch(FetchDescriptor<Deduction>())
-        try writeLines("deductions.jsonl", deductions.lazy.map {
+        }
+        let deductionCount = try writeModels(Deduction.self, file: "deductions.jsonl", from: 0.4, to: 0.5) {
             BackupFormat.DeductionRecord(month: $0.month, name: $0.employeeName, title: $0.title, amount: $0.amount, note: $0.note, rank: $0.rank)
-        }, count: deductions.count, from: 0.4, to: 0.5)
-        let deductionCount = deductions.count
-        let staff = try modelContext.fetch(FetchDescriptor<StaffMember>())
-        try writeLines("staff.jsonl", staff.lazy.map {
+        }
+        let staffCount = try writeModels(StaffMember.self, file: "staff.jsonl", from: 0.5, to: 0.8) {
             BackupFormat.StaffRecord(name: $0.name, mother: $0.motherKey, stat: $0.statNumber, unified: $0.unifiedNumber,
                                      rank: $0.rank, status: $0.status, workplace: $0.workplace, details: $0.detailsData)
-        }, count: staff.count, from: 0.5, to: 0.8)
+        }
         let accounts = try ExecutionAccountStore.load()
         try writeLines("accounts.jsonl", accounts.lazy.map {
             BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
@@ -159,7 +180,7 @@ actor BackupActor {
         let formatVersion = BackupFormat.exportVersion(for: settings)
         let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
-                                             employees: employeeCount, deductions: deductionCount, staff: staff.count,
+                                             employees: employeeCount, deductions: deductionCount, staff: staffCount,
                                              accounts: accounts.count, books: books.count)
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
         try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
@@ -179,11 +200,11 @@ actor BackupActor {
     }
 
     /// يستبدل كل البيانات بمحتوى النسخة. يعيد الإعدادات المحفوظة فيها.
-    func restore(from folder: URL, progress: ProgressSink?) throws -> [String: Data] {
+    func restore(from folder: URL, progress: ProgressSink?, recoverable: Bool = false) throws -> [String: Data] {
         let decoder = JSONDecoder()
         func records<T: Decodable>(_ name: String, _ type: T.Type) throws -> [T] {
             var result: [T] = []
-            try BackupLineReader.read(folder.appendingPathComponent(name)) { line in
+            try BackupLineReader.read(folder.appendingPathComponent(name), maxLineBytes: 64 * 1024 * 1024) { line in
                 result.append(try decoder.decode(type, from: line))
             }
             return result
@@ -192,7 +213,7 @@ actor BackupActor {
         func validate<T: Decodable>(_ name: String, _ type: T.Type) throws -> (count: Int, hash: Data) {
             var count = 0
             var hash = SHA256()
-            try BackupLineReader.read(folder.appendingPathComponent(name), onChunk: { hash.update(data: $0) }) { line in
+            try BackupLineReader.read(folder.appendingPathComponent(name), maxLineBytes: 64 * 1024 * 1024, onChunk: { hash.update(data: $0) }) { line in
                 _ = try decoder.decode(type, from: line)
                 count += 1
             }
@@ -202,7 +223,7 @@ actor BackupActor {
                                           insert: (Int, T) throws -> Void) throws {
             var count = 0
             var hash = SHA256()
-            try BackupLineReader.read(folder.appendingPathComponent(name), onChunk: { hash.update(data: $0) }) { line in
+            try BackupLineReader.read(folder.appendingPathComponent(name), maxLineBytes: 64 * 1024 * 1024, onChunk: { hash.update(data: $0) }) { line in
                 try insert(count, decoder.decode(type, from: line))
                 count += 1
             }
@@ -291,6 +312,10 @@ actor BackupActor {
         var previousBooks: URL?
         defer { if !booksInstalled { try? FileManager.default.removeItem(at: preparedBooks) } }
 
+        if recoverable {
+            guard let store = modelContainer.configurations.first?.url else { throw BackupError.folderUnavailable }
+            try RestoreSafety.prepare(store: store)
+        }
         modelContext.autosaveEnabled = false
         var committed = false
         defer {
@@ -300,26 +325,44 @@ actor BackupActor {
             }
         }
         // حذف الكائنات مؤجل مع إدخال البديل إلى حفظ واحد قابل للتراجع.
-        for item in try modelContext.fetch(FetchDescriptor<Employee>()) { modelContext.delete(item) }
-        for item in try modelContext.fetch(FetchDescriptor<Deduction>()) { modelContext.delete(item) }
-        for item in try modelContext.fetch(FetchDescriptor<PayrollMonth>()) { modelContext.delete(item) }
-        for item in try modelContext.fetch(FetchDescriptor<StaffMember>()) { modelContext.delete(item) }
+        func remove<T: PersistentModel>(_ type: T.Type) throws {
+            var descriptor = FetchDescriptor<T>()
+            if recoverable { descriptor.fetchLimit = 256 }
+            while true {
+                let context = recoverable ? ModelContext(modelContainer) : modelContext
+                context.autosaveEnabled = false
+                let items = try context.fetch(descriptor)
+                if items.isEmpty { break }
+                for item in items { context.delete(item) }
+                if recoverable { try context.save() } else { break }
+            }
+        }
+        try remove(Employee.self); try remove(Deduction.self)
+        try remove(PayrollMonth.self); try remove(StaffMember.self)
+        var destination = recoverable ? ModelContext(modelContainer) : modelContext
+        destination.autosaveEnabled = false
+        func flush() throws {
+            try destination.save()
+            if recoverable { destination = ModelContext(modelContainer); destination.autosaveEnabled = false }
+        }
         for r in months {
             let m = PayrollMonth(name: r.name, employeeCount: r.employeeCount, deductionCount: r.deductionCount)
             m.importedAt = r.importedAt
             m.itemSummaryData = r.summary
-            modelContext.insert(m)
+            destination.insert(m)
         }
         try insertRecords("employees.jsonl", BackupFormat.EmployeeRecord.self, expected: employees) { i, r in
             let e = Employee(month: r.month, name: r.name, rank: r.rank, workplace: r.workplace, netSalary: r.net)
             e.itemsData = r.items
             e.detailsData = r.details
             e.rawColumnsData = r.rawColumns
-            modelContext.insert(e)
+            destination.insert(e)
+            if recoverable && i % 256 == 255 { try flush() }
             if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, employees.count))) }
         }
         try insertRecords("deductions.jsonl", BackupFormat.DeductionRecord.self, expected: deductions) { i, r in
-            modelContext.insert(Deduction(month: r.month, employeeName: r.name, title: r.title, amount: r.amount, note: r.note, rank: r.rank))
+            destination.insert(Deduction(month: r.month, employeeName: r.name, title: r.title, amount: r.amount, note: r.note, rank: r.rank))
+            if recoverable && i % 256 == 255 { try flush() }
             if i % 1000 == 0 { progress?(0.6 + 0.1 * Double(i) / Double(max(1, deductions.count))) }
         }
         try insertRecords("staff.jsonl", BackupFormat.StaffRecord.self, expected: staff) { i, r in
@@ -327,12 +370,13 @@ actor BackupActor {
                                 rank: r.rank, status: r.status, workplace: r.workplace, sections: [])
             s.motherKey = r.mother
             s.detailsData = r.details
-            modelContext.insert(s)
+            destination.insert(s)
+            if recoverable && i % 256 == 255 { try flush() }
             if i % 1000 == 0 { progress?(0.7 + 0.3 * Double(i) / Double(max(1, staff.count))) }
         }
         previousBooks = try OfficialBookFiles.installPrepared(preparedBooks)
         booksInstalled = true
-        try modelContext.save()
+        try destination.save()
         ExecutionAccountStore.saveEncoded(accountData)
         if let previousBooks { try? FileManager.default.removeItem(at: previousBooks) }
         progress?(1)
@@ -1098,7 +1142,7 @@ final class BackupManager {
             let container = SharedModel.container
             do {
                 let settings = try await Task.detached(priority: .userInitiated) {
-                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink)
+                    try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink, recoverable: true)
                 }.value
                 BankStatementCache.shared.invalidate()
                 restoredSettingValues = settings.reduce(into: [:]) { result, item in
@@ -1113,6 +1157,8 @@ final class BackupManager {
                         UserDefaults.standard.set(value, forKey: key)
                     }
                 }
+                UserDefaults.standard.synchronize()
+                try RestoreSafety.finish()
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 Self.rememberSafetyManifest(pending.manifest)
                 if let serverRestore, BackupServerConfig.address == serverRestore.address, BackupServerConfig.token == serverRestore.token {
@@ -1140,6 +1186,7 @@ final class BackupManager {
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
                              "Restored: \(pending.manifest.months.count) months, \(pending.manifest.staff) staff.")
             } catch {
+                if RestoreSafety.pending { SharedModel.health.restartRequired = true }
                 BankStatementCache.shared.invalidate()
                 progress.end()
                 message = tr("تعذّر الاسترجاع: \(error.localizedDescription)", "Restore failed: \(error.localizedDescription)")
