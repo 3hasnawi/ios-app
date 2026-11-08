@@ -1,10 +1,11 @@
 name: Application safety regression
-# Recheck receipt accessibility grouping and press only inside the visible document.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [.github/workflows/safety-regression.yml]
+    inputs:
+      navigation_only:
+        description: Recheck only system navigation and search context actions
+        type: boolean
+        default: false
 permissions:
   contents: write
 jobs:
@@ -15,4 +16,5 @@ jobs:
     uses: ./.github/workflows/simulator.yml
     with:
       quick: true
-      navigation_only: true
+      safety_only: ${{ !inputs.navigation_only }}
+      navigation_only: ${{ inputs.navigation_only }}
