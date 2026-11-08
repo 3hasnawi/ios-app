@@ -12,6 +12,7 @@ public partial class MainWindow
     private DeductionReportData? _entityReport;
     private int _reportRequest;
     private int _entityRequest;
+    private bool _reportExportInProgress;
 
     private void ResetEntityReport(IReadOnlyList<string> months)
     {
@@ -29,6 +30,7 @@ public partial class MainWindow
         EntityReportGrid.ItemsSource = null;
         EntityReportTotal.Text = "";
         ExportEntityReportButton.IsEnabled = false;
+        ExportEntityPdfButton.IsEnabled = false;
     }
 
     private void EntityReport_Click(object sender, RoutedEventArgs e)
@@ -80,7 +82,7 @@ public partial class MainWindow
             EntityReportGrid.ItemsSource = result.Rows.Select((row, index) => new EntityReportDisplay(index + 1, row)).ToArray();
             EntityReportTotal.Text = $"المجموع: {result.Total.ToString("#,0.############################", CultureInfo.InvariantCulture)} د.ع";
             EntityReportHint.Text = $"{result.Rows.Count:N0} قيد بمبلغ. استُبعد {result.MissingAmounts:N0} بلا مبلغ، و{result.ZeroAmounts:N0} صفري، و{result.StatusRecords:N0} حالة. الرتبة غير مسجلة في {result.MissingRanks:N0} قيد.";
-            ExportEntityReportButton.IsEnabled = result.Rows.Count > 0;
+            ExportEntityReportButton.IsEnabled = ExportEntityPdfButton.IsEnabled = result.Rows.Count > 0 && !_reportExportInProgress;
         }
         catch (Exception ex) { if (request == _reportRequest) EntityReportHint.Text = "تعذّر إعداد الكشف: " + ex.Message; }
         finally { ShowEntityReportButton.IsEnabled = true; }
@@ -100,7 +102,9 @@ public partial class MainWindow
         if (!string.Equals(Path.GetExtension(target), ".xlsx", StringComparison.OrdinalIgnoreCase))
         { MessageBox.Show(this, "اختر اسماً ينتهي بـ .xlsx.", "تصدير الكشف"); return; }
         var temporary = Path.Combine(Path.GetDirectoryName(target)!, ".payroll-report-" + Guid.NewGuid().ToString("N") + ".tmp");
-        ExportEntityReportButton.IsEnabled = false;
+        _reportExportInProgress = true;
+        ExportEntityReportButton.IsEnabled = ExportEntityPdfButton.IsEnabled = false;
+        StatusText.Text = "جارٍ إعداد كشف Excel…";
         try
         {
             await Task.Run(() =>
@@ -112,7 +116,7 @@ public partial class MainWindow
             StatusText.Text = "حُفظ كشف الجهة بصيغة Excel. راجع السجلات المستبعدة والرتب الناقصة قبل اعتماده.";
         }
         catch (Exception ex) { TryDeletePreview(temporary); MessageBox.Show(this, "تعذّر تصدير الكشف.\n\n" + ex.Message, "تصدير الكشف", MessageBoxButton.OK, MessageBoxImage.Warning); }
-        finally { ExportEntityReportButton.IsEnabled = _entityReport?.Rows.Count > 0; }
+        finally { _reportExportInProgress = false; ExportEntityReportButton.IsEnabled = ExportEntityPdfButton.IsEnabled = _entityReport?.Rows.Count > 0; }
     }
 
     private sealed class EntityReportDisplay(int number, DeductionReportRow row)
@@ -122,5 +126,40 @@ public partial class MainWindow
         public string Name => row.Name;
         public string Amount => row.Amount.ToString("#,0.############################", CultureInfo.InvariantCulture);
         public string Note => row.Note;
+    }
+
+    private async void ExportEntityPdf_Click(object sender, RoutedEventArgs e)
+    {
+        if (_entityReport is null) { EntityReportHint.Text = "اعرض الكشف أولاً."; return; }
+        var report = _entityReport;
+        var header = ReportHeaderBox.Text;
+        var picker = new SaveFileDialog { Title = "حفظ كشف الجهة", Filter = "ملف PDF (*.pdf)|*.pdf", DefaultExt = ".pdf", AddExtension = true, OverwritePrompt = true, FileName = "كشف الاستقطاعات.pdf" };
+        if (picker.ShowDialog(this) != true) return;
+        var target = Path.GetFullPath(picker.FileName);
+        var relative = Path.GetRelativePath(_dataRoot, target);
+        if (!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        { MessageBox.Show(this, "اختر موقعاً خارج مجلد بيانات التطبيق لحماية النسخة المحلية.", "تصدير الكشف"); return; }
+        if (!string.Equals(Path.GetExtension(target), ".pdf", StringComparison.OrdinalIgnoreCase))
+        { MessageBox.Show(this, "اختر اسماً ينتهي بـ .pdf.", "تصدير الكشف"); return; }
+        var temporary = Path.Combine(Path.GetDirectoryName(target)!, ".payroll-report-" + Guid.NewGuid().ToString("N") + ".tmp");
+        var fontDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+        var regular = Path.Combine(fontDirectory, "arial.ttf");
+        var bold = Path.Combine(fontDirectory, "arialbd.ttf");
+        _reportExportInProgress = true;
+        ExportEntityReportButton.IsEnabled = ExportEntityPdfButton.IsEnabled = false;
+        StatusText.Text = "جارٍ إعداد كشف PDF… قد تستغرق الكشوف الكبيرة بعض الوقت.";
+        try
+        {
+            await Task.Run(() =>
+            {
+                if (!File.Exists(regular) || !File.Exists(bold)) throw new FileNotFoundException("يحتاج الكشف خط Arial العادي والعريض المثبّت على ويندوز.");
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    DeductionPdfWriter.Write(report, header, regular, bold, stream);
+                File.Move(temporary, target, true);
+            });
+            StatusText.Text = "حُفظ كشف الجهة بصيغة PDF. راجع السجلات المستبعدة والرتب الناقصة قبل اعتماده.";
+        }
+        catch (Exception ex) { TryDeletePreview(temporary); MessageBox.Show(this, "تعذّر تصدير الكشف.\n\n" + ex.Message, "تصدير الكشف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        finally { _reportExportInProgress = false; ExportEntityReportButton.IsEnabled = ExportEntityPdfButton.IsEnabled = _entityReport?.Rows.Count > 0; }
     }
 }

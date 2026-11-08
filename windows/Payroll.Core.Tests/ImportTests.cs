@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Payroll.Core;
 using ClosedXML.Excel;
+using UglyToad.PdfPig;
 
 namespace Payroll.Core.Tests;
 
@@ -214,6 +215,55 @@ public sealed class ImportTests
             Assert.Throws<InvalidOperationException>(() => DeductionExcelWriter.Write(tooMany, "ترويسة", new MemoryStream()));
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void EntityPdfHasPortraitPagesAndContainsAmountsWithoutClipping()
+    {
+        var fontDir = OperatingSystem.IsWindows() ? Environment.GetFolderPath(Environment.SpecialFolder.Fonts) : "/usr/share/fonts/truetype/dejavu";
+        var regular = Path.Combine(fontDir, OperatingSystem.IsWindows() ? "arial.ttf" : "DejaVuSans.ttf");
+        var bold = Path.Combine(fontDir, OperatingSystem.IsWindows() ? "arialbd.ttf" : "DejaVuSans-Bold.ttf");
+        Assert.True(File.Exists(regular) && File.Exists(bold), "Test fonts must be installed.");
+        var rows = Enumerable.Range(1, 90).Select(i => new DeductionReportRow("مفوض", $"اسم موظف وهمي {i}", 1000 + i, $"إضبارة {i}/2026")).ToArray();
+        var report = new DeductionReportData("أيلول 2026", "جهة وهمية", rows, 0, 0, 0, 0, rows.Sum(x => x.Amount));
+        using var stream = new MemoryStream();
+        DeductionPdfWriter.Write(report, "قيادة شرطة محافظة الانبار", regular, bold, stream);
+        using var pdf = PdfDocument.Open(stream.ToArray());
+        Assert.True(pdf.NumberOfPages > 1);
+        foreach (var page in pdf.GetPages())
+        {
+            Assert.InRange(page.Width, 594, 596);
+            Assert.InRange(page.Height, 841, 843);
+            Assert.NotEmpty(page.Letters);
+            foreach (var letter in page.Letters)
+            {
+                Assert.InRange(letter.GlyphRectangle.Left, 20, 575);
+                Assert.InRange(letter.GlyphRectangle.Right, 20, 575);
+                Assert.InRange(letter.GlyphRectangle.Bottom, 35, 820);
+                Assert.InRange(letter.GlyphRectangle.Top, 35, 820);
+            }
+        }
+        var text = string.Join(' ', pdf.GetPages().Select(p => p.Text));
+        foreach (var row in rows)
+            Assert.Contains(row.Amount.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture), text);
+        Assert.Contains("94,095", text);
+        Assert.Throws<InvalidDataException>(() => DeductionPdfWriter.Write(report with { Total = 1 }, "رأس", regular, bold, new MemoryStream()));
+        var longRow = report with { Rows = [new DeductionReportRow("", "اسم", 1, new string('س', 5000))], Total = 1 };
+        Assert.Throws<InvalidOperationException>(() => DeductionPdfWriter.Write(longRow, "رأس", regular, bold, new MemoryStream()));
+        var missingGlyph = report with { Rows = [new DeductionReportRow("", "اسم", 1, "رقم 🧬")], Total = 1 };
+        Assert.Throws<InvalidOperationException>(() => DeductionPdfWriter.Write(missingGlyph, "رأس", regular, bold, new MemoryStream()));
+        var mixedRows = new[] { new DeductionReportRow("مفوض", "اسم وهمي", 1000, "رقم ١٢٣ / ٢٠٢٦"), new DeductionReportRow("شرطي", "اسم وهمي", 2000, "رقم 456 / 2026") };
+        var mixedReport = report with { Month = "شهر", Rows = mixedRows, Total = 3000 };
+        using var mixedStream = new MemoryStream();
+        DeductionPdfWriter.Write(mixedReport, "رأس", regular, bold, mixedStream);
+        using var mixedPdf = PdfDocument.Open(mixedStream.ToArray());
+        var words = mixedPdf.GetPage(1).GetWords().ToArray();
+        var arabicNumber = Assert.Single(words, w => w.Text == "١٢٣");
+        var arabicYear = Assert.Single(words, w => w.Text == "٢٠٢٦");
+        Assert.True(arabicNumber.BoundingBox.Left > arabicYear.BoundingBox.Left, "Arabic number must be to the right of the year in the RTL note.");
+        var latinNumber = Assert.Single(words, w => w.Text == "456");
+        var latinYear = Assert.Single(words, w => w.Text == "2026");
+        Assert.True(latinNumber.BoundingBox.Left > latinYear.BoundingBox.Left, "Latin number must be to the right of the year in the RTL note.");
     }
 
     private static string Temp() { var dir = Path.Combine(Path.GetTempPath(), "payroll-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }

@@ -131,7 +131,10 @@
           </Border>
           <DockPanel Grid.Row="4" Margin="0,10,0,0">
             <TextBlock x:Name="EntityReportTotal" VerticalAlignment="Center" FontWeight="Bold"/>
-            <Button x:Name="ExportEntityReportButton" DockPanel.Dock="Left" Content="تصدير Excel" Click="ExportEntityReport_Click" IsEnabled="False"/>
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+              <Button x:Name="ExportEntityReportButton" Content="تصدير Excel" Click="ExportEntityReport_Click" IsEnabled="False"/>
+              <Button x:Name="ExportEntityPdfButton" Content="تصدير PDF" Click="ExportEntityPdf_Click" IsEnabled="False"/>
+            </StackPanel>
           </DockPanel>
         </Grid>
       </Grid>
