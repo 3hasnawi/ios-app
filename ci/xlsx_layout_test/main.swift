@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
 import FoundationXML
+#endif
 
 let columns: [ReportSheet.Column] = [
     .init(title: "ت", width: 5, kind: .serial),
