@@ -800,6 +800,8 @@ struct UnifiedPersonView: View {
                 Section {
                     PersonPayslip(employee: record, staff: staff)
                         .id(record.persistentModelID)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("personPayslip")
                         .contextMenu {
                             Button(tr("تقرير راتب PDF", "Salary report PDF"), systemImage: ReportSymbols.pdf) {

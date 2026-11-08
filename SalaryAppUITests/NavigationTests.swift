@@ -321,9 +321,27 @@ final class NavigationTests: XCTestCase {
         XCTAssertFalse(app.tabBars.buttons["مشاركة"].exists)
         XCTAssertFalse(app.tabBars.buttons["المزيد"].exists || app.tabBars.buttons["More"].exists)
         XCTAssertTrue(searchTab.exists)
-        payslip.press(forDuration: 1.0)
+        // The receipt may extend below the screen. Press its visible body, rather
+        // than a descendant logo image or the offscreen centre of the full page.
+        let window = app.windows.firstMatch.frame
+        let top = app.navigationBars.firstMatch.frame.maxY + 12
+        let bottom = app.tabBars.firstMatch.frame.minY - 12
+        let viewport = CGRect(x: window.minX + 20, y: top,
+                              width: window.width - 40, height: bottom - top)
+        let visible = payslip.frame.intersection(viewport)
+        print("CONTEXT payslip=\(payslip.frame) visible=\(visible)")
+        guard !visible.isNull, visible.width > 40, visible.height > 40 else {
+            XCTFail("القسيمة ليست ظاهرة داخل مساحة المحتوى: \(app.debugDescription)")
+            return
+        }
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        origin.withOffset(CGVector(dx: visible.midX,
+                                   dy: visible.minY + min(100, visible.height / 2))).press(forDuration: 1.2)
         let image = app.buttons["قسيمة صورة"]
-        XCTAssertTrue(image.waitForExistence(timeout: 5))
+        guard image.waitForExistence(timeout: 10) else {
+            XCTFail("لم تظهر قائمة مشاركة القسيمة: \(app.debugDescription)")
+            return
+        }
         image.tap()
         XCTAssertTrue(element("shareModePicker").waitForExistence(timeout: 8))
     }

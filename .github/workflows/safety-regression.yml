@@ -1,5 +1,5 @@
 name: Application safety regression
-# Recheck the passive search context preview after all data and report gesture checks passed.
+# Recheck receipt accessibility grouping and press only inside the visible document.
 on:
   workflow_dispatch:
   push:
