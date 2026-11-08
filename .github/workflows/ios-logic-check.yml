@@ -1,0 +1,25 @@
+name: iOS logic checks (no app build)
+'on':
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  logic:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swiftc --version
+      - name: Parse changed Swift files
+        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift
+      - name: Retention and search normalization
+        run: python3 ci/ios_safety_test/run.py
+      - name: Payroll item parser
+        run: bash ci/payroll_item_parser_test/run.sh
+      - name: Treasury letter calculations
+        run: bash ci/treasury_letter_test/run.sh
+      - name: Streaming backup line reader
+        run: |
+          swiftc SalaryApp/BackupLineReader.swift ci/backup_line_reader_test/main.swift -o "$RUNNER_TEMP/backup-reader-test"
+          "$RUNNER_TEMP/backup-reader-test"

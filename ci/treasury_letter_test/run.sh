@@ -14,4 +14,8 @@ source = (root / 'SalaryApp/TreasuryLetterRules.swift').read_text()
 (out / 'TreasuryRules.swift').write_text(source.replace('nonisolated ', ''))
 PY
 cp "$repo_dir/ci/treasury_letter_test/main.swift" "$repo_dir/ci/treasury_letter_test/Stubs.swift" "$test_dir/"
-docker run --rm --network none -v "$test_dir:/tests" -w /tests swift:6.0 bash -c 'swiftc Arabic.swift ReportRow.swift Stubs.swift TreasuryRules.swift main.swift -o /tests/test && /tests/test'
+if command -v swiftc >/dev/null 2>&1; then
+  (cd "$test_dir" && swiftc Arabic.swift ReportRow.swift Stubs.swift TreasuryRules.swift main.swift -o test && ./test)
+else
+  docker run --rm --network none -v "$test_dir:/tests" -w /tests swift:6.0 bash -c 'swiftc Arabic.swift ReportRow.swift Stubs.swift TreasuryRules.swift main.swift -o /tests/test && /tests/test'
+fi

@@ -16,4 +16,8 @@ s = (root / 'SalaryApp/Reports.swift').read_text()
 (out / 'ReportRow.swift').write_text('import Foundation\n' + s[s.index('nonisolated struct ReportRow'):s.index('/// حسابات التقارير في الخلفية.')].replace('nonisolated ', ''))
 PY
 cp "$repo_dir/ci/payroll_item_parser_test/main.swift" "$repo_dir/ci/payroll_item_parser_test/Stubs.swift" "$test_dir/"
-docker run --rm --network none -v "$test_dir:/tests" -w /tests swift:6.0 bash -c 'swiftc Arabic.swift Stubs.swift Parser.swift ReportRow.swift main.swift -o /tests/run && /tests/run'
+if command -v swiftc >/dev/null 2>&1; then
+  (cd "$test_dir" && swiftc Arabic.swift Stubs.swift Parser.swift ReportRow.swift main.swift -o run && ./run)
+else
+  docker run --rm --network none -v "$test_dir:/tests" -w /tests swift:6.0 bash -c 'swiftc Arabic.swift Stubs.swift Parser.swift ReportRow.swift main.swift -o /tests/run && /tests/run'
+fi

@@ -6,14 +6,20 @@ nonisolated enum PDFDecor {
     static let footerText = "( قيادة شرطة محافظة الانبار - قسم الحسابات )"
     /// يعيد كتابة الملف مع التذييل فقط.
     static func apply(to url: URL, date: Date = .now, footer: String = footerText) throws {
-        guard let source = CGPDFDocument(url as CFURL), source.numberOfPages > 0 else { return }
+        func invalidPDF() -> NSError {
+            NSError(domain: "PDFDecor", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("تعذّر التحقق من صفحات الكشف؛ بقي الملف الأصلي دون استبدال.", "Could not verify the report pages; the original file was not replaced.")])
+        }
+        guard let source = CGPDFDocument(url as CFURL), source.numberOfPages > 0 else { throw invalidPDF() }
         let temp = url.deletingLastPathComponent().appendingPathComponent(".decor-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: temp) }
         var mediaBox = CGRect(x: 0, y: 0, width: 595, height: 842)
-        guard let context = CGContext(temp as CFURL, mediaBox: &mediaBox, nil) else { return }
+        guard let context = CGContext(temp as CFURL, mediaBox: &mediaBox, nil) else { throw invalidPDF() }
+        var closed = false
+        defer { if !closed { context.closePDF() } }
         let stamp = stampText(date)
         let pages = source.numberOfPages
-        for index in 1...pages { autoreleasepool {
-            guard let page = source.page(at: index) else { return }
+        for index in 1...pages { try autoreleasepool {
+            guard let page = source.page(at: index) else { throw invalidPDF() }
             var box = page.getBoxRect(.mediaBox)
             let info = [kCGPDFContextMediaBox as String: Data(bytes: &box, count: MemoryLayout<CGRect>.size)] as CFDictionary
             context.beginPDFPage(info)
@@ -24,6 +30,9 @@ nonisolated enum PDFDecor {
             context.endPDFPage()
         } }
         context.closePDF()
+        closed = true
+        guard let result = CGPDFDocument(temp as CFURL), result.numberOfPages == pages else { throw invalidPDF() }
+        for index in 1...pages where result.page(at: index) == nil { throw invalidPDF() }
         _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
     }
 
@@ -69,4 +78,30 @@ nonisolated enum PDFDecor {
     }
 
     private static func arabicDigits(_ n: Int) -> String { ReportSheet.easternDigits(String(n)) }
+
+    #if targetEnvironment(simulator)
+    /// اختبار وهمي للحفاظ على الملف عند الفشل وعدد الصفحات عند النجاح.
+    static func selfTest() throws -> Bool {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-decor-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let damagedURL = directory.appendingPathComponent("damaged.pdf")
+        let damaged = Data("not a PDF".utf8)
+        try damaged.write(to: damagedURL)
+        do { try apply(to: damagedURL); return false } catch { }
+        guard try Data(contentsOf: damagedURL) == damaged else { return false }
+        let file = directory.appendingPathComponent("report.pdf")
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
+        try renderer.writePDF(to: file) { context in
+            for _ in 0..<2 {
+                context.beginPage()
+                ("بيانات وهمية" as NSString).draw(at: CGPoint(x: 60, y: 60), withAttributes: [.font: ReportFont.regular(12)])
+            }
+        }
+        try apply(to: file)
+        guard let output = CGPDFDocument(file as CFURL), output.numberOfPages == 2,
+              output.page(at: 1) != nil, output.page(at: 2) != nil else { return false }
+        return try !FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasPrefix(".decor-") }
+    }
+    #endif
 }

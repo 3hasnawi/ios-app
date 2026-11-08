@@ -319,7 +319,8 @@ nonisolated enum MonthName {
         var month: Int?
         var numbers: [Int] = []
         for word in words {
-            if let n = ArabicText.number(from: word).map({ Int($0) }), word.allSatisfy({ $0.isNumber }) {
+            // قد يتضمن اسم الملف رقماً أكبر من Int؛ التحويل الآمن يمنع انهيار التطبيق قبل رفض الشهر.
+            if word.allSatisfy({ $0.isNumber }), let n = Int(ArabicText.latinDigits(word)) {
                 if n >= 1900 && n <= 2200 { year = n } else { numbers.append(n) }
             }
         }
