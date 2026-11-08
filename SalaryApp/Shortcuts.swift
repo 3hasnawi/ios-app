@@ -24,7 +24,11 @@ final class DatabaseHealth {
     @discardableResult static func ensureReady() async throws -> ModelContainer {
         if health.restartRequired { throw NSError(domain: "Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "أغلق التطبيق وافتحه لإعادة نقطة الرجوع قبل متابعة العمل."]) }
         if let opened { return opened }
-        if let opening { return try await opening.value }
+        if let opening {
+            let result = try await opening.value
+            opened = result
+            return result
+        }
         let work = Task { @MainActor in
             try await Task.detached(priority: .userInitiated) { try RestoreSafety.recoverIfNeeded() }.value
             return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
