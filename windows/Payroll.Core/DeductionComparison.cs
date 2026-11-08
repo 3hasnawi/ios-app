@@ -53,7 +53,7 @@ public static class DeductionComparison
     }
 
     // Mirrors the iPhone's DeductionStatus.read: status-only rows are not financial deductions.
-    private static bool IsStatusOnly(string note)
+    internal static bool IsStatusOnly(string note)
     {
         const string prefix = "⟦حالة الاستقطاع:";
         if (!note.StartsWith(prefix, StringComparison.Ordinal)) return false;

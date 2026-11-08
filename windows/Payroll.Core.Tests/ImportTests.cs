@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Payroll.Core;
+using ClosedXML.Excel;
 
 namespace Payroll.Core.Tests;
 
@@ -169,6 +170,48 @@ public sealed class ImportTests
             var rows = PayrollRepository.GetPage(result.Directory, true, "أيلول 2026", "احمد فاطمه 12", 0);
             Assert.Equal("أَحمد فاطمة ١٢", Assert.Single(rows.Rows).Name);
             Assert.Equal("ايمان 12", ArabicSearch.Normalize("إيـمان ١٢"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task EntityStatementOmitsNonAmountsAndExportsExactPortraitWorkbook()
+    {
+        var dir = Temp();
+        try
+        {
+            var result = await IosBackupImporter.ImportAsync(Fixture(dir), Path.Combine(dir, "data"));
+            using (var db = Open(result.Directory))
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO deductions(month,name,title,amount,note,rank,original) VALUES ('أيلول 2026','زكريا','جهة وهمية','500','=بيانات','مفوض',X'00'), ('أيلول 2026','أحمد','جهة وهمية','20','إضبارة 123','شرطي',X'00'), ('أيلول 2026','ناقص','جهة وهمية',NULL,'','',X'00'), ('أيلول 2026','صفري','جهة وهمية','0','','',X'00'), ('أيلول 2026','موقوف','جهة وهمية',NULL,'⟦حالة الاستقطاع:موقوف⟧','',X'00'), ('أيلول 2026','جهة أخرى','جهة أخرى','7','','',X'00')";
+                cmd.ExecuteNonQuery();
+            }
+            Assert.Contains("جهة وهمية", DeductionReport.Entities(result.Directory, "أيلول 2026"));
+            var report = DeductionReport.Create(result.Directory, "أيلول 2026", "جهة وهمية");
+            Assert.Equal(3, report.Rows.Count);
+            Assert.Equal("أحمد", report.Rows[0].Name);
+            Assert.Equal(1520m, report.Total);
+            Assert.Equal(1, report.MissingAmounts);
+            Assert.Equal(1, report.ZeroAmounts);
+            Assert.Equal(1, report.StatusRecords);
+            using var stream = new MemoryStream();
+            DeductionExcelWriter.Write(report, "ترويسة وهمية", stream);
+            stream.Position = 0;
+            using var workbook = new XLWorkbook(stream);
+            var sheet = workbook.Worksheet("الكشف");
+            Assert.True(sheet.RightToLeft);
+            Assert.Equal(XLPageOrientation.Portrait, sheet.PageSetup.PageOrientation);
+            Assert.Equal(XLPaperSize.A4Paper, sheet.PageSetup.PaperSize);
+            Assert.Equal("أحمد", sheet.Cell("C4").GetString());
+            Assert.Equal("=بيانات", sheet.Cell("E5").GetString());
+            Assert.False(sheet.Cell("E5").HasFormula);
+            Assert.Equal(1520d, sheet.Cell("D7").GetDouble());
+            var unsafeAmount = report with { Rows = [new DeductionReportRow("", "اسم", 0.1m, "")], Total = 0.1m };
+            Assert.Throws<InvalidOperationException>(() => DeductionExcelWriter.Write(unsafeAmount, "ترويسة", new MemoryStream()));
+            Assert.Throws<InvalidDataException>(() => DeductionExcelWriter.Write(report with { Total = 1 }, "ترويسة", new MemoryStream()));
+            var tooMany = report with { Rows = Enumerable.Repeat(new DeductionReportRow("", "اسم", 1, ""), 30001).ToArray(), Total = 30001 };
+            Assert.Throws<InvalidOperationException>(() => DeductionExcelWriter.Write(tooMany, "ترويسة", new MemoryStream()));
         }
         finally { Directory.Delete(dir, true); }
     }

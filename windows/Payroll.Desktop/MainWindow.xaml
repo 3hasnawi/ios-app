@@ -9,6 +9,7 @@
           <Button x:Name="HomeButton" Content="الرئيسية" Click="Home_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="DeductionsButton" Content="الاستقطاعات" Click="Deductions_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="ComparisonButton" Content="مقارنة الاستقطاعات" Click="Comparison_Click" HorizontalContentAlignment="Right"/>
+          <Button x:Name="EntityReportButton" Content="كشف استقطاعات جهة" Click="EntityReport_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="SalariesButton" Content="الرواتب" Click="Salaries_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="ArchiveButton" Content="الأرشيف" Click="Archive_Click" HorizontalContentAlignment="Right"/>
           <TextBlock Text="الأقسام القادمة" Foreground="#B8D5CF" Margin="8,24,8,5"/>
@@ -102,6 +103,36 @@
             <Button Content="معاينة الكتاب" Click="PreviewBook_Click" Background="{StaticResource Primary}" Foreground="White"/>
             <Button Content="حفظ نسخة PDF" Click="SaveBook_Click"/>
           </StackPanel>
+        </Grid>
+        <Grid x:Name="EntityReportPanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <WrapPanel Margin="0,0,0,8">
+            <TextBlock Text="الشهر" VerticalAlignment="Center" Margin="4"/>
+            <ComboBox x:Name="ReportMonthBox" MinWidth="170" Padding="8,6" SelectionChanged="ReportMonth_Changed"/>
+            <TextBlock Text="الجهة" VerticalAlignment="Center" Margin="14,4,4,4"/>
+            <ComboBox x:Name="ReportEntityBox" MinWidth="240" MaxWidth="400" Padding="8,6" SelectionChanged="ReportEntity_Changed"/>
+            <Button x:Name="ShowEntityReportButton" Content="عرض الكشف" Click="ShowEntityReport_Click" Background="{StaticResource Primary}" Foreground="White"/>
+          </WrapPanel>
+          <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+            <TextBlock Text="ترويسة الكشف" VerticalAlignment="Center" Margin="4"/>
+            <TextBox x:Name="ReportHeaderBox" Width="300" Padding="8,6" Text="قيادة شرطة محافظة الانبار"/>
+          </WrapPanel>
+          <TextBlock x:Name="EntityReportHint" Grid.Row="2" Margin="4,0,4,10" Foreground="#61736F" TextWrapping="Wrap" Text="اختر الشهر والجهة لعرض الكشف. تحفظ الورقة عمودية."/>
+          <Border Grid.Row="3" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+            <DataGrid x:Name="EntityReportGrid" AlternationCount="2" HeadersVisibility="Column" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="ت" Binding="{Binding Number}" Width="SizeToHeader"/>
+                <DataGridTextColumn Header="الرتبة" Binding="{Binding Rank}" Width="SizeToCells" MinWidth="80"/>
+                <DataGridTextColumn Header="الاسم الكامل" Binding="{Binding Name}" Width="*" MinWidth="190"/>
+                <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount}" Width="SizeToCells" MinWidth="120"/>
+                <DataGridTextColumn Header="رقم وتاريخ الاضبارة" Binding="{Binding Note}" Width="*" MinWidth="180"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Border>
+          <DockPanel Grid.Row="4" Margin="0,10,0,0">
+            <TextBlock x:Name="EntityReportTotal" VerticalAlignment="Center" FontWeight="Bold"/>
+            <Button x:Name="ExportEntityReportButton" DockPanel.Dock="Left" Content="تصدير Excel" Click="ExportEntityReport_Click" IsEnabled="False"/>
+          </DockPanel>
         </Grid>
       </Grid>
       <TextBlock x:Name="StatusText" Grid.Row="2" Text="جاهز" Foreground="#61736F" Margin="0,12,0,0" TextWrapping="Wrap"/>

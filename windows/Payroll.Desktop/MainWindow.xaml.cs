@@ -95,10 +95,11 @@ public partial class MainWindow : Window
         if (info.Months.Count > 1) PreviousMonthBox.SelectedIndex = 1;
         ComparisonGrid.ItemsSource = null;
         ResetArchive();
+        ResetEntityReport(info.Months);
         if (TablePanel.Visibility == Visibility.Visible) { _page = 0; _ = RefreshRowsAsync(); }
     }
 
-    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; ComparisonPanel.Visibility = Visibility.Collapsed; ArchivePanel.Visibility = Visibility.Collapsed; }
+    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; ComparisonPanel.Visibility = Visibility.Collapsed; ArchivePanel.Visibility = Visibility.Collapsed; EntityReportPanel.Visibility = Visibility.Collapsed; }
     private void Deductions_Click(object sender, RoutedEventArgs e) => ShowTable(true);
     private void Salaries_Click(object sender, RoutedEventArgs e) => ShowTable(false);
     private void ShowTable(bool deductions)
@@ -109,6 +110,7 @@ public partial class MainWindow : Window
         HomePanel.Visibility = Visibility.Collapsed; TablePanel.Visibility = Visibility.Visible;
         ComparisonPanel.Visibility = Visibility.Collapsed;
         ArchivePanel.Visibility = Visibility.Collapsed;
+        EntityReportPanel.Visibility = Visibility.Collapsed;
         _ = RefreshRowsAsync();
     }
     private void Comparison_Click(object sender, RoutedEventArgs e)
@@ -116,6 +118,7 @@ public partial class MainWindow : Window
         PageTitle.Text = "مقارنة الاستقطاعات";
         HomePanel.Visibility = TablePanel.Visibility = Visibility.Collapsed;
         ArchivePanel.Visibility = Visibility.Collapsed;
+        EntityReportPanel.Visibility = Visibility.Collapsed;
         ComparisonPanel.Visibility = Visibility.Visible;
     }
 

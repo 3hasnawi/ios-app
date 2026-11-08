@@ -22,7 +22,7 @@ public partial class MainWindow
     private async void Archive_Click(object sender, RoutedEventArgs e)
     {
         PageTitle.Text = "الأرشيف";
-        HomePanel.Visibility = TablePanel.Visibility = ComparisonPanel.Visibility = Visibility.Collapsed;
+        HomePanel.Visibility = TablePanel.Visibility = ComparisonPanel.Visibility = EntityReportPanel.Visibility = Visibility.Collapsed;
         ArchivePanel.Visibility = Visibility.Visible;
         await LoadArchiveAsync();
     }
