@@ -31,6 +31,9 @@ main='''import Foundation
         async let second = SharedModel.ensureReady()
         let (a,b) = try await (first,second)
         precondition(a === b && a === SharedModel.container && ModelContainer.count == 1)
+        SharedModel.health.restoring = true
+        do { try await SharedModel.ensureReady(); fatalError("An intent read partial restore data") } catch { }
+        SharedModel.health.restoring = false
         SharedModel.health.restartRequired = true
         do { try await SharedModel.ensureReady(); fatalError("Partial restore was exposed") } catch { }
         print("Startup retries, concurrent callers and recovery blocking passed")

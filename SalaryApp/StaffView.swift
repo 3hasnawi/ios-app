@@ -130,6 +130,7 @@ struct RootView: View {
             }
         }
         // النظام يرسم الزجاج ويحرّك المؤشر ويصغّر الشريط أثناء التمرير.
+        .disabled(backup.isWorking || importCenter.isBusy || staffImport.isImporting)
         .tabBarMinimizeBehavior(.onScrollDown)
         .fullScreenCover(isPresented: $router.showReports) {
             ReportsView(presentedFromHome: true)

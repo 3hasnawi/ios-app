@@ -1143,9 +1143,10 @@ final class BackupManager {
         let serverRestore = pendingServerRestore
         pendingServerRestore = nil
         isWorking = true
+        SharedModel.health.restoring = true
         let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         Task {
-            defer { isWorking = false; version += 1; try? FileManager.default.removeItem(at: pending.folder) }
+            defer { isWorking = false; SharedModel.health.restoring = false; version += 1; try? FileManager.default.removeItem(at: pending.folder) }
             let progress = ImportProgress.shared
             progress.begin(tr("استرجاع النسخة", "Restoring backup"))
             let sink = progress.sink(0, 1, tr("استبدال البيانات", "Replacing data"))

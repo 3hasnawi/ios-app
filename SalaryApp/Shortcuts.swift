@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 @MainActor @Observable
 final class DatabaseHealth {
     var restartRequired = false
+    var restoring = false
 }
 @MainActor enum SharedModel {
     static let health = DatabaseHealth()
@@ -23,6 +24,7 @@ final class DatabaseHealth {
         return opened
     }
     @discardableResult static func ensureReady() async throws -> ModelContainer {
+        if health.restoring { throw NSError(domain: "Database", code: 2, userInfo: [NSLocalizedDescriptionKey: "انتظر اكتمال استرجاع النسخة قبل قراءة البيانات."]) }
         if health.restartRequired || recovering { throw NSError(domain: "Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "أغلق التطبيق وافتحه لإعادة نقطة الرجوع قبل متابعة العمل."]) }
         if let opened { return opened }
         if let opening {
