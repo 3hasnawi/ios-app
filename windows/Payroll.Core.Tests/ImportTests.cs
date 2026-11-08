@@ -205,6 +205,11 @@ public sealed class ImportTests
             Assert.Equal(XLPageOrientation.Portrait, sheet.PageSetup.PageOrientation);
             Assert.Equal(XLPaperSize.A4Paper, sheet.PageSetup.PaperSize);
             Assert.Equal("أحمد", sheet.Cell("C4").GetString());
+            Assert.Equal("Arial", sheet.Cell("C4").Style.Font.FontName);
+            Assert.True(sheet.Cell("C4").Style.Font.Bold);
+            Assert.Equal(11.5, sheet.Cell("C4").Style.Font.FontSize);
+            Assert.Equal("Arial", sheet.Cell("B4").Style.Font.FontName);
+            Assert.Equal(10.5, sheet.Cell("B4").Style.Font.FontSize);
             Assert.Equal("=بيانات", sheet.Cell("E5").GetString());
             Assert.False(sheet.Cell("E5").HasFormula);
             Assert.Equal(1520d, sheet.Cell("D7").GetDouble());
@@ -230,6 +235,10 @@ public sealed class ImportTests
         DeductionPdfWriter.Write(report, "قيادة شرطة محافظة الانبار", regular, bold, stream);
         using var pdf = PdfDocument.Open(stream.ToArray());
         Assert.True(pdf.NumberOfPages > 1);
+        var fontNames = pdf.GetPages().SelectMany(p => p.Letters).Select(letter => letter.FontName).Distinct().ToArray();
+        var family = OperatingSystem.IsWindows() ? "Arial" : "DejaVuSans";
+        Assert.Contains(fontNames, name => name is not null && name.Contains(family, StringComparison.OrdinalIgnoreCase) && !name.Contains("Bold", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(fontNames, name => name is not null && name.Contains(family, StringComparison.OrdinalIgnoreCase) && name.Contains("Bold", StringComparison.OrdinalIgnoreCase));
         foreach (var page in pdf.GetPages())
         {
             Assert.InRange(page.Width, 594, 596);
