@@ -4,7 +4,11 @@ root=Path(__file__).resolve().parents[2]
 s=(root/'SalaryApp/Shortcuts.swift').read_text()
 start=s.index('@MainActor @Observable\nfinal class DatabaseHealth')
 end=s.index('/// ينقل',start)
-production='import Foundation\nimport Observation\n'+s[start:end]
+boot=s[start:end]
+# Recovery itself is exercised through SwiftData in the simulator; isolate the startup coordinator here.
+a=boot.index('    private static func recoveredURL(')
+boot=boot[:a] + '    static func recoveredURL(_ id: String) -> URL { URL(fileURLWithPath: "/fictional/" + id) }\n    static func makeRecoveredContainer(_ url: URL) throws -> ModelContainer { try ModelContainer(for: Employee.self) }\n}\n'
+production='import Foundation\nimport Observation\n'+boot
 stubs='''import Foundation
 final class ModelContainer: @unchecked Sendable {
     static var count = 0

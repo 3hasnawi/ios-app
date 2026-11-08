@@ -131,6 +131,18 @@ jobs:
           cp test-files/synthetic-word-font.ttf "$DATA/Documents/"
           echo "DATA=$DATA" >> "$GITHUB_ENV"
 
+      - name: Verify recovery to an independent database from a legacy backup
+        run: |
+          xcrun simctl launch "$UDID" "$BUNDLE" -bootstrapRecoveryTest YES
+          for i in $(seq 1 120); do
+            [ -f "$DATA/Documents/import-report.txt" ] && break
+            sleep 1
+          done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/bootstrap-recovery-report.txt
+          grep -q '^bootstrapRecovery=ok rows=600 legacyBackup=5' ci-output/bootstrap-recovery-report.txt
+          xcrun simctl terminate "$UDID" "$BUNDLE"
+          rm -f "$DATA/Documents/import-report.txt"
+
       - name: Verify Word transfer drafts
         run: |
           rm -f "$DATA/Documents/import-report.txt"

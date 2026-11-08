@@ -15,6 +15,7 @@ final class DatabaseHealth {
 @MainActor enum SharedModel {
     static let health = DatabaseHealth()
     private static var opened: ModelContainer?
+    private static var recovering = false
     private static var opening: Task<ModelContainer, Error>?
     static var container: ModelContainer {
         // لا تُنشأ واجهات البيانات إلا بعد ensureReady؛ الاختصارات تتحقق منه أيضاً.
@@ -22,7 +23,7 @@ final class DatabaseHealth {
         return opened
     }
     @discardableResult static func ensureReady() async throws -> ModelContainer {
-        if health.restartRequired { throw NSError(domain: "Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "أغلق التطبيق وافتحه لإعادة نقطة الرجوع قبل متابعة العمل."]) }
+        if health.restartRequired || recovering { throw NSError(domain: "Database", code: 1, userInfo: [NSLocalizedDescriptionKey: "أغلق التطبيق وافتحه لإعادة نقطة الرجوع قبل متابعة العمل."]) }
         if let opened { return opened }
         if let opening {
             let result = try await opening.value
@@ -31,6 +32,12 @@ final class DatabaseHealth {
         }
         let work = Task { @MainActor in
             try await Task.detached(priority: .userInitiated) { try RestoreSafety.recoverIfNeeded() }.value
+            if let id = UserDefaults.standard.string(forKey: "activeRecoveredDatabase") {
+                guard UUID(uuidString: id) != nil else { throw CocoaError(.fileReadCorruptFile) }
+                let url = recoveredURL(id)
+                guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
+                return try makeRecoveredContainer(url)
+            }
             return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
         }
         opening = work
@@ -39,6 +46,49 @@ final class DatabaseHealth {
         opened = result
         return result
     }
+    private static func recoveredURL(_ id: String) -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RecoveredDatabases", isDirectory: true).appendingPathComponent(id + ".store")
+    }
+    private static func makeRecoveredContainer(_ url: URL) throws -> ModelContainer {
+        let schema = Schema([PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self])
+        return try ModelContainer(for: schema, configurations: [ModelConfiguration(url: url)])
+    }
+    /// لا تُلمس القاعدة التي تعذر فتحها: لا يصبح البديل فعّالاً إلا بعد استرجاع ناجح كامل.
+    static func recover(from archive: URL) async throws -> ModelContainer {
+        guard opened == nil, opening == nil, !recovering, !RestoreSafety.pending else { throw CocoaError(.fileWriteUnknown) }
+        recovering = true
+        defer { recovering = false }
+        let folder = try await BackupManager.extractForRestore(archive)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let id = UUID().uuidString, url = recoveredURL(id)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let candidate = try makeRecoveredContainer(url)
+        do {
+            let settings = try await BackupActor(modelContainer: candidate).restore(from: folder, progress: nil, recoverable: true)
+            for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted"] where settings[key] == nil {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            for (key, data) in settings {
+                let value = try PropertyListSerialization.propertyList(from: data, format: nil)
+                UserDefaults.standard.set(value, forKey: key)
+            }
+            UserDefaults.standard.set(id, forKey: "activeRecoveredDatabase")
+            UserDefaults.standard.synchronize()
+            try RestoreSafety.finish()
+            opened = candidate
+            for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
+            BankStatementCache.shared.invalidate()
+            await SearchIndex.shared.invalidate()
+            OfficialBookStore.shared.reload()
+            BackupManager.shared.markChanged()
+            return candidate
+        } catch {
+            if RestoreSafety.pending { health.restartRequired = true }
+            throw error
+        }
+    }
+
 }
 
 /// ينقل اسماً من اختصار "افتح البحث" إلى الشاشة الرئيسية.

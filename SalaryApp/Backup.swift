@@ -1064,9 +1064,11 @@ final class BackupManager {
 
     func openForRestore(_ url: URL) async { await open(url) }
 
-    private func open(_ url: URL, serverRestore: (date: Date, address: String, token: String, uploadID: String?, deviceName: String?)? = nil) async {
-        do {
-            let folder = try await Task.detached(priority: .userInitiated) { () throws -> URL in
+    nonisolated static func extractForRestore(_ url: URL) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) { () throws -> URL in
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 var extracted = false
@@ -1106,7 +1108,13 @@ final class BackupManager {
                 ImportCenter.removeCopy(url)
                 extracted = true
                 return dir
-            }.value
+
+        }.value
+    }
+
+    private func open(_ url: URL, serverRestore: (date: Date, address: String, token: String, uploadID: String?, deviceName: String?)? = nil) async {
+        do {
+            let folder = try await Self.extractForRestore(url)
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
             guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
             if manifest.version >= 2, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("accounts.jsonl").path) {
