@@ -8,6 +8,7 @@
         <StackPanel>
           <Button x:Name="HomeButton" Content="الرئيسية" Click="Home_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="DeductionsButton" Content="الاستقطاعات" Click="Deductions_Click" HorizontalContentAlignment="Right"/>
+          <Button x:Name="ComparisonButton" Content="مقارنة الاستقطاعات" Click="Comparison_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="SalariesButton" Content="الرواتب" Click="Salaries_Click" HorizontalContentAlignment="Right"/>
           <TextBlock Text="الأقسام القادمة" Foreground="#B8D5CF" Margin="8,24,8,5"/>
           <TextBlock Text="كشف البنك · ملفات التحويل" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
@@ -54,6 +55,30 @@
             </DataGrid>
           </Border>
           <DockPanel Grid.Row="2" Margin="0,10,0,0"><TextBlock x:Name="PageInfo" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Left"><Button x:Name="PreviousButton" Content="السابق" Click="Previous_Click"/><Button x:Name="NextButton" Content="التالي" Click="Next_Click"/></StackPanel></DockPanel>
+        </Grid>
+        <Grid x:Name="ComparisonPanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <WrapPanel Margin="0,0,0,8">
+            <TextBlock Text="الشهر السابق" VerticalAlignment="Center" Margin="4"/>
+            <ComboBox x:Name="PreviousMonthBox" MinWidth="170" Padding="8,6" SelectionChanged="ComparisonMonth_Changed"/>
+            <TextBlock Text="الشهر الحالي" VerticalAlignment="Center" Margin="14,4,4,4"/>
+            <ComboBox x:Name="CurrentMonthBox" MinWidth="170" Padding="8,6" SelectionChanged="ComparisonMonth_Changed"/>
+            <Button x:Name="RunComparisonButton" Content="عرض المقارنة" Click="RunComparison_Click" Background="{StaticResource Primary}" Foreground="White"/>
+          </WrapPanel>
+          <TextBlock x:Name="ComparisonHint" Grid.Row="1" Margin="4,0,4,12" TextWrapping="Wrap" Foreground="#61736F" Text="تُقارن الجهات بحسب اسمها كما ورد في النسخة؛ الأسماء المختلفة لا تُدمج تلقائياً."/>
+          <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+            <DataGrid x:Name="ComparisonGrid" AlternationCount="2" HeadersVisibility="Column" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الجهة" Binding="{Binding Entity}" Width="*" MinWidth="190"/>
+                <DataGridTextColumn Header="عدد السابق" Binding="{Binding PreviousCount}" Width="SizeToHeader"/>
+                <DataGridTextColumn Header="مبلغ السابق" Binding="{Binding PreviousDisplay}" Width="SizeToCells"/>
+                <DataGridTextColumn Header="عدد الحالي" Binding="{Binding CurrentCount}" Width="SizeToHeader"/>
+                <DataGridTextColumn Header="مبلغ الحالي" Binding="{Binding CurrentDisplay}" Width="SizeToCells"/>
+                <DataGridTextColumn Header="الفرق" Binding="{Binding DifferenceDisplay}" Width="SizeToCells"/>
+                <DataGridTextColumn Header="مبالغ ناقصة" Binding="{Binding MissingDisplay}" Width="SizeToHeader"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Border>
         </Grid>
       </Grid>
       <TextBlock x:Name="StatusText" Grid.Row="2" Text="جاهز" Foreground="#61736F" Margin="0,12,0,0" TextWrapping="Wrap"/>

@@ -88,10 +88,15 @@ public partial class MainWindow : Window
         DatasetSummary.Text = $"الرواتب: {info.Employees:N0} سجل · الاستقطاعات: {info.Deductions:N0} قيد\nالملاك: {info.Staff:N0} سجل · الحسابات: {info.Accounts:N0}";
         MonthBox.ItemsSource = new[] { AllMonths }.Concat(info.Months).ToArray();
         MonthBox.SelectedIndex = 0;
+        PreviousMonthBox.ItemsSource = info.Months;
+        CurrentMonthBox.ItemsSource = info.Months;
+        if (info.Months.Count > 0) CurrentMonthBox.SelectedIndex = 0;
+        if (info.Months.Count > 1) PreviousMonthBox.SelectedIndex = 1;
+        ComparisonGrid.ItemsSource = null;
         if (TablePanel.Visibility == Visibility.Visible) { _page = 0; _ = RefreshRowsAsync(); }
     }
 
-    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; }
+    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; ComparisonPanel.Visibility = Visibility.Collapsed; }
     private void Deductions_Click(object sender, RoutedEventArgs e) => ShowTable(true);
     private void Salaries_Click(object sender, RoutedEventArgs e) => ShowTable(false);
     private void ShowTable(bool deductions)
@@ -100,7 +105,55 @@ public partial class MainWindow : Window
         PageTitle.Text = deductions ? "الاستقطاعات" : "الرواتب";
         PlaceColumn.Header = deductions ? "الجهة" : "محل العمل";
         HomePanel.Visibility = Visibility.Collapsed; TablePanel.Visibility = Visibility.Visible;
+        ComparisonPanel.Visibility = Visibility.Collapsed;
         _ = RefreshRowsAsync();
+    }
+    private void Comparison_Click(object sender, RoutedEventArgs e)
+    {
+        PageTitle.Text = "مقارنة الاستقطاعات";
+        HomePanel.Visibility = TablePanel.Visibility = Visibility.Collapsed;
+        ComparisonPanel.Visibility = Visibility.Visible;
+    }
+
+    private void ComparisonMonth_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || ComparisonGrid is null) return;
+        ComparisonGrid.ItemsSource = null;
+        ComparisonHint.Text = "اضغط عرض المقارنة بعد اختيار الشهرين. تُقارن أسماء الجهات كما وردت في النسخة.";
+    }
+
+    private async void RunComparison_Click(object sender, RoutedEventArgs e)
+    {
+        if (_dataset is null) { StatusText.Text = "افتح نسخة الآيفون أولاً."; return; }
+        if (PreviousMonthBox.SelectedItem is not string previous || CurrentMonthBox.SelectedItem is not string current || previous == current)
+        { StatusText.Text = "اختر شهرين مختلفين للمقارنة."; return; }
+        var dataset = _dataset;
+        RunComparisonButton.IsEnabled = false;
+        PreviousMonthBox.IsEnabled = CurrentMonthBox.IsEnabled = false;
+        try
+        {
+            var rows = await Task.Run(() => DeductionComparison.Compare(dataset, previous, current));
+            if (dataset != _dataset) return;
+            ComparisonGrid.ItemsSource = rows.Select(x => new ComparisonDisplay(x)).ToArray();
+            var missing = rows.Sum(x => x.PreviousMissing + x.CurrentMissing);
+            ComparisonHint.Text = $"{rows.Count:N0} جهة. تُقارن الأسماء كما وردت في النسخة؛ الأسماء المختلفة لا تُدمج تلقائياً. " +
+                (missing > 0 ? $"تنبيه: {missing:N0} سجل بلا مبلغ؛ المجاميع والفروق غير مكتملة." : "لا توجد مبالغ مفقودة في السجلات المقارنة.");
+            StatusText.Text = "اكتملت المقارنة.";
+        }
+        catch (Exception ex) { StatusText.Text = "تعذّرت المقارنة: " + ex.Message; }
+        finally { RunComparisonButton.IsEnabled = true; PreviousMonthBox.IsEnabled = CurrentMonthBox.IsEnabled = true; }
+    }
+
+    private sealed class ComparisonDisplay(DeductionComparisonRow row)
+    {
+        private static string Format(decimal value) => value.ToString("#,0.############################", CultureInfo.InvariantCulture);
+        public string Entity => row.Entity;
+        public int PreviousCount => row.PreviousCount;
+        public int CurrentCount => row.CurrentCount;
+        public string PreviousDisplay => Format(row.PreviousAmount) + (row.PreviousMissing > 0 ? " (ناقص)" : "");
+        public string CurrentDisplay => Format(row.CurrentAmount) + (row.CurrentMissing > 0 ? " (ناقص)" : "");
+        public string DifferenceDisplay => row.PreviousMissing + row.CurrentMissing > 0 ? "غير مكتمل" : Format(row.Difference);
+        public string MissingDisplay => $"{row.PreviousMissing} / {row.CurrentMissing}";
     }
     private void Filter_Changed(object sender, SelectionChangedEventArgs e) { if (!IsLoaded) return; _page = 0; _ = RefreshRowsAsync(); }
     private void Search_Changed(object sender, TextChangedEventArgs e) { if (!IsLoaded) return; _searchTimer.Stop(); _searchTimer.Start(); }

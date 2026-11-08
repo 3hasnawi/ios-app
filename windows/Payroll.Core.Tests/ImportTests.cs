@@ -105,6 +105,31 @@ public sealed class ImportTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Fact]
+    public async Task ComparisonUsesDecimalAndMakesMissingAmountsVisible()
+    {
+        var dir = Temp();
+        try
+        {
+            var result = await IosBackupImporter.ImportAsync(Fixture(dir), Path.Combine(dir, "data"));
+            using (var db = Open(result.Directory))
+            using (var cmd = db.CreateCommand())
+            {
+                cmd.CommandText = "INSERT INTO deductions(month,name,title,amount,note,rank,original) VALUES ('تشرين الاول 2026','اسم','جهة وهمية',NULL,'','',X'00'), ('تشرين الاول 2026','اسم','جهة وهمية','0.1','','',X'00')";
+                cmd.ExecuteNonQuery();
+            }
+            var rows = DeductionComparison.Compare(result.Directory, "أيلول 2026", "تشرين الاول 2026");
+            var row = Assert.Single(rows);
+            Assert.Equal(1000m, row.PreviousAmount);
+            Assert.Equal(1000.1m, row.CurrentAmount);
+            Assert.Equal(0.1m, row.Difference);
+            Assert.Equal(1, row.CurrentMissing);
+            Assert.Equal(3, row.CurrentCount);
+            Assert.Throws<ArgumentException>(() => DeductionComparison.Compare(result.Directory, "أيلول 2026", "أيلول 2026"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     private static string Temp() { var dir = Path.Combine(Path.GetTempPath(), "payroll-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }
     private static SqliteConnection Open(string dir) { var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(dir, "data.sqlite"), Pooling = false }.ToString()); db.Open(); return db; }
     private static string Fixture(string dir, bool wrongCount = false, string? extra = null, string fileName = "source.zip", int version = 5)
