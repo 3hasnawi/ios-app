@@ -21,6 +21,8 @@ jobs:
         run: swiftc --version
       - name: Parse changed Swift files
         run: swiftc -frontend -parse SalaryApp/*.swift
+      - name: Real SwiftData split import and rollback
+        run: python3 ci/data_importer_test/run.py
       - name: Startup failure and concurrent callers
         run: python3 ci/startup_safety_test/run.py
       - name: Malformed Excel rejection

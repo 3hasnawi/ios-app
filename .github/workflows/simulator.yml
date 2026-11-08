@@ -107,7 +107,7 @@ jobs:
               for row in sheet.iter_rows(values_only=True): ws.append(list(row))
               import os; os.makedirs("test-files/split", exist_ok=True); wb.save(out)
           PY
-          sed 's/$/ months=1/' sep.txt > ci-output/expected-split.txt
+          sed -E 's/employees=[0-9]+/employees=0/; s/$/ months=1 accountsAdded=0 accountsUpdated=0 accountsInvalid=0 failed=1/' sep.txt > ci-output/expected-split.txt
           # ملف غير متوافق (لا اسم ولا صافي راتب) لاختبار رسالة الرفض
           .venv/bin/python -c "
           from openpyxl import Workbook
@@ -365,7 +365,7 @@ jobs:
           launch -tab bank -openBankSettings YES
           shot 03d-bank-manual-amounts 5
 
-          # 2b) ملفان منفصلان: نافذة المراجعة (التعرّف على النوع والشهر)، ثم الاستيراد
+          # 2b) شهر أقدم: يجب رفض رواتبه، وتبقى استقطاعاته قابلة للاستيراد.
           SPLIT="$DATA/Documents/رواتب آب 2026.xlsx|$DATA/Documents/استقطاعات آب 2026.xlsx"
           launch -importFile "$SPLIT" -importReview YES
           shot 02b-import-review 10
@@ -373,6 +373,11 @@ jobs:
           launch -importFile "$SPLIT"
           for i in $(seq 1 120); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
           { cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "error=no split report"; } | tee ci-output/import-split-report.txt
+          rm -f "$DATA/Documents/import-report.txt"
+          launch -retainedPayrollTest YES
+          for i in $(seq 1 90); do [ -f "$DATA/Documents/import-report.txt" ] && break; sleep 1; done
+          cat "$DATA/Documents/import-report.txt" | tee ci-output/retained-after-old-import-report.txt
+          grep -q '^retainedPayroll=ok' ci-output/retained-after-old-import-report.txt
 
           # 2c) ملف غير متوافق: رسالة الرفض بالسبب
           launch -importFile "$DATA/Documents/ملف غير متوافق.xlsx" -importReview YES
