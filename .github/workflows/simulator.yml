@@ -75,7 +75,7 @@ jobs:
         run: |
           xcodebuild -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release \
             -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build-for-testing > ci-output/build.log 2>&1 \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES build-for-testing > ci-output/build.log 2>&1 \
             || { grep -E "error:|warning: .*(isolat|Sendable)" ci-output/build.log | sort -u | head -40 | sed 's/^/::error::/'; exit 1; }
           grep -cE "warning:" ci-output/build.log || true
 

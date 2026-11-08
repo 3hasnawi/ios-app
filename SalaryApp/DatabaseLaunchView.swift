@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 /// خطأ فتح القاعدة لا ينشئ قاعدة فارغة ولا يسمح باستعمال بيانات جزئية.
 struct DatabaseLaunchView: View {
