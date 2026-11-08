@@ -20,6 +20,8 @@ jobs:
         run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift SalaryApp/EntityDeductionPDF.swift SalaryApp/ReportExport.swift SalaryApp/EmployeeDeductions.swift SalaryApp/EmployeeDeductionSelfTest.swift SalaryApp/HealthCareReport.swift SalaryApp/HealthCarePDFLayout.swift
       - name: Retention and search normalization
         run: python3 ci/ios_safety_test/run.py
+      - name: Health care summary
+        run: python3 ci/health_summary_test/run.py
       - name: Payroll item parser
         run: bash ci/payroll_item_parser_test/run.sh
       - name: Report layout calculations

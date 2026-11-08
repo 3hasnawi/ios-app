@@ -31,6 +31,12 @@ nonisolated enum HealthCareReport {
         var others: [ReportRow]
         /// مبالغ لا تقبل القسمة على \(Num.format(3500)) (الكشف لا يقبل الكسور).
         var irregular: [ReportRow] { subscribers.filter { !HealthCareReport.isExact($0.amount) } }
+        /// لا تُقرّب المبالغ غير المنتظمة إلى إحدى فئات العوائل.
+        var regularFamilies: [Int: Int] {
+            Dictionary(grouping: subscribers.filter { HealthCareReport.isExact($0.amount) },
+                       by: { HealthCareReport.family($0.amount) }).mapValues(\.count)
+        }
+        var irregularTotal: Double { irregular.reduce(0) { $0 + $1.amount } }
     }
 
     static func applies(to title: String) -> Bool {
@@ -287,7 +293,7 @@ struct HealthCareSection: View {
     let lists: HealthCareReport.Lists
 
     var body: some View {
-        let families = Dictionary(grouping: lists.subscribers, by: { HealthCareReport.family($0.amount) }).mapValues(\.count)
+        let families = lists.regularFamilies
         let irregular = lists.irregular
         if !irregular.isEmpty {
             Section {
@@ -318,6 +324,10 @@ struct HealthCareSection: View {
             }
             LabeledContent(tr("غير المشتركين (لهم رواتب)", "Not subscribed (paid)")) {
                 Text(Num.format(lists.others.count)).monospacedDigit().foregroundStyle(.red)
+            }
+            LabeledContent(tr("المبالغ غير المنتظمة (\(Num.format(irregular.count)))", "Irregular amounts (\(irregular.count))")) {
+                Text(Money.format(lists.irregularTotal)).monospacedDigit()
+                    .foregroundStyle(irregular.isEmpty ? Color.secondary : Color.red)
             }
             ForEach(families.keys.sorted(), id: \.self) { n in
                 LabeledContent(tr("عائلة من \(Num.format(n)) (\(Money.format(Double(n) * HealthCareReport.perMember)))",
