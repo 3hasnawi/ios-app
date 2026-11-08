@@ -106,7 +106,7 @@ public sealed class ImportTests
     }
 
     private static string Temp() { var dir = Path.Combine(Path.GetTempPath(), "payroll-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }
-    private static SqliteConnection Open(string dir) { var db = new SqliteConnection($"Data Source={Path.Combine(dir, "data.sqlite")}"); db.Open(); return db; }
+    private static SqliteConnection Open(string dir) { var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(dir, "data.sqlite"), Pooling = false }.ToString()); db.Open(); return db; }
     private static string Fixture(string dir, bool wrongCount = false, string? extra = null, string fileName = "source.zip", int version = 5)
     {
         var months = new[] { "أيلول 2026", "تشرين الاول 2026", "تشرين الثاني 2026" };
