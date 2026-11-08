@@ -510,9 +510,21 @@ private struct SavedMonthsView: View {
         ) {
             Button(tr("حذف", "Delete"), role: .destructive) {
                 guard let name = monthToDelete?.name else { return }
+                guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+                    ImportCenter.shared.message = tr("انتظر انتهاء العملية الحالية قبل الحذف.", "Wait for the current operation before deleting data.")
+                    return
+                }
+                ImportCenter.shared.isBusy = true
                 let importer = DataImporter(modelContainer: context.container)
-                BackupManager.shared.markChanged()
-                Task { try? await importer.delete(month: name) }
+                Task {
+                    defer { ImportCenter.shared.isBusy = false }
+                    do {
+                        try await importer.delete(month: name)
+                        BackupManager.shared.markChanged()
+                        BankStatementCache.shared.invalidate()
+                        await SearchIndex.shared.invalidate()
+                    } catch { ImportCenter.shared.message = error.localizedDescription }
+                }
             }
         }
     }

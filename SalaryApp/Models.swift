@@ -293,8 +293,12 @@ actor DataImporter {
     }
 
     func delete(month: String) throws {
+        modelContext.autosaveEnabled = false
+        var committed = false
+        defer { if !committed { modelContext.rollback() } }
         try removeData(of: month)
         try modelContext.save()
+        committed = true
     }
 
     private func removeData(of month: String) throws {

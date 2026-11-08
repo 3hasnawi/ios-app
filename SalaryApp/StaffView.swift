@@ -76,13 +76,19 @@ final class StaffImportState {
     }
 
     func deleteAll() {
-        BackupManager.shared.markChanged()
+        guard !isImporting, !ImportCenter.shared.isBusy, !BackupManager.shared.isWorking else {
+            message = tr("انتظر انتهاء العملية الحالية قبل الحذف.", "Wait for the current operation before deleting data.")
+            return
+        }
+        isImporting = true
         let container = SharedModel.container
         Task {
-            try? await Task.detached(priority: .userInitiated) {
+            defer { isImporting = false; version += 1 }
+            do {
                 try await StaffImporter(modelContainer: container).deleteAll()
-            }.value
-            version += 1
+                BackupManager.shared.markChanged()
+                await SearchIndex.shared.invalidate()
+            } catch { message = error.localizedDescription }
         }
     }
 }
