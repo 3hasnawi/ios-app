@@ -22,7 +22,7 @@ nonisolated enum EntityDeductionPDF {
     private static func invalid(_ message: String) -> NSError {
         NSError(domain: "EntityDeductionPDF", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
-    private static func lines(_ text: String, width: CGFloat, font: UIFont) throws -> Int {
+    static func lines(_ text: String, width: CGFloat, font: UIFont) throws -> Int {
         guard width > 1 else { throw invalid("أحد أعمدة الكشف أضيق من أن يحتوي البيانات.") }
         guard !text.isEmpty else { return 1 }
         let attrs: [NSAttributedString.Key: Any] = [.font: font, NSAttributedString.Key(kCTParagraphStyleAttributeName as String): PDFText.rtl]

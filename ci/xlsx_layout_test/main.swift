@@ -36,3 +36,18 @@ bad = sheet
 bad.rows[0][1] = String(repeating: "اسم ", count: 9000)
 do { try XLSXWriter.validate(bad); fatalError("Overlong row accepted") } catch { }
 print("Excel report wrapping, styling and numeric safety tests passed with fictional data")
+
+let healthLongName = String(repeating: "اسم وهمي طويل ", count: 8)
+let healthRows = [ReportRow(name: healthLongName, rank: "موظف", amount: 3500), ReportRow(name: "موظف وهمي", rank: "موظف", amount: 3700)]
+let healthXML = try HealthCareReport.sheet(healthRows, month: "2026", others: false)
+precondition(healthXML.contains(healthLongName))
+precondition(healthXML.contains("r=\"C3\" s=\"7\""))
+precondition(healthXML.contains("r=\"C4\" s=\"10\""))
+precondition(healthXML.contains("r=\"E4\" s=\"5\""))
+precondition(!healthXML.contains("r=\"3\" ht=\"24\""))
+precondition(HealthCareReport.styles.contains("wrapText=\"1\""))
+do {
+    _ = try HealthCareReport.sheet([ReportRow(name: "اسم", rank: "موظف", amount: .infinity)], month: "2026", others: false)
+    fatalError("Invalid health amount accepted")
+} catch { }
+print("Health care Excel wrapping and warning cell tests passed")

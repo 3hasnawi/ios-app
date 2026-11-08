@@ -17,7 +17,7 @@ jobs:
       - name: Swift version
         run: swiftc --version
       - name: Parse changed Swift files
-        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift SalaryApp/EntityDeductionPDF.swift SalaryApp/ReportExport.swift SalaryApp/EmployeeDeductions.swift SalaryApp/EmployeeDeductionSelfTest.swift
+        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift SalaryApp/EntityDeductionPDF.swift SalaryApp/ReportExport.swift SalaryApp/EmployeeDeductions.swift SalaryApp/EmployeeDeductionSelfTest.swift SalaryApp/HealthCareReport.swift SalaryApp/HealthCarePDFLayout.swift
       - name: Retention and search normalization
         run: python3 ci/ios_safety_test/run.py
       - name: Payroll item parser

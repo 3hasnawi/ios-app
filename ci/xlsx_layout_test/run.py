@@ -33,7 +33,20 @@ struct ReportSheet {
 with tempfile.TemporaryDirectory(prefix="salary-xlsx-layout-") as temp:
     directory = Path(temp)
     (directory / "Production.swift").write_text(production)
+    health = (root / "SalaryApp/HealthCareReport.swift").read_text()
+    start = health.index("    private static func sheet(")
+    end = health.index("    // MARK: - PDF", start)
+    health_production = health[start:end].replace("private static", "static")
+    health_stubs = '''import Foundation
+struct ReportRow { let name: String; let rank: String; let amount: Double }
+enum HealthCareReport {
+    static func isExact(_ value: Double) -> Bool { value.truncatingRemainder(dividingBy: 3500) == 0 }
+    static func family(_ value: Double) -> Int { max(1, Int((value / 3500).rounded())) }
+    static func familyText(_ value: Double) -> String { isExact(value) ? String(family(value)) : String(format: "%.2f", value / 3500) }
+    static func title(month: String, others: Bool) -> String { "رعاية " + month }
+'''
+    (directory / "Health.swift").write_text(health_stubs + health_production + "}\n")
     (directory / "Stubs.swift").write_text(stubs)
     (directory / "main.swift").write_text((root / "ci/xlsx_layout_test/main.swift").read_text())
-    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
+    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "xlsx-test")], cwd=directory, check=True)

@@ -75,28 +75,38 @@ nonisolated enum HealthCareReport {
 
     static func writeExcel(_ lists: Lists, month: String, to url: URL) throws {
         try XLSXWriter.package(sheets: [
-            ("المشتركين", sheet(lists.subscribers, month: month, others: false)),
-            ("الغير مشتركين", sheet(lists.others, month: month, others: true)),
+            ("المشتركين", try sheet(lists.subscribers, month: month, others: false)),
+            ("الغير مشتركين", try sheet(lists.others, month: month, others: true)),
         ], styles: styles, to: url)
     }
 
-    private static func sheet(_ rows: [ReportRow], month: String, others: Bool) -> String {
+    private static func sheet(_ rows: [ReportRow], month: String, others: Bool) throws -> String {
         let t = XLSXWriter.self
         let headers = others ? ["ت", "الرتبة", "الاسم", "المبلغ"] : ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"]
         let last = t.letter(headers.count - 1)
+        let textColumns: [ReportSheet.Column] = [
+            .init(title: "الرتبة", width: 13, kind: .text),
+            .init(title: "الاسم", width: 42, kind: .text)
+        ]
+        guard rows.count <= 1_048_574, rows.allSatisfy({ $0.amount.isFinite && abs($0.amount) <= 999_999_999_999_999 && $0.name.utf16.count <= 32_767 && $0.rank.utf16.count <= 32_767 && t.rowHeight([$0.rank, $0.name], columns: textColumns) <= 409 }) else {
+            throw NSError(domain: "HealthCareReport", code: 1, userInfo: [NSLocalizedDescriptionKey: "بيانات كشف الرعاية أكبر من المساحة المدعومة في Excel."])
+        }
         var xml = "<row r=\"1\" ht=\"34\" customHeight=\"1\">" + t.textCell("A1", title(month: month, others: others), style: 1)
             + (1..<headers.count).map { "<c r=\"\(t.letter($0))1\" s=\"1\"/>" }.joined() + "</row>"
         xml += "<row r=\"2\" ht=\"22\" customHeight=\"1\">"
             + headers.enumerated().map { t.textCell("\(t.letter($0.offset))2", $0.element, style: 2) }.joined() + "</row>"
         for (i, row) in rows.enumerated() {
             let r = i + 3
-            xml += "<row r=\"\(r)\" ht=\"20\" customHeight=\"1\">"
-                + "<c r=\"A\(r)\" s=\"3\"><v>\(i + 1)</v></c>"
-                + t.textCell("B\(r)", row.rank, style: 4)
-                + t.textCell("C\(r)", row.name, style: 4)
-                + "<c r=\"D\(r)\" s=\"3\"><v>\(t.number(row.amount))</v></c>"
+            let shaded = !i.isMultiple(of: 2)
+            let height = t.rowHeight([row.rank, row.name], columns: textColumns)
+            let numberStyle = shaded ? 8 : 3
+            xml += "<row r=\"\(r)\" ht=\"\(height)\" customHeight=\"1\">"
+                + "<c r=\"A\(r)\" s=\"\(numberStyle)\"><v>\(i + 1)</v></c>"
+                + t.textCell("B\(r)", row.rank, style: shaded ? 9 : 6)
+                + t.textCell("C\(r)", row.name, style: shaded ? 10 : 7)
+                + "<c r=\"D\(r)\" s=\"\(numberStyle)\"><v>\(t.number(row.amount))</v></c>"
                 + (others ? "" : isExact(row.amount)
-                    ? "<c r=\"E\(r)\" s=\"3\"><v>\(family(row.amount))</v></c>"
+                    ? "<c r=\"E\(r)\" s=\"\(numberStyle)\"><v>\(family(row.amount))</v></c>"
                     : "<c r=\"E\(r)\" s=\"5\"><v>\(familyText(row.amount))</v></c>")
                 + "</row>"
         }
@@ -124,30 +134,38 @@ nonisolated enum HealthCareReport {
     private static let styles = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-    <fonts count="3">
+    <fonts count="5">
     <font><sz val="12"/><name val="Arial"/></font>
     <font><b/><sz val="16"/><name val="Arial"/></font>
     <font><b/><sz val="12"/><name val="Arial"/></font>
+    <font><sz val="10.5"/><name val="Arial"/></font>
+    <font><b/><sz val="11.5"/><name val="Arial"/></font>
     </fonts>
-    <fills count="5">
+    <fills count="6">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFF7C80"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF4F4F4"/><bgColor indexed="64"/></patternFill></fill>
     </fills>
     <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>
     </borders>
     <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-    <cellXfs count="6">
+    <cellXfs count="11">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2" wrapText="1"/></xf>
     </cellXfs>
     <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
     </styleSheet>
@@ -156,60 +174,66 @@ nonisolated enum HealthCareReport {
     // MARK: - PDF (A4 بالطول: المشتركون ثم غير المشتركين من صفحة جديدة)
 
     static func writePDF(_ lists: Lists, month: String, to url: URL) throws {
-        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-        let margin: CGFloat = 32
+        let page = HealthCarePDFLayout.page, margin = HealthCarePDFLayout.margin
         let width = page.width - margin * 2
         let yellow = UIColor(red: 1, green: 1, blue: 0, alpha: 1)
         let gray = UIColor(white: 0.85, alpha: 1)
-        let rowH: CGFloat = 20
-
-        func draw(_ text: String, _ rect: CGRect, size: CGFloat = 10.5, bold: Bool = true) {
-            let font = bold ? ReportFont.bold(size) : ReportFont.regular(size)
-            PDFText.draw(text, in: rect.insetBy(dx: 3, dy: 0), font: font)
+        let alternate = UIColor(white: 0.957, alpha: 1)
+        struct Section {
+            let rows: [ReportRow]
+            let values: [[String]]
+            let headers: [String]
+            let title: String
+            let layout: HealthCarePDFLayout.Layout
         }
-
+        let sections: [Section] = try [false, true].map { others in
+            let rows = others ? lists.others : lists.subscribers
+            guard rows.allSatisfy({ $0.amount.isFinite && abs($0.amount) <= 999_999_999_999_999 }) else {
+                throw NSError(domain: "HealthCareReport", code: 1, userInfo: [NSLocalizedDescriptionKey: "مبلغ غير صالح في كشف الرعاية الصحية."])
+            }
+            let headers = others ? ["ت", "الرتبة", "الاسم", "المبلغ"] : ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"]
+            let ratios: [CGFloat] = others ? [7, 13, 42, 14] : [7, 13, 42, 14, 17]
+            let values = rows.enumerated().map { i, row in
+                [String(i + 1), row.rank, row.name, Money.plain(row.amount)] + (others ? [] : [familyText(row.amount)])
+            }
+            let heading = title(month: month, others: others)
+            return Section(rows: rows, values: values, headers: headers, title: heading,
+                           layout: try HealthCarePDFLayout.make(title: heading, headers: headers, rows: values, ratios: ratios))
+        }
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         try renderer.writePDF(to: url) { context in
             let cg = context.cgContext
             cg.setLineWidth(0.6)
             UIColor.black.setStroke()
-            for others in [false, true] {
-                let rows = others ? lists.others : lists.subscribers
-                let headers = others ? ["ت", "الرتبة", "الاسم", "المبلغ"] : ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"]
-                let ratios: [CGFloat] = others ? [7, 13, 42, 14] : [7, 13, 42, 14, 17]
-                let widths = ratios.map { $0 / ratios.reduce(0, +) * width }
-                var xs: [CGFloat] = []
+            for section in sections {
+                let layout = section.layout
                 var x = page.width - margin
-                for w in widths { x -= w; xs.append(x) }
-                let perPage = Int((page.height - margin * 2 - 34 - rowH - 16) / rowH)
-                let pages = max(1, Int(ceil(Double(rows.count) / Double(perPage))))
-                for p in 0..<pages { autoreleasepool {
+                let xs = layout.widths.map { w -> CGFloat in x -= w; return x }
+                for range in layout.pages { autoreleasepool {
                     context.beginPage()
-                    let titleRect = CGRect(x: margin, y: margin, width: width, height: 30)
+                    let titleRect = CGRect(x: margin, y: margin, width: width, height: layout.titleHeight)
                     yellow.setFill(); cg.fill(titleRect); cg.stroke(titleRect)
-                    draw(title(month: month, others: others), titleRect, size: 13)
+                    PDFText.draw(section.title, in: titleRect.insetBy(dx: 3, dy: 0), font: ReportFont.bold(13), wrap: true)
                     var y = titleRect.maxY + 4
-                    for (c, h) in headers.enumerated() {
-                        let r = CGRect(x: xs[c], y: y, width: widths[c], height: rowH)
-                        gray.setFill(); cg.fill(r); cg.stroke(r)
-                        draw(h, r)
+                    for (c, h) in section.headers.enumerated() {
+                        let rect = CGRect(x: xs[c], y: y, width: layout.widths[c], height: layout.headerHeight)
+                        gray.setFill(); cg.fill(rect); cg.stroke(rect)
+                        PDFText.draw(h, in: rect.insetBy(dx: 3, dy: 0), font: ReportFont.bold(11), wrap: true)
                     }
-                    y += rowH
-                    let start = p * perPage
-                    for i in start..<min(rows.count, start + perPage) {
-                        let row = rows[i]
-                        let values = [String(i + 1), row.rank, row.name, Money.plain(row.amount)] + (others ? [] : [familyText(row.amount)])
-                        for (c, v) in values.enumerated() {
-                            let r = CGRect(x: xs[c], y: y, width: widths[c], height: rowH)
-                            if c == 4 && !isExact(row.amount) {
-                                UIColor(red: 1, green: 0.49, blue: 0.5, alpha: 1).setFill(); cg.fill(r)
-                            }
-                            cg.stroke(r)
-                            draw(v, r)
+                    y += layout.headerHeight
+                    for i in range {
+                        let row = section.rows[i], height = layout.heights[i]
+                        for (c, value) in section.values[i].enumerated() {
+                            let rect = CGRect(x: xs[c], y: y, width: layout.widths[c], height: height)
+                            if c == 4 && !isExact(row.amount) { UIColor(red: 1, green: 0.49, blue: 0.5, alpha: 1).setFill() }
+                            else { (i.isMultiple(of: 2) ? UIColor.white : alternate).setFill() }
+                            cg.fill(rect); cg.stroke(rect)
+                            let font = c == 2 ? ReportFont.bold(11.5) : (c == 1 ? ReportFont.regular(10.5) : ReportFont.bold(11))
+                            PDFText.draw(value, in: rect.insetBy(dx: 3, dy: 0), font: font, wrap: c == 1 || c == 2)
                         }
-                        y += rowH
+                        y += height
                     }
-                } }   // autoreleasepool لكل صفحة
+                } }
             }
         }
     }

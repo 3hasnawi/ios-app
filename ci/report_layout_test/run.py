@@ -43,8 +43,10 @@ enum PDFText {
 with tempfile.TemporaryDirectory(prefix="salary-report-layout-") as temp:
     directory = Path(temp)
     (directory / "Entity.swift").write_text(entity)
+    health = (root / "SalaryApp/HealthCarePDFLayout.swift").read_text().replace("import UIKit", "import AppKit").replace("nonisolated ", "")
+    (directory / "Health.swift").write_text(health)
     (directory / "Widths.swift").write_text(widths)
     (directory / "Stubs.swift").write_text(stubs)
     (directory / "main.swift").write_text((root / "ci/report_layout_test/main.swift").read_text())
-    subprocess.run(["swiftc", "Stubs.swift", "Widths.swift", "Entity.swift", "main.swift", "-o", "layout-test"], cwd=directory, check=True)
+    subprocess.run(["swiftc", "Stubs.swift", "Widths.swift", "Entity.swift", "Health.swift", "main.swift", "-o", "layout-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "layout-test")], cwd=directory, check=True)

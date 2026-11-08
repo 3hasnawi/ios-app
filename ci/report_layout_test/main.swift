@@ -32,3 +32,19 @@ do {
     fatalError("Oversized row was accepted")
 } catch { }
 print("Portrait and landscape report layout tests passed with fictional data")
+
+let healthRows = (1...85).map { [String($0), "موظف", name, "3500", "1"] }
+let healthHeaders = ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"]
+let health = try HealthCarePDFLayout.make(title: "اشتراكات الرعاية الصحية", headers: healthHeaders, rows: healthRows, ratios: [7, 13, 42, 14, 17])
+precondition(health.pages.count > 1)
+precondition(health.pages.flatMap(Array.init) == Array(healthRows.indices))
+precondition(health.heights.allSatisfy { $0 > 24 })
+let blankHealth = try HealthCarePDFLayout.make(title: "رعاية", headers: healthHeaders, rows: [], ratios: [7, 13, 42, 14, 17])
+precondition(blankHealth.pages.count == 1 && blankHealth.pages[0].isEmpty)
+var tooLong = healthRows
+ tooLong[0][2] = String(repeating: "اسم طويل ", count: 6000)
+do {
+    _ = try HealthCarePDFLayout.make(title: "رعاية", headers: healthHeaders, rows: tooLong, ratios: [7, 13, 42, 14, 17])
+    fatalError("Oversized health row was accepted")
+} catch { }
+print("Health care layout wraps names and paginates all rows")
