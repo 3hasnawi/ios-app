@@ -17,16 +17,20 @@ jobs:
       - name: Swift version
         run: swiftc --version
       - name: Parse changed Swift files
-        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift
+        run: swiftc -frontend -parse SalaryApp/Models.swift SalaryApp/PDFDecor.swift SalaryApp/SalaryTrustSelfTest.swift SalaryApp/EntityDeductionPDF.swift SalaryApp/ReportExport.swift
       - name: Retention and search normalization
         run: python3 ci/ios_safety_test/run.py
       - name: Payroll item parser
         run: bash ci/payroll_item_parser_test/run.sh
+      - name: Report layout calculations
+        run: python3 ci/report_layout_test/run.py
+      - name: PDF page preservation
+        run: python3 ci/pdf_safety_test/run.py
       - name: Treasury letter calculations
         run: bash ci/treasury_letter_test/run.sh
       - name: Streaming backup line reader
         run: |
-          swiftc SalaryApp/BackupLineReader.swift ci/backup_line_reader_test/main.swift -o "$RUNNER_TEMP/backup-reader-test"
+          swiftc -O SalaryApp/BackupLineReader.swift ci/backup_line_reader_test/main.swift -o "$RUNNER_TEMP/backup-reader-test"
           "$RUNNER_TEMP/backup-reader-test"
       - name: Large fictional backup line reader
         if: ${{ inputs.large_backup }}

@@ -1,4 +1,7 @@
 import UIKit
+#if targetEnvironment(simulator)
+import PDFKit
+#endif
 
 /// تذييل أسفل كل صفحة: يميناً اسم القسم، وفي الوسط رقم الصفحة، ويساراً تاريخ ووقت التصدير.
 /// يعمل على الملف بعد كتابته، فيشمل كل الكشوف (القوائم، صندوق الشهداء، عقد الإطعام، الرعاية الصحية).
@@ -101,7 +104,27 @@ nonisolated enum PDFDecor {
         try apply(to: file)
         guard let output = CGPDFDocument(file as CFURL), output.numberOfPages == 2,
               output.page(at: 1) != nil, output.page(at: 2) != nil else { return false }
-        return try !FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasPrefix(".decor-") }
+        guard try !FileManager.default.contentsOfDirectory(atPath: directory.path).contains(where: { $0.hasPrefix(".decor-") }) else { return false }
+        // كشف عام متعدد الصفحات: يبقى النص الطويل كاملاً في الاتجاهين.
+        let longName = "اسم منتسب وهمي طويل يتضمن اسم الاب والجد واللقب للتحقق من التفاف النص"
+        let columns: [ReportSheet.Column] = [
+            .init(title: "ت", width: 5, kind: .serial),
+            .init(title: "الاسم الكامل", width: 50, kind: .text),
+            .init(title: "التفاصيل", width: 60, kind: .text),
+            .init(title: "المبلغ", width: 18, kind: .amount)
+        ]
+        let rows = (1...60).map { index in [String(index), longName, "بيانات تجريبية طويلة للمراجعة", ""] }
+        let sheet = ReportSheet(header: "قيادة وهمية", title: "كشف تجريبي", columns: columns, rows: rows, amounts: Array(repeating: 100, count: rows.count))
+        let report = directory.appendingPathComponent("wrapped-report.pdf")
+        try PDFReportWriter.write(sheet, to: report)
+        guard let pdf = PDFDocument(url: report), pdf.pageCount > 1 else { return false }
+        var fullText = ""
+        for pageNumber in 0..<pdf.pageCount {
+            guard let page = pdf.page(at: pageNumber), page.bounds(for: .mediaBox).width > page.bounds(for: .mediaBox).height,
+                  let text = page.string else { return false }
+            fullText += text + " "
+        }
+        return ArabicText.matchKey(fullText).contains(ArabicText.matchKey(longName))
     }
     #endif
 }

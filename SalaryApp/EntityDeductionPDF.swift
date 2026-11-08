@@ -1,9 +1,10 @@
 import UIKit
 import CoreText
 
-/// كشف جهة واحدة: A4 عمودي، مع قياس التفاف كل خلية قبل إنشاء أي صفحة.
+/// يقيس التفاف كل خلية قبل إنشاء الصفحات؛ كشف الجهة المفردة يبقى عمودياً.
 nonisolated enum EntityDeductionPDF {
     struct Layout {
+        let page: CGRect
         let widths: [CGFloat]
         let positions: [CGFloat]
         let headerHeight: CGFloat
@@ -12,9 +13,7 @@ nonisolated enum EntityDeductionPDF {
         let rowHeights: [CGFloat]
         let pages: [Range<Int>]
     }
-    private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
     private static let margin: CGFloat = 28
-    private static let bottom: CGFloat = 796
     private static let nameFont = ReportFont.bold(11.5)
     private static let textFont = ReportFont.regular(10.5)
     private static let headingFont = ReportFont.bold(11)
@@ -48,12 +47,20 @@ nonisolated enum EntityDeductionPDF {
     private static func isName(_ column: ReportSheet.Column) -> Bool { column.title.contains("الاسم") || column.title.hasPrefix("اسم") }
 
     static func prepare(_ sheet: ReportSheet) throws -> Layout {
-        guard sheet.entityDeduction, !sheet.columns.isEmpty, sheet.rows.count == sheet.amounts.count,
+        guard !sheet.columns.isEmpty, sheet.rows.count == sheet.amounts.count,
               sheet.rows.allSatisfy({ $0.count == sheet.columns.count }), sheet.amounts.allSatisfy({ $0.isFinite }), sheet.total.isFinite,
-              sheet.columns.filter({ $0.kind == .amount }).count == 1 else {
-            throw invalid("بيانات كشف الاستقطاعات غير مكتملة.")
+              sheet.columns.filter({ $0.kind == .amount }).count == 1,
+              !sheet.showTotal || sheet.amountColumn > 0 else {
+            throw invalid("بيانات الكشف غير مكتملة.")
         }
-        let widths = PDFReportWriter.columnWidths(sheet, tableWidth: page.width - margin * 2)
+        let page = sheet.landscape ? CGRect(x: 0, y: 0, width: 842, height: 595) : CGRect(x: 0, y: 0, width: 595, height: 842)
+        let bottom = page.height - margin - 18
+        let tableWidth = page.width - margin * 2
+        let widths = PDFReportWriter.columnWidths(sheet, tableWidth: tableWidth)
+        guard widths.count == sheet.columns.count, widths.allSatisfy({ $0.isFinite && $0 > 8 }),
+              abs(widths.reduce(0, +) - tableWidth) <= 1 else {
+            throw invalid("لا تتسع أعمدة الكشف داخل صفحة A4؛ صدّر Excel.")
+        }
         var right = page.width - margin
         let positions = widths.map { width -> CGFloat in right -= width; return right }
         let headerFont = ReportFont.bold(14), titleFont = ReportFont.bold(14)
@@ -63,7 +70,7 @@ nonisolated enum EntityDeductionPDF {
         let columnsHeight = max(24, ceil(CGFloat(columnsLines) * headingFont.lineHeight + 6))
         let tableTop = margin + headerHeight + titleHeight + columnsHeight
         let room = bottom - tableTop
-        guard room > 48 else { throw invalid("عنوان الكشف طويل جداً لصفحة A4 العمودية.") }
+        guard room > 48 else { throw invalid("عنوان الكشف طويل جداً لصفحة A4.") }
         let rowHeights: [CGFloat] = try sheet.rows.enumerated().map { index, row in
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
             var height: CGFloat = 24
@@ -72,10 +79,10 @@ nonisolated enum EntityDeductionPDF {
                 let value: String = switch column.kind { case .serial: String(index + 1); case .amount: money(sheet.amounts[index]); case .text: row[c] }
                 let font: UIFont = switch column.kind { case .serial, .amount: amountFont; case .text: isName(column) ? nameFont : textFont }
                 let count = try lines(value, width: widths[c] - 8, font: font)
-                if column.kind != .text && count > 1 { throw invalid("مبلغ أو تسلسل لا يتسع في الكشف العمودي؛ صدّر Excel.") }
+                if column.kind != .text && count > 1 { throw invalid("مبلغ أو تسلسل لا يتسع في الكشف؛ صدّر Excel.") }
                 height = max(height, ceil(CGFloat(count) * font.lineHeight + 8))
             }
-            guard height + (sheet.showTotal ? columnsHeight : 0) <= room else { throw invalid("أحد صفوف الكشف أطول من الصفحة العمودية؛ صدّر Excel.") }
+            guard height + (sheet.showTotal ? columnsHeight : 0) <= room else { throw invalid("أحد صفوف الكشف أطول من الصفحة؛ صدّر Excel.") }
             return height
         }
         var pages: [Range<Int>] = [], start = 0
@@ -90,13 +97,14 @@ nonisolated enum EntityDeductionPDF {
         if pages.isEmpty { pages = [0..<0] }
         if sheet.showTotal, sheet.columns.indices.contains(sheet.amountColumn),
            try lines(money(sheet.total), width: widths[sheet.amountColumn] - 8, font: ReportFont.bold(11.5)) > 1 {
-            throw invalid("مجموع الكشف لا يتسع في الصفحة العمودية؛ صدّر Excel.")
+            throw invalid("مجموع الكشف لا يتسع في الصفحة؛ صدّر Excel.")
         }
-        return Layout(widths: widths, positions: positions, headerHeight: headerHeight, titleHeight: titleHeight,
+        return Layout(page: page, widths: widths, positions: positions, headerHeight: headerHeight, titleHeight: titleHeight,
                       columnsHeight: columnsHeight, rowHeights: rowHeights, pages: pages)
     }
 
     static func render(_ sheet: ReportSheet, layout: Layout, in context: UIGraphicsPDFRendererContext) {
+        let page = layout.page
         let dark = UIColor(red: 0.12, green: 0.31, blue: 0.47, alpha: 1)
         let light = UIColor(red: 0.87, green: 0.92, blue: 0.97, alpha: 1)
         let line = UIColor(red: 0.61, green: 0.72, blue: 0.83, alpha: 1)

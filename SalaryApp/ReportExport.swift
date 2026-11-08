@@ -391,15 +391,11 @@ nonisolated enum PDFReportWriter {
     /// عدة كشوف في ملف واحد: كل كشف يبدأ بصفحة جديدة برأسه ومجموعه (PDF مجمّع).
     static func write(_ sheets: [ReportSheet], to url: URL) throws {
         // نتحقق من اتساع كل صف قبل إنشاء الملف، فلا يُشارك كشف مبتور.
-        let layouts: [EntityDeductionPDF.Layout?] = try sheets.map { sheet in
-            if sheet.entityDeduction { return try EntityDeductionPDF.prepare(sheet) }
-            return nil
-        }
+        let layouts = try sheets.map { try EntityDeductionPDF.prepare($0) }
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
         try renderer.writePDF(to: url) { context in
             for (index, sheet) in sheets.enumerated() {
-                if let layout = layouts[index] { EntityDeductionPDF.render(sheet, layout: layout, in: context) }
-                else { render(sheet, in: context) }
+                EntityDeductionPDF.render(sheet, layout: layouts[index], in: context)
             }
         }
     }
@@ -442,91 +438,7 @@ nonisolated enum PDFReportWriter {
         return widths
     }
 
-    private static func render(_ sheet: ReportSheet, in context: UIGraphicsPDFRendererContext) {
-        let page = sheet.landscape ? CGRect(x: 0, y: 0, width: 842, height: 595) : CGRect(x: 0, y: 0, width: 595, height: 842)
-        let margin: CGFloat = 28
-        let tableWidth = page.width - margin * 2
-        let rowHeight: CGFloat = 20
-        let headerTop: CGFloat = margin
-        let titleHeight: CGFloat = 30
-        let columnsHeight: CGFloat = 22
-        let tableTop = headerTop + 24 + titleHeight + columnsHeight
-        let bottom = page.height - margin - 18
-        let perPage = max(1, Int((bottom - tableTop) / rowHeight))
-        let pages = max(1, Int(ceil(Double(sheet.rows.count + 1) / Double(perPage))))
 
-        let widths = columnWidths(sheet, tableWidth: tableWidth)
-        // الأعمدة من اليمين إلى اليسار.
-        var xs: [CGFloat] = []
-        var x = page.width - margin
-        for w in widths { x -= w; xs.append(x) }
-
-        let dark = UIColor(red: 0.12, green: 0.31, blue: 0.47, alpha: 1)
-        let light = UIColor(red: 0.87, green: 0.92, blue: 0.97, alpha: 1)
-        let line = UIColor(red: 0.61, green: 0.72, blue: 0.83, alpha: 1)
-
-        func draw(_ text: String, in rect: CGRect, font: UIFont, color: UIColor = .black, align: NSTextAlignment = .center) {
-            PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 0), font: font, color: color, align: align)
-        }
-
-        func cellRect(_ c: Int, y: CGFloat, height: CGFloat) -> CGRect {
-            CGRect(x: xs[c], y: y, width: widths[c], height: height)
-        }
-
-        let amountFormatter = NumberFormatter()
-        amountFormatter.numberStyle = .decimal
-        amountFormatter.locale = Locale(identifier: "en_US")
-        amountFormatter.maximumFractionDigits = 2
-        func money(_ v: Double) -> String { amountFormatter.string(from: NSNumber(value: v)) ?? String(v) }
-
-        do {
-            let cg = context.cgContext
-            for p in 0..<pages { autoreleasepool {
-                context.beginPage(withBounds: page, pageInfo: [:])
-                draw(sheet.header, in: CGRect(x: margin, y: headerTop, width: tableWidth, height: 22), font: ReportFont.bold(14))
-                let titleRect = CGRect(x: margin, y: headerTop + 24, width: tableWidth, height: titleHeight)
-                dark.setFill(); cg.fill(titleRect)
-                draw(sheet.title, in: titleRect, font: ReportFont.bold(14), color: .white)
-                let colY = titleRect.maxY
-                for (c, column) in sheet.columns.enumerated() {
-                    let r = cellRect(c, y: colY, height: columnsHeight)
-                    light.setFill(); cg.fill(r)
-                    line.setStroke(); cg.stroke(r, width: 0.5)
-                    draw(column.title, in: r, font: ReportFont.bold(10.5))
-                }
-                var y = tableTop
-                let start = p * perPage
-                let end = min(sheet.rows.count, start + perPage)
-                if start < end {
-                    for i in start..<end {
-                        for (c, column) in sheet.columns.enumerated() {
-                            let r = cellRect(c, y: y, height: rowHeight)
-                            line.setStroke(); cg.stroke(r, width: 0.5)
-                            switch column.kind {
-                            case .serial: draw(String(i + 1), in: r, font: ReportFont.bold(10))
-                            case .amount: draw(money(sheet.amounts[i]), in: r, font: ReportFont.bold(10.5))
-                            case .text: draw(sheet.rows[i][c], in: r, font: ReportFont.regular(10), align: .right)
-                            }
-                        }
-                        y += rowHeight
-                    }
-                }
-                if p == pages - 1, sheet.showTotal {
-                    let amountCol = sheet.amountColumn
-                    let labelRect = (0..<max(1, amountCol)).map { cellRect($0, y: y, height: columnsHeight) }.reduce(CGRect.null) { $0.union($1) }
-                    for c in 0..<sheet.columns.count {
-                        let r = cellRect(c, y: y, height: columnsHeight)
-                        light.setFill(); cg.fill(r)
-                    }
-                    line.setStroke()
-                    cg.stroke(labelRect, width: 0.5)
-                    for c in amountCol..<sheet.columns.count { cg.stroke(cellRect(c, y: y, height: columnsHeight), width: 0.5) }
-                    draw("المجموع", in: labelRect, font: ReportFont.bold(11))
-                    draw(money(sheet.total), in: cellRect(amountCol, y: y, height: columnsHeight), font: ReportFont.bold(11))
-                }
-            } }   // autoreleasepool: ذاكرة كل صفحة تُحرَّر بعدها
-        }
-    }
 }
 
 // MARK: - نافذة التصدير
