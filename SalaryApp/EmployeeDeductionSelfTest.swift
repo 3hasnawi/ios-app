@@ -73,7 +73,18 @@ enum EmployeeDeductionSelfTest {
         let long = EmployeeDeductionStatement(person: person, rank: "موظف", workplace: "قسم تجريبي", entity: "جهة وهمية", rows: rows)
         let file = try await EmployeeDeductionPDF.make(long, logo: nil)
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
-        try require(PDFDocument(url: file)?.pageCount == 2, "Four years must span two pages")
+        let document = PDFDocument(url: file)
+        try require(document?.pageCount == 1, "Four years must fit on one landscape page")
+        if let page = document?.page(at: 0) {
+            let bounds = page.bounds(for: .mediaBox)
+            try require(bounds.width > bounds.height, "Statement must be landscape")
+        } else { throw Failure(message: "Statement page missing") }
+        try require(statement.references == ["1", "2", "مرجع"], "Deduction references missing")
+        let fifthYear = rows + [DeductionPeriodRow(year: 2028, month: 1, state: .amount(100))]
+        let multi = EmployeeDeductionStatement(person: person, rank: "موظف", workplace: "قسم تجريبي", entity: "جهة وهمية", rows: fifthYear)
+        let multiFile = try await EmployeeDeductionPDF.make(multi, logo: nil)
+        defer { try? FileManager.default.removeItem(at: multiFile.deletingLastPathComponent()) }
+        try require(PDFDocument(url: multiFile)?.pageCount == 2, "Five years must span two pages")
         let replacementContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
         let seed = ModelContext(replacementContainer)
         for month in [jan, feb] {

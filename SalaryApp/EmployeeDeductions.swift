@@ -30,6 +30,7 @@ nonisolated struct EmployeeDeductionStatement: Sendable {
     let entity: String
     let rows: [DeductionPeriodRow]
     var hasUnrecognizedMonths = false
+    var references: [String] = []
     var total: Double { rows.reduce(0) { result, row in
         if case .amount(let value) = row.state { return result + value }
         if case .status(let amount, _) = row.state { return result + (amount ?? 0) }
@@ -151,15 +152,27 @@ actor EmployeeDeductionEngine {
         }
         let title = entity
         var dd = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key && $0.title == title })
-        dd.propertiesToFetch = [\.month, \.amount, \.note]
+        dd.propertiesToFetch = [\.month, \.amount, \.note, \.rank]
         var totals: [String: Double] = [:]
         var statuses: [String: Set<String>] = [:]
         var hasUnrecognizedMonths = false
+        var references = Set<String>()
+        var deductionRank = ""
+        var latestRankDate = 0
         for d in try modelContext.fetch(dd) {
             try Task.checkCancellation()
             let date = MonthName.sortKey(d.month)
             if date == 0 { hasUnrecognizedMonths = true; continue }
             guard date >= from && date <= to else { continue }
+            if date >= latestRankDate && !d.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                deductionRank = d.rank; latestRankDate = date
+            }
+            var reference = d.note
+            if DeductionStatus.read(d.note, amount: d.amount) != nil, let end = reference.range(of: "⟧") {
+                reference = String(reference[end.upperBound...])
+            }
+            reference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reference.isEmpty { references.insert(reference) }
             if let status = DeductionStatus.read(d.note, amount: d.amount) {
                 statuses[d.month, default: []].insert(status)
                 continue
@@ -185,7 +198,7 @@ actor EmployeeDeductionEngine {
             else if let total = totals[name] { rows.append(DeductionPeriodRow(year: year, month: month, state: .amount(total))) }
             else { rows.append(DeductionPeriodRow(year: year, month: month, state: .none)) }
         }
-        let statement = EmployeeDeductionStatement(person: person, rank: latest?.rank ?? "", workplace: latest?.workplace ?? "", entity: entity, rows: rows, hasUnrecognizedMonths: hasUnrecognizedMonths)
+        let statement = EmployeeDeductionStatement(person: person, rank: (latest?.rank.isEmpty == false ? latest!.rank : deductionRank), workplace: latest?.workplace ?? "", entity: entity, rows: rows, hasUnrecognizedMonths: hasUnrecognizedMonths, references: references.sorted())
         guard statement.total.isFinite else { throw EmployeeDeductionError.invalidAmount }
         return statement
     }
@@ -449,7 +462,7 @@ struct StatementPreview: View {
     }
 }
 
-/// تنسيق الكشف المعتمد: حتى ثلاث سنوات في الصفحة، بحدود لكل خلية ومجموع مستقل.
+/// كشف أفقي حتى أربع سنوات في الصفحة مع بيان المراجع والمجاميع.
 nonisolated enum EmployeeDeductionPDF {
     static func make(_ statement: EmployeeDeductionStatement, logo: Data?) async throws -> URL {
         try await PDFWork.run {
@@ -458,7 +471,7 @@ nonisolated enum EmployeeDeductionPDF {
             let url = dir.appendingPathComponent("كشف استقطاعات موظف.pdf")
             do {
                 try write(statement, logo: logo, url: url)
-                try PDFDecor.apply(to: url, footer: "قسم الحسابات / CT")
+                try PDFDecor.apply(to: url, footer: "كشف الاستقطاعات")
                 return url
             } catch {
                 try? FileManager.default.removeItem(at: dir)
@@ -468,145 +481,136 @@ nonisolated enum EmployeeDeductionPDF {
     }
 
     private static func write(_ statement: EmployeeDeductionStatement, logo: Data?, url: URL) throws {
-        let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-        let margin: CGFloat = 30
-        let width = page.width - margin * 2
-        let gap: CGFloat = 6
-        let green = UIColor(red: 0.08, green: 0.26, blue: 0.20, alpha: 1)
-        let light = UIColor(red: 0.90, green: 0.94, blue: 0.91, alpha: 1)
-        let border = UIColor(red: 0.36, green: 0.46, blue: 0.39, alpha: 1)
-        let yearGroups = Dictionary(grouping: statement.rows, by: \.year)
-        let years = yearGroups.keys.sorted()
-        let pages = stride(from: 0, to: years.count, by: 3).map { Array(years[$0..<min($0 + 3, years.count)]) }
-        guard let first = statement.rows.first, let last = statement.rows.last, !pages.isEmpty else { throw EmployeeDeductionError.invalidRange }
-        let moneyFormatter = NumberFormatter()
-        moneyFormatter.numberStyle = .decimal
-        moneyFormatter.locale = Locale(identifier: "en_US")
-        moneyFormatter.maximumFractionDigits = 2
-        func number(_ value: Double) -> String { ReportSheet.easternDigits(moneyFormatter.string(from: NSNumber(value: value)) ?? String(value)) }
-        func fits(_ text: String, width: CGFloat, size: CGFloat) -> Bool {
-            (text as NSString).size(withAttributes: [.font: ReportFont.bold(size)]).width <= width - 8
+        let page = CGRect(x: 0, y: 0, width: 842, height: 595)
+        let margin: CGFloat = 22, width: CGFloat = 798
+        let navy = UIColor(red: 0.11, green: 0.23, blue: 0.31, alpha: 1)
+        let light = UIColor(red: 0.90, green: 0.94, blue: 0.96, alpha: 1)
+        let stripe = UIColor(red: 0.93, green: 0.95, blue: 0.96, alpha: 1)
+        let border = UIColor(red: 0.65, green: 0.72, blue: 0.77, alpha: 1)
+        let grouped = Dictionary(grouping: statement.rows, by: \.year)
+        let years = grouped.keys.sorted()
+        let pages = stride(from: 0, to: years.count, by: 4).map { Array(years[$0..<min($0 + 4, years.count)]) }
+        guard !pages.isEmpty else { throw EmployeeDeductionError.invalidRange }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal; formatter.locale = Locale(identifier: "en_US"); formatter.maximumFractionDigits = 2
+        func number(_ value: Double) -> String { formatter.string(from: NSNumber(value: value)) ?? String(value) }
+        func fits(_ value: String, width: CGFloat, size: CGFloat) -> Bool {
+            (value as NSString).size(withAttributes: [.font: ReportFont.bold(size)]).width <= width - 8
         }
-        func fitSize(_ text: String, width: CGFloat, sizes: [CGFloat] = [10, 9, 8, 7]) throws -> CGFloat {
-            guard let size = sizes.first(where: { fits(text, width: width, size: $0) }) else { throw EmployeeDeductionError.textTooLong }
+        func fitSize(_ value: String, width: CGFloat, sizes: [CGFloat] = [11, 10, 9, 8, 7]) throws -> CGFloat {
+            guard let size = sizes.first(where: { fits(value, width: width, size: $0) }) else { throw EmployeeDeductionError.textTooLong }
             return size
         }
-        let half = width / 2
-        let details = [statement.person.name, statement.rank.isEmpty ? "—" : statement.rank,
-                       statement.entity, statement.workplace.isEmpty ? "—" : statement.workplace,
-                       DeductionCalendar.label(first.year, first.month), DeductionCalendar.label(last.year, last.month)]
-        let detailSizes = try details.map { try fitSize($0, width: half * 0.68) }
-        let colWidth = (width - 2 * gap) / 3
-        let valueWidth = colWidth * 0.47
+        let reference = statement.references.isEmpty ? "—" : statement.references.joined(separator: " | ")
+        // لا نختصر رقم الإضبارة أو نرسمه فوق الجدول عند كثرة المراجع.
+        let referenceFont = ReportFont.bold(9)
+        let referenceBox = (reference as NSString).boundingRect(with: CGSize(width: width * 0.48 - 8, height: 1000), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: referenceFont], context: nil)
+        let referenceHeight = max(29, ceil(referenceBox.height + 8))
+        guard referenceHeight <= 65 else { throw EmployeeDeductionError.textTooLong }
+        _ = try fitSize(statement.person.name, width: width * 0.74, sizes: [12, 11, 10, 9, 8])
+        _ = try fitSize(statement.rank.isEmpty ? "—" : statement.rank, width: width * 0.25)
+        _ = try fitSize("جهة الاستقطاع: " + statement.entity, width: width * 0.5)
+        let groupWidth = width / 4, valueWidth = groupWidth * 0.51, monthWidth = groupWidth - valueWidth
+        func statusText(_ value: Double?, _ names: [String]) -> String {
+            ([value.map(number)].compactMap { $0 } + names).joined(separator: " / ")
+        }
+        for month in DeductionCalendar.months { _ = try fitSize(month, width: monthWidth, sizes: [12]) }
         for row in statement.rows {
-            if case .amount(let amount) = row.state { _ = try fitSize(number(amount), width: valueWidth, sizes: [9, 8, 7]) }
+            if case .amount(let amount) = row.state { _ = try fitSize(number(amount), width: valueWidth, sizes: [12]) }
             if case .status(let amount, let names) = row.state {
-                if let amount { _ = try fitSize(number(amount), width: valueWidth, sizes: [8, 7, 6]) }
-                _ = try fitSize(names.joined(separator: "، "), width: valueWidth, sizes: [7, 6, 5])
+                _ = try fitSize(statusText(amount, names), width: valueWidth, sizes: [12])
             }
         }
-        for year in years {
-            let sum = yearGroups[year, default: []].reduce(0.0) { result, row in
-                if case .amount(let amount) = row.state { return result + amount }
-                if case .status(let amount, _) = row.state { return result + (amount ?? 0) }
+        func total(_ rows: [DeductionPeriodRow]) -> Double {
+            rows.reduce(0) { result, row in
+                if case .amount(let value) = row.state { return result + value }
+                if case .status(let value, _) = row.state { return result + (value ?? 0) }
                 return result
             }
-            _ = try fitSize(number(sum), width: valueWidth, sizes: [9, 8, 7])
         }
-        _ = try fitSize(number(statement.total), width: width * 0.45, sizes: [13, 11, 9, 7])
+        for year in years { _ = try fitSize(number(total(grouped[year, default: []])), width: valueWidth, sizes: [12]) }
+        _ = try fitSize(number(statement.total), width: width / 2, sizes: [13, 12, 11, 10, 9])
+        let count = statement.rows.filter { row in
+            if case .amount = row.state { return true }
+            if case .status(let value, _) = row.state { return value != nil }
+            return false
+        }.count
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         try renderer.writePDF(to: url) { context in
             for (pageIndex, pageYears) in pages.enumerated() { autoreleasepool {
                 context.beginPage()
                 let cg = context.cgContext
-                func text(_ value: String, _ rect: CGRect, size: CGFloat = 9, bold: Bool = false, color: UIColor = .black, align: NSTextAlignment = .right) {
-                    PDFText.draw(value, in: rect.insetBy(dx: 4, dy: 0), font: bold ? ReportFont.bold(size) : ReportFont.regular(size), color: color, align: align)
+                func text(_ value: String, _ rect: CGRect, size: CGFloat = 10, bold: Bool = true, color: UIColor = .black, wrap: Bool = false) {
+                    PDFText.draw(value, in: rect.insetBy(dx: 4, dy: 0), font: bold ? ReportFont.bold(size) : ReportFont.regular(size), color: color, align: .center, wrap: wrap)
                 }
                 func cell(_ rect: CGRect, fill: UIColor? = nil) {
                     if let fill { cg.setFillColor(fill.cgColor); cg.fill(rect) }
-                    cg.setStrokeColor(border.cgColor); cg.setLineWidth(0.6); cg.stroke(rect)
+                    cg.setStrokeColor(border.cgColor); cg.setLineWidth(0.5); cg.stroke(rect)
                 }
-                if let logo, let image = UIImage(data: logo) { image.draw(in: CGRect(x: margin + 5, y: 26, width: 52, height: 52)) }
-                let header = ["جمهورية العراق", "وزارة الداخلية", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
-                for (i, line) in header.enumerated() { text(line, CGRect(x: 275, y: 25 + CGFloat(i) * 13, width: width - 245, height: 13), size: 10, bold: true) }
-                cg.setStrokeColor(green.cgColor); cg.setLineWidth(1.5); cg.move(to: CGPoint(x: margin, y: 83)); cg.addLine(to: CGPoint(x: page.width - margin, y: 83)); cg.strokePath()
-                text("كشف استقطاعات موظف", CGRect(x: margin, y: 92, width: width, height: 25), size: 15, bold: true, color: green, align: .center)
-                text("تفاصيل الاستقطاع لصالح الجهة خلال الفترة المختارة", CGRect(x: margin, y: 118, width: width, height: 16), size: 9, color: .darkGray, align: .center)
-                let labels = ["اسم الموظف", "الرتبة", "جهة الاستقطاع", "محل العمل", "من", "إلى"]
-                for index in 0..<6 {
-                    let row = index / 2
-                    let x = index % 2 == 0 ? margin + half : margin
-                    let rect = CGRect(x: x, y: 142 + CGFloat(row) * 25, width: half, height: 25)
-                    cell(rect)
-                    text(labels[index], CGRect(x: rect.maxX - half * 0.30, y: rect.minY, width: half * 0.30, height: rect.height), size: 8, color: .darkGray)
-                    text(details[index], CGRect(x: rect.minX, y: rect.minY, width: half * 0.68, height: rect.height), size: detailSizes[index], bold: true, align: .left)
+                let header = CGRect(x: margin, y: 18, width: width, height: 31)
+                cell(header, fill: navy)
+                text("قيادة شرطة محافظة الأنبار / قسم الحسابات", CGRect(x: header.midX, y: header.minY, width: width / 2, height: header.height), size: 10, color: .white)
+                text("كشف استقطاعات", CGRect(x: margin, y: header.minY, width: width / 2, height: header.height), size: 14, color: .white)
+                let labelWidth = width * 0.25
+                func info(_ label: String, _ value: String, y: CGFloat, x: CGFloat, w: CGFloat, valueSize: CGFloat = 10) {
+                    let labelRect = CGRect(x: x + w - labelWidth / 2, y: y, width: labelWidth / 2, height: 25)
+                    let valueRect = CGRect(x: x, y: y, width: w - labelWidth / 2, height: 25)
+                    cell(labelRect, fill: light); cell(valueRect)
+                    text(label, labelRect, size: 9); text(value, valueRect, size: valueSize)
                 }
-                text("الاستقطاعات الشهرية", CGRect(x: margin, y: 226, width: width, height: 22), size: 11, bold: true, color: green)
-                let top: CGFloat = 252
-                let yearHeight: CGFloat = 26, headingHeight: CGFloat = 23, rowHeight: CGFloat = 23, sumHeight: CGFloat = 27
+                info("الاسم الكامل", statement.person.name, y: 49, x: margin, w: width, valueSize: (try? fitSize(statement.person.name, width: width * 0.74, sizes: [12, 11, 10, 9, 8])) ?? 8)
+                info("الرتبة", statement.rank.isEmpty ? "—" : statement.rank, y: 74, x: margin + width * 0.5, w: width * 0.5, valueSize: (try? fitSize(statement.rank.isEmpty ? "—" : statement.rank, width: width * 0.25)) ?? 7)
+                let entityRect = CGRect(x: margin, y: 74, width: width * 0.5, height: 25)
+                cell(entityRect, fill: stripe); text("جهة الاستقطاع: " + statement.entity, entityRect, size: (try? fitSize("جهة الاستقطاع: " + statement.entity, width: entityRect.width)) ?? 7)
+                let refY: CGFloat = 99
+                let refRect = CGRect(x: margin, y: refY, width: width * 0.48, height: referenceHeight)
+                let refLabel = CGRect(x: refRect.maxX, y: refY, width: width * 0.15, height: referenceHeight)
+                let countRect = CGRect(x: refLabel.maxX, y: refY, width: width * 0.25, height: referenceHeight)
+                let countLabel = CGRect(x: countRect.maxX, y: refY, width: width * 0.12, height: referenceHeight)
+                cell(refRect, fill: stripe); cell(refLabel, fill: light); cell(countRect, fill: stripe); cell(countLabel, fill: light)
+                text(reference, refRect, size: 9, wrap: true); text("رقم وتاريخ الإضبارة", refLabel, size: 8)
+                text(String(count), countRect, size: 13); text("عدد الأشهر", countLabel, size: 8)
+                let top = refY + referenceHeight + 12
+                let headingHeight: CGFloat = 24, rowHeight: CGFloat = 22.1, sumHeight: CGFloat = 24
                 for (column, year) in pageYears.enumerated() {
-                    let x = page.width - margin - colWidth - CGFloat(column) * (colWidth + gap)
-                    let headerRect = CGRect(x: x, y: top, width: colWidth, height: yearHeight)
-                    cell(headerRect, fill: green); text(ReportSheet.easternDigits(String(year)), headerRect, size: 11, bold: true, color: .white, align: .center)
-                    let titleY = top + yearHeight
-                    let monthWidth = colWidth - valueWidth
-                    let valueRect = CGRect(x: x, y: titleY, width: valueWidth, height: headingHeight)
-                    let monthRect = CGRect(x: x + valueWidth, y: titleY, width: monthWidth, height: headingHeight)
-                    cell(valueRect, fill: light); cell(monthRect, fill: light)
-                    text("المبلغ", valueRect, size: 8.5, bold: true, align: .center)
-                    text("الشهر", monthRect, size: 8.5, bold: true, align: .center)
-                    let rows = yearGroups[year, default: []]
+                    let x = page.width - margin - groupWidth * CGFloat(column + 1)
+                    let amountHeader = CGRect(x: x, y: top, width: valueWidth, height: headingHeight)
+                    let monthHeader = CGRect(x: x + valueWidth, y: top, width: monthWidth, height: headingHeight)
+                    cell(amountHeader, fill: navy); cell(monthHeader, fill: navy)
+                    text(String(year), amountHeader, size: 12, color: .white); text("الشهر", monthHeader, size: 12, color: .white)
+                    let rows = grouped[year, default: []]
                     for month in 1...12 {
-                        let y = titleY + headingHeight + CGFloat(month - 1) * rowHeight
+                        let y = top + headingHeight + CGFloat(month - 1) * rowHeight
                         let vr = CGRect(x: x, y: y, width: valueWidth, height: rowHeight)
                         let mr = CGRect(x: x + valueWidth, y: y, width: monthWidth, height: rowHeight)
-                        cell(vr); cell(mr)
+                        let fill: UIColor = month.isMultiple(of: 2) ? stripe : .white
+                        cell(vr, fill: fill); cell(mr, fill: fill)
+                        text(DeductionCalendar.months[month - 1], mr, size: 12)
                         guard let row = rows.first(where: { $0.month == month }) else { continue }
-                        text(DeductionCalendar.months[month - 1], mr, size: 8.5)
                         switch row.state {
-                        case .amount(let amount):
-                            let s = (try? fitSize(number(amount), width: valueWidth, sizes: [9, 8, 7])) ?? 7
-                            text(number(amount), vr, size: s, align: .center)
-                        case .status(let amount, let names):
-                            let status = names.joined(separator: "، ")
-                            let size = (try? fitSize(status, width: valueWidth, sizes: [7, 6, 5])) ?? 5
-                            if let amount {
-                                let upper = CGRect(x: vr.minX, y: vr.minY, width: vr.width, height: vr.height / 2)
-                                let lower = CGRect(x: vr.minX, y: vr.midY, width: vr.width, height: vr.height / 2)
-                                let amountSize = (try? fitSize(number(amount), width: valueWidth, sizes: [8, 7, 6])) ?? 6
-                                text(number(amount), upper, size: amountSize, align: .center)
-                                text(status, lower, size: size, align: .center)
-                            } else { text(status, vr, size: size, align: .center) }
-                        case .none: text("لا يوجد", vr, size: 8, align: .center)
-                        case .unavailable: text("غير متحقق", vr, size: 7.5, color: .systemOrange, align: .center)
+                        case .amount(let value): text(number(value), vr, size: 12, bold: false)
+                        case .none: text("—", vr, size: 12)
+                        case .unavailable: text("غير متحقق", vr, size: 12, color: .systemOrange)
+                        case .status(let value, let names):
+                            text(statusText(value, names), vr, size: 12)
+
                         }
                     }
-                    let sumY = titleY + headingHeight + 12 * rowHeight
-                    let left = CGRect(x: x, y: sumY, width: valueWidth, height: sumHeight)
-                    let right = CGRect(x: x + valueWidth, y: sumY, width: monthWidth, height: sumHeight)
-                    cell(left, fill: light); cell(right, fill: light)
-                    let incomplete = rows.contains { if case .unavailable = $0.state { return true }; return false }
-                    let subtotalTitle = incomplete ? "مجموع المتوفر" : (rows.count == 12 ? "مجموع السنة" : "مجموع الفترة")
-                    text(subtotalTitle, right, size: 8, bold: true, align: .center)
-                    let subtotal = rows.reduce(0.0) { value, row in
-                        if case .amount(let amount) = row.state { return value + amount }
-                        if case .status(let amount, _) = row.state { return value + (amount ?? 0) }
-                        return value
-                    }
-                    let size = (try? fitSize(number(subtotal), width: valueWidth, sizes: [9, 8, 7])) ?? 7
-                    text(number(subtotal), left, size: size, bold: true, align: .center)
+                    let y = top + headingHeight + 12 * rowHeight
+                    let amountCell = CGRect(x: x, y: y, width: valueWidth, height: sumHeight)
+                    let labelCell = CGRect(x: x + valueWidth, y: y, width: monthWidth, height: sumHeight)
+                    cell(amountCell, fill: light); cell(labelCell, fill: light)
+                    text("المجموع", labelCell, size: 12)
+                    text(number(total(rows)), amountCell, size: 12)
                 }
-                let endY = top + yearHeight + headingHeight + 12 * rowHeight + sumHeight
                 if pageIndex == pages.count - 1 {
-                    let totalRect = CGRect(x: margin, y: endY + 14, width: width, height: 30)
-                    cg.setFillColor(green.cgColor); cg.fill(totalRect)
-                    text(statement.incomplete ? "مجموع القيود المتوفرة" : "المجموع الكلي للفترة", CGRect(x: totalRect.midX, y: totalRect.minY, width: width / 2, height: 30), size: 10, bold: true, color: .white)
-                    let amountSize = (try? fitSize(number(statement.total), width: width * 0.45, sizes: [13, 11, 9, 7])) ?? 7
-                    text(number(statement.total), CGRect(x: margin, y: totalRect.minY, width: width * 0.45, height: 30), size: amountSize, bold: true, color: .white, align: .left)
-                    if statement.incomplete {
-                        text("توجد أشهر غير متحققة أو بأسماء غير مفهومة؛ المجموع للقيود المتوفرة فقط.", CGRect(x: margin, y: totalRect.maxY + 4, width: width, height: 24), size: 8, color: .darkGray)
-                    }
-                    text("التدقيق: ................................", CGRect(x: page.width - margin - 200, y: totalRect.maxY + 34, width: 200, height: 20), size: 9)
+                    let y = top + headingHeight + 12 * rowHeight + sumHeight + 7
+                    let totalRect = CGRect(x: margin, y: y, width: width, height: 28)
+                    cell(totalRect, fill: navy)
+                    text(statement.incomplete ? "مجموع القيود المتوفرة" : "المجموع الكلي للاستقطاعات", CGRect(x: totalRect.midX, y: y, width: width / 2, height: 28), size: 11, color: .white)
+                    text(number(statement.total), CGRect(x: margin, y: y, width: width / 2, height: 28), size: (try? fitSize(number(statement.total), width: width / 2, sizes: [13, 12, 11, 10, 9])) ?? 9, color: .white)
+                    if statement.incomplete { text("توجد أشهر غير متحققة أو غير مفهومة؛ المجموع للقيود المتوفرة فقط.", CGRect(x: margin, y: y + 29, width: width, height: 18), size: 8, color: .systemOrange) }
+                    text("التدقيق", CGRect(x: page.width - margin - 170, y: y + 51, width: 170, height: 18), size: 10)
                 }
             } }
         }
