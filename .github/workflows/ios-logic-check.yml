@@ -19,6 +19,8 @@ jobs:
         run: swiftc --version
       - name: Parse changed Swift files
         run: swiftc -frontend -parse SalaryApp/*.swift
+      - name: Startup failure and concurrent callers
+        run: python3 ci/startup_safety_test/run.py
       - name: Malformed Excel rejection
         run: python3 ci/import_safety_test/run.py
       - name: Interrupted restore recovery
