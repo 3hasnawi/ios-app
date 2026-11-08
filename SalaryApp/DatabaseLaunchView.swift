@@ -32,7 +32,7 @@ struct DatabaseLaunchView: View {
         .task(id: attempt) {
             guard container == nil, !health.restartRequired else { return }
             do { container = try await SharedModel.ensureReady() }
-            catch { error = error.localizedDescription }
+            catch { self.error = error.localizedDescription }
         }
     }
 }
