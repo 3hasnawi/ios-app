@@ -118,12 +118,27 @@ nonisolated struct ReportSheet: Sendable {
 nonisolated enum XLSXWriter {
     /// يكتب ملف xlsx بالتنسيق (اتجاه من اليمين، ألوان، حدود، دمج، معادلة المجموع).
     static func write(_ sheet: ReportSheet, to url: URL) throws {
+        try validate(sheet)
         try package(worksheet: worksheet(sheet), styles: styles, printTitles: "$1:$3", to: url)
     }
 
     /// ملف بعدة كشوف بالشكل المعتمد: كل كشف في ورقة باسمه، ورأس الكشف يتكرر عند الطباعة.
     static func writeWorkbook(_ sheets: [(name: String, sheet: ReportSheet)], to url: URL) throws {
+        for (_, sheet) in sheets { try validate(sheet) }
         try package(sheets: sheets.map { ($0.name, worksheet($0.sheet)) }, styles: styles, printTitles: "$1:$3", to: url)
+    }
+
+    /// لا ننشئ مصنفاً مبتوراً أو أرقاماً لا يمكن لـ Excel تمثيلها بالدقة المعتادة.
+    static func validate(_ sheet: ReportSheet) throws {
+        let limit = 999_999_999_999_999.0
+        guard !sheet.columns.isEmpty, sheet.columns.count <= 16_384, sheet.rows.count <= 1_048_572,
+              sheet.rows.count == sheet.amounts.count, sheet.rows.allSatisfy({ $0.count == sheet.columns.count }),
+              sheet.columns.allSatisfy({ $0.width.isFinite && $0.width > 0 }),
+              sheet.amounts.allSatisfy({ $0.isFinite && abs($0) <= limit }), sheet.total.isFinite, abs(sheet.total) <= limit,
+              sheet.amounts.reduce(0, { $0 + abs($1) }) <= limit,
+              sheet.rows.allSatisfy({ row in row.allSatisfy({ $0.utf16.count <= 32_767 }) && rowHeight(row, columns: sheet.columns) <= 409 }) else {
+            throw NSError(domain: "XLSXWriter", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("تعذّر إنشاء Excel كاملاً: راجع المبالغ أو طول أحد الصفوف قبل التصدير.", "Could not create a complete Excel report. Check amounts and row lengths before exporting.")])
+        }
     }
 
     /// ملف بعدة أوراق (اسم الورقة، محتواها).
@@ -232,7 +247,18 @@ nonisolated enum XLSXWriter {
     }
 
     static func number(_ value: Double) -> String {
-        value == value.rounded() ? String(Int64(value)) : String(value)
+        if let integer = Int64(exactly: value) { return String(integer) }
+        return String(value)
+    }
+
+    static func rowHeight(_ row: [String], columns: [ReportSheet.Column]) -> Int {
+        let lineCount = columns.enumerated().filter { $0.element.kind == .text }.map { index, column in
+            let width = max(1, column.width - 5)
+            return row[index].split(separator: "\n", omittingEmptySubsequences: false).reduce(0) { count, part in
+                count + max(1, Int(ceil(Double(part.count) * 1.15 / width)))
+            }
+        }.max() ?? 1
+        return max(24, lineCount * 16 + 6)
     }
 
     static func worksheet(_ sheet: ReportSheet) -> String {
@@ -250,20 +276,16 @@ nonisolated enum XLSXWriter {
             for (c, column) in sheet.columns.enumerated() {
                 let ref = "\(letter(c))\(r)"
                 switch column.kind {
-                case .serial: cells += "<c r=\"\(ref)\" s=\"5\"><v>\(i + 1)</v></c>"
-                case .amount: cells += "<c r=\"\(ref)\" s=\"6\"><v>\(number(sheet.amounts[i]))</v></c>"
+                case .serial: cells += "<c r=\"\(ref)\" s=\"\(i.isMultiple(of: 2) ? 5 : 12)\"><v>\(i + 1)</v></c>"
+                case .amount: cells += "<c r=\"\(ref)\" s=\"\(i.isMultiple(of: 2) ? 6 : 13)\"><v>\(number(sheet.amounts[i]))</v></c>"
                 case .text:
                     let nameColumn = column.title.contains("الاسم") || column.title.hasPrefix("اسم")
-                    cells += textCell(ref, values[c], style: sheet.entityDeduction ? (nameColumn ? 11 : 10) : 4)
+                    let style = i.isMultiple(of: 2) ? (nameColumn ? 11 : 10) : (nameColumn ? 15 : 14)
+                    cells += textCell(ref, values[c], style: style)
                 }
             }
-            if sheet.entityDeduction {
-                let lineCount = sheet.columns.enumerated().filter { $0.element.kind == .text }.map { index, column in
-                    max(1, Int(ceil(Double(values[index].count) / max(1, column.width - 3))))
-                }.max() ?? 1
-                let height = min(409, max(24, lineCount * 16 + 6))
-                rows += "<row r=\"\(r)\" ht=\"\(height)\" customHeight=\"1\">\(cells)</row>"
-            } else { rows += "<row r=\"\(r)\" ht=\"20\" customHeight=\"1\">\(cells)</row>" }
+            let height = rowHeight(values, columns: sheet.columns)
+            rows += "<row r=\"\(r)\" ht=\"\(height)\" customHeight=\"1\">\(cells)</row>"
         }
         // سطر المجموع: "المجموع" في الأعمدة قبل المبلغ، والمبلغ بمعادلة SUM.
         let totalRow = sheet.rows.count + 4
@@ -307,25 +329,28 @@ nonisolated enum XLSXWriter {
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
     <numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts>
-    <fonts count="5">
+    <fonts count="7">
     <font><sz val="11"/><name val="Arial"/></font>
     <font><b/><sz val="14"/><name val="Arial"/></font>
     <font><b/><sz val="15"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>
     <font><b/><sz val="11"/><name val="Arial"/></font>
-    <font><b/><sz val="12"/><name val="Arial"/></font>
+    <font><b/><sz val="11"/><name val="Arial"/></font>
+    <font><sz val="10.5"/><name val="Arial"/></font>
+    <font><b/><sz val="11.5"/><name val="Arial"/></font>
     </fonts>
-    <fills count="4">
+    <fills count="5">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF1F4E79"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFDDEBF7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF3F7FB"/><bgColor indexed="64"/></patternFill></fill>
     </fills>
     <borders count="2">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FF9BB7D4"/></left><right style="thin"><color rgb="FF9BB7D4"/></right><top style="thin"><color rgb="FF9BB7D4"/></top><bottom style="thin"><color rgb="FF9BB7D4"/></bottom><diagonal/></border>
     </borders>
     <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-    <cellXfs count="12">
+    <cellXfs count="16">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
@@ -334,10 +359,14 @@ nonisolated enum XLSXWriter {
     <xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="164" fontId="4" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
-    <xf numFmtId="164" fontId="4" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="6" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="6" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="4" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="6" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
     </cellXfs>
     <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
     </styleSheet>

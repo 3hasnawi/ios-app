@@ -24,6 +24,8 @@ jobs:
         run: bash ci/payroll_item_parser_test/run.sh
       - name: Report layout calculations
         run: python3 ci/report_layout_test/run.py
+      - name: Excel report layout and numeric safety
+        run: python3 ci/xlsx_layout_test/run.py
       - name: PDF page preservation
         run: python3 ci/pdf_safety_test/run.py
       - name: Treasury letter calculations
