@@ -115,7 +115,7 @@ public sealed class ImportTests
             using (var db = Open(result.Directory))
             using (var cmd = db.CreateCommand())
             {
-                cmd.CommandText = "INSERT INTO deductions(month,name,title,amount,note,rank,original) VALUES ('تشرين الاول 2026','اسم','جهة وهمية',NULL,'','',X'00'), ('تشرين الاول 2026','اسم','جهة وهمية','0.1','','',X'00')";
+                cmd.CommandText = "INSERT INTO deductions(month,name,title,amount,note,rank,original) VALUES ('تشرين الاول 2026','اسم','جهة وهمية',NULL,'','',X'00'), ('تشرين الاول 2026','اسم','جهة وهمية','0.1','','',X'00'), ('تشرين الاول 2026','اسم','جهة وهمية',NULL,'⟦حالة الاستقطاع:موقوف⟧','',X'00')";
                 cmd.ExecuteNonQuery();
             }
             var rows = DeductionComparison.Compare(result.Directory, "أيلول 2026", "تشرين الاول 2026");

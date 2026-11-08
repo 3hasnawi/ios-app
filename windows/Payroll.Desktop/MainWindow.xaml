@@ -70,9 +70,9 @@
             <DataGrid x:Name="ComparisonGrid" AlternationCount="2" HeadersVisibility="Column" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
               <DataGrid.Columns>
                 <DataGridTextColumn Header="الجهة" Binding="{Binding Entity}" Width="*" MinWidth="190"/>
-                <DataGridTextColumn Header="عدد السابق" Binding="{Binding PreviousCount}" Width="SizeToHeader"/>
+                <DataGridTextColumn Header="قيود السابق" Binding="{Binding PreviousCount}" Width="SizeToHeader"/>
                 <DataGridTextColumn Header="مبلغ السابق" Binding="{Binding PreviousDisplay}" Width="SizeToCells"/>
-                <DataGridTextColumn Header="عدد الحالي" Binding="{Binding CurrentCount}" Width="SizeToHeader"/>
+                <DataGridTextColumn Header="قيود الحالي" Binding="{Binding CurrentCount}" Width="SizeToHeader"/>
                 <DataGridTextColumn Header="مبلغ الحالي" Binding="{Binding CurrentDisplay}" Width="SizeToCells"/>
                 <DataGridTextColumn Header="الفرق" Binding="{Binding DifferenceDisplay}" Width="SizeToCells"/>
                 <DataGridTextColumn Header="مبالغ ناقصة" Binding="{Binding MissingDisplay}" Width="SizeToHeader"/>
