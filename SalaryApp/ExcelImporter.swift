@@ -823,7 +823,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
         case "c":
             var text = value
             if type == "s" {
-                guard let index = Int(value), sharedStrings.indices.contains(index) else {
+                guard let index = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)), sharedStrings.indices.contains(index) else {
                     invalidCell = true; parser.abortParsing(); return
                 }
                 text = sharedStrings[index]

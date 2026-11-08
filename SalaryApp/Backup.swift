@@ -46,7 +46,7 @@ nonisolated enum BackupFormat {
     struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String; var localAccount: String? = nil }
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
-    static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
+    static let settingsKeys = ["pendingTrustPayrollMonths", "pendingTrustPayrollStarted", "staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
@@ -1153,7 +1153,9 @@ final class BackupManager {
                         result[item.key] = normalized
                     }
                 }
-                if settings[SalaryTrust.settingsKey] == nil { UserDefaults.standard.removeObject(forKey: SalaryTrust.settingsKey) }
+                for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted"] where settings[key] == nil {
+                    UserDefaults.standard.removeObject(forKey: key)
+                }
                 for (key, data) in settings {
                     if let value = try? PropertyListSerialization.propertyList(from: data, format: nil) {
                         UserDefaults.standard.set(value, forKey: key)

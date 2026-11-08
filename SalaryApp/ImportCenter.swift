@@ -390,7 +390,16 @@ final class ImportCenter {
             message = tr("اختر ملف رواتب واحداً فقط؛ يحتفظ التطبيق بآخر شهرين من الرواتب. تبقى الاستقطاعات محفوظة.", "Choose only one payroll file; the app retains the latest two payroll months. Deductions are preserved.")
             return
         }
-        let pendingTrust = UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? []
+        var pendingTrust = UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? []
+        let intents = UserDefaults.standard.dictionary(forKey: "pendingTrustPayrollStarted") as? [String: Double] ?? [:]
+        do {
+            let records = try ModelContext(SharedModel.container).fetch(FetchDescriptor<PayrollMonth>())
+            pendingTrust.removeAll { name in
+                guard let started = intents[name] else { return false }
+                return !records.contains { $0.name == name && $0.employeeCount > 0 && $0.importedAt.timeIntervalSince1970 >= started }
+            }
+            UserDefaults.standard.set(pendingTrust, forKey: "pendingTrustPayrollMonths")
+        } catch { message = error.localizedDescription; return }
         if let payroll = jobs.first(where: { $0.kind == .payroll || $0.kind == .payrollAndDeductions }),
            pendingTrust.contains(where: { $0 != payroll.month }) {
             message = tr("لم تكتمل إضافة أمانات شهر سابق. أعد استيراد ذلك الشهر وأكمل الأمانات قبل إدخال شهر جديد: \(pendingTrust.joined(separator: "، "))", "A previous month's trust entries are pending. Reimport that month before a new payroll month: \(pendingTrust.joined(separator: ", "))")
@@ -460,7 +469,11 @@ final class ImportCenter {
                     let expectedDate = job.annualExpectedImportDate
                     if kind != .deductions && !fromTest {
                         var pending = Set(UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? [])
-                        pending.insert(month)
+                        if pending.insert(month).inserted {
+                            var started = UserDefaults.standard.dictionary(forKey: "pendingTrustPayrollStarted") as? [String: Double] ?? [:]
+                            started[month] = Date().timeIntervalSince1970
+                            UserDefaults.standard.set(started, forKey: "pendingTrustPayrollStarted")
+                        }
                         UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
                     }
                     try await Task.detached(priority: .userInitiated) {

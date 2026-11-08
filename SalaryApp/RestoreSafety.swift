@@ -47,7 +47,7 @@ nonisolated enum RestoreSafety {
     }
     /// يُستدعى عند البدء فقط، قبل فتح أي ModelContainer للقاعدة.
     static func recoverIfNeeded(defaults preferences: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) throws {
-        guard pending else { return }
+        guard pending else { try discardInactive(); return }
         let fm = FileManager.default
         let marker = try JSONDecoder().decode(Marker.self, from: Data(contentsOf: root.appendingPathComponent("active.json")))
         guard UUID(uuidString: marker.folder) != nil else { throw failure("نقطة الرجوع غير صالحة؛ لم تُحذف الملفات.") }
@@ -70,6 +70,13 @@ nonisolated enum RestoreSafety {
         preferences.set(false, forKey: "backupServerEnabled")
         preferences.synchronize()
         try finish()
+    }
+    private static func discardInactive() throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: root.path) else { return }
+        for folder in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) where UUID(uuidString: folder.lastPathComponent) != nil {
+            try fm.removeItem(at: folder)
+        }
     }
     static func finish() throws {
         let fm = FileManager.default
