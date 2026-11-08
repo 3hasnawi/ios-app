@@ -40,6 +40,10 @@ nonisolated enum RestoreSafety {
         let result = sqlite3_backup_step(backup, -1)
         let finish = sqlite3_backup_finish(backup)
         guard result == SQLITE_DONE, finish == SQLITE_OK else { throw failure("تعذّر إكمال نقطة الرجوع (\(result)/\(finish))؛ بقيت البيانات دون استبدال.") }
+        // ملف اللقطة مستقل: لا يعتمد على ملفات WAL/SHM مؤقتة قد تُحذف بعد إغلاق الاتصال.
+        guard sqlite3_exec(output, "PRAGMA journal_mode=DELETE", nil, nil, nil) == SQLITE_OK else {
+            throw failure("تعذّر تثبيت ملف نقطة الرجوع.")
+        }
     }
     /// يُستدعى عند البدء فقط، قبل فتح أي ModelContainer للقاعدة.
     static func recoverIfNeeded() throws {
