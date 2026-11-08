@@ -10,9 +10,10 @@
           <Button x:Name="DeductionsButton" Content="الاستقطاعات" Click="Deductions_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="ComparisonButton" Content="مقارنة الاستقطاعات" Click="Comparison_Click" HorizontalContentAlignment="Right"/>
           <Button x:Name="SalariesButton" Content="الرواتب" Click="Salaries_Click" HorizontalContentAlignment="Right"/>
+          <Button x:Name="ArchiveButton" Content="الأرشيف" Click="Archive_Click" HorizontalContentAlignment="Right"/>
           <TextBlock Text="الأقسام القادمة" Foreground="#B8D5CF" Margin="8,24,8,5"/>
           <TextBlock Text="كشف البنك · ملفات التحويل" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
-          <TextBlock Text="الأرشيف · أمانات الرواتب" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
+          <TextBlock Text="أمانات الرواتب" Foreground="#A5C7C0" TextWrapping="Wrap" Margin="8,5"/>
         </StackPanel>
       </DockPanel>
     </Border>
@@ -79,6 +80,28 @@
               </DataGrid.Columns>
             </DataGrid>
           </Border>
+        </Grid>
+        <Grid x:Name="ArchivePanel" Visibility="Collapsed">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <WrapPanel Margin="0,0,0,10">
+            <TextBlock Text="بحث في الكتب" VerticalAlignment="Center" Margin="4"/>
+            <TextBox x:Name="ArchiveSearchBox" Width="260" Padding="8,6" TextChanged="ArchiveSearch_Changed"/>
+          </WrapPanel>
+          <TextBlock x:Name="ArchiveHint" Grid.Row="1" Margin="4,0,4,10" Foreground="#61736F" TextWrapping="Wrap" Text="الكتب الموجودة داخل نسخة الآيفون المحفوظة محلياً."/>
+          <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="10" ClipToBounds="True">
+            <DataGrid x:Name="ArchiveGrid" AlternationCount="2" HeadersVisibility="Column" SelectionMode="Single" MouseDoubleClick="PreviewBook_Click">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="عنوان الكتاب" Binding="{Binding Title}" Width="*" MinWidth="180"/>
+                <DataGridTextColumn Header="الشهر" Binding="{Binding Month}" Width="SizeToCells" MinWidth="140"/>
+                <DataGridTextColumn Header="الجهة" Binding="{Binding Entity}" Width="SizeToCells" MinWidth="140"/>
+                <DataGridTextColumn Header="الصفحات" Binding="{Binding Pages}" Width="SizeToHeader"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Border>
+          <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+            <Button Content="معاينة الكتاب" Click="PreviewBook_Click" Background="{StaticResource Primary}" Foreground="White"/>
+            <Button Content="حفظ نسخة PDF" Click="SaveBook_Click"/>
+          </StackPanel>
         </Grid>
       </Grid>
       <TextBlock x:Name="StatusText" Grid.Row="2" Text="جاهز" Foreground="#61736F" Margin="0,12,0,0" TextWrapping="Wrap"/>

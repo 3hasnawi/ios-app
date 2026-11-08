@@ -130,23 +130,47 @@ public sealed class ImportTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Fact]
+    public async Task ArchivedBookIsListedAndCopiedWithoutChangingBackup()
+    {
+        var dir = Temp();
+        try
+        {
+            var id = Guid.NewGuid();
+            var source = Fixture(dir, bookId: id);
+            var original = await File.ReadAllBytesAsync(source);
+            var result = await IosBackupImporter.ImportAsync(source, Path.Combine(dir, "data"));
+            var book = Assert.Single(ArchivedBooks.List(result.Directory));
+            Assert.Equal(id, book.Id);
+            Assert.Equal("كتاب وهمي", book.Title);
+            Assert.Equal("جهة وهمية", book.Entity);
+            using var copy = new MemoryStream();
+            await ArchivedBooks.CopyPdfAsync(result.Directory, id, copy);
+            Assert.Equal("%PDF-1.7\nfictional", Encoding.UTF8.GetString(copy.ToArray()));
+            Assert.Equal(original, await File.ReadAllBytesAsync(Path.Combine(result.Directory, "original.zip")));
+            await Assert.ThrowsAsync<InvalidDataException>(() => ArchivedBooks.CopyPdfAsync(result.Directory, Guid.NewGuid(), new MemoryStream()));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     private static string Temp() { var dir = Path.Combine(Path.GetTempPath(), "payroll-test-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(dir); return dir; }
     private static SqliteConnection Open(string dir) { var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = Path.Combine(dir, "data.sqlite"), Pooling = false }.ToString()); db.Open(); return db; }
-    private static string Fixture(string dir, bool wrongCount = false, string? extra = null, string fileName = "source.zip", int version = 5)
+    private static string Fixture(string dir, bool wrongCount = false, string? extra = null, string fileName = "source.zip", int version = 5, Guid? bookId = null)
     {
         var months = new[] { "أيلول 2026", "تشرين الاول 2026", "تشرين الثاني 2026" };
         var path = Path.Combine(dir, fileName);
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         void Add(string name, string body) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(body); }
         static string Lines<T>(IEnumerable<T> rows) => string.Join('\n', rows.Select(x => JsonSerializer.Serialize(x))) + "\n";
-        Add("manifest.json", JsonSerializer.Serialize(new { version, createdAt = 0, months, employees = wrongCount ? 4 : 3, deductions = 3, staff = 0, accounts = 0, books = 0 }));
+        Add("manifest.json", JsonSerializer.Serialize(new { version, createdAt = 0, months, employees = wrongCount ? 4 : 3, deductions = 3, staff = 0, accounts = 0, books = bookId.HasValue ? 1 : 0 }));
         Add("settings.json", "{}");
         Add("months.jsonl", Lines(months.Select(name => new { name, importedAt = 0, employeeCount = 1, deductionCount = 1 })));
         Add("employees.jsonl", Lines(months.Select(month => new { month, name = "موظف وهمي", rank = "عقد", workplace = "قسم", net = 123456, items = (string?)null, details = (string?)null, rawColumns = (string?)null })));
         Add("deductions.jsonl", Lines(months.Select(month => new { month, name = "موظف وهمي", title = "جهة وهمية", amount = 1000, note = "", rank = "عقد" })));
         Add("staff.jsonl", "");
         Add("accounts.jsonl", "");
-        Add("books/index.json", "[]");
+        Add("books/index.json", bookId.HasValue ? JsonSerializer.Serialize(new[] { new { id = bookId.Value.ToString().ToUpperInvariant(), title = "كتاب وهمي", month = months[0], entity = "جهة وهمية", pages = 1, createdAt = 0 } }) : "[]");
+        if (bookId.HasValue) Add("books/" + bookId.Value.ToString().ToUpperInvariant() + ".pdf", "%PDF-1.7\nfictional");
         if (extra != null) Add(extra, "unsafe");
         return path;
     }

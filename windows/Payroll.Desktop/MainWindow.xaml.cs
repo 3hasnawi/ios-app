@@ -28,6 +28,7 @@ public partial class MainWindow : Window
         _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); _page = 0; _ = RefreshRowsAsync(); };
         Loaded += async (_, _) => await LoadPreviousAsync();
         Closing += WindowClosing;
+        Closed += (_, _) => ClearPreviewFiles();
     }
 
     private async Task LoadPreviousAsync()
@@ -93,10 +94,11 @@ public partial class MainWindow : Window
         if (info.Months.Count > 0) CurrentMonthBox.SelectedIndex = 0;
         if (info.Months.Count > 1) PreviousMonthBox.SelectedIndex = 1;
         ComparisonGrid.ItemsSource = null;
+        ResetArchive();
         if (TablePanel.Visibility == Visibility.Visible) { _page = 0; _ = RefreshRowsAsync(); }
     }
 
-    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; ComparisonPanel.Visibility = Visibility.Collapsed; }
+    private void Home_Click(object sender, RoutedEventArgs e) { PageTitle.Text = "الرئيسية"; HomePanel.Visibility = Visibility.Visible; TablePanel.Visibility = Visibility.Collapsed; ComparisonPanel.Visibility = Visibility.Collapsed; ArchivePanel.Visibility = Visibility.Collapsed; }
     private void Deductions_Click(object sender, RoutedEventArgs e) => ShowTable(true);
     private void Salaries_Click(object sender, RoutedEventArgs e) => ShowTable(false);
     private void ShowTable(bool deductions)
@@ -106,12 +108,14 @@ public partial class MainWindow : Window
         PlaceColumn.Header = deductions ? "الجهة" : "محل العمل";
         HomePanel.Visibility = Visibility.Collapsed; TablePanel.Visibility = Visibility.Visible;
         ComparisonPanel.Visibility = Visibility.Collapsed;
+        ArchivePanel.Visibility = Visibility.Collapsed;
         _ = RefreshRowsAsync();
     }
     private void Comparison_Click(object sender, RoutedEventArgs e)
     {
         PageTitle.Text = "مقارنة الاستقطاعات";
         HomePanel.Visibility = TablePanel.Visibility = Visibility.Collapsed;
+        ArchivePanel.Visibility = Visibility.Collapsed;
         ComparisonPanel.Visibility = Visibility.Visible;
     }
 
