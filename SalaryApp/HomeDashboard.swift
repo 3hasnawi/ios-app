@@ -196,7 +196,9 @@ struct HomeDashboard: View {
 
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
-    @State private var route: HomeRoute?
+    @Binding var navigationPath: NavigationPath
+
+    private func open(_ route: HomeRoute) { navigationPath.append(route) }
     @State private var backup = BackupManager.shared
     @AppStorage(HomeTileLayout.key) private var layoutRaw = ""
     @AppStorage(HomeCard.hiddenKey) private var hiddenRaw = ""
@@ -234,8 +236,8 @@ struct HomeDashboard: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let current {
                     HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
-                                   openReports: { route = .reports },
-                                   openRoute: { route = $0 },
+                                   openReports: { open(.reports) },
+                                   openRoute: { open($0) },
                                    openEntities: { openReports(.entities, month: current) })
                     if !recents.isEmpty && !hidden.contains(.recents) {
                         recentRow
@@ -265,9 +267,9 @@ struct HomeDashboard: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
-        .navigationDestination(item: $route) { route in
+        .navigationDestination(for: HomeRoute.self) { route in
             switch route {
-            case .reports: ReportsView(pushedFromHome: true)
+            case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
             case .audit: AuditView(months: months.map(\.name))
             case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")
             case .deductions: DeductionAuditView(months: months.map(\.name), to: current?.name ?? "")
@@ -383,9 +385,9 @@ struct HomeDashboard: View {
 
     private func openTile(_ kind: HomeTileKind, month: PayrollMonth) {
         switch kind {
-        case .reports, .special: route = .reports
-        case .attention: route = .audit
-        case .changes: route = .salary
+        case .reports, .special: open(.reports)
+        case .attention: open(.audit)
+        case .changes: open(.salary)
         case .deductionCount, .deductionTotal, .entities: openReports(.entities, month: month)
         case .employees: AppRouter.shared.tab = .search
         case .recents:
@@ -400,7 +402,7 @@ struct HomeDashboard: View {
     /// مدخل ثابت للتقارير بعد نقلها من الشريط السفلي.
     private var reportsEntry: some View {
         Button {
-            route = .reports
+            open(.reports)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "chart.bar.doc.horizontal")
@@ -520,7 +522,7 @@ struct HomeDashboard: View {
             if let overview {
                 Button(tr("نسخ الصافي", "Copy net"), systemImage: "doc.on.doc") { copyToClipboard(Money.format(overview.netTotal)) }
             }
-            Button(tr("تدقيق الرواتب", "Payroll audit"), systemImage: "checkmark.shield") { route = .salary }
+            Button(tr("تدقيق الرواتب", "Payroll audit"), systemImage: "checkmark.shield") { open(.salary) }
         }
         .accessibilityIdentifier("homeNetCard")
     }
@@ -570,7 +572,7 @@ struct HomeDashboard: View {
                     VStack(spacing: 0) {
                         ForEach(Array(audit.issues.prefix(3).enumerated()), id: \.element.id) { i, issue in
                             Button {
-                                route = issue.route == "deductions" ? .deductions : .salary
+                                open(issue.route == "deductions" ? .deductions : .salary)
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: issue.id == "bank" ? "arrow.left.arrow.right" : "exclamationmark")
@@ -644,7 +646,7 @@ struct HomeDashboard: View {
 
     private func chipRow(_ items: [(String, String, Color)], destination: ChipTarget) -> some View {
         Button {
-            route = destination == .salary ? .salary : .deductions
+            open(destination == .salary ? .salary : .deductions)
         } label: {
             HStack(spacing: 6) {
                 ForEach(items.indices, id: \.self) { i in
@@ -886,7 +888,7 @@ struct HomeDashboard: View {
             }
         }
         .contextMenu {
-            Button(tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud") { route = .backup }
+            Button(tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud") { open(.backup) }
             hideButton(.dataStatus)
         }
         .accessibilityIdentifier("homeDataStatus")
@@ -939,7 +941,7 @@ struct HomeDashboard: View {
                                      @ViewBuilder content: () -> Content) -> some View {
         cardShell(kind) {
             Button {
-                route = target
+                open(target)
             } label: {
                 HStack {
                     Text(kind.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
@@ -957,7 +959,7 @@ struct HomeDashboard: View {
             content()
         }
         .contextMenu {
-            Button(link, systemImage: "arrow.forward.circle") { route = target }
+            Button(link, systemImage: "arrow.forward.circle") { open(target) }
             hideButton(kind)
         }
     }

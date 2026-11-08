@@ -1046,11 +1046,23 @@ final class BackupManager {
         if let savedSeenUpload { UserDefaults.standard.set(savedSeenUpload, forKey: BackupServerConfig.seenUploadKey) }
         else { UserDefaults.standard.removeObject(forKey: BackupServerConfig.seenUploadKey) }
         let serverDatesOK = serverDate != nil && noSeenIsNewer && !sameIsNewer && laterIsNewer && !sameUploadIsNewer && differentUploadIsNewer
+        // Report independent failures separately; never hide a failing component behind another.
+        #if targetEnvironment(simulator)
+        let scanOK: Bool, decorOK: Bool
+        var diagnostic = ""
+        do { scanOK = try OfficialBookScanEnhancement.selfTest() }
+        catch { scanOK = false; diagnostic += " scanError=\(error.localizedDescription)" }
+        do { decorOK = try PDFDecor.selfTest() }
+        catch { decorOK = false; diagnostic += " decorError=\(error.localizedDescription)" }
+        #else
+        let scanOK = true, decorOK = true
+        let diagnostic = ""
+        #endif
         let trustOK = SalaryTrustSelfTest.run()
         let trustPDFOK = await SalaryTrustSelfTest.pdf()
         let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
-            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK && trustPDFOK
-        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) trustPDF=\(trustPDFOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)")
+            && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK && trustPDFOK && scanOK && decorOK
+        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) trustPDF=\(trustPDFOK) scan=\(scanOK) decor=\(decorOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)\(diagnostic)")
     }
 
     // MARK: - الاسترجاع

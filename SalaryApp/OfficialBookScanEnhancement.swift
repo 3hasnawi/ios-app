@@ -99,7 +99,10 @@ nonisolated enum OfficialBookScanEnhancement {
                 let pages = try prepare([original], mode: mode, quality: quality)
                 guard pages.count == 1, let source = CGImageSourceCreateWithData(pages[0] as CFData, nil),
                       let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                      image.width == 80, image.height == 100 else { return false }
+                      image.width == 80, image.height == 100 else {
+                    throw NSError(domain: "ScanEnhancementTest", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "Invalid image dimensions for \(mode.rawValue)/\(quality.rawValue)"])
+                }
             }
         }
         do { _ = try prepare([Data("invalid".utf8)], mode: .original, quality: .high); return false }

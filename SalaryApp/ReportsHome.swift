@@ -25,6 +25,8 @@ enum ReportsRoute: Hashable {
 struct ReportsView: View {
     var presentedFromHome = false
     var pushedFromHome = false
+    /// Use the parent stack for all pushes, including back-swipe bookkeeping.
+    var homePath: Binding<NavigationPath>? = nil
     @Environment(\.dismiss) private var dismiss
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
@@ -34,7 +36,7 @@ struct ReportsView: View {
     @State private var deductionGroups: [ReportGroup] = []
     @State private var loadedKey = ""
     @State private var path: [ReportsRoute] = []
-    @State private var pushedRoute: ReportsRoute?
+    @State private var homeDepth: Int?
     @State private var showExport = false
     @State private var exporter = QuickExporter.shared
     @State private var appliedLaunchOptions = false
@@ -63,10 +65,16 @@ struct ReportsView: View {
         }
     }
     private func open(_ route: ReportsRoute) {
-        if pushedFromHome { pushedRoute = route } else { path.append(route) }
+        if let homePath { homePath.wrappedValue.append(route) } else { path.append(route) }
     }
     private func openRoot(_ route: ReportsRoute) {
-        if pushedFromHome { pushedRoute = route } else { path = [route] }
+        if let homePath {
+            let depth = homeDepth ?? homePath.wrappedValue.count
+            if homePath.wrappedValue.count > depth {
+                homePath.wrappedValue.removeLast(homePath.wrappedValue.count - depth)
+            }
+            homePath.wrappedValue.append(route)
+        } else { path = [route] }
     }
     @ViewBuilder private func destination(_ route: ReportsRoute) -> some View {
         switch route {
@@ -128,7 +136,7 @@ struct ReportsView: View {
                 }
             }
             .navigationDestination(for: ReportsRoute.self) { route in destination(route) }
-            .navigationDestination(item: $pushedRoute) { route in destination(route) }
+            .onAppear { if homeDepth == nil { homeDepth = homePath?.wrappedValue.count } }
             .sheet(isPresented: $showExport) {
                 if let month {
                     DeductionExportSheet(month: month.name, byEntity: byEntity, groups: deductionGroups)
@@ -180,7 +188,7 @@ struct ReportsView: View {
                 openRoot(route)
                 router.pendingReport = nil
             }
-            .task(id: "\(loadKey)|\(path.count)|\(pushedRoute != nil)") {
+            .task(id: "\(loadKey)|\(path.count)|\(homePath?.wrappedValue.count ?? 0)") {
                 auditIssues = nil
                 guard let name = months.first?.name else { return }
                 let key = loadKey

@@ -118,13 +118,23 @@ nonisolated enum PDFDecor {
         let report = directory.appendingPathComponent("wrapped-report.pdf")
         try PDFReportWriter.write(sheet, to: report)
         guard let pdf = PDFDocument(url: report), pdf.pageCount > 1 else { return false }
-        var fullText = ""
+        let layout = try EntityDeductionPDF.prepare(sheet)
         for pageNumber in 0..<pdf.pageCount {
-            guard let page = pdf.page(at: pageNumber), page.bounds(for: .mediaBox).width > page.bounds(for: .mediaBox).height,
-                  let text = page.string else { return false }
-            fullText += text + " "
+            guard let page = pdf.page(at: pageNumber), page.bounds(for: .mediaBox).width > page.bounds(for: .mediaBox).height else { return false }
+            // Extract only the first name cell: whole-page extraction can interleave adjacent
+            // columns with wrapped Arabic lines even when the rendered cell is complete.
+            let row = layout.pages[pageNumber].lowerBound
+            let top = 28 + layout.headerHeight + layout.titleHeight + layout.columnsHeight
+            let rect = CGRect(x: layout.positions[1] + 2,
+                              y: layout.page.height - top - layout.rowHeights[row] + 1,
+                              width: layout.widths[1] - 4, height: layout.rowHeights[row] - 2)
+            let text = page.selection(for: rect)?.string ?? ""
+            guard ArabicText.matchKey(text).contains(ArabicText.matchKey(longName)) else {
+                throw NSError(domain: "PDFDecorTest", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Wrapped name missing on page \(pageNumber + 1): \(text)"])
+            }
         }
-        return ArabicText.matchKey(fullText).contains(ArabicText.matchKey(longName))
+        return true
     }
     #endif
 }

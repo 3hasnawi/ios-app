@@ -1,6 +1,14 @@
 name: Simulator test
 
 on:
+  workflow_call:
+    inputs:
+      quick:
+        type: boolean
+        default: false
+      safety_only:
+        type: boolean
+        default: false
   # البناء يدوي فقط (بأمر من صاحب المشروع)، لا يعمل تلقائياً عند الدمج.
   workflow_dispatch:
     inputs:
@@ -18,6 +26,10 @@ on:
         default: false
       navigation_only:
         description: Recheck system navigation after search-mode test isolation
+        type: boolean
+        default: false
+      safety_only:
+        description: Recheck report navigation gestures, account import, and complete backup checks
         type: boolean
         default: false
       focused_ui:
@@ -41,6 +53,7 @@ jobs:
       BACKUP_ONLY: ${{ inputs.backup_only }}
       NAVIGATION_ONLY: ${{ inputs.navigation_only }}
       FOCUSED_UI: ${{ inputs.focused_ui }}
+      SAFETY_ONLY: ${{ inputs.safety_only }}
     steps:
       - uses: actions/checkout@v4
 
@@ -305,7 +318,7 @@ jobs:
           if [ "$QUICK" = true ]; then
             check_accounts
             import_two_months
-            if [ "$BACKUP_ONLY" = true ] || [ "$NAVIGATION_ONLY" = true ] || [ "$FOCUSED_UI" = true ]; then exit 0; fi
+            if [ "$BACKUP_ONLY" = true ] || [ "$NAVIGATION_ONLY" = true ] || [ "$FOCUSED_UI" = true ] || [ "$SAFETY_ONLY" = true ]; then exit 0; fi
             launch -tab reports -compareDeductions YES
             shot 08z-deduction-comparison 8
             launch
@@ -585,6 +598,9 @@ jobs:
           if [ "$FOCUSED_UI" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow)
           fi
+          if [ "$SAFETY_ONLY" = true ]; then
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testReportsBackGestures -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar)
+          fi
           if [ "$DEDUCTIONS_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)
           fi
@@ -615,7 +631,7 @@ jobs:
 
       # المشاركة الحقيقية: "حفظ في الملفات" (PDF وExcel) ثم "نسخ"، والتحقق أن الملف المحفوظ سليم وأن الحافظة فيها الملف.
       - name: Share sheet end-to-end (Save to Files, Copy)
-        if: inputs.deductions_only != true && inputs.backup_only != true && inputs.navigation_only != true && inputs.focused_ui != true
+        if: inputs.deductions_only != true && inputs.backup_only != true && inputs.navigation_only != true && inputs.focused_ui != true && inputs.safety_only != true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           DEV="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data"
@@ -651,7 +667,7 @@ jobs:
           exit $fail
 
       - name: Autopilot lag test (in-app navigation, no XCUITest overhead)
-        if: inputs.deductions_only != true && inputs.backup_only != true && inputs.navigation_only != true && inputs.focused_ui != true
+        if: inputs.deductions_only != true && inputs.backup_only != true && inputs.navigation_only != true && inputs.focused_ui != true && inputs.safety_only != true
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -664,7 +680,7 @@ jobs:
           python3 ci/perf_report.py ci-output/empty.log ci-output/perf-autopilot.txt | tee ci-output/autopilot-report.txt
 
       - name: Backup round trip and rejection of corrupted records
-        if: inputs.quick != true || inputs.backup_only == true
+        if: ${{ !cancelled() && (inputs.quick != true || inputs.backup_only == true || inputs.safety_only == true) }}
         run: |
           DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
           xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
@@ -690,13 +706,13 @@ jobs:
           xcrun simctl io "$UDID" screenshot ci-output/screenshots/08e3-backup-after-auto.png || true
 
       - name: Check salary trust filters and optional payment fields
-        if: inputs.quick != true || inputs.backup_only == true
+        if: ${{ !cancelled() && (inputs.quick != true || inputs.backup_only == true || inputs.safety_only == true) }}
         run: |
           grep -q "trust=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust self-test failed"; exit 1; }
           grep -q "trustPDF=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust PDF test failed"; exit 1; }
 
       - name: Enforce navigation test result
-        if: inputs.backup_only != true
+        if: ${{ !cancelled() && inputs.backup_only != true }}
         run: |
           [ -f ci-output/uitest-status.txt ] || { echo "::error::UI tests did not produce a result"; exit 1; }
           [ "$(cat ci-output/uitest-status.txt)" = 0 ] || { echo "::error::UI navigation tests failed; inspect uitest.log"; exit 1; }

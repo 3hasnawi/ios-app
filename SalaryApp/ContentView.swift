@@ -78,7 +78,7 @@ struct ContentView: View {
             // اختيار شهر واحد من تقويم شريط العنوان؛ أحدث شهر هو الافتراضي.
             // الشاشة الرئيسية: ملخص الشهر وآخر عمليات البحث، والشعار خلفية شفافة.
             // البحث نفسه في تبويب العدسة.
-            HomeDashboard(months: months, current: currentMonth)
+            HomeDashboard(months: months, current: currentMonth, navigationPath: $path)
                 .id("\(language)-\(numerals)")
                 // زر الأشهر في شريط العنوان (لا يغطي البطاقات عند التمرير).
                 .toolbar {
