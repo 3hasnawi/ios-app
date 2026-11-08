@@ -588,7 +588,7 @@ nonisolated enum EmployeeDeductionPDF {
                         text(DeductionCalendar.months[month - 1], mr, size: 12)
                         guard let row = rows.first(where: { $0.month == month }) else { continue }
                         switch row.state {
-                        case .amount(let value): text(number(value), vr, size: 12, bold: false)
+                        case .amount(let value): text(number(value), vr, size: 12)
                         case .none: text("—", vr, size: 12)
                         case .unavailable: text("غير متحقق", vr, size: 12, color: .systemOrange)
                         case .status(let value, let names):
