@@ -1,0 +1,53 @@
+{
+  "ExecutionAccount": [
+    "#Index<ExecutionAccount>([\\.key])",
+    "var key: String",
+    "var entity: String",
+    "var iban: String",
+    "var branch: String",
+    "var swift: String"
+  ],
+  "PayrollMonth": [
+    "var name: String",
+    "var sortKey: Int",
+    "var importedAt: Date",
+    "var employeeCount: Int",
+    "var deductionCount: Int",
+    "var itemSummaryData: Data? = nil"
+  ],
+  "Employee": [
+    "#Index<Employee>([\\.month, \\.name], [\\.matchKey])",
+    "var month: String = \"\"",
+    "var name: String",
+    "var nameKey: String",
+    "var matchKey: String",
+    "var rank: String",
+    "var workplace: String",
+    "var netSalary: Double?",
+    "var itemsData: Data? = nil",
+    "var detailsData: Data? = nil",
+    "var rawColumnsData: Data? = nil"
+  ],
+  "Deduction": [
+    "#Index<Deduction>([\\.month, \\.matchKey], [\\.matchKey])",
+    "var month: String = \"\"",
+    "var employeeName: String",
+    "var matchKey: String",
+    "var title: String",
+    "var amount: Double?",
+    "var note: String",
+    "var rank: String = \"\""
+  ],
+  "StaffMember": [
+    "#Index<StaffMember>([\\.nameKey], [\\.motherKey], [\\.statNumber], [\\.unifiedNumber])",
+    "var name: String",
+    "var nameKey: String",
+    "var motherKey: String",
+    "var statNumber: String",
+    "var unifiedNumber: String",
+    "var rank: String",
+    "var status: String",
+    "var workplace: String",
+    "var detailsData: Data"
+  ]
+}
