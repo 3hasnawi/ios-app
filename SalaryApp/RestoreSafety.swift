@@ -39,7 +39,7 @@ nonisolated enum RestoreSafety {
         guard let backup = sqlite3_backup_init(output, "main", input, "main") else { throw failure("تعذّر تجهيز نقطة الرجوع.") }
         let result = sqlite3_backup_step(backup, -1)
         let finish = sqlite3_backup_finish(backup)
-        guard result == SQLITE_DONE, finish == SQLITE_OK else { throw failure("تعذّر إكمال نقطة الرجوع؛ بقيت البيانات دون استبدال.") }
+        guard result == SQLITE_DONE, finish == SQLITE_OK else { throw failure("تعذّر إكمال نقطة الرجوع (\(result)/\(finish))؛ بقيت البيانات دون استبدال.") }
     }
     /// يُستدعى عند البدء فقط، قبل فتح أي ModelContainer للقاعدة.
     static func recoverIfNeeded() throws {
