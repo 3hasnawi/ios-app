@@ -1,6 +1,11 @@
 name: iOS logic checks (no app build)
 'on':
   workflow_dispatch:
+    inputs:
+      large_backup:
+        description: Test streaming a fictional JSONL larger than 2.3 GB
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -23,3 +28,7 @@ jobs:
         run: |
           swiftc SalaryApp/BackupLineReader.swift ci/backup_line_reader_test/main.swift -o "$RUNNER_TEMP/backup-reader-test"
           "$RUNNER_TEMP/backup-reader-test"
+      - name: Large fictional backup line reader
+        if: ${{ inputs.large_backup }}
+        timeout-minutes: 8
+        run: '"$RUNNER_TEMP/backup-reader-test" --large'
