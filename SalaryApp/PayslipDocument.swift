@@ -18,6 +18,7 @@ struct PayslipDocument: View {
     let name: String
     let rank: String
     let workplace: String
+    let paymentMethod: String
     let status: String
     let month: String
     let net: Double?
@@ -32,9 +33,18 @@ struct PayslipDocument: View {
 
     private var total: Double { lines.reduce(0) { $0 + ($1.amount ?? 0) } }
 
+    private var paymentLabel: String {
+        let raw = paymentMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = ArabicText.normalize(raw)
+        if value.contains("بطاق") || value.contains("كارت") || value.contains("ماستر") { return tr("بطاقة", "Card") }
+        if value.contains("كاش") || value.contains("نقد") { return tr("كاش", "Cash") }
+        // الرواتب القديمة قد لا تحفظ طريقة الدفع؛ لا نستنتجها من الحساب أو الرتبة.
+        return raw.isEmpty ? tr("غير محدد", "Not specified") : raw
+    }
+
     private var infoRows: [(String, String)] {
         [(tr("الاسم", "Name"), name), (tr("الرتبة", "Rank"), rank),
-         (tr("محل العمل", "Workplace"), workplace)]
+         (tr("محل العمل", "Workplace"), workplace), (tr("نوع الدفع", "Payment type"), paymentLabel)]
             .filter { !$0.1.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
@@ -236,6 +246,7 @@ extension PayslipDocument {
             name: employee.name,
             rank: employee.rank.isEmpty ? (staff?.rank ?? "") : employee.rank,
             workplace: employee.workplace.isEmpty ? (staff?.workplace ?? "") : employee.workplace,
+            paymentMethod: employee.details["طريقة الدفع"] ?? "",
             status: staff?.status ?? "",
             month: employee.month,
             net: employee.netSalary,
