@@ -38,7 +38,7 @@ struct SalaryTrustView: View {
     @State private var previewBase = Data()
     @State private var showingPreview = false
     @State private var loading = false
-    @State private var selected: SalaryTrust.Entry?
+    @State private var selectedPerson: SalaryTrust.Person?
     @State private var selectingBooks = false
     @State private var selectedIDs = Set<String>()
     @State private var showBookPicker = false
@@ -53,9 +53,12 @@ struct SalaryTrustView: View {
     var body: some View {
         List {
             if let ledger {
+                let visible = SalaryTrust.filtered(ledger.entries, month: filterMonth, status: filterStatus, search: search)
+                let people = SalaryTrust.people(visible)
                 Section {
                     LabeledContent(tr("المتبقي حسب الفلاتر", "Outstanding for current filters"), value: Money.format(Double(SalaryTrust.outstanding(visible))))
-                    LabeledContent(tr("القيود الظاهرة", "Visible entries"), value: Num.format(visible.count))
+                    LabeledContent(tr("الأسماء الظاهرة", "Visible people"), value: Num.format(people.count))
+                    LabeledContent(tr("قيود الأشهر الظاهرة", "Visible monthly entries"), value: Num.format(visible.count))
                     Text("\(filterMonth == 0 ? tr("كل الأشهر", "All months") : SalaryTrust.monthLabel(filterMonth)) · \(filterStatus.title)")
                         .font(.caption).foregroundStyle(.secondary)
                     let unresolved = visible.filter(\.reviewPending).count
@@ -78,34 +81,43 @@ struct SalaryTrustView: View {
                         Text(tr("ربط الكتاب لا يسجّل صرفاً ولا يغيّر الرصيد.", "Linking a document does not record payment or change the balance.")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section(tr("السجلات", "Entries")) {
-                    ForEach(visible) { e in
+                Section(tr("الأسماء", "People")) {
+                    ForEach(people) { person in
                         Button {
                             if selectingBooks {
-                                if !selectedIDs.insert(e.id).inserted { selectedIDs.remove(e.id) }
-                            } else { selected = e }
+                                if person.entryIDs.isSubset(of: selectedIDs) { selectedIDs.subtract(person.entryIDs) }
+                                else { selectedIDs.formUnion(person.entryIDs) }
+                            } else { selectedPerson = person }
                         } label: {
                             HStack(alignment: .top) {
-                                if selectingBooks { Image(systemName: selectedIDs.contains(e.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(.teal) }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(e.name).font(.headline).privacySensitive()
-                                Text("\(e.month)/\(e.year) · \(Money.format(Double(e.amount)))").font(.caption).foregroundStyle(.secondary)
-                                Text(tr("الحالة بالملف: \(e.importedStatus.orDash)", "File status: \(e.importedStatus.orDash)")).font(.caption).privacySensitive()
-                                Text(tr("تاريخ الصرف: \(e.displayPaymentDate.orDash)", "Payment date: \(e.displayPaymentDate.orDash)")).font(.caption).foregroundStyle(.secondary).privacySensitive()
-                                if !e.displayNotes.isEmpty { Text(tr("الملاحظات: \(e.displayNotes)", "Notes: \(e.displayNotes)")).font(.caption).foregroundStyle(.secondary).privacySensitive() }
-                                Text(e.reviewPending ? tr("للمراجعة · لا تدخل في الرصيد", "Review required · excluded from balance") : e.remaining == 0 ? tr("مصروف بالكامل", "Paid in full") : tr("المتبقي: \(Money.format(Double(e.remaining)))", "Remaining: \(Money.format(Double(e.remaining)))"))
-                                    .font(.caption.weight(.semibold)).foregroundStyle(e.reviewPending ? Color.orange : Color.secondary)
-                                if !(e.bookIds ?? []).isEmpty { Label(tr("كتاب مرتبط", "Linked document"), systemImage: "paperclip").font(.caption).foregroundStyle(.teal) }
-                            }
+                                if selectingBooks {
+                                    Image(systemName: person.entryIDs.isSubset(of: selectedIDs) ? "checkmark.circle.fill" : selectedIDs.isDisjoint(with: person.entryIDs) ? "circle" : "minus.circle.fill")
+                                        .foregroundStyle(.teal)
+                                }
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(person.name).font(.headline).privacySensitive()
+                                    Text(tr("\(Num.format(person.entries.count)) شهر · المجموع: \(Money.format(Double(person.total)))", "\(person.entries.count) months · Total: \(Money.format(Double(person.total)))"))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    Text(tr("المتبقي المؤكد: \(Money.format(Double(person.remaining)))", "Confirmed outstanding: \(Money.format(Double(person.remaining)))"))
+                                        .font(.caption.weight(.semibold))
+                                    if person.reviewTotal > 0 {
+                                        Text(tr("توجد قيود للمراجعة مستبعدة من المتبقي.", "Entries needing review are excluded from outstanding."))
+                                            .font(.caption).foregroundStyle(.orange)
+                                    }
+                                    Text(tr("افتح الاسم لعرض كل الأشهر وتفاصيلها", "Open to view every month and its details"))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.forward").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         .contextMenu {
-                            Button(tr("فتح التفاصيل", "Open details"), systemImage: "doc.text") { selected = e }
-                            Button(tr("تحديد للربط بكتاب", "Select for document linking"), systemImage: "checkmark.circle") {
-                                selectingBooks = true; selectedIDs.insert(e.id)
+                            Button(tr("تفاصيل كل الأشهر", "All monthly details"), systemImage: "calendar") { selectedPerson = person }
+                            Button(tr("تحديد الأشهر الظاهرة للربط بكتاب", "Select visible months for linking"), systemImage: "checkmark.circle") {
+                                selectingBooks = true; selectedIDs.formUnion(person.entryIDs)
                             }
-                            Button(tr("ربط بكتاب", "Link a document"), systemImage: "link") {
-                                selectedIDs = [e.id]; selectingBooks = true; showBookPicker = true
+                            Button(tr("ربط الأشهر الظاهرة بكتاب", "Link visible months to a document"), systemImage: "link") {
+                                selectedIDs = person.entryIDs; selectingBooks = true; showBookPicker = true
                             }
                         }
                     }
@@ -153,7 +165,9 @@ struct SalaryTrustView: View {
                 selectedIDs.removeAll(); selectingBooks = false
             }
         }
-        .sheet(item: $selected) { entry in NavigationStack { SalaryTrustEntryView(entry: entry, stored: $stored) } }
+        .sheet(item: $selectedPerson) { person in
+            NavigationStack { SalaryTrustPersonView(personID: person.id, stored: $stored) }
+        }
         .alert(tr("اعتماد ملف الأمانات", "Confirm trust spreadsheet"), isPresented: $showingPreview) {
             Button(tr("استيراد", "Import")) {
                 guard let preview else { return }
@@ -194,6 +208,72 @@ struct SalaryTrustView: View {
                 } catch { problem = error.localizedDescription }
             }
         }
+    }
+}
+
+/// كل الأشهر تظهر عند فتح الاسم حتى لو كانت قائمة الأسماء مفلترة بشهر أو حالة.
+private struct SalaryTrustPersonView: View {
+    let personID: String
+    @Binding var stored: Data
+    @Environment(\.dismiss) private var dismiss
+    private var person: SalaryTrust.Person? {
+        guard let ledger = try? SalaryTrust.decode(stored) else { return nil }
+        return SalaryTrust.people(ledger.entries).first { $0.id == personID }
+    }
+    var body: some View {
+        List {
+            if let person {
+                Section {
+                    Text(person.name).font(.headline).privacySensitive()
+                    LabeledContent(tr("عدد الأشهر", "Months"), value: Num.format(person.entries.count))
+                    LabeledContent(tr("مجموع كل الأشهر", "Total for all months"), value: Money.format(Double(person.total)))
+                    LabeledContent(tr("المصروف المؤكد", "Confirmed paid"), value: Money.format(Double(person.paid)))
+                    LabeledContent(tr("المتبقي المؤكد", "Confirmed outstanding"), value: Money.format(Double(person.remaining)))
+                    if person.reviewTotal > 0 {
+                        LabeledContent(tr("مبالغ للمراجعة", "Amounts needing review"), value: Money.format(Double(person.reviewTotal)))
+                            .foregroundStyle(.orange)
+                        Text(tr("مبالغ المراجعة ضمن المجموع، ولا تدخل في المصروف أو المتبقي المؤكد.", "Review amounts are included in the total but excluded from confirmed paid and outstanding."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(tr("كل أشهر هذا الاسم، بغض النظر عن فلاتر القائمة السابقة.", "Every month for this name, regardless of the previous list filters."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section(tr("تفاصيل الأشهر", "Monthly details")) {
+                    ForEach(person.entries) { entry in
+                        NavigationLink {
+                            SalaryTrustEntryView(entry: entry, stored: $stored)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(SalaryTrust.monthLabel(entry.year * 100 + entry.month)).font(.headline)
+                                    Spacer()
+                                    Text(Money.format(Double(entry.amount))).font(.headline).monospacedDigit()
+                                }
+                                Text(SalaryTrust.paymentStatus(entry)).font(.caption.weight(.semibold))
+                                    .foregroundStyle(entry.reviewPending ? Color.orange : Color.secondary)
+                                Text(tr("الحالة بالملف: \(entry.importedStatus.orDash)", "File status: \(entry.importedStatus.orDash)"))
+                                    .font(.caption).privacySensitive()
+                                Text(tr("تاريخ الصرف: \(entry.displayPaymentDate.orDash)", "Payment date: \(entry.displayPaymentDate.orDash)"))
+                                    .font(.caption).foregroundStyle(.secondary).privacySensitive()
+                                if !entry.displayNotes.isEmpty {
+                                    Text(tr("الملاحظات: \(entry.displayNotes)", "Notes: \(entry.displayNotes)"))
+                                        .font(.caption).foregroundStyle(.secondary).privacySensitive()
+                                }
+                                if !(entry.bookIds ?? []).isEmpty {
+                                    Label(tr("كتاب مرتبط", "Linked document"), systemImage: "paperclip").font(.caption).foregroundStyle(.teal)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(tr("تعذّر العثور على قيود هذا الاسم؛ أعد فتح القائمة.", "This person's entries are unavailable; reopen the list."))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle(tr("أمانات المنتسب", "Person’s salary trust"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("إغلاق", "Close")) { dismiss() } } }
     }
 }
 

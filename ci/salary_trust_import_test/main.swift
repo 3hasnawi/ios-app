@@ -65,6 +65,31 @@ let oldManifestData=try JSONEncoder().encode(oldManifest)
 let oldManifestRestored=try JSONDecoder().decode(BackupFormat.Manifest.self,from:oldManifestData)
 precondition(oldManifestRestored.salaryTrustEntries==nil)
 try BackupFormat.validateTrust(legacy,manifest:oldManifestRestored)
+// التجميع لا يدمج القيود المالية أو يسقط شهراً، حتى عند اختلاف المسافات أو السنة.
+var priorUnpaid=unpaid
+priorUnpaid.id=UUID().uuidString;priorUnpaid.name="  منتسب  وهمي أ  "
+priorUnpaid.year=2026;priorUnpaid.amount=2500
+var priorReview=review
+priorReview.id=UUID().uuidString;priorReview.name=paid.name
+let groupedLedger=SalaryTrust.Ledger(version:2,entries:[priorUnpaid,paid,unpaid,priorReview],openingImported:true)
+let groupedData=try SalaryTrust.encode(groupedLedger)
+let people=SalaryTrust.people(groupedLedger.entries)
+precondition(people.count==2)
+let person=people.first{$0.id==ArabicText.matchKey(paid.name)}!
+precondition(person.entries.map(\.id)==[priorReview.id,paid.id,priorUnpaid.id])
+precondition(person.total==6500 && person.paid==1000 && person.remaining==2500 && person.reviewTotal==3000)
+precondition(person.entryIDs==Set([priorUnpaid.id,paid.id,priorReview.id]))
+precondition(Set(people.flatMap(\.entries).map(\.id))==Set(groupedLedger.entries.map(\.id)))
+precondition(people.reduce(Int64(0)){$0+$1.remaining}==SalaryTrust.outstanding(groupedLedger.entries))
+let monthlyPeople=SalaryTrust.people(SalaryTrust.filtered(groupedLedger.entries,month:202711,status:.paid,search:""))
+precondition(monthlyPeople.count==1 && monthlyPeople[0].entries.count==1 && monthlyPeople[0].total==1000)
+precondition(people.first{$0.id==monthlyPeople[0].id}!.entries.count==3)
+let groupedRoundTrip=try SalaryTrust.decode(groupedData)
+precondition(groupedRoundTrip==groupedLedger)
+let legacyPerson=SalaryTrust.people(legacy.entries)[0]
+precondition(legacyPerson.paid==300 && legacyPerson.remaining==1700)
+precondition(SalaryTrust.people([]).isEmpty)
+print("Person grouping, per-month details, filtered selection, review totals and legacy partial payments passed")
 print("Trust XLSX import, future months, notes/date, status, replacement, legacy, report and standalone backup checks passed")
 if FileManager.default.fileExists(atPath:root.appendingPathComponent("private.xlsx").path) {
     struct Expected:Decodable {let name:String,rank:String,workplace:String;let amount:Int64;let note:String,status:String,date:String}

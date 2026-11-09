@@ -56,6 +56,14 @@ nonisolated enum SalaryTrustSelfTest {
                   imported.entries[0].displayNotes == "ملاحظة ملف",
                   imported.entries[0].importedPaymentDate == "تشرين الثاني2027",
                   try SalaryTrust.decode(SalaryTrust.encode(imported)) == imported else { return false }
+            var earlier = imported.entries[0]
+            earlier.id = UUID().uuidString; earlier.month = 10
+            earlier.amount = 700; earlier.legacyPaid = false; earlier.importedStatus = ""
+            earlier.importedPaymentDate = nil
+            let people = SalaryTrust.people(imported.entries + [earlier])
+            guard people.count == 1, people[0].entries.count == 2, people[0].total == 1700,
+                  people[0].paid == 1000, people[0].remaining == 700,
+                  people[0].entries.map(\.month) == [11, 10] else { return false }
             return true
         } catch { return false }
     }

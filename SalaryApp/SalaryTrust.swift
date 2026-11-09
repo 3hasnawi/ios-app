@@ -95,6 +95,22 @@ nonisolated enum SalaryTrust {
         var paid: Int64 { legacyPaid ? amount : payments.reduce(0) { $0 + $1.amount } }
         var remaining: Int64 { amount - paid }
     }
+    /// تجميع للعرض فقط؛ تبقى قيود الأشهر مستقلة في التخزين والتصدير.
+    struct Person: Identifiable, Sendable {
+        let id: String
+        let entries: [Entry]
+        var name: String { entries.first?.name ?? "" }
+        var entryIDs: Set<String> { Set(entries.map(\.id)) }
+        var total: Int64 { entries.reduce(0) { $0 + $1.amount } }
+        var paid: Int64 { entries.filter { !$0.reviewPending }.reduce(0) { $0 + $1.paid } }
+        var remaining: Int64 { SalaryTrust.outstanding(entries) }
+        var reviewTotal: Int64 { entries.filter(\.reviewPending).reduce(0) { $0 + $1.amount } }
+    }
+    static func people(_ entries: [Entry]) -> [Person] {
+        Dictionary(grouping: entries, by: { ArabicText.matchKey($0.name) }).map { nameKey, rows in
+            Person(id: nameKey, entries: rows.sorted { ($0.year, $0.month, $0.id) > ($1.year, $1.month, $1.id) })
+        }.sorted { $0.id < $1.id }
+    }
     struct Ledger: Codable, Equatable, Sendable {
         var version: Int = 1
         var entries: [Entry] = []
