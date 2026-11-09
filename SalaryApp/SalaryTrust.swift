@@ -4,7 +4,6 @@ import Foundation
 nonisolated enum SalaryTrust {
     static let settingsKey = "salaryTrustLedgerV1"
     static let maximum: Int64 = 9_007_199_254_740_991
-    static let openingCutoff = 202609
 
     enum PaymentFilter: String, CaseIterable, Identifiable, Sendable {
         case all, unfinished, unpaid, partial, paid, review
@@ -72,7 +71,7 @@ nonisolated enum SalaryTrust {
         var year: Int
         var month: Int
         var amount: Int64
-        /// الحالة من عمود الملاحظات المجاور لصافي الراتب.
+        /// الملاحظات من ملف الأمانات؛ اسم الحقل باقٍ لقراءة الدفاتر القديمة.
         var caseStatus: String
         var note: String
         var importedStatus: String
@@ -81,13 +80,25 @@ nonisolated enum SalaryTrust {
         var payments: [Payment]
         /// روابط كتب الأرشيف فقط؛ لا تثبت الصرف ولا تغيّر الرصيد.
         var bookIds: [String]? = nil
+        /// قيمة عمود تاريخ الصرف كما وردت في الملف؛ غيابها في النسخ القديمة مقبول.
+        var importedPaymentDate: String? = nil
+        var displayNotes: String {
+            [caseStatus, note].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: "\n")
+        }
+        var displayPaymentDate: String {
+            if let date = importedPaymentDate, !date.isEmpty { return date }
+            // تظهر تواريخ الدفعات القديمة للقراءة فقط حتى يُعتمد ملف جديد.
+            return payments.map(\.bookDate).filter { !$0.isEmpty }
+                .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }.joined(separator: "، ")
+        }
         var paid: Int64 { legacyPaid ? amount : payments.reduce(0) { $0 + $1.amount } }
         var remaining: Int64 { amount - paid }
     }
     struct Ledger: Codable, Equatable, Sendable {
         var version: Int = 1
         var entries: [Entry] = []
-        /// لم يُسجل شهر الافتتاح إلا بعد مراجعة الملف بكامله.
+        /// لم يُعتمد ملف الأمانات إلا بعد مراجعته بكامله؛ الاسم باقٍ لتوافق النسخ.
         var openingImported: Bool = false
     }
     static func invalid(_ text: String) -> NSError {
@@ -108,7 +119,7 @@ nonisolated enum SalaryTrust {
         return actual.year == y && actual.month == m && actual.day == d
     }
     static func validate(_ ledger: Ledger) throws {
-        guard ledger.version == 1, ledger.entries.count <= 100_000 else { throw invalid(tr("دفتر الأمانات غير صالح أو من إصدار أحدث.", "The trust ledger is invalid or from a newer version.")) }
+        guard (1...2).contains(ledger.version), ledger.entries.count <= 100_000 else { throw invalid(tr("دفتر الأمانات غير صالح أو من إصدار أحدث.", "The trust ledger is invalid or from a newer version.")) }
         var ids = Set<String>(), keys = Set<String>(), payments = Set<String>()
         var total: Int64 = 0
         for e in ledger.entries {
@@ -116,9 +127,16 @@ nonisolated enum SalaryTrust {
                   !e.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   e.name.count <= 300, e.rank.count <= 150, e.workplace.count <= 300,
                   e.caseStatus.count <= 2000, e.note.count <= 2000, e.importedStatus.count <= 300,
+                  (e.importedPaymentDate?.count ?? 0) <= 300,
                   (1900...2200).contains(e.year), (1...12).contains(e.month),
                   e.amount > 0, e.amount <= maximum, keys.insert(key(e)).inserted,
                   (!e.legacyPaid || e.payments.isEmpty), (!e.reviewPending || (!e.legacyPaid && e.payments.isEmpty)) else { throw invalid(tr("سجل أمانة غير صالح أو مكرر؛ لم تُحفظ التغييرات.", "A trust entry is invalid or duplicated; changes were not saved.")) }
+            if ledger.version == 2 {
+                let state = importedDisposition(e.importedStatus)
+                guard e.payments.isEmpty, e.legacyPaid == (state == .paid), e.reviewPending == (state == .review) else {
+                    throw invalid(tr("حالة الأمانة لا تطابق الملف المستورد.", "The trust status does not match the imported file."))
+                }
+            }
             let bookIds = e.bookIds ?? []
             guard bookIds.count <= 100, bookIds.allSatisfy({ UUID(uuidString: $0) != nil }),
                   Set(bookIds.map { $0.lowercased() }).count == bookIds.count else {
@@ -137,6 +155,29 @@ nonisolated enum SalaryTrust {
             guard total <= maximum - e.amount else { throw invalid(tr("مجموع الأمانات يتجاوز الحد المدعوم.", "Trust total exceeds the supported limit.")) }
             total += e.amount
         }
+    }
+    enum ImportedDisposition: Equatable { case paid, unpaid, review }
+    static func importedDisposition(_ raw: String) -> ImportedDisposition {
+        let status = ArabicText.matchKey(raw)
+        if ["صرف", "مصروف", "مصروف بالكامل", "تم الصرف"].map(ArabicText.matchKey).contains(status) { return .paid }
+        if ["", "غير مصروف", "لم يصرف", "لم يتم الصرف"].map(ArabicText.matchKey).contains(status) { return .unpaid }
+        return .review
+    }
+    /// الملف هو المرجع المالي؛ تبقى روابط الكتب فقط عند تطابق الشخص والشهر.
+    static func replacing(with incoming: Ledger, existing: Ledger) throws -> Ledger {
+        try validate(incoming); try validate(existing)
+        guard incoming.version == 2, incoming.openingImported else {
+            throw invalid(tr("اختر ملف أمانات صالحاً.", "Choose a valid trust spreadsheet."))
+        }
+        let old = Dictionary(uniqueKeysWithValues: existing.entries.map { (key($0), $0) })
+        var result = incoming
+        for index in result.entries.indices {
+            if let saved = old[key(result.entries[index])] {
+                result.entries[index].id = saved.id
+                result.entries[index].bookIds = saved.bookIds
+            }
+        }
+        try validate(result); return result
     }
     /// يربط كتاباً بمجموعة في عملية واحدة دون تغيير المبالغ أو حالة الصرف.
     static func linking(_ ledger: Ledger, bookID: UUID, entries ids: Set<String>) throws -> Ledger {

@@ -765,6 +765,7 @@ nonisolated final class SharedStringsReader: NSObject, XMLParserDelegate {
 nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     private let sharedStrings: [String]
     private let onRow: ([String]) -> Void
+    private var transformCell: ((Int, String?, String) -> String)?
     private var row: [String] = []
     private var column = 0
     private var nextColumn = 0
@@ -784,11 +785,13 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     }
 
     static func read(_ file: URL, sharedStrings: [String], onProgress: ((Double) -> Void)? = nil,
+                     transformCell: ((Int, String?, String) -> String)? = nil,
                      onRow: @escaping ([String]) -> Void) throws {
         let reader = WorksheetReader(sharedStrings: sharedStrings, onRow: onRow)
         guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("worksheet") }
         reader.stream = stream
         reader.onProgress = onProgress
+        reader.transformCell = transformCell
         let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
         reader.fileSize = max(1, (attributes?[.size] as? NSNumber)?.doubleValue ?? 1)
         let parser = XMLParser(stream: stream)
@@ -831,7 +834,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
             if row.count <= column {
                 row += Array(repeating: "", count: column - row.count + 1)
             }
-            row[column] = text
+            row[column] = transformCell?(column, type, text) ?? text
             nextColumn = column + 1
         case "row":
             onRow(row)

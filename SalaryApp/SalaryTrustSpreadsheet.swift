@@ -1,7 +1,7 @@
 import Foundation
 import ZIPFoundation
 
-/// قراءة افتتاح الأمانات محلياً؛ أي صف غير واضح يوقف الاستيراد دون حفظ جزئي.
+/// قراءة ملف الأمانات محلياً؛ أي صف غير واضح يوقف الاستيراد دون حفظ جزئي.
 nonisolated enum SalaryTrustSpreadsheet {
     static func read(_ url: URL) throws -> SalaryTrust.Ledger {
         let granted = url.startAccessingSecurityScopedResource()
@@ -30,52 +30,24 @@ nonisolated enum SalaryTrustSpreadsheet {
         else { strings = [] }
         let sheets = entries.filter { $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml") && !$0.path.contains("_rels") }
         guard !sheets.isEmpty else { throw SalaryTrust.invalid(tr("لم توجد أوراق في الملف.", "No worksheets were found.")) }
+        let uses1904: Bool
+        if let workbook = archive["xl/workbook.xml"] { uses1904 = try SalaryTrustWorkbookDates.read(extract(workbook)) }
+        else { uses1904 = false }
         var result: [SalaryTrust.Entry] = []
-        var found = false, problems: [String] = []
         for sheet in sheets {
             let file = try extract(sheet)
-            var headers: [String: Int]?, rowNumber = 0
-            try WorksheetReader.read(file, sharedStrings: strings) { row in
-                rowNumber += 1
-                guard rowNumber <= 100_000, row.count <= 500 else { problems.append(tr("عدد صفوف الملف أو أعمدته كبير جداً.", "The file has too many rows or columns.")); return }
-                func cell(_ i: Int?) -> String {
-                    guard let i, i >= 0, i < row.count else { return "" }
-                    return row[i].trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if headers == nil {
-                    guard rowNumber <= 20 else { return }
-                    let normalized = row.map(ArabicText.normalize)
-                    func index(_ label: String) -> Int? { normalized.firstIndex(of: ArabicText.normalize(label)) }
-                    guard let name = index("الاسم الكامل"), let amount = index("صافي الراتب"),
-                          let month = index("الشهر"), let year = index("السنة") else { return }
-                    var map = ["name": name, "amount": amount, "month": month, "year": year]
-                    map["rank"] = index("الرتبة"); map["workplace"] = index("الفوج او المديرية")
-                    map["note"] = index("ملاحظات4"); map["note2"] = index("الملاحظات"); map["status"] = index("الحالة")
-                    headers = map; found = true; return
-                }
-                guard let h = headers else { return }
-                let name = cell(h["name"])
-                if name.isEmpty && cell(h["amount"]).isEmpty && cell(h["month"]).isEmpty && cell(h["year"]).isEmpty { return }
-                let period = MonthName.sortKey(cell(h["month"]) + " " + cell(h["year"]))
-                let status = cell(h["status"])
-                let normalized = ArabicText.normalize(status)
-                let paid = normalized == ArabicText.normalize("صرف")
-                let pending = normalized == ArabicText.normalize("قطع علاقة تقاعد")
-                guard !name.isEmpty, period > 0, period <= SalaryTrust.openingCutoff,
-                      let number = ArabicText.number(from: cell(h["amount"])), number.isFinite,
-                      number > 0, number.rounded() == number, number <= Double(SalaryTrust.maximum),
-                      status.isEmpty || paid || pending else {
-                    problems.append(tr("صف \(rowNumber): تحقق من الاسم والشهر والمبلغ والحالة.", "Row \(rowNumber): check the name, month, amount and status.")); return
-                }
-                let notes = cell(h["note2"])
-                result.append(.init(id: UUID().uuidString, name: name, rank: cell(h["rank"]), workplace: cell(h["workplace"]), year: period / 100, month: period % 100,
-                                    amount: Int64(number), caseStatus: cell(h["note"]), note: notes, importedStatus: status, legacyPaid: paid, reviewPending: pending, payments: []))
+            var rows = SalaryTrustImportRows()
+            try WorksheetReader.read(file, sharedStrings: strings, transformCell: { column, type, value in
+                column == rows.dateColumn ? SalaryTrustExcelDate.text(value, cellType: type, uses1904: uses1904) : value
+            }) { row in rows.append(row) }
+            if rows.foundHeader {
+                let entries = try rows.result().entries
+                guard result.count <= 100_000 - entries.count else { throw SalaryTrust.invalid(tr("عدد سجلات الأمانات كبير جداً.", "Too many trust entries.")) }
+                result += entries
             }
         }
-        guard found, !result.isEmpty, problems.isEmpty else {
-            throw SalaryTrust.invalid(problems.first ?? tr("تعذّر العثور على بيانات الأمانات في الملف.", "Could not find trust entries in the file."))
-        }
-        let ledger = SalaryTrust.Ledger(entries: result, openingImported: true)
+        guard !result.isEmpty else { throw SalaryTrust.invalid(tr("تعذّر العثور على بيانات الأمانات في الملف.", "Could not find trust entries in the file.")) }
+        let ledger = SalaryTrust.Ledger(version: 2, entries: result, openingImported: true)
         try SalaryTrust.validate(ledger)
         return ledger
     }

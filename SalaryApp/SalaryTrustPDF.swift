@@ -5,7 +5,7 @@ import PDFKit
 /// يلف الخلايا الطويلة ويتحقق من النص المرسوم قبل إتاحة الكشف للمشاركة.
 nonisolated enum SalaryTrustPDF {
     private static let page = CGRect(x: 0, y: 0, width: 842, height: 595)
-    private static let widths: [CGFloat] = [28, 150, 75, 78, 125, 110, 110, 110]
+    private static let widths: [CGFloat] = [24, 120, 65, 70, 70, 85, 80, 80, 120, 72]
     private static let margin: CGFloat = 28
     private static let bottom: CGFloat = 560
     private static let font = ReportFont.regular(9)
@@ -102,7 +102,7 @@ nonisolated enum SalaryTrustPDF {
                 if expected.isEmpty { continue }
                 let rect = CGRect(x: positions[column] + 0.2, y: page.height - placement.y - placement.height + 0.2, width: widths[column] - 0.4, height: placement.height - 0.4)
                 let actual = identity(output.selection(for: rect)?.string ?? "")
-                let valid = column == 0 || column >= 5 ? actual == expected : TransferAnbarTablePDF.matchesExtractedCell(actual, expected: expected)
+                let valid = [0, 5, 6, 7].contains(column) ? actual == expected : TransferAnbarTablePDF.matchesExtractedCell(actual, expected: expected)
                 guard valid else { throw SalaryTrust.invalid(tr("تعذّرت مطابقة الصف \(placement.row + 1) والعمود \(column + 1) في PDF؛ لم يُشارك الملف.", "PDF verification failed at row \(placement.row + 1), column \(column + 1); the file was not shared.")) }
             }
         }

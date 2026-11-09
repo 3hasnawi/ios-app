@@ -1,13 +1,12 @@
 import SwiftUI
-import SwiftData
 import UniformTypeIdentifiers
 import VisionKit
 
 /// يحفظ الدفتر كاملاً دفعة واحدة بعد الفحص، ويمنع استبداله أثناء النسخ أو الاسترجاع.
 @MainActor enum SalaryTrustStore {
     static func load() throws -> SalaryTrust.Ledger { try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) }
-    static func save(_ ledger: SalaryTrust.Ledger, expected: Data, duringImport: Bool = false) throws {
-        guard !BackupManager.shared.isWorking, (!ImportCenter.shared.isBusy || duringImport), !StaffImportState.shared.isImporting,
+    static func save(_ ledger: SalaryTrust.Ledger, expected: Data) throws {
+        guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting,
               (UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) == expected else {
             throw SalaryTrust.invalid(tr("تغيّرت البيانات أو توجد عملية جارية؛ أعد المحاولة.", "The data changed or another operation is running; try again."))
         }
@@ -25,48 +24,10 @@ import VisionKit
         let linked = try SalaryTrust.linking(ledger, bookID: book.id, entries: ids)
         try save(linked, expected: expected)
     }
-    /// تُضاف قائمة الكاش مرة واحدة؛ أي تغيير أو تكرار في الشخص والشهر يوقف الإضافة للمراجعة.
-    static func addCash(month: String, duringImport: Bool = false) async throws -> Int {
-        let period = MonthName.sortKey(month)
-        guard period > SalaryTrust.openingCutoff else { return 0 }
-        let expected = UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()
-        var ledger = try SalaryTrust.decode(expected)
-        guard ledger.openingImported else { return 0 }
-        let container = SharedModel.container
-        let descriptor = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
-        let before = try ModelContext(container).fetch(descriptor)
-        guard before.count == 1 else { throw SalaryTrust.invalid(tr("تعذّر تحديد شهر الرواتب بصورة فريدة.", "Could not uniquely identify the payroll month.")) }
-        let importedAt = before[0].importedAt
-        let list = try await Task.detached(priority: .userInitiated) { try await TransferCashListEngine(modelContainer: container).list(month: month) }.value
-        let after = try ModelContext(container).fetch(descriptor)
-        guard after.count == 1, after[0].importedAt == importedAt else { throw SalaryTrust.invalid(tr("تغيّرت رواتب الشهر أثناء إعداد الأمانات؛ أعد المحاولة.", "Payroll changed while preparing trust entries; try again.")) }
-        guard list.repeatedNameRows == 0 else { throw SalaryTrust.invalid(tr("توجد أسماء كاش مكررة في الشهر؛ راجعها قبل إضافتها للأمانات.", "Duplicate cash names require review before adding trust entries.")) }
-        let existing = Dictionary(uniqueKeysWithValues: ledger.entries.map { (SalaryTrust.key($0), $0) })
-        var additions: [SalaryTrust.Entry] = []
-        for person in list.employees {
-            guard person.amount > 0, person.amount <= Double(SalaryTrust.maximum), person.amount.rounded() == person.amount,
-                  !person.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !person.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !person.workplace.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SalaryTrust.invalid(tr("بيانات أحد رواتب الكاش غير مكتملة.", "A cash salary has incomplete data.")) }
-            guard let caseStatus = person.caseStatus else { throw SalaryTrust.invalid(tr("عمود الملاحظات بعد صافي الراتب غير متاح؛ أعد استيراد رواتب الشهر وراجعها قبل إضافة الأمانات.", "The notes column following net salary is unavailable; reimport and review the month before adding trust entries.")) }
-            let entry = SalaryTrust.Entry(id: UUID().uuidString, name: person.name, rank: person.rank, workplace: person.workplace,
-                year: period / 100, month: period % 100, amount: Int64(person.amount), caseStatus: caseStatus, note: "", importedStatus: "", legacyPaid: false, reviewPending: false, payments: [])
-            if let old = existing[SalaryTrust.key(entry)] {
-                guard old.amount == entry.amount, old.caseStatus == entry.caseStatus else { throw SalaryTrust.invalid(tr("تغيّر مبلغ أمانة مسجلة أو حالتها؛ راجعها قبل التحديث.", "An existing trust amount or status changed; review it before updating.")) }
-            } else { additions.append(entry) }
-        }
-        let incoming = Set(list.employees.map { "\(period / 100)-\(period % 100)|" + ArabicText.matchKey($0.name) })
-        let missing = ledger.entries.contains { $0.year == period / 100 && $0.month == period % 100 && !incoming.contains(SalaryTrust.key($0)) }
-        guard !missing else { throw SalaryTrust.invalid(tr("تغيّرت قائمة كاش الشهر وفيها قيود محفوظة لم تعد موجودة؛ راجعها قبل التحديث.", "The cash list no longer contains some saved entries; review before updating.")) }
-        guard !additions.isEmpty else { return 0 }
-        ledger.entries.append(contentsOf: additions)
-        try save(ledger, expected: expected, duringImport: duringImport)
-        return additions.count
-    }
+
 }
 
 struct SalaryTrustView: View {
-    @Query private var months: [PayrollMonth]
     @AppStorage(SalaryTrust.settingsKey) private var stored = Data()
     @State private var search = ""
     @State private var filterMonth = 0
@@ -100,8 +61,15 @@ struct SalaryTrustView: View {
                     let unresolved = visible.filter(\.reviewPending).count
                     if unresolved > 0 { Text(tr("\(Num.format(unresolved)) قيد للمراجعة مستبعد من المتبقي.", "\(unresolved) entries needing review are excluded from the balance.")).font(.caption).foregroundStyle(.orange) }
                 }
-                if !ledger.openingImported {
-                    Section { Button(tr("استيراد ملف الأمانات الافتتاحي", "Import opening trust spreadsheet"), systemImage: "square.and.arrow.down") { pickOpening() }.disabled(loading) }
+                Section {
+                    Button(tr("استيراد أو تحديث ملف الأمانات", "Import or update trust spreadsheet"), systemImage: "square.and.arrow.down") { pickOpening() }
+                        .disabled(loading)
+                    Text(tr("الملاحظات والحالة وتاريخ الصرف من Excel حصراً. لتعديلها حدّث الملف وأعد استيراده.", "Notes, status and payment date come only from Excel. Update and reimport the file to change them."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if ledger.version == 1 && !ledger.entries.isEmpty {
+                        Text(tr("الدفتر الحالي محفوظ من نسخة سابقة؛ يبقى كما هو حتى تؤكد استيراد ملف بديل.", "The existing ledger is from an earlier version and stays intact until you confirm a replacement spreadsheet."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if selectingBooks {
                     Section {
@@ -122,7 +90,9 @@ struct SalaryTrustView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(e.name).font(.headline).privacySensitive()
                                 Text("\(e.month)/\(e.year) · \(Money.format(Double(e.amount)))").font(.caption).foregroundStyle(.secondary)
-                                if !e.caseStatus.isEmpty { Text(tr("الحالة: \(e.caseStatus)", "Status: \(e.caseStatus)")).font(.caption).privacySensitive() }
+                                Text(tr("الحالة بالملف: \(e.importedStatus.orDash)", "File status: \(e.importedStatus.orDash)")).font(.caption).privacySensitive()
+                                Text(tr("تاريخ الصرف: \(e.displayPaymentDate.orDash)", "Payment date: \(e.displayPaymentDate.orDash)")).font(.caption).foregroundStyle(.secondary).privacySensitive()
+                                if !e.displayNotes.isEmpty { Text(tr("الملاحظات: \(e.displayNotes)", "Notes: \(e.displayNotes)")).font(.caption).foregroundStyle(.secondary).privacySensitive() }
                                 Text(e.reviewPending ? tr("للمراجعة · لا تدخل في الرصيد", "Review required · excluded from balance") : e.remaining == 0 ? tr("مصروف بالكامل", "Paid in full") : tr("المتبقي: \(Money.format(Double(e.remaining)))", "Remaining: \(Money.format(Double(e.remaining)))"))
                                     .font(.caption.weight(.semibold)).foregroundStyle(e.reviewPending ? Color.orange : Color.secondary)
                                 if !(e.bookIds ?? []).isEmpty { Label(tr("كتاب مرتبط", "Linked document"), systemImage: "paperclip").font(.caption).foregroundStyle(.teal) }
@@ -179,33 +149,25 @@ struct SalaryTrustView: View {
             }
         }
         .sheet(isPresented: $showBookPicker) {
-            SalaryTrustBookPicker(ids: selectedIDs, months: Array(Set(months.map(\.name) + (ledger?.entries ?? []).filter { selectedIDs.contains($0.id) }.map { "\($0.month) \($0.year)" })).sorted()) {
+            SalaryTrustBookPicker(ids: selectedIDs, months: Array(Set((ledger?.entries ?? []).filter { selectedIDs.contains($0.id) }.map { SalaryTrust.monthLabel($0.year * 100 + $0.month) })).sorted()) {
                 selectedIDs.removeAll(); selectingBooks = false
             }
         }
         .sheet(item: $selected) { entry in NavigationStack { SalaryTrustEntryView(entry: entry, stored: $stored) } }
-        .alert(tr("مراجعة ملف الأمانات", "Review trust spreadsheet"), isPresented: $showingPreview) {
+        .alert(tr("اعتماد ملف الأمانات", "Confirm trust spreadsheet"), isPresented: $showingPreview) {
             Button(tr("استيراد", "Import")) {
                 guard let preview else { return }
                 do {
                     try SalaryTrustStore.save(preview, expected: previewBase)
-                    let names = months.map(\.name).filter { MonthName.sortKey($0) > SalaryTrust.openingCutoff }
-                        .sorted { MonthName.sortKey($0) < MonthName.sortKey($1) }
-                    Task {
-                        var errors: [String] = []
-                        for name in names {
-                            do { _ = try await SalaryTrustStore.addCash(month: name) }
-                            catch { errors.append("\(name): \(error.localizedDescription)") }
-                        }
-                        if !errors.isEmpty { problem = tr("استُورد الرصيد الافتتاحي، لكن بعض الأشهر تحتاج مراجعة:\n", "Opening data imported; some months need review:\n") + errors.joined(separator: "\n") }
-                    }
+                    selectedIDs.removeAll(); selectingBooks = false
                 } catch { problem = error.localizedDescription }
                 self.preview = nil
             }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { preview = nil }
         } message: {
             if let preview {
-                Text(tr("\(Num.format(preview.entries.count)) سجل · \(Num.format(preview.entries.filter(\.legacyPaid).count)) مصروف بالكامل · \(Num.format(preview.entries.filter(\.reviewPending).count)) للمراجعة. استورد الملف على جهاز واحد، ثم انقل النسخة الاحتياطية إلى الجهاز الآخر. لن تتغير البيانات قبل التأكيد.", "\(preview.entries.count) entries · \(preview.entries.filter(\.legacyPaid).count) paid · \(preview.entries.filter(\.reviewPending).count) need review. Import on one device, then restore its backup on the other."))
+                let oldCount = (try? SalaryTrust.decode(previewBase).entries.count) ?? 0
+                Text(tr("\(Num.format(preview.entries.count)) سجل · \(Num.format(preview.entries.filter(\.legacyPaid).count)) مصروف بالكامل · \(Num.format(preview.entries.filter(\.reviewPending).count)) للمراجعة. سيحل الملف محل معلومات \(Num.format(oldCount)) سجل حالي في دفتر الأمانات. تبقى الكتب في الأرشيف وروابط السجلات المطابقة محفوظة. لن يتغير الدفتر قبل التأكيد.", "\(preview.entries.count) entries · \(preview.entries.filter(\.legacyPaid).count) paid · \(preview.entries.filter(\.reviewPending).count) need review. Replaces financial information for \(oldCount) existing entries after confirmation. Archived documents and links for matching entries are kept."))
             }
         }
         .alert(tr("أمانات الرواتب", "Salary trust"), isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
@@ -225,8 +187,9 @@ struct SalaryTrustView: View {
             Task {
                 defer { loading = false; ImportCenter.removeCopy(file) }
                 do {
-                    guard try SalaryTrust.decode(previewBase).entries.isEmpty else { throw SalaryTrust.invalid(tr("الدفتر غير فارغ؛ لم تُستبدل البيانات.", "The ledger is not empty; data was not replaced.")) }
-                    preview = try await Task.detached(priority: .userInitiated) { try SalaryTrustSpreadsheet.read(file) }.value
+                    let existing = try SalaryTrust.decode(previewBase)
+                    let incoming = try await Task.detached(priority: .userInitiated) { try SalaryTrustSpreadsheet.read(file) }.value
+                    preview = try SalaryTrust.replacing(with: incoming, existing: existing)
                     showingPreview = true
                 } catch { problem = error.localizedDescription }
             }
@@ -240,173 +203,84 @@ private struct SalaryTrustEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var archive = OfficialBookStore.shared
     @State private var showBookPicker = false
-    @Query private var months: [PayrollMonth]
-    @State private var amount = ""
-    @State private var bookNumber = ""
-    @State private var paymentNote = ""
-    @State private var entryNote = ""
-    @State private var confirmPaid = false
-    @State private var caseStatus = ""
-    @State private var date = Date()
-    @State private var hasBookDate = false
-    @State private var editPayment: SalaryTrust.Payment?
     @State private var problem: String?
     init(entry: SalaryTrust.Entry, stored: Binding<Data>) {
-        _entry = State(initialValue: entry)
-        _stored = stored
+        _entry = State(initialValue: entry); _stored = stored
     }
     var body: some View {
         Form {
             Section {
                 LabeledContent(tr("الاسم", "Name"), value: entry.name).privacySensitive()
-                LabeledContent(tr("الشهر", "Month"), value: "\(entry.month)/\(entry.year)")
+                LabeledContent(tr("الرتبة", "Rank"), value: entry.rank.orDash)
+                LabeledContent(tr("الفوج أو المديرية", "Workplace"), value: entry.workplace.orDash).privacySensitive()
+                LabeledContent(tr("الشهر", "Month"), value: SalaryTrust.monthLabel(entry.year * 100 + entry.month))
                 LabeledContent(tr("المبلغ", "Amount"), value: Money.format(Double(entry.amount)))
-                if !entry.reviewPending { LabeledContent(tr("المتبقي", "Remaining"), value: Money.format(Double(entry.remaining))) }
-                 if !entry.importedStatus.isEmpty { LabeledContent(tr("حالة الملف الأصلي", "Original file status"), value: entry.importedStatus) }
+                LabeledContent(tr("حالة الصرف", "Payment status"), value: SalaryTrust.paymentStatus(entry))
+                if !entry.reviewPending {
+                    LabeledContent(tr("المصروف", "Paid"), value: Money.format(Double(entry.paid)))
+                    LabeledContent(tr("المتبقي", "Remaining"), value: Money.format(Double(entry.remaining)))
+                }
             }
-            Section(tr("الحالة وملاحظات القيد", "Status and entry notes")) {
-                TextField(tr("الحالة", "Status"), text: $caseStatus, axis: .vertical).privacySensitive()
-                TextField(tr("أضف ملاحظات", "Add notes"), text: $entryNote, axis: .vertical).privacySensitive()
-                Button(tr("حفظ الحالة والملاحظات", "Save status and notes")) { change { $0.caseStatus = caseStatus; $0.note = entryNote } }
+            Section(tr("المعلومات المستوردة", "Imported information")) {
+                LabeledContent(tr("الحالة بالملف", "File status"), value: entry.importedStatus.orDash).privacySensitive()
+                LabeledContent(tr("تاريخ الصرف", "Payment date"), value: entry.displayPaymentDate.orDash).privacySensitive()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(tr("الملاحظات", "Notes")).font(.caption).foregroundStyle(.secondary)
+                    Text(entry.displayNotes.orDash).privacySensitive().textSelection(.enabled)
+                }
+                Text(tr("تحديث هذه المعلومات يكون باستيراد ملف Excel جديد فقط.", "Update this information by importing a new Excel spreadsheet."))
+                    .font(.caption).foregroundStyle(.secondary)
+                if entry.reviewPending {
+                    Text(tr("الحالة تحتاج مراجعة في ملف Excel؛ هذا القيد مستبعد من المتبقي حتى تحديث الملف.", "Review the status in Excel. This entry is excluded from the balance until the spreadsheet is updated."))
+                        .font(.caption).foregroundStyle(.orange)
+                }
             }
-            Section(tr("كتب الصرف المرتبطة", "Linked payment documents")) {
+            if !entry.payments.isEmpty {
+                Section(tr("دفعات محفوظة من نسخة سابقة", "Payments saved by an earlier version")) {
+                    ForEach(entry.payments) { p in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(Money.format(Double(p.amount)))
+                            if !p.bookNumber.isEmpty { Text(p.bookNumber).font(.caption) }
+                            if !p.bookDate.isEmpty { Text(p.bookDate).font(.caption) }
+                            if !p.note.isEmpty { Text(p.note).font(.caption).privacySensitive() }
+                        }
+                    }
+                }
+            }
+            Section(tr("الكتب المرتبطة", "Linked documents")) {
                 Button(tr("ربط بكتاب من الأرشيف أو مسحه", "Link an archived document or scan one"), systemImage: "link") { showBookPicker = true }
                 ForEach(entry.bookIds ?? [], id: \.self) { rawID in
                     if let uuid = UUID(uuidString: rawID), let book = archive.books.first(where: { $0.id == uuid }) {
                         NavigationLink { OfficialBookDetailView(id: uuid) } label: { Text(book.title) }
-                        Button(tr("إزالة ارتباط الكتاب", "Unlink document"), role: .destructive) {
-                            change { $0.bookIds = ($0.bookIds ?? []).filter { UUID(uuidString: $0) != uuid } }
-                        }
+                        Button(tr("إزالة ارتباط الكتاب", "Unlink document"), role: .destructive) { unlink(uuid) }
                     } else { Text(tr("كتاب مرتبط غير موجود؛ راجع الأرشيف.", "A linked document is missing; check the archive.")).foregroundStyle(.red) }
                 }
-                Text(tr("ربط الكتاب لا يسجّل صرفاً ولا يغيّر الرصيد.", "Linking a document does not record payment or change the balance.")).font(.caption).foregroundStyle(.secondary)
-            }
-            if entry.reviewPending {
-                Section {
-                    Text(tr("هذا السجل مستبعد من الرصيد حتى تحدد حالته.", "This entry is excluded from the balance until reviewed."))
-                    Button(tr("اعتمادها غير مصروفة", "Mark outstanding")) { resolve(paid: false) }
-                    Button(tr("اعتمادها مصروفة بالكامل", "Mark fully paid"), role: .destructive) { confirmPaid = true }
-                }
-            } else {
-                if !entry.payments.isEmpty {
-                    Section(tr("دفعات الصرف", "Payments")) {
-                        ForEach(entry.payments) { p in
-                            VStack(alignment: .leading) {
-                                Text(([Money.format(Double(p.amount)), p.bookNumber, p.bookDate].filter { !$0.isEmpty }).joined(separator: " · "))
-                                Button(tr("تعديل بيانات الكتاب", "Edit document details")) { editPayment = p }.font(.caption)
-                                if !p.note.isEmpty { Text(p.note).font(.caption).privacySensitive() }
-                            }
-                        }
-                    }
-                }
-                if entry.remaining > 0 {
-                    Section(tr("تسجيل صرف", "Record payment")) {
-                        TextField(tr("المبلغ", "Amount"), text: $amount).keyboardType(.numberPad)
-                        TextField(tr("رقم الكتاب (اختياري)", "Book number (optional)"), text: $bookNumber)
-                        Toggle(tr("إضافة تاريخ الكتاب (اختياري)", "Add book date (optional)"), isOn: $hasBookDate)
-                        if hasBookDate { DatePicker(tr("تاريخ الكتاب", "Book date"), selection: $date, displayedComponents: .date).environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current) }
-                        TextField(tr("ملاحظات الصرف (اختياري)", "Payment notes (optional)"), text: $paymentNote, axis: .vertical)
-                        Button(tr("حفظ الصرف", "Save payment")) { savePayment() }
-                    }
-                }
-            }
-        }
-        .onAppear { entryNote = entry.note; caseStatus = entry.caseStatus }
-        .sheet(item: $editPayment) { payment in
-            SalaryTrustPaymentEditor(payment: payment) { updated in
-                let expected = stored
-                var ledger = try SalaryTrust.decode(expected)
-                guard let index = ledger.entries.firstIndex(where: { $0.id == entry.id }), ledger.entries[index] == entry,
-                      let paymentIndex = ledger.entries[index].payments.firstIndex(where: { $0.id == payment.id }),
-                      ledger.entries[index].payments[paymentIndex] == payment else {
-                    throw SalaryTrust.invalid(tr("تغيّرت الدفعة؛ أعد فتح القيد.", "The payment changed; reopen the entry."))
-                }
-                ledger.entries[index].payments[paymentIndex] = updated
-                try SalaryTrustStore.save(ledger, expected: expected)
-                entry = ledger.entries[index]
+                Text(tr("ربط الكتاب لا يغيّر الحالة أو تاريخ الصرف أو الرصيد.", "Linking a document does not change status, payment date or balance."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .sheet(isPresented: $showBookPicker) {
-            SalaryTrustBookPicker(ids: [entry.id], months: Array(Set(months.map(\.name) + ["\(entry.month) \(entry.year)"])).sorted()) {
+            SalaryTrustBookPicker(ids: [entry.id], months: [SalaryTrust.monthLabel(entry.year * 100 + entry.month)]) {
                 if let updated = try? SalaryTrust.decode(stored).entries.first(where: { $0.id == entry.id }) { entry = updated }
             }
         }
         .navigationTitle(tr("تفاصيل الأمانة", "Trust details"))
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("إغلاق", "Close")) { dismiss() } } }
-        .alert(tr("تأكيد الصرف الكامل", "Confirm full payment"), isPresented: $confirmPaid) {
-            Button(tr("تأكيد", "Confirm"), role: .destructive) { resolve(paid: true) }
-            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
-        } message: { Text(tr("هل تؤكد أن مبلغ الأمانة صُرف بالكامل؟", "Confirm that the entire trust amount was paid?")) }
-        .alert(tr("تحقق من البيانات", "Check data"), isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) { Button(tr("حسناً", "OK"), role: .cancel) {} } message: { Text(problem ?? "") }
+        .alert(tr("تحقق من البيانات", "Check data"), isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button(tr("حسناً", "OK"), role: .cancel) {}
+        } message: { Text(problem ?? "") }
     }
-    private func change(_ body: (inout SalaryTrust.Entry) throws -> Void) {
+    private func unlink(_ uuid: UUID) {
         do {
-            let expected = stored; var ledger = try SalaryTrust.decode(expected)
-            guard let index = ledger.entries.firstIndex(where: { $0.id == entry.id }), ledger.entries[index] == entry else { throw SalaryTrust.invalid(tr("تغيّر السجل؛ أعد فتحه.", "The entry changed; reopen it.")) }
-            try body(&ledger.entries[index]); try SalaryTrustStore.save(ledger, expected: expected); dismiss()
+            let expected = stored
+            var ledger = try SalaryTrust.decode(expected)
+            guard let index = ledger.entries.firstIndex(where: { $0.id == entry.id }), ledger.entries[index] == entry else {
+                throw SalaryTrust.invalid(tr("تغيّر السجل؛ أعد فتحه.", "The entry changed; reopen it."))
+            }
+            ledger.entries[index].bookIds = (entry.bookIds ?? []).filter { UUID(uuidString: $0) != uuid }
+            try SalaryTrustStore.save(ledger, expected: expected)
+            entry = ledger.entries[index]
         } catch { problem = error.localizedDescription }
-    }
-    private func resolve(paid: Bool) { change { $0.reviewPending = false; $0.legacyPaid = paid; $0.caseStatus = caseStatus; $0.note = entryNote } }
-    private func savePayment() {
-        guard let number = ArabicText.number(from: amount), number.isFinite, number > 0, number.rounded() == number,
-              number <= Double(entry.remaining) else {
-            problem = tr("أدخل مبلغاً لا يتجاوز المتبقي.", "Enter an amount no greater than the balance."); return
-        }
-        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        let stamp = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
-        change { $0.caseStatus = caseStatus; $0.note = entryNote; $0.payments.append(.init(id: UUID().uuidString, amount: Int64(number), bookNumber: bookNumber.trimmingCharacters(in: .whitespacesAndNewlines), bookDate: hasBookDate ? stamp : "", note: paymentNote.trimmingCharacters(in: .whitespacesAndNewlines))) }
-    }
-}
-
-
-/// تعديل بيانات الكتاب والملاحظة دون تغيير مبلغ الدفعة.
-private struct SalaryTrustPaymentEditor: View {
-    let payment: SalaryTrust.Payment
-    let save: (SalaryTrust.Payment) throws -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var number: String
-    @State private var note: String
-    @State private var hasDate: Bool
-    @State private var date: Date
-    @State private var error: String?
-    init(payment: SalaryTrust.Payment, save: @escaping (SalaryTrust.Payment) throws -> Void) {
-        self.payment = payment; self.save = save
-        _number = State(initialValue: payment.bookNumber)
-        _note = State(initialValue: payment.note)
-        _hasDate = State(initialValue: !payment.bookDate.isEmpty)
-        let formatter = DateFormatter(); formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(identifier: "Asia/Baghdad")
-        formatter.dateFormat = "yyyy-MM-dd"
-        _date = State(initialValue: formatter.date(from: payment.bookDate) ?? Date())
-    }
-    var body: some View {
-        NavigationStack {
-            Form {
-                LabeledContent(tr("مبلغ الصرف", "Payment"), value: Money.format(Double(payment.amount)))
-                TextField(tr("رقم الكتاب (اختياري)", "Book number (optional)"), text: $number)
-                Toggle(tr("إضافة تاريخ الكتاب (اختياري)", "Add book date (optional)"), isOn: $hasDate)
-                if hasDate { DatePicker(tr("تاريخ الكتاب", "Book date"), selection: $date, displayedComponents: .date).environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current) }
-                TextField(tr("ملاحظات الصرف (اختياري)", "Payment notes (optional)"), text: $note, axis: .vertical)
-            }
-            .navigationTitle(tr("بيانات كتاب الصرف", "Payment document details"))
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { persist() } }
-            }
-            .alert(tr("تعذّر الحفظ", "Could not save"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button(tr("حسناً", "OK"), role: .cancel) { error = nil }
-            } message: { Text(error ?? "") }
-        }
-    }
-    private func persist() {
-        var updated = payment
-        updated.bookNumber = number.trimmingCharacters(in: .whitespacesAndNewlines)
-        updated.note = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        updated.bookDate = hasDate ? String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0) : ""
-        do { try save(updated); dismiss() } catch { self.error = error.localizedDescription }
     }
 }
 

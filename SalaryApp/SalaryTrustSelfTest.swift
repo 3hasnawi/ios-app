@@ -48,6 +48,14 @@ nonisolated enum SalaryTrustSelfTest {
             do { try SalaryTrust.validate(bad); return false } catch { }
             bad = ledger; var repeated = entry; repeated.id = UUID().uuidString; bad.entries.append(repeated)
             do { try SalaryTrust.validate(bad); return false } catch { }
+            var rows = SalaryTrustImportRows()
+            rows.append(["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "ملاحظات4", "الحالة", "تاريخ الصرف"])
+            rows.append(["منتسب تجريبي", "1000", "تشرين الثاني", "2027", "ملاحظة ملف", "صرف", "تشرين الثاني2027"])
+            let imported = try rows.result()
+            guard imported.version == 2, imported.entries[0].remaining == 0,
+                  imported.entries[0].displayNotes == "ملاحظة ملف",
+                  imported.entries[0].importedPaymentDate == "تشرين الثاني2027",
+                  try SalaryTrust.decode(SalaryTrust.encode(imported)) == imported else { return false }
             return true
         } catch { return false }
     }

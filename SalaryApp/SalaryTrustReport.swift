@@ -33,18 +33,20 @@ nonisolated enum SalaryTrustReport {
             .init(title: tr("الاسم", "Name"), width: 30, kind: .text),
             .init(title: tr("الشهر", "Month"), width: 15, kind: .text),
             .init(title: tr("الصرف", "Payment"), width: 17, kind: .text),
-            .init(title: tr("الحالة", "Status"), width: 26, kind: .text),
+            .init(title: tr("الحالة بالملف", "File status"), width: 20, kind: .text),
             .init(title: tr("الأمانة", "Deposit"), width: 18, kind: .text),
             .init(title: tr("المصروف", "Paid"), width: 18, kind: .text),
             .init(title: tr("المتبقي", "Remaining"), width: 18, kind: .text),
+            .init(title: tr("الملاحظات", "Notes"), width: 35, kind: .text),
+            .init(title: tr("تاريخ الصرف", "Payment date"), width: 18, kind: .text),
         ]
         var rows = request.entries.enumerated().map { index, entry in
             [String(index + 1), clean(entry.name), SalaryTrust.monthLabel(entry.year * 100 + entry.month),
-             SalaryTrust.paymentStatus(entry), clean(entry.caseStatus), amount(entry.amount),
-             entry.reviewPending ? "—" : amount(entry.paid), entry.reviewPending ? "—" : amount(entry.remaining)]
+             SalaryTrust.paymentStatus(entry), clean(entry.importedStatus), amount(entry.amount),
+             entry.reviewPending ? "—" : amount(entry.paid), entry.reviewPending ? "—" : amount(entry.remaining), clean(entry.displayNotes), clean(entry.displayPaymentDate)]
         }
         let reviewCount = request.entries.filter(\.reviewPending).count
-        rows.append(["", tr("المتبقي المؤكد", "Confirmed outstanding"), "", reviewCount > 0 ? tr("للمراجعة: \(Num.format(reviewCount))", "Review: \(reviewCount)") : "", "", "", "", amount(SalaryTrust.outstanding(request.entries))])
+        rows.append(["", tr("المتبقي المؤكد", "Confirmed outstanding"), "", reviewCount > 0 ? tr("للمراجعة: \(Num.format(reviewCount))", "Review: \(reviewCount)") : "", "", "", "", amount(SalaryTrust.outstanding(request.entries)), "", ""])
         return ReportSheet(header: UserDefaults.standard.string(forKey: ReportSheet.headerKey) ?? ReportSheet.defaultHeader,
             title: tr("أمانات الرواتب · \(filters)", "Salary trust · \(filters)"), columns: columns,
             rows: rows, amounts: Array(repeating: 0, count: rows.count), showTotal: false)

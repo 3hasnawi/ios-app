@@ -11,16 +11,27 @@ import CryptoKit
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 10
+    static let version = 11
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 }
     static func exportVersion(for settings: [String: Data]) -> Int {
+        // تمنع الصيغة الجديدة إسقاط تاريخ الصرف أو تعديل دفتر الملف بتطبيق قديم.
+        if let raw = settings[SalaryTrust.settingsKey],
+           let data = try? PropertyListSerialization.propertyList(from: raw, format: nil) as? Data,
+           let ledger = try? SalaryTrust.decode(data), ledger.version == 2 { return 11 }
         if let raw = settings[TransferLetterCustomizationStore.settingsKey],
            let data = try? PropertyListSerialization.propertyList(from: raw, format: nil) as? Data, !data.isEmpty {
             guard let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data) else { return 10 }
             if store.hasUnifiedTemplates { return 10 }
         }
         return settings[CustomTransferTemplate.settingsKey] != nil ? 9 : (settings[FundingApproval.settingsKey] != nil ? 8 : (settings[ContractOverrides.settingsKey] == nil ? 5 : 6))
+    }
+    static func validateTrust(_ ledger: SalaryTrust.Ledger?, manifest: Manifest) throws {
+        if let ledger {
+            guard manifest.salaryTrustEntries == nil || manifest.salaryTrustEntries == ledger.entries.count,
+                  ledger.version < 2 || manifest.version == 11,
+                  manifest.version != 11 || (ledger.version == 2 && manifest.salaryTrustEntries == ledger.entries.count) else { throw BackupError.notBackup }
+        } else if manifest.version == 11 || (manifest.salaryTrustEntries ?? 0) > 0 { throw BackupError.notBackup }
     }
     static let prefix = "نسخة الرواتب"
 
@@ -33,9 +44,10 @@ nonisolated enum BackupFormat {
         var staff: Int
         var accounts: Int?
         var books: Int?
+        var salaryTrustEntries: Int? = nil
         var hasData: Bool {
             !months.isEmpty || employees > 0 || deductions > 0 || staff > 0 ||
-            (accounts ?? 0) > 0 || (books ?? 0) > 0
+            (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0
         }
     }
 
@@ -46,7 +58,7 @@ nonisolated enum BackupFormat {
     struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String; var localAccount: String? = nil }
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
-    static let settingsKeys = ["pendingTrustPayrollMonths", "pendingTrustPayrollStarted", "staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
+    static let settingsKeys = ["staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
@@ -84,7 +96,8 @@ actor BackupActor {
         return BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now, months: months,
                                      employees: employees, deductions: deductions, staff: staff,
                                      accounts: try ExecutionAccountStore.load().count,
-                                     books: try OfficialBookFiles.read().count)
+                                     books: try OfficialBookFiles.read().count,
+                                     salaryTrustEntries: try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()).entries.count)
     }
 
     /// يكتب ملف النسخة (zip) ويعيد رابطه ووصفه.
@@ -156,9 +169,12 @@ actor BackupActor {
             BackupFormat.AccountRecord(entity: $0.entity, iban: $0.iban, branch: $0.branch, swift: $0.swift, localAccount: $0.localAccount)
         }, count: accounts.count, from: 0.8, to: 0.82)
         let books = try OfficialBookFiles.stage(into: dir.appendingPathComponent("books", isDirectory: true))
+        var trustCount: Int?
         if let serialized = settings[SalaryTrust.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
-            try SalaryTrust.validateBooks(SalaryTrust.decode(data), available: Set(books.map(\.id)))
+            let ledger = try SalaryTrust.decode(data)
+            try SalaryTrust.validateBooks(ledger, available: Set(books.map(\.id)))
+            trustCount = ledger.entries.count
         }
 
         if let serialized = settings[ContractOverrides.settingsKey] {
@@ -181,7 +197,7 @@ actor BackupActor {
         let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
-                                             accounts: accounts.count, books: books.count)
+                                             accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount)
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
         try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
 
@@ -250,11 +266,11 @@ actor BackupActor {
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         if let serialized = settings[FundingApproval.settingsKey] {
-            guard (manifest.version == 8 || manifest.version == 9 || manifest.version == 10), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.version == 8 || manifest.version == 9 || manifest.version == 10 || manifest.version == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
         } else if manifest.version == 8 { throw BackupError.notBackup }
         if let serialized = settings[CustomTransferTemplate.settingsKey] {
-            guard (manifest.version == 9 || manifest.version == 10), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.version == 9 || manifest.version == 10 || manifest.version == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try CustomTransferTemplate.decode(data)
         } else if manifest.version == 9 { throw BackupError.notBackup }
         if let serialized = settings[TransferLetterCustomizationStore.settingsKey] {
@@ -277,10 +293,12 @@ actor BackupActor {
            !(try SalaryTrust.decode(saved)).entries.isEmpty {
             throw SalaryTrust.invalid(tr("النسخة المختارة لا تحتوي دفتر الأمانات الموجود على الجهاز. لم تُستبدل البيانات؛ احفظ نسخة شاملة أولاً واسترجع نسخة تحتوي الدفتر.", "The selected backup does not contain this device’s trust ledger. Data was not replaced; save a full backup and restore one containing the ledger."))
         }
+        let restoredTrust: SalaryTrust.Ledger?
         if let serialized = settings[SalaryTrust.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
-            _ = try SalaryTrust.decode(data)
-        }
+            restoredTrust = try SalaryTrust.decode(data)
+        } else { restoredTrust = nil }
+        try BackupFormat.validateTrust(restoredTrust, manifest: manifest)
         if let serialized = settings[BankReconciliation.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try BankReconciliation.decode(data)
@@ -639,7 +657,8 @@ final class BackupManager {
             previous.deductions > 0 && current.deductions == 0 ||
             previous.staff > 0 && current.staff == 0 ||
             (previous.accounts ?? 0) > 0 && (current.accounts ?? 0) == 0 ||
-            (previous.books ?? 0) > 0 && (current.books ?? 0) == 0
+            (previous.books ?? 0) > 0 && (current.books ?? 0) == 0 ||
+            (previous.salaryTrustEntries ?? 0) > 0 && (current.salaryTrustEntries ?? 0) == 0
         guard !lostMonth && !lostRows else { throw BackupError.dataLossRisk }
     }
 
@@ -652,7 +671,7 @@ final class BackupManager {
                 try await BackupActor(modelContainer: container).safetyManifest()
             }.value
             guard UserDefaults.standard.data(forKey: Self.safetyManifestKey) == nil,
-                  !manifest.months.isEmpty || manifest.employees > 0 || manifest.staff > 0 else { return }
+                  manifest.hasData else { return }
             Self.rememberSafetyManifest(manifest)
             integrityWarning = false
         } catch { /* لا ننشئ خط أساس من قراءة ناقصة. */ }
@@ -1290,7 +1309,7 @@ final class BackupManager {
             let start = Date()
             let (url, testManifest) = try await makeBackup(title: "test")
             #if targetEnvironment(simulator)
-            guard testManifest.version == 10 else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
+            guard testManifest.version == 10 || testManifest.version == 11 else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
             #endif
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.

@@ -390,21 +390,9 @@ final class ImportCenter {
             message = tr("اختر ملف رواتب واحداً فقط؛ يحتفظ التطبيق بآخر شهرين من الرواتب. تبقى الاستقطاعات محفوظة.", "Choose only one payroll file; the app retains the latest two payroll months. Deductions are preserved.")
             return
         }
-        var pendingTrust = UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? []
-        let intents = UserDefaults.standard.dictionary(forKey: "pendingTrustPayrollStarted") as? [String: Double] ?? [:]
-        do {
-            let records = try ModelContext(SharedModel.container).fetch(FetchDescriptor<PayrollMonth>())
-            pendingTrust.removeAll { name in
-                guard let started = intents[name] else { return false }
-                return !records.contains { $0.name == name && $0.employeeCount > 0 && $0.importedAt.timeIntervalSince1970 >= started }
-            }
-            UserDefaults.standard.set(pendingTrust, forKey: "pendingTrustPayrollMonths")
-        } catch { message = error.localizedDescription; return }
-        if let payroll = jobs.first(where: { $0.kind == .payroll || $0.kind == .payrollAndDeductions }),
-           pendingTrust.contains(where: { $0 != payroll.month }) {
-            message = tr("لم تكتمل إضافة أمانات شهر سابق. أعد استيراد ذلك الشهر وأكمل الأمانات قبل إدخال شهر جديد: \(pendingTrust.joined(separator: "، "))", "A previous month's trust entries are pending. Reimport that month before a new payroll month: \(pendingTrust.joined(separator: ", "))")
-            return
-        }
+        // لم تعد الأمانات مرتبطة باستيراد الرواتب؛ نزيل انتظار الإكمال القديم فقط.
+        UserDefaults.standard.removeObject(forKey: "pendingTrustPayrollMonths")
+        UserDefaults.standard.removeObject(forKey: "pendingTrustPayrollStarted")
         let annualMonths = Set(jobs.filter(\.annualSource).map(\.month))
         if jobs.contains(where: { job in
             annualMonths.contains(job.month) && job.kind != .payroll && jobs.filter { $0.month == job.month && $0.kind != .payroll }.count > 1
@@ -426,7 +414,6 @@ final class ImportCenter {
         var totals = (employees: 0, deductions: 0)
         var accountTotals = (added: 0, updated: 0, invalid: 0)
         var months = Set<String>()
-        var trustPayrollMonths = Set<String>()
         var newestPayroll: (key: Int, name: String)?
 
         for (index, job) in jobs.enumerated() {
@@ -467,15 +454,6 @@ final class ImportCenter {
                     let kind = job.kind
                     let expectedCount = job.annualExpectedCount
                     let expectedDate = job.annualExpectedImportDate
-                    if kind != .deductions && !fromTest {
-                        var pending = Set(UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? [])
-                        if pending.insert(month).inserted {
-                            var started = UserDefaults.standard.dictionary(forKey: "pendingTrustPayrollStarted") as? [String: Double] ?? [:]
-                            started[month] = Date().timeIntervalSince1970
-                            UserDefaults.standard.set(started, forKey: "pendingTrustPayrollStarted")
-                        }
-                        UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
-                    }
                     try await Task.detached(priority: .userInitiated) {
                         let importer = DataImporter(modelContainer: container)
                         switch kind {
@@ -499,7 +477,6 @@ final class ImportCenter {
                     if d > 0 { parts.append(tr("\(Num.format(d)) استقطاع", "\(Num.format(d)) deductions")) }
                     lines.append("\(month): " + parts.joined(separator: tr(" و", ", ")))
                     if kind != .deductions {
-                        trustPayrollMonths.insert(month)
                         let odd = HealthCareReport.irregularCount(in: result.employees)
                         if odd > 0 {
                             warnings.append(tr("⚠️ \(month): \(Num.format(odd)) مبلغ رعاية صحية لا يقبل القسمة على \(Num.format(3500)). راجعه في التقارير ← الرعاية الصحية.",
@@ -531,19 +508,6 @@ final class ImportCenter {
         if !fromTest { for c in candidates { Self.removeCopy(c.url) } }
         candidates = []
         progress.end()
-        if !fromTest {
-            for month in trustPayrollMonths.sorted(by: { MonthName.sortKey($0) < MonthName.sortKey($1) }) {
-                do {
-                    var pending = Set(UserDefaults.standard.stringArray(forKey: "pendingTrustPayrollMonths") ?? [])
-                    pending.insert(month)
-                    UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
-                    let count = try await SalaryTrustStore.addCash(month: month, duringImport: true)
-                    pending.remove(month)
-                    UserDefaults.standard.set(pending.sorted(), forKey: "pendingTrustPayrollMonths")
-                    if count > 0 { warnings.append(tr("أمانات \(month): أُضيف \(Num.format(count)) قيد كاش.", "Trust \(month): added \(count) cash entries.")) }
-                } catch { warnings.append(tr("تعذّرت إضافة كاش \(month) للأمانات: \(error.localizedDescription)", "Could not add \(month) cash to trust: \(error.localizedDescription)")) }
-            }
-        }
         isBusy = false
         await BackupManager.shared.refreshIntegrityWarning()
         if let newestPayroll { lastPayrollMonth = newestPayroll.name }
