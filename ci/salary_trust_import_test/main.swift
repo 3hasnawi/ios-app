@@ -51,7 +51,7 @@ precondition(sheet.rows[3][7]=="2,000")
 let property=try PropertyListSerialization.data(fromPropertyList:SalaryTrust.encode(ledger),format:.binary,options:0)
 precondition(BackupFormat.exportVersion(for:[SalaryTrust.settingsKey:property])==11)
 precondition(BackupFormat.exportVersion(for:[:])==5 && BackupFormat.supports(5) && BackupFormat.supports(10) && BackupFormat.supports(11) && !BackupFormat.supports(7))
-let manifest=BackupFormat.Manifest(version:11,createdAt:.now,months:[],employees:0,deductions:0,staff:0,accounts:0,books:0,salaryTrustEntries:3)
+let manifest=BackupFormat.Manifest(version:11,createdAt:Date(),months:[],employees:0,deductions:0,staff:0,accounts:0,books:0,salaryTrustEntries:3)
 precondition(manifest.hasData);try BackupFormat.validateTrust(ledger,manifest:manifest)
 rejected {var bad=manifest;bad.salaryTrustEntries=2;try BackupFormat.validateTrust(ledger,manifest:bad)}
 rejected {var bad=manifest;bad.version=10;try BackupFormat.validateTrust(ledger,manifest:bad)}
@@ -60,7 +60,7 @@ rejected {var empty=manifest;empty.salaryTrustEntries=0;try BackupReplacement.ch
 let savedManifest=try JSONEncoder().encode(manifest)
 let roundTrip=try JSONDecoder().decode(BackupFormat.Manifest.self,from:savedManifest)
 precondition(roundTrip.salaryTrustEntries==3 && roundTrip.hasData)
-let oldManifest=BackupFormat.Manifest(version:5,createdAt:.now,months:[],employees:0,deductions:0,staff:0)
+let oldManifest=BackupFormat.Manifest(version:5,createdAt:Date(),months:[],employees:0,deductions:0,staff:0)
 let oldManifestData=try JSONEncoder().encode(oldManifest)
 let oldManifestRestored=try JSONDecoder().decode(BackupFormat.Manifest.self,from:oldManifestData)
 precondition(oldManifestRestored.salaryTrustEntries==nil)
