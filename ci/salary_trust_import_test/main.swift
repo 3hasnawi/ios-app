@@ -47,7 +47,7 @@ let request=SalaryTrustReportRequest(entries:ledger.entries,month:"كل الأش
 let sheet=try SalaryTrustReport.sheet(request)
 precondition(sheet.columns.count==10 && sheet.rows.count==4 && sheet.rows.allSatisfy{$0.count==10})
 precondition(sheet.rows[0][4]=="صرف" && sheet.rows[0][8]=="ملاحظة الملف" && sheet.rows[0][9]=="تشرين الثاني2027")
-precondition(sheet.rows[3][7]=="2,000")
+precondition(sheet.rows[3][7]=="2,000", "Unexpected fictional total: \(sheet.rows[3][7])")
 let property=try PropertyListSerialization.data(fromPropertyList:SalaryTrust.encode(ledger),format:.binary,options:0)
 precondition(BackupFormat.exportVersion(for:[SalaryTrust.settingsKey:property])==11)
 precondition(BackupFormat.exportVersion(for:[:])==5 && BackupFormat.supports(5) && BackupFormat.supports(10) && BackupFormat.supports(11) && !BackupFormat.supports(7))

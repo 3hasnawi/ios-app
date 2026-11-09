@@ -16,6 +16,7 @@ nonisolated struct SalaryTrustReportRequest: Identifiable, Sendable {
 nonisolated enum SalaryTrustReport {
     private static func amount(_ n: Int64) -> String {
         let f = NumberFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.numberStyle = .decimal; f.maximumFractionDigits = 0
+        f.usesGroupingSeparator = true; f.groupingSize = 3; f.groupingSeparator = ","
         return f.string(from: NSNumber(value: n)) ?? String(n)
     }
     private static func clean(_ text: String) -> String {
