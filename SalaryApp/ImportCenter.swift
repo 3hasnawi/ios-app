@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// نوع الملف المستورد.
 nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
-    case payrollAndDeductions, payroll, deductions, staff, executionAccounts, skip
+    case payrollAndDeductions, payroll, deductions, staff, executionAccounts, salaryTrust, skip
     var id: String { rawValue }
 
     var title: String {
@@ -14,6 +14,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .deductions: tr("استقطاعات", "Deductions")
         case .staff: tr("ملاك", "Staff")
         case .executionAccounts: tr("حسابات جهات التنفيذ", "Execution accounts")
+        case .salaryTrust: tr("أمانات الرواتب", "Salary trust")
         case .skip: tr("تجاهل", "Skip")
         }
     }
@@ -25,6 +26,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .deductions: "minus.circle.fill"
         case .staff: "person.3.fill"
         case .executionAccounts: "building.columns.fill"
+        case .salaryTrust: "tray.full.fill"
         case .skip: "xmark.circle"
         }
     }
@@ -36,6 +38,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
         case .deductions: .orange
         case .staff: .green
         case .executionAccounts: .teal
+        case .salaryTrust: .indigo
         case .skip: .gray
         }
     }
@@ -43,7 +46,7 @@ nonisolated enum ImportKind: String, Sendable, CaseIterable, Identifiable {
     var needsMonth: Bool { self == .payroll || self == .deductions || self == .payrollAndDeductions }
 }
 
-/// ملف بعد فحصه: نوعه وشهره كما تعرّف عليهما التطبيق، ويمكن تعديلهما قبل الاستيراد.
+/// ملف بعد فحصه: نوعه وشهره عند الحاجة، كما تعرّف عليهما التطبيق قبل الاستيراد.
 struct ImportCandidate: Identifiable {
     let id = UUID()
     let url: URL
@@ -62,9 +65,16 @@ struct ImportCandidate: Identifiable {
     var existingAnnualDeductions = false
     var annualExpectedCount: Int? = nil
     var annualExpectedImportDate: Date? = nil
+    /// لقطة الدفتر وقت المراجعة؛ تغيّره يمنع استبداله بمراجعة قديمة.
+    var trustBaseData: Data? = nil
+    var trustLedger: SalaryTrust.Ledger? = nil
 
     var summary: String {
         if let error { return error }
+        if let trustLedger {
+            return tr("\(Num.format(trustLedger.entries.count)) قيد أمانة · \(Num.format(SalaryTrust.people(trustLedger.entries).count)) اسم · كل الأشهر داخل الملف",
+                      "\(trustLedger.entries.count) trust entries · \(SalaryTrust.people(trustLedger.entries).count) people · all months from the file")
+        }
         if let staffCount { return tr("\(Num.format(staffCount)) موظف في الملاك", "\(Num.format(staffCount)) staff records") }
         guard let result else { return "" }
         if annualSource { return tr("\(Num.format(result.deductions.count)) سجل", "\(result.deductions.count) entries") }
@@ -90,7 +100,7 @@ struct ImportCandidate: Identifiable {
     }
 }
 
-/// زر استيراد واحد: يختار المستخدم أي ملفات (رواتب، استقطاعات، ملاك)، والتطبيق يتعرّف على نوع كل ملف
+/// زر استيراد واحد: يختار المستخدم أي ملفات (رواتب، استقطاعات، أمانات، ملاك)، والتطبيق يتعرّف على نوع كل ملف
 /// وشهره من محتواه واسمه، ثم تُعرض للمراجعة قبل الاستيراد.
 @MainActor @Observable
 final class ImportCenter {
@@ -206,6 +216,16 @@ final class ImportCenter {
                     return try ExcelImporter.load(url: url, progress: sink)
                 }.value
                 LaunchOptions.writeImportStage("read-complete")
+                if result.hasSalaryTrust {
+                    let expected = UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()
+                    let incoming = try await Task.detached(priority: .userInitiated) { try SalaryTrustSpreadsheet.read(url) }.value
+                    let ledger = try SalaryTrust.replacing(with: incoming, existing: SalaryTrust.decode(expected))
+                    var candidate = ImportCandidate(url: url, fileName: name, kind: .salaryTrust, month: "",
+                        allowedKinds: [.salaryTrust, .skip], result: nil, staffCount: nil, error: nil, monthDetected: true)
+                    candidate.trustBaseData = expected; candidate.trustLedger = ledger
+                    found.append(candidate)
+                    continue
+                }
                 if !result.annualDeductions.isEmpty {
                     let grouped = Dictionary(grouping: existing.filter { $0.sortKey > 0 }, by: \.sortKey)
                     guard result.annualDeductions.keys.allSatisfy({ (grouped[$0]?.count ?? 0) <= 1 }) else {
@@ -342,6 +362,10 @@ final class ImportCenter {
                 if StaffInfo.count > 0 { lines.append(tr("الملاك كاملاً", "all staff data")) }
             case .executionAccounts:
                 break // تُحدَّث الجهات الموجودة ولا تُحذف الجهات الغائبة من الملف.
+            case .salaryTrust:
+                if let data = c.trustBaseData, let ledger = try? SalaryTrust.decode(data), !ledger.entries.isEmpty {
+                    lines.append(tr("دفتر الأمانات كاملاً (\(Num.format(ledger.entries.count)) قيد)", "the entire trust ledger (\(ledger.entries.count) entries)"))
+                }
             case .skip:
                 break
             }
@@ -361,6 +385,9 @@ final class ImportCenter {
 
     var reviewActionTitle: String {
         if candidates.contains(where: \.annualSource) { return tr("استيراد المختار", "Import selected") }
+        if importableCount == 1, candidates.contains(where: { $0.kind == .salaryTrust }) {
+            return tr("اعتماد ملف الأمانات", "Confirm trust spreadsheet")
+        }
         if importableCount == 1, let candidate = candidates.first(where: { $0.kind == .executionAccounts }),
            let result = candidate.result, result.invalidAccounts > 0 {
             return tr("استيراد \(Num.format(result.accounts.count)) حساباً صالحاً", "Import \(result.accounts.count) valid accounts")
@@ -386,6 +413,10 @@ final class ImportCenter {
         let jobs = candidates.filter { $0.kind != .skip }
             // الملف الجامع أولاً حتى لا يمحو ملفاً منفصلاً لنفس الشهر.
             .sorted { Self.order($0.kind) < Self.order($1.kind) }
+        guard jobs.filter({ $0.kind == .salaryTrust }).count <= 1 else {
+            message = tr("اختر ملف أمانات واحداً فقط؛ الملف الجديد يستبدل دفتر الأمانات كاملاً.", "Choose only one trust spreadsheet; the new file replaces the entire trust ledger.")
+            return
+        }
         if jobs.filter({ $0.kind == .payroll || $0.kind == .payrollAndDeductions }).count > 1 {
             message = tr("اختر ملف رواتب واحداً فقط؛ يحتفظ التطبيق بآخر شهرين من الرواتب. تبقى الاستقطاعات محفوظة.", "Choose only one payroll file; the app retains the latest two payroll months. Deductions are preserved.")
             return
@@ -422,6 +453,13 @@ final class ImportCenter {
             let sink = progress.sink(Double(index) * share, Double(index + 1) * share, tr("حفظ \(job.fileName)\(counter)", "Saving \(job.fileName)\(counter)"))
             do {
                 switch job.kind {
+                case .salaryTrust:
+                    guard let incoming = job.trustLedger, let expected = job.trustBaseData else {
+                        throw SalaryTrust.invalid(tr("أعد اختيار ملف الأمانات ومراجعته.", "Select and review the trust spreadsheet again."))
+                    }
+                    try SalaryTrustStore.replaceFromImport(incoming, expected: expected)
+                    sink(1)
+                    lines.append(tr("أمانات الرواتب: استُبدل الدفتر كاملاً بـ \(Num.format(incoming.entries.count)) قيد من الملف، دون ربطه بشهر استيراد.", "Salary trust: replaced the whole ledger with \(incoming.entries.count) entries from the file, without an import month."))
                 case .staff:
                     StaffImportState.shared.isImporting = true
                     let url = job.url
@@ -543,6 +581,7 @@ final class ImportCenter {
 
     private static func order(_ kind: ImportKind) -> Int {
         switch kind {
+        case .salaryTrust: -1
         case .staff: 0
         case .executionAccounts: 1
         case .payrollAndDeductions: 2
@@ -677,6 +716,10 @@ private struct CandidateRow: View {
                     }
                 }
                 if item.error == nil {
+                    if item.trustLedger != nil {
+                        Text(tr("ملف أمانات مستقل، لا يحتاج اختيار شهر. عند التأكيد يستبدل الملف الجديد الدفتر القديم كاملاً، وتُقرأ أشهر القيود من داخل الملف. تبقى الكتب وروابط القيود المطابقة محفوظة.", "A standalone trust file; no import month is needed. Confirmation replaces the entire old ledger, with entry months read from the file. Archived documents and matching entry links are kept."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     HStack(spacing: 6) {
                         Menu {
                             Picker(tr("النوع", "Type"), selection: $item.kind) {

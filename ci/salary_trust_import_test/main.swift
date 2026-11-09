@@ -10,6 +10,19 @@ precondition(paid.year==2027 && paid.month==11 && paid.legacyPaid && paid.remain
 precondition(paid.caseStatus=="ملاحظة الملف" && paid.importedStatus=="صرف" && paid.importedPaymentDate=="تشرين الثاني2027")
 precondition(unpaid.remaining==2000 && review.reviewPending && SalaryTrust.outstanding(ledger.entries)==2000)
 let restored=try SalaryTrust.decode(SalaryTrust.encode(ledger));precondition(restored==ledger)
+// نفس القارئ الذي يستدعيه زر الاستيراد في الإعدادات، وباسم ملف بلا شهر.
+let detected=try ExcelImporter.load(url:root.appendingPathComponent("new.xlsx"))
+precondition(detected.hasSalaryTrust && detected.employees.isEmpty && detected.deductions.isEmpty)
+var candidate=ImportCandidate(url:root.appendingPathComponent("new.xlsx"),fileName:"new",kind:.salaryTrust,month:"",allowedKinds:[.salaryTrust,.skip],result:nil,staffCount:nil,error:nil,monthDetected:true)
+candidate.trustLedger=ledger
+precondition(!candidate.kind.needsMonth && candidate.month.isEmpty && !candidate.summary.isEmpty)
+let ordinary=try ExcelImporter.load(url:root.appendingPathComponent("ordinary.xlsx"))
+precondition(!ordinary.hasSalaryTrust && ordinary.employees.count==1)
+precondition(!SheetParser.isSalaryTrustHeader(["الاسم","المبلغ","الشهر","السنة","الحالة","جهة التنفيذ"]))
+rejected {_ = try ExcelImporter.load(url:root.appendingPathComponent("mixed.xlsx"))}
+let malformedTrust=try ExcelImporter.load(url:root.appendingPathComponent("missing-year.xlsx"))
+precondition(malformedTrust.hasSalaryTrust && malformedTrust.employees.isEmpty)
+rejected {_ = try SalaryTrustSpreadsheet.read(root.appendingPathComponent("missing-year.xlsx"))}
 var old=unpaid
 old.id=UUID().uuidString;old.note="ملاحظة قديمة";old.caseStatus="حالة قديمة";old.importedPaymentDate=nil
 old.payments=[.init(id:UUID().uuidString,amount:300,bookNumber:"",bookDate:"2026-11-02",note:"")]
@@ -90,10 +103,37 @@ let legacyPerson=SalaryTrust.people(legacy.entries)[0]
 precondition(legacyPerson.paid==300 && legacyPerson.remaining==1700)
 precondition(SalaryTrust.people([]).isEmpty)
 print("Person grouping, per-month details, filtered selection, review totals and legacy partial payments passed")
+try await MainActor.run {
+    let defaults=UserDefaults.standard
+    let previous=defaults.data(forKey:SalaryTrust.settingsKey)
+    defer {
+        if let previous {defaults.set(previous,forKey:SalaryTrust.settingsKey)}
+        else {defaults.removeObject(forKey:SalaryTrust.settingsKey)}
+        ImportCenter.shared.isBusy=false;BackupManager.shared.isWorking=false;StaffImportState.shared.isImporting=false
+    }
+    defaults.set(oldData,forKey:SalaryTrust.settingsKey)
+    ImportCenter.shared.isBusy=true
+    try SalaryTrustStore.replaceFromImport(ledger,expected:oldData)
+    let saved=defaults.data(forKey:SalaryTrust.settingsKey)!
+    let updated=try SalaryTrust.decode(saved)
+    precondition(updated.entries.count==3 && updated.entries[1].id==old.id && updated.entries[1].bookIds==[book])
+    let changes=BackupManager.shared.changes
+    rejected {try SalaryTrustStore.replaceFromImport(ledger,expected:oldData)}
+    BackupManager.shared.isWorking=true
+    rejected {try SalaryTrustStore.replaceFromImport(ledger,expected:saved)}
+    BackupManager.shared.isWorking=false;StaffImportState.shared.isImporting=true
+    rejected {try SalaryTrustStore.replaceFromImport(ledger,expected:saved)}
+    StaffImportState.shared.isImporting=false;ImportCenter.shared.isBusy=false
+    rejected {try SalaryTrustStore.replaceFromImport(ledger,expected:saved)}
+    precondition(defaults.data(forKey:SalaryTrust.settingsKey)==saved && BackupManager.shared.changes==changes)
+}
+print("Settings import detection without a month, whole-ledger replacement, preserved links and stale/busy save rejection passed")
 print("Trust XLSX import, future months, notes/date, status, replacement, legacy, report and standalone backup checks passed")
 if FileManager.default.fileExists(atPath:root.appendingPathComponent("private.xlsx").path) {
     struct Expected:Decodable {let name:String,rank:String,workplace:String;let amount:Int64;let note:String,status:String,date:String}
     do {
+        let detected=try ExcelImporter.load(url:root.appendingPathComponent("private.xlsx"))
+        guard detected.hasSalaryTrust,detected.employees.isEmpty,detected.deductions.isEmpty else {throw ImportError.cannotOpen("private routing")}
         let actual=try SalaryTrustSpreadsheet.read(root.appendingPathComponent("private.xlsx"))
         let expected=try JSONDecoder().decode([Expected].self,from:Data(contentsOf:root.appendingPathComponent("private-expected.json")))
         guard actual.entries.count==expected.count else {throw ImportError.cannotOpen("private row count")}

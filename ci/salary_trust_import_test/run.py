@@ -9,8 +9,8 @@ def block(s,token):
  while depth:
   depth+=(s[i]=='{')-(s[i]=='}');i+=1
  return s[a:i]
-def fixture(path,rows,numeric=False,epoch=False):
- headers=['الرتبة','الاسم الكامل','صافي الراتب','ملاحظات4','الفوج او المديرية','الشهر','السنة','الحالة','تاريخ الصرف']
+def fixture(path,rows,numeric=False,epoch=False,headers=None):
+ headers=headers or ['الرتبة','الاسم الكامل','صافي الراتب','ملاحظات4','الفوج او المديرية','الشهر','السنة','الحالة','تاريخ الصرف']
  xml=['<worksheet><sheetData>']
  for n,row in enumerate([headers]+rows,1):
   xml.append(f'<row r="{n}">')
@@ -25,15 +25,16 @@ def prepare(work):
  src=work/'Sources/TrustImportTests';src.mkdir(parents=True,exist_ok=True)
  vendor=os.environ.get('SALARY_ZIPFOUNDATION_PATH')
  dep=f'.package(path:{json.dumps(vendor)})' if vendor else '.package(url:"https://github.com/weichsel/ZIPFoundation.git",exact:"0.9.20")'
- (work/'Package.swift').write_text('// swift-tools-version:5.9\nimport PackageDescription\nlet package=Package(name:"TrustImportTests",dependencies:['+dep+'],targets:[.executableTarget(name:"TrustImportTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])])\n')
- importer=(root/'SalaryApp/ExcelImporter.swift').read_text();parser=importer[importer.index('private nonisolated func localName'):]
+ (work/'Package.swift').write_text('// swift-tools-version:5.9\nimport PackageDescription\nlet package=Package(name:"TrustImportTests",platforms:[.macOS(.v13)],dependencies:['+dep+'],targets:[.executableTarget(name:"TrustImportTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])])\n')
+ importer=(root/'SalaryApp/ExcelImporter.swift').read_text()
  models=(root/'SalaryApp/Models.swift').read_text();month=models[models.index('nonisolated enum MonthName'):models.index('extension PayrollMonth {')]
  arabic=(root/'SalaryApp/ArabicText.swift').read_text().split('\nenum Money')[0]
  backup=(root/'SalaryApp/Backup.swift').read_text()
  report=(root/'SalaryApp/SalaryTrustReport.swift').read_text();report=report[report.index('nonisolated struct SalaryTrustReportRequest'):report.index('    static func makePDF')]+'\n}\n'
- parts=[parser,month,arabic]+[(root/f'SalaryApp/{name}.swift').read_text() for name in ['SalaryTrust','SalaryTrustImport','SalaryTrustSpreadsheet']]
- parts+=[block(backup,'nonisolated enum BackupFormat'),'enum BackupReplacement {\n'+block(backup,'    nonisolated static func checkMissingData(')+'\n}',report]
- production='import Foundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\n'+'\n'.join(parts)
+ center=(root/'SalaryApp/ImportCenter.swift').read_text()
+ parts=[importer,month,arabic,block(models,'nonisolated struct PayrollColumnSnapshot'),block(center,'nonisolated enum ImportKind'),block(center,'struct ImportCandidate')]+[(root/f'SalaryApp/{name}.swift').read_text() for name in ['SalaryTrust','SalaryTrustImport','SalaryTrustSpreadsheet']]
+ parts+=[block((root/'SalaryApp/SalaryTrustView.swift').read_text(),'@MainActor enum SalaryTrustStore'),block(backup,'nonisolated enum BackupFormat'),'enum BackupReplacement {\n'+block(backup,'    nonisolated static func checkMissingData(')+'\n}',report]
+ production='import Foundation\nimport CoreFoundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\n'+'\n'.join(parts)
  (src/'Production.swift').write_text(production.replace('nonisolated ',''))
  for name in ['Stubs.swift','main.swift']:(src/name).write_text((root/'ci/salary_trust_import_test'/name).read_text())
  fixture(work/'new.xlsx',[
@@ -44,6 +45,11 @@ def prepare(work):
  fixture(work/'dates1904.xlsx',[['رتبة','منتسب وهمي',1000,'','قسم','تشرين الثاني',2026,'صرف',44872]],True,True)
  fixture(work/'bad.xlsx',[['رتبة','منتسب وهمي','3500/7000','','قسم','تشرين الثاني',2026,'صرف','']])
  fixture(work/'duplicate.xlsx',[['رتبة','منتسب وهمي',1000,'','قسم','تشرين الثاني',2026,'','']]*2)
+ fixture(work/'ordinary.xlsx',[['منتسب وهمي',1000]],headers=['Name_m','صافي الراتب'])
+ fixture(work/'missing-year.xlsx',[['منتسب وهمي',1000,'صرف','تشرين الثاني2027']],headers=['الاسم','صافي الراتب','الحالة','تاريخ الصرف'])
+ with zipfile.ZipFile(work/'new.xlsx') as trust, zipfile.ZipFile(work/'ordinary.xlsx') as payroll, zipfile.ZipFile(work/'mixed.xlsx','w') as mixed:
+  for name in trust.namelist():mixed.writestr(name,trust.read(name))
+  mixed.writestr('xl/worksheets/sheet2.xml',payroll.read('xl/worksheets/sheet1.xml'))
 if opt.prepare:prepare(opt.prepare)
 else:
  with tempfile.TemporaryDirectory(prefix='trust-import-') as temp:

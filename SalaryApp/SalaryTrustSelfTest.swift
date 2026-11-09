@@ -52,6 +52,12 @@ nonisolated enum SalaryTrustSelfTest {
             rows.append(["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "ملاحظات4", "الحالة", "تاريخ الصرف"])
             rows.append(["منتسب تجريبي", "1000", "تشرين الثاني", "2027", "ملاحظة ملف", "صرف", "تشرين الثاني2027"])
             let imported = try rows.result()
+            let detected = SheetParser()
+            detected.consume(["الاسم الكامل", "صافي الراتب", "الشهر", "السنة", "ملاحظات4", "الحالة", "تاريخ الصرف"])
+            detected.consume(["منتسب تجريبي", "1000", "تشرين الثاني", "2027", "ملاحظة ملف", "صرف", "تشرين الثاني2027"])
+            detected.finish()
+            guard detected.result.hasSalaryTrust, detected.result.employees.isEmpty,
+                  !ImportKind.salaryTrust.needsMonth else { return false }
             guard imported.version == 2, imported.entries[0].remaining == 0,
                   imported.entries[0].displayNotes == "ملاحظة ملف",
                   imported.entries[0].importedPaymentDate == "تشرين الثاني2027",

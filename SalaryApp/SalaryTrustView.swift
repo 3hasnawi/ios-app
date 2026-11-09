@@ -6,7 +6,21 @@ import VisionKit
 @MainActor enum SalaryTrustStore {
     static func load() throws -> SalaryTrust.Ledger { try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) }
     static func save(_ ledger: SalaryTrust.Ledger, expected: Data) throws {
-        guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting,
+        guard !ImportCenter.shared.isBusy else {
+            throw SalaryTrust.invalid(tr("انتظر انتهاء الاستيراد قبل حفظ دفتر الأمانات.", "Wait for import to finish before saving the trust ledger."))
+        }
+        try persist(ledger, expected: expected)
+    }
+    /// يمتلك الاستيراد الموحّد القفل أثناء استبدال الدفتر المراجع؛ لا يؤخذ شهر من اسم الملف.
+    static func replaceFromImport(_ incoming: SalaryTrust.Ledger, expected: Data) throws {
+        guard ImportCenter.shared.isBusy else {
+            throw SalaryTrust.invalid(tr("أعد مراجعة ملف الأمانات قبل الاستيراد.", "Review the trust spreadsheet again before importing."))
+        }
+        let replacement = try SalaryTrust.replacing(with: incoming, existing: SalaryTrust.decode(expected))
+        try persist(replacement, expected: expected)
+    }
+    private static func persist(_ ledger: SalaryTrust.Ledger, expected: Data) throws {
+        guard !BackupManager.shared.isWorking, !StaffImportState.shared.isImporting,
               (UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()) == expected else {
             throw SalaryTrust.invalid(tr("تغيّرت البيانات أو توجد عملية جارية؛ أعد المحاولة.", "The data changed or another operation is running; try again."))
         }

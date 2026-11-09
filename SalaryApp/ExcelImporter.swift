@@ -95,6 +95,8 @@ nonisolated struct InvalidExecutionAccount: Sendable, Identifiable {
 }
 
 nonisolated struct ImportResult: Sendable {
+    /// الأمانات دفتر مستقل؛ يمنع تمرير صفوفه إلى مستورد الرواتب الشهري.
+    var hasSalaryTrust = false
     var employees: [ImportedEmployee] = []
     var deductions: [ImportedDeduction] = []
     var annualDeductions: [Int: [ImportedDeduction]] = [:]
@@ -107,6 +109,7 @@ nonisolated struct ImportResult: Sendable {
     var problems: [String] = []
 
     mutating func merge(_ other: ImportResult) {
+        hasSalaryTrust = hasSalaryTrust || other.hasSalaryTrust
         employees += other.employees
         deductions += other.deductions
         for (month, records) in other.annualDeductions {
@@ -137,8 +140,8 @@ nonisolated enum ImportError: LocalizedError {
             return tr("لم يُعثر في \(file) على عمود \"الاسم\" مع عمود صافي الراتب أو مبلغ الاستقطاع.", "\(file) has no \"name\" column with a net salary or deduction amount column.")
         case .unrecognized(let file, let reasons):
             let intro = tr("الملف \(file) غير متوافق مع نظام التطبيق:", "\(file) doesn't match the app's format:")
-            let help = tr("المطلوب: رواتب (الاسم/Name_m وصافي الراتب)، أو استقطاعات (الاسم والمبلغ)، أو حسابات جهات (جهة التنفيذ ورقم الايبان). العناوين في أول ٢٠ صفاً.",
-                          "Expected: payroll (name and net salary), deductions (name and amount), or entity accounts (entity and IBAN). Headers must be within the first 20 rows.")
+            let help = tr("المطلوب: رواتب (الاسم/Name_m وصافي الراتب)، أو استقطاعات (الاسم والمبلغ)، أو أمانات (الاسم والصافي والشهر والسنة والحالة)، أو حسابات جهات (جهة التنفيذ ورقم الايبان). العناوين في أول ٢٠ صفاً.",
+                          "Expected: payroll (name and net salary), deductions (name and amount), salary trust (name, amount, month, year and status), or entity accounts (entity and IBAN). Headers must be within the first 20 rows.")
             return ([intro] + reasons.map { "• " + $0 } + [help]).joined(separator: "\n")
         }
     }
@@ -147,6 +150,7 @@ nonisolated enum ImportError: LocalizedError {
 /// يقرأ ملفات Excel (xlsx) أو CSV ويتعرف على الأوراق والأعمدة من العناوين.
 ///
 /// - ورقة فيها الاسم + صافي الراتب ← ورقة موظفين (أعمدة الاستقطاع داخلها لا تُقرأ).
+/// - ملف الأمانات بعناوين أشهر القيود وحالة الصرف ← إشارة مستقلة، لا صفوف رواتب شهرية.
 /// - ورقة فيها الاسم + المبلغ (بدون صافي راتب) ← ورقة الاستقطاعات، وهي المصدر الوحيد للاستقطاعات.
 ///
 /// ملف xlsx يُقرأ صفاً صفاً (XMLParser) لأن ورقة رواتب كبيرة قد تتجاوز 50 ميغابايت من XML.
@@ -167,6 +171,13 @@ nonisolated enum ExcelImporter {
         if !result.amountErrors.isEmpty { throw ImportError.unrecognized(url.lastPathComponent, Array(result.amountErrors.prefix(20))) }
         if !result.annualErrors.isEmpty {
             throw ImportError.unrecognized(url.lastPathComponent, Array(result.annualErrors.prefix(20)))
+        }
+        if result.hasSalaryTrust {
+            guard result.employees.isEmpty, result.deductions.isEmpty, result.annualDeductions.isEmpty,
+                  result.accounts.isEmpty, result.invalidAccountDetails.isEmpty else {
+                throw ImportError.unrecognized(url.lastPathComponent, [tr("ملف الأمانات يجب أن يكون مستقلاً عن الرواتب والاستقطاعات والحسابات. لم تُحفظ أي بيانات.", "Trust entries must be in a separate file from payroll, deductions and accounts. No data was saved.")])
+            }
+            return result
         }
         if !result.annualDeductions.isEmpty && (!result.employees.isEmpty || !result.deductions.isEmpty || !result.accounts.isEmpty || !result.invalidAccountDetails.isEmpty || !result.problems.isEmpty) {
             throw ImportError.unrecognized(url.lastPathComponent, [tr("الملف يجمع استقطاعات سنوية وبيانات أخرى؛ افصلها في ملفات مستقلة قبل الاستيراد.", "This file combines annual deductions with other data; separate the files before importing.")])
@@ -410,6 +421,10 @@ nonisolated final class SheetParser {
     }
 
     private func detectHeader(_ row: [String]) -> Mode? {
+        if Self.isSalaryTrustHeader(row) {
+            result.hasSalaryTrust = true
+            return .skip
+        }
         let headers = row.map(ArabicText.normalize)
         var used = Set<Int>()
         // ملفات حسابات الجهات مستقلة عن الرواتب، وقد تضم عمود «المبلغ» الفارغ.
@@ -615,8 +630,20 @@ nonisolated final class SheetParser {
         return remainder == 1 ? nil : .invalidChecksum
     }
 
+    /// التعرّف قبل صافي الرواتب؛ الشهر والسنة داخل كل قيد وليسا شهر استيراد الملف.
+    static func isSalaryTrustHeader(_ row: [String]) -> Bool {
+        let headers = Set(row.map(ArabicText.matchKey))
+        func has(_ aliases: String...) -> Bool { aliases.contains { headers.contains(ArabicText.matchKey($0)) } }
+        guard has("الاسم الكامل", "الاسم"), has("صافي الراتب", "المبلغ") else { return false }
+        let status = has("الحالة", "حالة الصرف"), date = has("تاريخ الصرف")
+        // ملف الاستقطاعات السنوي قد يحتوي الشهر والسنة والحالة أيضاً.
+        guard has("صافي الراتب") || date || has("ملاحظات4", "ملاحظات 4") else { return false }
+        return (has("الشهر") && has("السنة") && (status || date || has("ملاحظات4", "ملاحظات 4"))) || (status && date)
+    }
+
     /// بعد آخر صف: سبب عدم قبول الورقة إن لم يُقرأ منها شيء.
     func finish() {
+        guard !result.hasSalaryTrust else { return }
         // المبالغ التي خانة اسمها فارغة تُحسب للجهة الأكثر ظهوراً في نفس العمود (مثل شركة عراق الجوال).
         for (fallback, names) in pairNames {
             guard let main = names.max(by: { $0.value < $1.value })?.key else { continue }
