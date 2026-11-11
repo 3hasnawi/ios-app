@@ -118,6 +118,7 @@ nonisolated enum EntityDeductionPDF {
         let dark = UIColor(red: 0.12, green: 0.31, blue: 0.47, alpha: 1)
         let light = UIColor(red: 0.87, green: 0.92, blue: 0.97, alpha: 1)
         let line = UIColor(red: 0.61, green: 0.72, blue: 0.83, alpha: 1)
+        let borderWidth: CGFloat = sheet.deductionList ? 1 : 0.5
         let zebra = UIColor(red: 243/255, green: 247/255, blue: 251/255, alpha: 1)
         let tableWidth = page.width - margin * 2
         func cell(_ c: Int, _ y: CGFloat, _ height: CGFloat) -> CGRect { CGRect(x: layout.positions[c], y: y, width: layout.widths[c], height: height) }
@@ -132,7 +133,7 @@ nonisolated enum EntityDeductionPDF {
             dark.setFill(); cg.fill(title); text(sheet.title, title, ReportFont.bold(14), .white, wrap: true)
             let columnsY = title.maxY
             for c in sheet.columns.indices {
-                let rect = cell(c, columnsY, layout.columnsHeight); light.setFill(); cg.fill(rect); line.setStroke(); cg.stroke(rect, width: 0.5)
+                let rect = cell(c, columnsY, layout.columnsHeight); light.setFill(); cg.fill(rect); line.setStroke(); cg.stroke(rect, width: borderWidth)
                 text(sheet.columns[c].title, rect, headingFont, wrap: true)
             }
             var y = columnsY + layout.columnsHeight
@@ -141,7 +142,7 @@ nonisolated enum EntityDeductionPDF {
                 for c in sheet.columns.indices {
                     let rect = cell(c, y, height)
                     if index % 2 == 1 { zebra.setFill(); cg.fill(rect) }
-                    line.setStroke(); cg.stroke(rect, width: 0.5)
+                    line.setStroke(); cg.stroke(rect, width: borderWidth)
                     switch sheet.columns[c].kind {
                     case .serial: text(String(index + 1), rect, dataFont(sheet.columns[c], sheet: sheet))
                     case .amount: text(money(sheet.amounts[index]), rect, dataFont(sheet.columns[c], sheet: sheet))
@@ -154,8 +155,8 @@ nonisolated enum EntityDeductionPDF {
                 let amount = sheet.amountColumn
                 let label = (0..<amount).map { cell($0, y, layout.columnsHeight) }.reduce(CGRect.null) { $0.union($1) }
                 for c in sheet.columns.indices { light.setFill(); cg.fill(cell(c, y, layout.columnsHeight)) }
-                line.setStroke(); cg.stroke(label, width: 0.5)
-                for c in amount..<sheet.columns.count { cg.stroke(cell(c, y, layout.columnsHeight), width: 0.5) }
+                line.setStroke(); cg.stroke(label, width: borderWidth)
+                for c in amount..<sheet.columns.count { cg.stroke(cell(c, y, layout.columnsHeight), width: borderWidth) }
                 text("المجموع", label, ReportFont.bold(11.5))
                 text(money(sheet.total), cell(amount, y, layout.columnsHeight), ReportFont.bold(11.5))
             }
