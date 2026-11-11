@@ -7,6 +7,10 @@ name: iOS logic checks (no app build)
         description: Test streaming a fictional JSONL larger than 2.3 GB
         type: boolean
         default: false
+      report_preview:
+        description: Render the fictional deduction PDF and PNG with production CoreText code
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -38,7 +42,19 @@ jobs:
       - name: Payroll item parser
         run: bash ci/payroll_item_parser_test/run.sh
       - name: Report layout calculations
-        run: python3 ci/report_layout_test/run.py
+        run: |
+          if [ "${{ inputs.report_preview }}" = "true" ]; then
+            python3 ci/report_layout_test/run.py --preview-dir "$RUNNER_TEMP/deduction-style-preview"
+          else
+            python3 ci/report_layout_test/run.py
+          fi
+      - name: Upload fictional deduction preview
+        if: ${{ inputs.report_preview }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: deduction-style-preview
+          path: ${{ runner.temp }}/deduction-style-preview/
+          retention-days: 7
       - name: Excel report layout and numeric safety
         run: python3 ci/xlsx_layout_test/run.py
       - name: PDF page preservation

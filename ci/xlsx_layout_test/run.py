@@ -26,6 +26,7 @@ struct ReportSheet {
     var amounts: [Double]
     var showTotal = true
     var entityDeduction = false
+    var deductionList = false
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
     var landscape: Bool { !entityDeduction && columns.reduce(0) { $0 + $1.width } > 96 }

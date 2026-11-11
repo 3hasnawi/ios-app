@@ -33,6 +33,30 @@ do {
 } catch { }
 print("Portrait and landscape report layout tests passed with fictional data")
 
+let deductionColumns: [ReportSheet.Column] = [
+    .init(title: "ت", width: 5, kind: .serial),
+    .init(title: "الرتبة", width: 11, kind: .text),
+    .init(title: "الاسم الكامل", width: 34, kind: .text),
+    .init(title: "المبلغ", width: 14, kind: .amount),
+    .init(title: "رقم وتاريخ الاضبارة", width: 32, kind: .text)
+]
+var compact = ReportSheet(header: "قيادة وهمية", title: "قائمة استقطاعات تجريبية", columns: deductionColumns,
+    rows: [["1", "مفوض", "أحمد سامر محمود", "", "١٢٣ / ٢٠٢٦"]], amounts: [125000], entityDeduction: true, deductionList: true)
+for column in deductionColumns.dropFirst() {
+    let font = EntityDeductionPDF.dataFont(column, sheet: compact)
+    precondition(font.pointSize == 11.5 && font.fontName.lowercased().contains("bold"))
+}
+let compactLayout = try EntityDeductionPDF.prepare(compact)
+precondition(compactLayout.rowHeights == [20])
+compact.rows[0][4] = String(repeating: "إضبارة تجريبية طويلة ", count: 12)
+let wrappedCompact = try EntityDeductionPDF.prepare(compact)
+precondition(wrappedCompact.rowHeights[0] > 20)
+var ordinary = compact
+ordinary.deductionList = false
+precondition(EntityDeductionPDF.dataFont(deductionColumns[1], sheet: ordinary).pointSize == 10.5)
+precondition(EntityDeductionPDF.dataFont(deductionColumns[3], sheet: ordinary).pointSize == 11)
+print("Deduction fields use bold 11.5 with 20-point single-line rows and complete multiline cells")
+
 let healthRows = (1...85).map { [String($0), "موظف", name, "3500", "1"] }
 let healthHeaders = ["ت", "الرتبة", "الاسم", "المبلغ", "عدد افراد الاسرة"]
 let health = try HealthCarePDFLayout.make(title: "اشتراكات الرعاية الصحية", headers: healthHeaders, rows: healthRows, ratios: [7, 13, 42, 14, 17])

@@ -19,6 +19,16 @@ nonisolated enum EntityDeductionPDF {
     private static let headingFont = ReportFont.bold(11)
     private static let amountFont = ReportFont.bold(11)
 
+    static func dataFont(_ column: ReportSheet.Column, sheet: ReportSheet) -> UIFont {
+        switch column.kind {
+        case .serial: return amountFont
+        case .amount: return sheet.deductionList ? nameFont : amountFont
+        case .text:
+            let emphasized = isName(column) || (sheet.deductionList && ["الرتبة", "رقم وتاريخ الاضبارة"].contains(column.title))
+            return emphasized ? nameFont : textFont
+        }
+    }
+
     private static func invalid(_ message: String) -> NSError {
         NSError(domain: "EntityDeductionPDF", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -73,14 +83,14 @@ nonisolated enum EntityDeductionPDF {
         guard room > 48 else { throw invalid("عنوان الكشف طويل جداً لصفحة A4.") }
         let rowHeights: [CGFloat] = try sheet.rows.enumerated().map { index, row in
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
-            var height: CGFloat = 24
+            var height: CGFloat = sheet.deductionList ? 20 : 24
             for c in sheet.columns.indices {
                 let column = sheet.columns[c]
                 let value: String = switch column.kind { case .serial: String(index + 1); case .amount: money(sheet.amounts[index]); case .text: row[c] }
-                let font: UIFont = switch column.kind { case .serial, .amount: amountFont; case .text: isName(column) ? nameFont : textFont }
+                let font = dataFont(column, sheet: sheet)
                 let count = try lines(value, width: widths[c] - 8, font: font)
                 if column.kind != .text && count > 1 { throw invalid("مبلغ أو تسلسل لا يتسع في الكشف؛ صدّر Excel.") }
-                height = max(height, ceil(CGFloat(count) * font.lineHeight + 8))
+                height = max(height, ceil(CGFloat(count) * font.lineHeight + (sheet.deductionList ? 4 : 8)))
             }
             guard height + (sheet.showTotal ? columnsHeight : 0) <= room else { throw invalid("أحد صفوف الكشف أطول من الصفحة؛ صدّر Excel.") }
             return height
@@ -133,9 +143,9 @@ nonisolated enum EntityDeductionPDF {
                     if index % 2 == 1 { zebra.setFill(); cg.fill(rect) }
                     line.setStroke(); cg.stroke(rect, width: 0.5)
                     switch sheet.columns[c].kind {
-                    case .serial: text(String(index + 1), rect, amountFont)
-                    case .amount: text(money(sheet.amounts[index]), rect, amountFont)
-                    case .text: text(sheet.rows[index][c], rect, isName(sheet.columns[c]) ? nameFont : textFont, .black, .right, wrap: true)
+                    case .serial: text(String(index + 1), rect, dataFont(sheet.columns[c], sheet: sheet))
+                    case .amount: text(money(sheet.amounts[index]), rect, dataFont(sheet.columns[c], sheet: sheet))
+                    case .text: text(sheet.rows[index][c], rect, dataFont(sheet.columns[c], sheet: sheet), .black, .right, wrap: true)
                     }
                 }
                 y += height

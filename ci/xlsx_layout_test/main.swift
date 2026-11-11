@@ -37,6 +37,27 @@ bad.rows[0][1] = String(repeating: "اسم ", count: 9000)
 do { try XLSXWriter.validate(bad); fatalError("Overlong row accepted") } catch { }
 print("Excel report wrapping, styling and numeric safety tests passed with fictional data")
 
+let deductionColumns: [ReportSheet.Column] = [
+    .init(title: "ت", width: 5, kind: .serial), .init(title: "الرتبة", width: 11, kind: .text),
+    .init(title: "الاسم الكامل", width: 34, kind: .text), .init(title: "المبلغ", width: 14, kind: .amount),
+    .init(title: "رقم وتاريخ الاضبارة", width: 32, kind: .text)
+]
+let compact = ReportSheet(header: "رأس وهمي", title: "استقطاعات تجريبية", columns: deductionColumns,
+    rows: [["1", "مفوض", "أحمد سامر محمود", "", "١٢٣"], ["2", "شرطي", "علي حسن ناصر", "", "١٢٤"]],
+    amounts: [125000, 130000], entityDeduction: true, deductionList: true)
+precondition(compact.fitted().deductionList)
+try XLSXWriter.validate(compact)
+let compactXML = XLSXWriter.worksheet(compact)
+precondition(compactXML.contains("<row r=\"4\" ht=\"20\"") && compactXML.contains("<row r=\"5\" ht=\"20\""))
+for column in ["B", "C", "E"] {
+    precondition(compactXML.contains("<c r=\"\(column)4\" s=\"11\""))
+    precondition(compactXML.contains("<c r=\"\(column)5\" s=\"15\""))
+}
+precondition(compactXML.contains("<c r=\"D4\" s=\"16\"") && compactXML.contains("<c r=\"D5\" s=\"17\""))
+precondition(compactXML.contains("SUM(D4:D5)") && compactXML.contains("<v>255000</v>"))
+precondition(XLSXWriter.styles.contains("<cellXfs count=\"18\">"))
+print("Deduction Excel fields share bold 11.5 styles, 20-point rows and unchanged numerical totals")
+
 let healthLongName = String(repeating: "اسم وهمي طويل ", count: 8)
 let healthRows = [ReportRow(name: healthLongName, rank: "موظف", amount: 3500), ReportRow(name: "موظف وهمي", rank: "موظف", amount: 3700)]
 let healthXML = try HealthCareReport.sheet(healthRows, month: "2026", others: false)

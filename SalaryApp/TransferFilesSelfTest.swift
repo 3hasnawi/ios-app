@@ -391,7 +391,7 @@ import CoreText
             ReportRow(id: index, name: "اسم وهمي طويل جداً لغرض اختبار وضوح الاسم الكامل رقم \(index)", rank: "موظف", workplace: "", amount: 20, note: "رقم وتاريخ إضبارة وهمية طويلة لغرض اختبار التفاف النص", entity: "جهة وهمية")
         }
         let entitySheet = ReportSheet.make(group: group, rows: entityRows)
-        try check(entitySheet.entityDeduction && !entitySheet.landscape && entitySheet.columns.map(\.title) == ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "رقم وتاريخ الاضبارة"], "single-entity report portrait and columns")
+        try check(entitySheet.entityDeduction && entitySheet.deductionList && !entitySheet.landscape && entitySheet.columns.map(\.title) == ["ت", "الرتبة", "الاسم الكامل", "المبلغ", "رقم وتاريخ الاضبارة"], "single-entity report portrait and columns")
         let entityXML = XLSXWriter.worksheet(entitySheet)
         try check(entityXML.contains("orientation=\"portrait\"") && entityXML.contains("اسم وهمي طويل") && !entityXML.contains("جهة التنفيذ"), "entity Excel retains names and portrait setup")
         let combinedGroup = ReportGroup(kind: .deductions, month: group.month, title: group.title, count: 1, total: 1200, byEntity: true)

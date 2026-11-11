@@ -25,6 +25,8 @@ nonisolated struct ReportSheet: Sendable {
     var showTotal = true
     /// كشف الجهة المفردة يبقى A4 عمودياً مهما طال الاسم أو رقم الإضبارة.
     var entityDeduction = false
+    /// تنسيق قوائم الاستقطاعات فقط؛ لا يغيّر كشوف الرواتب والخلاصات الأخرى.
+    var deductionList = false
     var total: Double { amounts.reduce(0, +) }
     var amountColumn: Int { columns.firstIndex { $0.kind == .amount } ?? 0 }
     /// A4 بالعرض إذا كان مجموع عرض الأعمدة أكبر مما تتسعه الصفحة بالطول.
@@ -52,7 +54,7 @@ nonisolated struct ReportSheet: Sendable {
             let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + 3, column.kind == .serial ? 5 : 8))
             return Column(title: column.title, width: width.rounded(), kind: column.kind)
         }
-        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal, entityDeduction: entityDeduction)
+        return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal, entityDeduction: entityDeduction, deductionList: deductionList)
     }
 
     /// "ايلول 2026" ← "ايلول ٢٠٢٦" كما في النموذج.
@@ -90,7 +92,7 @@ nonisolated struct ReportSheet: Sendable {
                 header: header, title: "قائمة الاستقطاعات لـ شهر \(month) - \(group.title)", columns: columns,
                 rows: rows.enumerated().map { i, r in
                     [String(i + 1), r.rank, r.name, ""] + (!singleEntity ? [r.entity.isEmpty ? group.title : r.entity] : []) + [r.note]
-                }, amounts: rows.map(\.amount), entityDeduction: singleEntity
+                }, amounts: rows.map(\.amount), entityDeduction: singleEntity, deductionList: true
             )
         case .payroll:
             return ReportSheet(
@@ -140,7 +142,7 @@ nonisolated enum XLSXWriter {
               sheet.columns.allSatisfy({ $0.width.isFinite && $0.width > 0 }),
               sheet.amounts.allSatisfy({ $0.isFinite && abs($0) <= limit }), sheet.total.isFinite, abs(sheet.total) <= limit,
               sheet.amounts.reduce(0, { $0 + abs($1) }) <= limit,
-              sheet.rows.allSatisfy({ row in row.allSatisfy({ $0.utf16.count <= 32_767 }) && rowHeight(row, columns: sheet.columns) <= 409 }) else {
+              sheet.rows.allSatisfy({ row in row.allSatisfy({ $0.utf16.count <= 32_767 }) && rowHeight(row, columns: sheet.columns, compact: sheet.deductionList) <= 409 }) else {
             throw NSError(domain: "XLSXWriter", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("تعذّر إنشاء Excel كاملاً: راجع المبالغ أو طول أحد الصفوف قبل التصدير.", "Could not create a complete Excel report. Check amounts and row lengths before exporting.")])
         }
     }
@@ -255,14 +257,14 @@ nonisolated enum XLSXWriter {
         return String(value)
     }
 
-    static func rowHeight(_ row: [String], columns: [ReportSheet.Column]) -> Int {
+    static func rowHeight(_ row: [String], columns: [ReportSheet.Column], compact: Bool = false) -> Int {
         let lineCount = columns.enumerated().filter { $0.element.kind == .text }.map { index, column in
             let width = max(1, column.width - 5)
             return row[index].split(separator: "\n", omittingEmptySubsequences: false).reduce(0) { count, part in
                 count + max(1, Int(ceil(Double(part.count) * 1.15 / width)))
             }
         }.max() ?? 1
-        return max(24, lineCount * 16 + 6)
+        return max(compact ? 20 : 24, lineCount * 16 + (compact ? 4 : 6))
     }
 
     static func worksheet(_ sheet: ReportSheet) -> String {
@@ -281,14 +283,17 @@ nonisolated enum XLSXWriter {
                 let ref = "\(letter(c))\(r)"
                 switch column.kind {
                 case .serial: cells += "<c r=\"\(ref)\" s=\"\(i.isMultiple(of: 2) ? 5 : 12)\"><v>\(i + 1)</v></c>"
-                case .amount: cells += "<c r=\"\(ref)\" s=\"\(i.isMultiple(of: 2) ? 6 : 13)\"><v>\(number(sheet.amounts[i]))</v></c>"
+                case .amount:
+                    let style = sheet.deductionList ? (i.isMultiple(of: 2) ? 16 : 17) : (i.isMultiple(of: 2) ? 6 : 13)
+                    cells += "<c r=\"\(ref)\" s=\"\(style)\"><v>\(number(sheet.amounts[i]))</v></c>"
                 case .text:
                     let nameColumn = column.title.contains("الاسم") || column.title.hasPrefix("اسم")
-                    let style = i.isMultiple(of: 2) ? (nameColumn ? 11 : 10) : (nameColumn ? 15 : 14)
+                    let boldColumn = nameColumn || (sheet.deductionList && ["الرتبة", "رقم وتاريخ الاضبارة"].contains(column.title))
+                    let style = i.isMultiple(of: 2) ? (boldColumn ? 11 : 10) : (boldColumn ? 15 : 14)
                     cells += textCell(ref, values[c], style: style)
                 }
             }
-            let height = rowHeight(values, columns: sheet.columns)
+            let height = rowHeight(values, columns: sheet.columns, compact: sheet.deductionList)
             rows += "<row r=\"\(r)\" ht=\"\(height)\" customHeight=\"1\">\(cells)</row>"
         }
         // سطر المجموع: "المجموع" في الأعمدة قبل المبلغ، والمبلغ بمعادلة SUM.
@@ -354,7 +359,7 @@ nonisolated enum XLSXWriter {
     <border><left style="thin"><color rgb="FF9BB7D4"/></left><right style="thin"><color rgb="FF9BB7D4"/></right><top style="thin"><color rgb="FF9BB7D4"/></top><bottom style="thin"><color rgb="FF9BB7D4"/></bottom><diagonal/></border>
     </borders>
     <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-    <cellXfs count="16">
+    <cellXfs count="18">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
     <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" readingOrder="2"/></xf>
@@ -371,6 +376,8 @@ nonisolated enum XLSXWriter {
     <xf numFmtId="164" fontId="4" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="5" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="6" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" readingOrder="2" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="6" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="6" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     </cellXfs>
     <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
     </styleSheet>
@@ -453,8 +460,9 @@ nonisolated enum PDFReportWriter {
                 need = max(measure(String(max(sheet.rows.count, 1)), 10), measure(column.title, 10.5)) + 14
             case .amount:
                 let largest = max(abs(sheet.total), sheet.amounts.map(abs).max() ?? 0)
-                need = max(measure(formatter.string(from: NSNumber(value: largest)) ?? "", 11),
-                           measure(formatter.string(from: NSNumber(value: sheet.total)) ?? "", 11),
+                let size: CGFloat = sheet.deductionList ? 11.5 : 11
+                need = max(measure(formatter.string(from: NSNumber(value: largest)) ?? "", size),
+                           measure(formatter.string(from: NSNumber(value: sheet.total)) ?? "", size),
                            measure(column.title, 10.5)) + 16
             case .text:
                 continue
