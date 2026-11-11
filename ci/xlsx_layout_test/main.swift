@@ -47,7 +47,7 @@ let compact = ReportSheet(header: "رأس وهمي", title: "استقطاعات 
     amounts: [125000, 130000], entityDeduction: true, deductionList: true)
 precondition(compact.fitted().deductionList)
 try XLSXWriter.validate(compact)
-let compactXML = XLSXWriter.worksheet(compact)
+let compactXML = XLSXWriter.worksheet(compact.fitted())
 precondition(compactXML.contains("<row r=\"4\" ht=\"20\"") && compactXML.contains("<row r=\"5\" ht=\"20\""))
 for column in ["B", "C", "E"] {
     precondition(compactXML.contains("<c r=\"\(column)4\" s=\"11\""))

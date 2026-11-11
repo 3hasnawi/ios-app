@@ -50,9 +50,11 @@ nonisolated struct ReportSheet: Sendable {
             case .text: longest = rows.reduce(0) { max($0, $1[c].count) }
             }
             // الأرقام بخط عريض تحتاج مساحة أكبر (حتى لا يظهر المجموع ##### في Excel).
-            let factor = column.kind == .text ? 1.08 : 1.3
-            let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + 3, column.kind == .serial ? 5 : 8))
-            return Column(title: column.title, width: width.rounded(), kind: column.kind)
+            let factor = column.kind == .text ? (deductionList ? 1.15 : 1.08) : 1.3
+            // نفس مساحة النص التي يقيسها ارتفاع الصف؛ لا نحسب التفافاً وهمياً للحقل القصير.
+            let padding: Double = deductionList && column.kind == .text ? 5 : 3
+            let width = min(48, max(Double(column.title.count) + 2, Double(longest) * factor + padding, column.kind == .serial ? 5 : 8))
+            return Column(title: column.title, width: width.rounded(deductionList ? .up : .toNearestOrAwayFromZero), kind: column.kind)
         }
         return ReportSheet(header: header, title: title, columns: fittedColumns, rows: rows, amounts: amounts, showTotal: showTotal, entityDeduction: entityDeduction, deductionList: deductionList)
     }
