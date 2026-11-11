@@ -10,3 +10,11 @@
 [PDF كامل](design/deduction-list-11-5-bold-20.pdf) · [صورة الصفحة الكاملة](design/deduction-list-11-5-bold-20-full.png) · [صورة مقربة للجدول](design/deduction-list-11-5-bold-20.png)
 
 لتجديد المعاينة: تشغيل `ios-logic-check.yml` بخيار `report_preview=true` فقط. تُنشأ ملفات PDF وPNG في artifact اسمه `deduction-style-preview` دون بناء تطبيق أو تشغيل محاكي. لا تستبدل الأسماء الوهمية ببيانات حقيقية.
+
+## حدود الجدول 1 نقطة في PDF
+
+بطلب المالك أصبحت حدود رؤوس الأعمدة وصفوف البيانات والمجموع في قوائم الاستقطاعات بسماكة 1 نقطة في PDF؛ اللون والخط 11.5 غامق وارتفاع الصف 20 باقية. لم تتغير سماكات بقية الكشوف أو Excel؛ درجات حدود Excel جاهزة ولا تقبل تحديد نقطة واحدة بدقة.
+
+نجحت فحوص المنطق والمعاينة [43105928570](https://github.com/3hasnawi/ios-app/actions/runs/43105928570) على `af2a7d6a0f115abae16f3dbde9c0d0ec626003f7`. فُحص ملف PDF الناتج نفسه: خطوط الجدول 1 نقطة والنصوص متجهية دون صور نقطية. البيانات وهمية، ولم يُبنَ تطبيق أو محاكي.
+
+[PDF للطباعة](design/deduction-list-border-1pt.pdf) · [صورة الصفحة الكاملة](design/deduction-list-border-1pt-full.png) · [معاينة الجدول](design/deduction-list-border-1pt.png).
