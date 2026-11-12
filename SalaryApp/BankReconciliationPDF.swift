@@ -217,7 +217,7 @@ nonisolated enum BankReconciliationPDF {
                     if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: periodTop - 16, width: 531, height: 14), font: ReportFont.bold(9), color: .darkGray) }
                     let periodBar = CGRect(x: page.width - margin - 531, y: periodTop, width: 531, height: periodHeight)
                     shade.setFill(); cg.fill(periodBar)
-                    UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: 0.5)
+                    UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: ReportTableStyle.borderWidth)
                     PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
                     var x = page.width - margin
                     var rects: [CGRect] = []
@@ -226,7 +226,7 @@ nonisolated enum BankReconciliationPDF {
                         let cell = CGRect(x: x, y: tableTop, width: width, height: headerHeight)
                         rects.append(cell)
                         UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
-                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                         PDFText.draw(labels[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                     }
                     var y = rowTop
@@ -235,7 +235,7 @@ nonisolated enum BankReconciliationPDF {
                         if index % 2 == 1 { shade.setFill(); cg.fill(CGRect(x: rects[4].minX, y: y, width: 531, height: height)) }
                         for i in values.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
-                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                             PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: (2...4).contains(i) ? amountFont : font, align: i == 1 ? .right : .center, wrap: true)
                             if values[i] != "—" && !values[i].isEmpty { placements.append((pageCount, cell, values[i], i, index + 1)) }
                         }
@@ -246,7 +246,7 @@ nonisolated enum BankReconciliationPDF {
                         for i in totalRow.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: totalHeight)
                             UIColor(white: 0.93, alpha: 1).setFill(); cg.fill(cell)
-                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                             PDFText.draw(totalRow[i], in: cell.insetBy(dx: 3, dy: 1), font: bold)
                             if !totalRow[i].isEmpty { placements.append((pageCount, cell, totalRow[i], i, rows.count + 1)) }
                         }

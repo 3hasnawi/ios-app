@@ -186,7 +186,6 @@ nonisolated enum FundReport {
         try renderer.writePDF(to: url) { context in
             context.beginPage()
             let cg = context.cgContext
-            cg.setLineWidth(0.8)
             UIColor.black.setStroke()
             // العنوان قد يأخذ سطرين في الصفحة الطولية.
             draw(title(month: month), CGRect(x: margin, y: margin, width: width, height: 48), size: 15, align: .right)
@@ -195,7 +194,7 @@ nonisolated enum FundReport {
             func cell(_ c: Int, _ fill: UIColor? = nil) -> CGRect {
                 let r = CGRect(x: xs[c], y: y, width: widths[c], height: h)
                 if let fill { fill.setFill(); cg.fill(r) }
-                cg.stroke(r)
+                cg.stroke(r, width: ReportTableStyle.borderWidth)
                 return r
             }
             for (c, title) in ["ت", "الرتبة", "العدد", "دعم النشاط الاجتماعي", "المجموع", "الملاحظات"].enumerated() {
@@ -212,7 +211,7 @@ nonisolated enum FundReport {
             }
             y += h
             let label = cell(0, gray).union(cell(1, gray))
-            gray.setFill(); cg.fill(label); cg.stroke(label)
+            gray.setFill(); cg.fill(label); cg.stroke(label, width: ReportTableStyle.borderWidth)
             draw("المجموع", label)
             draw(num(Double(rows.reduce(0) { $0 + $1.count })), cell(2, gray))
             _ = cell(3, gray)

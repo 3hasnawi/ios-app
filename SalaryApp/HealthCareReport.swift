@@ -209,7 +209,6 @@ nonisolated enum HealthCareReport {
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         try renderer.writePDF(to: url) { context in
             let cg = context.cgContext
-            cg.setLineWidth(0.6)
             UIColor.black.setStroke()
             for section in sections {
                 let layout = section.layout
@@ -218,12 +217,12 @@ nonisolated enum HealthCareReport {
                 for range in layout.pages { autoreleasepool {
                     context.beginPage()
                     let titleRect = CGRect(x: margin, y: margin, width: width, height: layout.titleHeight)
-                    yellow.setFill(); cg.fill(titleRect); cg.stroke(titleRect)
+                    yellow.setFill(); cg.fill(titleRect); cg.stroke(titleRect, width: ReportTableStyle.borderWidth)
                     PDFText.draw(section.title, in: titleRect.insetBy(dx: 3, dy: 0), font: ReportFont.bold(13), wrap: true)
                     var y = titleRect.maxY + 4
                     for (c, h) in section.headers.enumerated() {
                         let rect = CGRect(x: xs[c], y: y, width: layout.widths[c], height: layout.headerHeight)
-                        gray.setFill(); cg.fill(rect); cg.stroke(rect)
+                        gray.setFill(); cg.fill(rect); cg.stroke(rect, width: ReportTableStyle.borderWidth)
                         PDFText.draw(h, in: rect.insetBy(dx: 3, dy: 0), font: ReportFont.bold(11), wrap: true)
                     }
                     y += layout.headerHeight
@@ -233,7 +232,7 @@ nonisolated enum HealthCareReport {
                             let rect = CGRect(x: xs[c], y: y, width: layout.widths[c], height: height)
                             if c == 4 && !isExact(row.amount) { UIColor(red: 1, green: 0.49, blue: 0.5, alpha: 1).setFill() }
                             else { (i.isMultiple(of: 2) ? UIColor.white : alternate).setFill() }
-                            cg.fill(rect); cg.stroke(rect)
+                            cg.fill(rect); cg.stroke(rect, width: ReportTableStyle.borderWidth)
                             let font = c == 2 ? ReportFont.bold(11.5) : (c == 1 ? ReportFont.regular(10.5) : ReportFont.bold(11))
                             PDFText.draw(value, in: rect.insetBy(dx: 3, dy: 0), font: font, wrap: c == 1 || c == 2)
                         }

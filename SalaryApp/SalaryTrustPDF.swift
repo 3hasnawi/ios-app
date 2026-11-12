@@ -67,7 +67,7 @@ nonisolated enum SalaryTrustPDF {
                 for column in widths.indices {
                     let cell = CGRect(x: positions[column], y: tableTop, width: widths[column], height: headerHeight)
                     UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(cell)
-                    UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                    UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                     PDFText.draw(sheet.columns[column].title, in: cell.insetBy(dx: 4, dy: 2), font: headerFont, wrap: true)
                 }
                 var y = tableTop + headerHeight
@@ -76,7 +76,7 @@ nonisolated enum SalaryTrustPDF {
                     placements.append((pages, index, y, height))
                     for column in widths.indices {
                         let cell = CGRect(x: positions[column], y: y, width: widths[column], height: height)
-                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                         PDFText.draw(sheet.rows[index][column], in: cell.insetBy(dx: 4, dy: 2), font: font, wrap: true)
                     }
                     y += height; index += 1

@@ -70,7 +70,7 @@ nonisolated enum TransferGroupTablePDF {
                 func cell(_ text: String, _ index: Int, _ y: CGFloat, _ height: CGFloat, _ face: UIFont, fill: Bool = false) {
                     let box = CGRect(x: positions[index], y: y, width: widths[index], height: height)
                     if fill { UIColor(red: 1, green: 1, blue: 0, alpha: 1).setFill(); cg.fill(box) }
-                    UIColor.black.setStroke(); cg.stroke(box, width: 0.5)
+                    UIColor.black.setStroke(); cg.stroke(box, width: ReportTableStyle.borderWidth)
                     PDFText.draw(text, in: box.insetBy(dx: 4, dy: 1), font: face, wrap: true)
                 }
                 for (index, label) in ["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"].enumerated() {
@@ -83,7 +83,7 @@ nonisolated enum TransferGroupTablePDF {
                 }
                 let labelBox = CGRect(x: positions[3], y: y, width: widths.prefix(4).reduce(0, +), height: totalHeight)
                 UIColor(red: 1, green: 1, blue: 0, alpha: 1).setFill(); cg.fill(labelBox)
-                UIColor.black.setStroke(); cg.stroke(labelBox, width: 0.5)
+                UIColor.black.setStroke(); cg.stroke(labelBox, width: ReportTableStyle.borderWidth)
                 PDFText.draw("المجموع", in: labelBox.insetBy(dx: 4, dy: 1), font: bold)
                 cell(number(total), 4, y, totalHeight, bold, fill: true)
             }

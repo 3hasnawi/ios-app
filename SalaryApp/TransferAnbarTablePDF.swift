@@ -77,7 +77,7 @@ nonisolated enum TransferAnbarTablePDF {
                 func cell(_ text: String, _ column: Int, _ y: CGFloat, _ height: CGFloat, _ textFont: UIFont, fill: UIColor? = nil, color: UIColor = .black) {
                     let rect = CGRect(x: positions[column], y: y, width: widths[column], height: height)
                     if let fill { fill.setFill(); cg.fill(rect) }
-                    UIColor.black.setStroke(); cg.stroke(rect, width: 0.5)
+                    UIColor.black.setStroke(); cg.stroke(rect, width: ReportTableStyle.borderWidth)
                     PDFText.draw(text, in: rect.insetBy(dx: 4, dy: 0.5), font: textFont, color: color, wrap: true)
                 }
                 let headerColor = UIColor(red: 0.122, green: 0.306, blue: 0.471, alpha: 1)

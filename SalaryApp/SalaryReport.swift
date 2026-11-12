@@ -269,7 +269,7 @@ nonisolated enum SalaryReportPDF {
                 let lr = CGRect(x: x + half - labelW, y: ty, width: labelW, height: rowH)
                 let vr = CGRect(x: x, y: ty, width: half - labelW, height: rowH)
                 if let fill { fill.setFill(); cg.fill(lr); cg.fill(vr) }
-                line.setStroke(); cg.stroke(lr, width: 0.5); cg.stroke(vr, width: 0.5)
+                line.setStroke(); cg.stroke(lr, width: ReportTableStyle.borderWidth); cg.stroke(vr, width: ReportTableStyle.borderWidth)
                 text(label, lr.insetBy(dx: 4, dy: 0), size: 9.5, bold: true)
                 text(value, vr.insetBy(dx: 3, dy: 0), size: 9.5, bold: bold, align: .center)
                 ty += rowH
@@ -298,7 +298,7 @@ nonisolated enum SalaryReportPDF {
         // صافي الراتب.
         let netRect = CGRect(x: m, y: y, width: width, height: 26)
         soft.setFill(); cg.fill(netRect)
-        UIColor(white: 0.2, alpha: 1).setStroke(); cg.stroke(netRect, width: 1.2)
+        UIColor(white: 0.2, alpha: 1).setStroke(); cg.stroke(netRect, width: ReportTableStyle.borderWidth)
         text("صافي الراتب", CGRect(x: page.midX, y: y, width: width / 2 - 20, height: 26), size: 13, bold: true, align: .center)
         text(r.net.map(money) ?? "—", CGRect(x: m + 20, y: y, width: width / 2 - 20, height: 26), size: 13, bold: true, align: .center)
         y += 38
@@ -311,7 +311,7 @@ nonisolated enum SalaryReportPDF {
         for (label, value) in r.info {
             let lr = CGRect(x: infoX + half * 0.55, y: iy, width: half * 0.45, height: rowH + 1)
             let vr = CGRect(x: infoX, y: iy, width: half * 0.55, height: rowH + 1)
-            line.setStroke(); cg.stroke(lr, width: 0.5); cg.stroke(vr, width: 0.5)
+            line.setStroke(); cg.stroke(lr, width: ReportTableStyle.borderWidth); cg.stroke(vr, width: ReportTableStyle.borderWidth)
             text(label, lr.insetBy(dx: 4, dy: 0), size: 9.5, bold: true)
             text(label == "IBAN" ? value : digits(value), vr.insetBy(dx: 3, dy: 0), size: 9, align: .center)
             iy += rowH + 1
@@ -325,7 +325,7 @@ nonisolated enum SalaryReportPDF {
                 x -= bw[i]
                 let rect = CGRect(x: x, y: by, width: bw[i], height: rowH + 1)
                 if let fill { fill.setFill(); cg.fill(rect) }
-                line.setStroke(); cg.stroke(rect, width: 0.5)
+                line.setStroke(); cg.stroke(rect, width: ReportTableStyle.borderWidth)
                 text(v, rect.insetBy(dx: 3, dy: 0), size: 9, bold: bold || i == 0, align: i == 0 ? .right : .center)
             }
             by += rowH + 1
@@ -341,7 +341,7 @@ nonisolated enum SalaryReportPDF {
         // الملاحظات.
         let ny = max(iy, by) + 10
         let notesRect = CGRect(x: m, y: ny, width: width, height: 34)
-        line.setStroke(); cg.stroke(notesRect, width: 0.5)
+        line.setStroke(); cg.stroke(notesRect, width: ReportTableStyle.borderWidth)
         text("الملاحظات", CGRect(x: right - 70, y: ny, width: 64, height: 34), size: 10, bold: true)
         if !r.notes.isEmpty { text(r.notes, CGRect(x: m + 6, y: ny, width: width - 84, height: 34), size: 9.5) }
     }

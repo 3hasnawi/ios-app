@@ -118,7 +118,7 @@ nonisolated enum EntityDeductionPDF {
         let dark = UIColor(red: 0.12, green: 0.31, blue: 0.47, alpha: 1)
         let light = UIColor(red: 0.87, green: 0.92, blue: 0.97, alpha: 1)
         let line = UIColor(red: 0.61, green: 0.72, blue: 0.83, alpha: 1)
-        let borderWidth: CGFloat = sheet.deductionList ? 1 : 0.5
+        let borderWidth = ReportTableStyle.borderWidth
         let zebra = UIColor(red: 243/255, green: 247/255, blue: 251/255, alpha: 1)
         let tableWidth = page.width - margin * 2
         func cell(_ c: Int, _ y: CGFloat, _ height: CGFloat) -> CGRect { CGRect(x: layout.positions[c], y: y, width: layout.widths[c], height: height) }

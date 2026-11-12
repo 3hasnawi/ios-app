@@ -403,7 +403,7 @@ nonisolated enum TransferAdaptivePDF {
                         cg.draw(logo, in: CGRect(origin: .zero, size: rect.size)); cg.restoreGState()
                     case .box(let rect, let shaded):
                         if shaded { UIColor(white: 0.94, alpha: 1).setFill(); cg.fill(rect) }
-                        UIColor.black.setStroke(); cg.stroke(rect, width: 0.6)
+                        UIColor.black.setStroke(); cg.stroke(rect, width: ReportTableStyle.borderWidth)
                     case .line(let item, let rect, let flush):
                         let displayed = item.justify ? stretchArabic(item.text, font: item.font, width: rect.width, mode: item.kashida) : item.text
                         let text = NSAttributedString(string: displayed, attributes: [

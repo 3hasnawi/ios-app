@@ -169,7 +169,6 @@ nonisolated enum FoodContractReport {
         let renderer = UIGraphicsPDFRenderer(bounds: page)
         try renderer.writePDF(to: url) { context in
             let cg = context.cgContext
-            cg.setLineWidth(0.7)
             UIColor.black.setStroke()
             var y = margin
             func newPage() {
@@ -178,7 +177,7 @@ nonisolated enum FoodContractReport {
                 y = margin + 50
                 for (c, t) in ["ت", "عدد المشتركين", "مبلغ الاستقطاع", "المجموع"].enumerated() {
                     let r = CGRect(x: xs[c], y: y, width: widths[c], height: rowH)
-                    gray.setFill(); cg.fill(r); cg.stroke(r)
+                    gray.setFill(); cg.fill(r); cg.stroke(r, width: ReportTableStyle.borderWidth)
                     draw(t, r)
                 }
                 y += rowH
@@ -186,7 +185,7 @@ nonisolated enum FoodContractReport {
             func cell(_ c: Int, _ fill: UIColor? = nil) -> CGRect {
                 let r = CGRect(x: xs[c], y: y, width: widths[c], height: rowH)
                 if let fill { fill.setFill(); cg.fill(r) }
-                cg.stroke(r)
+                cg.stroke(r, width: ReportTableStyle.borderWidth)
                 return r
             }
             newPage()
@@ -208,20 +207,20 @@ nonisolated enum FoodContractReport {
             // في العمودين الأوسطين (عدد المشتركين ومبلغ الاستقطاع).
             let labelW = widths[1] + widths[2]
             let headerRect = CGRect(x: xs[2], y: y, width: labelW, height: rowH)
-            gray.setFill(); cg.fill(headerRect); cg.stroke(headerRect)
+            gray.setFill(); cg.fill(headerRect); cg.stroke(headerRect, width: ReportTableStyle.borderWidth)
             draw("تفاصيل النسبة", headerRect)
             y += rowH
             let labelRect = { CGRect(x: xs[1], y: y, width: widths[1], height: rowH) }
             let amountRect = { CGRect(x: xs[2], y: y, width: widths[2], height: rowH) }
             var r1 = labelRect(), r2 = amountRect()
-            gray.setFill(); cg.fill(r1); cg.fill(r2); cg.stroke(r1); cg.stroke(r2)
+            gray.setFill(); cg.fill(r1); cg.fill(r2); cg.stroke(r1, width: ReportTableStyle.borderWidth); cg.stroke(r2, width: ReportTableStyle.borderWidth)
             draw("البيان", r1); draw("المبلغ", r2)
             for (i, value) in [split.total, split.fund, split.afterFund, split.tax, split.company].enumerated() {
                 y += rowH
                 r1 = labelRect(); r2 = amountRect()
                 UIColor(white: 0.95, alpha: 1).setFill(); cg.fill(r1)
                 if i == 4 { yellow.setFill(); cg.fill(r2) }
-                cg.stroke(r1); cg.stroke(r2)
+                cg.stroke(r1, width: ReportTableStyle.borderWidth); cg.stroke(r2, width: ReportTableStyle.borderWidth)
                 draw(splitLabels[i], r1, size: 11.5, align: .right)
                 draw(num(value), r2)
             }

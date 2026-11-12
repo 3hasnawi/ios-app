@@ -173,7 +173,7 @@ nonisolated enum StaffReport {
         cg.setStrokeColor(UIColor.darkGray.cgColor); cg.setLineWidth(0.7)
         cg.move(to: CGPoint(x: margin, y: 78)); cg.addLine(to: CGPoint(x: page.width - margin, y: 78)); cg.strokePath()
         text(tr("بيان معلومات المنتسب", "Employee information statement"), CGRect(x: margin, y: 83, width: width, height: 25), ReportFont.bold(15), align: .center)
-        cg.stroke(CGRect(x: margin, y: 112, width: width, height: 48))
+        cg.stroke(CGRect(x: margin, y: 112, width: width, height: 48), width: ReportTableStyle.borderWidth)
         let nameWidth = width - 132
         text(data.name, CGRect(x: margin + 128, y: 113, width: nameWidth, height: 24), ReportFont.bold(nameSize))
         text(data.subtitle, CGRect(x: margin + 128, y: 138, width: nameWidth, height: 16), ReportFont.regular(subtitleSize))
@@ -192,7 +192,7 @@ nonisolated enum StaffReport {
                     let labelWidth = cellWidth * 0.38
                     let labelRect = CGRect(x: x + cellWidth - labelWidth, y: y, width: labelWidth, height: h)
                     let valueRect = CGRect(x: x, y: y, width: cellWidth - labelWidth, height: h)
-                    cg.setStrokeColor(UIColor(white: 0.78, alpha: 1).cgColor); cg.setLineWidth(0.4)
+                    cg.setStrokeColor(UIColor(white: 0.78, alpha: 1).cgColor); cg.setLineWidth(ReportTableStyle.borderWidth)
                     cg.stroke(labelRect); cg.stroke(valueRect)
                     text(field.label, labelRect, font); text(field.value, valueRect, bold)
                 }

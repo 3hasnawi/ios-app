@@ -545,7 +545,7 @@ nonisolated enum EmployeeDeductionPDF {
                 }
                 func cell(_ rect: CGRect, fill: UIColor? = nil) {
                     if let fill { cg.setFillColor(fill.cgColor); cg.fill(rect) }
-                    cg.setStrokeColor(border.cgColor); cg.setLineWidth(0.5); cg.stroke(rect)
+                    cg.setStrokeColor(border.cgColor); cg.setLineWidth(ReportTableStyle.borderWidth); cg.stroke(rect)
                 }
                 let header = CGRect(x: margin, y: 18, width: width, height: 31)
                 cell(header, fill: navy)

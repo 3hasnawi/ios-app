@@ -233,7 +233,7 @@ struct PayslipDocument: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .background(fill ?? .clear)
-                .overlay(Rectangle().stroke(PayslipDocument.rule, lineWidth: 0.5))
+                .overlay(Rectangle().stroke(PayslipDocument.rule, lineWidth: ReportTableStyle.borderWidth))
         }
     }
 }

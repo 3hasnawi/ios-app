@@ -150,7 +150,7 @@ nonisolated enum TransferCashListPDF {
                     for i in labels.indices {
                         let cell = CGRect(x: positions[i], y: tableTop, width: columns[i], height: headerHeight)
                         UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(cell)
-                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                        UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                         PDFText.draw(labels[i], in: cell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10))
                     }
                     var y = tableTop + headerHeight
@@ -160,7 +160,7 @@ nonisolated enum TransferCashListPDF {
                         let values = [String(index + 1), row.name, row.rank, row.workplace, money(row.amount)]
                         for i in values.indices {
                             let cell = CGRect(x: positions[i], y: y, width: columns[i], height: height)
-                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: 0.5)
+                            UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
                             PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: font, align: i == 0 || i == 4 ? .center : .right, wrap: true)
                         }
                         y += height; index += 1
@@ -170,7 +170,7 @@ nonisolated enum TransferCashListPDF {
                         let titleWidth = columns[0] + columns[1] + columns[2] + columns[3]
                         let titleCell = CGRect(x: positions[3], y: y, width: titleWidth, height: totalHeight)
                         UIColor(white: 0.92, alpha: 1).setFill(); cg.fill(amountCell); cg.fill(titleCell)
-                        UIColor.darkGray.setStroke(); cg.stroke(amountCell, width: 0.5); cg.stroke(titleCell, width: 0.5)
+                        UIColor.darkGray.setStroke(); cg.stroke(amountCell, width: ReportTableStyle.borderWidth); cg.stroke(titleCell, width: ReportTableStyle.borderWidth)
                         PDFText.draw("المجموع · \(list.employees.count) راتب", in: titleCell.insetBy(dx: 4, dy: 0), font: ReportFont.bold(10), align: .right)
                         PDFText.draw(money(list.total), in: amountCell.insetBy(dx: 4, dy: 0), font: totalFont)
                         totalPlacement = (pageCount, y)

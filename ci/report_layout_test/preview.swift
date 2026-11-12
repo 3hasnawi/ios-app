@@ -17,17 +17,32 @@ for column in deductionColumns.dropFirst() {
     let font = EntityDeductionPDF.dataFont(column, sheet: previewSheet)
     precondition(font.fontName.hasPrefix("Arial") && font.pointSize == 11.5)
 }
-let pdfURL = previewDirectory.appendingPathComponent("deduction-preview.pdf")
-var mediaBox = previewLayout.page
-let previewCG = CGContext(pdfURL as CFURL, mediaBox: &mediaBox, nil)!
-let previewRenderer = UIGraphicsPDFRendererContext(previewCG)
-EntityDeductionPDF.render(previewSheet, layout: previewLayout, in: previewRenderer)
-previewRenderer.finishPage()
-previewCG.closePDF()
-try PDFDecor.apply(to: pdfURL, date: Date(timeIntervalSince1970: 1794387600))
-let previewPDF = PDFDocument(url: pdfURL)!
-precondition(previewPDF.pageCount == 1)
-let rendered = previewPDF.page(at: 0)!.thumbnail(of: CGSize(width: 1190, height: 1684), for: .mediaBox)
-let bitmap = NSBitmapImageRep(cgImage: rendered.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
-try bitmap.representation(using: .png, properties: [:])!.write(to: previewDirectory.appendingPathComponent("deduction-preview.png"))
-print("Production CoreText deduction preview exported as PDF and PNG, using Arial Bold 11.5 and 20-point rows")
+func exportPreview(_ sheet: ReportSheet, stem: String) throws {
+    let layout = try EntityDeductionPDF.prepare(sheet)
+    let url = previewDirectory.appendingPathComponent(stem + ".pdf")
+    var mediaBox = layout.page
+    let cg = CGContext(url as CFURL, mediaBox: &mediaBox, nil)!
+    let renderer = UIGraphicsPDFRendererContext(cg)
+    EntityDeductionPDF.render(sheet, layout: layout, in: renderer)
+    renderer.finishPage()
+    cg.closePDF()
+    try PDFDecor.apply(to: url, date: Date(timeIntervalSince1970: 1794387600))
+    let pdf = PDFDocument(url: url)!
+    precondition(pdf.pageCount == 1)
+    let rendered = pdf.page(at: 0)!.thumbnail(of: CGSize(width: 1190, height: 1684), for: .mediaBox)
+    let bitmap = NSBitmapImageRep(cgImage: rendered.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+    try bitmap.representation(using: .png, properties: [:])!.write(to: previewDirectory.appendingPathComponent(stem + ".png"))
+}
+try exportPreview(previewSheet, stem: "deduction-preview")
+let genericColumns: [ReportSheet.Column] = [
+    .init(title: "ت", width: 5, kind: .serial), .init(title: "الرتبة", width: 11, kind: .text),
+    .init(title: "الاسم الكامل", width: 34, kind: .text), .init(title: "المبلغ", width: 14, kind: .amount),
+    .init(title: "محل العمل", width: 30, kind: .text)
+]
+let genericRows = previewNames.enumerated().map { index, name in
+    [String(index + 1), index.isMultiple(of: 2) ? "مفوض" : "شرطي", name, "", "قسم تجريبي"]
+}
+let genericSheet = ReportSheet(header: "قيادة شرطة محافظة الانبار", title: "قائمة أسماء ورواتب تجريبية",
+    columns: genericColumns, rows: genericRows, amounts: previewNames.indices.map { Double(473000 + $0 * 10000) }).fitted()
+try exportPreview(genericSheet, stem: "general-report-preview")
+print("Production CoreText previews exported for deduction and general reports with unified table borders")

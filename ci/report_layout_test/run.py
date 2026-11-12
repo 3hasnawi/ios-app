@@ -55,6 +55,7 @@ else:
 with tempfile.TemporaryDirectory(prefix="salary-report-layout-") as temp:
     directory = Path(temp)
     (directory / "Entity.swift").write_text(entity)
+    (directory / "TableStyle.swift").write_text((root / "SalaryApp/ReportTableStyle.swift").read_text().replace("nonisolated ", ""))
     health = (root / "SalaryApp/HealthCarePDFLayout.swift").read_text().replace("import UIKit", "import AppKit").replace("nonisolated ", "")
     (directory / "Health.swift").write_text(health)
     (directory / "Widths.swift").write_text(widths)
@@ -70,5 +71,5 @@ with tempfile.TemporaryDirectory(prefix="salary-report-layout-") as temp:
         extra = ["UIKitPreviewStubs.swift", "Decor.swift"]
         arguments = [str(options.preview_dir.resolve())]
     (directory / "main.swift").write_text(main)
-    subprocess.run(["swiftc", "Stubs.swift", "Widths.swift", "Entity.swift", "Health.swift", *extra, "main.swift", "-o", "layout-test"], cwd=directory, check=True)
+    subprocess.run(["swiftc", "Stubs.swift", "Widths.swift", "TableStyle.swift", "Entity.swift", "Health.swift", *extra, "main.swift", "-o", "layout-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "layout-test"), *arguments], cwd=directory, check=True)
