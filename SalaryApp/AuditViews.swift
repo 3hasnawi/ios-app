@@ -10,6 +10,7 @@ struct AuditView: View {
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
     @State private var digest: AuditDigest?
+    @State private var entitySummary: DeductionEntityAlertSummary?
     @State private var exporting = false
     @State private var error: String?
 
@@ -52,10 +53,15 @@ struct AuditView: View {
         } message: { Text(error ?? "") }
         .task(id: loadKey) {
             guard !to.isEmpty else { return }
-            digest = nil
+            digest = nil; entitySummary = nil
             let loaded = await AuditDigest.run(month: to, previous: from, container: SharedModel.container)
+            let work = Task.detached(priority: .userInitiated) { () -> DeductionEntityAlertSummary? in
+                guard let comparison = loaded.deductions else { return nil }
+                return try? DeductionEntityAlerts.summarize(comparison)
+            }
+            let entities = await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
             guard !Task.isCancelled else { return }
-            digest = loaded
+            digest = loaded; entitySummary = entities
         }
     }
 
@@ -112,6 +118,11 @@ struct AuditView: View {
             tags.append(AuditTag(text: tr("توقف \(Num.format(d.rows(.stopped).count))", "Stopped \(d.rows(.stopped).count)"), style: .warning))
             tags.append(AuditTag(text: tr("جديد \(Num.format(d.rows(.started).count))", "New \(d.rows(.started).count)"), style: .ok))
             tags.append(AuditTag(text: tr("تغيّر \(Num.format(d.rows(.changed).count))", "Changed \(d.rows(.changed).count)"), style: .plain))
+        }
+        if let entitySummary {
+            let added = entitySummary.rows(.added).count, missing = entitySummary.rows(.missing).count
+            if added > 0 { tags.append(AuditTag(text: tr("جهات جديدة \(Num.format(added))", "New entities \(added)"), style: .ok)) }
+            if missing > 0 { tags.append(AuditTag(text: tr("جهات غائبة \(Num.format(missing))", "Absent entities \(missing)"), style: .warning)) }
         }
         if digest.deductionIssues > 0 {
             tags.append(AuditTag(text: tr("\(Num.format(digest.deductionIssues)) ملاحظات", "\(digest.deductionIssues) issues"), style: .warning))
