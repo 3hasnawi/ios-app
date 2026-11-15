@@ -59,6 +59,27 @@ enum TestData {
     @MainActor
     static func prepareIfRequested() async {
         #if targetEnvironment(simulator)
+        let trustOriginalKey = "trustSearchPreviewOriginal"
+        if UserDefaults.standard.bool(forKey: "trustSearchPreview") {
+            if UserDefaults.standard.object(forKey: trustOriginalKey) == nil {
+                UserDefaults.standard.set(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data(), forKey: trustOriginalKey)
+            }
+            func trustEntry(_ name: String, month: Int, amount: Int64, paid: Bool = false) -> SalaryTrust.Entry {
+                SalaryTrust.Entry(id: UUID().uuidString, name: name, rank: "موظف", workplace: "قسم تجريبي", year: 2026, month: month,
+                    amount: amount, caseStatus: "", note: "ملاحظة أمانة وهمية", importedStatus: paid ? "صرف" : "",
+                    legacyPaid: paid, reviewPending: false, payments: [], importedPaymentDate: paid ? "2026/09/15" : nil)
+            }
+            let preview = SalaryTrust.Ledger(version: 2, entries: [
+                trustEntry("أحمد علي حسين الدليمي", month: 10, amount: 450_000),
+                trustEntry("أحمد علي حسين الدليمي", month: 9, amount: 300_000),
+                trustEntry("أحمد علي حسين الدليمي", month: 8, amount: 250_000, paid: true),
+                trustEntry("منتسب أمانات تجريبي فقط", month: 7, amount: 200_000)], openingImported: true)
+            if let data = try? SalaryTrust.encode(preview) { UserDefaults.standard.set(data, forKey: SalaryTrust.settingsKey) }
+        } else if let original = UserDefaults.standard.data(forKey: trustOriginalKey) {
+            // المعاينة لا تترك دفترها الوهمي لعمليات الاختبار التالية.
+            UserDefaults.standard.set(original, forKey: SalaryTrust.settingsKey)
+            UserDefaults.standard.removeObject(forKey: trustOriginalKey)
+        }
         if UserDefaults.standard.bool(forKey: "seedReportNavigation") {
             let context = SharedModel.container.mainContext
             if (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) == 0 {

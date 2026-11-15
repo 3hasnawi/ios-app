@@ -75,6 +75,22 @@ final class NavigationTests: XCTestCase {
         }
     }
 
+    func testSalaryTrustGlobalSearch() {
+        for query in ["أحمد علي حسين الدليمي", "منتسب أمانات تجريبي فقط"] {
+            app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-trustSearchPreview", "YES", "-search", query]
+            app.launch()
+            guard wait(element("searchTrustSummary"), "ملخص الأمانات في البحث", timeout: 45) else { return }
+            XCTAssertFalse(element("searchModeMenu").exists)
+            let open = element("searchPersonTrust")
+            guard wait(open, "زر عرض الأمانات") else { return }
+            open.tap()
+            XCTAssertTrue(app.navigationBars["أمانات المنتسب"].waitForExistence(timeout: 15))
+            XCTAssertTrue(app.staticTexts["تفاصيل الأشهر"].exists)
+            app.terminate()
+            app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
+        }
+    }
+
     func testExecutionAccountsMerge() {
         app.launchArguments += ["-skipLock", "YES", "-tab", "settings", "-openAccounts", "YES"]
         app.launch()

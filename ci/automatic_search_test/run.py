@@ -22,7 +22,7 @@ types = '\n'.join(block(unified, name) for name in ['struct UnifiedPerson:', 'en
 records = '\n'.join(block(source('ExcelImporter.swift'), 'nonisolated ' + name) for name in [
     'struct ImportedEmployee:', 'struct ImportedDeduction:', 'enum DeductionStatus {', 'struct ImportedExecutionAccount:'])
 accounts = '\n'.join(block(source('ExecutionAccounts.swift'), name) for name in ['nonisolated struct SavedExecutionAccount:', 'nonisolated enum ExecutionAccountStore {'])
-report = source('Reports.swift').split('struct ReportDetailView:')[0].replace('import SwiftUI','').replace('import UIKit','')
+report = 'import Foundation\n' + source('Reports.swift').split('struct ReportDetailView:')[0].replace('import SwiftUI','').replace('import UIKit','')
 books = block(source('OfficialBooks.swift'), 'nonisolated struct OfficialBook:')
 predicate = 'enum StaffResultsList {\n' + block(source('StaffView.swift'), 'nonisolated static func predicate(mode:') + '\n}'
 lookup = 'enum EmployeeLookup {\n' + block(source('Shortcuts.swift'), 'nonisolated static func find(_ text:') + '\n}'

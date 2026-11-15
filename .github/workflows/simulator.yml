@@ -411,6 +411,12 @@ jobs:
           shot 04-search
           launch -tab search -search "تنفيذ الرمادي"
           shot 04b-smart-entity-search
+          launch -tab search -search "أحمد علي حسين الدليمي" -trustSearchPreview YES
+          shot 04c-search-with-trust 8
+          launch -tab search -search "منتسب أمانات تجريبي فقط" -trustSearchPreview YES
+          shot 04d-trust-only-search 8
+          launch -tab search -search "فاطمة محمد الدليمي"
+          shot 04e-automatic-mother-search 8
 
           # 5) تفاصيل موظف لديه استقطاعات من ورقة الاستقطاعات فقط
           #    (الاسم هناك مكتوب "احمد" بلا همزة، وعمود "شركة الاتصالات" داخل ورقة الرواتب يجب ألا يظهر)
@@ -598,7 +604,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes -only-testing:SalaryAppUITests/NavigationTests/testExecutionAccountsMerge)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes -only-testing:SalaryAppUITests/NavigationTests/testSalaryTrustGlobalSearch -only-testing:SalaryAppUITests/NavigationTests/testExecutionAccountsMerge)
           fi
           if [ "$NAVIGATION_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar)
