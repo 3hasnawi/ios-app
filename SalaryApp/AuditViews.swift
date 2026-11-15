@@ -225,8 +225,9 @@ private struct FlowTags: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 6) { ForEach(tags, id: \.self, content: tag) }
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) { ForEach(tags.prefix(2), id: \.self, content: tag) }
-                HStack(spacing: 6) { ForEach(tags.dropFirst(2), id: \.self, content: tag) }
+                ForEach(0..<((tags.count + 1) / 2), id: \.self) { row in
+                    HStack(spacing: 6) { ForEach(Array(tags.dropFirst(row * 2).prefix(2)), id: \.self, content: tag) }
+                }
             }
         }
     }
