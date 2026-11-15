@@ -86,7 +86,7 @@ struct ReportsView: View {
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .transferFiles: TransferFilesView()
         case .fundingExpenses: FundingExpensesView(month: month?.name ?? "", revision: loadKey)
-        case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport)
+        case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport, onRename: { await loadDeductions() })
         case .group(let group): ReportDetailView(group: group)
         }
     }
@@ -760,6 +760,9 @@ struct EntitiesView: View {
     let groups: [ReportGroup]
     let loaded: Bool
     @Binding var showExport: Bool
+    var onRename: () async -> Void
+    @State private var renameGroup: ReportGroup?
+    @State private var renameNotice: String?
     @State private var search = UserDefaults.standard.string(forKey: "entitySearch") ?? ""
     @State private var exporter = QuickExporter.shared
     @State private var previewGroup: ReportGroup?
@@ -780,6 +783,9 @@ struct EntitiesView: View {
 
     var body: some View {
         List {
+            if let renameNotice {
+                Section { Label(renameNotice, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.green) }
+            }
             Section {
                 if groups.isEmpty {
                     if loaded {
@@ -798,6 +804,9 @@ struct EntitiesView: View {
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
+                            Button(tr("تعديل تسمية جهة التنفيذ", "Rename execution entity"), systemImage: "pencil") { renameGroup = group }
+                                .disabled(exporter.isWorking || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
+                                .accessibilityIdentifier("renameExecutionEntity")
                             Button(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview) { previewGroup = group }
                             Button(tr("تصدير Excel", "Export Excel"), systemImage: ReportSymbols.excel) { exporter.single(group, format: .excel) }
                             Button(tr("تصدير PDF", "Export PDF"), systemImage: ReportSymbols.pdf) { exporter.single(group, format: .pdf) }
@@ -817,6 +826,14 @@ struct EntitiesView: View {
         }
         .adaptiveSearchable(text: $search, prompt: tr("ابحث عن جهة تنفيذ", "Search an execution entity"))
         .sheet(item: $previewGroup) { ReportPreviewLoader(group: $0) }
+        .sheet(item: $renameGroup) { group in
+            EntityRenameSheet(source: group.title) { result in
+                search = ""
+                await onRename()
+                renameNotice = tr("تم توحيد تسمية \(Num.format(result.records)) قيد في \(Num.format(result.months)) شهر.",
+                                  "Unified \(result.records) records across \(result.months) months.")
+            }
+        }
         .navigationTitle(tr("جهات التنفيذ", "Execution entities"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -832,6 +849,11 @@ struct EntitiesView: View {
             }
         }
         .overlay { if exporter.isWorking { ExportingHUD() } }
+        .task(id: loaded) {
+            #if targetEnvironment(simulator)
+            if loaded && UserDefaults.standard.bool(forKey: "entityRenamePreview") { renameGroup = groups.first }
+            #endif
+        }
     }
 }
 

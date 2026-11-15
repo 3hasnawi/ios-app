@@ -514,6 +514,8 @@ jobs:
           # قائمة جهات التنفيذ، ثم معاينة جدول جهة
           launch -tab reports -reportsEntities YES -reportByEntity NO
           shot 08v-entities 6
+          launch -tab reports -reportsEntities YES -entityRenamePreview YES
+          shot 08v-entity-rename 4
           launch -tab reports -reportByEntity NO -openReport YES -openReportTitle "تنفيذ الرمادي" -previewReport YES
           shot 08w-report-preview 10
 

@@ -34,13 +34,19 @@ final class DatabaseHealth {
         }
         let work = Task { @MainActor in
             try await Task.detached(priority: .userInitiated) { try RestoreSafety.recoverIfNeeded() }.value
+            let candidate: ModelContainer
             if let id = UserDefaults.standard.string(forKey: "activeRecoveredDatabase") {
                 guard UUID(uuidString: id) != nil else { throw CocoaError(.fileReadCorruptFile) }
                 let url = recoveredURL(id)
                 guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
-                return try makeRecoveredContainer(url)
+                candidate = try makeRecoveredContainer(url)
+            } else {
+                candidate = try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
             }
-            return try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
+            if try await DeductionEntityEditor(modelContainer: candidate).recoverIfNeeded() {
+                await EntityRenameEffects.refresh()
+            }
+            return candidate
         }
         opening = work
         defer { opening = nil }

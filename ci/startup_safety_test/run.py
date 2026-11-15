@@ -15,6 +15,11 @@ final class ModelContainer: @unchecked Sendable {
     init(for models: Any.Type...) throws { Self.count += 1 }
 }
 enum PayrollMonth {} ; enum Employee {} ; enum Deduction {} ; enum StaffMember {} ; enum ExecutionAccount {}
+actor DeductionEntityEditor {
+    init(modelContainer: ModelContainer) {}
+    func recoverIfNeeded() throws -> Bool { false }
+}
+@MainActor enum EntityRenameEffects { static func refresh() async {} }
 enum RestoreSafety {
     static var failed = false
     static func recoverIfNeeded() throws {
