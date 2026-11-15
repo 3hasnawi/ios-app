@@ -53,18 +53,8 @@ import Foundation
         let many = (0..<1400).map { row("وهمي \($0 / 2)", "جهة كبيرة جديدة", Double($0), "\($0)") }
         let large = try DeductionEntityAlerts.summarize(compare([row("قديم", "جهة سابقة", 1)], many))
         precondition(large.rows(.added)[0].people == 700 && large.rows(.added)[0].amount == Double((0..<1400).reduce(0, +)))
-        let months = [DeductionAlertMonth(name: "تشرين الثاني 2026", order: 202611, deductions: 10),
-                      DeductionAlertMonth(name: "تشرين الأول 2026", order: 202610, deductions: 0),
-                      DeductionAlertMonth(name: "أيلول 2026", order: 202609, deductions: 10),
-                      DeductionAlertMonth(name: "آب 2026", order: 202608, deductions: 10)]
-        precondition(DeductionEntityAlerts.previousMonth(selected: "تشرين الثاني 2026", months: months) == "أيلول 2026")
-        precondition(DeductionEntityAlerts.previousMonth(selected: "أيلول 2026", months: months) == "آب 2026")
-        precondition(DeductionEntityAlerts.previousMonth(selected: "تشرين الأول 2026", months: months) == nil)
-        precondition(DeductionEntityAlerts.previousMonth(selected: "آب 2026", months: months) == nil)
-        precondition(DeductionEntityAlerts.previousMonth(selected: "غير موجود", months: months) == nil)
-        let ambiguous = months + [DeductionAlertMonth(name: "ايلول 2026", order: 202609, deductions: 10)]
-        precondition(DeductionEntityAlerts.previousMonth(selected: "تشرين الثاني 2026", months: ambiguous) == nil)
-        precondition(DeductionEntityAlerts.previousMonth(selected: "أيلول 2026", months: ambiguous) == nil)
-        print("Deduction entity alerts: added/missing groups, distinct people, totals, branches, renaming, empty/invalid import rejection, reverse comparison and previous deduction month selection passed")
+        let confirmedEmpty = try DeductionEntityAlerts.summarize(compare(old, []), confirmedEmpty: true)
+        precondition(confirmedEmpty.rows(.added).isEmpty && confirmedEmpty.rows(.missing).count == 3)
+        print("Deduction entity alerts: added/missing groups, distinct people, totals, branches, renaming, empty/invalid import rejection, reverse comparison and explicitly confirmed empty months passed")
     }
 }

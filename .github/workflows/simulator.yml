@@ -511,7 +511,7 @@ jobs:
           r=$(cat "$DATA/Documents/import-report.txt" 2>/dev/null || echo "audit=failed no report")
           case "$r" in audit=ok*) echo "::notice::Audit: $r";; *) echo "::error::Audit: $r";; esac
           shot 08y-reports-with-audit 4
-          launch -tab reports -deductionEntityAlertsPreview YES
+          launch -tab reports -compareDeductions YES -deductionEntityAlertsPreview YES
           shot 08y-deduction-entity-alerts 6
           # قائمة جهات التنفيذ، ثم معاينة جدول جهة
           launch -tab reports -reportsEntities YES -reportByEntity NO

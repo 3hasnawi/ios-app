@@ -889,6 +889,9 @@ struct DeductionAuditView: View {
     @State private var from: String
     @State private var to: String
     @State private var result: DeductionComparison?
+    @State private var entitySummary: DeductionEntityAlertSummary?
+    @State private var entityError: String?
+    @State private var openEntityKind: DeductionEntityAlertKind?
     @State private var checks: [AuditCheck]?
     @State private var loadError: String?
     @State private var confirmedEmpty = false
@@ -924,6 +927,8 @@ struct DeductionAuditView: View {
         guard let result else { return false }
         return result.emptyMonths.isEmpty || confirmedEmpty
     }
+
+    private var entityAlertKey: String { "\(loadKey)|\(result != nil)|\(confirmedEmpty)" }
 
     var body: some View {
         List {
@@ -967,6 +972,19 @@ struct DeductionAuditView: View {
                         Text(tr("كل استقطاع = الموظف + الجهة + رقم الإضبارة. تغيّر الإضبارة يظهر كتوقف واستقطاع جديد.",
                                 "Each deduction = employee + entity + case number. A changed case number shows as stopped and new."))
                     }
+                    Section {
+                        if let entitySummary {
+                            DeductionEntityAlertRows(summary: entitySummary) { openEntityKind = $0 }
+                        } else if let entityError {
+                            Label(entityError, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                        } else {
+                            ProgressView(tr("جارٍ مراجعة الجهات…", "Checking entities…"))
+                        }
+                    } header: { Text(tr("تنبيهات الجهات", "Entity alerts")) }
+                    footer: {
+                        Text(tr("بحسب الشهرين المختارين أعلاه. الغياب يعني عدم وجود استقطاع للجهة في الشهر الجديد، ولا يعني حذف قيود الأشهر السابقة.",
+                                "Based on the two selected months. Absent means no deduction this month; earlier records remain saved."))
+                    }
                 }
             } else {
                 ProgressView(tr("جارٍ مقارنة الاستقطاعات…", "Comparing deductions…"))
@@ -990,6 +1008,11 @@ struct DeductionAuditView: View {
         }
         .navigationDestination(item: $openCheck) { check in
             AuditCheckView(check: check, month: to)
+        }
+        .navigationDestination(item: $openEntityKind) { kind in
+            if ready, let result, let entitySummary {
+                DeductionEntityAlertsList(comparison: result, summary: entitySummary, kind: kind)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -1023,7 +1046,30 @@ struct DeductionAuditView: View {
         .alert(tr("التصدير", "Export"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+        .task(id: entityAlertKey) {
+            let expectedKey = entityAlertKey
+            entitySummary = nil; entityError = nil
+            guard ready, let result else { return }
+            let acceptedEmpty = confirmedEmpty
+            let work = Task.detached(priority: .userInitiated) {
+                try DeductionEntityAlerts.summarize(result, confirmedEmpty: acceptedEmpty)
+            }
+            do {
+                let summary = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+                try Task.checkCancellation()
+                guard expectedKey == entityAlertKey else { return }
+                entitySummary = summary
+                #if targetEnvironment(simulator)
+                if UserDefaults.standard.bool(forKey: "deductionEntityAlertsPreview") { openEntityKind = .added }
+                #endif
+            } catch {
+                guard !Task.isCancelled, !(error is CancellationError), expectedKey == entityAlertKey else { return }
+                entityError = error.localizedDescription
+            }
+        }
         .task(id: loadKey) {
+            openEntityKind = nil
+            entitySummary = nil; entityError = nil
             result = nil
             checks = nil
             loadError = nil

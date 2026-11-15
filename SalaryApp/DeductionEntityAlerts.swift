@@ -25,12 +25,6 @@ nonisolated struct DeductionEntityAlertSummary: Sendable {
     func rows(_ kind: DeductionEntityAlertKind) -> [DeductionEntityAlert] { alerts.filter { $0.kind == kind } }
 }
 
-nonisolated struct DeductionAlertMonth: Sendable {
-    let name: String
-    let order: Int
-    let deductions: Int
-}
-
 /// المقارنة حسب الجهة مستقلة عن تغيّر الموظف أو الإضبارة داخل الجهة المستمرة.
 nonisolated enum DeductionEntityAlerts {
     private struct Total {
@@ -48,18 +42,8 @@ nonisolated enum DeductionEntityAlerts {
     }
     static func key(_ title: String) -> String { DeductionReview.normalized(title) }
 
-    /// لا نعتمد شهر رواتب بلا ملف استقطاعات، ولا نتنبأ بتاريخ اسم شهر غير مفهوم أو ملتبس.
-    static func previousMonth(selected: String, months: [DeductionAlertMonth]) -> String? {
-        guard let current = months.first(where: { $0.name == selected }), current.order > 0,
-              current.deductions > 0 else { return nil }
-        let candidates = months.filter { $0.deductions > 0 && $0.order > 0 && $0.order < current.order }
-        guard let order = candidates.map(\.order).max(), candidates.filter({ $0.order == order }).count == 1,
-              months.filter({ $0.order == current.order && $0.deductions > 0 }).count == 1 else { return nil }
-        return candidates.first { $0.order == order }?.name
-    }
-
-    static func summarize(_ comparison: DeductionComparison) throws -> DeductionEntityAlertSummary {
-        guard comparison.emptyMonths.isEmpty else { throw Incomplete() }
+    static func summarize(_ comparison: DeductionComparison, confirmedEmpty: Bool = false) throws -> DeductionEntityAlertSummary {
+        guard comparison.emptyMonths.isEmpty || confirmedEmpty else { throw Incomplete() }
         var totals: [String: Total] = [:]
         for (index, row) in comparison.entries.enumerated() {
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
