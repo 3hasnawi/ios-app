@@ -98,28 +98,33 @@ actor SmartFieldSearch {
         })
         let wantedAmount = ArabicText.number(from: query) ?? -Double.greatestFiniteMagnitude
         let matcher = AutomaticSearchQuery(query)
-        var notes = FetchDescriptor<Deduction>(predicate: #Predicate {
-            $0.note.contains(first) || $0.note.contains(digitQuery) || $0.note.contains(easternQuery) ||
+        let notePredicate = #Predicate<Deduction> {
+            $0.note.contains(first) || $0.note.contains(digitQuery) || $0.note.contains(easternQuery)
+        }
+        let identityPredicate = #Predicate<Deduction> {
             $0.title.contains(first) || $0.employeeName.contains(first) || $0.amount == wantedAmount
-        })
-        notes.fetchLimit = 128
-        notes.propertiesToFetch = [\.month, \.title, \.note, \.employeeName, \.rank, \.amount]
-        while result.noteGroups.count < 50 {
-            try Task.checkCancellation()
-            let count = try autoreleasepool {
-                let page = try modelContext.fetch(notes)
-                for item in page {
-                    try Task.checkCancellation()
-                    let fields = [AutomaticSearchQuery.Field(label: "entity", value: item.title),
-                        .init(label: "name", value: item.employeeName), .init(label: "note", value: item.note),
-                        .init(label: "rank", value: item.rank), .init(label: "amount", value: item.amount.map(String.init(describing:)) ?? "")]
-                    if matcher.match(fields) != nil { result.noteGroups.insert("\(item.month)|\(item.title)") }
-                    if result.noteGroups.count >= 50 { break }
+        }
+        for predicate in [notePredicate, identityPredicate] {
+            var notes = FetchDescriptor<Deduction>(predicate: predicate)
+            notes.fetchLimit = 128
+            notes.propertiesToFetch = [\.month, \.title, \.note, \.employeeName, \.rank, \.amount]
+            while result.noteGroups.count < 50 {
+                try Task.checkCancellation()
+                let count = try autoreleasepool {
+                    let page = try modelContext.fetch(notes)
+                    for item in page {
+                        try Task.checkCancellation()
+                        let fields = [AutomaticSearchQuery.Field(label: "entity", value: item.title),
+                            .init(label: "name", value: item.employeeName), .init(label: "note", value: item.note),
+                            .init(label: "rank", value: item.rank), .init(label: "amount", value: item.amount.map(String.init(describing:)) ?? "")]
+                        if matcher.match(fields) != nil { result.noteGroups.insert("\(item.month)|\(item.title)") }
+                        if result.noteGroups.count >= 50 { break }
+                    }
+                    return page.count
                 }
-                return page.count
+                if count < 128 { break }
+                notes.fetchOffset = (notes.fetchOffset ?? 0) + count
             }
-            if count < 128 { break }
-            notes.fetchOffset = (notes.fetchOffset ?? 0) + count
         }
         return result
     }

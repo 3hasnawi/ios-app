@@ -37,7 +37,10 @@ enum StaffSearchMode: String, Sendable { case name, mother, statNumber, unifiedN
  var title: String { switch self { case .name: "الاسم"; case .mother: "اسم الأم"; case .statNumber: "الرقم الإحصائي"; case .unifiedNumber: "الرقم الموحد" } }
 }
 enum StaffInfo { static var importedAt: Date? { Date(timeIntervalSince1970: 1) } }
-@MainActor enum SharedModel { static var container: ModelContainer! }
+@MainActor enum SharedModel {
+ private static var opened: ModelContainer?
+ static var container: ModelContainer { get { opened! } set { opened = newValue } }
+}
 @MainActor final class OfficialBookStore { static let shared = OfficialBookStore(); var books: [OfficialBook] = [] }
 enum PerfLog { static func record(_ name: String, since: Date) {} }
 '''
