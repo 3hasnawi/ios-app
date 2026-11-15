@@ -90,7 +90,12 @@ struct EntityRenameSheet: View {
             }
             .task {
                 do {
-                    names = try await DeductionEntityEditor(modelContainer: SharedModel.container).names()
+                    let container = SharedModel.container
+                    let work = Task.detached(priority: .userInitiated) {
+                        try await DeductionEntityEditor(modelContainer: container).names()
+                    }
+                    names = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+                    try Task.checkCancellation()
                     ready = true
                 } catch is CancellationError { }
                 catch { self.error = error.localizedDescription }
@@ -111,7 +116,11 @@ struct EntityRenameSheet: View {
         Task {
             defer { ImportCenter.shared.isBusy = false; saving = false }
             do {
-                let result = try await DeductionEntityEditor(modelContainer: container).rename(source: source, destination: name)
+                let original = source
+                let work = Task.detached(priority: .userInitiated) {
+                    try await DeductionEntityEditor(modelContainer: container).rename(source: original, destination: name)
+                }
+                let result = try await work.value
                 await EntityRenameEffects.refresh()
                 await onSaved(result)
                 dismiss()

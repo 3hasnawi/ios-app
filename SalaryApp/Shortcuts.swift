@@ -43,9 +43,10 @@ final class DatabaseHealth {
             } else {
                 candidate = try ModelContainer(for: PayrollMonth.self, Employee.self, Deduction.self, StaffMember.self, ExecutionAccount.self)
             }
-            if try await DeductionEntityEditor(modelContainer: candidate).recoverIfNeeded() {
-                await EntityRenameEffects.refresh()
-            }
+            let completedRename = try await Task.detached(priority: .userInitiated) {
+                try await DeductionEntityEditor(modelContainer: candidate).recoverIfNeeded()
+            }.value
+            if completedRename { await EntityRenameEffects.refresh() }
             return candidate
         }
         opening = work
