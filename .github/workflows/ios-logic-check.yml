@@ -29,6 +29,8 @@ jobs:
         run: python3 ci/data_importer_test/run.py
       - name: All-month entity unification and interrupted rename recovery
         run: python3 ci/entity_rename_test/run.py
+      - name: Deduction entity alerts and comparison month safety
+        run: python3 ci/deduction_entity_alert_test/run.py
       - name: Startup failure and concurrent callers
         run: python3 ci/startup_safety_test/run.py
       - name: Malformed Excel rejection

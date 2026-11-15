@@ -101,6 +101,7 @@ struct ReportsView: View {
                 } else {
                     VStack(spacing: 12) {
                         summaryCard
+                        DeductionReportAlerts(month: month?.name ?? "")
                         fundingExpensesCard
                         auditCard
                         employeeDeductionsCard

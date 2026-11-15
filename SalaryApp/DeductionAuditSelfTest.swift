@@ -50,13 +50,19 @@ nonisolated enum DeductionAuditSelfTest {
                 throw Failure(message: "Invalid input accepted")
             } catch is DeductionReview.InvalidData { }
         }
+        let entityPair = try DeductionReview.compare(from: "أيلول 2026", to: "تشرين الأول 2026",
+            old: [row("منتسب وهمي أ", 100, "جهة سابقة"), row("منتسب وهمي ب", 50, "جهة مستمرة")],
+            new: [row("منتسب وهمي ج", 200, "جهة جديدة"), row("منتسب وهمي ب", 70, "جهة مستمرة")])
+        let entityAlerts = try DeductionEntityAlerts.summarize(entityPair)
+        try require(entityAlerts.rows(.added).count == 1 && entityAlerts.rows(.missing).count == 1, "Entity alerts lost")
+        try require(entityAlerts.rows(.added)[0].amount == 200 && entityAlerts.rows(.missing)[0].amount == 100, "Entity alert totals")
         let files = try await AuditExport.deductions(result)
         try require((PDFDocument(url: files.pdf)?.pageCount ?? 0) > 0, "Invalid comparison PDF")
         let excel = try Data(contentsOf: files.excel)
         try require(excel.count > 100 && Array(excel.prefix(2)) == [0x50, 0x4b], "Invalid comparison workbook")
         let duplicateFiles = try await AuditExport.check(duplicates, month: "تشرين الأول 2026")
         try require((PDFDocument(url: duplicateFiles.pdf)?.pageCount ?? 0) > 0, "Invalid duplicate PDF")
-        return "deductionAudit=ok people=7 started=1 stopped=1 increased=1 decreased=1 unchanged=3 entityStopped=3 entityStarted=2 duplicates=1 totals=1250/1030 invalid=ok empty=ok export=ok"
+        return "deductionAudit=ok people=7 started=1 stopped=1 increased=1 decreased=1 unchanged=3 entityStopped=3 entityStarted=2 entityAlerts=ok duplicates=1 totals=1250/1030 invalid=ok empty=ok export=ok"
     }
 }
 #endif
