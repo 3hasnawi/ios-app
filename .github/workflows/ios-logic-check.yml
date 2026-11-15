@@ -31,6 +31,8 @@ jobs:
         run: python3 ci/entity_rename_test/run.py
       - name: Deduction entity alerts and incomplete comparison safety
         run: python3 ci/deduction_entity_alert_test/run.py
+      - name: Automatic all-field search and salary trust integration
+        run: python3 ci/automatic_search_test/run.py
       - name: Startup failure and concurrent callers
         run: python3 ci/startup_safety_test/run.py
       - name: Malformed Excel rejection

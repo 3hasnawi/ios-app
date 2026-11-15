@@ -226,7 +226,7 @@ struct SalaryTrustView: View {
 }
 
 /// كل الأشهر تظهر عند فتح الاسم حتى لو كانت قائمة الأسماء مفلترة بشهر أو حالة.
-private struct SalaryTrustPersonView: View {
+struct SalaryTrustPersonView: View {
     let personID: String
     @Binding var stored: Data
     @Environment(\.dismiss) private var dismiss

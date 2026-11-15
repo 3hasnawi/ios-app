@@ -62,15 +62,14 @@ final class NavigationTests: XCTestCase {
     }
 
     func testStaffSearchModes() {
-        for (option, query) in [("اسم الأم", "فاطمة محمد الدليمي"), ("الرقم الإحصائي", "١٠٠٠٠٠")] {
-            app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-fakeStaff", "100"]
+        for query in ["فاطمة محمد الدليمي", "١٠٠٠٠٠"] {
+            // حتى إذا بقيت إعدادات البحث القديم، تظل الواجهة شاملة وتلقائية.
+            app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-fakeStaff", "100", "-unifiedSmartMode", "NO"]
             app.launch()
-            guard wait(element("searchModeMenu"), "زر نوع البحث") else { return }
-            element("searchModeMenu").tap()
-            guard wait(app.buttons[option], "خيار \(option)") else { return }
-            app.buttons[option].tap()
+            guard wait(searchField, "البحث الشامل") else { return }
+            XCTAssertFalse(element("searchModeMenu").exists)
             type(query)
-            wait(element("resultCard"), "نتيجة \(option)", timeout: 20)
+            wait(element("resultCard"), "نتيجة البحث التلقائي", timeout: 30)
             app.terminate()
             app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
         }
@@ -273,7 +272,7 @@ final class NavigationTests: XCTestCase {
 
     /// يختبر شريط النظام والبحث والعودة والمشاركة دون فرض مقاس مخصص عليه.
     func testSystemNavigationBar() {
-        let baseArguments = app.launchArguments + ["-unifiedMode", "name"]
+        let baseArguments = app.launchArguments
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "settings", "-openSettings", "NO",
                                                "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
         app.launch()
@@ -487,17 +486,8 @@ final class NavigationTests: XCTestCase {
             wait(searchField, "شريط البحث")
         }
         // عند تفعيل البحث يخفي النظام شريط العنوان؛ نتحقق من زر النوع قبل الكتابة.
-        step("نوع البحث") {
-            let menu = element("searchModeMenu")
-            guard wait(menu, "زر نوع البحث") else { return }
-            menu.tap()
-            let mother = app.buttons["اسم الأم"]
-            guard wait(mother, "خيار اسم الأم") else { return }
-            mother.tap()
-            guard wait(menu, "زر نوع البحث بعد الاختيار") else { return }
-            menu.tap()
-            let name = app.buttons["الاسم"]
-            if wait(name, "خيار الاسم") { name.tap() }
+        step("البحث الشامل تلقائي") {
+            XCTAssertFalse(element("searchModeMenu").exists)
         }
         step("كتابة اسم") {
             type("احمد علي")

@@ -13,6 +13,7 @@ struct UnifiedPerson: Hashable, Identifiable {
     var subtitle: String { hit.subtitle }
     var hasPayroll: Bool { hit.employeeID != nil }
     var hasStaff: Bool { hit.staffID != nil }
+    var hasTrust: Bool { hit.trust != nil }
 
     @MainActor var employee: Employee? {
         hit.employeeID.flatMap { SharedModel.container.mainContext.model(for: $0) as? Employee }
@@ -80,8 +81,11 @@ struct UnifiedSearchView: View {
 
     @State private var search = Self.initialSearch
     @State private var appliedSearch = Self.initialSearch
-    @AppStorage("unifiedMode") private var modeRaw = StaffSearchMode.name.rawValue
-    @AppStorage("unifiedSmartMode") private var smart = true
+    @AppStorage(SalaryTrust.settingsKey) private var trustData = Data()
+    @State private var trustRevision = 0
+    @State private var trustTarget: String?
+    @State private var completingSearch = false
+    @State private var backup = BackupManager.shared
     @AppStorage(ExecutionAccountStore.storageKey) private var accountData = Data()
     /// يتحدّث تلقائياً عند أي إضافة أو مسح (من أي شاشة).
     @AppStorage(RecentSearches.key) private var recentsData = Data()
@@ -100,24 +104,17 @@ struct UnifiedSearchView: View {
     @State private var loadedKey = ""
     @State private var searchError: String?
     @State private var autopilot = AutoPilot.shared
-    /// القائمة العائمة لنوع البحث.
-    @State private var showModes = false
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
 
-    /// البحث دائماً في الرواتب والملاك معاً (بلا شريط نطاق).
-    private var scope: UnifiedScope { .all }
-    private var mode: StaffSearchMode { StaffSearchMode(rawValue: modeRaw) ?? .name }
     /// يشمل البحث الصوتي: تُحذف النقطة وعلامات الترقيم التي يضيفها الإملاء.
     private var trimmed: String { ArabicText.cleanQuery(appliedSearch) }
 
     /// كل الأشهر من الأحدث: لكل شخص يُعرض آخر شهر يوجد فيه اسمه، والشهر يظهر في بطاقته
     /// ويُختار غيره من صفحة الشخص.
-    private var monthNames: [String] { months.map(\.name) }
-
     private var queryKey: String {
         let revision = months.map { "\($0.name)@\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",")
-        return "\(trimmed)|\(smart)|\(mode.rawValue)|\(revision)|\(accountData.hashValue)|\(importState.version)|\(bookStore.revision)"
+        return "\(trimmed)|\(revision)|\(accountData.hashValue)|\(trustRevision)|\(backup.version)|\(importState.version)|\(bookStore.revision)|\(AppSettings.locale.identifier)"
     }
 
     var body: some View {
@@ -131,57 +128,72 @@ struct UnifiedSearchView: View {
                                                description: Text(searchError))
                             .listRowBackground(Color.clear)
                     }
-                } else if smart && loadedKey != queryKey {
+                } else if loadedKey != queryKey {
                     Section { ProgressView().frame(maxWidth: .infinity) }
-                } else if loadedKey == queryKey && (smart ? smartResults.isEmpty : people.isEmpty) {
+                } else if loadedKey == queryKey && smartResults.isEmpty && !completingSearch {
                     Section {
-                        if !smart && mode != .name && StaffInfo.count == 0 {
-                            ContentUnavailableView(tr("بيانات الملاك غير متوفرة", "Staff data unavailable"), systemImage: "person.3.fill",
-                                                   description: Text(tr("اسم الأم والرقم الإحصائي من ملف الملاك. أعد استيراد ملف Access من الإعدادات ← البيانات المحفوظة.",
-                                                                        "Mother's name and statistical number come from the staff database. Reimport the Access file from Settings › Saved data.")))
-                                .listRowBackground(Color.clear)
-                        } else {
-                            ContentUnavailableView.search(text: trimmed)
-                                .listRowBackground(Color.clear)
-                        }
+                        ContentUnavailableView.search(text: trimmed)
+                            .listRowBackground(Color.clear)
                     }
                 } else {
-                    if !people.isEmpty || !smart {
+                    if completingSearch {
+                        Section { ProgressView(tr("جارٍ البحث في بقية الحقول…", "Searching remaining fields…")).font(.caption) }
+                    }
+                    if let error = smartResults.trustError {
+                        Section { Label(error, systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(.orange) }
+                    }
+                    if !people.isEmpty {
                         Section {
                             ForEach(people) { person in
-                                NavigationLink(value: person) {
-                                    UnifiedCard(person: person)
-                                }
-                                .accessibilityIdentifier("resultCard")
-                                .contextMenu {
-                                    Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
-                                    if person.hasPayroll {
-                                        Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
-                                            shareTarget = person.employee
-                                        }
+                                VStack(alignment: .leading, spacing: 10) {
+                                    NavigationLink(value: person) {
+                                        UnifiedCard(person: person)
                                     }
-                                    if person.hasStaff {
-                                        Button(tr("مشاركة تقرير الملاك", "Share staff report"), systemImage: "doc.text") {
-                                            guard let member = person.staff else {
-                                                staffReportError = tr("لم يعد سجل الملاك متاحاً.", "The staff record is no longer available.")
-                                                return
+                                    .accessibilityIdentifier("resultCard")
+                                    .contextMenu {
+                                        Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
+                                        if person.hasPayroll {
+                                            Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
+                                                shareTarget = person.employee
                                             }
-                                            shareStaffReport(member)
                                         }
-                                        .disabled(preparingStaffReport)
+                                        if person.hasStaff {
+                                            Button(tr("مشاركة تقرير الملاك", "Share staff report"), systemImage: "doc.text") {
+                                                guard let member = person.staff else {
+                                                    staffReportError = tr("لم يعد سجل الملاك متاحاً.", "The staff record is no longer available.")
+                                                    return
+                                                }
+                                                shareStaffReport(member)
+                                            }
+                                            .disabled(preparingStaffReport)
+                                        }
+                                        Button(tr("كشف الاستقطاعات", "Deduction statement"), systemImage: "list.bullet.rectangle") {
+                                            deductionTarget = DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle)
+                                        }
+                                        .accessibilityIdentifier("employeeDeductionAction")
+                                        if person.hasTrust {
+                                            Button(tr("عرض الأمانات", "View salary trust"), systemImage: "tray.full") { trustTarget = person.hit.key }
+                                        }
+                                        Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
+                                    } preview: {
+                                        // Keep the context-menu preview passive: opening the full
+                                        // NavigationLink destination can commit navigation on release.
+                                        UnifiedCard(person: person)
+                                            .padding(16)
+                                            .frame(width: 320)
+                                            .background(Color(.secondarySystemGroupedBackground))
                                     }
-                                    Button(tr("كشف الاستقطاعات", "Deduction statement"), systemImage: "list.bullet.rectangle") {
-                                        deductionTarget = DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle)
+                                    if person.hasTrust {
+                                        Button { trustTarget = person.hit.key } label: {
+                                            HStack {
+                                                Label(tr("عرض الأمانات", "View salary trust"), systemImage: "tray.full")
+                                                Spacer()
+                                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold))
+                                            }.font(.subheadline.weight(.semibold))
+                                        }
+                                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                                        .accessibilityIdentifier("searchPersonTrust")
                                     }
-                                    .accessibilityIdentifier("employeeDeductionAction")
-                                    Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
-                                } preview: {
-                                    // Keep the context-menu preview passive: opening the full
-                                    // NavigationLink destination can commit navigation on release.
-                                    UnifiedCard(person: person)
-                                        .padding(16)
-                                        .frame(width: 320)
-                                        .background(Color(.secondarySystemGroupedBackground))
                                 }
                             }
                         } header: {
@@ -190,9 +202,11 @@ struct UnifiedSearchView: View {
                             } else {
                                 ProgressView()
                             }
+                        } footer: {
+                            if people.count >= 100 { Text(tr("تظهر أول ١٠٠ نتيجة للأشخاص؛ أضف كلمات لتضييق البحث.", "Showing the first 100 people. Add words to narrow the search.")) }
                         }
                     }
-                    if smart {
+                    Group {
                         if !smartResults.books.isEmpty {
                             Section(tr("الأرشيف", "Archive")) {
                                 ForEach(smartResults.books) { book in
@@ -259,7 +273,8 @@ struct UnifiedSearchView: View {
             .listStyle(.insetGrouped)
             .accessibilityIdentifier("searchList")
             .scrollDismissesKeyboard(.immediately)
-            .searchable(text: $search, prompt: Text(smart ? tr("ابحث في كل بيانات التطبيق", "Search all app data") : mode.prompt))
+            .searchable(text: $search, prompt: Text(tr("ابحث في كل بيانات التطبيق", "Search all app data")))
+            .onChange(of: trustData) { _, _ in trustRevision += 1 }
             .onSubmit(of: .search) { appliedSearch = search }
             .task(id: search) {
                 if !search.isEmpty {
@@ -271,28 +286,25 @@ struct UnifiedSearchView: View {
             // البحث نفسه: يُحسب عند تغيّر النص أو الخيارات.
             .task(id: queryKey) {
                 let key = queryKey
-                guard !trimmed.isEmpty else { people = []; smartResults = SmartSearchResults(); searchError = nil; loadedKey = key; return }
+                guard !trimmed.isEmpty else {
+                    people = []; smartResults = SmartSearchResults(); searchError = nil; completingSearch = false; loadedKey = key; return
+                }
                 let started = Date()
+                completingSearch = true
                 do {
-                    if smart {
-                        let found = try await SmartSearch.find(trimmed, months: months, accountData: accountData)
-                        guard !Task.isCancelled else { return }
-                        smartResults = found
-                        people = found.people
-                    } else {
-                        let found = try await UnifiedFinder.find(trimmed, mode: mode, scope: scope, months: monthNames)
-                        guard !Task.isCancelled else { return }
-                        people = found
+                    let found = try await SmartSearch.find(trimmed, months: months, accountData: accountData, trustData: trustData) { partial in
+                        guard !Task.isCancelled, key == queryKey else { return }
+                        smartResults = partial; people = partial.people; loadedKey = key; searchError = nil
                     }
-                    searchError = nil
+                    guard !Task.isCancelled, key == queryKey else { return }
+                    smartResults = found; people = found.people; searchError = nil
                 } catch is CancellationError {
                     return
                 } catch {
-                    guard !Task.isCancelled else { return }
-                    people = []
-                    smartResults = SmartSearchResults()
-                    searchError = error.localizedDescription
+                    guard !Task.isCancelled, key == queryKey else { return }
+                    people = []; smartResults = SmartSearchResults(); searchError = error.localizedDescription
                 }
+                completingSearch = false
                 loadedKey = key
                 PerfLog.record("search", since: started)
                 if LaunchOptions.openPerson, path.isEmpty, let first = people.first { path = [first] }
@@ -305,18 +317,11 @@ struct UnifiedSearchView: View {
                 guard let name else { return }
                 router.pendingSearch = nil
                 path = []
-                smart = false
-                modeRaw = StaffSearchMode.name.rawValue
                 search = name
                 appliedSearch = name
             }
             .navigationTitle(tr("بحث", "Search"))
-            // عنوان صغير بلا فراغ فوقه، ونوع البحث زر في شريط العنوان يفتح قائمة عائمة تحته.
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { modeButton }
-            }
-            .overlay { modePicker }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .sheet(item: $deductionTarget) { target in
                 NavigationStack {
@@ -336,10 +341,19 @@ struct UnifiedSearchView: View {
                 Button(tr("حسناً", "OK"), role: .cancel) {}
             } message: { Text(staffReportError ?? "") }
             .navigationDestination(for: UnifiedPerson.self) { person in
-                UnifiedPersonView(person: person)
+                Group {
+                    if !person.hasPayroll && !person.hasStaff && person.hasTrust {
+                        SalaryTrustPersonView(personID: person.hit.key, stored: $trustData)
+                    } else {
+                        UnifiedPersonView(person: person)
+                    }
+                }
                     .onAppear {
                         RecentSearches.add(.init(text: person.name, inPayroll: person.hasPayroll, inStaff: person.hasStaff))
                     }
+            }
+            .navigationDestination(item: $trustTarget) { key in
+                SalaryTrustPersonView(personID: key, stored: $trustData)
             }
         }
     }
@@ -358,115 +372,6 @@ struct UnifiedSearchView: View {
                 staffReportError = error.localizedDescription
             }
         }
-    }
-
-    /// نوع البحث: زر في شريط العنوان.
-    private var modeButton: some View {
-        Button {
-            withAnimation(.snappy(duration: 0.25)) { showModes.toggle() }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: smart ? "sparkle.magnifyingglass" : mode.systemImage)
-                Text(smart ? tr("بحث شامل", "All data") : mode.title).lineLimit(1)
-                Image(systemName: showModes ? "chevron.up" : "chevron.down").font(.caption.weight(.bold))
-            }
-            .font(.subheadline.weight(.semibold))
-        }
-        .accessibilityIdentifier("searchModeMenu")
-        .accessibilityLabel(tr("البحث حسب: \(smart ? "بحث شامل" : mode.title)", "Search by: \(smart ? "All data" : mode.title)"))
-        .glassButtonStyle(prominent: true)
-        .buttonBorderShape(.capsule)
-    }
-
-    /// القائمة العائمة تحت زر نوع البحث، والخلفية معتمة حتى تُغلق بالضغط خارجها.
-    private var modePicker: some View {
-        ZStack(alignment: .topTrailing) {
-            if showModes {
-                Color.black.opacity(0.35)
-                    .ignoresSafeArea()
-                    .onTapGesture { withAnimation(.snappy(duration: 0.25)) { showModes = false } }
-                    .transition(.opacity)
-                modePanel
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .transition(.scale(scale: 0.85, anchor: .topTrailing).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-    }
-
-    private var modePanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(tr("البحث حسب", "Search by"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
-            Button {
-                smart = true
-                withAnimation(.snappy(duration: 0.25)) { showModes = false }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "sparkle.magnifyingglass")
-                        .font(.callout.weight(.semibold)).foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.blue.gradient, in: RoundedRectangle(cornerRadius: 11))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(tr("بحث شامل", "All data")).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                        Text(tr("أشخاص، جهات، حسابات، أشهر", "People, entities, accounts, months"))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    if smart { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
-                }
-                .padding(10)
-                .background(smart ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 14))
-            }
-            .buttonStyle(.plain)
-            ForEach(StaffSearchMode.allCases) { option in
-                let on = !smart && option == mode
-                Button {
-                    smart = false
-                    modeRaw = option.rawValue
-                    withAnimation(.snappy(duration: 0.25)) { showModes = false }
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: option.systemImage)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(option.color.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(option.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                            Text(option.hint).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 8)
-                        if on {
-                            Image(systemName: "checkmark").font(.body.weight(.bold)).foregroundStyle(Color.accentColor)
-                        }
-                    }
-                    .padding(10)
-                    .background(on ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(option.title)
-            }
-        }
-        .padding(8)
-        .frame(width: 290)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.08)))
-        .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
-    }
-
-    private func pill(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-            Text(title).lineLimit(1)
-            Image(systemName: "chevron.down").font(.caption.weight(.bold))
-        }
-        .font(.subheadline.weight(.semibold))
     }
 
     @ViewBuilder
@@ -503,8 +408,8 @@ struct UnifiedSearchView: View {
                 ContentUnavailableView(
                     tr("ابحث في بيانات التطبيق", "Search app data"),
                     systemImage: "magnifyingglass",
-                    description: Text(tr("ابحث عن شخص، جهة تنفيذ، كتاب رسمي يشمل إشعاره، رقم حساب، بند راتب أو شهر. استخدم الزر في الأعلى للبحث المحدد باسم الأم أو الرقم.",
-                                         "Search people, entities, official documents and their notices, account numbers, payroll items or months. Use the top button to search specifically by mother's name or number."))
+                    description: Text(tr("ابحث بالاسم أو اسم الأم أو الرقم الإحصائي والموحد، أو ابحث عن أمانات وجهة تنفيذ وكتاب وحساب وبند راتب وشهر؛ يتعرف البحث على الحقول تلقائياً.",
+                                         "Search names, mothers’ names, statistical or unified numbers, salary trust, entities, documents, accounts, payroll items or months. Fields are matched automatically."))
                 )
                 .listRowBackground(Color.clear)
             }
@@ -563,6 +468,8 @@ nonisolated struct UnifiedHit: Sendable, Hashable {
     let month: String?
     let netSalary: Double?
     let staffStatus: String?
+    var matchLabel: String? = nil
+    var trust: SalaryTrustSearchSummary? = nil
 }
 
 /// البحث الموحّد يعمل على سياق خاص في الخلفية حتى تبقى الكتابة والتمرير سلسة.
@@ -723,6 +630,8 @@ struct UnifiedCard: View {
                     }
                 }
             }
+            if let label = hit.matchLabel { Text(label).font(.caption).foregroundStyle(.secondary) }
+            if person.hasPayroll || person.hasStaff {
             HStack(spacing: 8) {
                 tile(
                     title: person.hasPayroll ? (month ?? tr("الراتب", "Salary")) : tr("لا يوجد راتب", "No salary"),
@@ -735,6 +644,8 @@ struct UnifiedCard: View {
                     color: hit.staffStatus == nil ? .secondary : (hit.staffStatus!.contains("مستمر") ? .green : .orange)
                 )
             }
+            }
+            if let summary = hit.trust { TrustSearchSummaryView(summary: summary) }
         }
         .padding(.vertical, 4)
     }
@@ -755,6 +666,7 @@ struct UnifiedCard: View {
 
 struct UnifiedPersonView: View {
     let person: UnifiedPerson
+    @AppStorage(SalaryTrust.settingsKey) private var trustData = Data()
 
     /// "staff" للملاك، وإلا اسم الشهر.
     private static let staffTag = "staff"
@@ -813,6 +725,13 @@ struct UnifiedPersonView: View {
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                }
+            }
+            if person.hasTrust {
+                Section {
+                    NavigationLink {
+                        SalaryTrustPersonView(personID: person.hit.key, stored: $trustData)
+                    } label: { Label(tr("عرض أمانات الرواتب", "View salary trust"), systemImage: "tray.full") }
                 }
             }
         }
