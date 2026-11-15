@@ -38,7 +38,7 @@ import SwiftData
         precondition(changes[EntityRenamePlan.accountsKey] == nil)
         let links = try JSONDecoder().decode([String: String].self, from: changes[EntityRenamePlan.linksKey]!)
         precondition(links["deduction|" + targetKey] == oldKey)
-        let nextTemplates = try object(changes[EntityRenamePlan.templatesKey]!) ["templates"] as! [[String: Any]]
+        let nextTemplates = try object(changes[EntityRenamePlan.templatesKey]!)["templates"] as! [[String: Any]]
         precondition(nextTemplates[0]["sourceName"] as? String == target && nextTemplates[0]["body"] as? String == old)
         precondition(nextTemplates[1]["sourceName"] as? String == old)
         let customization = try object(changes[EntityRenamePlan.customizationsKey]!)["common"] as! [String: Any]
@@ -46,6 +46,14 @@ import SwiftData
         var conflict = settings
         conflict[EntityRenamePlan.accountsKey] = try data(accounts + [["entity": target, "iban": "FICTIONAL-ACCOUNT-B", "branch": "مصرف آخر", "swift": "FAKE"]])
         expectFailure { _ = try EntityRenamePlan.settings(source: old, destination: target, current: conflict) }
+        var categoryConflict = settings
+        categoryConflict[EntityRenamePlan.categoriesKey] = try data([
+            "\(oldKey)|FICTIONAL-ACCOUNT-A|مصرف وهمي": "otherBanks",
+            "\(targetKey)|FICTIONAL-ACCOUNT-A|مصرف وهمي": "rafidain"])
+        expectFailure { _ = try EntityRenamePlan.settings(source: old, destination: target, current: categoryConflict) }
+        let existingOnly = [EntityRenamePlan.accountsKey: try data([["entity": target, "iban": "FICTIONAL-ACCOUNT-C", "branch": "فرع وهمي"]])]
+        let unchangedTarget = try EntityRenamePlan.settings(source: old, destination: target, current: existingOnly)
+        precondition(unchangedTarget[EntityRenamePlan.linksKey] == nil)
         conflict[EntityRenamePlan.linksKey] = Data("corrupt".utf8)
         expectFailure { _ = try EntityRenamePlan.settings(source: old, destination: target, current: conflict) }
         for (key, value) in settings { defaults.set(value, forKey: key) }
@@ -72,6 +80,11 @@ import SwiftData
         let editor = DeductionEntityEditor(modelContainer: container)
         let names = try await editor.names()
         precondition(names.first { $0.title == old }?.months == 3)
+        defaults.set(Data("corrupt".utf8), forKey: EntityRenamePlan.linksKey)
+        do { _ = try await editor.rename(source: old, destination: target, journalURL: journal); fatalError("Corrupt settings accepted") } catch { }
+        let intact = try ModelContext(container).fetch(FetchDescriptor<Deduction>())
+        precondition(intact.filter { $0.title == old }.count == 701 && !FileManager.default.fileExists(atPath: journal.path))
+        defaults.removeObject(forKey: EntityRenamePlan.linksKey)
         let result = try await editor.rename(source: old, destination: target, journalURL: journal)
         precondition(result.records == 701 && result.months == 3)
         let verify = ModelContext(container)

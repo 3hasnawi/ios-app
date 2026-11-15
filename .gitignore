@@ -12,3 +12,7 @@ build/
 Payload/
 *.ipa
 .DS_Store
+
+# Generated Python caches
+__pycache__/
+*.pyc
