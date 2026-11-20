@@ -19,7 +19,7 @@ struct EmployeeRefundView: View {
     @State private var date = Date.now
     @State private var payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? ""
     @State private var account = UserDefaults.standard.string(forKey: "bankStatementIBAN") ?? ""
-    @State private var letters = RefundLetterSettings()
+    @State private var letters = RefundLetters()
     @State private var initialized = false
     @State private var error: String?
     @State private var working = false
@@ -65,8 +65,13 @@ struct EmployeeRefundView: View {
                 }
                 ForEach(codes, id: \.self) { code in
                     Section(code) {
-                        TextField(tr("اسم المصرف", "Bank name"), text: bankField(code, \.name))
-                        TextField("SWIFT / BIC", text: bankField(code, \.bic)).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                        if code == EmployeeRefund.rafidainCode {
+                            LabeledContent(tr("المصرف", "Bank"), value: EmployeeRefund.rafidainBank.name)
+                            LabeledContent("SWIFT / BIC", value: EmployeeRefund.rafidainBank.bic)
+                        } else {
+                            TextField(tr("اسم المصرف", "Bank name"), text: bankField(code, \.name))
+                            TextField("SWIFT / BIC", text: bankField(code, \.bic)).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                        }
                     }
                 }
             }
@@ -74,13 +79,12 @@ struct EmployeeRefundView: View {
                 DisclosureGroup(tr("بيانات الجهة الدافعة والكتاب", "Payer and letter details")) {
                     TextField(tr("اسم الجهة الدافعة", "Payer name"), text: $payer)
                     TextField(tr("آيبان الجهة الدافعة", "Payer IBAN"), text: $account).autocorrectionDisabled().textInputAutocapitalization(.characters)
-                    TextField(tr("الترويسة", "Letterhead"), text: $letters.header, axis: .vertical)
-                    TextField(tr("الجهة المخاطبة", "Addressee"), text: $letters.recipient)
-                    TextField(tr("العدد", "Letter number"), text: $letters.number)
-                    TextField(tr("التوقيع الأول", "First signature"), text: $letters.first, axis: .vertical)
-                    TextField(tr("التوقيع الثاني", "Second signature"), text: $letters.second, axis: .vertical)
-                    TextField(tr("التوقيع الثالث", "Third signature"), text: $letters.third, axis: .vertical)
-                    TextField(tr("نسخة منه إلى", "Copies to"), text: $letters.footer, axis: .vertical)
+                    if codes.contains(EmployeeRefund.rafidainCode) {
+                        letterFields(tr("كتاب الرافدين", "Rafidain letter"), $letters.rafidain)
+                    }
+                    if codes.contains(where: { $0 != EmployeeRefund.rafidainCode }) {
+                        letterFields(tr("كتاب الرشيد والمصارف الأخرى", "Rasheed and other banks letter"), $letters.otherBanks)
+                    }
                 }
             }
             if !rows.isEmpty {
@@ -113,6 +117,18 @@ struct EmployeeRefundView: View {
         }
     }
 
+    private func letterFields(_ title: String, _ settings: Binding<RefundLetterSettings>) -> some View {
+        DisclosureGroup(title) {
+            TextField(tr("الترويسة", "Letterhead"), text: settings.header, axis: .vertical)
+            TextField(tr("الجهة المخاطبة", "Addressee"), text: settings.recipient)
+            TextField(tr("العدد", "Letter number"), text: settings.number)
+            TextField(tr("التوقيع الأول", "First signature"), text: settings.first, axis: .vertical)
+            TextField(tr("التوقيع الثاني", "Second signature"), text: settings.second, axis: .vertical)
+            TextField(tr("التوقيع الثالث", "Third signature"), text: settings.third, axis: .vertical)
+            TextField(tr("نسخة منه إلى", "Copies to"), text: settings.footer, axis: .vertical)
+        }
+    }
+
     private func candidateButton(_ candidate: RefundCandidate) -> some View {
         let selected = rows.contains { $0.id == candidate.id }
         let person = candidate.person
@@ -120,7 +136,7 @@ struct EmployeeRefundView: View {
         return Button {
             if selected { rows.removeAll { $0.id == candidate.id } }
             else if let code {
-                if banks[code] == nil { banks[code] = bankDefaults(code, person: person) }
+                if code != EmployeeRefund.rafidainCode, banks[code] == nil { banks[code] = bankDefaults(code, person: person) }
                 rows.append(Row(candidate: candidate))
             }
         } label: {
@@ -141,7 +157,7 @@ struct EmployeeRefundView: View {
         let codes = Set(saved.filter { EmployeeRefund.bankCode($0.iban) == code }
             .map { $0.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
             .filter { $0.hasPrefix(code + "IQ") && TransferRules.validBIC($0) })
-        return RefundBank(name: code == "RAFB" ? "مصرف الرافدين" : person.bank, bic: codes.count == 1 ? codes.first ?? "" : "")
+        return RefundBank(name: person.bank, bic: codes.count == 1 ? codes.first ?? "" : "")
     }
     private func bankField(_ code: String, _ field: WritableKeyPath<RefundBank, String>) -> Binding<String> {
         Binding(get: { banks[code, default: RefundBank()][keyPath: field] },
@@ -164,13 +180,22 @@ struct EmployeeRefundView: View {
         guard !initialized else { return }
         initialized = true
         guard let data = UserDefaults.standard.data(forKey: TransferLetterCustomizationStore.settingsKey),
-              let common = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data).common else { return }
-        letters.header = common.letterTemplate?.header ?? common.header ?? letters.header
-        letters.number = common.fixedNumber ?? ""
-        letters.first = common.letterTemplate?.firstSigner ?? common.committeeFirst ?? ""
-        letters.second = common.letterTemplate?.secondSigner ?? common.committeeSecond ?? ""
-        letters.third = common.letterTemplate?.thirdSigner ?? common.committeeThird ?? ""
-        letters.footer = common.letterTemplate?.footer ?? common.footer ?? letters.footer
+              let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data) else { return }
+        func settings(for id: String) -> RefundLetterSettings {
+            let custom = store.effective(for: id)
+            let template = custom.letterTemplate
+            var value = RefundLetterSettings()
+            value.header = template?.header ?? custom.header ?? value.header
+            value.number = template?.number ?? custom.fixedNumber ?? value.number
+            value.first = template?.firstSigner ?? custom.committeeFirst ?? ""
+            value.second = template?.secondSigner ?? custom.committeeSecond ?? ""
+            value.third = template?.thirdSigner ?? custom.committeeThird ?? ""
+            value.footer = template?.footer ?? custom.footer ?? value.footer
+            value.signatureOffset = template?.signatureVerticalOffset ?? custom.signatureOffset ?? 0
+            value.template = template
+            return value
+        }
+        letters = RefundLetters(rafidain: settings(for: "rafidain_group"), otherBanks: settings(for: "other_banks_group"))
     }
     private func export() {
         guard !working else { return }

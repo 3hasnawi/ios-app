@@ -7,15 +7,18 @@ nonisolated struct RefundLetterSettings: Sendable {
     var first = ""
     var second = ""
     var third = ""
+    var template: CustomTransferTemplate?
+    var signatureOffset = 0
     var footer = "نسخة منه إلى:\nشعبة المصروفات / إجراء اللازم والمتابعة.\nالأرشيف."
 }
 
+nonisolated struct RefundLetters: Sendable {
+    var rafidain = RefundLetterSettings()
+    var otherBanks = RefundLetterSettings()
+}
+
 nonisolated enum EmployeeRefundExport {
-    static func make(_ batch: EmployeeRefund.Batch, date: Date, letters: RefundLetterSettings) throws -> [URL] {
-        guard !letters.recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !letters.header.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw EmployeeRefund.error("أكمل الترويسة والجهة المخاطبة في بيانات الكتاب.", "Enter the letterhead and addressee.")
-        }
+    static func make(_ batch: EmployeeRefund.Batch, date: Date, letters: RefundLetters) throws -> [URL] {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -38,8 +41,10 @@ nonisolated enum EmployeeRefundExport {
                 guard !groups.isEmpty else { continue }
                 let title = rafidain ? "الرافدين" : "الرشيد والمصارف الأخرى"
                 let url = folder.appendingPathComponent("كتاب إعادة مبالغ - " + title + ".pdf")
-                let blocks = try letter(groups, batch: batch, letters: letters, date: writtenDate)
-                try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+                let settings = rafidain ? letters.rafidain : letters.otherBanks
+                let blocks = try letter(groups, batch: batch, letters: settings, date: writtenDate)
+                try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false, signatureOffset: settings.signatureOffset,
+                    verifyNumericTableCells: !rafidain, signatureHorizontalOffset: settings.template?.signatureHorizontalOffset ?? 0, template: settings.template)
                 urls.append(url)
             }
             return urls
@@ -53,23 +58,47 @@ nonisolated enum EmployeeRefundExport {
         func display(_ amount: Int64) throws -> String {
             ReportSheet.easternDigits(try TransferWordValues.groupedAmount(Double(amount)))
         }
+        guard let first = groups.first, groups.allSatisfy({ $0.isRafidain == first.isRafidain }),
+              !letters.header.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !letters.recipient.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw EmployeeRefund.error("راجع مجموعة المصارف وترويسة الكتاب والجهة المخاطبة.", "Check the bank group, letterhead and addressee.")
+        }
         let total = groups.reduce(Int64.zero) { $0 + $1.total }
-        let body = "نرجو تحويل مبلغ قدره (\(try display(total))) دينار عراقي من حسابنا المرقم (\(batch.account)) إلى الحسابات الموطنة للمنتسبين المبينة في ملفات التحويل المرفقة، وذلك عن \(batch.reason)، وحسب التفصيل أدناه."
-        var rows = try groups.map { [$0.bank.name, try display($0.total), $0.bank.bic] }
-        if groups.count > 1 { rows.append(["المجموع الكلي", try display(total), ""]) }
+        let count = groups.reduce(0) { $0 + $1.payments.count }
+        let destination: String
+        if first.isRafidain {
+            destination = "إلى حساب \(first.bank.name) المرقم (\(first.bank.bic)) وحسب ما مؤشر في قرص CD"
+        } else {
+            let files = groups.count == 1 ? "ملف CSV المرفق" : "ملفات CSV المرفقة"
+            destination = "إلى حسابات المصارف المبينة في الجدول أدناه وحسب ما مؤشر في " + files
+        }
+        let from = batch.source.isEmpty ? "" : " من " + batch.source
+        let body = "نرجو تحويل مبلغ قدره (\(try display(total))) (\(try ArabicAmountWords.dinars(total))) لا غيرها من حسابنا المرقم (\(batch.account)) المفتوح لديكم \(destination)، والذي يمثل إعادة مبالغ\(from) لمنتسبي قيادة شرطة محافظة الأنبار والبالغ عددهم (\(ReportSheet.easternDigits(String(count))))، وتزويدنا بالإشعار اللازم بذلك."
+        let template = letters.template
         let signers = [letters.first, letters.second, letters.third]
         let cells = signers.allSatisfy(\.isEmpty) ? ["", "", ""] : try CustomTransferTemplate.signatureCells(signers, date: date)
         let reference = TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(letters.number), date: date, adaptivePDF: true)
-        let blocks: [TransferWordDocument.Block] = [
-            .paragraph(.init(text: letters.header, halfPoints: 28, bold: true)),
-            .paragraph(.init(text: reference, halfPoints: 28, bold: true)),
-            .paragraph(.init(text: "إلى / " + letters.recipient, font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(.init(text: "م / إعادة مبالغ", font: "Arial", halfPoints: 32, bold: true, centered: true)),
-            .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: nil)),
-            .table(.init(headers: ["المصرف", "المبلغ (دينار)", "SWIFT"], rows: rows, columnWeights: [4, 3, 3], boldLastRow: groups.count > 1)),
-            .table(.init(headers: [], rows: [cells], font: "Times New Roman", halfPoints: 28, showBorders: false)),
-            .paragraph(.init(text: letters.footer, halfPoints: 22, bold: true))
+        var blocks: [TransferWordDocument.Block] = [
+            .paragraph(.init(text: letters.header, halfPoints: template?.halfPoints(.header, default: 32) ?? 32, bold: true)),
+            .paragraph(.init(text: reference, halfPoints: template?.halfPoints(.reference, default: 36) ?? 36, bold: true)),
+            .paragraph(.init(text: "إلى / " + letters.recipient, font: "Arial", halfPoints: template?.halfPoints(.recipient, default: 32) ?? 32, bold: true, centered: true)),
+            .paragraph(.init(text: "م / تحويل مبلغ", font: "Arial", halfPoints: template?.halfPoints(.subject, default: 32) ?? 32, bold: true, centered: true)),
+            .paragraph(TransferWordGroupDraft.bodyParagraph(body, template: template))
         ]
+        if !first.isRafidain {
+            var rows = try groups.enumerated().map { index, group in
+                [ReportSheet.easternDigits(String(index + 1)), group.bank.name, try display(group.total),
+                 ReportSheet.easternDigits(String(group.payments.count)), group.bank.bic]
+            }
+            if groups.count > 1 { rows.append(["", "المجموع", try display(total), ReportSheet.easternDigits(String(count)), ""]) }
+            blocks.append(.table(.init(headers: ["ت", "اسم المصرف", "المبلغ", "عدد المنتسبين", "Receiver BIC"], rows: rows,
+                halfPoints: template?.halfPoints(.table, default: 22) ?? 22, columnWeights: [1, 8, 5, 4, 5], boldLastRow: groups.count > 1)))
+        }
+        blocks.append(.paragraph(.init(text: "المرفقات:\n١. قرص CD", halfPoints: template?.halfPoints(.attachments, default: 22) ?? 22)))
+        blocks.append(.table(.init(headers: [], rows: [cells], font: "Times New Roman",
+            halfPoints: template?.halfPoints(.signatures, default: 32) ?? 32, showBorders: false)))
+        blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(letters.footer, adaptivePDF: true),
+            halfPoints: template?.halfPoints(.footer, default: 24) ?? 24, bold: true)))
         return blocks
     }
 }

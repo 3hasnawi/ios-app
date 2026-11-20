@@ -16,6 +16,9 @@ nonisolated struct RefundBank: Equatable, Sendable {
 }
 
 nonisolated enum EmployeeRefund {
+    static let rafidainCode = "RAFB"
+    static let rafidainBank = RefundBank(name: "مصرف الرافدين / فرع المستنصر", bic: "RAFBIQB1098")
+
     struct Entry: Sendable {
         let person: RefundPerson
         let amount: String
@@ -30,13 +33,14 @@ nonisolated enum EmployeeRefund {
         let bank: RefundBank
         let payments: [Payment]
         let total: Int64
-        var isRafidain: Bool { code == "RAFB" }
+        var isRafidain: Bool { code == EmployeeRefund.rafidainCode }
     }
     struct Batch: Sendable {
         let groups: [Group]
         let total: Int64
         let payer: String
         let account: String
+        let source: String
         let reason: String
     }
     static func error(_ arabic: String, _ english: String) -> NSError {
@@ -84,7 +88,7 @@ nonisolated enum EmployeeRefund {
             groups[code, default: []].append(Payment(name: name, iban: iban, amount: value))
         }
         let result: [Group] = try groups.keys.sorted().map { code in
-            guard let bank = banks[code], let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
+            guard let bank = (code == rafidainCode ? rafidainBank : banks[code]), let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
             let name = bank.name.trimmingCharacters(in: .whitespacesAndNewlines)
             let bic = bank.bic.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             guard !name.isEmpty, TransferRules.safeField(name), TransferRules.validBIC(bic), bic.hasPrefix(code + "IQ") else {
@@ -92,7 +96,7 @@ nonisolated enum EmployeeRefund {
             }
             return Group(code: code, bank: RefundBank(name: name, bic: bic), payments: payments, total: payments.reduce(0) { $0 + $1.amount })
         }
-        return Batch(groups: result, total: total, payer: payer, account: account, reason: reason)
+        return Batch(groups: result, total: total, payer: payer, account: account, source: source, reason: reason)
     }
 
     // مرجع رقمي ثابت عند إعادة تجهيز الحركة، ومستقل عن ترتيب الأسماء أو ملفات استقطاعات اليوم نفسه.

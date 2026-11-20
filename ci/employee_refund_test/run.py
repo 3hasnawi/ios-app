@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
     common = work / "Shared.swift"
     common.write_text(arabic + "\n" + types + "\n" + category + "\nenum TransferRules {\n" + rules + "\n}\n" +
         (tests / "Support.swift").read_text())
-    files = [str(common), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
+    files = [str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
     subprocess.run(["swiftc", "-o", str(work / "test"), *files, str(tests / "main.swift")], check=True)
     subprocess.run([str(work / "test")], check=True)
     model = section("Models.swift", "@Model\nfinal class Employee", "    var items: [String: Double]")

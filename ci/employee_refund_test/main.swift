@@ -21,7 +21,17 @@ precondition(batch.total == 17000 && batch.groups.count == 3)
 let other = batch.groups.filter { !$0.isRafidain }
 let blocks = try EmployeeRefundExport.letter(other, batch: batch, letters: .init(), date: "1 / 1 / 2026")
 guard case .table(let table) = blocks[5] else { fatalError() }
-precondition(table.rows == [["OTHR","2500","OTHRIQ00"], ["RSHD","4500","RSHDIQ00"], ["المجموع الكلي","7000",""]])
+precondition(table.headers == ["ت","اسم المصرف","المبلغ","عدد المنتسبين","Receiver BIC"])
+precondition(table.rows == [["1","OTHR","2500","1","OTHRIQ00"], ["2","RSHD","4500","2","RSHDIQ00"], ["","المجموع","7000","3",""]])
+guard case .paragraph(let otherBody) = blocks[4] else { fatalError() }
+let otherWords = try ArabicAmountWords.dinars(7000)
+precondition(otherBody.text.contains(otherWords) && otherBody.text.contains("عددهم (3)") && otherBody.text.contains("مصدر تجريبي"))
+let raf = try plan([entries[0]], [:])
+let rafBlocks = try EmployeeRefundExport.letter(raf.groups, batch: raf, letters: .init(), date: "1 / 1 / 2026")
+guard case .paragraph(let rafBody) = rafBlocks[4], case .paragraph(let attachment) = rafBlocks[5] else { fatalError() }
+precondition(rafBody.text.contains("مصرف الرافدين / فرع المستنصر المرقم (RAFBIQB1098)") && rafBody.text.contains("عددهم (1)"))
+precondition(attachment.text.contains("قرص CD"))
+precondition(EmployeeRefund.csv(raf.groups[0], batch: raf, day: "20260101").range(of: Data("|RAFBIQB1098|".utf8)) != nil)
 var refs = Set<String>(), csvSum: Int64 = 0, offset = 0
 var expectedAmounts = [iban("RAFB", 1): "10000", iban("RSHD", 2): "4000", iban("OTHR", 3): "2500", iban("RSHD", 4): "500"]
 for group in batch.groups {
@@ -43,7 +53,8 @@ for (sample, count) in [(entries, 5), ([entries[0]], 2), ([entries[1],entries[3]
     try FileManager.default.removeItem(at: urls[0].deletingLastPathComponent())
 }
 precondition((try? plan(entries + [entries[0]])) == nil && (try? plan([])) == nil)
-var wrong = banks; wrong["RAFB"]?.bic = "RSHDIQ00"
+var wrong = banks; wrong["RSHD"]?.bic = "OTHRIQ00"
+precondition(batch.groups.first { $0.isRafidain }?.bank.bic == "RAFBIQB1098")
 precondition((try? plan(entries, wrong)) == nil && (try? plan(entries, [:])) == nil)
 precondition((try? plan([entry("RAFB", 99, "100")])) == nil && EmployeeRefund.bankCode("IQ00RAFB1234") == nil)
 for invalid in ["0","-1","1.5","123,45","9999999999999999","nan"] { precondition(EmployeeRefund.amount(invalid) == nil) }
