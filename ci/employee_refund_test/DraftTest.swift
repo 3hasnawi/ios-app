@@ -8,7 +8,7 @@ import SwiftData
         func employee(_ month: String, _ name: String, _ iban: String) throws -> Employee {
             let person = Employee(name: name)
             person.month = month
-            person.detailsData = try JSONEncoder().encode(["IBAN": iban, "Receiver BIC": "RAFBIQ00"])
+            person.detailsData = try JSONEncoder().encode(["IBAN": iban, "الرفرنس": "RAFBIQ00"])
             context.insert(person)
             try context.save()
             return person

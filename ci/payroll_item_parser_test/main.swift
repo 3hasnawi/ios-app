@@ -67,3 +67,9 @@ let records = [
 precondition(records.map(\.id) == [1, 2, 3])
 precondition(records.map(\.amount) == [100, 200, 300])
 precondition(records.map(\.note) == ["إضبارة ١", "إضبارة ٢", "إضبارة ٣"])
+
+let referencePayroll = SheetParser()
+referencePayroll.consume(["Name_m", "صافي الراتب", "الرفرنس"])
+referencePayroll.consume(["مستفيد تجريبي", "12500", "RAFBIQ00001"])
+referencePayroll.finish()
+precondition(referencePayroll.result.employees.first?.details["الرفرنس"] == "RAFBIQ00001")

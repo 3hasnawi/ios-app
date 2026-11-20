@@ -98,3 +98,10 @@ precondition(!rafCSV.contains("|RAFBIQB1098|"))
 
 precondition(EmployeeRefund.payrollBIC(details: ["SWIFT":"  "], columns: nil) == .empty)
 precondition(EmployeeRefund.payrollBIC(details: ["SWIFT":"\u{200f}RAFBiq00\u{200e}"], columns: nil) == .value("RAFBIQ00"))
+
+let historical = PayrollColumnSnapshot(headers: ["الرفرنس"], values: ["RAFBIQ00007"])
+precondition(EmployeeRefund.payrollBIC(details: [:], columns: historical) == .value("RAFBIQ00007"))
+precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"RAFBIQ00007"], columns: nil) == .value("RAFBIQ00007"))
+precondition(EmployeeRefund.payrollBIC(details: ["Receiver BIC":"RAFBIQ00008"], columns: historical) == .conflicting)
+precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"٠"], columns: nil) == .empty)
+precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"0", "Receiver BIC":"RAFBIQ00008"], columns: nil) == .value("RAFBIQ00008"))

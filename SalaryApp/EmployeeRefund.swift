@@ -79,7 +79,7 @@ nonisolated enum EmployeeRefund {
         ArabicText.normalize(title).filter { $0.isLetter || $0.isNumber }
     }
     private static let bicHeaders = Set([
-        "SWIFT", "BIC", "SWIFT Code", "BIC Code", "SWIFT/BIC", "BIC/SWIFT", "Receiver BIC", "Bank BIC",
+        "الرفرنس", "رفرنس", "SWIFT", "BIC", "SWIFT Code", "BIC Code", "SWIFT/BIC", "BIC/SWIFT", "Receiver BIC", "Bank BIC",
         "Bank Swift Code", "Branch BIC", "Branch Swift Code", "Beneficiary BIC",
         "سويفت", "سوفت", "سويفت كود", "سوفت كود", "رمز السويفت", "رمز السوفت",
         "رمز سويفت", "رمز سوفت", "كود السويفت", "كود السوفت", "السويفت كود", "السوفت كود",
@@ -96,7 +96,7 @@ nonisolated enum EmployeeRefund {
             foundColumn = true
             let clean = value.unicodeScalars.filter { $0.properties.generalCategory != .format }
             let code = ArabicText.latinDigits(String(String.UnicodeScalarView(clean)).trimmingCharacters(in: .whitespacesAndNewlines)).uppercased()
-            if !code.isEmpty { codes.insert(code) }
+            if !code.isEmpty && code != "0" { codes.insert(code) }
         }
         for (header, value) in details { collect(header, value) }
         if let columns {
