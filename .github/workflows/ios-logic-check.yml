@@ -66,7 +66,18 @@ jobs:
       - name: PDF page preservation
         run: python3 ci/pdf_safety_test/run.py
       - name: Employee refund routing, documents and iPhone UI type check
-        run: python3 ci/employee_refund_test/run.py
+        run: |
+          if [ "${{ inputs.report_preview }}" = "true" ]; then
+            export REFUND_PREVIEW_DIR="$RUNNER_TEMP/refund-letter-preview"
+          fi
+          python3 ci/employee_refund_test/run.py
+      - name: Upload fictional refund letter preview
+        if: ${{ inputs.report_preview }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: refund-letter-preview
+          path: ${{ runner.temp }}/refund-letter-preview/
+          retention-days: 7
       - name: Treasury letter calculations
         run: bash ci/treasury_letter_test/run.sh
       - name: Streaming backup line reader

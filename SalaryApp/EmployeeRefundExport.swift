@@ -24,8 +24,8 @@ nonisolated enum EmployeeRefundExport {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyyMMdd"
         let day = formatter.string(from: date)
-        formatter.dateFormat = "d / M / yyyy"
-        let writtenDate = ReportSheet.easternDigits(formatter.string(from: date))
+        formatter.dateFormat = "M / yyyy"
+        let writtenDate = " / " + ReportSheet.easternDigits(formatter.string(from: date))
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("refund-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
         do {
@@ -44,7 +44,7 @@ nonisolated enum EmployeeRefundExport {
                 let settings = rafidain ? letters.rafidain : letters.otherBanks
                 let blocks = try letter(groups, batch: batch, letters: settings, date: writtenDate)
                 try TransferAdaptivePDF.write(blocks: blocks, destination: url, sakkalBold: nil, group: false, signatureOffset: settings.signatureOffset,
-                    verifyNumericTableCells: !rafidain, signatureHorizontalOffset: settings.template?.signatureHorizontalOffset ?? 0, template: settings.template)
+                    verifyNumericTableCells: !rafidain, signatureHorizontalOffset: settings.template?.signatureHorizontalOffset ?? 0, template: settings.template, singlePageBankRefund: !rafidain)
                 urls.append(url)
             }
             return urls
@@ -93,7 +93,7 @@ nonisolated enum EmployeeRefundExport {
             }
             if groups.count > 1 { rows.append(["", "المجموع", try display(total), ReportSheet.easternDigits(String(count)), ""]) }
             blocks.append(.table(.init(headers: ["ت", "اسم المصرف", "المبلغ", "عدد المنتسبين", "Receiver BIC"], rows: rows,
-                halfPoints: template?.halfPoints(.table, default: 22) ?? 22, columnWeights: [1, 8, 5, 4, 5], boldLastRow: groups.count > 1)))
+                halfPoints: template?.halfPoints(.table, default: 19) ?? 19, columnWeights: [1, 8, 5, 4, 5], boldLastRow: groups.count > 1)))
         }
         blocks.append(.paragraph(.init(text: "المرفقات:\n١. قرص CD", halfPoints: template?.halfPoints(.attachments, default: 22) ?? 22)))
         blocks.append(.table(.init(headers: [], rows: [cells], font: "Times New Roman",

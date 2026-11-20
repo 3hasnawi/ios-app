@@ -1,4 +1,6 @@
 import Foundation
+import PDFKit
+import AppKit
 func iban(_ code: String, _ serial: Int) -> String {
     let bban = code + String(format: "%015d", serial)
     var mod = 0
@@ -23,10 +25,10 @@ let other = batch.groups.filter { !$0.isRafidain }
 let blocks = try EmployeeRefundExport.letter(other, batch: batch, letters: .init(), date: "1 / 1 / 2026")
 guard case .table(let table) = blocks[5] else { fatalError() }
 precondition(table.headers == ["ت","اسم المصرف","المبلغ","عدد المنتسبين","Receiver BIC"])
-precondition(table.rows == [["1","OTHR","2500","1","OTHRIQ00003"], ["2","RSHD","4500","2","RSHDIQ00002"], ["","المجموع","7000","3",""]])
+precondition(table.rows.map({ $0.map(ArabicText.latinDigits) }) == [["1","OTHR","2,500","1","OTHRIQ00003"], ["2","RSHD","4,500","2","RSHDIQ00002"], ["","المجموع","7,000","3",""]])
 guard case .paragraph(let otherBody) = blocks[4] else { fatalError() }
 let otherWords = try ArabicAmountWords.dinars(7000)
-precondition(otherBody.text.contains(otherWords) && otherBody.text.contains("عددهم (3)") && otherBody.text.contains("مصدر تجريبي"))
+precondition(otherBody.text.contains(otherWords) && otherBody.text.contains("عددهم (٣)") && otherBody.text.contains("مصدر تجريبي"))
 precondition(otherBody.text.contains("إلى حسابات المصارف المبينة في الجدول أدناه"))
 // قد تتضمن الدفعة الرافدين أيضاً؛ صياغة الكتاب الثاني تعتمد مصارف ذلك الكتاب وحده.
 let mixed = try plan([entries[0], entries[1], entries[3]], ["RSHD": RefundBank(name: "مصرف تجريبي", bic: "RSHDIQ00")])
@@ -34,8 +36,8 @@ let singleBank = mixed.groups.filter { !$0.isRafidain }
 let singleBlocks = try EmployeeRefundExport.letter(singleBank, batch: mixed, letters: .init(), date: "1 / 1 / 2026")
 guard case .paragraph(let singleBody) = singleBlocks[4], case .table(let singleTable) = singleBlocks[5] else { fatalError() }
 precondition(singleBody.text.contains("إلى حساب مصرف تجريبي، رمز السويفت (RSHDIQ00002)"))
-precondition(singleBody.text.contains("ملف CSV المرفق") && singleBody.text.contains("عددهم (2)"))
-precondition(singleTable.rows == [["1","مصرف تجريبي","4500","2","RSHDIQ00002"]])
+precondition(singleBody.text.contains("ملف CSV المرفق") && singleBody.text.contains("عددهم (٢)"))
+precondition(singleTable.rows.map({ $0.map(ArabicText.latinDigits) }) == [["1","مصرف تجريبي","4,500","2","RSHDIQ00002"]])
 let bankCSV = EmployeeRefund.csv(singleBank[0], batch: mixed, day: "20260101")
 let bankRows = String(decoding: bankCSV, as: UTF8.self).components(separatedBy: "\r\n").dropFirst().map { $0.components(separatedBy: "|") }
 precondition(bankRows.count == 2 && bankRows[0][6] == "RSHDIQ00002" && bankRows[1][6] == "RSHDIQ00004")
@@ -43,7 +45,7 @@ precondition(bankRows[0][8] == iban("RSHD", 2) && bankRows[1][8] == iban("RSHD",
 let raf = try plan([entries[0]], [:])
 let rafBlocks = try EmployeeRefundExport.letter(raf.groups, batch: raf, letters: .init(), date: "1 / 1 / 2026")
 guard case .paragraph(let rafBody) = rafBlocks[4], case .paragraph(let attachment) = rafBlocks[5] else { fatalError() }
-precondition(rafBody.text.contains("مصرف الرافدين / فرع المستنصر المرقم (RAFBIQB1098)") && rafBody.text.contains("عددهم (1)"))
+precondition(rafBody.text.contains("مصرف الرافدين / فرع المستنصر المرقم (RAFBIQB1098)") && rafBody.text.contains("عددهم (١)"))
 precondition(attachment.text.contains("قرص CD"))
 precondition(EmployeeRefund.csv(raf.groups[0], batch: raf, day: "20260101").range(of: Data("|RAFBIQ00001|".utf8)) != nil)
 var refs = Set<String>(), csvSum: Int64 = 0, offset = 0
@@ -82,7 +84,7 @@ let majority = try plan(entries + [entry("RSHD", 5, "1", bic: "RSHDIQ00002"),
 let majorityGroups = majority.groups.filter { !$0.isRafidain }
 let majorityBlocks = try EmployeeRefundExport.letter(majorityGroups, batch: majority, letters: .init(), date: "1 / 1 / 2026")
 guard case .table(let majorityTable) = majorityBlocks[5] else { fatalError() }
-precondition(majorityTable.rows == [["1","OTHR","2502","3","OTHRIQ00009"], ["2","RSHD","4501","3","RSHDIQ00002"], ["","المجموع","7003","6",""]])
+precondition(majorityTable.rows.map({ $0.map(ArabicText.latinDigits) }) == [["1","OTHR","2,502","3","OTHRIQ00009"], ["2","RSHD","4,501","3","RSHDIQ00002"], ["","المجموع","7,003","6",""]])
 let sole = try plan([entries[1]], ["RSHD": RefundBank(name: "مصرف تجريبي")])
 precondition(sole.groups.first?.bank.bic == "RSHDIQ00002")
 precondition((try? plan([entry("RAFB", 99, "100")])) == nil && EmployeeRefund.bankCode("IQ00RAFB1234") == nil)
@@ -120,3 +122,45 @@ precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"RAFBIQ00007"]
 precondition(EmployeeRefund.payrollBIC(details: ["Receiver BIC":"RAFBIQ00008"], columns: historical) == .conflicting)
 precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"٠"], columns: nil) == .empty)
 precondition(EmployeeRefund.payrollBIC(details: ["الرفرنس":"0", "Receiver BIC":"RAFBIQ00008"], columns: nil) == .value("RAFBIQ00008"))
+
+// يوم مميز للتحقق من بقائه في CSV وترك خانته للكتابة اليدوية في الكتاب.
+let refundDay = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 27, hour: 12))!
+var signers = RefundLetterSettings()
+signers.first = "العضو الأول"
+signers.second = "العضو الثاني"
+signers.third = "العضو الثالث"
+let letters = RefundLetters(rafidain: signers, otherBanks: signers)
+let codes = ["RSHD", "OTHR", "BANK", "TEST"]
+let directory = Dictionary(uniqueKeysWithValues: codes.map { ($0, RefundBank(name: "مصرف تجريبي للاستثمار والتمويل " + $0)) })
+for bankCount in [1, 4] {
+    let selectedCodes = codes.prefix(bankCount)
+    let sample = [entry("RAFB", 1, "500000")] + selectedCodes.enumerated().map { entry($0.element, $0.offset + 2, "1500000") }
+    let urls = try EmployeeRefundExport.make(try plan(sample, directory), date: refundDay, letters: letters)
+    defer { try? FileManager.default.removeItem(at: urls[0].deletingLastPathComponent()) }
+    for url in urls {
+        if url.pathExtension == "csv" {
+            let csv = try String(contentsOf: url, encoding: .utf8)
+            precondition(csv.contains("|20261127|"))
+            continue
+        }
+        let pdf = PDFDocument(url: url)!
+        precondition(pdf.pageCount == 1)
+        let page = pdf.page(at: 0)!
+        let text = ArabicText.latinDigits(page.string ?? "")
+        precondition(text.contains("2026") && !text.contains("27"))
+        if url.lastPathComponent.contains("الرشيد") {
+            for (index, code) in selectedCodes.enumerated() {
+                precondition(text.contains(code + "IQ00" + String(format: "%03d", index + 2)))
+            }
+            if bankCount == 4, let path = ProcessInfo.processInfo.environment["REFUND_PREVIEW_DIR"] {
+                let folder = URL(fileURLWithPath: path, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: url, to: folder.appendingPathComponent("refund-letter.pdf"))
+                let image = page.thumbnail(of: CGSize(width: 1190, height: 1684), for: .mediaBox)
+                let bitmap = NSBitmapImageRep(cgImage: image.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("refund-letter.png"))
+            }
+        }
+    }
+}
+print("Refund letters rendered and checked on one A4 page; CSV retains full value date.")

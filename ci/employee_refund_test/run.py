@@ -25,9 +25,18 @@ with tempfile.TemporaryDirectory() as tmp:
     snapshot = section("Models.swift", "nonisolated struct PayrollColumnSnapshot:", "/// ترميز سريع")
     common.write_text(arabic + "\n" + snapshot + "\n" + types + "\n" + category + "\nenum TransferRules {\n" + rules + "\n}\n" +
         (tests / "Support.swift").read_text())
-    files = [str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
-    subprocess.run(["swiftc", "-o", str(work / "test"), *files, str(tests / "main.swift")], check=True)
-    subprocess.run([str(work / "test")], check=True)
+    with common.open("a") as output:
+        output.write("extension ReportSheet {\n" + section("ReportExport.swift", "    static func easternDigits(", "    static var defaultHeader") + "}\n")
+        output.write("extension TransferWordValues {\n" + section("TransferWordValues.swift", "    static func groupedAmount(", "    /// تُطلب") + "}\n")
+        output.write("extension CustomTransferTemplate {\n" + section("CustomTransferTemplate.swift", "    static func invalid(", "    func halfPoints(") + "}\n")
+        output.write("extension TransferWordGroupDraft {\n" + section("TransferWordGroupDraft.swift", "    static func signatureCells(", "    static func bodyValues(")
+                     + section("TransferWordGroupDraft.swift", "    static func referenceText(", "    /// تبقى مساحة") + "}\n")
+    renderer = work / "Renderer.swift"
+    renderer.write_text((app / "TransferAdaptivePDF.swift").read_text().replace("import UIKit", "import AppKit"))
+    mac = [str(renderer), str(tests / "MacPDF.swift"), str(root / "ci/report_layout_test/UIKitPreviewStubs.swift")]
+    files = [str(app / "TransferHeaderFont.swift"), str(app / "ReportTableStyle.swift"), str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
+    subprocess.run(["swiftc", "-o", str(work / "test"), *mac, *files, str(tests / "main.swift")], check=True)
+    subprocess.run([str(work / "test")], cwd=root, check=True)
     model = section("Models.swift", "@Model\nfinal class Employee", "    var items: [String: Double]")
     model = model[:model.index("    init(")] + """
     init(name: String) { self.name = name; nameKey = ArabicText.normalize(name); matchKey = ArabicText.matchKey(name); rank = ""; workplace = "" }
@@ -40,10 +49,10 @@ with tempfile.TemporaryDirectory() as tmp:
     target = work / "Target.swift"
     target.write_text("import SwiftData\n" + section("RefundSearchEntrySheet.swift", "struct RefundSearchTarget:", "struct RefundSearchEntrySheet:"))
     shared = [str(ios), str(app / "RefundPayrollSearch.swift"), str(app / "RefundDraft.swift")]
-    subprocess.run(["swiftc", "-parse-as-library", "-o", str(work / "draft-test"), *files, *shared,
+    subprocess.run(["swiftc", "-parse-as-library", "-o", str(work / "draft-test"), *mac, *files, *shared,
                     str(target), str(tests / "DraftTest.swift")], check=True)
     subprocess.run([str(work / "draft-test")], check=True)
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-sdk", sdk, "-target", "arm64-apple-ios26.0",
-                    *files, str(ios), str(app / "EmployeeRefundView.swift"), str(app / "RefundPayrollSearch.swift"),
+                    *files, str(app / "TransferAdaptivePDF.swift"), str(ios), str(app / "EmployeeRefundView.swift"), str(app / "RefundPayrollSearch.swift"),
                     str(app / "RefundDraft.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)

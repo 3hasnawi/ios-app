@@ -151,7 +151,25 @@ nonisolated enum TransferAdaptivePDF {
     }
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
                       sakkalBold: Data?, group: Bool, signatureOffset: Int = 0,
-                      verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0, template: CustomTransferTemplate? = nil) throws {
+                      verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0, template: CustomTransferTemplate? = nil,
+                      singlePageBankRefund: Bool = false) throws {
+        func render(_ cap: Int?) throws {
+            try renderPDF(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: group,
+                          signatureOffset: signatureOffset, verifyNumericTableCells: verifyNumericTableCells,
+                          signatureHorizontalOffset: signatureHorizontalOffset, template: template, refundTableCap: cap)
+        }
+        guard singlePageBankRefund else { return try render(nil) }
+        // جرّب الصفحة كاملة بما فيها المرفقات واللجنة والنسخ قبل قبول حجم الجدول.
+        for cap in stride(from: 19, through: 16, by: -1) {
+            do { return try render(cap) }
+            catch Failure.groupTableDoesNotFit where cap > 16 { continue }
+            catch Failure.signaturePlacement where cap > 16 { continue }
+        }
+    }
+
+    private static func renderPDF(blocks: [TransferWordDocument.Block], destination: URL, sakkalBold: Data?,
+                                  group: Bool, signatureOffset: Int, verifyNumericTableCells: Bool,
+                                  signatureHorizontalOffset: Int, template: CustomTransferTemplate?, refundTableCap: Int?) throws {
         guard (-60...60).contains(signatureOffset), (-30...30).contains(signatureHorizontalOffset), blocks.count >= 7, !FileManager.default.fileExists(atPath: destination.path),
               case let .paragraph(header) = blocks[0], case let .paragraph(reference) = blocks[1],
               let logo = UIImage(named: "IraqEmblem")?.cgImage else { throw Failure.invalid }
@@ -186,11 +204,13 @@ nonisolated enum TransferAdaptivePDF {
         var numericCells: [(page: Int, rect: CGRect, expected: String)] = []
         var y: CGFloat = 23
         // يترك المتن مساحة ثابتة للتواقيع والنسخ أسفل صفحة الكتاب.
-        var limit: CGFloat = 590
+        let compact = refundTableCap != nil
+        var limit: CGFloat = compact ? bottom : 590
         var expectingFooter = false
         var signatureEnd: CGFloat?
         func add(_ operation: Draw) { pages[pages.count - 1].append(operation) }
         func nextPage() throws {
+            if compact { throw Failure.groupTableDoesNotFit }
             guard pages.count < 4000 else { throw fitFailure("page-count") }
             pages.append([]); y = margin
         }
@@ -206,13 +226,13 @@ nonisolated enum TransferAdaptivePDF {
         try addLines(headerLines, x: 28, width: headingWidth, flush: 0.5)
         y = max(150, y + 8)
         try addLines(refLines, x: 28, width: headingWidth, flush: 1)
-        y = max(220, y + 12)
+        y = max(compact ? 200 : 220, y + (compact ? 5 : 12))
         var afterBreak = false
         var needsClosing = false
         func addClosing() throws {
             let closing = TransferWordDocument.Paragraph(text: "للتفضل بالاطلاع وإجراء اللازم وإعلامنا... مع التقدير.", font: "Times New Roman", halfPoints: template?.halfPoints(.closing, default: 32) ?? 32, bold: true, centered: true)
             let closingFont = try font(closing, sakkal: sakkalBold)
-            y += 15
+            y += compact ? 6 : 15
             try addLines(lines(closing.text, font: closingFont, width: contentWidth), x: margin, width: contentWidth, flush: 0.5)
             needsClosing = false
         }
@@ -225,7 +245,7 @@ nonisolated enum TransferAdaptivePDF {
             case .paragraph(let p):
                 if needsClosing && p.text.hasPrefix("المرفقات:") { try addClosing() }
                 if blockIndex == 2 {
-                    y += 18
+                    y += compact ? 7 : 18
                     let salutation = TransferWordDocument.Paragraph(text: "تحية طيبة ..", font: "Times New Roman", halfPoints: template?.halfPoints(.salutation, default: 28) ?? 28, bold: true)
                     let salutationFont = try font(salutation, sakkal: sakkalBold)
                     try addLines(lines(salutation.text, font: salutationFont, width: contentWidth), x: margin, width: contentWidth, flush: 1)
@@ -256,7 +276,7 @@ nonisolated enum TransferAdaptivePDF {
             case .table(let table):
                 if needsClosing && table.showBorders && !afterBreak {
                     try addClosing()
-                    y += 18 // فراغ سطر قبل الجدول.
+                    y += compact ? 4 : 18
                 }
                 let count = table.headers.isEmpty ? (table.rows.first?.count ?? 0) : table.headers.count
                 let weights = table.columnWeights ?? Array(repeating: 1, count: count)
@@ -270,7 +290,7 @@ nonisolated enum TransferAdaptivePDF {
                 let groupTable = group && afterBreak
                 let signature = !table.showBorders
                 let tableRight = (table.alignRight ? page.width - margin : margin + (contentWidth + tableWidth) / 2) + (signature ? CGFloat(signatureHorizontalOffset) : 0)
-                var chosenHalfPoints = table.halfPoints
+                var chosenHalfPoints = signature ? table.halfPoints : min(table.halfPoints, refundTableCap ?? table.halfPoints)
                 var fonts: [Int: CTFont] = [:]
                 func layout(_ values: [String], bold: Bool, halfPoints: Int) throws -> ([[TextLine]], CGFloat) {
                     guard values.count == count else { throw Failure.invalid }
@@ -281,8 +301,9 @@ nonisolated enum TransferAdaptivePDF {
                         cellFont = try font(.init(text: "", font: table.font, halfPoints: halfPoints, bold: bold), sakkal: sakkalBold)
                         fonts[fontKey] = cellFont
                     }
-                    let spacing: CGFloat = groupTable ? 0.5 : (signature ? 1 : 3)
-                    let padding: CGFloat = groupTable ? 2 : 6
+                    let tightRows = groupTable || (compact && !signature)
+                    let spacing: CGFloat = tightRows ? 0.5 : (signature ? 1 : 3)
+                    let padding: CGFloat = tightRows ? 2 : 6
                     var cells: [[TextLine]] = []
                     var tallest: CGFloat = 0
                     for index in values.indices {
@@ -344,7 +365,8 @@ nonisolated enum TransferAdaptivePDF {
                         } catch Failure.signatureDoesNotFit { continue }
                     }
                     guard found else { throw Failure.signatureDoesNotFit }
-                    let signatureStart = CGFloat(610 + signatureOffset)
+                    let configuredStart = CGFloat(610 + signatureOffset)
+                    let signatureStart = compact && signatureOffset == 0 ? max(configuredStart, y + 8) : configuredStart
                     let signatureHeight = try layout(table.rows[0], bold: true, halfPoints: chosenHalfPoints).1
                     guard y + 8 <= signatureStart, signatureStart + signatureHeight <= bottom else { throw Failure.signaturePlacement }
                     y = signatureStart; limit = bottom
@@ -383,7 +405,7 @@ nonisolated enum TransferAdaptivePDF {
                     }
                     try drawRow(row, bold: bold)
                 }
-                y += 8
+                y += compact ? 3 : 8
             }
         }
         guard !expectingFooter else { throw Failure.invalid }
