@@ -20,7 +20,9 @@ struct EmployeeRefundView: View {
     }
 
     var body: some View {
-        Form {
+        let options = draft.letterBICOptions
+        let codes = options.keys.sorted()
+        return Form {
             Section {
                 LabeledContent(tr("شهر حسابات المنتسبين", "Employee account month"), value: month)
                 DatePicker(tr("تاريخ التحويل", "Transfer date"), selection: $draft.date, displayedComponents: .date)
@@ -52,8 +54,7 @@ struct EmployeeRefundView: View {
                         }
                     }
                 }
-                let options = draft.letterBICOptions
-                ForEach(options.keys.sorted(), id: \.self) { code in
+                ForEach(codes, id: \.self) { code in
                     Section(code) {
                         if code == EmployeeRefund.rafidainCode {
                             LabeledContent(tr("المصرف", "Bank"), value: EmployeeRefund.rafidainBank.name)
