@@ -23,7 +23,7 @@ let other = batch.groups.filter { !$0.isRafidain }
 let blocks = try EmployeeRefundExport.letter(other, batch: batch, letters: .init(), date: "1 / 1 / 2026")
 guard case .table(let table) = blocks[5] else { fatalError() }
 precondition(table.headers == ["ت","اسم المصرف","المبلغ","عدد المنتسبين","Receiver BIC"])
-precondition(table.rows == [["1","OTHR","2500","1","OTHRIQ00"], ["2","RSHD","4500","2","RSHDIQ00"], ["","المجموع","7000","3",""]])
+precondition(table.rows == [["1","OTHR","2500","1","OTHRIQ00003"], ["2","RSHD","4500","2","RSHDIQ00002"], ["","المجموع","7000","3",""]])
 guard case .paragraph(let otherBody) = blocks[4] else { fatalError() }
 let otherWords = try ArabicAmountWords.dinars(7000)
 precondition(otherBody.text.contains(otherWords) && otherBody.text.contains("عددهم (3)") && otherBody.text.contains("مصدر تجريبي"))
@@ -33,9 +33,9 @@ let mixed = try plan([entries[0], entries[1], entries[3]], ["RSHD": RefundBank(n
 let singleBank = mixed.groups.filter { !$0.isRafidain }
 let singleBlocks = try EmployeeRefundExport.letter(singleBank, batch: mixed, letters: .init(), date: "1 / 1 / 2026")
 guard case .paragraph(let singleBody) = singleBlocks[4], case .table(let singleTable) = singleBlocks[5] else { fatalError() }
-precondition(singleBody.text.contains("إلى حساب مصرف تجريبي، رمز السويفت (RSHDIQ00)"))
+precondition(singleBody.text.contains("إلى حساب مصرف تجريبي، رمز السويفت (RSHDIQ00002)"))
 precondition(singleBody.text.contains("ملف CSV المرفق") && singleBody.text.contains("عددهم (2)"))
-precondition(singleTable.rows == [["1","مصرف تجريبي","4500","2","RSHDIQ00"]])
+precondition(singleTable.rows == [["1","مصرف تجريبي","4500","2","RSHDIQ00002"]])
 let bankCSV = EmployeeRefund.csv(singleBank[0], batch: mixed, day: "20260101")
 let bankRows = String(decoding: bankCSV, as: UTF8.self).components(separatedBy: "\r\n").dropFirst().map { $0.components(separatedBy: "|") }
 precondition(bankRows.count == 2 && bankRows[0][6] == "RSHDIQ00002" && bankRows[1][6] == "RSHDIQ00004")
@@ -69,7 +69,22 @@ for (sample, count) in [(entries, 5), ([entries[0]], 2), ([entries[1],entries[3]
 precondition((try? plan(entries + [entries[0]])) == nil && (try? plan([])) == nil)
 var wrong = banks; wrong["RSHD"]?.bic = "OTHRIQ00"
 precondition(batch.groups.first { $0.isRafidain }?.bank.bic == "RAFBIQB1098")
-precondition((try? plan(entries, wrong)) == nil && (try? plan(entries, [:])) == nil)
+let outdated = try plan(entries, wrong)
+precondition(outdated.groups.first { $0.code == "RSHD" }?.bank.bic == "RSHDIQ00002")
+precondition((try? plan(entries, [:])) == nil)
+var preferred = banks
+preferred["RSHD"]?.bic = "RSHDIQ00004"
+let tied = try plan(entries.reversed(), preferred)
+precondition(tied.groups.first { $0.code == "RSHD" }?.bank.bic == "RSHDIQ00004")
+let majority = try plan(entries + [entry("RSHD", 5, "1", bic: "RSHDIQ00002"),
+                                   entry("OTHR", 6, "1", bic: "OTHRIQ00009"),
+                                   entry("OTHR", 7, "1", bic: "OTHRIQ00009")], preferred)
+let majorityGroups = majority.groups.filter { !$0.isRafidain }
+let majorityBlocks = try EmployeeRefundExport.letter(majorityGroups, batch: majority, letters: .init(), date: "1 / 1 / 2026")
+guard case .table(let majorityTable) = majorityBlocks[5] else { fatalError() }
+precondition(majorityTable.rows == [["1","OTHR","2502","3","OTHRIQ00009"], ["2","RSHD","4501","3","RSHDIQ00002"], ["","المجموع","7003","6",""]])
+let sole = try plan([entries[1]], ["RSHD": RefundBank(name: "مصرف تجريبي")])
+precondition(sole.groups.first?.bank.bic == "RSHDIQ00002")
 precondition((try? plan([entry("RAFB", 99, "100")])) == nil && EmployeeRefund.bankCode("IQ00RAFB1234") == nil)
 for invalid in ["0","-1","1.5","123,45","9999999999999999","nan"] { precondition(EmployeeRefund.amount(invalid) == nil) }
 precondition((try? plan([entry("RAFB", 1, "999999999999999"), entry("RAFB", 2, "1")])) == nil)

@@ -41,7 +41,7 @@ import SwiftData
         guard !rows.contains(where: { $0.candidate.person.iban == person.iban }) else {
             throw EmployeeRefund.error("هذا الآيبان موجود لمنتسب آخر في الدفعة.", "Another batch member already has this IBAN.")
         }
-        if code != EmployeeRefund.rafidainCode, banks[code] == nil { banks[code] = bankDefaults(code, person: person) }
+        if code != EmployeeRefund.rafidainCode, banks[code] == nil { banks[code] = RefundBank(name: person.bank) }
         rows.append(Row(candidate: candidate, amount: amount ?? ""))
     }
     func remove(_ id: PersistentIdentifier) {
@@ -59,14 +59,20 @@ import SwiftData
         loadLetterSettings()
     }
 
-    private func bankDefaults(_ code: String, person: RefundPerson) -> RefundBank {
-        let accounts = UserDefaults.standard.data(forKey: ExecutionAccountStore.storageKey) ?? Data()
-        let saved = (try? ExecutionAccountStore.decode(accounts)) ?? []
-        let codes = Set(saved.filter { EmployeeRefund.bankCode($0.iban) == code }
-            .map { $0.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
-            .filter { $0.hasPrefix(code + "IQ") && TransferRules.validBIC($0) })
-        return RefundBank(name: person.bank, bic: codes.count == 1 ? codes.first ?? "" : "")
+    var letterBICOptions: [String: [String]] {
+        var codesByBank: [String: [String]] = [:]
+        for row in rows {
+            let person = row.candidate.person
+            guard let bank = EmployeeRefund.bankCode(person.iban) else { continue }
+            if case .value(let bic) = person.payrollBIC, person.payrollBIC.warning(bankCode: bank) == nil {
+                codesByBank[bank, default: []].append(bic)
+            } else if codesByBank[bank] == nil {
+                codesByBank[bank] = []
+            }
+        }
+        return codesByBank.mapValues(EmployeeRefund.mostFrequentBICs)
     }
+
     func loadLetterSettings() {
         guard !initialized else { return }
         initialized = true

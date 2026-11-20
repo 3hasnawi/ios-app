@@ -1,9 +1,4 @@
 enum Money { static func format(_ value: Double?) -> String { "" } }
-struct SavedExecutionAccount { let iban, swift: String }
-enum ExecutionAccountStore {
-    static let storageKey = "accounts"
-    static func decode(_ data: Data) throws -> [SavedExecutionAccount] { [] }
-}
 struct TransferLetterCustomizationStore: Decodable {
     static let settingsKey = "letters"
     struct Fields: Decodable {

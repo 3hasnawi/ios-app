@@ -14,7 +14,6 @@ struct EmployeeRefundView: View {
     @State private var error: String?
     @State private var confirming = false
 
-    private var codes: [String] { Set(draft.rows.compactMap { EmployeeRefund.bankCode($0.candidate.person.iban) }).sorted() }
     private func plan() throws -> EmployeeRefund.Batch {
         try EmployeeRefund.plan(entries: draft.rows.map { .init(person: $0.candidate.person, amount: $0.amount) },
             banks: draft.banks, payer: draft.payer, account: draft.account, source: draft.source)
@@ -53,14 +52,15 @@ struct EmployeeRefundView: View {
                         }
                     }
                 }
-                ForEach(codes, id: \.self) { code in
+                let options = draft.letterBICOptions
+                ForEach(options.keys.sorted(), id: \.self) { code in
                     Section(code) {
                         if code == EmployeeRefund.rafidainCode {
                             LabeledContent(tr("المصرف", "Bank"), value: EmployeeRefund.rafidainBank.name)
                             LabeledContent(tr("سويفت الكتاب", "Letter SWIFT"), value: EmployeeRefund.rafidainBank.bic)
                         } else {
                             TextField(tr("اسم المصرف", "Bank name"), text: bankField(code, \.name))
-                            TextField(tr("سويفت الكتاب", "Letter SWIFT"), text: bankField(code, \.bic)).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                            bankLetterBIC(code, leaders: options[code] ?? [])
                         }
                     }
                 }
@@ -151,6 +151,23 @@ struct EmployeeRefundView: View {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
             }
         }.disabled(code == nil && !selected)
+    }
+
+    @ViewBuilder private func bankLetterBIC(_ code: String, leaders: [String]) -> some View {
+        let title = tr("سويفت الكتاب", "Letter SWIFT")
+        if let selected = EmployeeRefund.letterBIC(leaders: leaders, preferred: draft.banks[code]?.bic ?? "") {
+            if leaders.count > 1 {
+                Picker(title, selection: Binding(get: { selected }, set: { draft.banks[code, default: RefundBank()].bic = $0 })) {
+                    ForEach(leaders, id: \.self) { Text($0).tag($0) }
+                }
+                Text(tr("تساوت هذه الرموز بعدد المنتسبين. يمكنك اختيار أحدها للكتاب.", "These codes have the same employee count. Choose one for the letter."))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                LabeledContent(title, value: selected)
+            }
+        } else {
+            LabeledContent(title, value: tr("راجع الرفرنس في الرواتب", "Check payroll SWIFT"))
+        }
     }
 
     private func bankField(_ code: String, _ field: WritableKeyPath<RefundBank, String>) -> Binding<String> {

@@ -105,6 +105,18 @@ nonisolated enum EmployeeRefund {
         guard let first = codes.first else { return foundColumn ? .empty : .missingColumn }
         return codes.count == 1 ? .value(first) : .conflicting
     }
+    // كل منتسب له صوت واحد لرمز فرعه، بصرف النظر عن مبلغ الإعادة.
+    static func mostFrequentBICs(_ codes: [String]) -> [String] {
+        var counts: [String: Int] = [:]
+        for code in codes { counts[code, default: 0] += 1 }
+        guard let maximum = counts.values.max() else { return [] }
+        return counts.keys.filter { counts[$0] == maximum }.sorted()
+    }
+
+    static func letterBIC(leaders: [String], preferred: String) -> String? {
+        leaders.contains(preferred) ? preferred : leaders.first
+    }
+
     static func amount(_ value: String) -> Int64? {
         let clean = ArabicText.latinDigits(value.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "٬", with: ",")
         guard clean.range(of: #"^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$"#, options: .regularExpression) != nil,
@@ -144,9 +156,10 @@ nonisolated enum EmployeeRefund {
         let result: [Group] = try groups.keys.sorted().map { code in
             guard let bank = (code == rafidainCode ? rafidainBank : banks[code]), let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
             let name = bank.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let bic = bank.bic.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            guard !name.isEmpty, TransferRules.safeField(name), TransferRules.validBIC(bic), bic.hasPrefix(code + "IQ") else {
-                throw error("أكمل اسم المصرف ورمز SWIFT المطابق للآيبان: " + code, "Check bank name and matching SWIFT for " + code)
+            let bic = code == rafidainCode ? rafidainBank.bic
+                : letterBIC(leaders: mostFrequentBICs(payments.map(\.bic)), preferred: bank.bic)
+            guard let bic, !name.isEmpty, TransferRules.safeField(name) else {
+                throw error("راجع اسم المصرف: " + code, "Check bank name for " + code)
             }
             return Group(code: code, bank: RefundBank(name: name, bic: bic), payments: payments, total: payments.reduce(0) { $0 + $1.amount })
         }

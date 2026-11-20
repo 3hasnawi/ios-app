@@ -13,8 +13,8 @@ import SwiftData
             try context.save()
             return person
         }
-        func fakeIBAN(_ suffix: Int) -> String {
-            let bban = "RAFB" + String(format: "%015d", suffix)
+        func fakeIBAN(_ suffix: Int, code: String = "RAFB") -> String {
+            let bban = code + String(format: "%015d", suffix)
             var mod = 0
             for c in (bban + "IQ00").utf8 {
                 for n in (c >= 65 ? String(c - 55) : String(c - 48)).utf8 { mod = (mod * 10 + Int(n - 48)) % 97 }
@@ -55,6 +55,24 @@ import SwiftData
         precondition(draft.rows.count == 1 && draft.rows[0].amount == "2500")
         let entries = draft.rows.map { EmployeeRefund.Entry(person: $0.candidate.person, amount: $0.amount) }
         precondition((try? EmployeeRefund.plan(entries: entries, banks: [:], payer: "دافع", account: fakeIBAN(8), source: "")) == nil)
+        draft.clear()
+        func branchCandidate(_ id: PersistentIdentifier, _ serial: Int, _ bic: RefundPayrollBIC) -> RefundCandidate {
+            .init(id: id, month: "A", person: .init(name: "تجريبي", rank: "", workplace: "", iban: fakeIBAN(serial, code: "RSHD"),
+                                                  bank: "مصرف تجريبي", payrollBIC: bic))
+        }
+        let branchA = "RSHDIQ00001", branchB = "RSHDIQ00002"
+        try draft.add(branchCandidate(one.id, 1, .value(branchB)))
+        precondition(draft.letterBICOptions["RSHD"] == [branchB])
+        try draft.add(branchCandidate(two.id, 2, .value(branchA)))
+        precondition(draft.letterBICOptions["RSHD"] == [branchA, branchB])
+        try draft.add(branchCandidate(old.id, 3, .value(branchB)))
+        precondition(draft.letterBICOptions["RSHD"] == [branchB])
+        draft.remove(old.id)
+        draft.remove(one.id)
+        precondition(draft.letterBICOptions["RSHD"] == [branchA])
+        try draft.add(branchCandidate(old.id, 3, .value("OTHRIQ00")))
+        draft.remove(two.id)
+        precondition(draft.letterBICOptions["RSHD"] == [])
         print("Shared refund draft selection, editing, month resolution and ambiguity checks passed.")
     }
 }
