@@ -143,7 +143,7 @@ struct EmployeeRefundView: View {
         DisclosureGroup(title) {
             TextField(tr("الترويسة", "Letterhead"), text: settings.header, axis: .vertical)
             TextField(tr("الجهة المخاطبة", "Addressee"), text: settings.recipient)
-            TextField(tr("العدد", "Letter number"), text: settings.number)
+            LabeledContent(tr("العدد", "Letter number"), value: RefundLetterSettings.fixedNumber)
             TextField(tr("التوقيع الأول", "First signature"), text: settings.first, axis: .vertical)
             TextField(tr("التوقيع الثاني", "Second signature"), text: settings.second, axis: .vertical)
             TextField(tr("التوقيع الثالث", "Third signature"), text: settings.third, axis: .vertical)

@@ -2,7 +2,9 @@ import Foundation
 
 nonisolated struct RefundLetterSettings: Codable, Sendable {
     var header = "جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات"
-    var number = ""
+    // تفصل علامة الاتجاه بين حقلي الأرقام كي يظهر ١ عن يمين ٢٢ في النص العربي.
+    static let fixedNumber = "١\u{200F}/٢٢/ح/"
+    private(set) var number = fixedNumber
     var recipient = "مصرف الرافدين / فرع الأنبار"
     var first = ""
     var second = ""
@@ -100,7 +102,7 @@ nonisolated enum EmployeeRefundExport {
         let template = letters.template
         let signers = [letters.first, letters.second, letters.third]
         let cells = signers.allSatisfy(\.isEmpty) ? ["", "", ""] : try CustomTransferTemplate.signatureCells(signers, date: date)
-        let reference = TransferWordGroupDraft.referenceText(number: ReportSheet.easternDigits(letters.number), date: date, adaptivePDF: true)
+        let reference = TransferWordGroupDraft.referenceText(number: RefundLetterSettings.fixedNumber, date: date, adaptivePDF: true)
         var blocks: [TransferWordDocument.Block] = [
             .paragraph(.init(text: letters.header, halfPoints: template?.halfPoints(.header, default: 32) ?? 32, bold: true)),
             .paragraph(.init(text: reference, halfPoints: template?.halfPoints(.reference, default: 36) ?? 36, bold: true)),

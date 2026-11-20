@@ -130,20 +130,24 @@ signers.first = "العضو الأول"
 signers.second = "العضو الثاني"
 signers.third = "العضو الثالث"
 // قد تحمل الدفعة المؤرشفة فقرة نسخ مختلفة في كل كتاب، أو في القالب الموروث.
-func legacySettings(_ footer: String) throws -> RefundLetterSettings {
+func legacySettings(_ footer: String, number: String) throws -> RefundLetterSettings {
     var settings = signers
     var template = CustomTransferTemplate()
+    template.number = "٩٩"
     template.footer = "وجهة أخرى من قالب التحويلات"
     settings.template = template
     var record = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+    record["number"] = number
     record["footer"] = footer
     return try JSONDecoder().decode(RefundLetterSettings.self, from: JSONSerialization.data(withJSONObject: record))
 }
-let letters = try RefundLetters(rafidain: legacySettings("الأرشيف."), otherBanks: legacySettings("جهة قديمة"))
+let letters = try RefundLetters(rafidain: legacySettings("الأرشيف.", number: ""), otherBanks: legacySettings("جهة قديمة", number: "٧٧"))
 let expectedCopies = "نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة."
 for (groups, settings) in [(raf.groups, letters.rafidain), (other, letters.otherBanks)] {
     let letter = try EmployeeRefundExport.letter(groups, batch: batch, letters: settings, date: " / ١١ / ٢٠٢٦")
     guard case .paragraph(let copies) = letter.last else { fatalError("Missing copies footer") }
+    guard case .paragraph(let reference) = letter[1] else { fatalError("Missing reference") }
+    precondition(reference.text.components(separatedBy: "\n").first == "العدد: ١\u{200F}/٢٢/ح/")
     precondition(copies.text == expectedCopies)
 }
 let codes = ["RSHD", "OTHR", "BANK", "TEST"]

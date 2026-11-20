@@ -121,7 +121,6 @@ import SwiftData
             let template = custom.letterTemplate
             var value = RefundLetterSettings()
             value.header = template?.header ?? custom.header ?? value.header
-            value.number = template?.number ?? custom.fixedNumber ?? value.number
             value.first = template?.firstSigner ?? custom.committeeFirst ?? ""
             value.second = template?.secondSigner ?? custom.committeeSecond ?? ""
             value.third = template?.thirdSigner ?? custom.committeeThird ?? ""
