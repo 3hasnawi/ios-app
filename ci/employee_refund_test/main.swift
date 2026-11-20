@@ -26,6 +26,17 @@ precondition(table.rows == [["1","OTHR","2500","1","OTHRIQ00"], ["2","RSHD","450
 guard case .paragraph(let otherBody) = blocks[4] else { fatalError() }
 let otherWords = try ArabicAmountWords.dinars(7000)
 precondition(otherBody.text.contains(otherWords) && otherBody.text.contains("عددهم (3)") && otherBody.text.contains("مصدر تجريبي"))
+precondition(otherBody.text.contains("إلى حسابات المصارف المبينة في الجدول أدناه"))
+// قد تتضمن الدفعة الرافدين أيضاً؛ صياغة الكتاب الثاني تعتمد مصارف ذلك الكتاب وحده.
+let mixed = try plan([entries[0], entries[1], entries[3]], ["RSHD": RefundBank(name: "مصرف تجريبي", bic: "RSHDIQ00")])
+let singleBank = mixed.groups.filter { !$0.isRafidain }
+let singleBlocks = try EmployeeRefundExport.letter(singleBank, batch: mixed, letters: .init(), date: "1 / 1 / 2026")
+guard case .paragraph(let singleBody) = singleBlocks[4], case .table(let singleTable) = singleBlocks[5] else { fatalError() }
+precondition(singleBody.text.contains("إلى حساب مصرف تجريبي، رمز السويفت (RSHDIQ00)"))
+precondition(singleBody.text.contains("ملف CSV المرفق") && singleBody.text.contains("عددهم (2)"))
+precondition(singleTable.rows == [["1","مصرف تجريبي","4500","2","RSHDIQ00"]])
+let bankCSV = EmployeeRefund.csv(singleBank[0], batch: mixed, day: "20260101")
+precondition(String(decoding: bankCSV, as: UTF8.self).components(separatedBy: "|RSHDIQ00|").count == 3)
 let raf = try plan([entries[0]], [:])
 let rafBlocks = try EmployeeRefundExport.letter(raf.groups, batch: raf, letters: .init(), date: "1 / 1 / 2026")
 guard case .paragraph(let rafBody) = rafBlocks[4], case .paragraph(let attachment) = rafBlocks[5] else { fatalError() }

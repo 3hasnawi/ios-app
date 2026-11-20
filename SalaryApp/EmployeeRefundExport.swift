@@ -68,9 +68,10 @@ nonisolated enum EmployeeRefundExport {
         let destination: String
         if first.isRafidain {
             destination = "إلى حساب \(first.bank.name) المرقم (\(first.bank.bic)) وحسب ما مؤشر في قرص CD"
+        } else if groups.count == 1 {
+            destination = "إلى حساب \(first.bank.name)، رمز السويفت (\(first.bank.bic))، وحسب ما مؤشر في ملف CSV المرفق"
         } else {
-            let files = groups.count == 1 ? "ملف CSV المرفق" : "ملفات CSV المرفقة"
-            destination = "إلى حسابات المصارف المبينة في الجدول أدناه وحسب ما مؤشر في " + files
+            destination = "إلى حسابات المصارف المبينة في الجدول أدناه وحسب ما مؤشر في ملفات CSV المرفقة"
         }
         let from = batch.source.isEmpty ? "" : " من " + batch.source
         let body = "نرجو تحويل مبلغ قدره (\(try display(total))) (\(try ArabicAmountWords.dinars(total))) لا غيرها من حسابنا المرقم (\(batch.account)) المفتوح لديكم \(destination)، والذي يمثل إعادة مبالغ\(from) لمنتسبي قيادة شرطة محافظة الأنبار والبالغ عددهم (\(ReportSheet.easternDigits(String(count))))، وتزويدنا بالإشعار اللازم بذلك."
