@@ -606,7 +606,7 @@ jobs:
           sleep 3
           TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests)
           if [ "$QUICK" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes -only-testing:SalaryAppUITests/NavigationTests/testSalaryTrustGlobalSearch -only-testing:SalaryAppUITests/NavigationTests/testExecutionAccountsMerge)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow -only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testStaffSearchModes -only-testing:SalaryAppUITests/NavigationTests/testSalaryTrustGlobalSearch -only-testing:SalaryAppUITests/NavigationTests/testRefundFromGlobalSearch -only-testing:SalaryAppUITests/NavigationTests/testExecutionAccountsMerge)
           fi
           if [ "$NAVIGATION_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar)

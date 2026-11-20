@@ -96,6 +96,9 @@ struct UnifiedSearchView: View {
     @State private var path: [UnifiedPerson] = []
     /// مشاركة تقرير الراتب من الضغط المطوّل على بطاقة النتيجة.
     @State private var shareTarget: Employee?
+    private let refundDraft = RefundDraft.shared
+    @State private var refundTarget: RefundSearchTarget?
+    @State private var refundReviewMonth: String?
     @State private var deductionTarget: DeductionPerson?
     @State private var preparingStaffReport = false
     @State private var staffReportError: String?
@@ -120,6 +123,14 @@ struct UnifiedSearchView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if let month = refundDraft.month {
+                    Button {
+                        refundReviewMonth = month
+                    } label: {
+                        Label(tr("عرض الدفعة (\(Num.format(refundDraft.rows.count)))", "View batch (\(refundDraft.rows.count))"), systemImage: "tray.full")
+                    }
+                    .accessibilityIdentifier("viewSearchRefundBatch")
+                }
                 if trimmed.isEmpty {
                     emptyState
                 } else if loadedKey == queryKey, let searchError {
@@ -152,6 +163,16 @@ struct UnifiedSearchView: View {
                                     .accessibilityIdentifier("resultCard")
                                     .contextMenu {
                                         Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
+                                        if let id = person.hit.employeeID, let month = person.hit.month {
+                                            let target = RefundSearchTarget(id: id, key: person.hit.key, month: month)
+                                            Button(target.isIn(refundDraft)
+                                                ? tr("تعديل مبلغ الإعادة", "Edit refund amount")
+                                                : tr("إضافة إلى دفعة إعادة المبالغ", "Add to refund batch"), systemImage: "plus.circle") {
+                                                refundTarget = target
+                                            }
+                                            .disabled(refundDraft.working)
+                                            .accessibilityIdentifier("searchRefundAction")
+                                        }
                                         if person.hasPayroll {
                                             Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
                                                 shareTarget = person.employee
@@ -322,6 +343,8 @@ struct UnifiedSearchView: View {
             }
             .navigationTitle(tr("بحث", "Search"))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(item: $refundReviewMonth) { month in EmployeeRefundView(month: month) }
+            .sheet(item: $refundTarget) { target in RefundSearchEntrySheet(target: target) }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
             .sheet(item: $deductionTarget) { target in
                 NavigationStack {

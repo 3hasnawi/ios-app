@@ -30,13 +30,20 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(work / "test")], check=True)
     model = section("Models.swift", "@Model\nfinal class Employee", "    var items: [String: Double]")
     model = model[:model.index("    init(")] + """
-    init(name: String) { self.name = name; nameKey = name; matchKey = name; rank = ""; workplace = "" }
-    var details: [String:String] { [:] }
+    init(name: String) { self.name = name; nameKey = ArabicText.normalize(name); matchKey = ArabicText.matchKey(name); rank = ""; workplace = "" }
+    var details: [String:String] { detailsData.flatMap { try? JSONDecoder().decode([String:String].self, from: $0) } ?? [:] }
     var rawColumns: PayrollColumnSnapshot? { PayrollColumnSnapshot.decode(rawColumnsData) }
 }
 """
     ios = work / "IOS.swift"
     ios.write_text("import Foundation\nimport SwiftData\n" + model + (tests / "IOS.support").read_text())
+    target = work / "Target.swift"
+    target.write_text("import SwiftData\n" + section("RefundSearchEntrySheet.swift", "struct RefundSearchTarget:", "struct RefundSearchEntrySheet:"))
+    shared = [str(ios), str(app / "RefundPayrollSearch.swift"), str(app / "RefundDraft.swift")]
+    subprocess.run(["swiftc", "-parse-as-library", "-o", str(work / "draft-test"), *files, *shared,
+                    str(target), str(tests / "DraftTest.swift")], check=True)
+    subprocess.run([str(work / "draft-test")], check=True)
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-sdk", sdk, "-target", "arm64-apple-ios26.0",
-                    *files, str(ios), str(app / "EmployeeRefundView.swift"), str(app / "RefundPayrollSearch.swift")], check=True)
+                    *files, str(ios), str(app / "EmployeeRefundView.swift"), str(app / "RefundPayrollSearch.swift"),
+                    str(app / "RefundDraft.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)

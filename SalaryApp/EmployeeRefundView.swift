@@ -2,41 +2,30 @@ import SwiftUI
 import SwiftData
 
 struct EmployeeRefundView: View {
-    let month: String
-    private struct Row: Identifiable {
-        var candidate: RefundCandidate
-        var amount = ""
-        var id: PersistentIdentifier { candidate.id }
-    }
+    private let initialMonth: String
+    init(month: String) { initialMonth = month }
+    private var month: String { draft.month ?? initialMonth }
+    @Bindable private var draft = RefundDraft.shared
     @Environment(\.modelContext) private var context
-    @AppStorage(ExecutionAccountStore.storageKey) private var accounts = Data()
     @State private var search = ""
     @State private var found: [RefundCandidate] = []
     @State private var completedSearch = ""
-    @State private var rows: [Row] = []
-    @State private var banks: [String: RefundBank] = [:]
-    @State private var source = ""
-    @State private var date = Date.now
-    @State private var payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? ""
-    @State private var account = UserDefaults.standard.string(forKey: "bankStatementIBAN") ?? ""
-    @State private var letters = RefundLetters()
-    @State private var initialized = false
+    @State private var confirmClear = false
     @State private var error: String?
-    @State private var working = false
     @State private var confirming = false
 
-    private var codes: [String] { Set(rows.compactMap { EmployeeRefund.bankCode($0.candidate.person.iban) }).sorted() }
+    private var codes: [String] { Set(draft.rows.compactMap { EmployeeRefund.bankCode($0.candidate.person.iban) }).sorted() }
     private func plan() throws -> EmployeeRefund.Batch {
-        try EmployeeRefund.plan(entries: rows.map { .init(person: $0.candidate.person, amount: $0.amount) },
-            banks: banks, payer: payer, account: account, source: source)
+        try EmployeeRefund.plan(entries: draft.rows.map { .init(person: $0.candidate.person, amount: $0.amount) },
+            banks: draft.banks, payer: draft.payer, account: draft.account, source: draft.source)
     }
 
     var body: some View {
         Form {
             Section {
                 LabeledContent(tr("شهر حسابات المنتسبين", "Employee account month"), value: month)
-                DatePicker(tr("تاريخ التحويل", "Transfer date"), selection: $date, displayedComponents: .date)
-                TextField(tr("الجهة أو المصرف المعيد (اختياري)", "Refund source (optional)"), text: $source)
+                DatePicker(tr("تاريخ التحويل", "Transfer date"), selection: $draft.date, displayedComponents: .date)
+                TextField(tr("الجهة أو المصرف المعيد (اختياري)", "Refund source (optional)"), text: $draft.source)
             }
             Section(tr("اختيار المنتسبين", "Select employees")) {
                 TextField(tr("ابحث بالاسم", "Search by name"), text: $search).autocorrectionDisabled()
@@ -47,14 +36,14 @@ struct EmployeeRefundView: View {
                     if found.count == 50 { Text(tr("أدخل اسماً أطول لتضييق النتائج.", "Enter more of the name to narrow the results.")).font(.caption) }
                 }
             }
-            if !rows.isEmpty {
+            if !draft.rows.isEmpty {
                 Section(tr("مبلغ الإعادة لكل منتسب", "Refund amount per employee")) {
-                    ForEach($rows) { $row in
+                    ForEach($draft.rows) { $row in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Text(row.candidate.person.name).bold()
                                 Spacer()
-                                Button(role: .destructive) { let id = row.id; rows.removeAll { $0.id == id } } label: {
+                                Button(role: .destructive) { draft.remove(row.id) } label: {
                                     Image(systemName: "minus.circle").accessibilityLabel(tr("إزالة", "Remove"))
                                 }.buttonStyle(.borderless)
                             }
@@ -78,17 +67,17 @@ struct EmployeeRefundView: View {
             }
             Section {
                 DisclosureGroup(tr("بيانات الجهة الدافعة والكتاب", "Payer and letter details")) {
-                    TextField(tr("اسم الجهة الدافعة", "Payer name"), text: $payer)
-                    TextField(tr("آيبان الجهة الدافعة", "Payer IBAN"), text: $account).autocorrectionDisabled().textInputAutocapitalization(.characters)
+                    TextField(tr("اسم الجهة الدافعة", "Payer name"), text: $draft.payer)
+                    TextField(tr("آيبان الجهة الدافعة", "Payer IBAN"), text: $draft.account).autocorrectionDisabled().textInputAutocapitalization(.characters)
                     if codes.contains(EmployeeRefund.rafidainCode) {
-                        letterFields(tr("كتاب الرافدين", "Rafidain letter"), $letters.rafidain)
+                        letterFields(tr("كتاب الرافدين", "Rafidain letter"), $draft.letters.rafidain)
                     }
                     if codes.contains(where: { $0 != EmployeeRefund.rafidainCode }) {
-                        letterFields(tr("كتاب الرشيد والمصارف الأخرى", "Rasheed and other banks letter"), $letters.otherBanks)
+                        letterFields(tr("كتاب الرشيد والمصارف الأخرى", "Rasheed and other banks letter"), $draft.letters.otherBanks)
                     }
                 }
             }
-            if !rows.isEmpty {
+            if !draft.rows.isEmpty {
                 Section(tr("مراجعة الدفعة", "Review batch")) {
                     if let batch = try? plan() {
                         ForEach(batch.groups, id: \.code) { group in
@@ -102,12 +91,20 @@ struct EmployeeRefundView: View {
                 }
             }
         }
+        .toolbar {
+            if !draft.rows.isEmpty {
+                Button(tr("تفريغ الدفعة", "Clear batch"), systemImage: "trash") { confirmClear = true }.disabled(draft.working)
+            }
+        }
+        .confirmationDialog(tr("تفريغ دفعة الإعادة الحالية؟", "Clear the current refund batch?"), isPresented: $confirmClear, titleVisibility: .visible) {
+            Button(tr("تفريغ الدفعة", "Clear batch"), role: .destructive) { draft.clear() }
+        }
         .navigationTitle(tr("إعادة المبالغ", "Employee refunds")).navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
-        .disabled(working)
-        .overlay { if working { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
-        .task(id: search) { await find() }
-        .onAppear { loadLetterSettings() }
+        .disabled(draft.working)
+        .overlay { if draft.working { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+        .task(id: [month, search]) { await find() }
+        .onAppear { draft.loadLetterSettings() }
         .alert(tr("إعادة المبالغ", "Employee refunds"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK")) { error = nil }
         } message: { Text(error ?? "") }
@@ -131,15 +128,15 @@ struct EmployeeRefundView: View {
     }
 
     private func candidateButton(_ candidate: RefundCandidate) -> some View {
-        let selected = rows.contains { $0.id == candidate.id }
+        let selected = draft.rows.contains { $0.id == candidate.id }
         let person = candidate.person
         let code = EmployeeRefund.bankCode(person.iban)
         let validBIC = code.map { EmployeeRefund.validPayrollBIC(person.payrollBIC, bankCode: $0) } ?? false
         return Button {
-            if selected { rows.removeAll { $0.id == candidate.id } }
-            else if let code {
-                if code != EmployeeRefund.rafidainCode, banks[code] == nil { banks[code] = bankDefaults(code, person: person) }
-                rows.append(Row(candidate: candidate))
+            if selected { draft.remove(candidate.id) }
+            else {
+                do { try draft.add(candidate) }
+                catch { self.error = error.localizedDescription }
             }
         } label: {
             HStack {
@@ -157,16 +154,9 @@ struct EmployeeRefundView: View {
         }.disabled(!validBIC && !selected)
     }
 
-    private func bankDefaults(_ code: String, person: RefundPerson) -> RefundBank {
-        let saved = (try? ExecutionAccountStore.decode(accounts)) ?? []
-        let codes = Set(saved.filter { EmployeeRefund.bankCode($0.iban) == code }
-            .map { $0.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
-            .filter { $0.hasPrefix(code + "IQ") && TransferRules.validBIC($0) })
-        return RefundBank(name: person.bank, bic: codes.count == 1 ? codes.first ?? "" : "")
-    }
     private func bankField(_ code: String, _ field: WritableKeyPath<RefundBank, String>) -> Binding<String> {
-        Binding(get: { banks[code, default: RefundBank()][keyPath: field] },
-                set: { banks[code, default: RefundBank()][keyPath: field] = $0 })
+        Binding(get: { draft.banks[code, default: RefundBank()][keyPath: field] },
+                set: { draft.banks[code, default: RefundBank()][keyPath: field] = $0 })
     }
     private func find() async {
         let input = search, month = month, container = context.container
@@ -174,45 +164,24 @@ struct EmployeeRefundView: View {
         do {
             try await Task.sleep(for: .milliseconds(200))
             let result = try await Task.detached { try await RefundPayrollSearch(modelContainer: container).search(input, month: month) }.value
-            guard !Task.isCancelled, search == input else { return }
+            guard !Task.isCancelled, self.month == month, search == input else { return }
             found = result; completedSearch = input
         } catch {
-            guard !Task.isCancelled, search == input else { return }
+            guard !Task.isCancelled, self.month == month, search == input else { return }
             found = []; completedSearch = input; self.error = error.localizedDescription
         }
     }
-    private func loadLetterSettings() {
-        guard !initialized else { return }
-        initialized = true
-        guard let data = UserDefaults.standard.data(forKey: TransferLetterCustomizationStore.settingsKey),
-              let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data) else { return }
-        func settings(for id: String) -> RefundLetterSettings {
-            let custom = store.effective(for: id)
-            let template = custom.letterTemplate
-            var value = RefundLetterSettings()
-            value.header = template?.header ?? custom.header ?? value.header
-            value.number = template?.number ?? custom.fixedNumber ?? value.number
-            value.first = template?.firstSigner ?? custom.committeeFirst ?? ""
-            value.second = template?.secondSigner ?? custom.committeeSecond ?? ""
-            value.third = template?.thirdSigner ?? custom.committeeThird ?? ""
-            value.footer = template?.footer ?? custom.footer ?? value.footer
-            value.signatureOffset = template?.signatureVerticalOffset ?? custom.signatureOffset ?? 0
-            value.template = template
-            return value
-        }
-        letters = RefundLetters(rafidain: settings(for: "rafidain_group"), otherBanks: settings(for: "other_banks_group"))
-    }
     private func export() {
-        guard !working else { return }
+        guard !draft.working else { return }
         do {
-            let batch = try plan(), people = rows.map(\.candidate), container = context.container
-            let month = month, date = date, settings = letters
-            working = true
+            let batch = try plan(), people = draft.rows.map(\.candidate), container = context.container
+            let month = month, exportDate = draft.date, settings = draft.letters
+            draft.working = true
             Task {
-                defer { working = false }
+                defer { draft.working = false }
                 do {
                     try await Task.detached { try await RefundPayrollSearch(modelContainer: container).verify(people, month: month) }.value
-                    let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: date, letters: settings) }
+                    let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: exportDate, letters: settings) }
                     ActivityShare.present(urls) { _ in
                         if let folder = urls.first?.deletingLastPathComponent() { try? FileManager.default.removeItem(at: folder) }
                     }

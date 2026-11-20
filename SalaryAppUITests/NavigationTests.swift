@@ -75,6 +75,29 @@ final class NavigationTests: XCTestCase {
         }
     }
 
+    func testRefundFromGlobalSearch() {
+        app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-search", "أحمد علي حسين الدليمي"]
+        app.launch()
+        let card = element("resultCard")
+        guard wait(card, "نتيجة المنتسب", timeout: 45) else { return }
+        card.press(forDuration: 0.8)
+        element("searchRefundAction").tap()
+        let field = element("searchRefundAmount")
+        guard wait(field, "مبلغ الإعادة") else { return }
+        field.tap()
+        field.typeText("25000")
+        element("saveSearchRefund").tap()
+        guard wait(element("viewSearchRefundBatch"), "الدفعة من البحث") else { return }
+        card.press(forDuration: 0.8)
+        element("searchRefundAction").tap()
+        guard wait(field, "تعديل مبلغ موجود") else { return }
+        XCTAssertEqual(field.value as? String, "25000")
+        element("saveSearchRefund").tap()
+        element("viewSearchRefundBatch").tap()
+        XCTAssertTrue(app.navigationBars["إعادة المبالغ"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.textFields.matching(NSPredicate(format: "value == %@", "25000")).count, 1)
+    }
+
     func testSalaryTrustGlobalSearch() {
         for query in ["أحمد علي حسين الدليمي", "منتسب أمانات تجريبي فقط"] {
             app.launchArguments += ["-skipLock", "YES", "-tab", "search", "-trustSearchPreview", "YES", "-search", query]

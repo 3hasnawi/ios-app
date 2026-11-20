@@ -3,6 +3,7 @@ import Foundation
 
 nonisolated struct RefundCandidate: Identifiable, Hashable, Sendable {
     let id: PersistentIdentifier
+    let month: String
     let person: RefundPerson
 }
 
@@ -10,7 +11,7 @@ nonisolated struct RefundCandidate: Identifiable, Hashable, Sendable {
 actor RefundPayrollSearch {
     private func candidate(_ employee: Employee) -> RefundCandidate {
         let details = employee.details
-        return RefundCandidate(id: employee.persistentModelID, person: RefundPerson(name: employee.name, rank: employee.rank,
+        return RefundCandidate(id: employee.persistentModelID, month: employee.month, person: RefundPerson(name: employee.name, rank: employee.rank,
             workplace: employee.workplace, iban: EmployeeRefund.normalizeAccount(details["IBAN"] ?? ""), bank: details["توطين المصرف"] ?? "",
             payrollBIC: EmployeeRefund.payrollBIC(details: details, columns: employee.rawColumns)))
     }
@@ -22,6 +23,18 @@ actor RefundPayrollSearch {
                                               sortBy: [SortDescriptor(\.name), SortDescriptor(\.workplace)])
         query.fetchLimit = 50
         return try modelContext.fetch(query).map(candidate)
+    }
+
+    func searchResult(_ target: RefundSearchTarget, month: String) throws -> RefundCandidate {
+        let key = target.key
+        var query = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month && $0.matchKey == key })
+        if target.month != month { query.fetchLimit = 2 }
+        let matches = try modelContext.fetch(query)
+        if target.month == month, let exact = matches.first(where: { $0.persistentModelID == target.id }) {
+            return candidate(exact)
+        }
+        if target.month != month, matches.count == 1 { return candidate(matches[0]) }
+        throw EmployeeRefund.error("تعذّر تحديد سجل هذا المنتسب في شهر الدفعة. راجع الأسماء من شاشة إعادة المبالغ.", "Could not identify this employee in the batch month. Review names on the refunds screen.")
     }
 
     func verify(_ selected: [RefundCandidate], month: String) throws {

@@ -29,7 +29,7 @@ HEADERS = [
     "مدخل البانات واسم الحاسبة ", "تاريخ التعديل", "اسم الشهدة", "اسم المنصب", "عدد العلاوات",
     "الرقم الوظيفي", "الرقم الموحد", "الرقم الاحصائي", "طريقة الدفع", "توطين المصرف", "IBAN", "الرفرنس",
     "عدد الاطفال", "حالة الموظف", "الدورة", "Unit_No", "استقطاع مؤقت", "اسم استقطاع المؤقته",
-    "اسم اللقب العلمي", "M_Stob", "IdBoss", "حقل مستقبلي تجريبي",
+    "اسم اللقب العلمي", "M_Stob", "IdBoss", "حقل مستقبلي تجريبي", "Receiver BIC",
 ]
 COL = {h: i for i, h in enumerate(HEADERS)}
 
@@ -87,6 +87,11 @@ def employee_row(name, rank, unit, net, phone_deduction):
     row[COL["مجموع الاستقطاعات"]] = sum(row[COL[c]] or 0 for c in deduction_cols)
     row[COL["توطين المصرف"]] = "مصرف الرافدين"
     row[COL["IBAN"]] = "IQ00RAFB" + str(10**14 + h * 7919)
+    if name == "أحمد علي حسين الدليمي":
+        bban = "RAFB" + str(10**14 + h * 7919)
+        digits = "".join(str(ord(c) - 55) if c.isalpha() else c for c in bban + "IQ00")
+        row[COL["IBAN"]] = f"IQ{98 - int(digits) % 97:02d}{bban}"
+        row[COL["Receiver BIC"]] = "RAFBIQ00001"
     row[COL["الرقم الموحد"]] = str(1000000 + h * 31)
     row[COL["الرقم الوظيفي"]] = str(130000000 + h * 17)
     row[COL["رقم الضمان الصحي"]] = str(400000 + h)
