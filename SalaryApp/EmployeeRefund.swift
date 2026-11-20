@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// لقطة المستفيد من صف الرواتب. اسم الجهة المعيدة لا يُستعمل مطلقاً لاختيار حساب المستفيد.
 nonisolated struct RefundPerson: Hashable, Sendable {
@@ -94,12 +95,20 @@ nonisolated enum EmployeeRefund {
         return Batch(groups: result, total: total, payer: payer, account: account, reason: reason)
     }
 
-    /// نفس ترتيب أعمدة التحويل المصرفي والفاصل والترميز المعتمدين. التسلسل يتواصل بين ملفات الدفعة.
-    static func csv(_ group: Group, batch: Batch, day: String, offset: Int) -> Data {
+    // مرجع رقمي ثابت عند إعادة تجهيز الحركة، ومستقل عن ترتيب الأسماء أو ملفات استقطاعات اليوم نفسه.
+    private static func reference(_ payment: Payment, group: Group, batch: Batch, day: String) -> String {
+        let components = [day, batch.account, payment.iban, String(payment.amount), batch.reason, group.bank.bic]
+        let digest = SHA256.hash(data: Data(components.joined(separator: "|").utf8))
+        let serial = digest.prefix(8).reduce(UInt64.zero) { ($0 << 8) | UInt64($1) }
+        let prefix = group.isRafidain ? TransferCategory.rafidain.prefix : TransferCategory.otherBanks.prefix
+        return day + prefix + "0" + String(serial)
+    }
+
+    /// نفس ترتيب أعمدة التحويل المصرفي والفاصل والترميز المعتمدين.
+    static func csv(_ group: Group, batch: Batch, day: String) -> Data {
         var rows = [TransferRules.csvHeader]
-        for (index, item) in group.payments.enumerated() {
-            let prefix = group.isRafidain ? TransferCategory.rafidain.prefix : TransferCategory.otherBanks.prefix
-            let fields = [day + prefix + String(offset + index + 1), day, batch.payer, batch.account, String(item.amount),
+        for item in group.payments {
+            let fields = [reference(item, group: group, batch: batch, day: day), day, batch.payer, batch.account, String(item.amount),
                           "IQD", group.bank.bic, item.name, item.iban, batch.reason, "SLEV"]
             rows.append(fields.joined(separator: "|"))
         }

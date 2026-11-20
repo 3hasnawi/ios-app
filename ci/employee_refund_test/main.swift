@@ -24,7 +24,7 @@ guard case .table(let table) = blocks[5] else { fatalError() }
 precondition(table.rows == [["OTHR","2500","OTHRIQ00"], ["RSHD","4500","RSHDIQ00"], ["المجموع الكلي","7000",""]])
 var refs = Set<String>(), csvSum: Int64 = 0, offset = 0
 for group in batch.groups {
-    let csv = EmployeeRefund.csv(group, batch: batch, day: "20260101", offset: offset)
+    let csv = EmployeeRefund.csv(group, batch: batch, day: "20260101")
     for line in String(decoding: csv, as: UTF8.self).components(separatedBy: "\r\n").dropFirst() {
         let fields = line.components(separatedBy: "|")
         precondition(fields.count == 11 && refs.insert(fields[0]).inserted && fields[6] == group.bank.bic)
@@ -46,3 +46,10 @@ precondition((try? plan([entry("RAFB", 99, "100")])) == nil && EmployeeRefund.ba
 for invalid in ["0","-1","1.5","123,45","9999999999999999","nan"] { precondition(EmployeeRefund.amount(invalid) == nil) }
 precondition((try? plan([entry("RAFB", 1, "999999999999999"), entry("RAFB", 2, "1")])) == nil)
 print("Refund bank routing, CSVs, letter table totals, single/mixed batches and rejected transfers passed.")
+
+let standalone = try plan([entries[3]])
+let singleCSV = EmployeeRefund.csv(standalone.groups[0], batch: standalone, day: "20260101")
+let singleRef = String(decoding: singleCSV, as: UTF8.self).components(separatedBy: "\r\n")[1].components(separatedBy: "|")[0]
+precondition(refs.contains(singleRef) && singleRef.count <= 35)
+let changed = try plan([entry("RSHD", 4, "501")])
+precondition(EmployeeRefund.csv(changed.groups[0], batch: changed, day: "20260101") != singleCSV)

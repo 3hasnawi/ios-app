@@ -26,13 +26,12 @@ nonisolated enum EmployeeRefundExport {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("refund-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
         do {
-            var urls: [URL] = [], offset = 0
+            var urls: [URL] = []
             for group in batch.groups {
-                let data = EmployeeRefund.csv(group, batch: batch, day: day, offset: offset)
+                let data = EmployeeRefund.csv(group, batch: batch, day: day)
                 let url = folder.appendingPathComponent("إعادة مبالغ - " + group.code + ".csv")
                 try data.write(to: url, options: [.atomic, .completeFileProtection])
                 urls.append(url)
-                offset += group.payments.count
             }
             for rafidain in [true, false] {
                 let groups = batch.groups.filter { $0.isRafidain == rafidain }
