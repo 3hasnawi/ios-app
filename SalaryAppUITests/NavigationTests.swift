@@ -103,7 +103,15 @@ final class NavigationTests: XCTestCase {
         element("saveSearchRefund").tap()
         element("viewSearchRefundBatch").tap()
         XCTAssertTrue(app.navigationBars["إعادة المبالغ"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.textFields.matching(NSPredicate(format: "value == %@", "25000")).count, 1)
+        let inlineAmount = app.textFields["refundRecipientAmount"].firstMatch
+        XCTAssertTrue(inlineAmount.waitForExistence(timeout: 10))
+        XCTAssertEqual(inlineAmount.value as? String, "25000")
+        inlineAmount.tap()
+        inlineAmount.typeText("12")
+        let entered = inlineAmount.value as? String ?? ""
+        XCTAssertEqual(entered.count, 7)
+        XCTAssertTrue(entered.contains("12"))
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
     }
 
     func testSalaryTrustGlobalSearch() {

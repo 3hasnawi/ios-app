@@ -91,6 +91,42 @@ import SwiftData
         precondition(draft.month == nil && draft.rows.isEmpty)
         let afterClear = try storage.archived()
         precondition(afterClear.count == 1 && afterClear[0].snapshot.rows.count == 2 && RefundDraft(storage: storage).rows.isEmpty)
+        // تعديل الأرشيف مع بقاء المسودة الحية مستقلة وحماية التعديل من نسخة متقادمة.
+        let original = afterClear[0]
+        let editor = RefundDraft(storage: storage, editing: original)
+        editor.setAmount("١٢٣٤٥", for: one.id)
+        precondition(editor.rows.first?.amount == "١٢٣٤٥")
+        editor.remove(two.id)
+        try editor.add(old, amount: "٦٠")
+        editor.date = original.snapshot.date.addingTimeInterval(86400)
+        editor.source = "جهة معدّلة"
+        let beforeSave = try storage.archived()
+        precondition(beforeSave[0].revision == original.revision && RefundDraft(storage: storage).rows.isEmpty)
+        let updated = try await editor.saveArchiveEdit(container: container)
+        let editedBatch = try updated.snapshot.plan()
+        precondition(updated.id == original.id && editedBatch.total == 12405 && updated.snapshot.date == editor.date)
+        precondition(updated.snapshot.rows.map(\.candidate) == [one, old] && updated.snapshot.source == editor.source)
+        try storage.archive(updated.snapshot)
+        let once = try storage.archived()
+        precondition(once.count == 1 && once[0].revision == updated.revision)
+        do { try storage.delete(original); fatalError("Deleted newer edit") } catch {}
+        do { _ = try storage.replace(original, with: original.snapshot); fatalError("Overwrote newer edit") } catch {}
+        let cancelled = RefundDraft(storage: storage, editing: updated)
+        cancelled.remove(one.id); cancelled.remove(old.id)
+        precondition(cancelled.rows.isEmpty && cancelled.date == editor.date && cancelled.source == editor.source)
+        do { _ = try await cancelled.saveArchiveEdit(container: container); fatalError("Saved empty batch") } catch {}
+        try storage.archive(original.snapshot)
+        let separate = try storage.archived()
+        precondition(separate.count == 2)
+        try storage.delete(updated)
+        let remaining = try storage.archived()
+        precondition(remaining.count == 1 && remaining[0].revision == original.revision)
+        precondition(RefundDraft(storage: storage).rows.isEmpty)
+        try draft.add(one, amount: "1")
+        for value in ["٢", "٢٣", "٢٣٤", "", "٨٥"] { draft.setAmount(value, for: one.id) }
+        draft.flushAmount()
+        precondition(RefundDraft(storage: storage).rows.first?.amount == "٨٥")
+        draft.clear()
         let incomplete = try employee("A", "مستفيد تجريبي", fakeIBAN(9))
         incomplete.detailsData = try JSONEncoder().encode(["IBAN": fakeIBAN(9)])
         try context.save()

@@ -2,14 +2,24 @@ import SwiftUI
 import SwiftData
 
 /// مسودة الجلسة مشتركة بين شاشة التحويل والبحث وتتبع شهر صفوف الرواتب المختارة.
-@Observable @MainActor final class RefundDraft {
+@Observable @MainActor final class RefundDraft: Identifiable {
     static let shared = RefundDraft()
     private(set) var batchID = UUID()
     let storage: RefundStorage
+    let archivedRecord: RefundStorage.Archived?
+    @ObservationIgnored private var pendingAmountSave: Task<Void, Never>?
+    @ObservationIgnored private var changingAmount = false
     private var updating = false
     private(set) var loadFailed = false
     private(set) var storageError: String?
-    var rows: [RefundDraftRow] = [] { didSet { persist() } }
+    var rows: [RefundDraftRow] = [] {
+        didSet {
+            guard !changingAmount else { return }
+            letterBICOptions = Self.bankOptions(for: rows)
+            persist()
+        }
+    }
+    private(set) var letterBICOptions: [String: [String]] = [:]
     var month: String? { rows.first?.candidate.month }
     var banks: [String: RefundBank] = [:] { didSet { persist() } }
     var source = "" { didSet { persist() } }
@@ -20,9 +30,10 @@ import SwiftData
     var working = false
     private var initialized = false
 
-    init(storage: RefundStorage = .local) {
+    init(storage: RefundStorage = .local, editing record: RefundStorage.Archived? = nil) {
         self.storage = storage
-        reload()
+        archivedRecord = record
+        if let record { apply(record.snapshot) } else { reload() }
     }
 
     func reload() {
@@ -49,9 +60,47 @@ import SwiftData
     }
 
     func persist() {
-        guard !updating, !loadFailed else { return }
+        guard !updating, !loadFailed, archivedRecord == nil else { return }
+        pendingAmountSave?.cancel()
+        pendingAmountSave = nil
         do { try storage.saveDraft(snapshot); storageError = nil }
         catch { storageError = tr("تعذّر حفظ المسودة على الجهاز.", "Could not save the draft on this device.") }
+    }
+
+    // تحدّث القيمة في الذاكرة فوراً، واجمع ضربات المفاتيح في كتابة قرص واحدة.
+    func setAmount(_ amount: String, for id: PersistentIdentifier) {
+        guard !working, !loadFailed, let index = rows.firstIndex(where: { $0.id == id }), rows[index].amount != amount else { return }
+        changingAmount = true
+        rows[index].amount = amount
+        changingAmount = false
+        guard archivedRecord == nil else { return }
+        pendingAmountSave?.cancel()
+        pendingAmountSave = Task {
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            persist()
+        }
+    }
+
+    func flushAmount() {
+        if pendingAmountSave != nil { persist() }
+    }
+
+    func saveArchiveEdit(container: ModelContainer) async throws -> RefundStorage.Archived {
+        guard let original = archivedRecord, !working else {
+            throw EmployeeRefund.error("تعذّر تعديل الدفعة.", "Cannot edit this batch.")
+        }
+        working = true
+        defer { working = false }
+        let saved = snapshot, storage = storage
+        return try await Task.detached {
+            let existing = Set(original.snapshot.rows.map(\.candidate))
+            let added = saved.rows.map(\.candidate).filter { !existing.contains($0) }
+            let search = RefundPayrollSearch(modelContainer: container)
+            for (month, people) in Dictionary(grouping: added, by: \.month) {
+                try await search.verify(people, month: month)
+            }
+            return try storage.replace(original, with: saved)
+        }.value
     }
 
     func recover(files: [URL], month: String, container: ModelContainer) async throws {
@@ -84,7 +133,7 @@ import SwiftData
 
     func add(_ candidate: RefundCandidate, amount: String? = nil) throws {
         let person = candidate.person
-        guard !working, !loadFailed, month == nil || month == candidate.month else {
+        guard !working, !loadFailed, archivedRecord != nil || month == nil || month == candidate.month else {
             throw EmployeeRefund.error("راجع الدفعة الحالية وشهر الرواتب قبل الإضافة.", "Check the active batch and its payroll month.")
         }
         guard let code = EmployeeRefund.bankCode(person.iban) else {
@@ -109,7 +158,7 @@ import SwiftData
     func remove(_ id: PersistentIdentifier) {
         guard !working else { return }
         rows.removeAll { $0.id == id }
-        if rows.isEmpty { clear() }
+        if rows.isEmpty && archivedRecord == nil { clear() }
     }
     func clear() {
         guard !working else { return }
@@ -125,7 +174,7 @@ import SwiftData
         loadLetterSettings()
     }
 
-    var letterBICOptions: [String: [String]] {
+    private static func bankOptions(for rows: [RefundDraftRow]) -> [String: [String]] {
         var codesByBank: [String: [String]] = [:]
         for row in rows {
             let person = row.candidate.person

@@ -4,13 +4,36 @@ import UniformTypeIdentifiers
 
 struct EmployeeRefundView: View {
     private let initialMonth: String
-    init(month: String) { initialMonth = month }
-    private var month: String { draft.month ?? initialMonth }
-    @Bindable private var draft = RefundDraft.shared
+    private let editMonths: [String]
+    private let onEdited: ((RefundStorage.Archived) -> Void)?
+    @Bindable private var draft: RefundDraft
+    @State private var selectedMonth: String
+    @FocusState private var amountFocus: PersistentIdentifier?
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
+
+    init(month: String) {
+        initialMonth = month
+        editMonths = []
+        onEdited = nil
+        draft = .shared
+        _selectedMonth = State(initialValue: month)
+    }
+
+    init(editing draft: RefundDraft, months: [String], onEdited: @escaping (RefundStorage.Archived) -> Void) {
+        self.draft = draft
+        initialMonth = draft.month ?? ""
+        editMonths = months
+        self.onEdited = onEdited
+        _selectedMonth = State(initialValue: months.contains(initialMonth) ? initialMonth : months.first ?? initialMonth)
+    }
+
+    private var isEditingArchive: Bool { draft.archivedRecord != nil }
+    private var month: String { isEditingArchive ? selectedMonth : draft.month ?? initialMonth }
     @Environment(\.modelContext) private var context
     @State private var search = ""
     @State private var found: [RefundCandidate] = []
-    @State private var completedSearch = ""
+    @State private var completedSearch: [String] = []
     @State private var confirmClear = false
     @State private var error: String?
     @State private var confirming = false
@@ -28,41 +51,49 @@ struct EmployeeRefundView: View {
         let options = draft.letterBICOptions
         let codes = options.keys.sorted()
         return Form {
-            Section {
-                NavigationLink { RefundHistoryView(storage: draft.storage) } label: {
-                    Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
-                }
-                if draft.rows.isEmpty, !month.isEmpty, !draft.loadFailed {
-                    Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") {
-                        FilePicker.present(types: [.commaSeparatedText], onPick: recover)
+            if !isEditingArchive {
+                Section {
+                    NavigationLink { RefundHistoryView(storage: draft.storage) } label: {
+                        Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
                     }
-                }
-                switch recoveryStatus {
-                case .idle: EmptyView()
-                case .reading:
-                    ProgressView(tr("جارٍ قراءة الملفات ومطابقة المنتسبين…", "Reading files and matching employees…"))
-                case .restored(let count):
-                    if !draft.rows.isEmpty {
-                        Label(tr("تم استرجاع المسودة. عدد المنتسبين: \(count)", "Draft recovered. Employees: \(count)"), systemImage: "checkmark.circle")
+                    if draft.rows.isEmpty, !month.isEmpty, !draft.loadFailed {
+                        Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") {
+                            FilePicker.present(types: [.commaSeparatedText], onPick: recover)
+                        }
                     }
-                case .failed(let reason):
-                    Label(reason, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-                }
-                if let message = draft.storageError {
-                    Text(message).foregroundStyle(.red)
-                    Button(tr("إعادة المحاولة", "Retry")) { if draft.loadFailed { draft.reload() } else { draft.persist() } }
+                    switch recoveryStatus {
+                    case .idle: EmptyView()
+                    case .reading:
+                        ProgressView(tr("جارٍ قراءة الملفات ومطابقة المنتسبين…", "Reading files and matching employees…"))
+                    case .restored(let count):
+                        if !draft.rows.isEmpty {
+                            Label(tr("تم استرجاع المسودة. عدد المنتسبين: \(count)", "Draft recovered. Employees: \(count)"), systemImage: "checkmark.circle")
+                        }
+                    case .failed(let reason):
+                        Label(reason, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                    }
+                    if let message = draft.storageError {
+                        Text(message).foregroundStyle(.red)
+                        Button(tr("إعادة المحاولة", "Retry")) { if draft.loadFailed { draft.reload() } else { draft.persist() } }
+                    }
                 }
             }
             Group {
             Section {
-                LabeledContent(tr("شهر حسابات المنتسبين", "Employee account month"), value: month)
+                if isEditingArchive && !editMonths.isEmpty {
+                    Picker(tr("شهر البحث عن منتسب", "Payroll month for new recipients"), selection: $selectedMonth) {
+                        ForEach(editMonths, id: \.self) { Text($0).tag($0) }
+                    }
+                } else {
+                    LabeledContent(tr("شهر حسابات المنتسبين", "Employee account month"), value: month)
+                }
                 DatePicker(tr("تاريخ التحويل", "Transfer date"), selection: $draft.date, displayedComponents: .date)
                 TextField(tr("الجهة أو المصرف المعيد (اختياري)", "Refund source (optional)"), text: $draft.source)
             }
             Section(tr("اختيار المنتسبين", "Select employees")) {
                 TextField(tr("ابحث بالاسم", "Search by name"), text: $search).autocorrectionDisabled()
                 if search.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
-                    if completedSearch != search { ProgressView() }
+                    if completedSearch != [month, search] { ProgressView() }
                     else if found.isEmpty { Text(tr("لا توجد نتائج لهذا الشهر", "No results for this month")).foregroundStyle(.secondary) }
                     else { ForEach(found) { person in candidateButton(person) } }
                     if found.count == 50 { Text(tr("أدخل اسماً أطول لتضييق النتائج.", "Enter more of the name to narrow the results.")).font(.caption) }
@@ -70,7 +101,7 @@ struct EmployeeRefundView: View {
             }
             if !draft.rows.isEmpty {
                 Section(tr("مبلغ الإعادة لكل منتسب", "Refund amount per employee")) {
-                    ForEach($draft.rows) { $row in
+                    ForEach(draft.rows) { row in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
                                 Text(row.candidate.person.name).bold()
@@ -81,7 +112,7 @@ struct EmployeeRefundView: View {
                             }
                             Text(row.candidate.person.iban).font(.caption.monospaced()).privacySensitive()
                             RefundPayrollBICLabel(person: row.candidate.person)
-                            TextField(tr("المبلغ بالدينار", "Amount in IQD"), text: $row.amount).keyboardType(.numberPad)
+                            RefundAmountInput(row: row, draft: draft, focus: $amountFocus)
                         }
                     }
                 }
@@ -111,15 +142,17 @@ struct EmployeeRefundView: View {
             }
             if !draft.rows.isEmpty {
                 Section(tr("مراجعة الدفعة", "Review batch")) {
-                    if let batch = try? plan() {
+                    if amountFocus == nil, let batch = try? plan() {
                         ForEach(batch.groups, id: \.code) { group in
                             LabeledContent(group.bank.name, value: Money.format(Double(group.total)))
                         }
                         LabeledContent(tr("المجموع الكلي", "Grand total"), value: Money.format(Double(batch.total))).bold()
                     }
-                    Button(tr("حفظ الدفعة بتاريخ التحويل", "Save dated batch"), systemImage: "archivebox") { finish(share: false) }
-                    Button(tr("تصدير الكتب وملفات CSV وقائمة المنتسبين", "Export letters, CSVs and employee list"), systemImage: "square.and.arrow.up") {
-                        do { _ = try plan(); confirming = true } catch { self.error = error.localizedDescription }
+                    if !isEditingArchive {
+                        Button(tr("حفظ الدفعة بتاريخ التحويل", "Save dated batch"), systemImage: "archivebox") { finish(share: false) }
+                        Button(tr("تصدير الكتب وملفات CSV وقائمة المنتسبين", "Export letters, CSVs and employee list"), systemImage: "square.and.arrow.up") {
+                            do { _ = try plan(); confirming = true } catch { self.error = error.localizedDescription }
+                        }
                     }
                 }
             }
@@ -129,14 +162,39 @@ struct EmployeeRefundView: View {
             if empty { recoveryStatus = .idle }
         }
         .toolbar {
-            if !draft.rows.isEmpty {
-                Button(tr("تفريغ الدفعة", "Clear batch"), systemImage: "trash") { confirmClear = true }.disabled(draft.working)
+            if let onEdited {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(tr("إلغاء", "Cancel")) { dismiss() }.disabled(draft.working)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(tr("حفظ التعديلات", "Save changes")) {
+                        amountFocus = nil
+                        Task {
+                            do { onEdited(try await draft.saveArchiveEdit(container: context.container)); dismiss() }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }.disabled(draft.working || draft.rows.isEmpty)
+                }
+            } else if !draft.rows.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(tr("تفريغ الدفعة", "Clear batch"), systemImage: "trash") { confirmClear = true }.disabled(draft.working)
+                }
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                if amountFocus != nil {
+                    Spacer()
+                    Button(tr("تم", "Done")) { amountFocus = nil }
+                }
             }
         }
+        .interactiveDismissDisabled(isEditingArchive && draft.working)
+        .onChange(of: amountFocus) { _, _ in draft.flushAmount() }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { draft.flushAmount() } }
+        .onDisappear { draft.flushAmount() }
         .confirmationDialog(tr("تفريغ دفعة الإعادة الحالية؟", "Clear the current refund batch?"), isPresented: $confirmClear, titleVisibility: .visible) {
             Button(tr("تفريغ الدفعة", "Clear batch"), role: .destructive) { draft.clear() }
         }
-        .navigationTitle(tr("إعادة المبالغ", "Employee refunds")).navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(isEditingArchive ? tr("تعديل الدفعة", "Edit batch") : tr("إعادة المبالغ", "Employee refunds")).navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .disabled(draft.working)
         .overlay { if draft.working && recoveryStatus != .reading { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
@@ -216,15 +274,15 @@ struct EmployeeRefundView: View {
     }
     private func find() async {
         let input = search, month = month, container = context.container
-        guard ArabicText.cleanQuery(input).count >= 2 else { found = []; completedSearch = input; return }
+        guard ArabicText.cleanQuery(input).count >= 2 else { found = []; completedSearch = [month, input]; return }
         do {
             try await Task.sleep(for: .milliseconds(200))
             let result = try await Task.detached { try await RefundPayrollSearch(modelContainer: container).search(input, month: month) }.value
             guard !Task.isCancelled, self.month == month, search == input else { return }
-            found = result; completedSearch = input
+            found = result; completedSearch = [month, input]
         } catch {
             guard !Task.isCancelled, self.month == month, search == input else { return }
-            found = []; completedSearch = input; self.error = error.localizedDescription
+            found = []; completedSearch = [month, input]; self.error = error.localizedDescription
         }
     }
     private func recover(_ files: [URL]) {
@@ -258,6 +316,33 @@ struct EmployeeRefundView: View {
                 } catch { self.error = error.localizedDescription }
             }
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct RefundAmountInput: View {
+    let row: RefundDraftRow
+    let draft: RefundDraft
+    let focus: FocusState<PersistentIdentifier?>.Binding
+    @State private var text: String
+
+    init(row: RefundDraftRow, draft: RefundDraft, focus: FocusState<PersistentIdentifier?>.Binding) {
+        self.row = row
+        self.draft = draft
+        self.focus = focus
+        _text = State(initialValue: row.amount)
+    }
+
+    var body: some View {
+        TextField(tr("المبلغ بالدينار", "Amount in IQD"), text: Binding(get: { text }, set: { value in
+            text = value
+            draft.setAmount(value, for: row.id)
+        }))
+        .keyboardType(.numberPad)
+        .focused(focus, equals: row.id)
+        .onChange(of: row.amount) { _, value in
+            if focus.wrappedValue != row.id && text != value { text = value }
+        }
+        .accessibilityIdentifier("refundRecipientAmount")
     }
 }
 

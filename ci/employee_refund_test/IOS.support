@@ -1,3 +1,9 @@
+@Model final class PayrollMonth {
+    var sortKey = 0
+    var employeeCount = 0
+    var name = ""
+    init() {}
+}
 enum Money { static func format(_ value: Double?) -> String { "" } }
 struct TransferLetterCustomizationStore: Decodable {
     static let settingsKey = "letters"
