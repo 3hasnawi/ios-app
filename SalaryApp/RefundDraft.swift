@@ -25,8 +25,8 @@ import SwiftData
         guard !working, month == nil || month == candidate.month else {
             throw EmployeeRefund.error("راجع الدفعة الحالية وشهر الرواتب قبل الإضافة.", "Check the active batch and its payroll month.")
         }
-        guard let code = EmployeeRefund.bankCode(person.iban), EmployeeRefund.validPayrollBIC(person.payrollBIC, bankCode: code) else {
-            throw EmployeeRefund.error("راجع الآيبان والسويفت في رواتب المنتسب.", "Check the employee’s payroll IBAN and SWIFT.")
+        guard let code = EmployeeRefund.bankCode(person.iban) else {
+            throw EmployeeRefund.error("راجع الآيبان في رواتب المنتسب.", "Check the employee’s payroll IBAN.")
         }
         if let amount, EmployeeRefund.amount(amount) == nil {
             throw EmployeeRefund.error("أدخل مبلغاً صحيحاً بالدينار.", "Enter a positive whole amount in IQD.")

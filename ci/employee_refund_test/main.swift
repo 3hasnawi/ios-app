@@ -9,7 +9,7 @@ func iban(_ code: String, _ serial: Int) -> String {
 }
 func entry(_ code: String, _ serial: Int, _ amount: String, bic: String? = nil) -> EmployeeRefund.Entry {
     .init(person: .init(name: "منتسب تجريبي " + String(serial), rank: "", workplace: "", iban: iban(code, serial), bank: code,
-        payrollBIC: bic ?? code + "IQ00" + String(format: "%03d", serial)), amount: amount)
+        payrollBIC: .value(bic ?? code + "IQ00" + String(format: "%03d", serial))), amount: amount)
 }
 let payer = iban("RAFB", 99)
 let entries = [entry("RAFB", 1, "١٠٬٠٠٠"), entry("RSHD", 2, "4,000"), entry("OTHR", 3, "2500"), entry("RSHD", 4, "500")]
@@ -52,7 +52,7 @@ for group in batch.groups {
     let csv = EmployeeRefund.csv(group, batch: batch, day: "20260101")
     for line in String(decoding: csv, as: UTF8.self).components(separatedBy: "\r\n").dropFirst() {
         let fields = line.components(separatedBy: "|")
-        precondition(fields.count == 11 && refs.insert(fields[0]).inserted && entries.contains { $0.person.iban == fields[8] && $0.person.payrollBIC == fields[6] })
+        precondition(fields.count == 11 && refs.insert(fields[0]).inserted && entries.contains { $0.person.iban == fields[8] && $0.person.payrollBIC == .value(fields[6]) })
         precondition(EmployeeRefund.bankCode(fields[8]) == group.code && fields[9].contains("إعادة"))
         precondition(expectedAmounts.removeValue(forKey: fields[8]) == fields[4])
         csvSum += Int64(fields[4])!
@@ -84,10 +84,10 @@ precondition(EmployeeRefund.csv(changed.groups[0], batch: changed, day: "2026010
 
 // تُستخدم خلايا الرواتب المحفوظة في اللقطة حتى لو سبق الاستيراد هذه الميزة.
 let raw = PayrollColumnSnapshot.decode(PayrollColumnSnapshot.encode(headers: ["IBAN","رمز السويفت","Receiver BIC"], values: ["ignored"," rshdiq00002 ","RSHDIQ٠٠٠٠٢"]))
-precondition(EmployeeRefund.payrollBIC(details: [:], columns: raw) == "RSHDIQ00002")
-precondition(EmployeeRefund.payrollBIC(details: ["Swift_Code":"rshdiq00"], columns: nil) == "RSHDIQ00")
-precondition(EmployeeRefund.payrollBIC(details: ["BIC":"RSHDIQ00004"], columns: raw).isEmpty)
-precondition(EmployeeRefund.payrollBIC(details: ["رمز الفرع":"002"], columns: nil).isEmpty)
+precondition(EmployeeRefund.payrollBIC(details: [:], columns: raw) == .value("RSHDIQ00002"))
+precondition(EmployeeRefund.payrollBIC(details: ["Swift_Code":"rshdiq00"], columns: nil) == .value("RSHDIQ00"))
+precondition(EmployeeRefund.payrollBIC(details: ["BIC":"RSHDIQ00004"], columns: raw) == .conflicting)
+precondition(EmployeeRefund.payrollBIC(details: ["رمز الفرع":"002"], columns: nil) == .missingColumn)
 for bad in ["", "RSHDIQ0", "OTHRIQ00002"] {
     precondition((try? plan([entry("RSHD", 2, "100", bic: bad)])) == nil)
 }
@@ -95,3 +95,6 @@ let twoRaf = try plan([entries[0], entry("RAFB", 7, "100")], [:])
 let rafCSV = String(decoding: EmployeeRefund.csv(twoRaf.groups[0], batch: twoRaf, day: "20260101"), as: UTF8.self)
 precondition(twoRaf.groups.count == 1 && rafCSV.contains("|RAFBIQ00001|") && rafCSV.contains("|RAFBIQ00007|"))
 precondition(!rafCSV.contains("|RAFBIQB1098|"))
+
+precondition(EmployeeRefund.payrollBIC(details: ["SWIFT":"  "], columns: nil) == .empty)
+precondition(EmployeeRefund.payrollBIC(details: ["SWIFT":"\u{200f}RAFBiq00\u{200e}"], columns: nil) == .value("RAFBIQ00"))

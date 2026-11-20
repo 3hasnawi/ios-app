@@ -48,7 +48,7 @@ struct EmployeeRefundView: View {
                                 }.buttonStyle(.borderless)
                             }
                             Text(row.candidate.person.iban).font(.caption.monospaced()).privacySensitive()
-                            LabeledContent(tr("سويفت المنتسب", "Employee SWIFT"), value: row.candidate.person.payrollBIC)
+                            RefundPayrollBICLabel(person: row.candidate.person)
                             TextField(tr("المبلغ بالدينار", "Amount in IQD"), text: $row.amount).keyboardType(.numberPad)
                         }
                     }
@@ -131,7 +131,6 @@ struct EmployeeRefundView: View {
         let selected = draft.rows.contains { $0.id == candidate.id }
         let person = candidate.person
         let code = EmployeeRefund.bankCode(person.iban)
-        let validBIC = code.map { EmployeeRefund.validPayrollBIC(person.payrollBIC, bankCode: $0) } ?? false
         return Button {
             if selected { draft.remove(candidate.id) }
             else {
@@ -143,15 +142,15 @@ struct EmployeeRefundView: View {
                 VStack(alignment: .leading) {
                     Text(person.name)
                     Text([person.rank, person.workplace, person.bank].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
-                    if code != nil && !validBIC {
-                        Text(tr("راجع خانة السويفت في رواتب المنتسب", "Check SWIFT in the payroll row")).font(.caption).foregroundStyle(.orange)
+                    if code != nil, let warning = person.bicWarning {
+                        Text(warning).font(.caption).foregroundStyle(.orange)
                     }
                     Text(code.map { $0 + " · …" + person.iban.suffix(4) } ?? tr("آيبان مفقود أو غير صالح", "Missing or invalid IBAN")).font(.caption)
                 }
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
             }
-        }.disabled(!validBIC && !selected)
+        }.disabled(code == nil && !selected)
     }
 
     private func bankField(_ code: String, _ field: WritableKeyPath<RefundBank, String>) -> Binding<String> {
@@ -188,5 +187,19 @@ struct EmployeeRefundView: View {
                 } catch { self.error = error.localizedDescription }
             }
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct RefundPayrollBICLabel: View {
+    let person: RefundPerson
+    var body: some View {
+        if let warning = person.bicWarning {
+            Label(warning, systemImage: "exclamationmark.triangle")
+                .font(.caption).foregroundStyle(.orange)
+            Text(tr("يمكن إدخال المبلغ الآن. يلزم سويفت صحيح للتصدير.", "You can enter the amount now. Export requires a valid SWIFT."))
+                .font(.caption).foregroundStyle(.secondary)
+        } else if case .value(let bic) = person.payrollBIC {
+            LabeledContent(tr("سويفت المنتسب", "Employee SWIFT"), value: bic)
+        }
     }
 }

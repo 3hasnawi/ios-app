@@ -33,7 +33,7 @@ struct RefundSearchEntrySheet: View {
                         LabeledContent(tr("شهر الرواتب", "Payroll month"), value: candidate.month)
                         LabeledContent(tr("المصرف", "Bank"), value: person.bank)
                         LabeledContent("IBAN", value: "…" + person.iban.suffix(4)).privacySensitive()
-                        LabeledContent(tr("سويفت المنتسب", "Employee SWIFT"), value: person.payrollBIC)
+                        RefundPayrollBICLabel(person: person)
                     }
                     Section {
                         TextField(tr("مبلغ الإعادة بالدينار", "Refund amount in IQD"), text: $amount)
@@ -45,7 +45,7 @@ struct RefundSearchEntrySheet: View {
                             save(candidate)
                         }
                         .accessibilityIdentifier("saveSearchRefund")
-                        .disabled(EmployeeRefund.amount(amount) == nil || !eligible(candidate) || saving || draft.working)
+                        .disabled(EmployeeRefund.amount(amount) == nil || EmployeeRefund.bankCode(person.iban) == nil || saving || draft.working)
                     }
                 } else if error == nil {
                     ProgressView()
@@ -72,17 +72,13 @@ struct RefundSearchEntrySheet: View {
                 try Task.checkCancellation()
                 candidate = result
                 amount = draft.rows.first { $0.id == result.id }?.amount ?? ""
-                if !eligible(result) {
-                    error = tr("راجع الآيبان والسويفت في رواتب هذا المنتسب.", "Check the IBAN and SWIFT in this employee’s payroll row.")
+                if EmployeeRefund.bankCode(result.person.iban) == nil {
+                    error = tr("راجع الآيبان في رواتب هذا المنتسب.", "Check the IBAN in this employee’s payroll row.")
                 }
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
             }
         }
-    }
-    private func eligible(_ candidate: RefundCandidate) -> Bool {
-        guard let code = EmployeeRefund.bankCode(candidate.person.iban) else { return false }
-        return EmployeeRefund.validPayrollBIC(candidate.person.payrollBIC, bankCode: code)
     }
     private func save(_ candidate: RefundCandidate) {
         guard !saving else { return }

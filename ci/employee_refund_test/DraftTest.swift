@@ -44,6 +44,17 @@ import SwiftData
         draft.remove(two.id)
         draft.clear()
         precondition(draft.month == nil && draft.rows.isEmpty)
+        let incomplete = try employee("A", "مستفيد تجريبي", fakeIBAN(9))
+        incomplete.detailsData = try JSONEncoder().encode(["IBAN": fakeIBAN(9)])
+        try context.save()
+        let revised = RefundPayrollSearch(modelContainer: container)
+        let pending = try await revised.searchResult(.init(id: incomplete.persistentModelID, key: incomplete.matchKey, month: "A"), month: "A")
+        precondition(pending.person.payrollBIC == .missingColumn)
+        try draft.add(pending)
+        try draft.add(pending, amount: "2500")
+        precondition(draft.rows.count == 1 && draft.rows[0].amount == "2500")
+        let entries = draft.rows.map { EmployeeRefund.Entry(person: $0.candidate.person, amount: $0.amount) }
+        precondition((try? EmployeeRefund.plan(entries: entries, banks: [:], payer: "دافع", account: fakeIBAN(8), source: "")) == nil)
         print("Shared refund draft selection, editing, month resolution and ambiguity checks passed.")
     }
 }

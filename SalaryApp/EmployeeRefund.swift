@@ -8,7 +8,25 @@ nonisolated struct RefundPerson: Hashable, Sendable {
     let workplace: String
     let iban: String
     let bank: String
-    let payrollBIC: String
+    let payrollBIC: RefundPayrollBIC
+
+    var bicWarning: String? { payrollBIC.warning(bankCode: EmployeeRefund.bankCode(iban)) }
+}
+
+nonisolated enum RefundPayrollBIC: Hashable, Sendable {
+    case missingColumn, empty, conflicting, value(String)
+
+    func warning(bankCode: String?) -> String? {
+        switch self {
+        case .missingColumn: return tr("لم يُتعرّف على عمود السويفت في صف الراتب المحفوظ.", "No recognized SWIFT column in the saved payroll row.")
+        case .empty: return tr("خانة السويفت فارغة في رواتب هذا المنتسب.", "The employee’s payroll SWIFT field is empty.")
+        case .conflicting: return tr("صف الراتب يحتوي أكثر من رمز سويفت مختلف.", "The payroll row contains conflicting SWIFT codes.")
+        case .value(let bic):
+            guard TransferRules.validBIC(bic) else { return tr("صيغة سويفت المنتسب غير صالحة.", "The employee’s SWIFT format is invalid.") }
+            if let bankCode, !bic.hasPrefix(bankCode + "IQ") { return tr("سويفت المنتسب لا يطابق مصرف الآيبان.", "The employee’s SWIFT does not match the IBAN bank.") }
+            return nil
+        }
+    }
 }
 
 nonisolated struct RefundBank: Equatable, Sendable {
@@ -70,21 +88,22 @@ nonisolated enum EmployeeRefund {
     ].map(headerKey))
 
     // الأعمدة الأصلية تشمل الحقول غير المعروفة وقت الاستيراد وتحتفظ بالعناوين المكررة.
-    static func payrollBIC(details: [String: String], columns: PayrollColumnSnapshot?) -> String {
+    static func payrollBIC(details: [String: String], columns: PayrollColumnSnapshot?) -> RefundPayrollBIC {
+        var foundColumn = false
         var codes = Set<String>()
         func collect(_ header: String, _ value: String) {
             guard bicHeaders.contains(headerKey(header)) else { return }
-            let code = ArabicText.latinDigits(value.trimmingCharacters(in: .whitespacesAndNewlines)).uppercased()
+            foundColumn = true
+            let clean = value.unicodeScalars.filter { $0.properties.generalCategory != .format }
+            let code = ArabicText.latinDigits(String(String.UnicodeScalarView(clean)).trimmingCharacters(in: .whitespacesAndNewlines)).uppercased()
             if !code.isEmpty { codes.insert(code) }
         }
         for (header, value) in details { collect(header, value) }
         if let columns {
             for (header, value) in zip(columns.headers, columns.values) { collect(header, value) }
         }
-        return codes.count == 1 ? codes.first ?? "" : ""
-    }
-    static func validPayrollBIC(_ bic: String, bankCode: String) -> Bool {
-        TransferRules.validBIC(bic) && bic.hasPrefix(bankCode + "IQ")
+        guard let first = codes.first else { return foundColumn ? .empty : .missingColumn }
+        return codes.count == 1 ? .value(first) : .conflicting
     }
     static func amount(_ value: String) -> Int64? {
         let clean = ArabicText.latinDigits(value.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "٬", with: ",")
@@ -109,9 +128,9 @@ nonisolated enum EmployeeRefund {
             guard let code = bankCode(iban), iban != account, TransferRules.safeField(name) else {
                 throw error("راجع اسم المنتسب وآيبانه: " + name, "Check employee name and IBAN: " + name)
             }
-            guard validPayrollBIC(entry.person.payrollBIC, bankCode: code) else {
-                throw error("راجع سويفت المنتسب في ملف الرواتب ثم أعد استيراد الشهر: " + name,
-                            "Check this employee’s SWIFT in payroll and reimport the month: " + name)
+            guard case .value(let bic) = entry.person.payrollBIC, entry.person.bicWarning == nil else {
+                let reason = entry.person.bicWarning ?? tr("راجع السويفت.", "Check SWIFT.")
+                throw error(name + " — " + reason, name + " — " + reason)
             }
             guard seen.insert(iban).inserted else {
                 throw error("الآيبان مكرر بين المستفيدين: " + name, "Repeated beneficiary IBAN: " + name)
@@ -120,7 +139,7 @@ nonisolated enum EmployeeRefund {
                 throw error("راجع المبلغ بالدينار للمنتسب: " + name, "Check the IQD amount for " + name)
             }
             total += value
-            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value, bic: entry.person.payrollBIC))
+            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value, bic: bic))
         }
         let result: [Group] = try groups.keys.sorted().map { code in
             guard let bank = (code == rafidainCode ? rafidainBank : banks[code]), let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
