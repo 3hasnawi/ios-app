@@ -15,7 +15,10 @@ struct EmployeeRefundView: View {
     @State private var error: String?
     @State private var confirming = false
     @State private var saved = false
-    @State private var importingCSV = false
+    private enum RecoveryStatus: Equatable {
+        case idle, reading, restored(Int), failed(String)
+    }
+    @State private var recoveryStatus = RecoveryStatus.idle
 
     private func plan() throws -> EmployeeRefund.Batch {
         try draft.snapshot.plan()
@@ -30,7 +33,20 @@ struct EmployeeRefundView: View {
                     Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
                 }
                 if draft.rows.isEmpty, !month.isEmpty, !draft.loadFailed {
-                    Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") { importingCSV = true }
+                    Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") {
+                        FilePicker.present(types: [.commaSeparatedText], onPick: recover)
+                    }
+                }
+                switch recoveryStatus {
+                case .idle: EmptyView()
+                case .reading:
+                    ProgressView(tr("جارٍ قراءة الملفات ومطابقة المنتسبين…", "Reading files and matching employees…"))
+                case .restored(let count):
+                    if !draft.rows.isEmpty {
+                        Label(tr("تم استرجاع المسودة. عدد المنتسبين: \(count)", "Draft recovered. Employees: \(count)"), systemImage: "checkmark.circle")
+                    }
+                case .failed(let reason):
+                    Label(reason, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
                 }
                 if let message = draft.storageError {
                     Text(message).foregroundStyle(.red)
@@ -109,8 +125,8 @@ struct EmployeeRefundView: View {
             }
             }.disabled(draft.loadFailed)
         }
-        .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
-            do { recover(try result.get()) } catch { self.error = error.localizedDescription }
+        .onChange(of: draft.rows.isEmpty) { _, empty in
+            if empty { recoveryStatus = .idle }
         }
         .toolbar {
             if !draft.rows.isEmpty {
@@ -123,7 +139,7 @@ struct EmployeeRefundView: View {
         .navigationTitle(tr("إعادة المبالغ", "Employee refunds")).navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .disabled(draft.working)
-        .overlay { if draft.working { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
+        .overlay { if draft.working && recoveryStatus != .reading { ProgressView().padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
         .task(id: [month, search]) { await find() }
         .onAppear { draft.loadLetterSettings() }
         .alert(tr("إعادة المبالغ", "Employee refunds"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -212,31 +228,14 @@ struct EmployeeRefundView: View {
         }
     }
     private func recover(_ files: [URL]) {
-        guard !draft.working, draft.rows.isEmpty, !files.isEmpty else { return }
+        guard !files.isEmpty else { return }
         let container = context.container, month = month
-        draft.working = true
+        recoveryStatus = .reading
         Task {
-            defer { draft.working = false }
             do {
-                let (old, rows) = try await Task.detached {
-                    let old = try RefundCSVRecovery.read(files)
-                    return (old, try await RefundPayrollSearch(modelContainer: container).recover(old.payments, month: month))
-                }.value
-                var snapshot = draft.snapshot
-                snapshot.batchID = UUID()
-                snapshot.rows = rows; snapshot.date = old.date; snapshot.source = old.source
-                snapshot.payer = old.payer; snapshot.account = old.account
-                snapshot.banks = [:]
-                for row in rows {
-                    let person = row.candidate.person
-                    if let code = EmployeeRefund.bankCode(person.iban), snapshot.banks[code] == nil {
-                        snapshot.banks[code] = RefundBank(name: person.bank.isEmpty ? code : person.bank)
-                    }
-                }
-                _ = try snapshot.plan()
-                try draft.storage.saveDraft(snapshot)
-                draft.apply(snapshot)
-            } catch { self.error = error.localizedDescription }
+                try await draft.recover(files: files, month: month, container: container)
+                recoveryStatus = .restored(draft.rows.count)
+            } catch { recoveryStatus = .failed(error.localizedDescription) }
         }
     }
 

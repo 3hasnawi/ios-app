@@ -51,6 +51,35 @@ import SwiftData
         precondition(historical.total == 25400)
         let recovered = try await engine.recover(historical.groups[0].payments, month: "A")
         precondition(recovered.map(\.candidate) == draft.rows.map(\.candidate))
+        // نفس نقطة الدخول التي يستدعيها منتقي الملفات بعد زر فتح.
+        let importedStorage = RefundStorage(root: root.appendingPathComponent("recovered"))
+        let imported = RefundDraft(storage: importedStorage)
+        imported.source = "مسودة قبل الاسترجاع"
+        var files: [URL] = []
+        for row in draft.rows {
+            var part = draft.snapshot
+            part.rows = [row]
+            let batch = try part.plan()
+            let file = root.appendingPathComponent("refund-\(files.count).csv")
+            let data = EmployeeRefund.csv(batch.groups[0], batch: batch, day: "20261120")
+            try (Data([0xEF, 0xBB, 0xBF]) + data).write(to: file)
+            files.append(file)
+        }
+        let bad = root.appendingPathComponent("wrong.csv")
+        try Data("invalid".utf8).write(to: bad)
+        do {
+            try await imported.recover(files: [files[0], bad], month: "A", container: container)
+            fatalError("Partial import accepted")
+        } catch {
+            precondition(error.localizedDescription.contains("wrong.csv"))
+        }
+        precondition(imported.rows.isEmpty && !imported.working)
+        let unchanged = try importedStorage.loadDraft()
+        precondition(unchanged?.source == "مسودة قبل الاسترجاع" && unchanged?.rows.isEmpty == true)
+        try await imported.recover(files: files, month: "A", container: container)
+        let fromDisk = RefundDraft(storage: importedStorage)
+        precondition(fromDisk.rows.map(\.candidate) == draft.rows.map(\.candidate))
+        precondition(fromDisk.rows.map(\.amount) == ["25000", "400"] && !imported.working)
         precondition((try? draft.add(old, amount: "1")) == nil)
         precondition((try? draft.add(two, amount: "0")) == nil && draft.rows[1].amount == "400")
         _ = try employee("B", first.name, fakeIBAN(4))

@@ -45,7 +45,7 @@ actor RefundPayrollSearch {
                 $0.person.iban == payment.iban && $0.person.payrollBIC == .value(payment.bic)
             }
             guard matches.count == 1, let match = matches.first else {
-                throw EmployeeRefund.error("تعذّرت مطابقة حساب المنتسب مع شهر الرواتب المختار: " + payment.name, "Could not match the employee account in the selected payroll month: " + payment.name)
+                throw EmployeeRefund.error("تعذّرت مطابقة حساب المنتسب «" + payment.name + "» في رواتب شهر " + month + ". اختر شهر الرواتب الذي أُعدّت منه الدفعة.", "Could not match " + payment.name + " in " + month + ". Select the original payroll month.")
             }
             return RefundDraftRow(candidate: match, amount: String(payment.amount), recoveredReference: payment.recoveredReference)
         }

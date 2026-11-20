@@ -54,6 +54,34 @@ import SwiftData
         catch { storageError = tr("تعذّر حفظ المسودة على الجهاز.", "Could not save the draft on this device.") }
     }
 
+    func recover(files: [URL], month: String, container: ModelContainer) async throws {
+        guard !working, !loadFailed, rows.isEmpty, !month.isEmpty else {
+            throw EmployeeRefund.error("يتطلب الاسترجاع مسودة فارغة وشهر رواتب محدداً.", "Recovery requires an empty draft and a selected payroll month.")
+        }
+        working = true
+        defer { working = false }
+        let (csv, recovered) = try await Task.detached {
+            let csv = try RefundCSVRecovery.read(files)
+            let search = RefundPayrollSearch(modelContainer: container)
+            return (csv, try await search.recover(csv.payments, month: month))
+        }.value
+        var saved = snapshot
+        saved.batchID = UUID()
+        saved.rows = recovered; saved.date = csv.date; saved.source = csv.source
+        saved.payer = csv.payer; saved.account = csv.account
+        saved.banks = [:]
+        for row in recovered {
+            let person = row.candidate.person
+            if let code = EmployeeRefund.bankCode(person.iban), saved.banks[code] == nil {
+                saved.banks[code] = RefundBank(name: person.bank.isEmpty ? code : person.bank)
+            }
+        }
+        _ = try saved.plan()
+        try storage.saveDraft(saved)
+        apply(saved)
+        storageError = nil
+    }
+
     func add(_ candidate: RefundCandidate, amount: String? = nil) throws {
         let person = candidate.person
         guard !working, !loadFailed, month == nil || month == candidate.month else {

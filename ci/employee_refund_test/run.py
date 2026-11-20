@@ -62,4 +62,4 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(work / "draft-test")], check=True)
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-sdk", sdk, "-target", "arm64-apple-ios26.0",
-                    *files, str(app / "TransferAdaptivePDF.swift"), *shared, str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)
+                    *files, str(app / "TransferAdaptivePDF.swift"), str(app / "DocumentPicker.swift"), *shared, str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)

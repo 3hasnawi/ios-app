@@ -10,4 +10,3 @@ struct TransferLetterCustomizationStore: Decodable {
     var common: Fields
 }
 enum PDFWork { static func run<T>(_ body: @escaping () throws -> T) async throws -> T { try body() } }
-@MainActor enum ActivityShare { static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {} }
