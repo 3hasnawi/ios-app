@@ -35,18 +35,27 @@ nonisolated struct RefundBank: Codable, Equatable, Sendable {
 }
 
 nonisolated enum EmployeeRefund {
+    static let remittanceInformation = "اعادة مبالغ تنفيذ"
+    static let legacyReason = "إعادة مبالغ زائدة في التسديد"
     static let rafidainCode = "RAFB"
     static let rafidainBank = RefundBank(name: "مصرف الرافدين / فرع المستنصر", bic: "RAFBIQB1098")
 
+    // الملف الجديد لا يحتوي اسم الجهة الذي دخل في توليد المرجع الأصلي.
+    struct RecoveredReference: Codable, Sendable {
+        let computed: String
+        let original: String
+    }
     struct Entry: Sendable {
         let person: RefundPerson
         let amount: String
+        var recoveredReference: RecoveredReference? = nil
     }
     struct Payment: Sendable {
         let name: String
         let iban: String
         let amount: Int64
         let bic: String
+        var recoveredReference: RecoveredReference? = nil
     }
     struct Group: Sendable {
         let code: String
@@ -128,7 +137,7 @@ nonisolated enum EmployeeRefund {
         let payer = payer.trimmingCharacters(in: .whitespacesAndNewlines)
         let account = normalizeAccount(account)
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        let reason = source.isEmpty ? "إعادة مبالغ زائدة في التسديد" : "إعادة مبالغ زائدة في التسديد - " + source
+        let reason = source.isEmpty ? legacyReason : legacyReason + " - " + source
         guard !entries.isEmpty, bankCode(account) != nil, TransferRules.safeField(payer), TransferRules.safeField(reason) else {
             throw error("اختر المنتسبين وراجع اسم الجهة الدافعة وآيبانها ومصدر الإعادة.", "Select employees and check payer details and refund source.")
         }
@@ -151,7 +160,7 @@ nonisolated enum EmployeeRefund {
                 throw error("راجع المبلغ بالدينار للمنتسب: " + name, "Check the IQD amount for " + name)
             }
             total += value
-            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value, bic: bic))
+            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value, bic: bic, recoveredReference: entry.recoveredReference))
         }
         let result: [Group] = try groups.keys.sorted().map { code in
             guard let bank = (code == rafidainCode ? rafidainBank : banks[code]), let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
@@ -167,11 +176,11 @@ nonisolated enum EmployeeRefund {
     }
 
     // مرجع رقمي ثابت عند إعادة تجهيز الحركة، ومستقل عن ترتيب الأسماء أو ملفات استقطاعات اليوم نفسه.
-    private static func reference(_ payment: Payment, group: Group, batch: Batch, day: String) -> String {
-        let components = [day, batch.account, payment.iban, String(payment.amount), batch.reason, payment.bic]
+    static func reference(_ payment: Payment, bank: String, payerAccount: String, reason: String, day: String) -> String {
+        let components = [day, payerAccount, payment.iban, String(payment.amount), reason, payment.bic]
         let digest = SHA256.hash(data: Data(components.joined(separator: "|").utf8))
         let serial = digest.prefix(8).reduce(UInt64.zero) { ($0 << 8) | UInt64($1) }
-        let prefix = group.isRafidain ? TransferCategory.rafidain.prefix : TransferCategory.otherBanks.prefix
+        let prefix = bank == rafidainCode ? TransferCategory.rafidain.prefix : TransferCategory.otherBanks.prefix
         return day + prefix + "0" + String(serial)
     }
 
@@ -179,8 +188,10 @@ nonisolated enum EmployeeRefund {
     static func csv(_ group: Group, batch: Batch, day: String) -> Data {
         var rows = [TransferRules.csvHeader]
         for item in group.payments {
-            let fields = [reference(item, group: group, batch: batch, day: day), day, batch.payer, batch.account, String(item.amount),
-                          "IQD", item.bic, item.name, item.iban, batch.reason, "SLEV"]
+            let computed = reference(item, bank: group.code, payerAccount: batch.account, reason: batch.reason, day: day)
+            let issuedReference = item.recoveredReference.flatMap { $0.computed == computed ? $0.original : nil } ?? computed
+            let fields = [issuedReference, day, batch.payer, batch.account, String(item.amount),
+                          "IQD", item.bic, item.name, item.iban, remittanceInformation, "SLEV"]
             rows.append(fields.joined(separator: "|"))
         }
         return Data(rows.joined(separator: "\r\n").utf8)

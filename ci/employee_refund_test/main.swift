@@ -55,7 +55,7 @@ for group in batch.groups {
     for line in String(decoding: csv, as: UTF8.self).components(separatedBy: "\r\n").dropFirst() {
         let fields = line.components(separatedBy: "|")
         precondition(fields.count == 11 && refs.insert(fields[0]).inserted && entries.contains { $0.person.iban == fields[8] && $0.person.payrollBIC == .value(fields[6]) })
-        precondition(EmployeeRefund.bankCode(fields[8]) == group.code && fields[9].contains("إعادة"))
+        precondition(EmployeeRefund.bankCode(fields[8]) == group.code && fields[9] == "اعادة مبالغ تنفيذ" && fields[10] == "SLEV")
         precondition(expectedAmounts.removeValue(forKey: fields[8]) == fields[4])
         csvSum += Int64(fields[4])!
     }
@@ -159,7 +159,25 @@ for bankCount in [1, 4] {
     defer { try? FileManager.default.removeItem(at: urls[0].deletingLastPathComponent()) }
     let csvURLs = urls.filter { $0.pathExtension == "csv" }
     let recovered = try RefundCSVRecovery.read(csvURLs)
-    precondition(recovered.payments.count == sample.count && recovered.payer == "جهة اختبار" && recovered.source == "مصدر تجريبي")
+    precondition(recovered.payments.count == sample.count && recovered.payer == "جهة اختبار" && recovered.source.isEmpty)
+    let restoredEntries = try recovered.payments.map { payment -> EmployeeRefund.Entry in
+        guard let original = sample.first(where: { $0.person.iban == payment.iban }) else { throw CocoaError(.fileReadCorruptFile) }
+        return .init(person: original.person, amount: String(payment.amount), recoveredReference: payment.recoveredReference)
+    }
+    let restored = try EmployeeRefund.plan(entries: restoredEntries, banks: directory, payer: recovered.payer, account: recovered.account, source: recovered.source)
+    for group in restored.groups {
+        let original = csvURLs.first { $0.lastPathComponent.contains(group.code) }!
+        let data = try Data(contentsOf: original)
+        precondition(EmployeeRefund.csv(group, batch: restored, day: "20261127") == data)
+    }
+    let legacyURL = urls[0].deletingLastPathComponent().appendingPathComponent("legacy.csv")
+    let currentText = try String(contentsOf: csvURLs[0], encoding: .utf8)
+    for source in ["", "مصدر تجريبي"] {
+        let oldReason = source.isEmpty ? "إعادة مبالغ زائدة في التسديد" : "إعادة مبالغ زائدة في التسديد - " + source
+        try currentText.replacingOccurrences(of: "|اعادة مبالغ تنفيذ|", with: "|" + oldReason + "|").write(to: legacyURL, atomically: true, encoding: .utf8)
+        let old = try RefundCSVRecovery.read([legacyURL])
+        precondition(old.source == source && !old.payments.isEmpty)
+    }
     precondition((try? RefundCSVRecovery.read(csvURLs + [csvURLs[0]])) == nil)
     for url in urls {
         if url.pathExtension == "csv" {

@@ -5,6 +5,7 @@ import CryptoKit
 nonisolated struct RefundDraftRow: Codable, Identifiable, Sendable {
     var candidate: RefundCandidate
     var amount: String
+    var recoveredReference: EmployeeRefund.RecoveredReference? = nil
     var id: PersistentIdentifier { candidate.id }
 }
 
@@ -20,7 +21,7 @@ nonisolated struct RefundSnapshot: Codable, Sendable {
     var month: String? { rows.first?.candidate.month }
 
     func plan() throws -> EmployeeRefund.Batch {
-        try EmployeeRefund.plan(entries: rows.map { .init(person: $0.candidate.person, amount: $0.amount) },
+        try EmployeeRefund.plan(entries: rows.map { .init(person: $0.candidate.person, amount: $0.amount, recoveredReference: $0.recoveredReference) },
                                 banks: banks, payer: payer, account: account, source: source)
     }
 }

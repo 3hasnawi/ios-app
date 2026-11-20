@@ -47,7 +47,7 @@ actor RefundPayrollSearch {
             guard matches.count == 1, let match = matches.first else {
                 throw EmployeeRefund.error("تعذّرت مطابقة حساب المنتسب مع شهر الرواتب المختار: " + payment.name, "Could not match the employee account in the selected payroll month: " + payment.name)
             }
-            return RefundDraftRow(candidate: match, amount: String(payment.amount))
+            return RefundDraftRow(candidate: match, amount: String(payment.amount), recoveredReference: payment.recoveredReference)
         }
     }
 
