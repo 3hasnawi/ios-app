@@ -77,7 +77,9 @@ nonisolated struct RefundStorage: Sendable {
             var url = history.appendingPathComponent(id + ".json")
             // قد تكون نسخة مطابقة محفوظة الآن باسمها القديم بعد تعديلها.
             for file in files where try Data(contentsOf: file) == data { return }
-            if files.contains(url) { url = history.appendingPathComponent(UUID().uuidString + ".json") }
+            if FileManager.default.fileExists(atPath: url.path) {
+                url = history.appendingPathComponent(UUID().uuidString + ".json")
+            }
             try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
             try data.write(to: url, options: [.atomic, .completeFileProtection])
         }
