@@ -351,10 +351,9 @@ struct TransferFilesView: View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
-                if let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first(where: { $0.employeeCount > 0 }) {
-                    NavigationLink(value: ReportsRoute.refunds(payroll.name)) {
-                        Label(tr("إعادة المبالغ", "Employee refunds"), systemImage: "arrow.uturn.backward.circle")
-                    }
+                let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first(where: { $0.employeeCount > 0 })
+                NavigationLink(value: ReportsRoute.refunds(payroll?.name ?? "")) {
+                    Label(tr("إعادة المبالغ", "Employee refunds"), systemImage: "arrow.uturn.backward.circle")
                 }
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
                     Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")

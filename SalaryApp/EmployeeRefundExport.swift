@@ -1,6 +1,6 @@
 import Foundation
 
-nonisolated struct RefundLetterSettings: Sendable {
+nonisolated struct RefundLetterSettings: Codable, Sendable {
     var header = "جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات"
     var number = ""
     var recipient = "مصرف الرافدين / فرع الأنبار"
@@ -12,7 +12,7 @@ nonisolated struct RefundLetterSettings: Sendable {
     var footer = "نسخة منه إلى:\nشعبة المصروفات / إجراء اللازم والمتابعة.\nالأرشيف."
 }
 
-nonisolated struct RefundLetters: Sendable {
+nonisolated struct RefundLetters: Codable, Sendable {
     var rafidain = RefundLetterSettings()
     var otherBanks = RefundLetterSettings()
 }
@@ -47,11 +47,31 @@ nonisolated enum EmployeeRefundExport {
                     verifyNumericTableCells: !rafidain, signatureHorizontalOffset: settings.template?.signatureHorizontalOffset ?? 0, template: settings.template, singlePageBankRefund: !rafidain)
                 urls.append(url)
             }
+            let rosterURL = folder.appendingPathComponent("قائمة منتسبي إعادة المبالغ.pdf")
+            formatter.dateFormat = "yyyy/MM/dd"
+            let sheet = roster(batch, date: ReportSheet.easternDigits(formatter.string(from: date)))
+            try PDFReportWriter.write(sheet, to: rosterURL)
+            urls.append(rosterURL)
             return urls
         } catch {
             try? FileManager.default.removeItem(at: folder)
             throw error
         }
+    }
+    static func roster(_ batch: EmployeeRefund.Batch, date: String) -> ReportSheet {
+        var rows: [[String]] = [], amounts: [Double] = []
+        for group in batch.groups {
+            let bank = group.isRafidain ? "مصرف الرافدين" : group.bank.name
+            for person in group.payments {
+                rows.append([String(rows.count + 1), person.name, "", person.iban, bank])
+                amounts.append(Double(person.amount))
+            }
+        }
+        let title = ["قائمة منتسبي إعادة المبالغ", date, batch.source].filter { !$0.isEmpty }.joined(separator: " — ")
+        return ReportSheet(header: batch.payer, title: title,
+                           columns: [.init(title: "ت", width: 5, kind: .serial), .init(title: "اسم المنتسب", width: 32, kind: .text),
+                                     .init(title: "المبلغ (د.ع)", width: 16, kind: .amount), .init(title: "رقم الحساب (IBAN)", width: 33, kind: .text),
+                                     .init(title: "المصرف", width: 26, kind: .text)], rows: rows, amounts: amounts)
     }
     static func letter(_ groups: [EmployeeRefund.Group], batch: EmployeeRefund.Batch,
                                     letters: RefundLetterSettings, date: String) throws -> [TransferWordDocument.Block] {

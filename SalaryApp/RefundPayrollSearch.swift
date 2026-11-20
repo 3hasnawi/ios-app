@@ -1,7 +1,7 @@
 import SwiftData
 import Foundation
 
-nonisolated struct RefundCandidate: Identifiable, Hashable, Sendable {
+nonisolated struct RefundCandidate: Codable, Identifiable, Hashable, Sendable {
     let id: PersistentIdentifier
     let month: String
     let person: RefundPerson
@@ -35,6 +35,20 @@ actor RefundPayrollSearch {
         }
         if target.month != month, matches.count == 1 { return candidate(matches[0]) }
         throw EmployeeRefund.error("تعذّر تحديد سجل هذا المنتسب في شهر الدفعة. راجع الأسماء من شاشة إعادة المبالغ.", "Could not identify this employee in the batch month. Review names on the refunds screen.")
+    }
+
+    func recover(_ payments: [EmployeeRefund.Payment], month: String) throws -> [RefundDraftRow] {
+        try payments.map { payment in
+            let key = ArabicText.matchKey(payment.name)
+            let query = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month && $0.matchKey == key })
+            let matches = try modelContext.fetch(query).map(candidate).filter {
+                $0.person.iban == payment.iban && $0.person.payrollBIC == .value(payment.bic)
+            }
+            guard matches.count == 1, let match = matches.first else {
+                throw EmployeeRefund.error("تعذّرت مطابقة حساب المنتسب مع شهر الرواتب المختار: " + payment.name, "Could not match the employee account in the selected payroll month: " + payment.name)
+            }
+            return RefundDraftRow(candidate: match, amount: String(payment.amount))
+        }
     }
 
     func verify(_ selected: [RefundCandidate], month: String) throws {

@@ -4,25 +4,59 @@ import SwiftData
 /// مسودة الجلسة مشتركة بين شاشة التحويل والبحث وتتبع شهر صفوف الرواتب المختارة.
 @Observable @MainActor final class RefundDraft {
     static let shared = RefundDraft()
-    struct Row: Identifiable {
-        var candidate: RefundCandidate
-        var amount: String
-        var id: PersistentIdentifier { candidate.id }
-    }
-    var rows: [Row] = []
+    private(set) var batchID = UUID()
+    let storage: RefundStorage
+    private var updating = false
+    private(set) var loadFailed = false
+    private(set) var storageError: String?
+    var rows: [RefundDraftRow] = [] { didSet { persist() } }
     var month: String? { rows.first?.candidate.month }
-    var banks: [String: RefundBank] = [:]
-    var source = ""
-    var date = Date.now
-    var payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? ""
-    var account = UserDefaults.standard.string(forKey: "bankStatementIBAN") ?? ""
-    var letters = RefundLetters()
+    var banks: [String: RefundBank] = [:] { didSet { persist() } }
+    var source = "" { didSet { persist() } }
+    var date = Date.now { didSet { persist() } }
+    var payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? "" { didSet { persist() } }
+    var account = UserDefaults.standard.string(forKey: "bankStatementIBAN") ?? "" { didSet { persist() } }
+    var letters = RefundLetters() { didSet { persist() } }
     var working = false
     private var initialized = false
 
+    init(storage: RefundStorage = .local) {
+        self.storage = storage
+        reload()
+    }
+
+    func reload() {
+        do {
+            if let saved = try storage.loadDraft() { apply(saved) }
+            loadFailed = false
+            storageError = nil
+        } catch {
+            loadFailed = true
+            storageError = tr("تعذّرت قراءة المسودة المحفوظة. افتح قفل الجهاز وأعد المحاولة.", "Could not read the saved draft. Unlock the device and retry.")
+        }
+    }
+
+    var snapshot: RefundSnapshot {
+        .init(batchID: batchID, rows: rows, banks: banks, source: source, date: date, payer: payer, account: account, letters: letters)
+    }
+
+    func apply(_ saved: RefundSnapshot) {
+        updating = true
+        batchID = saved.batchID; rows = saved.rows; banks = saved.banks
+        source = saved.source; date = saved.date; payer = saved.payer; account = saved.account
+        letters = saved.letters; initialized = true
+        updating = false
+    }
+
+    func persist() {
+        guard !updating, !loadFailed else { return }
+        do { try storage.saveDraft(snapshot); storageError = nil }
+        catch { storageError = tr("تعذّر حفظ المسودة على الجهاز.", "Could not save the draft on this device.") }
+    }
+
     func add(_ candidate: RefundCandidate, amount: String? = nil) throws {
         let person = candidate.person
-        guard !working, month == nil || month == candidate.month else {
+        guard !working, !loadFailed, month == nil || month == candidate.month else {
             throw EmployeeRefund.error("راجع الدفعة الحالية وشهر الرواتب قبل الإضافة.", "Check the active batch and its payroll month.")
         }
         guard let code = EmployeeRefund.bankCode(person.iban) else {
@@ -42,7 +76,7 @@ import SwiftData
             throw EmployeeRefund.error("هذا الآيبان موجود لمنتسب آخر في الدفعة.", "Another batch member already has this IBAN.")
         }
         if code != EmployeeRefund.rafidainCode, banks[code] == nil { banks[code] = RefundBank(name: person.bank) }
-        rows.append(Row(candidate: candidate, amount: amount ?? ""))
+        rows.append(RefundDraftRow(candidate: candidate, amount: amount ?? ""))
     }
     func remove(_ id: PersistentIdentifier) {
         guard !working else { return }
@@ -51,6 +85,10 @@ import SwiftData
     }
     func clear() {
         guard !working else { return }
+        guard !loadFailed else { return }
+        updating = true
+        defer { updating = false; persist() }
+        batchID = UUID()
         rows.removeAll(); banks.removeAll()
         source = ""; date = .now
         payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? ""
@@ -74,7 +112,7 @@ import SwiftData
     }
 
     func loadLetterSettings() {
-        guard !initialized else { return }
+        guard !initialized, !loadFailed else { return }
         initialized = true
         guard let data = UserDefaults.standard.data(forKey: TransferLetterCustomizationStore.settingsKey),
               let store = try? JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data) else { return }

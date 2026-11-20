@@ -91,7 +91,7 @@ struct RefundSearchEntrySheet: View {
                     try await RefundPayrollSearch(modelContainer: container).verify([candidate], month: candidate.month)
                 }.value
                 try draft.add(candidate, amount: value)
-                dismiss()
+                if let message = draft.storageError { self.error = message } else { dismiss() }
             } catch { self.error = error.localizedDescription }
         }
     }

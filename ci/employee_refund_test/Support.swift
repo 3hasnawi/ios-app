@@ -12,4 +12,3 @@ enum TransferWordGroupDraft {
     static func bodyParagraph(_ body: String, template: CustomTransferTemplate?) -> TransferWordDocument.Paragraph { .init(text: body) }
 }
 enum TransferWordValues { enum Failure: Error { case invalidAmount } }
-enum ReportSheet {}

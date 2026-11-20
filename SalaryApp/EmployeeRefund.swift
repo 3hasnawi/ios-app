@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// لقطة المستفيد من صف الرواتب. اسم الجهة المعيدة لا يُستعمل مطلقاً لاختيار حساب المستفيد.
-nonisolated struct RefundPerson: Hashable, Sendable {
+nonisolated struct RefundPerson: Codable, Hashable, Sendable {
     let name: String
     let rank: String
     let workplace: String
@@ -13,7 +13,7 @@ nonisolated struct RefundPerson: Hashable, Sendable {
     var bicWarning: String? { payrollBIC.warning(bankCode: EmployeeRefund.bankCode(iban)) }
 }
 
-nonisolated enum RefundPayrollBIC: Hashable, Sendable {
+nonisolated enum RefundPayrollBIC: Codable, Hashable, Sendable {
     case missingColumn, empty, conflicting, value(String)
 
     func warning(bankCode: String?) -> String? {
@@ -29,7 +29,7 @@ nonisolated enum RefundPayrollBIC: Hashable, Sendable {
     }
 }
 
-nonisolated struct RefundBank: Equatable, Sendable {
+nonisolated struct RefundBank: Codable, Equatable, Sendable {
     var name = ""
     var bic = ""
 }

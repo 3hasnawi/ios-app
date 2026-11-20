@@ -1,6 +1,7 @@
 import AppKit
 
 typealias UIFont = NSFont
+extension NSFont { var lineHeight: CGFloat { ascender - descender + leading } }
 
 struct UIImage {
     let cgImage: CGImage?

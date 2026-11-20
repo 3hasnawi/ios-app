@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct EmployeeRefundView: View {
     private let initialMonth: String
@@ -13,16 +14,30 @@ struct EmployeeRefundView: View {
     @State private var confirmClear = false
     @State private var error: String?
     @State private var confirming = false
+    @State private var saved = false
+    @State private var importingCSV = false
 
     private func plan() throws -> EmployeeRefund.Batch {
-        try EmployeeRefund.plan(entries: draft.rows.map { .init(person: $0.candidate.person, amount: $0.amount) },
-            banks: draft.banks, payer: draft.payer, account: draft.account, source: draft.source)
+        try draft.snapshot.plan()
     }
 
     var body: some View {
         let options = draft.letterBICOptions
         let codes = options.keys.sorted()
         return Form {
+            Section {
+                NavigationLink { RefundHistoryView(storage: draft.storage) } label: {
+                    Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
+                }
+                if draft.rows.isEmpty, !month.isEmpty, !draft.loadFailed {
+                    Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") { importingCSV = true }
+                }
+                if let message = draft.storageError {
+                    Text(message).foregroundStyle(.red)
+                    Button(tr("إعادة المحاولة", "Retry")) { if draft.loadFailed { draft.reload() } else { draft.persist() } }
+                }
+            }
+            Group {
             Section {
                 LabeledContent(tr("شهر حسابات المنتسبين", "Employee account month"), value: month)
                 DatePicker(tr("تاريخ التحويل", "Transfer date"), selection: $draft.date, displayedComponents: .date)
@@ -86,11 +101,16 @@ struct EmployeeRefundView: View {
                         }
                         LabeledContent(tr("المجموع الكلي", "Grand total"), value: Money.format(Double(batch.total))).bold()
                     }
-                    Button(tr("تصدير ملفات CSV والكتب", "Export CSV files and letters"), systemImage: "square.and.arrow.up") {
+                    Button(tr("حفظ الدفعة بتاريخ التحويل", "Save dated batch"), systemImage: "archivebox") { finish(share: false) }
+                    Button(tr("تصدير الكتب وملفات CSV وقائمة المنتسبين", "Export letters, CSVs and employee list"), systemImage: "square.and.arrow.up") {
                         do { _ = try plan(); confirming = true } catch { self.error = error.localizedDescription }
                     }
                 }
             }
+            }.disabled(draft.loadFailed)
+        }
+        .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
+            do { recover(try result.get()) } catch { self.error = error.localizedDescription }
         }
         .toolbar {
             if !draft.rows.isEmpty {
@@ -109,8 +129,11 @@ struct EmployeeRefundView: View {
         .alert(tr("إعادة المبالغ", "Employee refunds"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK")) { error = nil }
         } message: { Text(error ?? "") }
+        .alert(tr("حُفظت الدفعة ضمن الدفعات المحفوظة.", "Batch saved to history."), isPresented: $saved) {
+            Button(tr("حسناً", "OK")) {}
+        }
         .confirmationDialog(tr("تأكيد مبالغ الإعادة وتجهيز الملفات؟", "Confirm refund amounts and prepare files?"), isPresented: $confirming, titleVisibility: .visible) {
-            Button(tr("تجهيز ومشاركة", "Prepare and share")) { export() }
+            Button(tr("تجهيز ومشاركة", "Prepare and share")) { finish(share: true) }
         } message: {
             Text(tr("سيُجهّز ملف مستقل لكل مصرف وكتاب لكل مجموعة ممثلة في الدفعة.", "One file per bank and one letter per represented bank group will be prepared."))
         }
@@ -188,17 +211,48 @@ struct EmployeeRefundView: View {
             found = []; completedSearch = input; self.error = error.localizedDescription
         }
     }
-    private func export() {
+    private func recover(_ files: [URL]) {
+        guard !draft.working, draft.rows.isEmpty, !files.isEmpty else { return }
+        let container = context.container, month = month
+        draft.working = true
+        Task {
+            defer { draft.working = false }
+            do {
+                let (old, rows) = try await Task.detached {
+                    let old = try RefundCSVRecovery.read(files)
+                    return (old, try await RefundPayrollSearch(modelContainer: container).recover(old.payments, month: month))
+                }.value
+                var snapshot = draft.snapshot
+                snapshot.batchID = UUID()
+                snapshot.rows = rows; snapshot.date = old.date; snapshot.source = old.source
+                snapshot.payer = old.payer; snapshot.account = old.account
+                snapshot.banks = [:]
+                for row in rows {
+                    let person = row.candidate.person
+                    if let code = EmployeeRefund.bankCode(person.iban), snapshot.banks[code] == nil {
+                        snapshot.banks[code] = RefundBank(name: person.bank.isEmpty ? code : person.bank)
+                    }
+                }
+                _ = try snapshot.plan()
+                try draft.storage.saveDraft(snapshot)
+                draft.apply(snapshot)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func finish(share: Bool) {
         guard !draft.working else { return }
         do {
             let batch = try plan(), people = draft.rows.map(\.candidate), container = context.container
-            let month = month, exportDate = draft.date, settings = draft.letters
+            let month = month, snapshot = draft.snapshot, storage = draft.storage
             draft.working = true
             Task {
                 defer { draft.working = false }
                 do {
                     try await Task.detached { try await RefundPayrollSearch(modelContainer: container).verify(people, month: month) }.value
-                    let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: exportDate, letters: settings) }
+                    try await Task.detached { try storage.archive(snapshot) }.value
+                    guard share else { saved = true; return }
+                    let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: snapshot.date, letters: snapshot.letters) }
                     ActivityShare.present(urls) { _ in
                         if let folder = urls.first?.deletingLastPathComponent() { try? FileManager.default.removeItem(at: folder) }
                     }

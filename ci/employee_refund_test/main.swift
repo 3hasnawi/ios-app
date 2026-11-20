@@ -63,7 +63,7 @@ for group in batch.groups {
 }
 precondition(expectedAmounts.isEmpty && csvSum == batch.total && offset == 4)
 precondition((try? plan([entries[0], entry("RSHD", 2, "")])) == nil)
-for (sample, count) in [(entries, 5), ([entries[0]], 2), ([entries[1],entries[3]], 2)] {
+for (sample, count) in [(entries, 6), ([entries[0]], 3), ([entries[1],entries[3]], 3)] {
     let urls = try EmployeeRefundExport.make(try plan(sample), date: Date(), letters: .init())
     precondition(urls.count == count && Set(urls.map(\.lastPathComponent)).count == count)
     try FileManager.default.removeItem(at: urls[0].deletingLastPathComponent())
@@ -137,6 +137,10 @@ for bankCount in [1, 4] {
     let sample = [entry("RAFB", 1, "500000")] + selectedCodes.enumerated().map { entry($0.element, $0.offset + 2, "1500000") }
     let urls = try EmployeeRefundExport.make(try plan(sample, directory), date: refundDay, letters: letters)
     defer { try? FileManager.default.removeItem(at: urls[0].deletingLastPathComponent()) }
+    let csvURLs = urls.filter { $0.pathExtension == "csv" }
+    let recovered = try RefundCSVRecovery.read(csvURLs)
+    precondition(recovered.payments.count == sample.count && recovered.payer == "جهة اختبار" && recovered.source == "مصدر تجريبي")
+    precondition((try? RefundCSVRecovery.read(csvURLs + [csvURLs[0]])) == nil)
     for url in urls {
         if url.pathExtension == "csv" {
             let csv = try String(contentsOf: url, encoding: .utf8)
@@ -147,6 +151,10 @@ for bankCount in [1, 4] {
         precondition(pdf.pageCount == 1)
         let page = pdf.page(at: 0)!
         let text = ArabicText.latinDigits(page.string ?? "")
+        if url.lastPathComponent.hasPrefix("قائمة") {
+            for entry in sample { precondition(text.contains(entry.person.iban)) }
+            continue
+        }
         precondition(text.contains("2026") && !text.contains("27"))
         if url.lastPathComponent.contains("الرشيد") {
             for (index, code) in selectedCodes.enumerated() {
