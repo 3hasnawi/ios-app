@@ -65,6 +65,8 @@ jobs:
         run: python3 ci/xlsx_layout_test/run.py
       - name: PDF page preservation
         run: python3 ci/pdf_safety_test/run.py
+      - name: Employee refund routing, documents and iPhone UI type check
+        run: python3 ci/employee_refund_test/run.py
       - name: Treasury letter calculations
         run: bash ci/treasury_letter_test/run.sh
       - name: Streaming backup line reader

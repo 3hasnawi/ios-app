@@ -1,0 +1,17 @@
+enum Money { static func format(_ value: Double?) -> String { "" } }
+struct SavedExecutionAccount { let iban, swift: String }
+enum ExecutionAccountStore {
+    static let storageKey = "accounts"
+    static func decode(_ data: Data) throws -> [SavedExecutionAccount] { [] }
+}
+struct TransferLetterCustomizationStore: Decodable {
+    static let settingsKey = "letters"
+    struct Fields: Decodable {
+        var header, footer, fixedNumber, committeeFirst, committeeSecond, committeeThird: String?
+        var letterTemplate: Template?
+        struct Template: Decodable { var header, footer, firstSigner, secondSigner, thirdSigner: String }
+    }
+    var common: Fields
+}
+enum PDFWork { static func run<T>(_ body: @escaping () throws -> T) async throws -> T { try body() } }
+@MainActor enum ActivityShare { static func present(_ urls: [URL], onDone: ((Bool) -> Void)? = nil) {} }

@@ -14,6 +14,7 @@ enum ReportsRoute: Hashable {
     case salaryAudit
     case salaryTrust(SalaryTrust.PaymentFilter)
     case transferFiles
+    case refunds(String)
     case fundingExpenses
     case group(ReportGroup)
 }
@@ -85,6 +86,7 @@ struct ReportsView: View {
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .transferFiles: TransferFilesView()
+        case .refunds(let month): EmployeeRefundView(month: month)
         case .fundingExpenses: FundingExpensesView(month: month?.name ?? "", revision: loadKey)
         case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport, onRename: { await loadDeductions() })
         case .group(let group): ReportDetailView(group: group)
@@ -461,6 +463,9 @@ struct ReportsView: View {
         let defaults = UserDefaults.standard
         let payroll = defaults.string(forKey: "reportKind") == "payroll"
         if payroll { openRoot(.items) }
+        #if targetEnvironment(simulator)
+        if defaults.bool(forKey: "refundPreview"), let payroll = months.first(where: { $0.employeeCount > 0 }) { openRoot(.refunds(payroll.name)) }
+        #endif
         if defaults.bool(forKey: "reportsEntities") { openRoot(.entities) }
         if defaults.bool(forKey: "reportsAudit") { openRoot(.audit) }
         if defaults.bool(forKey: "compareDeductions") { openRoot(.deductionComparison) }

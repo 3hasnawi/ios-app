@@ -148,6 +148,7 @@ nonisolated enum TransferRules {
         if !safeField(entity.beneficiaryName ?? entity.group.title) { result.append(tr("اسم الجهة يحتوي رمزاً غير مقبول", "Unsupported character in entity name")) }
         return result
     }
+    static let csvHeader = "Reference|Value Date|Payer Name|Payer Account|Amount|Currency|Receiver BIC|Beneficiary Name|Beneficiary Account|Remittance Information|Details of Charges"
     static func csv(_ entities: [TransferEntity], category: TransferCategory, month: String, payer: String, payerIBAN: String, date: Date = .now) throws -> Data {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               safeField(payer), validIBAN(payerIBAN), safeField(month),
@@ -160,7 +161,7 @@ nonisolated enum TransferRules {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd"
         let day = formatter.string(from: date)
-        var rows = ["Reference|Value Date|Payer Name|Payer Account|Amount|Currency|Receiver BIC|Beneficiary Name|Beneficiary Account|Remittance Information|Details of Charges"]
+        var rows = [csvHeader]
         for (index, entity) in entities.enumerated() {
             guard let account = entity.account else { throw CocoaError(.fileWriteUnknown) }
             let amount = String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entity.group.total)
@@ -350,6 +351,11 @@ struct TransferFilesView: View {
         List {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
+                if let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first(where: { $0.employeeCount > 0 }) {
+                    NavigationLink(value: ReportsRoute.refunds(payroll.name)) {
+                        Label(tr("إعادة المبالغ", "Employee refunds"), systemImage: "arrow.uturn.backward.circle")
+                    }
+                }
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
                     Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")
                 }
