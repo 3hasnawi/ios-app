@@ -33,7 +33,9 @@ with tempfile.TemporaryDirectory() as tmp:
         output.write("extension TransferWordGroupDraft {\n" + section("TransferWordGroupDraft.swift", "    static func signatureCells(", "    static func bodyValues(")
                      + section("TransferWordGroupDraft.swift", "    static func referenceText(", "    /// تبقى مساحة") + "}\n")
     renderer = work / "Renderer.swift"
-    renderer.write_text((app / "TransferAdaptivePDF.swift").read_text().replace("import UIKit", "import AppKit"))
+    # The macOS CLI has no iOS file-protection class. Keep the real PDFKit checks.
+    render_source = (app / "TransferAdaptivePDF.swift").read_text().replace("import UIKit", "import AppKit")
+    renderer.write_text(render_source.replace("try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)", ""))
     report = work / "ReportPDF.swift"
     report_code = ("import UIKit\n" + section("ReportExport.swift", "nonisolated enum PDFReportWriter", "// MARK: - نافذة التصدير")
                    + (app / "ReportFont.swift").read_text() + (app / "EntityDeductionPDF.swift").read_text()
