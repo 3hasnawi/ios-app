@@ -104,6 +104,7 @@ struct RootView: View {
     @State private var router = AppRouter.shared
     @State private var staffImport = StaffImportState.shared
     @State private var importProgress = ImportProgress.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var importCenter = ImportCenter.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var backup = BackupManager.shared
@@ -174,11 +175,15 @@ struct RootView: View {
         }
         // شريط تقدّم الاستيراد (رواتب أو ملاك) فوق الشريط السفلي أياً كان التبويب.
         .overlay(alignment: .bottom) {
-            if importProgress.isActive {
-                ImportProgressBar(progress: importProgress)
-                    .padding(.bottom, 76)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            ZStack {
+                if importProgress.isActive {
+                    ImportProgressBar(progress: importProgress)
+                        .padding(.bottom, 76)
+                        .transition(.asymmetric(insertion: reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity),
+                                                removal: .identity))
+                }
             }
+            .animation(importProgress.isActive ? .easeOut(duration: 0.2) : nil, value: importProgress.isActive)
         }
         .sheet(isPresented: $router.showShare, onDismiss: { router.shareMode = nil }) {
             if let employee = router.payslipToShare { ShareOptionsSheet(employee: employee, initialMode: router.shareMode) }

@@ -22,6 +22,7 @@ final class AppLock {
     /// يُطلب Face ID تلقائياً مرة واحدة لكل قفل؛ بعد الإلغاء يكون بالزر فقط.
     private var autoPrompt: Bool
     private var backgroundedAt: Date?
+    var pendingForegroundCheck: Bool { backgroundedAt != nil }
 
     private init() {
         // -skipLock: لصورة الإعدادات في اختبار المحاكي فقط.
@@ -92,7 +93,7 @@ final class AppLock {
         defer { isAuthenticating = false }
         switch await Self.authenticate(reason: tr("افتح تطبيق الرواتب", "Unlock the payroll app")) {
         case .success:
-            isLocked = false
+            withAnimation(.easeOut(duration: 0.2)) { isLocked = false }
             message = nil
         case .failure(let error):
             let code = (error as? LAError)?.code
@@ -137,16 +138,21 @@ struct AppLockGate<Content: View>: View {
     @AppStorage(AppLock.enabledKey) private var enabled = false
 
     var body: some View {
+        let needsPrivacyCover = enabled && (scenePhase != .active || lock.pendingForegroundCheck)
+        let covered = lock.isLocked || needsPrivacyCover
         content()
+            .accessibilityHidden(covered)
+            .allowsHitTesting(!covered)
             .overlay {
-                if lock.isLocked {
-                    LockScreen(lock: lock)
-                        .transition(.opacity)
-                } else if enabled && scenePhase != .active {
-                    PrivacyCover()
+                ZStack {
+                    if needsPrivacyCover {
+                        PrivacyCover().transition(.identity)
+                    } else if lock.isLocked {
+                        LockScreen(lock: lock)
+                            .transition(.asymmetric(insertion: .identity, removal: .opacity))
+                    }
                 }
             }
-            .animation(.easeOut(duration: 0.25), value: lock.isLocked)
             .onChange(of: scenePhase, initial: true) { _, phase in
                 lock.scenePhaseChanged(phase)
             }
@@ -208,7 +214,7 @@ private struct LockScreen: View {
 private struct PrivacyCover: View {
     var body: some View {
         ZStack {
-            Rectangle().fill(.regularMaterial).ignoresSafeArea()
+            Color(.systemBackground).ignoresSafeArea()
             Image("HomeLogo")
                 .resizable()
                 .scaledToFit()

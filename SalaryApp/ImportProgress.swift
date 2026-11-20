@@ -16,7 +16,7 @@ final class ImportProgress {
         self.title = title
         detail = ""
         fraction = 0
-        withAnimation(.snappy) { isActive = true }
+        isActive = true
     }
 
     func end() {
@@ -94,11 +94,9 @@ struct ImportProgressBar: View {
                 Spacer()
                 Text(Num.digits("\(Int((progress.fraction * 100).rounded()))%"))
                     .font(.subheadline.weight(.bold).monospacedDigit())
-                    .contentTransition(.numericText())
             }
             ProgressView(value: progress.fraction)
                 .tint(Color.accentColor)
-                .animation(.linear(duration: 0.15), value: progress.fraction)
             if !progress.detail.isEmpty {
                 Text(progress.detail)
                     .font(.caption)

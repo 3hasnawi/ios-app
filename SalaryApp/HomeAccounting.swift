@@ -62,7 +62,8 @@ struct HomeAccounting: View {
 
     @AppStorage(HomeActionLayout.key) private var actionsRaw = ""
     @Environment(\.colorScheme) private var colorScheme
-    @State private var selectedReview = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var selectedReviewID: String?
 
     private let green = Color(red: 0.07, green: 0.25, blue: 0.22)
     // الأخضر الداكن مناسب لسطح البطاقة العلوية، لكنه لا يُقرأ فوق بطاقات الوضع الليلي.
@@ -78,9 +79,9 @@ struct HomeAccounting: View {
                 actionCard(0)
                 actionCard(1)
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: actionsRaw)
             reviewStrip
         }
-        .animation(.snappy, value: actionsRaw)
     }
 
     private var netCard: some View {
@@ -269,6 +270,7 @@ struct HomeAccounting: View {
 
     @ViewBuilder
     private var reviewStrip: some View {
+        let items = reviewItems
         if audit == nil {
             HStack(spacing: 12) {
                 ProgressView()
@@ -277,7 +279,7 @@ struct HomeAccounting: View {
             }
             .frame(maxWidth: .infinity, minHeight: 108)
             .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
-        } else if reviewItems.isEmpty {
+        } else if items.isEmpty {
             Label(previous == nil
                   ? tr("لا يوجد شهر سابق للمقارنة؛ فحوص الشهر الحالي فقط", "No previous month; current checks only")
                   : tr("لا توجد ملاحظات أو متغيرات للمراجعة", "No issues or changes to review"),
@@ -285,17 +287,18 @@ struct HomeAccounting: View {
                 .font(.subheadline.weight(.medium)).foregroundStyle(accent)
                 .frame(maxWidth: .infinity, minHeight: 108)
                 .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
-        } else {
+        } else if let first = items.first {
+            let currentID = items.first { $0.id == selectedReviewID }?.id ?? first.id
+            let selection = Binding(get: { currentID }, set: { selectedReviewID = $0 })
             VStack(spacing: 2) {
-                TabView(selection: $selectedReview) {
-                    ForEach(reviewItems.indices, id: \.self) { index in
-                        let item = reviewItems[index]
+                TabView(selection: selection) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         Button { openRoute(item.route) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: item.symbol).font(.title3).foregroundStyle(accent)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(tr("حالة للمراجعة · \(Num.format(index + 1)) من \(Num.format(reviewItems.count))",
-                                            "Review item · \(index + 1) of \(reviewItems.count)"))
+                                    Text(tr("حالة للمراجعة · \(Num.format(index + 1)) من \(Num.format(items.count))",
+                                            "Review item · \(index + 1) of \(items.count)"))
                                         .font(.caption).foregroundStyle(.secondary)
                                     Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                                         .lineLimit(2)
@@ -310,28 +313,30 @@ struct HomeAccounting: View {
                             .contentShape(RoundedRectangle(cornerRadius: 21))
                         }
                         .buttonStyle(.plain)
-                        .tag(index)
+                        .accessibilityActions {
+                            if index > 0 {
+                                Button(tr("الحالة السابقة", "Previous review item")) { selectedReviewID = items[index - 1].id }
+                            }
+                            if index + 1 < items.count {
+                                Button(tr("الحالة التالية", "Next review item")) { selectedReviewID = items[index + 1].id }
+                            }
+                        }
+                        .tag(item.id)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(height: 112)
                 HStack(spacing: 5) {
-                    ForEach(reviewItems.indices, id: \.self) { index in
-                        Circle().fill(index == selectedReview ? accent : accent.opacity(0.35))
-                            .frame(width: index == selectedReview ? 6 : 4, height: index == selectedReview ? 6 : 4)
+                    ForEach(items) { item in
+                        Circle().fill(item.id == currentID ? accent : accent.opacity(0.35))
+                            .frame(width: item.id == currentID ? 6 : 4, height: item.id == currentID ? 6 : 4)
                     }
                 }
                 .accessibilityHidden(true)
             }
             .accessibilityIdentifier("homeReviewCarousel")
-            .task(id: reviewItems.map(\.id).joined(separator: "|")) {
-                selectedReview = 0
-                guard reviewItems.count > 1 else { return }
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(7))
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.easeInOut) { selectedReview = (selectedReview + 1) % reviewItems.count }
-                }
+            .onChange(of: currentID, initial: true) { _, id in
+                selectedReviewID = id
             }
         }
     }

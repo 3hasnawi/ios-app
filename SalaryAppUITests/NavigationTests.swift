@@ -20,6 +20,14 @@ final class NavigationTests: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_IQ", "-perfLog", "YES"]
     }
 
+    func testLockedScreenHidesPayrollFromAccessibility() {
+        app.launchArguments += ["-faceIDLock", "YES", "-lockPreview", "YES"]
+        app.launch()
+        XCTAssertTrue(element("unlockButton").waitForExistence(timeout: 15))
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertFalse(element("homeNetCard").exists)
+    }
+
     func testReportsBackGestures() {
         continueAfterFailure = false
         app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES"]
