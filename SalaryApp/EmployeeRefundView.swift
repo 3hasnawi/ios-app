@@ -15,7 +15,6 @@ struct EmployeeRefundView: View {
     @State private var completedSearch = ""
     @State private var rows: [Row] = []
     @State private var banks: [String: RefundBank] = [:]
-    @State private var commonAmount = ""
     @State private var source = ""
     @State private var date = Date.now
     @State private var payer = UserDefaults.standard.string(forKey: "bankStatementAccountName") ?? ""
@@ -50,14 +49,6 @@ struct EmployeeRefundView: View {
             }
             if !rows.isEmpty {
                 Section(tr("مبلغ الإعادة لكل منتسب", "Refund amount per employee")) {
-                    if rows.count > 1 {
-                        HStack {
-                            TextField(tr("مبلغ موحّد (اختياري)", "Common amount (optional)"), text: $commonAmount).keyboardType(.numberPad)
-                            Button(tr("تطبيق على الكل", "Apply to all")) {
-                                for index in rows.indices { rows[index].amount = commonAmount }
-                            }.buttonStyle(.borderless).disabled(EmployeeRefund.amount(commonAmount) == nil)
-                        }
-                    }
                     ForEach($rows) { $row in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {

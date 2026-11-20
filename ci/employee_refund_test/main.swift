@@ -23,17 +23,20 @@ let blocks = try EmployeeRefundExport.letter(other, batch: batch, letters: .init
 guard case .table(let table) = blocks[5] else { fatalError() }
 precondition(table.rows == [["OTHR","2500","OTHRIQ00"], ["RSHD","4500","RSHDIQ00"], ["المجموع الكلي","7000",""]])
 var refs = Set<String>(), csvSum: Int64 = 0, offset = 0
+var expectedAmounts = [iban("RAFB", 1): "10000", iban("RSHD", 2): "4000", iban("OTHR", 3): "2500", iban("RSHD", 4): "500"]
 for group in batch.groups {
     let csv = EmployeeRefund.csv(group, batch: batch, day: "20260101")
     for line in String(decoding: csv, as: UTF8.self).components(separatedBy: "\r\n").dropFirst() {
         let fields = line.components(separatedBy: "|")
         precondition(fields.count == 11 && refs.insert(fields[0]).inserted && fields[6] == group.bank.bic)
         precondition(EmployeeRefund.bankCode(fields[8]) == group.code && fields[9].contains("إعادة"))
+        precondition(expectedAmounts.removeValue(forKey: fields[8]) == fields[4])
         csvSum += Int64(fields[4])!
     }
     offset += group.payments.count
 }
-precondition(csvSum == batch.total && offset == 4)
+precondition(expectedAmounts.isEmpty && csvSum == batch.total && offset == 4)
+precondition((try? plan([entries[0], entry("RSHD", 2, "")])) == nil)
 for (sample, count) in [(entries, 5), ([entries[0]], 2), ([entries[1],entries[3]], 2)] {
     let urls = try EmployeeRefundExport.make(try plan(sample), date: Date(), letters: .init())
     precondition(urls.count == count && Set(urls.map(\.lastPathComponent)).count == count)
