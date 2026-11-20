@@ -11,7 +11,8 @@ actor RefundPayrollSearch {
     private func candidate(_ employee: Employee) -> RefundCandidate {
         let details = employee.details
         return RefundCandidate(id: employee.persistentModelID, person: RefundPerson(name: employee.name, rank: employee.rank,
-            workplace: employee.workplace, iban: EmployeeRefund.normalizeAccount(details["IBAN"] ?? ""), bank: details["توطين المصرف"] ?? ""))
+            workplace: employee.workplace, iban: EmployeeRefund.normalizeAccount(details["IBAN"] ?? ""), bank: details["توطين المصرف"] ?? "",
+            payrollBIC: EmployeeRefund.payrollBIC(details: details, columns: employee.rawColumns)))
     }
 
     func search(_ input: String, month: String) throws -> [RefundCandidate] {

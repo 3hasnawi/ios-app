@@ -8,6 +8,7 @@ nonisolated struct RefundPerson: Hashable, Sendable {
     let workplace: String
     let iban: String
     let bank: String
+    let payrollBIC: String
 }
 
 nonisolated struct RefundBank: Equatable, Sendable {
@@ -27,6 +28,7 @@ nonisolated enum EmployeeRefund {
         let name: String
         let iban: String
         let amount: Int64
+        let bic: String
     }
     struct Group: Sendable {
         let code: String
@@ -55,6 +57,35 @@ nonisolated enum EmployeeRefund {
               TransferRules.validIBAN(clean) else { return nil }
         return String(clean.dropFirst(4).prefix(4))
     }
+    private static func headerKey(_ title: String) -> String {
+        ArabicText.normalize(title).filter { $0.isLetter || $0.isNumber }
+    }
+    private static let bicHeaders = Set([
+        "SWIFT", "BIC", "SWIFT Code", "BIC Code", "SWIFT/BIC", "BIC/SWIFT", "Receiver BIC", "Bank BIC",
+        "Bank Swift Code", "Branch BIC", "Branch Swift Code", "Beneficiary BIC",
+        "سويفت", "سوفت", "سويفت كود", "سوفت كود", "رمز السويفت", "رمز السوفت",
+        "رمز سويفت", "رمز سوفت", "كود السويفت", "كود السوفت", "السويفت كود", "السوفت كود",
+        "السويفت", "السوفت", "سويفت المصرف", "سوفت المصرف", "سويفت الفرع", "سوفت الفرع",
+        "رمز السويفت للمصرف", "رمز السويفت للفرع", "رمز SWIFT", "رمز BIC"
+    ].map(headerKey))
+
+    // الأعمدة الأصلية تشمل الحقول غير المعروفة وقت الاستيراد وتحتفظ بالعناوين المكررة.
+    static func payrollBIC(details: [String: String], columns: PayrollColumnSnapshot?) -> String {
+        var codes = Set<String>()
+        func collect(_ header: String, _ value: String) {
+            guard bicHeaders.contains(headerKey(header)) else { return }
+            let code = ArabicText.latinDigits(value.trimmingCharacters(in: .whitespacesAndNewlines)).uppercased()
+            if !code.isEmpty { codes.insert(code) }
+        }
+        for (header, value) in details { collect(header, value) }
+        if let columns {
+            for (header, value) in zip(columns.headers, columns.values) { collect(header, value) }
+        }
+        return codes.count == 1 ? codes.first ?? "" : ""
+    }
+    static func validPayrollBIC(_ bic: String, bankCode: String) -> Bool {
+        TransferRules.validBIC(bic) && bic.hasPrefix(bankCode + "IQ")
+    }
     static func amount(_ value: String) -> Int64? {
         let clean = ArabicText.latinDigits(value.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "٬", with: ",")
         guard clean.range(of: #"^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$"#, options: .regularExpression) != nil,
@@ -78,6 +109,10 @@ nonisolated enum EmployeeRefund {
             guard let code = bankCode(iban), iban != account, TransferRules.safeField(name) else {
                 throw error("راجع اسم المنتسب وآيبانه: " + name, "Check employee name and IBAN: " + name)
             }
+            guard validPayrollBIC(entry.person.payrollBIC, bankCode: code) else {
+                throw error("راجع سويفت المنتسب في ملف الرواتب ثم أعد استيراد الشهر: " + name,
+                            "Check this employee’s SWIFT in payroll and reimport the month: " + name)
+            }
             guard seen.insert(iban).inserted else {
                 throw error("الآيبان مكرر بين المستفيدين: " + name, "Repeated beneficiary IBAN: " + name)
             }
@@ -85,7 +120,7 @@ nonisolated enum EmployeeRefund {
                 throw error("راجع المبلغ بالدينار للمنتسب: " + name, "Check the IQD amount for " + name)
             }
             total += value
-            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value))
+            groups[code, default: []].append(Payment(name: name, iban: iban, amount: value, bic: entry.person.payrollBIC))
         }
         let result: [Group] = try groups.keys.sorted().map { code in
             guard let bank = (code == rafidainCode ? rafidainBank : banks[code]), let payments = groups[code] else { throw error("بيانات المصرف ناقصة: " + code, "Missing bank: " + code) }
@@ -101,7 +136,7 @@ nonisolated enum EmployeeRefund {
 
     // مرجع رقمي ثابت عند إعادة تجهيز الحركة، ومستقل عن ترتيب الأسماء أو ملفات استقطاعات اليوم نفسه.
     private static func reference(_ payment: Payment, group: Group, batch: Batch, day: String) -> String {
-        let components = [day, batch.account, payment.iban, String(payment.amount), batch.reason, group.bank.bic]
+        let components = [day, batch.account, payment.iban, String(payment.amount), batch.reason, payment.bic]
         let digest = SHA256.hash(data: Data(components.joined(separator: "|").utf8))
         let serial = digest.prefix(8).reduce(UInt64.zero) { ($0 << 8) | UInt64($1) }
         let prefix = group.isRafidain ? TransferCategory.rafidain.prefix : TransferCategory.otherBanks.prefix
@@ -113,7 +148,7 @@ nonisolated enum EmployeeRefund {
         var rows = [TransferRules.csvHeader]
         for item in group.payments {
             let fields = [reference(item, group: group, batch: batch, day: day), day, batch.payer, batch.account, String(item.amount),
-                          "IQD", group.bank.bic, item.name, item.iban, batch.reason, "SLEV"]
+                          "IQD", item.bic, item.name, item.iban, batch.reason, "SLEV"]
             rows.append(fields.joined(separator: "|"))
         }
         return Data(rows.joined(separator: "\r\n").utf8)

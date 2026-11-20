@@ -59,6 +59,7 @@ struct EmployeeRefundView: View {
                                 }.buttonStyle(.borderless)
                             }
                             Text(row.candidate.person.iban).font(.caption.monospaced()).privacySensitive()
+                            LabeledContent(tr("سويفت المنتسب", "Employee SWIFT"), value: row.candidate.person.payrollBIC)
                             TextField(tr("المبلغ بالدينار", "Amount in IQD"), text: $row.amount).keyboardType(.numberPad)
                         }
                     }
@@ -67,10 +68,10 @@ struct EmployeeRefundView: View {
                     Section(code) {
                         if code == EmployeeRefund.rafidainCode {
                             LabeledContent(tr("المصرف", "Bank"), value: EmployeeRefund.rafidainBank.name)
-                            LabeledContent("SWIFT / BIC", value: EmployeeRefund.rafidainBank.bic)
+                            LabeledContent(tr("سويفت الكتاب", "Letter SWIFT"), value: EmployeeRefund.rafidainBank.bic)
                         } else {
                             TextField(tr("اسم المصرف", "Bank name"), text: bankField(code, \.name))
-                            TextField("SWIFT / BIC", text: bankField(code, \.bic)).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                            TextField(tr("سويفت الكتاب", "Letter SWIFT"), text: bankField(code, \.bic)).textInputAutocapitalization(.characters).autocorrectionDisabled()
                         }
                     }
                 }
@@ -133,6 +134,7 @@ struct EmployeeRefundView: View {
         let selected = rows.contains { $0.id == candidate.id }
         let person = candidate.person
         let code = EmployeeRefund.bankCode(person.iban)
+        let validBIC = code.map { EmployeeRefund.validPayrollBIC(person.payrollBIC, bankCode: $0) } ?? false
         return Button {
             if selected { rows.removeAll { $0.id == candidate.id } }
             else if let code {
@@ -144,12 +146,15 @@ struct EmployeeRefundView: View {
                 VStack(alignment: .leading) {
                     Text(person.name)
                     Text([person.rank, person.workplace, person.bank].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                    if code != nil && !validBIC {
+                        Text(tr("راجع خانة السويفت في رواتب المنتسب", "Check SWIFT in the payroll row")).font(.caption).foregroundStyle(.orange)
+                    }
                     Text(code.map { $0 + " · …" + person.iban.suffix(4) } ?? tr("آيبان مفقود أو غير صالح", "Missing or invalid IBAN")).font(.caption)
                 }
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
             }
-        }.disabled(code == nil)
+        }.disabled(!validBIC && !selected)
     }
 
     private func bankDefaults(_ code: String, person: RefundPerson) -> RefundBank {

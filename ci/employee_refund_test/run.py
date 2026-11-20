@@ -22,7 +22,8 @@ with tempfile.TemporaryDirectory() as tmp:
     rules += section("TransferFiles.swift", "    static let csvHeader", "    static func csv")
     category = section("TransferFiles.swift", "nonisolated enum TransferCategory", "nonisolated struct TransferEntity")
     common = work / "Shared.swift"
-    common.write_text(arabic + "\n" + types + "\n" + category + "\nenum TransferRules {\n" + rules + "\n}\n" +
+    snapshot = section("Models.swift", "nonisolated struct PayrollColumnSnapshot:", "/// ترميز سريع")
+    common.write_text(arabic + "\n" + snapshot + "\n" + types + "\n" + category + "\nenum TransferRules {\n" + rules + "\n}\n" +
         (tests / "Support.swift").read_text())
     files = [str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
     subprocess.run(["swiftc", "-o", str(work / "test"), *files, str(tests / "main.swift")], check=True)
@@ -31,6 +32,7 @@ with tempfile.TemporaryDirectory() as tmp:
     model = model[:model.index("    init(")] + """
     init(name: String) { self.name = name; nameKey = name; matchKey = name; rank = ""; workplace = "" }
     var details: [String:String] { [:] }
+    var rawColumns: PayrollColumnSnapshot? { PayrollColumnSnapshot.decode(rawColumnsData) }
 }
 """
     ios = work / "IOS.swift"
