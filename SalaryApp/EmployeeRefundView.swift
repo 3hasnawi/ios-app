@@ -147,7 +147,7 @@ struct EmployeeRefundView: View {
             TextField(tr("التوقيع الأول", "First signature"), text: settings.first, axis: .vertical)
             TextField(tr("التوقيع الثاني", "Second signature"), text: settings.second, axis: .vertical)
             TextField(tr("التوقيع الثالث", "Third signature"), text: settings.third, axis: .vertical)
-            TextField(tr("نسخة منه إلى", "Copies to"), text: settings.footer, axis: .vertical)
+            Text(verbatim: RefundLetterSettings.copiesTo)
         }
     }
 

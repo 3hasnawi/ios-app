@@ -125,7 +125,6 @@ import SwiftData
             value.first = template?.firstSigner ?? custom.committeeFirst ?? ""
             value.second = template?.secondSigner ?? custom.committeeSecond ?? ""
             value.third = template?.thirdSigner ?? custom.committeeThird ?? ""
-            value.footer = template?.footer ?? custom.footer ?? value.footer
             value.signatureOffset = template?.signatureVerticalOffset ?? custom.signatureOffset ?? 0
             value.template = template
             return value

@@ -129,7 +129,23 @@ var signers = RefundLetterSettings()
 signers.first = "العضو الأول"
 signers.second = "العضو الثاني"
 signers.third = "العضو الثالث"
-let letters = RefundLetters(rafidain: signers, otherBanks: signers)
+// قد تحمل الدفعة المؤرشفة فقرة نسخ مختلفة في كل كتاب، أو في القالب الموروث.
+func legacySettings(_ footer: String) throws -> RefundLetterSettings {
+    var settings = signers
+    var template = CustomTransferTemplate()
+    template.footer = "وجهة أخرى من قالب التحويلات"
+    settings.template = template
+    var record = try JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as! [String: Any]
+    record["footer"] = footer
+    return try JSONDecoder().decode(RefundLetterSettings.self, from: JSONSerialization.data(withJSONObject: record))
+}
+let letters = try RefundLetters(rafidain: legacySettings("الأرشيف."), otherBanks: legacySettings("جهة قديمة"))
+let expectedCopies = "نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة."
+for (groups, settings) in [(raf.groups, letters.rafidain), (other, letters.otherBanks)] {
+    let letter = try EmployeeRefundExport.letter(groups, batch: batch, letters: settings, date: " / ١١ / ٢٠٢٦")
+    guard case .paragraph(let copies) = letter.last else { fatalError("Missing copies footer") }
+    precondition(copies.text == expectedCopies)
+}
 let codes = ["RSHD", "OTHR", "BANK", "TEST"]
 let directory = Dictionary(uniqueKeysWithValues: codes.map { ($0, RefundBank(name: "مصرف تجريبي للاستثمار والتمويل " + $0)) })
 for bankCount in [1, 4] {

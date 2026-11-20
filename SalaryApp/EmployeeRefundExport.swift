@@ -9,7 +9,9 @@ nonisolated struct RefundLetterSettings: Codable, Sendable {
     var third = ""
     var template: CustomTransferTemplate?
     var signatureOffset = 0
-    var footer = "نسخة منه إلى:\nشعبة المصروفات / إجراء اللازم والمتابعة.\nالأرشيف."
+    static let copiesTo = "نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة."
+    // حافظ على مفتاح footer في ترميز المسودات القديمة. النص المطبوع موحّد للكتابين.
+    private(set) var footer = copiesTo
 }
 
 nonisolated struct RefundLetters: Codable, Sendable {
@@ -118,7 +120,7 @@ nonisolated enum EmployeeRefundExport {
         blocks.append(.paragraph(.init(text: "المرفقات:\n١. قرص CD", halfPoints: template?.halfPoints(.attachments, default: 22) ?? 22)))
         blocks.append(.table(.init(headers: [], rows: [cells], font: "Times New Roman",
             halfPoints: template?.halfPoints(.signatures, default: 32) ?? 32, showBorders: false)))
-        blocks.append(.paragraph(.init(text: TransferWordGroupDraft.footerWritingSpace(letters.footer, adaptivePDF: true),
+        blocks.append(.paragraph(.init(text: RefundLetterSettings.copiesTo,
             halfPoints: template?.halfPoints(.footer, default: 24) ?? 24, bold: true)))
         return blocks
     }
