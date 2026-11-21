@@ -32,7 +32,8 @@ jobs:
           cp "تشرين الاول 2026.xlsx" "$data/Documents/"
           xcrun simctl launch "$UDID" "$bundle" -importFile "$data/Documents/تشرين الاول 2026.xlsx"
           for i in $(seq 1 90); do test -f "$data/Documents/import-report.txt" && break; sleep 1; done
-          grep '^employees=12 .*failed=0' "$data/Documents/import-report.txt"
+          grep '^employees=12 .*months=1 ' "$data/Documents/import-report.txt"
+          if grep -q ' failed=' "$data/Documents/import-report.txt"; then exit 1; fi
           xcrun simctl terminate "$UDID" "$bundle"
       - name: Exercise search, live amounts and archived batch actions
         run: |
