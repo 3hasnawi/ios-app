@@ -39,7 +39,9 @@ final class RefundInputTests: XCTestCase {
         XCTAssertEqual(searchAmount.value as? String, "7500")
         capture("search-amount-7500")
         element("refundAmountDone").tap()
-        element("saveSearchRefund").tap()
+        let saveFromSearch = element("saveSearchRefund")
+        XCTAssertTrue(saveFromSearch.waitForExistence(timeout: 10), app.debugDescription)
+        saveFromSearch.tap()
         element("viewSearchRefundBatch").tap()
 
         let amount = element("refundRecipientAmount")

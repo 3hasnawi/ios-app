@@ -38,13 +38,7 @@ struct RefundSearchEntrySheet: View {
                     Section {
                         RefundAmountField(tr("مبلغ الإعادة بالدينار", "Refund amount in IQD"), identifier: "searchRefundAmount", text: $amount)
                             .frame(minHeight: 44)
-                        Button(draft.rows.contains { $0.id == candidate.id }
-                            ? tr("حفظ ومتابعة البحث", "Save and continue searching")
-                            : tr("إضافة ومتابعة البحث", "Add and continue searching")) {
-                            save(candidate)
-                        }
-                        .accessibilityIdentifier("saveSearchRefund")
-                        .disabled(EmployeeRefund.amount(amount) == nil || EmployeeRefund.bankCode(person.iban) == nil || saving || draft.working)
+
                     }
                 } else if error == nil {
                     ProgressView()
@@ -54,6 +48,13 @@ struct RefundSearchEntrySheet: View {
             .navigationTitle(tr("مبلغ الإعادة", "Refund amount"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    if let candidate {
+                        Button(tr("حفظ", "Save")) { save(candidate) }
+                            .accessibilityIdentifier("saveSearchRefund")
+                            .disabled(EmployeeRefund.amount(amount) == nil || EmployeeRefund.bankCode(candidate.person.iban) == nil || saving || draft.working)
+                    }
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     Button(tr("إلغاء", "Cancel")) { dismiss() }.disabled(saving)
                 }
