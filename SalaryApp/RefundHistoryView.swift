@@ -3,18 +3,20 @@ import SwiftData
 
 struct RefundHistoryView: View {
     let storage: RefundStorage
+    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse)]) private var months: [PayrollMonth]
     @State private var records: [RefundStorage.Archived] = []
+    @State private var editor: RefundDraft?
+    @State private var pendingDelete: RefundStorage.Archived?
+    @State private var deleting = false
     @State private var error: String?
+
     var body: some View {
         List {
             if let error { Text(error).foregroundStyle(.red) }
             else if records.isEmpty { Text(tr("لا توجد دفعات محفوظة.", "No saved batches.")) }
             ForEach(records) { record in
                 NavigationLink {
-                    RefundArchivedDetail(record: record, storage: storage) { updated in
-                        records.removeAll { $0.id == record.id }
-                        if let updated { records.append(updated); records.sort(by: RefundStorage.Archived.newestFirst) }
-                    }
+                    RefundArchivedDetail(snapshot: record.snapshot)
                 } label: {
                     VStack(alignment: .leading) {
                         Text(record.snapshot.date, format: .dateTime.year().month().day())
@@ -23,32 +25,55 @@ struct RefundHistoryView: View {
                             .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityIdentifier("refundHistoryRow")
+                .contextMenu {
+                    Button(tr("تعديل الدفعة", "Edit batch"), systemImage: "pencil") {
+                        editor = RefundDraft(storage: storage, editing: record)
+                    }.accessibilityIdentifier("editSavedRefund")
+                    Button(role: .destructive) { pendingDelete = record } label: {
+                        Label(tr("حذف الدفعة", "Delete batch"), systemImage: "trash")
+                    }.accessibilityIdentifier("deleteSavedRefund")
+                }
             }
         }
         .navigationTitle(tr("الدفعات المحفوظة", "Saved batches"))
+        .disabled(deleting)
         .task {
             do { records = try await Task.detached { [storage] in try storage.archived() }.value }
             catch { self.error = error.localizedDescription }
+        }
+        .sheet(item: $editor) { session in
+            NavigationStack {
+                EmployeeRefundView(editing: session, months: months.filter { $0.employeeCount > 0 }.map(\.name)) { updated in
+                    if let index = records.firstIndex(where: { $0.id == updated.id }) {
+                        records[index] = updated
+                        records.sort(by: RefundStorage.Archived.newestFirst)
+                    }
+                }
+            }
+        }
+        .alert(tr("حذف الدفعة المحفوظة؟", "Delete saved batch?"),
+               isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+               presenting: pendingDelete) { record in
+            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
+            Button(tr("حذف الدفعة", "Delete batch"), role: .destructive) {
+                deleting = true
+                Task {
+                    defer { deleting = false }
+                    do {
+                        try await Task.detached { [storage] in try storage.delete(record) }.value
+                        records.removeAll { $0.id == record.id }
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        } message: { record in
+            Text(tr("سيُحذف سجل الدفعة المؤرخة", "Permanently delete the batch dated") + " " + record.snapshot.date.formatted(date: .numeric, time: .omitted) + "؟")
         }
     }
 }
 
 private struct RefundArchivedDetail: View {
-    @State private var record: RefundStorage.Archived
-    let storage: RefundStorage
-    let onChange: (RefundStorage.Archived?) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse)]) private var months: [PayrollMonth]
-    @State private var editor: RefundDraft?
-    @State private var confirmDelete = false
-    @State private var deleting = false
-    private var snapshot: RefundSnapshot { record.snapshot }
-
-    init(record: RefundStorage.Archived, storage: RefundStorage, onChange: @escaping (RefundStorage.Archived?) -> Void) {
-        _record = State(initialValue: record)
-        self.storage = storage
-        self.onChange = onChange
-    }
+    let snapshot: RefundSnapshot
     @State private var exporting = false
     @State private var error: String?
     var body: some View {
@@ -80,44 +105,8 @@ private struct RefundArchivedDetail: View {
                     }
                 }.disabled(exporting)
             }
-            Button(role: .destructive) { confirmDelete = true } label: {
-                Label(tr("حذف الدفعة المحفوظة", "Delete saved batch"), systemImage: "trash")
-            }
             if let error { Text(error).foregroundStyle(.red) }
         }
         .navigationTitle(tr("تفاصيل الدفعة", "Batch details"))
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(tr("تعديل الدفعة", "Edit batch"), systemImage: "pencil") {
-                    editor = RefundDraft(storage: storage, editing: record)
-                }
-            }
-        }
-        .disabled(exporting || deleting)
-        .sheet(item: $editor) { session in
-            NavigationStack {
-                EmployeeRefundView(editing: session, months: months.filter { $0.employeeCount > 0 }.map(\.name)) { updated in
-                    record = updated
-                    onChange(updated)
-                }
-            }
-        }
-        .alert(tr("حذف الدفعة المحفوظة؟", "Delete saved batch?"), isPresented: $confirmDelete) {
-            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
-            Button(tr("حذف الدفعة", "Delete batch"), role: .destructive) {
-                deleting = true
-                let original = record
-                Task {
-                    defer { deleting = false }
-                    do {
-                        try await Task.detached { [storage] in try storage.delete(original) }.value
-                        dismiss()
-                        onChange(nil)
-                    } catch { self.error = error.localizedDescription }
-                }
-            }
-        } message: {
-            Text(tr("سيُحذف سجل هذه الدفعة من الأرشيف نهائياً.", "This batch will be permanently removed from history."))
-        }
     }
 }

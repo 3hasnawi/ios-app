@@ -8,7 +8,7 @@ struct EmployeeRefundView: View {
     private let onEdited: ((RefundStorage.Archived) -> Void)?
     @Bindable private var draft: RefundDraft
     @State private var selectedMonth: String
-    @FocusState private var amountFocus: PersistentIdentifier?
+    @State private var editingAmountID: PersistentIdentifier?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
 
@@ -55,7 +55,7 @@ struct EmployeeRefundView: View {
                 Section {
                     NavigationLink { RefundHistoryView(storage: draft.storage) } label: {
                         Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
-                    }
+                    }.accessibilityIdentifier("refundHistory")
                     if draft.rows.isEmpty, !month.isEmpty, !draft.loadFailed {
                         Button(tr("استرجاع دفعة من ملفات CSV", "Recover batch from CSV files"), systemImage: "square.and.arrow.down") {
                             FilePicker.present(types: [.commaSeparatedText], onPick: recover)
@@ -112,7 +112,15 @@ struct EmployeeRefundView: View {
                             }
                             Text(row.candidate.person.iban).font(.caption.monospaced()).privacySensitive()
                             RefundPayrollBICLabel(person: row.candidate.person)
-                            RefundAmountInput(row: row, draft: draft, focus: $amountFocus)
+                            RefundAmountField(tr("المبلغ بالدينار", "Amount in IQD"), identifier: "refundRecipientAmount",
+                                              text: Binding(get: { row.amount }, set: { draft.setAmount($0, for: row.id) })) { editing in
+                                if editing { editingAmountID = row.id }
+                                else {
+                                    if editingAmountID == row.id { editingAmountID = nil }
+                                    draft.flushAmount()
+                                }
+                            }
+                            .frame(minHeight: 44)
                         }
                     }
                 }
@@ -142,12 +150,13 @@ struct EmployeeRefundView: View {
             }
             if !draft.rows.isEmpty {
                 Section(tr("مراجعة الدفعة", "Review batch")) {
-                    if amountFocus == nil, let batch = try? plan() {
-                        ForEach(batch.groups, id: \.code) { group in
-                            LabeledContent(group.bank.name, value: Money.format(Double(group.total)))
-                        }
-                        LabeledContent(tr("المجموع الكلي", "Grand total"), value: Money.format(Double(batch.total))).bold()
+                    let batch = editingAmountID == nil ? try? plan() : nil
+                    ForEach(codes, id: \.self) { code in
+                        let bank = code == EmployeeRefund.rafidainCode ? EmployeeRefund.rafidainBank : draft.banks[code]
+                        let total = batch?.groups.first(where: { $0.code == code })?.total
+                        LabeledContent(bank?.name ?? code, value: total.map { Money.format(Double($0)) } ?? "—")
                     }
+                    LabeledContent(tr("المجموع الكلي", "Grand total"), value: batch.map { Money.format(Double($0.total)) } ?? "—").bold()
                     if !isEditingArchive {
                         Button(tr("حفظ الدفعة بتاريخ التحويل", "Save dated batch"), systemImage: "archivebox") { finish(share: false) }
                         Button(tr("تصدير الكتب وملفات CSV وقائمة المنتسبين", "Export letters, CSVs and employee list"), systemImage: "square.and.arrow.up") {
@@ -168,7 +177,6 @@ struct EmployeeRefundView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(tr("حفظ التعديلات", "Save changes")) {
-                        amountFocus = nil
                         Task {
                             do { onEdited(try await draft.saveArchiveEdit(container: context.container)); dismiss() }
                             catch { self.error = error.localizedDescription }
@@ -180,15 +188,8 @@ struct EmployeeRefundView: View {
                     Button(tr("تفريغ الدفعة", "Clear batch"), systemImage: "trash") { confirmClear = true }.disabled(draft.working)
                 }
             }
-            ToolbarItemGroup(placement: .keyboard) {
-                if amountFocus != nil {
-                    Spacer()
-                    Button(tr("تم", "Done")) { amountFocus = nil }
-                }
-            }
         }
         .interactiveDismissDisabled(isEditingArchive && draft.working)
-        .onChange(of: amountFocus) { _, _ in draft.flushAmount() }
         .onChange(of: scenePhase) { _, phase in if phase != .active { draft.flushAmount() } }
         .onDisappear { draft.flushAmount() }
         .confirmationDialog(tr("تفريغ دفعة الإعادة الحالية؟", "Clear the current refund batch?"), isPresented: $confirmClear, titleVisibility: .visible) {
@@ -316,33 +317,6 @@ struct EmployeeRefundView: View {
                 } catch { self.error = error.localizedDescription }
             }
         } catch { self.error = error.localizedDescription }
-    }
-}
-
-private struct RefundAmountInput: View {
-    let row: RefundDraftRow
-    let draft: RefundDraft
-    let focus: FocusState<PersistentIdentifier?>.Binding
-    @State private var text: String
-
-    init(row: RefundDraftRow, draft: RefundDraft, focus: FocusState<PersistentIdentifier?>.Binding) {
-        self.row = row
-        self.draft = draft
-        self.focus = focus
-        _text = State(initialValue: row.amount)
-    }
-
-    var body: some View {
-        TextField(tr("المبلغ بالدينار", "Amount in IQD"), text: Binding(get: { text }, set: { value in
-            text = value
-            draft.setAmount(value, for: row.id)
-        }))
-        .keyboardType(.numberPad)
-        .focused(focus, equals: row.id)
-        .onChange(of: row.amount) { _, value in
-            if focus.wrappedValue != row.id && text != value { text = value }
-        }
-        .accessibilityIdentifier("refundRecipientAmount")
     }
 }
 

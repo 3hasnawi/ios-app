@@ -36,9 +36,8 @@ struct RefundSearchEntrySheet: View {
                         RefundPayrollBICLabel(person: person)
                     }
                     Section {
-                        TextField(tr("مبلغ الإعادة بالدينار", "Refund amount in IQD"), text: $amount)
-                            .keyboardType(.numberPad)
-                            .accessibilityIdentifier("searchRefundAmount")
+                        RefundAmountField(tr("مبلغ الإعادة بالدينار", "Refund amount in IQD"), identifier: "searchRefundAmount", text: $amount)
+                            .frame(minHeight: 44)
                         Button(draft.rows.contains { $0.id == candidate.id }
                             ? tr("حفظ ومتابعة البحث", "Save and continue searching")
                             : tr("إضافة ومتابعة البحث", "Add and continue searching")) {
