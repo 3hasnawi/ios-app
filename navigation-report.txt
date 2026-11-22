@@ -1,0 +1,8 @@
+الخطوة                               المدة  تجمّد   أسوأ  الحكم
+
+steps=0 hangs>=100ms=52 hangs>=250ms=30 hangs>=500ms=17 worst=4000ms
+slowest_waits: 1033ms حقل البحث
+xctest: Executed 1 test, with 0 failures
+issues=0
+
+timings: launch=[2042, 1540]; firstAppear=[4391, 2902]; salaryAudit=[19520]; searchQuery=[1341, 24, 932, 27]

@@ -1,0 +1,225 @@
+Command line invocation:
+    /Applications/Xcode_26.6.app/Contents/Developer/usr/bin/xcodebuild test-without-building -project SalaryApp.xcodeproj -scheme SalaryApp -configuration Release -destination id=6478AFFB-AE17-412A-A1E5-51BCFFD300B6 -derivedDataPath build "-only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar" CODE_SIGNING_ALLOWED=NO
+
+Build settings from command line:
+    CODE_SIGNING_ALLOWED = NO
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  ZIPFoundation: https://github.com/weichsel/ZIPFoundation @ e7048f0
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:iOS Simulator, arch:arm64, id:6478AFFB-AE17-412A-A1E5-51BCFFD300B6, OS:26.5, name:iPhone 17 Pro }
+{ platform:iOS Simulator, arch:x86_64, id:6478AFFB-AE17-412A-A1E5-51BCFFD300B6, OS:26.5, name:iPhone 17 Pro }
+2026-11-22 09:32:32.595625+0000 SalaryAppUITests-Runner[30642:83404] [Default] Running tests...
+objc[30642]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x1083c4310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x107e0c398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-11-22 09:32:39.403.
+2026-11-22 09:32:39.865 xcodebuild[29558:80628] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-22 09:32:39.865 xcodebuild[29558:80628] [MT] IDELaunchParametersSnapshot: no debugger version
+Test Suite 'SalaryAppUITests.xctest' started at 2026-11-22 09:32:39.404.
+Test Suite 'NavigationTests' started at 2026-11-22 09:32:39.404.
+Test Case '-[SalaryAppUITests.NavigationTests testSystemNavigationBar]' started.
+    t =     0.00s Start Test at 2026-11-22 09:32:39.405
+    t =     0.04s Set Up
+    t =     0.04s Open com.example.SalaryApp
+    t =     0.04s     Launch com.example.SalaryApp
+    t =     3.53s         Setting up automation session
+    t =     6.01s         Wait for com.example.SalaryApp to idle
+    t =     8.66s Waiting 30.0s for TabBar (First Match) to exist
+    t =     9.72s     Checking `Expect predicate `existsNoRetry == 1` for object TabBar (First Match)`
+    t =     9.72s         Checking existence of `TabBar (First Match)`
+    t =     9.85s Checking existence of `Keyboard (First Match)`
+    t =    10.36s Checking existence of `"الإعدادات" Button`
+    t =    10.54s Find the "الإعدادات" Button
+    t =    10.65s Checking existence of `"مشاركة" Button`
+    t =    10.73s Checking existence of `Keyboard (First Match)`
+    t =    10.94s Checking existence of `"الرئيسية" Button`
+    t =    11.01s Tap "الرئيسية" Button
+    t =    11.01s     Wait for com.example.SalaryApp to idle
+    t =    11.01s     Find the "الرئيسية" Button
+    t =    11.08s     Check for interrupting elements affecting "الرئيسية" Button
+    t =    11.16s     Synthesize event
+    t =    11.67s     Wait for com.example.SalaryApp to idle
+    t =    14.03s Tap "homeReportsEntry" Any
+    t =    14.03s     Wait for com.example.SalaryApp to idle
+    t =    14.25s     Find the "homeReportsEntry" Any
+    t =    14.52s     Check for interrupting elements affecting "homeReportsEntry" Button
+    t =    14.67s     Synthesize event
+    t =    16.62s     Wait for com.example.SalaryApp to idle
+    t =    20.36s Waiting 8.0s for "التقارير" NavigationBar to exist
+    t =    21.45s     Checking `Expect predicate `existsNoRetry == 1` for object "التقارير" NavigationBar`
+    t =    21.45s         Checking existence of `"التقارير" NavigationBar`
+    t =    21.73s Tap "BackButton" Button
+    t =    21.73s     Wait for com.example.SalaryApp to idle
+    t =    21.75s     Find the "BackButton" Button
+    t =    21.97s     Check for interrupting elements affecting "BackButton" Button
+    t =    22.08s     Synthesize event
+    t =    22.41s     Wait for com.example.SalaryApp to idle
+    t =    23.24s Waiting 8.0s for "الرئيسية" NavigationBar to exist
+    t =    24.31s     Checking `Expect predicate `existsNoRetry == 1` for object "الرئيسية" NavigationBar`
+    t =    24.31s         Checking existence of `"الرئيسية" NavigationBar`
+    t =    24.39s Checking existence of `"بحث" Button`
+    t =    24.47s Tap "بحث" Button
+    t =    24.47s     Wait for com.example.SalaryApp to idle
+    t =    24.47s     Find the "بحث" Button
+    t =    24.55s     Check for interrupting elements affecting "بحث" Button
+    t =    24.66s     Synthesize event
+    t =    25.10s     Wait for com.example.SalaryApp to idle
+    t =    27.22s Waiting 8.0s for SearchField (First Match) to exist
+    t =    28.27s     Checking `Expect predicate `existsNoRetry == 1` for object SearchField (First Match)`
+    t =    28.27s         Checking existence of `SearchField (First Match)`
+    t =    28.31s Waiting 8.0s for SearchField (First Match) to exist
+    t =    29.31s     Checking `Expect predicate `existsNoRetry == 1` for object SearchField (First Match)`
+    t =    29.31s         Checking existence of `SearchField (First Match)`
+WAIT 1033 حقل البحث
+    t =    29.34s Tap SearchField (First Match)
+    t =    29.34s     Wait for com.example.SalaryApp to idle
+    t =    29.35s     Find the SearchField (First Match)
+    t =    29.39s     Check for interrupting elements affecting "ابحث في كل بيانات التطبيق" SearchField
+    t =    29.42s     Synthesize event
+    t =    29.72s     Wait for com.example.SalaryApp to idle
+    t =    32.66s Type 'احمد' into "ابحث في كل بيانات التطبيق" SearchField
+    t =    32.66s     Wait for com.example.SalaryApp to idle
+    t =    32.88s     Find the "ابحث في كل بيانات التطبيق" SearchField
+    t =    33.44s     Check for interrupting elements affecting "ابحث في كل بيانات التطبيق" SearchField
+    t =    33.50s     Synthesize event
+    t =    33.78s     Wait for com.example.SalaryApp to idle
+    t =    34.21s Type ' علي' into "ابحث في كل بيانات التطبيق" SearchField
+    t =    34.22s     Wait for com.example.SalaryApp to idle
+    t =    34.24s     Find the "ابحث في كل بيانات التطبيق" SearchField
+    t =    34.65s     Check for interrupting elements affecting "ابحث في كل بيانات التطبيق" SearchField
+    t =    34.78s     Synthesize event
+    t =    35.06s     Wait for com.example.SalaryApp to idle
+    t =    35.06s Find the "ابحث في كل بيانات التطبيق" SearchField
+    t =    35.28s Waiting 10.0s for "resultCard" Any to exist
+    t =    36.32s     Checking `Expect predicate `existsNoRetry == 1` for object "resultCard" Any`
+    t =    36.32s         Checking existence of `"resultCard" Any`
+    t =    37.09s         Capturing element debug description
+    t =    37.33s     Checking `Expect predicate `existsNoRetry == 1` for object "resultCard" Any`
+    t =    37.33s         Checking existence of `"resultCard" Any`
+    t =    41.20s Checking existence of `Keyboard (First Match)`
+    t =    41.25s Checking existence of `"searchList" Any`
+    t =    42.92s Swipe down "searchList" Any
+    t =    42.92s     Wait for com.example.SalaryApp to idle
+    t =    42.93s     Find the "searchList" Any
+    t =    43.46s     Check for interrupting elements affecting "searchList" CollectionView
+    t =    43.85s     Synthesize event
+    t =    44.76s     Wait for com.example.SalaryApp to idle
+    t =    45.20s Checking existence of `"الرئيسية" Button`
+    t =    47.02s Tap "الرئيسية" Button
+    t =    47.02s     Wait for com.example.SalaryApp to idle
+    t =    47.02s     Find the "الرئيسية" Button
+    t =    47.14s     Check for interrupting elements affecting "الرئيسية" Button
+    t =    47.23s     Synthesize event
+    t =    47.54s     Wait for com.example.SalaryApp to idle
+    t =    48.44s Checking existence of `"بحث" Button`
+    t =    48.73s Tap "بحث" Button
+    t =    48.73s     Wait for com.example.SalaryApp to idle
+    t =    49.34s     Find the "بحث" Button
+    t =    49.44s     Check for interrupting elements affecting "magnifyingglass" Button
+    t =    49.50s     Synthesize event
+    t =    49.80s     Wait for com.example.SalaryApp to idle
+    t =    51.26s Waiting 8.0s for SearchField (First Match) to exist
+    t =    52.29s     Checking `Expect predicate `existsNoRetry == 1` for object SearchField (First Match)`
+    t =    52.29s         Checking existence of `SearchField (First Match)`
+    t =    52.35s Terminate com.example.SalaryApp:31499
+    t =    54.37s Open com.example.SalaryApp
+    t =    54.37s     Launch com.example.SalaryApp
+2026-11-22 09:33:34.118 xcodebuild[29558:80628] [MT] IDELaunchParametersSnapshot: The operation couldn’t be completed. (DebuggerLLDB.DebuggerVersionStore.StoreError error 0.)
+2026-11-22 09:33:34.118 xcodebuild[29558:80628] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =    55.77s         Setting up automation session
+    t =    57.14s         Wait for com.example.SalaryApp to idle
+    t =    59.31s Waiting 20.0s for "resultCard" Button to exist
+    t =    60.34s     Checking `Expect predicate `existsNoRetry == 1` for object "resultCard" Button`
+    t =    60.34s         Checking existence of `"resultCard" Button`
+    t =    61.60s Checking `Expect predicate `hittable == 1` for object "resultCard" Button`
+    t =    61.60s     Find the "resultCard" Button
+    t =    61.78s Press "resultCard" Button for 1.2 seconds
+    t =    61.78s     Wait for com.example.SalaryApp to idle
+    t =    61.79s     Find the "resultCard" Button
+    t =    61.95s     Check for interrupting elements affecting "resultCard" Button
+    t =    62.02s     Synthesize event
+    t =    63.47s     Wait for com.example.SalaryApp to idle
+    t =    64.06s Waiting 10.0s for "employeeDeductionAction" Any to exist
+    t =    65.09s     Checking `Expect predicate `existsNoRetry == 1` for object "employeeDeductionAction" Any`
+    t =    65.09s         Checking existence of `"employeeDeductionAction" Any`
+    t =    65.66s Tap "employeeDeductionAction" Any
+    t =    65.66s     Wait for com.example.SalaryApp to idle
+    t =    65.66s     Find the "employeeDeductionAction" Any
+    t =    67.05s     Check for interrupting elements affecting "employeeDeductionAction" Button
+    t =    67.41s     Synthesize event
+    t =    67.80s     Wait for com.example.SalaryApp to idle
+    t =    69.19s Waiting 10.0s for "deductionSelectedPerson" Any to exist
+    t =    70.25s     Checking `Expect predicate `existsNoRetry == 1` for object "deductionSelectedPerson" Any`
+    t =    70.25s         Checking existence of `"deductionSelectedPerson" Any`
+    t =    70.91s Find the "deductionSelectedPerson" Any
+    t =    71.38s Tap "إغلاق" Button
+    t =    71.38s     Wait for com.example.SalaryApp to idle
+    t =    71.39s     Find the "إغلاق" Button
+    t =    71.53s     Check for interrupting elements affecting "إغلاق" Button
+    t =    71.65s     Synthesize event
+    t =    71.98s     Wait for com.example.SalaryApp to idle
+    t =    73.81s Checking `Expect predicate `hittable == 1` for object "resultCard" Button`
+    t =    73.81s     Find the "resultCard" Button
+    t =    74.31s Tap "resultCard" Button
+    t =    74.31s     Wait for com.example.SalaryApp to idle
+    t =    74.33s     Find the "resultCard" Button
+    t =    74.68s     Check for interrupting elements affecting "resultCard" Button
+    t =    74.76s     Synthesize event
+    t =    75.07s     Wait for com.example.SalaryApp to idle
+    t =    75.19s Waiting 20.0s for "personPayslip" Any to exist
+    t =    76.24s     Checking `Expect predicate `existsNoRetry == 1` for object "personPayslip" Any`
+    t =    76.24s         Checking existence of `"personPayslip" Any`
+    t =    76.65s Checking existence of `"مشاركة" Button`
+    t =    76.73s Checking existence of `"المزيد" Button`
+    t =    76.79s Checking existence of `"More" Button`
+    t =    76.84s Checking existence of `"بحث" Button`
+    t =    76.90s Checking existence of `"بحث" Button`
+    t =    76.95s Find the Window (First Match)
+    t =    76.96s Find the NavigationBar (First Match)
+    t =    77.01s Find the TabBar (First Match)
+    t =    77.05s Find the "personPayslip" Any
+    t =    77.25s Find the "personPayslip" Other
+CONTEXT payslip=(16.0, 120.0, 370.0, 490.33333333333326) visible=(20.0, 128.0, 362.0, 482.33333333333326)
+    t =    77.45s Press Target Application 'com.example.SalaryApp'[0.00, 0.00] -> (201.0, 228.0) for 1.2 seconds
+    t =    77.45s     Wait for com.example.SalaryApp to idle
+    t =    77.45s     Find the Target Application 'com.example.SalaryApp'
+    t =    77.49s     Check for interrupting elements affecting "الرواتب" Application
+    t =    77.53s     Synthesize event
+    t =    77.54s         Find the Target Application 'com.example.SalaryApp'
+    t =    77.58s         Find the Target Application 'com.example.SalaryApp'
+    t =    77.62s         Find the Target Application 'com.example.SalaryApp'
+    t =    79.09s     Wait for com.example.SalaryApp to idle
+    t =    79.59s Waiting 10.0s for "قسيمة صورة" Button to exist
+    t =    80.60s     Checking `Expect predicate `existsNoRetry == 1` for object "قسيمة صورة" Button`
+    t =    80.60s         Checking existence of `"قسيمة صورة" Button`
+    t =    80.68s Tap "قسيمة صورة" Button
+    t =    80.68s     Wait for com.example.SalaryApp to idle
+    t =    80.69s     Find the "قسيمة صورة" Button
+    t =    80.75s     Check for interrupting elements affecting "photo" Button
+    t =    80.80s     Synthesize event
+    t =    81.11s     Wait for com.example.SalaryApp to idle
+    t =    84.04s Waiting 8.0s for "shareModePicker" Any to exist
+    t =    85.08s     Checking `Expect predicate `existsNoRetry == 1` for object "shareModePicker" Any`
+    t =    85.08s         Checking existence of `"shareModePicker" Any`
+    t =    85.24s Tear Down
+Test Case '-[SalaryAppUITests.NavigationTests testSystemNavigationBar]' passed (86.064 seconds).
+Test Suite 'NavigationTests' passed at 2026-11-22 09:34:05.470.
+	 Executed 1 test, with 0 failures (0 unexpected) in 86.064 (86.066) seconds
+Test Suite 'SalaryAppUITests.xctest' passed at 2026-11-22 09:34:05.471.
+	 Executed 1 test, with 0 failures (0 unexpected) in 86.064 (86.066) seconds
+Test Suite 'Selected tests' passed at 2026-11-22 09:34:05.471.
+	 Executed 1 test, with 0 failures (0 unexpected) in 86.064 (86.068) seconds
+2026-11-22 09:34:27.008 xcodebuild[29558:80628] [MT] IDETestOperationsObserverDebug: 128.644 elapsed -- Testing started completed.
+2026-11-22 09:34:27.008 xcodebuild[29558:80628] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-11-22 09:34:27.008 xcodebuild[29558:80628] [MT] IDETestOperationsObserverDebug: 128.644 sec, +128.644 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/runner/work/ios-app/ios-app/build/Logs/Test/Test-SalaryApp-2026.11.22_09-32-14-+0000.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started

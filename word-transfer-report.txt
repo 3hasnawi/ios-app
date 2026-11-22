@@ -1,0 +1,1 @@
+wordTransfers=ok drafts=11 synthetic=1

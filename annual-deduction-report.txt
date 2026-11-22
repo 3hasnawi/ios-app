@@ -1,0 +1,1 @@
+annualDeduction=ok months=3 statuses=ok invalid=ok yearConflict=ok

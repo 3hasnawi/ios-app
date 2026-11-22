@@ -1,0 +1,1 @@
+employeeDeduction=ok sums=ok missing=ok duplicates=ok pdfPages=2
