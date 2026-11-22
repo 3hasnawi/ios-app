@@ -88,3 +88,19 @@ jobs:
         if: ${{ inputs.large_backup }}
         timeout-minutes: 8
         run: '"$RUNNER_TEMP/backup-reader-test" --large'
+  interface-types:
+    runs-on: macos-26
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: weichsel/ZIPFoundation
+          ref: 22787ffb59de99e5dc1fbfe80b19c97a904ad48d
+          path: vendor/ZIPFoundation
+      - name: Type-check iPhone screens and navigation without building the application
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          FLAGS=(-swift-version 5 -target arm64-apple-ios26.0 -sdk "$SDK" -parse-as-library)
+          xcrun swiftc "${FLAGS[@]}" -emit-module -module-name ZIPFoundation vendor/ZIPFoundation/Sources/ZIPFoundation/*.swift -emit-module-path "$RUNNER_TEMP/ZIPFoundation.swiftmodule"
+          xcrun swiftc "${FLAGS[@]}" -I "$RUNNER_TEMP" -module-name SalaryApp -whole-module-optimization -typecheck SalaryApp/*.swift

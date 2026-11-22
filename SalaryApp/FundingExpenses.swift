@@ -153,6 +153,7 @@ struct FundingExpensesView: View {
             else if ledger == nil { Text(FundingApproval.Failure.invalid.localizedDescription).foregroundStyle(.red) }
             else if let report = displayedReport {
                 Section(tr("اعتماد الكشف", "Statement approval")) {
+                    LabeledContent(tr("شهر التمويل", "Funding month"), value: report.month)
                     if let approval = displayedApproval {
                         Label(tr("معتمد يدوياً \(approval.confirmedAt.formatted(date: .numeric, time: .shortened))", "Manually approved \(approval.confirmedAt.formatted(date: .numeric, time: .shortened))"), systemImage: "checkmark.seal.fill").foregroundStyle(.green)
                         if showSavedApproval || self.report == nil {
@@ -195,7 +196,19 @@ struct FundingExpensesView: View {
                 Section(tr("المطابقة مع كشف البنك", "Bank statement comparison")) {
                     LabeledContent(report.isProvisional ? tr("مجموع المصروفات المتوفرة", "Available expenses") : tr("مجموع المصروفات", "Total expenses"), value: Money.format(report.total))
                     LabeledContent(report.isProvisional ? tr("مجموع البنك المتوفر", "Available bank total") : tr("مجموع كشف البنك", "Bank statement total"), value: Money.format(report.bankTotal))
+                    if report.difference != 0 {
+                        NavigationLink {
+                            List {
+                                LabeledContent(tr("شهر التمويل", "Funding month"), value: report.month)
+                                ForEach(report.rows) { row in LabeledContent(row.displayTitle, value: Money.format(row.amount)) }
+                                LabeledContent(tr("الفرق", "Difference"), value: Money.format(report.difference))
+                            }.navigationTitle(tr("تفصيل فرق التمويل", "Funding difference details"))
+                        } label: {
+                            LabeledContent(tr("الفرق: البنك ناقص المصروفات", "Difference: bank minus expenses"), value: Money.format(report.difference))
+                        }
+                    } else {
                     LabeledContent(tr("الفرق: البنك ناقص المصروفات", "Difference: bank minus expenses"), value: Money.format(report.difference))
+                    }
                     Label(report.difference == 0 ? (report.isProvisional ? tr("تطابق حسابي للبيانات المتوفرة فقط", "Numerical match for available data only") : tr("المبلغان متطابقان", "Amounts match")) : tr("المبلغان غير متطابقين؛ راجع الجهات والمبالغ.", "Amounts differ; review entities and amounts."), systemImage: report.difference == 0 && !report.isProvisional ? "checkmark.circle" : "exclamationmark.triangle")
                         .foregroundStyle(report.difference == 0 && !report.isProvisional ? .green : .orange)
                     if report.unclassifiedCount > 0 { Text(tr("توجد رواتب غير مصنفة حسب طريقة الدفع؛ راجعها.", "Some salaries have no classified payment method; review them.")).foregroundStyle(.orange) }

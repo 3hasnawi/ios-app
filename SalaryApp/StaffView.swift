@@ -196,7 +196,16 @@ struct RootView: View {
             get: { importCenter.message != nil },
             set: { if !$0 { importCenter.message = nil } }
         )) {
-            Button(tr("حسناً", "OK"), role: .cancel) {}
+            if let month = importCenter.importedAuditMonth {
+                Button(tr("فتح تدقيق الشهر", "Open month audit")) {
+                    UserDefaults.standard.set(month, forKey: "reportMonth")
+                    router.pendingReport = .audit
+                    router.tab = .payroll
+                    router.showReports = true
+                    importCenter.importedAuditMonth = nil
+                }
+            }
+            Button(tr("حسناً", "OK"), role: .cancel) { importCenter.importedAuditMonth = nil }
         } message: {
             Text(importCenter.message ?? "")
         }

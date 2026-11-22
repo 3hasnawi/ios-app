@@ -8,7 +8,8 @@ nonisolated enum EntityRenamePlan {
     static let letterLinksKey = "transferLetterEntityLinks"
     static let customizationsKey = "transferLetterCustomizations"
     static let templatesKey = "customTransferTemplatesV1"
-    static let keys = [linksKey, accountsKey, categoriesKey, letterLinksKey, customizationsKey, templatesKey]
+    static let pinnedKey = "homePinnedEntityNames"
+    static let keys = [pinnedKey, linksKey, accountsKey, categoriesKey, letterLinksKey, customizationsKey, templatesKey]
 
     static func invalid(_ message: String) -> NSError {
         NSError(domain: "EntityRename", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
@@ -49,6 +50,14 @@ nonisolated enum EntityRenamePlan {
         let destination = try validatedName(destination)
         let old = ArabicText.normalize(source), new = ArabicText.normalize(destination)
         var updates: [String: Data] = [:]
+        if let data = current[pinnedKey], !data.isEmpty {
+            let names = try JSONDecoder().decode([String].self, from: data)
+            if names.contains(source) {
+                var seen = Set<String>()
+                let renamed = names.map { $0 == source ? destination : $0 }.filter { seen.insert($0).inserted }
+                updates[pinnedKey] = try JSONEncoder().encode(renamed)
+            }
+        }
         var links = try dictionary(current[linksKey])
         var categories = try dictionary(current[categoriesKey])
         let accounts = try (current[accountsKey].flatMap { $0.isEmpty ? nil : $0 }).map {

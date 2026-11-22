@@ -29,12 +29,14 @@ import SwiftData
         let accounts: [[String: Any]] = [["entity": old, "iban": "FICTIONAL-ACCOUNT-A", "branch": "مصرف وهمي", "swift": "FAKE"]]
         let preservedAccounts = try data(accounts)
         let templates = try data(["version": 1, "templates": [["source": "execution", "sourceName": old, "body": old], ["source": "payroll", "sourceName": old]]])
-        let settings: [String: Data] = [EntityRenamePlan.accountsKey: preservedAccounts,
+        let settings: [String: Data] = [EntityRenamePlan.pinnedKey: try JSONEncoder().encode([old, target]), EntityRenamePlan.accountsKey: preservedAccounts,
             EntityRenamePlan.templatesKey: templates,
             EntityRenamePlan.letterLinksKey: try data(["test": ["title": oldKey, "accountKey": oldKey, "iban": "FICTIONAL"]]),
             EntityRenamePlan.customizationsKey: try data(["common": ["beneficiarySource": old, "bodyTemplate": old], "individual": [:]]),
             EntityRenamePlan.categoriesKey: try data(["\(oldKey)|FICTIONAL-ACCOUNT-A|مصرف وهمي": "otherBanks"])]
         let changes = try EntityRenamePlan.settings(source: old, destination: target, current: settings)
+        let pinned = try JSONDecoder().decode([String].self, from: changes[EntityRenamePlan.pinnedKey]!)
+        precondition(pinned == [target])
         precondition(changes[EntityRenamePlan.accountsKey] == nil)
         let links = try JSONDecoder().decode([String: String].self, from: changes[EntityRenamePlan.linksKey]!)
         precondition(links["deduction|" + targetKey] == oldKey)

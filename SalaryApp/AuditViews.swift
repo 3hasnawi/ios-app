@@ -14,12 +14,15 @@ struct AuditView: View {
     @State private var exporting = false
     @State private var error: String?
 
+    private let selectedMonth: String
+
     init(month: String = "", months: [String]) {
+        selectedMonth = month
         self.months = months
     }
 
-    private var to: String { months.first ?? "" }
-    private var from: String { months.count > 1 ? months[1] : "" }
+    private var to: String { months.contains(selectedMonth) ? selectedMonth : months.first ?? "" }
+    private var from: String { months.firstIndex(of: to).flatMap { months.dropFirst($0 + 1).first } ?? "" }
     private var loadKey: String {
         let stamps = savedMonths.filter { $0.name == to || $0.name == from }
             .map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.sorted().joined(separator: "|")
@@ -32,6 +35,8 @@ struct AuditView: View {
                 if months.isEmpty {
                     ContentUnavailableView(tr("لا توجد بيانات", "No data"), systemImage: "checkmark.shield")
                 } else {
+                    Text(from.isEmpty ? tr("شهر التدقيق: \(to) · لا يوجد شهر سابق للمقارنة", "Audit month: \(to) · No previous month available") : tr("\(to) مقارنةً بـ\(from)", "\(to) compared with \(from)"))
+                        .font(.subheadline.weight(.semibold))
                     salaryCard
                     deductionCard
                     Text(tr("الضغط المطول على أي بطاقة: تصدير الكشف الشامل Excel / PDF", "Long-press a card to export the full report"))
@@ -67,7 +72,7 @@ struct AuditView: View {
 
     private var salaryCard: some View {
         NavigationLink {
-            SalaryAuditView(months: months)
+            SalaryAuditView(months: months, to: to)
         } label: {
             AuditHubCard(title: tr("الرواتب", "Payroll"),
                          subtitle: tr("فحوص الشهر · مقارنة الأشهر\nالجدد والخارجون وتغيّر الرواتب", "Monthly checks · month comparison\nNew, removed and salary changes"),
@@ -84,10 +89,10 @@ struct AuditView: View {
 
     private var deductionCard: some View {
         NavigationLink {
-            DeductionAuditView(months: months)
+            DeductionAuditView(months: months, to: to)
         } label: {
             AuditHubCard(title: tr("الاستقطاعات", "Deductions"),
-                         subtitle: tr("مقارنة آخر شهرين تلقائياً\nتوقف · جديد · تغيّر المبلغ", "Compares the last two months\nStopped · new · changed"),
+                         subtitle: tr("مقارنة الشهر المحدد بالسابق\nتوقف · جديد · تغيّر المبلغ", "Compares the selected and previous months\nStopped · new · changed"),
                          systemImage: "arrow.left.arrow.right", color: .orange, tags: deductionTags, loading: digest == nil)
         }
         .buttonStyle(.plain)
@@ -916,7 +921,10 @@ struct DeductionAuditView: View {
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
-    init(months: [String], to selectedMonth: String = "", initialKind: DeductionGroupKind? = nil, initialCheckID: String? = nil) {
+    private let initialEntityKind: DeductionEntityAlertKind?
+
+    init(months: [String], to selectedMonth: String = "", initialKind: DeductionGroupKind? = nil, initialCheckID: String? = nil, initialEntityKind: DeductionEntityAlertKind? = nil) {
+        self.initialEntityKind = initialEntityKind
         self.months = months
         self.initialKind = initialKind
         self.initialCheckID = initialCheckID
@@ -1071,6 +1079,10 @@ struct DeductionAuditView: View {
                 try Task.checkCancellation()
                 guard expectedKey == entityAlertKey else { return }
                 entitySummary = summary
+                if !openedInitial, let initialEntityKind {
+                    openedInitial = true
+                    openEntityKind = initialEntityKind
+                }
                 #if targetEnvironment(simulator)
                 if UserDefaults.standard.bool(forKey: "deductionEntityAlertsPreview") { openEntityKind = .added }
                 #endif

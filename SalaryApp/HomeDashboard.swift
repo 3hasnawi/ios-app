@@ -38,6 +38,7 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
     var added = 0, removed = 0, rank = 0, workplace = 0, net = 0, bank = 0
     var hasDeductions = false
     var deductionComparisonBlocked = false
+    var addedEntities = 0, missingEntities = 0
     var stopped = 0, started = 0, changed = 0
 
     init() {}
@@ -56,7 +57,7 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
                 issues.append(Issue(id: "bank", title: tr("تغيّر الحساب المصرفي", "Bank account changed"),
                                     detail: tr("مقارنة بـ\(d.previous)", "vs \(d.previous)"), count: bank, route: "salary"))
             }
-            for c in s.checks where !c.ok {
+            for c in s.checks where !c.ok && !c.id.lowercased().contains("staff") {
                 issues.append(Issue(id: c.id, title: c.title, detail: c.subtitle, count: c.rows.count, route: "salary"))
             }
         }
@@ -66,6 +67,10 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
         if let c = d.deductions {
             deductionComparisonBlocked = !c.emptyMonths.isEmpty
             if c.emptyMonths.isEmpty {
+                if let summary = try? DeductionEntityAlerts.summarize(c) {
+                    addedEntities = summary.rows(.added).count
+                    missingEntities = summary.rows(.missing).count
+                }
                 hasDeductions = true
                 stopped = c.rows(.stopped).count
                 started = c.rows(.started).count
@@ -182,7 +187,8 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup, reports
+    case audit, salary, deductions, backup, reports, specialReports
+    case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
     var id: Self { self }
@@ -194,6 +200,10 @@ struct HomeDashboard: View {
     let months: [PayrollMonth]
     let current: PayrollMonth?
 
+    @State private var preview: ReportGroup?
+    @AppStorage(PinnedEntities.key) private var pinnedData = Data()
+    @AppStorage("homeHiddenWorkReports") private var hiddenReports = ""
+    @State private var refund = RefundDraft.shared
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
     @Binding var navigationPath: NavigationPath
@@ -226,7 +236,7 @@ struct HomeDashboard: View {
         } + trendMonths).joined(separator: ";")
     }
 
-    private var auditKey: String { "v3|\(statsKey)|\(AppSettings.locale.identifier)" }
+    private var auditKey: String { "v4|\(statsKey)|\(AppSettings.locale.identifier)" }
 
     private var summary: [String: PayrollItems.Summary] { PayrollItems.decodeSummary(current?.itemSummaryData) ?? [:] }
 
@@ -236,9 +246,11 @@ struct HomeDashboard: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let current {
                     HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
-                                   openReports: { open(.reports) },
+                                   openReports: { UserDefaults.standard.set(current.name, forKey: "reportMonth"); open(.reports) },
                                    openRoute: { open($0) },
-                                   openEntities: { openReports(.entities, month: current) })
+                                   openEntities: { openReports(.entities, month: current) }) {
+                        workShortcuts(current)
+                    }
                     if !recents.isEmpty && !hidden.contains(.recents) {
                         recentRow
                     }
@@ -267,10 +279,14 @@ struct HomeDashboard: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
+        .sheet(item: $preview) { ReportPreviewLoader(group: $0) }
         .navigationDestination(for: HomeRoute.self) { route in
             switch route {
             case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
-            case .audit: AuditView(months: months.map(\.name))
+            case .specialReports:
+                if let current { ScrollView { workShortcuts(current, showAll: true).padding() }.navigationTitle(tr("الكشوف المثبّتة", "Pinned reports")) }
+            case .entityAlert(let kind): DeductionAuditView(months: months.map(\.name), to: current?.name ?? "", initialEntityKind: kind)
+            case .audit: AuditView(month: current?.name ?? "", months: months.map(\.name))
             case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")
             case .deductions: DeductionAuditView(months: months.map(\.name), to: current?.name ?? "")
             case .backup: BackupView()
@@ -282,6 +298,61 @@ struct HomeDashboard: View {
         }
         .task(id: statsKey) { await loadOverview() }
         .task(id: auditKey) { await loadAudit() }
+    }
+
+    private func workShortcuts(_ month: PayrollMonth, showAll: Bool = false) -> some View {
+        let hidden = Set(hiddenReports.split(separator: "|").map(String.init))
+        let summary = PayrollItems.decodeSummary(month.itemSummaryData) ?? [:]
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(tr("كشوفي المثبّتة", "Pinned reports")).font(.headline)
+                Spacer()
+                Menu {
+                    ForEach(WorkReport.allCases) { report in
+                        Button {
+                            var updated = hidden
+                            if updated.contains(report.rawValue) { updated.remove(report.rawValue) } else { updated.insert(report.rawValue) }
+                            hiddenReports = updated.sorted().joined(separator: "|")
+                        } label: { Label(report.title, systemImage: hidden.contains(report.rawValue) ? "circle" : "checkmark.circle") }
+                    }
+                } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
+                .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], alignment: .leading, spacing: 8) {
+                ForEach(WorkReport.allCases.filter { showAll || !hidden.contains($0.rawValue) }) { report in
+                    let group = report.group(month: month.name, summary: summary)
+                    Button {
+                        if report == .entities { openReports(.entities, month: month) }
+                        else { preview = group }
+                    } label: { shortcutLabel(report.title, icon: report.icon) }
+                    .accessibilityIdentifier("pinned-" + report.rawValue)
+                    .disabled(report != .entities && group == nil)
+                }
+                ForEach(PinnedEntities.read(pinnedData), id: \.self) { title in
+                    Button {
+                        openReports(.group(ReportGroup(kind: .deductions, month: month.name, title: title, count: 0, total: 0, byEntity: false)), month: month)
+                    } label: { shortcutLabel(title, icon: "pin") }
+                    .contextMenu {
+                        Button(tr("إلغاء التثبيت", "Unpin"), systemImage: "pin.slash") { pinnedData = PinnedEntities.toggle(title, in: pinnedData) }
+                    }
+                }
+            }
+            if !showAll, let source = refund.month, !refund.rows.isEmpty {
+                Button { openReports(.refunds(source), month: month) } label: {
+                    VStack(alignment: .leading) {
+                        Label(tr("متابعة مسودة إعادة المبالغ", "Resume refund draft"), systemImage: "arrow.uturn.backward.circle")
+                        Text(refund.date, format: .dateTime.year().month().day())
+                        Text(tr("\(Num.format(refund.rows.count)) منتسب", "\(refund.rows.count) people") + " · " + (refund.snapshot.enteredTotal.map { Money.format(Double($0)) } ?? tr("المبالغ غير مكتملة", "Incomplete amounts")))
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                }.buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private func shortcutLabel(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon).font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 8).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: التحميل
@@ -466,7 +537,8 @@ struct HomeDashboard: View {
         guard !Task.isCancelled else { return }
         let digest = await AuditDigest.run(month: current.name, previous: previous?.name ?? "", container: SharedModel.container)
         guard !Task.isCancelled else { return }
-        let result = HomeAudit(digest)
+        let result = await Task.detached(priority: .utility) { HomeAudit(digest) }.value
+        guard !Task.isCancelled else { return }
         audit = result
         if let data = try? JSONEncoder().encode([cacheKey: result]) {
             UserDefaults.standard.set(data, forKey: Self.auditCacheKey)
@@ -1009,7 +1081,6 @@ struct HomeDashboard: View {
     private func openReports(_ route: ReportsRoute, month: PayrollMonth) {
         UserDefaults.standard.set(month.name, forKey: "reportMonth")
         AppRouter.shared.pendingReport = route
-        AppRouter.shared.tab = .payroll
-        AppRouter.shared.showReports = true
+        open(.reports)
     }
 }

@@ -36,6 +36,8 @@ struct ReportsView: View {
     private let byEntity = false
     @State private var deductionGroups: [ReportGroup] = []
     @State private var loadedKey = ""
+    @State private var deductionsError: String?
+    @State private var loadRequest = UUID()
     @State private var path: [ReportsRoute] = []
     @State private var homeDepth: Int?
     @State private var showExport = false
@@ -59,6 +61,11 @@ struct ReportsView: View {
 
     private var loadKey: String { "\(month?.name ?? "")|\(month?.deductionCount ?? 0)|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(byEntity)" }
 
+    private var auditPrevious: PayrollMonth? {
+        guard let name = month?.name, let index = months.firstIndex(where: { $0.name == name }) else { return nil }
+        return months.dropFirst(index + 1).first
+    }
+
     var body: some View {
         Group {
             if pushedFromHome { reportsContent }
@@ -80,15 +87,15 @@ struct ReportsView: View {
     @ViewBuilder private func destination(_ route: ReportsRoute) -> some View {
         switch route {
         case .items: PayrollItemsView(groups: payrollGroups ?? [], month: month?.name ?? "")
-        case .deductionComparison: DeductionAuditView(months: months.map(\.name))
+        case .deductionComparison: DeductionAuditView(months: months.map(\.name), to: month?.name ?? "")
         case .employeeDeductions: EmployeeDeductionsView()
-        case .salaryAudit: SalaryAuditView(months: months.map(\.name))
+        case .salaryAudit: SalaryAuditView(months: months.map(\.name), to: month?.name ?? "")
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .transferFiles: TransferFilesView()
         case .refunds(let month): EmployeeRefundView(month: month)
         case .fundingExpenses: FundingExpensesView(month: month?.name ?? "", revision: loadKey)
-        case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: loadedKey == loadKey, showExport: $showExport, onRename: { await loadDeductions() })
+        case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: deductionsReady, loadError: deductionsError, showExport: $showExport, onRename: { await loadDeductions() })
         case .group(let group): ReportDetailView(group: group)
         }
     }
@@ -190,18 +197,25 @@ struct ReportsView: View {
                 openRoot(route)
                 router.pendingReport = nil
             }
-            .task(id: "\(loadKey)|\(path.count)|\(homePath?.wrappedValue.count ?? 0)") {
+            .task(id: "\(loadKey)|\(auditPrevious?.importedAt.timeIntervalSince1970 ?? 0)|\(path.count)|\(homePath?.wrappedValue.count ?? 0)") {
                 auditIssues = nil
-                guard let name = months.first?.name else { return }
+                guard let name = month?.name else { return }
                 let key = loadKey
-                let previous = months.count > 1 ? months[1].name : ""
-                let issues = await AuditResults.shared.cachedIssues(month: name, previous: previous, container: SharedModel.container)
-                guard !Task.isCancelled, key == loadKey else { return }
-                auditIssues = issues
+                let previous = auditPrevious?.name ?? ""
+                let container = SharedModel.container
+                do {
+                    async let salary = AuditResults.shared.salary(from: previous, to: name, container: container)
+                    async let deductions = AuditResults.shared.deductionChecks(month: name, container: container)
+                    let (s, d) = try await (salary, deductions)
+                    guard !Task.isCancelled, key == loadKey else { return }
+                    auditIssues = (s.checks + d).filter { !$0.ok }.count
+                } catch { if !Task.isCancelled { auditIssues = nil } }
             }
     }
 
     // MARK: البطاقات
+
+    private var deductionsReady: Bool { month != nil && loadedKey == loadKey && deductionsError == nil }
 
     private var summaryCard: some View {
         let total = deductionGroups.reduce(0) { $0 + $1.total }
@@ -209,20 +223,25 @@ struct ReportsView: View {
         return VStack(alignment: .leading, spacing: 2) {
             Text(tr("مجموع الاستقطاعات · \(month?.name ?? "")", "Total deductions · \(month?.name ?? "")"))
                 .font(.caption).opacity(0.85)
-            Text(Money.format(total))
+            Text(deductionsReady ? Money.format(total) : "—")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
+            if let deductionsError {
+                Text(deductionsError).font(.caption)
+                Button(tr("إعادة المحاولة", "Retry")) { Task { await loadDeductions() } }
+            } else if !deductionsReady { ProgressView().tint(.white) } else {
             Text(tr("\(Num.format(deductionGroups.count)) جهة · \(Num.format(people)) استقطاع",
                     "\(deductionGroups.count) entities · \(people) deductions"))
                 .font(.caption).opacity(0.85)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(.white)
         .padding(16)
         .background(Theme.salaryGradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     /// الكشوف الخاصة من ورقة الرواتب، ثم بطاقة كل البنود.
@@ -234,7 +253,7 @@ struct ReportsView: View {
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
             ReportCard(title: tr("صندوق الشهداء", "Martyrs fund"), subtitle: fund.map { tr("\(Num.format($0.count)) موظف", "\($0.count) employees") },
                        total: fund?.total, systemImage: "star.fill", color: .green, group: fund, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
-            ReportCard(title: tr("عقد الإطعام", "Food contract"), subtitle: food.map { tr("عراق الجوال · \(Num.format($0.count))", "Iraq Mobile · \($0.count)") },
+            ReportCard(title: tr("شركة عراق الجوال", "Iraq Mobile"), subtitle: food.map { tr("عقد الإطعام · \(Num.format($0.count))", "Food contract · \($0.count)") },
                        total: food?.total, systemImage: "fork.knife", color: .orange, group: food, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
             ReportCard(title: tr("الرعاية الصحية", "Health care"), subtitle: health.map { tr("\(Num.format($0.count)) مشترك", "\($0.count) subscribers") },
                        total: health?.total, systemImage: "cross.case.fill", color: .red, group: health, onOpen: { open(.group($0)) }, onPreview: { previewGroup = $0 })
@@ -271,7 +290,7 @@ struct ReportsView: View {
                 CardIcon(systemImage: auditIssues == 0 ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
                          color: auditIssues == 0 ? .green : .orange)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(tr("التدقيق", "Audit")).font(.headline).foregroundStyle(.primary)
+                    Text(tr("تدقيق \(month?.name ?? "")", "Audit · \(month?.name ?? "")")).font(.headline).foregroundStyle(.primary)
                     Group {
                         if let auditIssues {
                             Text(auditIssues == 0 ? tr("لا ملاحظات", "No issues") : tr("\(Num.format(auditIssues)) ملاحظات", "\(auditIssues) issues"))
@@ -334,11 +353,11 @@ struct ReportsView: View {
                     CardIcon(systemImage: "building.columns.fill", color: .indigo)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(tr("جهات التنفيذ", "Execution entities")).font(.headline).foregroundStyle(.primary)
-                        Text(loadedKey == loadKey
+                        Text(deductionsError != nil ? tr("تعذّرت قراءة الاستقطاعات", "Could not read deductions") : deductionsReady
                              ? tr("\(Num.format(deductionGroups.count)) جهة", "\(deductionGroups.count) entities")
                              : tr("جارٍ الحساب…", "Calculating…"))
                             .font(.subheadline).foregroundStyle(.secondary)
-                        Text(Money.format(total))
+                        Text(deductionsReady ? Money.format(total) : "—")
                             .font(.title3.weight(.bold).monospacedDigit())
                             .foregroundStyle(.red)
                             .lineLimit(1)
@@ -371,35 +390,45 @@ struct ReportsView: View {
             tr("\(Num.format(entries.filter(\.reviewPending).count)) قيد للمراجعة", "\(entries.filter(\.reviewPending).count) entries to review"),
             tr("\(Num.format(entries.filter { !$0.reviewPending && $0.paid > 0 && $0.remaining > 0 }.count)) قيد مصروف جزئياً", "\(entries.filter { !$0.reviewPending && $0.paid > 0 && $0.remaining > 0 }.count) partially paid entries")
         ]
-        return Button { open(.salaryTrust(.all)) } label: {
-            HStack(spacing: 12) {
-                CardIcon(systemImage: "banknote.fill", color: .teal)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(tr("أمانات الرواتب", "Salary trust")).font(.headline).foregroundStyle(.primary)
-                    Text(tr("الرصيد غير المصروف · كل الأشهر", "Outstanding · all months"))
-                        .font(.subheadline).foregroundStyle(.secondary)
-                    Text(ledger?.openingImported == true ? Money.format(Double(SalaryTrust.outstanding(ledger?.entries ?? []))) : "—")
-                        .font(.title3.weight(.bold).monospacedDigit()).foregroundStyle(.teal).lineLimit(1).minimumScaleFactor(0.7)
-                    if ledger?.openingImported == true {
-                        Text(notices[trustNoticeIndex % notices.count]).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        return VStack(alignment: .leading, spacing: 4) {
+            Button { open(.salaryTrust(.all)) } label: {
+                HStack(spacing: 12) {
+                    CardIcon(systemImage: "banknote.fill", color: .teal)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(tr("أمانات الرواتب", "Salary trust")).font(.headline).foregroundStyle(.primary)
+                        Text(tr("الرصيد غير المصروف · كل الأشهر", "Outstanding · all months"))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text(ledger?.openingImported == true ? Money.format(Double(SalaryTrust.outstanding(ledger?.entries ?? []))) : "—")
+                            .font(.title3.weight(.bold).monospacedDigit()).foregroundStyle(.teal).lineLimit(1).minimumScaleFactor(0.7)
+                        if ledger?.openingImported == true {
+                            Text(notices[trustNoticeIndex % notices.count]).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.forward").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+                .padding(14)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
-            .padding(14)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button(tr("فتح الأمانات", "Open trust"), systemImage: "list.bullet") { open(.salaryTrust(.all)) }
+                Button(tr("الأمانات غير المكتملة", "Outstanding trust"), systemImage: "line.3.horizontal.decrease.circle") { open(.salaryTrust(.unfinished)) }
+                Button(tr("القيود للمراجعة", "Entries for review"), systemImage: "exclamationmark.circle") { open(.salaryTrust(.review)) }
+            }
+            .accessibilityIdentifier("reportsSalaryTrustCard")
+            .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+                trustNoticeIndex = (trustNoticeIndex + 1) % notices.count
+            }
+        if ledger?.openingImported == true {
+            let due = SalaryTrust.filtered(entries, month: 0, status: .unfinished, search: "")
+            Button { open(.salaryTrust(.unfinished)) } label: {
+                Label(tr("غير المصروفة · \(Num.format(Set(due.map { ArabicText.matchKey($0.name) }).count)) منتسب · \(Money.format(Double(SalaryTrust.outstanding(due))))",
+                         "Outstanding · \(Set(due.map { ArabicText.matchKey($0.name) }).count) people · \(Money.format(Double(SalaryTrust.outstanding(due))))"), systemImage: "tray.full")
+                    .font(.subheadline)
+            }.padding(.horizontal)
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button(tr("فتح الأمانات", "Open trust"), systemImage: "list.bullet") { open(.salaryTrust(.all)) }
-            Button(tr("الأمانات غير المكتملة", "Outstanding trust"), systemImage: "line.3.horizontal.decrease.circle") { open(.salaryTrust(.unfinished)) }
-            Button(tr("القيود للمراجعة", "Entries for review"), systemImage: "exclamationmark.circle") { open(.salaryTrust(.review)) }
-        }
-        .accessibilityIdentifier("reportsSalaryTrustCard")
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
-            trustNoticeIndex = (trustNoticeIndex + 1) % notices.count
         }
     }
 
@@ -446,12 +475,23 @@ struct ReportsView: View {
         let name = month.name
         let entity = byEntity
         let container = SharedModel.container
-        let result = (try? await Task.detached(priority: .userInitiated) {
-            try await ReportEngine(modelContainer: container).deductionGroups(month: name, byEntity: entity)
-        }.value) ?? []
-        guard !Task.isCancelled else { return }
-        deductionGroups = result
-        loadedKey = key
+        let request = UUID()
+        loadRequest = request
+        loadedKey = ""
+        deductionsError = nil
+        deductionGroups = []
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try await ReportEngine(modelContainer: container).deductionGroups(month: name, byEntity: entity)
+            }.value
+            guard !Task.isCancelled, request == loadRequest, key == loadKey else { return }
+            deductionGroups = result
+            loadedKey = key
+        } catch {
+            guard !Task.isCancelled, request == loadRequest, key == loadKey else { return }
+            deductionsError = error.localizedDescription
+            return
+        }
         await applyLaunchOptions()
     }
 
@@ -761,9 +801,11 @@ private struct ExportingHUD: View {
 
 /// كل جهة بمبلغها وعدد موظفيها، مع البحث وزر التصدير.
 struct EntitiesView: View {
+    @AppStorage(PinnedEntities.key) private var pinnedData = Data()
     let month: String
     let groups: [ReportGroup]
     let loaded: Bool
+    var loadError: String? = nil
     @Binding var showExport: Bool
     var onRename: () async -> Void
     @State private var renameGroup: ReportGroup?
@@ -792,7 +834,10 @@ struct EntitiesView: View {
                 Section { Label(renameNotice, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.green) }
             }
             Section {
-                if groups.isEmpty {
+                if let loadError {
+                    Text(loadError).foregroundStyle(.secondary)
+                    Button(tr("إعادة المحاولة", "Retry")) { Task { await onRename() } }
+                } else if groups.isEmpty {
                     if loaded {
                         Text(tr("لا توجد استقطاعات لهذا الشهر.", "No deductions for this month.")).foregroundStyle(.secondary)
                     } else {
@@ -809,6 +854,9 @@ struct EntitiesView: View {
                         }
                         .accessibilityIdentifier("reportGroup")
                         .contextMenu {
+                            Button(PinnedEntities.read(pinnedData).contains(group.title) ? tr("إلغاء التثبيت", "Unpin") : tr("تثبيت في الرئيسية", "Pin to Home"), systemImage: "pin") {
+                                pinnedData = PinnedEntities.toggle(group.title, in: pinnedData)
+                            }
                             Button(tr("تعديل تسمية جهة التنفيذ", "Rename execution entity"), systemImage: "pencil") { renameGroup = group }
                                 .disabled(exporter.isWorking || BackupManager.shared.isWorking || ImportCenter.shared.isBusy || StaffImportState.shared.isImporting)
                                 .accessibilityIdentifier("renameExecutionEntity")
@@ -823,7 +871,7 @@ struct EntitiesView: View {
                     }
                 }
             } header: {
-                Text(search.isEmpty
+                Text(!loaded ? "" : search.isEmpty
                      ? tr("\(Num.format(groups.count)) جهة · \(Money.format(groups.reduce(0) { $0 + $1.total }))", "\(groups.count) entities")
                      : tr("\(Num.format(filtered.count)) من \(Num.format(groups.count))", "\(filtered.count) of \(groups.count)"))
                     .textCase(nil)

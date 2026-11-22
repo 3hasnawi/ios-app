@@ -55,6 +55,26 @@ final class NavigationTests: XCTestCase {
         backTo("الرئيسية")
     }
 
+    func testExecutionPersonStatementShortcut() {
+        continueAfterFailure = false
+        app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES"]
+        app.launch()
+        let pinned = element("pinned-entities")
+        XCTAssertTrue(pinned.waitForExistence(timeout: 30))
+        pinned.tap()
+        let group = element("reportGroup")
+        XCTAssertTrue(group.waitForExistence(timeout: 30))
+        group.tap()
+        let entries = element("entityEmployeeEntries")
+        XCTAssertTrue(entries.waitForExistence(timeout: 30))
+        entries.tap()
+        let row = element("entityWorklistRow")
+        XCTAssertTrue(row.waitForExistence(timeout: 15))
+        row.press(forDuration: 1.2)
+        app.buttons["كشف استقطاعات المنتسب"].firstMatch.tap()
+        XCTAssertTrue(element("deductionSelectedPerson").waitForExistence(timeout: 15))
+    }
+
     func testDeductionComparison() {
         app.launchArguments += ["-tab", "reports", "-compareDeductions", "YES"]
         app.launch()

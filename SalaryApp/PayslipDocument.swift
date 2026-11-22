@@ -2,7 +2,7 @@ import SwiftUI
 
 /// قسيمة الراتب بشكل المستند الرسمي (جداول بحدود على ورق فاتح).
 /// نسختان:
-///  - `.screen` داخل التطبيق: ترويسة الوزارة وشعارها، محل العمل، وختم الحالة من الملاك.
+///  - `.screen` داخل التطبيق: صافي الشهر، ثم بيانات المنتسب واستقطاعاته.
 ///  - `.export` صورة النسخ والمشاركة: محايدة ("قسيمة راتب" فقط، بلا شعار ولا اسم وزارة)، ومحل العمل بدل الرقم الإحصائي.
 /// الحقول الفارغة لا تظهر.
 struct PayslipDocument: View {
@@ -49,6 +49,35 @@ struct PayslipDocument: View {
     }
 
     var body: some View {
+        if style == .screen { screenSummary } else { document }
+    }
+
+    private var screenSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("صافي الراتب · \(month)", "Net salary · \(month)")).font(.subheadline)
+                Text(Money.format(net)).font(.title.bold()).monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading).padding()
+            .foregroundStyle(.white).background(Self.green, in: RoundedRectangle(cornerRadius: 14))
+            ForEach(Array(infoRows.enumerated()), id: \.offset) { _, row in
+                LabeledContent(row.0, value: row.1)
+            }
+            if !status.isEmpty { Text(status).font(.caption).foregroundStyle(.secondary) }
+            Divider()
+            Text(tr("استقطاعات الشهر", "Monthly deductions")).font(.headline)
+            if lines.isEmpty { Text(tr("لا توجد استقطاعات", "No deductions")).foregroundStyle(.secondary) }
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, item in
+                VStack(alignment: .leading, spacing: 3) {
+                    LabeledContent(item.title, value: Money.format(item.amount)).monospacedDigit()
+                    if !item.note.isEmpty { Text(item.note).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                }
+            }
+            if !lines.isEmpty { LabeledContent(tr("مجموع الاستقطاعات", "Total deductions"), value: Money.format(total)).font(.headline) }
+        }.padding().background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var document: some View {
         VStack(spacing: 0) {
             header
             VStack(alignment: .leading, spacing: 14) {

@@ -18,6 +18,8 @@ struct ImportedBookDraft: Identifiable {
 
 /// أرشيف الكتب المرتبطة بالأشهر؛ البحث بالاسم أو الشهر أو الجهة المرتبطة.
 struct OfficialBooksView: View {
+    var linkedEntity: String? = nil
+    var suggestedMonth: String = ""
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse), SortDescriptor(\PayrollMonth.importedAt, order: .reverse)])
     private var months: [PayrollMonth]
     @State private var store = OfficialBookStore.shared
@@ -37,7 +39,9 @@ struct OfficialBooksView: View {
     private var visible: [OfficialBook] {
         let tokens = ArabicText.normalize(ArabicText.cleanQuery(search)).split(separator: " ").map(String.init)
         return store.books.filter { book in
-            if tokens.isEmpty { return selectedMonth.isEmpty || book.month == selectedMonth }
+            if let linkedEntity, ArabicText.normalize(book.entity ?? "") != ArabicText.normalize(linkedEntity) { return false }
+            if !selectedMonth.isEmpty && book.month != selectedMonth { return false }
+            if tokens.isEmpty { return true }
             let text = ArabicText.normalize([book.title, book.month, book.entity ?? ""].joined(separator: " "))
             return tokens.allSatisfy { text.contains($0) }
         }
@@ -123,11 +127,6 @@ struct OfficialBooksView: View {
         .searchable(text: $search, prompt: tr("ابحث عن كتاب أو جهة أو شهر", "Search documents, entities or months"))
         .navigationTitle(tr("الأرشيف", "Archive"))
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            guard selectedMonth.isEmpty else { return }
-            let current = UserDefaults.standard.string(forKey: "selectedMonth") ?? ""
-            selectedMonth = monthNames.contains(current) ? current : monthNames.first ?? ""
-        }
         .sheet(isPresented: $showingScanner) {
             OfficialBookScanner(onComplete: { images in
                 showingScanner = false
@@ -157,13 +156,13 @@ struct OfficialBooksView: View {
             } catch { self.error = error.localizedDescription }
         }
         .sheet(item: $imported) { file in
-            OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth,
-                               images: nil, existing: nil, pdf: file.pdf, suggestedTitle: file.suggestedTitle)
+            OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? (monthNames.contains(suggestedMonth) ? suggestedMonth : monthNames.first ?? "") : selectedMonth,
+                               images: nil, existing: nil, pdf: file.pdf, suggestedTitle: file.suggestedTitle, suggestedEntity: linkedEntity)
         }
         .sheet(item: $draft) { draft in
             OfficialBookEditor(months: draft.replacing.map { book in monthNames.contains(book.month) ? monthNames : [book.month] + monthNames } ?? monthNames,
-                               initialMonth: draft.replacing?.month ?? (selectedMonth.isEmpty ? monthNames.first ?? "" : selectedMonth),
-                               images: draft.images, existing: draft.replacing)
+                               initialMonth: draft.replacing?.month ?? (selectedMonth.isEmpty ? (monthNames.contains(suggestedMonth) ? suggestedMonth : monthNames.first ?? "") : selectedMonth),
+                               images: draft.images, existing: draft.replacing, suggestedEntity: linkedEntity)
         }
         .sheet(item: $editing) { book in
             OfficialBookEditor(months: monthNames.contains(book.month) ? monthNames : [book.month] + monthNames, initialMonth: book.month, images: nil, existing: book)
@@ -218,7 +217,7 @@ struct OfficialBookEditor: View {
 
     /// ملف PDF من «الملفات» بدل صور الماسح.
     private let pdf: Data?
-    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?, pdf: Data? = nil, suggestedTitle: String = "", onSaved: ((OfficialBook) -> Void)? = nil) {
+    init(months: [String], initialMonth: String, images: [Data]?, existing: OfficialBook?, pdf: Data? = nil, suggestedTitle: String = "", suggestedEntity: String? = nil, onSaved: ((OfficialBook) -> Void)? = nil) {
         self.months = months
         self.existing = existing
         self.onSaved = onSaved
@@ -226,7 +225,7 @@ struct OfficialBookEditor: View {
         _images = State(initialValue: images)
         _title = State(initialValue: existing?.title ?? suggestedTitle)
         _month = State(initialValue: initialMonth)
-        _entity = State(initialValue: existing?.entity ?? "")
+        _entity = State(initialValue: existing?.entity ?? suggestedEntity ?? "")
     }
 
     var body: some View {

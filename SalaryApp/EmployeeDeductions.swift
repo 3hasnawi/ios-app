@@ -224,7 +224,8 @@ struct EmployeeDeductionsView: View {
     @State private var pdf: StatementPDF?
     @State private var generating = false
 
-    init(initialPerson: DeductionPerson? = nil) {
+    init(initialPerson: DeductionPerson? = nil, initialEntity: String = "") {
+        _entity = State(initialValue: initialEntity)
         _person = State(initialValue: initialPerson)
     }
     private var dataVersion: String { months.map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",") }

@@ -157,7 +157,9 @@ actor SmartFieldSearch {
                     var hit = UnifiedHit(key: ArabicText.matchKey(member.name), name: member.name,
                         subtitle: [member.rank, member.workplace].filter { !$0.isEmpty }.joined(separator: " · "),
                         employeeID: nil, staffID: member.persistentModelID, month: nil, netSalary: nil, staffStatus: member.status)
-                    hit.matchLabel = tr("مطابقة في \(label)", "Match in \(label)")
+                    hit.matchLabel = label == tr("اسم الأم", "Mother's name")
+                        ? tr("تطابق اسم الأم · \(member.motherKey)", "Mother’s name match · \(member.motherKey)")
+                        : tr("مطابقة في \(label)", "Match in \(label)")
                     hits.append(hit)
                     if hits.count >= 60 { break }
                 }
@@ -222,7 +224,7 @@ enum SmartSearch {
         for mode in modes {
             var found = try await SearchIndex.shared.hits(query, mode: mode, scope: .all, months: monthNames, container: container)
             if mode != .name {
-                for index in found.indices { found[index].matchLabel = tr("مطابقة في \(mode.title)", "Match in \(mode.title)") }
+                for index in found.indices where found[index].matchLabel == nil { found[index].matchLabel = tr("مطابقة في \(mode.title)", "Match in \(mode.title)") }
             }
             hits += found
             try Task.checkCancellation()

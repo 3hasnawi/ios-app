@@ -28,7 +28,7 @@ nonisolated struct ReportGroup: Hashable, Sendable, Identifiable {
     /// ملخص الجهة للشهر المعروض يعتمد على الصفوف نفسها التي ستُصدَّر.
     func forMonth(_ month: String, rows: [ReportRow]) -> ReportGroup {
         ReportGroup(kind: kind, month: month, title: title,
-                    count: Set(rows.map { ArabicText.matchKey($0.name) }).count,
+                    count: Set(rows.map { $0.personKey.isEmpty ? ArabicText.matchKey($0.name) : $0.personKey }).count,
                     total: rows.reduce(0) { $0 + $1.amount }, byEntity: byEntity)
     }
 }
@@ -42,6 +42,7 @@ nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
     let note: String
     /// جهة الاستقطاع (الفرع) لهذا السطر.
     var entity: String = ""
+    var personKey: String = ""
 
     static func nameOrder(_ left: ReportRow, _ right: ReportRow) -> Bool {
         let order = ArabicText.alphabeticalOrder(left.name, right.name)
@@ -103,7 +104,7 @@ actor ReportEngine {
                 let (payrollRank, workplace) = info[item.matchKey] ?? ("", "")
                 let rank = item.rank.isEmpty ? payrollRank : item.rank
                 rows.append(ReportRow(id: i, name: item.employeeName, rank: rank, workplace: workplace,
-                                      amount: item.amount ?? 0, note: item.note, entity: item.title))
+                                      amount: item.amount ?? 0, note: item.note, entity: item.title, personKey: item.matchKey))
             }
             return rows.sorted(by: ReportRow.nameOrder)
         case .payroll:
@@ -189,9 +190,8 @@ struct ReportDetailView: View {
                                 if loadError != nil {
                                     Text("—").font(.title2.bold())
                                 } else if let rows {
-                                    Text(Num.format(rows.count)).font(.title2.bold())
-                                    Text(tr("المكرر: \(Num.format(max(0, rows.count - (activeGroup?.count ?? 0)))) سطر",
-                                            "Repeated names: \(Num.format(max(0, rows.count - (activeGroup?.count ?? 0)))) rows"))
+                                    Text(Num.format(activeGroup?.count ?? 0)).font(.title2.bold())
+                                    Text(tr("\(Num.format(rows.count)) قيد", "\(rows.count) entries"))
                                         .font(.caption2).foregroundStyle(.secondary)
                                 } else {
                                     ProgressView().frame(height: 28)
@@ -205,8 +205,32 @@ struct ReportDetailView: View {
                 .padding(.vertical, 4)
             }
 
+            if let activeGroup, group.kind == .deductions, let rows {
+                Section {
+                    NavigationLink {
+                        EntityWorklist(group: activeGroup, rows: rows)
+                    } label: { Label(tr("قيود المنتسبين", "Employee entries"), systemImage: "person.2") }
+                    .accessibilityIdentifier("entityEmployeeEntries")
+                    NavigationLink {
+                        OfficialBooksView(linkedEntity: group.title, suggestedMonth: selectedMonth)
+                    } label: { Label(tr("الكتب المرتبطة", "Linked documents"), systemImage: "folder") }
+                }
+                Section(tr("مقارنة الشهر", "Month comparison")) {
+                    if let index = months.firstIndex(where: { $0.name == selectedMonth }),
+                       let previous = months.dropFirst(index + 1).first, previous.deductionCount > 0,
+                       months[index].deductionCount > 0 {
+                        EntityMonthComparison(group: activeGroup, rows: rows, previous: previous.name, revision: previous.importedAt)
+                    } else {
+                        let prior = months.firstIndex(where: { $0.name == selectedMonth }).flatMap { months.dropFirst($0 + 1).first }
+                        let missing = months.first(where: { $0.name == selectedMonth })?.deductionCount == 0 ? selectedMonth : prior?.name
+                        Text(missing.map { tr("المقارنة غير متاحة: لا توجد بيانات استقطاع في \($0)", "Comparison unavailable: no deduction data in \($0)") }
+                             ?? tr("لا يوجد شهر سابق محفوظ للمقارنة", "No previous month is stored for comparison"))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             if let account = executionAccount {
-                Section(tr("حساب جهة التنفيذ", "Execution account")) {
+                DisclosureGroup(tr("حساب جهة التنفيذ", "Execution account")) {
                     if ArabicText.normalize(account.entity) != ArabicText.normalize(group.title) {
                         LabeledContent(tr("الحساب المرتبط", "Linked account"), value: account.entity)
                     }
@@ -227,24 +251,20 @@ struct ReportDetailView: View {
                 Section { Text(tr("لا توجد استقطاعات لهذه الجهة في الشهر المختار.", "No deductions for this entity in the selected month.")).foregroundStyle(.secondary) }
             }
 
-            // بدل قائمة الأسماء: معاينة الجدول كما سيُصدَّر، وزر التصدير.
-            Section {
-                HStack(spacing: 10) {
-                    actionButton(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview, filled: false) { showPreview = true }
-                        .accessibilityIdentifier("previewReport")
-                    actionButton(tr("تصدير", "Export"), systemImage: "square.and.arrow.up", filled: true) { showExport = true }
-                        .accessibilityIdentifier("exportReport")
-                }
-                .disabled(rows?.isEmpty != false || loadError != nil || activeGroup == nil)
-                .overlay { if rows == nil && loadError == nil { ProgressView().allowsHitTesting(false) } }
-                .frame(maxWidth: .infinity)
-                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                .listRowBackground(Color.clear)
-            } footer: {
-                if let rows, loadError == nil {
-                    Text(tr("\(Num.format(rows.count)) سطر في الجدول، بالشكل المعتمد (A4).", "\(rows.count) rows, in the approved A4 layout."))
+            if group.kind == .payroll {
+                Section {
+                    reportActions
+                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+                        .listRowBackground(Color.clear)
+                } footer: {
+                    if let rows, loadError == nil {
+                        Text(tr("\(Num.format(rows.count)) سطر في الجدول، بالشكل المعتمد (A4).", "\(rows.count) rows, in the approved A4 layout."))
+                    }
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if group.kind == .deductions { reportActions.padding(.horizontal).padding(.vertical, 6).background(.bar) }
         }
         .listSectionSpacing(.compact)
         .contentMargins(.top, 8, for: .scrollContent)
@@ -336,6 +356,18 @@ struct ReportDetailView: View {
                 rows = []
             }
         }
+    }
+
+    private var reportActions: some View {
+        HStack(spacing: 10) {
+                    actionButton(tr("معاينة الجدول", "Preview table"), systemImage: ReportSymbols.preview, filled: false) { showPreview = true }
+                        .accessibilityIdentifier("previewReport")
+                    actionButton(tr("تصدير", "Export"), systemImage: "square.and.arrow.up", filled: true) { showExport = true }
+                        .accessibilityIdentifier("exportReport")
+                }
+                .disabled(rows?.isEmpty != false || loadError != nil || activeGroup == nil)
+                .overlay { if rows == nil && loadError == nil { ProgressView().allowsHitTesting(false) } }
+                .frame(maxWidth: .infinity)
     }
 
     private var loadingState: some View {

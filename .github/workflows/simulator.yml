@@ -615,7 +615,7 @@ jobs:
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison -only-testing:SalaryAppUITests/NavigationTests/testNavigationFlow)
           fi
           if [ "$SAFETY_ONLY" = true ]; then
-            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testReportsBackGestures -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar)
+            TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testExecutionPersonStatementShortcut -only-testing:SalaryAppUITests/NavigationTests/testReportsBackGestures -only-testing:SalaryAppUITests/NavigationTests/testReportActions -only-testing:SalaryAppUITests/NavigationTests/testSystemNavigationBar)
           fi
           if [ "$DEDUCTIONS_ONLY" = true ]; then
             TEST_FILTER=(-only-testing:SalaryAppUITests/NavigationTests/testDeductionComparison)

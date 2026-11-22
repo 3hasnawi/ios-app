@@ -118,6 +118,7 @@ final class ImportCenter {
     var isBusy = false
     var message: String?
     /// أحدث شهر رواتب استُورد (تختاره الشاشة الرئيسية).
+    var importedAuditMonth: String?
     var lastPayrollMonth: String?
     /// للاختبار: يستورد مباشرة بعد الفحص بدون نافذة المراجعة.
     private var autoRun = false
@@ -444,6 +445,7 @@ final class ImportCenter {
         var warnings: [String] = []
         var totals = (employees: 0, deductions: 0)
         var accountTotals = (added: 0, updated: 0, invalid: 0)
+        importedAuditMonth = nil
         var months = Set<String>()
         var newestPayroll: (key: Int, name: String)?
 
@@ -558,6 +560,7 @@ final class ImportCenter {
         if !fromTest, !lines.isEmpty, let auditMonth = newestPayroll?.name ?? months.sorted(by: { MonthName.sortKey($0) > MonthName.sortKey($1) }).first,
            let pair = AuditDigest.months(container: SharedModel.container, latest: auditMonth) {
             let audit = await AuditDigest.run(month: pair.month, previous: pair.previous, container: SharedModel.container)
+            importedAuditMonth = pair.month
             await AuditNotifications.post(audit)
             parts += ["", audit.issues == 0
                       ? tr("🔎 التدقيق (\(auditMonth)): لا ملاحظات.", "🔎 Audit (\(auditMonth)): no issues.")

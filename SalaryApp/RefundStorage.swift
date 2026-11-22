@@ -22,6 +22,17 @@ nonisolated struct RefundSnapshot: Codable, Sendable {
 
     var payrollMonths: String { Array(Set(rows.map(\.candidate.month))).sorted().joined(separator: "، ") }
 
+    var enteredTotal: Int64? {
+        var total: Int64 = 0
+        for row in rows {
+            guard let amount = EmployeeRefund.amount(row.amount) else { return nil }
+            let result = total.addingReportingOverflow(amount)
+            guard !result.overflow else { return nil }
+            total = result.partialValue
+        }
+        return total
+    }
+
     func plan() throws -> EmployeeRefund.Batch {
         try EmployeeRefund.plan(entries: rows.map { .init(person: $0.candidate.person, amount: $0.amount, recoveredReference: $0.recoveredReference) },
                                 banks: banks, payer: payer, account: account, source: source)

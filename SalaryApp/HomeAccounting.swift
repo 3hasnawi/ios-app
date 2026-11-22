@@ -51,7 +51,7 @@ struct HomeReviewItem: Identifiable {
     let route: HomeRoute
 }
 
-struct HomeAccounting: View {
+struct HomeAccounting<Shortcuts: View>: View {
     let month: PayrollMonth
     let previous: PayrollMonth?
     let overview: HomeOverview?
@@ -59,10 +59,13 @@ struct HomeAccounting: View {
     let openReports: () -> Void
     let openRoute: (HomeRoute) -> Void
     let openEntities: () -> Void
+    @ViewBuilder var shortcuts: () -> Shortcuts
 
     @AppStorage(HomeActionLayout.key) private var actionsRaw = ""
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("homeHeadlineDeductions") private var showDeductions = true
+    @ScaledMetric(relativeTo: .body) private var reviewHeight: CGFloat = 112
     @State private var selectedReviewID: String?
 
     private let green = Color(red: 0.07, green: 0.25, blue: 0.22)
@@ -75,26 +78,34 @@ struct HomeAccounting: View {
     var body: some View {
         VStack(spacing: 14) {
             netCard
+                .onTapGesture { if showDeductions { openEntities() } else { openRoute(.salary) } }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { if showDeductions { openEntities() } else { openRoute(.salary) } }
+                .contextMenu {
+                    Button(tr("مجموع الاستقطاعات", "Total deductions")) { showDeductions = true }
+                    Button(tr("صافي الرواتب", "Net payroll")) { showDeductions = false }
+                }
+            reviewStrip
+            shortcuts()
             HStack(alignment: .top, spacing: 12) {
                 actionCard(0)
                 actionCard(1)
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: actionsRaw)
-            reviewStrip
         }
     }
 
     private var netCard: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(tr("صافي رواتب \(month.name)", "Net payroll · \(month.name)"))
+                Text(showDeductions ? tr("مجموع الاستقطاعات · \(month.name)", "Total deductions · \(month.name)") : tr("صافي رواتب \(month.name)", "Net payroll · \(month.name)"))
                     .font(.subheadline).foregroundStyle(.white.opacity(0.83))
-                Text(Money.format(overview?.netTotal))
+                Text(Money.format(showDeductions ? overview?.entityTotal : overview?.netTotal))
                     .font(.system(size: 35, weight: .bold, design: .rounded))
                     .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
                     .foregroundStyle(.white)
                 HStack(spacing: 8) {
-                    if let now = overview?.netTotal, let before = overview?.previousNetTotal, before > 0 {
+                    if !showDeductions, let now = overview?.netTotal, let before = overview?.previousNetTotal, before > 0 {
                         let change = (now - before) / before * 100
                         Text(tr("\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% عن الشهر السابق",
                                 "\(change >= 0 ? "+" : "")\(change.formatted(.number.precision(.fractionLength(1)).locale(AppSettings.locale)))% vs previous month"))
@@ -150,12 +161,11 @@ struct HomeAccounting: View {
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Text(detail(kind)).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-                Spacer(minLength: 0)
                 Text(footnote(kind)).font(.caption2).foregroundStyle(accent)
                     .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 166, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
             .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(accent.opacity(0.18)))
             .contentShape(RoundedRectangle(cornerRadius: 21))
@@ -207,7 +217,8 @@ struct HomeAccounting: View {
 
     private func open(_ kind: HomeActionKind) {
         switch kind {
-        case .reports, .special: openReports()
+        case .reports: openReports()
+        case .special: openRoute(.specialReports)
         case .salaryAudit, .changes: openRoute(.salary)
         case .deductionAudit: openRoute(.deductions)
         case .entities: openEntities()
@@ -217,6 +228,14 @@ struct HomeAccounting: View {
     private var reviewItems: [HomeReviewItem] {
         guard let audit else { return [] }
         var items: [HomeReviewItem] = []
+        for kind in DeductionEntityAlertKind.allCases {
+            let count = kind == .added ? audit.addedEntities : audit.missingEntities
+            if count > 0 {
+                items.append(HomeReviewItem(id: "entity-" + kind.rawValue, title: kind.title,
+                                            detail: tr("\(Num.format(count)) جهة · \(month.name)", "\(count) entities · \(month.name)"),
+                                            symbol: "building.columns", route: .entityAlert(kind)))
+            }
+        }
         if !audit.salaryAvailable {
             items.append(HomeReviewItem(id: "salary-unavailable",
                                         title: tr("تدقيق الرواتب غير مكتمل", "Payroll audit incomplete"),
@@ -325,7 +344,7 @@ struct HomeAccounting: View {
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 112)
+                .frame(height: reviewHeight)
                 HStack(spacing: 5) {
                     ForEach(items) { item in
                         Circle().fill(item.id == currentID ? accent : accent.opacity(0.35))

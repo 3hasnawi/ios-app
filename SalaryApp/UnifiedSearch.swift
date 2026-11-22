@@ -98,6 +98,8 @@ struct UnifiedSearchView: View {
     @State private var shareTarget: Employee?
     private let refundDraft = RefundDraft.shared
     @State private var refundTarget: RefundSearchTarget?
+    @AppStorage("selectedMonth") private var selectedWorkMonth = ""
+    @State private var quickPreview: ReportGroup?
     @State private var refundReviewMonth: String?
     @State private var deductionTarget: DeductionPerson?
     @State private var preparingStaffReport = false
@@ -112,6 +114,33 @@ struct UnifiedSearchView: View {
 
     /// يشمل البحث الصوتي: تُحذف النقطة وعلامات الترقيم التي يضيفها الإملاء.
     private var trimmed: String { ArabicText.cleanQuery(appliedSearch) }
+
+    private var workMonth: PayrollMonth? { months.first { $0.name == selectedWorkMonth } ?? months.first }
+    private func matchesTask(_ label: String) -> Bool {
+        let query = AutomaticSearchQuery(trimmed)
+        guard !query.isEmpty, query.digits == nil, trimmed.count >= 3 else { return false }
+        let name = AutomaticSearchQuery.normalize(label)
+        return query.tokens.allSatisfy { name.contains($0) }
+    }
+    private var matchingReports: [WorkReport] {
+        WorkReport.allCases.filter { $0 != .entities && matchesTask(tr("معاينة كشف ", "Preview report ") + $0.title) }
+    }
+    private var matchesRefund: Bool { matchesTask(tr("إعادة مبالغ دفعة إعادة المبالغ", "Refund batch")) && (refundDraft.month != nil || months.contains { $0.employeeCount > 0 }) }
+    @ViewBuilder private var workActions: some View {
+        if let month = workMonth {
+            ForEach(matchingReports) { report in
+                let group = report.group(month: month.name, summary: PayrollItems.decodeSummary(month.itemSummaryData) ?? [:])
+                Button { quickPreview = group } label: {
+                    Label(report.title + " · " + month.name, systemImage: ReportSymbols.preview)
+                }.disabled(group == nil)
+            }
+        }
+        if matchesRefund {
+            Button { refundReviewMonth = refundDraft.month ?? months.first(where: { $0.employeeCount > 0 })?.name } label: {
+                Label(tr("إعادة المبالغ", "Refund batch"), systemImage: "arrow.uturn.backward.circle")
+            }
+        }
+    }
 
     /// كل الأشهر من الأحدث: لكل شخص يُعرض آخر شهر يوجد فيه اسمه، والشهر يظهر في بطاقته
     /// ويُختار غيره من صفحة الشخص.
@@ -131,6 +160,7 @@ struct UnifiedSearchView: View {
                     }
                     .accessibilityIdentifier("viewSearchRefundBatch")
                 }
+                if !trimmed.isEmpty { workActions }
                 if trimmed.isEmpty {
                     emptyState
                 } else if loadedKey == queryKey, let searchError {
@@ -142,9 +172,8 @@ struct UnifiedSearchView: View {
                 } else if loadedKey != queryKey {
                     Section { ProgressView().frame(maxWidth: .infinity) }
                 } else if loadedKey == queryKey && smartResults.isEmpty && !completingSearch {
-                    Section {
-                        ContentUnavailableView.search(text: trimmed)
-                            .listRowBackground(Color.clear)
+                    if matchingReports.isEmpty && !matchesRefund {
+                        Section { ContentUnavailableView.search(text: trimmed).listRowBackground(Color.clear) }
                     }
                 } else {
                     if completingSearch {
@@ -158,11 +187,15 @@ struct UnifiedSearchView: View {
                             ForEach(people) { person in
                                 VStack(alignment: .leading, spacing: 10) {
                                     NavigationLink(value: person) {
-                                        UnifiedCard(person: person)
+                                        UnifiedCard(person: person, query: trimmed)
                                     }
                                     .accessibilityIdentifier("resultCard")
                                     .contextMenu {
                                         Button(tr("فتح", "Open"), systemImage: "person.text.rectangle") { path = [person] }
+                                        Button(tr("كشف الاستقطاعات", "Deduction statement"), systemImage: "list.bullet.rectangle") {
+                                            deductionTarget = DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle)
+                                        }
+                                        .accessibilityIdentifier("employeeDeductionAction")
                                         if let id = person.hit.employeeID, let month = person.hit.month {
                                             let target = RefundSearchTarget(id: id, key: person.hit.key, month: month)
                                             Button(target.isIn(refundDraft)
@@ -172,6 +205,9 @@ struct UnifiedSearchView: View {
                                             }
                                             .disabled(refundDraft.working)
                                             .accessibilityIdentifier("searchRefundAction")
+                                        }
+                                        if person.hasTrust {
+                                            Button(tr("عرض الأمانات", "View salary trust"), systemImage: "tray.full") { trustTarget = person.hit.key }
                                         }
                                         if person.hasPayroll {
                                             Button(tr("مشاركة تقرير الراتب", "Share salary report"), systemImage: "square.and.arrow.up") {
@@ -188,29 +224,18 @@ struct UnifiedSearchView: View {
                                             }
                                             .disabled(preparingStaffReport)
                                         }
-                                        Button(tr("كشف الاستقطاعات", "Deduction statement"), systemImage: "list.bullet.rectangle") {
-                                            deductionTarget = DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle)
-                                        }
-                                        .accessibilityIdentifier("employeeDeductionAction")
-                                        if person.hasTrust {
-                                            Button(tr("عرض الأمانات", "View salary trust"), systemImage: "tray.full") { trustTarget = person.hit.key }
-                                        }
                                         Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(person.name) }
                                     } preview: {
                                         // Keep the context-menu preview passive: opening the full
                                         // NavigationLink destination can commit navigation on release.
-                                        UnifiedCard(person: person)
+                                        UnifiedCard(person: person, query: trimmed)
                                             .padding(16)
                                             .frame(width: 320)
                                             .background(Color(.secondarySystemGroupedBackground))
                                     }
-                                    if person.hasTrust {
+                                    if let summary = person.hit.trust {
                                         Button { trustTarget = person.hit.key } label: {
-                                            HStack {
-                                                Label(tr("عرض الأمانات", "View salary trust"), systemImage: "tray.full")
-                                                Spacer()
-                                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold))
-                                            }.font(.subheadline.weight(.semibold))
+                                            TrustSearchSummaryView(summary: summary)
                                         }
                                         .buttonStyle(.plain).foregroundStyle(Color.accentColor)
                                         .accessibilityIdentifier("searchPersonTrust")
@@ -346,6 +371,7 @@ struct UnifiedSearchView: View {
             .navigationDestination(item: $refundReviewMonth) { month in EmployeeRefundView(month: month) }
             .sheet(item: $refundTarget) { target in RefundSearchEntrySheet(target: target) }
             .sheet(item: $shareTarget) { ShareOptionsSheet(employee: $0) }
+            .sheet(item: $quickPreview) { ReportPreviewLoader(group: $0) }
             .sheet(item: $deductionTarget) { target in
                 NavigationStack {
                     EmployeeDeductionsView(initialPerson: target)
@@ -600,12 +626,16 @@ enum UnifiedFinder {
             }
             let name = pair.staff?.name ?? pair.employee?.name ?? ""
             let subtitle = pair.staff.map { [$0.rank, $0.workplace] } ?? pair.employee.map { [$0.rank, $0.workplace] } ?? []
-            return UnifiedHit(
+            var hit = UnifiedHit(
                 key: key, name: name,
                 subtitle: subtitle.filter { !$0.isEmpty }.joined(separator: " · "),
                 employeeID: pair.employee?.persistentModelID, staffID: pair.staff?.persistentModelID,
                 month: pair.employee?.month, netSalary: pair.employee?.netSalary, staffStatus: pair.staff?.status
             )
+            if mode == .mother, let member = pair.staff {
+                hit.matchLabel = tr("تطابق اسم الأم · \(member.motherKey)", "Mother’s name match · \(member.motherKey)")
+            }
+            return hit
         }
         .sorted { lhs, rhs in
             // من في الطرفين أولاً، ثم بالاسم.
@@ -639,49 +669,26 @@ enum UnifiedFinder {
 /// بطاقة نتيجة: الاسم، وراتب آخر شهر، والحالة في الملاك.
 struct UnifiedCard: View {
     let person: UnifiedPerson
-    private var hit: UnifiedHit { person.hit }
-    private var month: String? { hit.month }
+    var query = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                NameAvatar(name: person.name, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(person.name).font(.body.weight(.semibold)).lineLimit(2)
-                    if !person.subtitle.isEmpty {
-                        Text(person.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-            }
-            if let label = hit.matchLabel { Text(label).font(.caption).foregroundStyle(.secondary) }
-            if person.hasPayroll || person.hasStaff {
-            HStack(spacing: 8) {
-                tile(
-                    title: person.hasPayroll ? (month ?? tr("الراتب", "Salary")) : tr("لا يوجد راتب", "No salary"),
-                    value: person.hasPayroll ? Money.format(hit.netSalary) : "—",
-                    color: .primary
-                )
-                tile(
-                    title: tr("الملاك", "Staff"),
-                    value: hit.staffStatus.map { $0.isEmpty ? tr("موجود", "Found") : $0 } ?? tr("غير موجود", "Not found"),
-                    color: hit.staffStatus == nil ? .secondary : (hit.staffStatus!.contains("مستمر") ? .green : .orange)
-                )
-            }
-            }
-            if let summary = hit.trust { TrustSearchSummaryView(summary: summary) }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func tile(title: String, value: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Text(value).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(color).lineLimit(1)
+            Text(highlightedName).font(.body.weight(.semibold))
+            if !person.subtitle.isEmpty { Text(person.subtitle).font(.subheadline).foregroundStyle(.secondary) }
+            if let label = person.hit.matchLabel { Text(label).font(.caption).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.vertical, 3)
+    }
+
+    private var highlightedName: AttributedString {
+        var name = AttributedString(person.name)
+        for token in query.split(separator: " ") {
+            if let range = name.range(of: String(token), options: [.diacriticInsensitive, .caseInsensitive]) {
+                name[range].backgroundColor = Color.accentColor.opacity(0.14)
+            }
+        }
+        return name
     }
 }
 
@@ -748,6 +755,13 @@ struct UnifiedPersonView: View {
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
+                }
+            }
+            if person.hasPayroll {
+                Section {
+                    NavigationLink {
+                        EmployeeDeductionsView(initialPerson: DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle))
+                    } label: { Label(tr("كشف استقطاعات المنتسب", "Employee deduction statement"), systemImage: "list.bullet.rectangle") }
                 }
             }
             if person.hasTrust {

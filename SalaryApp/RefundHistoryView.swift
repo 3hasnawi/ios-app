@@ -21,6 +21,7 @@ struct RefundHistoryView: View {
                     VStack(alignment: .leading) {
                         Text(record.snapshot.date, format: .dateTime.year().month().day())
                         Text([record.snapshot.source, record.snapshot.payrollMonths,
+                              record.snapshot.enteredTotal.map { Money.format(Double($0)) } ?? "",
                               tr("عدد المنتسبين", "Employees") + " " + String(record.snapshot.rows.count)]
                             .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
                     }
