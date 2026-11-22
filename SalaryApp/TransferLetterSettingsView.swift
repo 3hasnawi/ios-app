@@ -361,9 +361,8 @@ struct TransferLetterSettingsView: View {
                 defer { importing = false }
                 do {
                     let imported = try await Task.detached(priority: .userInitiated) {
-                        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                        guard size > 0, size <= 1_000_000 else { throw TransferWordDefaults.Failure.invalid }
-                        let package = try TransferWordDefaults.decode(Data(contentsOf: url))
+                        let data = try BoundedFile.read(url, limit: 1_000_000)
+                        let package = try TransferWordDefaults.decode(data)
                         try TransferWordDefaults.verifyReferences(package, data: referenceSnapshot)
                         return package
                     }.value

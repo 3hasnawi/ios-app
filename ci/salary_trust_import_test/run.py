@@ -46,6 +46,11 @@ def prepare(work):
  fixture(work/'bad.xlsx',[['رتبة','منتسب وهمي','3500/7000','','قسم','تشرين الثاني',2026,'صرف','']])
  fixture(work/'duplicate.xlsx',[['رتبة','منتسب وهمي',1000,'','قسم','تشرين الثاني',2026,'','']]*2)
  fixture(work/'ordinary.xlsx',[['منتسب وهمي',1000]],headers=['Name_m','صافي الراتب'])
+ # Simulate a storage bit error in an ordinary uncompressed test worksheet.
+ original=(work/'ordinary.xlsx').read_bytes()
+ before=b'<t>Name_m</t>'
+ assert original.count(before)==1
+ (work/'damaged.xlsx').write_bytes(original.replace(before,b'<t>Name_l</t>'))
  fixture(work/'missing-year.xlsx',[['منتسب وهمي',1000,'صرف','تشرين الثاني2027']],headers=['الاسم','صافي الراتب','الحالة','تاريخ الصرف'])
  with zipfile.ZipFile(work/'new.xlsx') as trust, zipfile.ZipFile(work/'ordinary.xlsx') as payroll, zipfile.ZipFile(work/'mixed.xlsx','w') as mixed:
   for name in trust.namelist():mixed.writestr(name,trust.read(name))

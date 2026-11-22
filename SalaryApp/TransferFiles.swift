@@ -332,10 +332,9 @@ struct TransferFilesView: View {
                 defer { importingReferences = false }
                 do {
                     let data = try await Task.detached(priority: .userInitiated) {
-                        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                        guard size > 0, size <= 10_000_000 else { throw TransferReferencePack.Failure.oversized }
-                        _ = try TransferReferencePack.validate(url)
-                        return try Data(contentsOf: url)
+                        let data = try BoundedFile.read(url, limit: 10_000_000)
+                        _ = try TransferReferencePack.validateData(data)
+                        return data
                     }.value
                     guard !BackupManager.shared.isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
                         referenceError = tr("انتظر انتهاء العملية الحالية ثم أعد اختيار الحزمة.", "Wait for the current operation, then select the package again.")

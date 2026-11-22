@@ -26,6 +26,13 @@ try CheckedArchive.write(part, from: archive, to: output, limit: part.uncompress
 rejected { try CheckedArchive.write(part, from: archive, to: output, limit: part.uncompressedSize) }
 let savedXML = try Data(contentsOf: output)
 precondition(savedXML == xml)
+let damagedURL = root.appendingPathComponent("damaged.xlsx")
+rejected { _ = try ExcelImporter.load(url: damagedURL) }
+let damaged = try Archive(url: damagedURL, accessMode: .read)
+let damagedEntry = try CheckedArchive.Index(damaged)["xl/worksheets/sheet1.xml"]!
+let incomplete = root.appendingPathComponent("incomplete.xml")
+rejected { try CheckedArchive.write(damagedEntry, from: damaged, to: incomplete, limit: part.uncompressedSize) }
+precondition(!FileManager.default.fileExists(atPath: incomplete.path))
 let ledger=try SalaryTrustSpreadsheet.read(root.appendingPathComponent("new.xlsx"))
 precondition(ledger.version==2 && ledger.entries.count==3)
 let paid=ledger.entries[0],unpaid=ledger.entries[1],review=ledger.entries[2]
