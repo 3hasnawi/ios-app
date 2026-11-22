@@ -1,6 +1,12 @@
-# Shared payroll columns: staged design (not activated)
+# Shared payroll columns
 
-## Current state
+## iPhone backup format 12
+
+The iPhone exporter stores the exact header bytes once per distinct schema and keeps the remaining bytes and insertion offset in each employee record. Unsupported snapshots pass through intact. Before replacing the selected file it reopens the ZIP, checks its entries and verifies a fingerprint of the reconstructed payroll against the original employee fields. A second digest covers the supporting files including deductions, settings and archived PDFs. Restore verifies both before replacing data. Versions 1–6 and 8–11 retain their original readers. Earlier app releases cannot open a version 12 archive.
+
+The backup settings screen records compressed sizes only after a successful save. The total includes ZIP overhead. The test in `ci/compact_backup_test` runs the export and restore actor on isolated SwiftData containers.
+
+## Historical v7 experiment
 
 Backup versions 1–6 remain unchanged. `SharedPayrollColumns` in C# and Swift is a tested byte-preserving primitive, not a database migration, backup reader, or writer. Production must not emit a new backup version until both client implementations, server capability checks, and device recovery tests are complete.
 

@@ -47,11 +47,23 @@ nonisolated enum BackupFormat {
         var salaryTrustEntries: Int? = nil
         var contentVersion: Int? = nil
         var payrollDigest: Data? = nil
+        var supportingDigest: Data? = nil
+
+        func entryLimit(_ path: String) -> UInt64 {
+            switch path {
+            case "manifest.json": return 1_000_000
+            case "settings.json": return 64_000_000
+            case "books/index.json": return 9_999_999
+            case "payroll-headers.json": return 48 * 1024 * 1024
+            case let name where name.hasPrefix("books/"): return 60_000_000
+            default: return .max
+            }
+        }
         var dataVersion: Int { version == 12 ? contentVersion ?? -1 : version }
         func validateFormat() throws {
             guard BackupFormat.supports(version) else { throw BackupError.newerVersion }
             if version == 12 {
-                guard [5, 6, 8, 9, 10, 11].contains(dataVersion), payrollDigest?.count == 32 else { throw BackupError.notBackup }
+                guard [5, 6, 8, 9, 10, 11].contains(dataVersion), payrollDigest?.count == 32, supportingDigest?.count == 32 else { throw BackupError.notBackup }
             }
         }
         var hasData: Bool {
@@ -71,6 +83,13 @@ nonisolated enum BackupFormat {
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
+
+    static func removeExport(_ file: URL) {
+        let parent = file.deletingLastPathComponent()
+        guard file.lastPathComponent == fileName(), parent.lastPathComponent.hasPrefix("payroll-export-"),
+              parent.deletingLastPathComponent().standardizedFileURL == FileManager.default.temporaryDirectory.standardizedFileURL else { return }
+        try? FileManager.default.removeItem(at: parent)
+    }
 
     /// اسم ثابت: كل نسخة جديدة تحلّ محل السابقة (تاريخ النسخة محفوظ داخلها).
     static func fileName() -> String { "\(prefix).zip" }
@@ -117,19 +136,24 @@ actor BackupActor {
         defer { try? fm.removeItem(at: dir) }
         let encoder = JSONEncoder()
 
+        var expectedDigests: [String: Data] = [:]
         func writeLines<S: Sequence>(_ name: String, _ items: S, count: Int, from: Double, to: Double) throws where S.Element: Encodable {
             let url = dir.appendingPathComponent(name)
             _ = fm.createFile(atPath: url.path, contents: nil)
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }
+            var hash = SHA256()
             var buffer = Data()
             for (i, item) in items.enumerated() {
                 buffer.append(try encoder.encode(item))
                 buffer.append(0x0A)
-                if buffer.count > 1_000_000 { try handle.write(contentsOf: buffer); buffer.removeAll(keepingCapacity: true) }
+                if buffer.count > 1_000_000 { hash.update(data: buffer); try handle.write(contentsOf: buffer); buffer.removeAll(keepingCapacity: true) }
                 if i % 2000 == 0 { progress?(from + (to - from) * Double(i) / Double(max(1, count))) }
             }
+            hash.update(data: buffer)
             try handle.write(contentsOf: buffer)
+            try handle.close()
+            expectedDigests[name] = Data(hash.finalize())
         }
 
         let months = try modelContext.fetch(FetchDescriptor<PayrollMonth>())
@@ -143,6 +167,7 @@ actor BackupActor {
             _ = fm.createFile(atPath: target.path, contents: nil)
             let handle = try FileHandle(forWritingTo: target)
             defer { try? handle.close() }
+            var hash = SHA256()
             var offset = 0
             while offset < count {
                 try Task.checkCancellation()
@@ -155,12 +180,15 @@ actor BackupActor {
                     guard !items.isEmpty else { throw BackupError.notBackup }
                     for item in items {
                         var data = try encoder.encode(convert(item)); data.append(0x0A)
+                        hash.update(data: data)
                         try handle.write(contentsOf: data)
                     }
                     offset += items.count
                 }
                 progress?(from + (to - from) * Double(offset) / Double(max(1, count)))
             }
+            try handle.close()
+            expectedDigests[file] = Data(hash.finalize())
             return count
         }
         var payroll = CompactPayrollBackup.Writer()
@@ -204,24 +232,25 @@ actor BackupActor {
             if !data.isEmpty { try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data).validateUnifiedTemplates() }
         }
         let formatVersion = BackupFormat.exportVersion(for: settings)
+        try JSONEncoder().encode(payroll.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
+        try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
+        guard books.count <= 10_000 else { throw CheckedArchive.Failure.tooLarge }
+        let supporting = BackupArchiveVerification.supportingPaths(bookIDs: books.map(\.id))
         let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
                                              accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount,
-                                             contentVersion: formatVersion, payrollDigest: payroll.fingerprint.digest)
-        try JSONEncoder().encode(payroll.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
+                                             contentVersion: formatVersion, payrollDigest: payroll.fingerprint.digest,
+                                             supportingDigest: try BackupArchiveVerification.supportingDigest(in: dir, paths: supporting, expected: expectedDigests))
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
-        try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
-
-        let out = fm.temporaryDirectory.appendingPathComponent(BackupFormat.fileName())
-        try? fm.removeItem(at: out)
-        let files = ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", CompactPayrollBackup.schemaFile,
-                     "deductions.jsonl", "staff.jsonl", "accounts.jsonl", "books/index.json"]
-            + books.map { "books/\($0.id.uuidString).pdf" }
+        let outputDirectory = fm.temporaryDirectory.appendingPathComponent("payroll-export-" + UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let out = outputDirectory.appendingPathComponent(BackupFormat.fileName())
+        let files = ["manifest.json", "employees.jsonl"] + supporting
         do {
             try BackupArchiveVerification.create(at: out, source: dir, files: files, manifest: manifest)
         } catch {
-            try? fm.removeItem(at: out)
+            try? fm.removeItem(at: outputDirectory)
             throw error
         }
         progress?(1)
@@ -262,6 +291,13 @@ actor BackupActor {
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
         try manifest.validateFormat()
         guard manifest.hasData else { throw BackupError.emptyRestore }
+        if manifest.version == 12 {
+            let archivedBooks = try OfficialBookFiles.read(in: folder.appendingPathComponent("books"))
+            let paths = BackupArchiveVerification.supportingPaths(bookIDs: archivedBooks.map(\.id))
+            guard try BackupArchiveVerification.supportingDigest(in: folder, paths: paths) == manifest.supportingDigest else {
+                throw BackupError.notBackup
+            }
+        }
         let months = try records("months.jsonl", BackupFormat.MonthRecord.self)
         let employeeDigest = try CompactPayrollBackup.read(in: folder, manifest: manifest)
         let deductions = try validate("deductions.jsonl", BackupFormat.DeductionRecord.self)
@@ -575,7 +611,7 @@ final class BackupManager {
             defer { isWorking = false; version += 1 }
             do {
                 let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
-                defer { try? FileManager.default.removeItem(at: url) }
+                defer { BackupFormat.removeExport(url) }
                 let sizes = try await Task.detached { try BackupSizes.read(url) }.value
                 await FilePicker.waitUntilSettled()
                 guard let saved = await FilePicker.exportBackup(url) else { return }
@@ -625,10 +661,9 @@ final class BackupManager {
     // MARK: - إنشاء نسخة
 
     private func makeBackup(title: String) async throws -> (URL, BackupFormat.Manifest) {
-        let settings = BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
-            if let value = UserDefaults.standard.object(forKey: key),
-               let data = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) {
-                dict[key] = data
+        let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
+            if let value = UserDefaults.standard.object(forKey: key) {
+                dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
             }
         }
         let progress = ImportProgress.shared
@@ -641,7 +676,7 @@ final class BackupManager {
         }.value
         // حاوية جديدة فارغة بعد إعادة تثبيت التطبيق لا يجوز أن تمحو آخر نسخة صالحة.
         guard result.1.hasData else {
-            try? FileManager.default.removeItem(at: result.0)
+            BackupFormat.removeExport(result.0)
             throw BackupError.emptyData
         }
         return result
@@ -655,6 +690,28 @@ final class BackupManager {
         return size
     }
 
+    nonisolated static func replaceVerifiedArchive(_ url: URL, size preparedSize: Int64, manifest: BackupFormat.Manifest, at file: URL) throws {
+        var coordinationError: NSError?
+        var writeError: Error?
+        var didWrite = false
+        // تنسيق الاستبدال مع مزود الملفات يحافظ على صلاحية الوصول المختارة.
+        NSFileCoordinator().coordinate(writingItemAt: file, options: .forReplacing, error: &coordinationError) { target in
+            do {
+                try Self.checkReplacement(manifest, at: target)
+                // تُكتب النسخة إلى ملف مجاور ثم تُستبدل دفعة واحدة؛ تبقى القديمة عند فشل الكتابة.
+                let contents = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard contents.count > 0, Int64(contents.count) == preparedSize else { throw BackupError.emptyArchive }
+                try contents.write(to: target, options: .atomic)
+                didWrite = true
+            } catch { writeError = error }
+        }
+        if let error = coordinationError ?? writeError {
+            if !FileManager.default.fileExists(atPath: file.path) { throw BackupError.folderUnavailable }
+            throw error
+        }
+        guard didWrite else { throw BackupError.folderUnavailable }
+    }
+
     /// يمنع تحديث حاوية ناقصة من محو أشهر أو ملاك أو حسابات كانت في نسخة iCloud السابقة.
     nonisolated static func checkReplacement(_ current: BackupFormat.Manifest, at file: URL) throws {
         let attributes: [FileAttributeKey: Any]
@@ -662,21 +719,12 @@ final class BackupManager {
         catch let error as NSError where error.domain == NSCocoaErrorDomain && (error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError) { return }
         // حجم iCloud قد يكون صفراً لملف لم يُنزّل؛ لا نعتبر ذلك إذناً بمحو النسخة.
         if (attributes[.size] as? NSNumber)?.intValue == 0 { throw BackupError.unavailableArchive }
-        var coordinationError: NSError?
-        var readError: Error?
-        var previous: BackupFormat.Manifest?
-        NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordinationError) { target in
-            do {
-                let archive = try Archive(url: target, accessMode: .read)
-                let entries = try CheckedArchive.Index(archive)
-                guard let entry = entries["manifest.json"] else { throw BackupError.notBackup }
-                let data = try CheckedArchive.data(entry, from: archive, limit: 1_000_000)
-                previous = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
-            } catch { readError = error }
-        }
-        if let error = coordinationError ?? readError { throw error }
-        guard let previous else { throw BackupError.folderUnavailable }
-        guard BackupFormat.supports(previous.version) else { throw BackupError.newerVersion }
+        let archive = try Archive(url: file, accessMode: .read)
+        let entries = try CheckedArchive.Index(archive)
+        guard let entry = entries["manifest.json"] else { throw BackupError.notBackup }
+        let data = try CheckedArchive.data(entry, from: archive, limit: 1_000_000)
+        let previous = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
+        try previous.validateFormat()
         try checkMissingData(current, previous: previous)
     }
 
@@ -761,7 +809,7 @@ final class BackupManager {
             defer { isWorking = false }
             do {
                 let (url, _) = try await makeBackup(title: tr("نسخة احتياطية", "Backup"))
-                ActivityShare.present([url])
+                ActivityShare.present([url]) { _ in BackupFormat.removeExport(url) }
             } catch {
                 message = tr("تعذّر إنشاء النسخة: \(error.localizedDescription)", "Couldn't create the backup: \(error.localizedDescription)")
             }
@@ -838,36 +886,17 @@ final class BackupManager {
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         do {
             let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي", "Backing up"))
-            defer { try? FileManager.default.removeItem(at: url) }
+            defer { BackupFormat.removeExport(url) }
             try Self.checkSafetyManifest(manifest)
             let sizes = try await Task.detached { try BackupSizes.read(url) }.value
-            let preparedSize = sizes.total
             let scope = resolveBookmark(Self.folderKey) ?? file
-            let (_, refreshedBookmark) = try await Task.detached(priority: .utility) { () throws -> (Int64, Data?) in
+            let refreshedBookmark = try await Task.detached(priority: .utility) { () throws -> Data? in
                 let granted = scope.startAccessingSecurityScopedResource()
                 defer { if granted { scope.stopAccessingSecurityScopedResource() } }
-                try Self.checkReplacement(manifest, at: file)
-                var coordinationError: NSError?
-                var writeError: Error?
-                var didWrite = false
-                // تنسيق الاستبدال مع مزود الملفات يحافظ على صلاحية الوصول المختارة.
-                NSFileCoordinator().coordinate(writingItemAt: file, options: .forReplacing, error: &coordinationError) { target in
-                    do {
-                        // تُكتب النسخة إلى ملف مجاور ثم تُستبدل دفعة واحدة؛ تبقى القديمة عند فشل الكتابة.
-                        let contents = try Data(contentsOf: url, options: .mappedIfSafe)
-                        guard !contents.isEmpty else { throw BackupError.emptyArchive }
-                        try contents.write(to: target, options: .atomic)
-                        didWrite = true
-                    } catch { writeError = error }
-                }
-                if let error = coordinationError ?? writeError {
-                    if !FileManager.default.fileExists(atPath: file.path) { throw BackupError.folderUnavailable }
-                    throw error
-                }
-                guard didWrite else { throw BackupError.folderUnavailable }
+                try Self.replaceVerifiedArchive(url, size: sizes.total, manifest: manifest, at: file)
                 // حجم مزود iCloud الوصفي قد يبقى صفراً مؤقتاً بعد الكتابة؛ نعتمد حجم البيانات المكتوبة.
                 let bookmark = try? file.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                return (preparedSize, bookmark)
+                return bookmark
             }.value
             if UserDefaults.standard.data(forKey: Self.folderKey) == nil,
                UserDefaults.standard.string(forKey: Self.testFileKey) == nil,
@@ -929,7 +958,7 @@ final class BackupManager {
                 return reason
             }
             let (file, manifest) = try await makeBackup(title: tr("نسخ إلى السيرفر", "Backing up to server"))
-            defer { try? FileManager.default.removeItem(at: file) }
+            defer { BackupFormat.removeExport(file) }
             try Self.checkSafetyManifest(manifest)
             let expected = try Self.archiveSize(file)
             // أعد الفحص بعد تجهيز الملف؛ التأكيد اليدوي لا يشمل نسخة تغيّرت أثناء التجهيز.
@@ -1149,7 +1178,7 @@ final class BackupManager {
             for name in required {
                 guard let entry = entries[name] else { throw BackupError.notBackup }
                 try CheckedArchive.write(entry, from: archive, to: dir.appendingPathComponent(name),
-                                         limit: name == "settings.json" ? 64_000_000 : name == CompactPayrollBackup.schemaFile ? UInt64(CompactPayrollBackup.schemaFileLimit) : .max)
+                                         limit: manifest.entryLimit(name))
             }
             if manifest.version >= 3 {
                 guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
@@ -1163,7 +1192,7 @@ final class BackupManager {
                 for book in books {
                     let name = "books/\(book.id.uuidString).pdf"
                     guard let entry = entries[name], entry.type == .file,
-                          entry.uncompressedSize < 60_000_000 else { throw BackupError.notBackup }
+                          entry.uncompressedSize <= 60_000_000 else { throw BackupError.notBackup }
                     try CheckedArchive.write(entry, from: archive, to: OfficialBookFiles.file(book.id, in: booksDir), limit: 60_000_000)
                 }
                 _ = try OfficialBookFiles.validateArchive(in: booksDir, expected: expected)
@@ -1340,6 +1369,7 @@ final class BackupManager {
             }
             let start = Date()
             let (url, testManifest) = try await makeBackup(title: "test")
+            defer { BackupFormat.removeExport(url) }
             #if targetEnvironment(simulator)
             guard testManifest.version == 12 && [10, 11].contains(testManifest.dataVersion) else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
             #endif

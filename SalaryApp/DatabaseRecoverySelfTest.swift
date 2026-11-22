@@ -12,7 +12,7 @@ import SwiftData
         for i in 0..<600 { context.insert(Employee(month: "تشرين الأول 2026", name: "منتسب وهمي \(i)", rank: "موظف", workplace: "اختبار", netSalary: 1000)) }
         try context.save()
         let (archive, _) = try await BackupActor(modelContainer: source).export(settings: [:], progress: nil)
-        defer { try? FileManager.default.removeItem(at: archive) }
+        defer { BackupFormat.removeExport(archive) }
         let restored = try await SharedModel.recover(from: archive)
         let verify = ModelContext(restored)
         guard try verify.fetchCount(FetchDescriptor<Employee>()) == 600, !RestoreSafety.pending,
@@ -21,7 +21,7 @@ import SwiftData
         for e in try verify.fetch(FetchDescriptor<Employee>()) { verify.delete(e) }
         for m in try verify.fetch(FetchDescriptor<PayrollMonth>()) { verify.delete(m) }
         try verify.save()
-        return "bootstrapRecovery=ok rows=600 legacyBackup=5"
+        return "bootstrapRecovery=ok rows=600 compactBackup=12"
     }
 }
 #endif

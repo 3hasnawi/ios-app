@@ -14,22 +14,56 @@ nonisolated enum BackupArchiveVerification {
         try verify(url, source: source, files: files, manifest: manifest)
     }
 
+    static func supportingPaths(bookIDs: [UUID]) -> [String] {
+        ["settings.json", "months.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl",
+         CompactPayrollBackup.schemaFile, "books/index.json"] + bookIDs.map { "books/\($0.uuidString).pdf" }
+    }
+
+    private static func fileDigest(_ url: URL) throws -> Data {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        var hash = SHA256()
+        while let chunk = try file.read(upToCount: 256 * 1024), !chunk.isEmpty {
+            try Task.checkCancellation()
+            hash.update(data: chunk)
+        }
+        return Data(hash.finalize())
+    }
+
+    private static func combined(_ names: [String], digest: (String) throws -> Data) rethrows -> Data {
+        var hash = SHA256()
+        for name in names.sorted() {
+            hash.update(data: Data(name.utf8))
+            hash.update(data: Data([0]))
+            hash.update(data: try digest(name))
+        }
+        return Data(hash.finalize())
+    }
+
+    static func supportingDigest(in source: URL, paths: [String], expected: [String: Data] = [:]) throws -> Data {
+        try combined(paths) { name in
+            if let original = expected[name] { return original }
+            return try fileDigest(source.appendingPathComponent(name))
+        }
+    }
+
     /// نعيد فتح الناتج ونقارن محتوى كل جزء بالمصدر المستقل، بما فيه ملفات PDF وحركات البنك.
     static func verify(_ url: URL, source: URL, files: [String], manifest: BackupFormat.Manifest) throws {
         let archive = try Archive(url: url, accessMode: .read)
         let entries = try CheckedArchive.Index(archive)
         guard Set(entries.entries.map(\.path)) == Set(files) else { throw BackupError.notBackup }
-        for name in files {
+        func archiveDigest(_ name: String) throws -> Data {
             guard let entry = entries[name] else { throw BackupError.notBackup }
-            let file = try FileHandle(forReadingFrom: source.appendingPathComponent(name))
-            defer { try? file.close() }
-            var sourceHash = SHA256(), archiveHash = SHA256()
-            while let chunk = try file.read(upToCount: 256 * 1024), !chunk.isEmpty {
-                try Task.checkCancellation()
-                sourceHash.update(data: chunk)
-            }
-            try CheckedArchive.consume(entry, from: archive, limit: .max) { archiveHash.update(data: $0) }
-            guard sourceHash.finalize() == archiveHash.finalize() else { throw BackupError.notBackup }
+            var hash = SHA256()
+            try CheckedArchive.consume(entry, from: archive, limit: manifest.entryLimit(name)) { hash.update(data: $0) }
+            return Data(hash.finalize())
+        }
+        let separate = ["manifest.json", "employees.jsonl"]
+        for name in separate {
+            guard try archiveDigest(name) == fileDigest(source.appendingPathComponent(name)) else { throw BackupError.notBackup }
+        }
+        guard try combined(files.filter { !separate.contains($0) }, digest: archiveDigest) == manifest.supportingDigest else {
+            throw BackupError.notBackup
         }
         // بعد إثبات تطابق أجزاء الملف نختبر مسار الاسترجاع نفسه مقابل بصمة كل الرواتب قبل الاختزال.
         try CompactPayrollBackup.read(in: source, manifest: manifest)

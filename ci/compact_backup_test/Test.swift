@@ -85,7 +85,7 @@ import CoreGraphics
         let bookData = try Data(contentsOf: OfficialBookFiles.file(book.id))
         let actor = BackupActor(modelContainer: destination)
         let (url, manifest) = try await BackupActor(modelContainer: source).export(settings: settings, progress: nil)
-        defer { try? FileManager.default.removeItem(at: url) }
+        defer { BackupFormat.removeExport(url) }
         precondition(manifest.version == 12 && manifest.dataVersion == 6 && manifest.employees == count)
         let folder = try await Restore.extractForRestore(url)
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -131,6 +131,22 @@ import CoreGraphics
         try rows.dropFirst(boundary + 1).write(to: rowsURL); try await rejectRestore()
         try rows.write(to: rowsURL)
 
+        let deductionURL = folder.appendingPathComponent("deductions.jsonl")
+        let goodDeductions = try Data(contentsOf: deductionURL)
+        let end = goodDeductions.firstIndex(of: 10)!
+        var deduction = try JSONDecoder().decode(BackupFormat.DeductionRecord.self, from: goodDeductions[..<end])
+        deduction.amount = (deduction.amount ?? 0) + 1
+        var changedDeductions = try encoder.encode(deduction)
+        changedDeductions.append(goodDeductions[end...])
+        try changedDeductions.write(to: deductionURL); try await rejectRestore()
+        try goodDeductions.write(to: deductionURL)
+        let pdfURL = OfficialBookFiles.file(book.id, in: folder.appendingPathComponent("books"))
+        try (bookData + Data("\n".utf8)).write(to: pdfURL); try await rejectRestore()
+        try bookData.write(to: pdfURL)
+        let settingsURL = folder.appendingPathComponent("settings.json")
+        let goodSettings = try Data(contentsOf: settingsURL)
+        try Data("{}".utf8).write(to: settingsURL); try await rejectRestore()
+        try goodSettings.write(to: settingsURL)
         // نبني نسخة قديمة كاملة من سجلات SwiftData الأصلية ثم نسترجعها عبر المسار المعتاد.
         let sizes = try BackupSizes.read(url)
         let archive = try Archive(url: url, accessMode: .read)
@@ -144,7 +160,7 @@ import CoreGraphics
         }
         try oldRows.write(to: rowsURL)
         var legacy = manifest
-        legacy.version = 6; legacy.contentVersion = nil; legacy.payrollDigest = nil
+        legacy.version = 6; legacy.contentVersion = nil; legacy.payrollDigest = nil; legacy.supportingDigest = nil
         try encoder.encode(legacy).write(to: manifestURL)
         let legacyURL = root.appendingPathComponent("legacy.zip")
         do {
@@ -160,6 +176,59 @@ import CoreGraphics
         precondition(oldRestored == original)
         let oldSizes = try BackupSizes.read(legacyURL)
         precondition(sizes.total < oldSizes.total)
-        print("Verified \(count) payroll and \(count) deduction rows, two months, duplicate/empty columns, independent totals, manual contract amount, PDF, legacy restore and four corruption classes. ZIP bytes old=\(oldSizes.total) compact=\(sizes.total); payroll bytes before ZIP old=\(oldRows.count) compact=\(rows.count + goodHeaders.count)")
+        print("Verified \(count) payroll and \(count) deduction rows, two months, duplicate/empty columns, independent totals, manual contract amount, PDF, legacy restore and corrupted hashes, amounts, headers, rows, PDFs and settings. ZIP bytes old=\(oldSizes.total) compact=\(sizes.total); payroll bytes before ZIP old=\(oldRows.count) compact=\(rows.count + goodHeaders.count)")
+        let saving = root.appendingPathComponent("Saved")
+        try FileManager.default.createDirectory(at: saving, withIntermediateDirectories: true)
+        let target = saving.appendingPathComponent(BackupFormat.fileName())
+        try FileManager.default.copyItem(at: legacyURL, to: target)
+        let previousBytes = try Data(contentsOf: target)
+        await rejected { try Restore.replaceVerifiedArchive(url, size: sizes.total + 1, manifest: manifest, at: target) }
+        let afterFailure = try Data(contentsOf: target)
+        precondition(afterFailure == previousBytes)
+        var incomplete = manifest; incomplete.months = []
+        await rejected { try Restore.replaceVerifiedArchive(url, size: sizes.total, manifest: incomplete, at: target) }
+        let afterRefusal = try Data(contentsOf: target)
+        precondition(afterRefusal == previousBytes)
+        try Restore.replaceVerifiedArchive(url, size: sizes.total, manifest: manifest, at: target)
+        let names = try FileManager.default.contentsOfDirectory(atPath: saving.path)
+        let candidateBytes = try Data(contentsOf: url), savedBytes = try Data(contentsOf: target)
+        precondition(names == [BackupFormat.fileName()] && savedBytes == candidateBytes)
+        print("Coordinated replacement preserves the existing ZIP on two failure paths and writes one verified file on success.")
+        try stressHeaders(root: root)
+    }
+
+    static func stressHeaders(root: URL) throws {
+        let dir = root.appendingPathComponent("two-payroll-months")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("employees.jsonl")
+        try Data().write(to: path)
+        let out = try FileHandle(forWritingTo: path)
+        var writer = CompactPayrollBackup.Writer()
+        let encoder = JSONEncoder()
+        let titles = (0..<100).map { "اختبار عمود " + String($0) }
+        let raw = try encoder.encode(PayrollColumnSnapshot(headers: titles, values: titles.map { _ in "" }))
+        var expectedUnits: [String: Int64] = [:]
+        let rows = 52_084
+        for i in 0..<rows {
+            let month = months[i % 2]
+            let units = i % 31 == 0 ? 0 : Int64(8 * (300_000 + i) + i % 8)
+            let net: Double? = i % 31 == 0 ? nil : Double(units) / 8
+            expectedUnits[month, default: 0] += units
+            let record = BackupFormat.EmployeeRecord(month: month, name: "اختبار " + String(i), rank: "", workplace: "", net: net, items: nil, details: nil, rawColumns: raw)
+            var line = try encoder.encode(writer.pack(record))
+            line.append(10); try out.write(contentsOf: line)
+        }
+        try out.close()
+        precondition(writer.headers.count == 1)
+        try encoder.encode(writer.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
+        let manifest = BackupFormat.Manifest(version: 12, createdAt: .now, months: months, employees: rows, deductions: 0, staff: 0,
+                                             contentVersion: 5, payrollDigest: writer.fingerprint.digest)
+        var actual: [String: Double] = [:]
+        try CompactPayrollBackup.read(in: dir, manifest: manifest) { i, row in
+            precondition(row.rawColumns == raw && row.name == "اختبار " + String(i))
+            actual[row.month, default: 0] += row.net ?? 0
+        }
+        precondition(actual == expectedUnits.mapValues { Double($0) / 8 })
+        print("Stress: 52,084 salary records across two months verified against independently summed eighth-dinar units.")
     }
 }

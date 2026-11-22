@@ -156,7 +156,7 @@ jobs:
             sleep 1
           done
           cat "$DATA/Documents/import-report.txt" | tee ci-output/bootstrap-recovery-report.txt
-          grep -q '^bootstrapRecovery=ok rows=600 legacyBackup=5' ci-output/bootstrap-recovery-report.txt
+          grep -q '^bootstrapRecovery=ok rows=600 compactBackup=12' ci-output/bootstrap-recovery-report.txt
           xcrun simctl terminate "$UDID" "$BUNDLE"
           rm -f "$DATA/Documents/import-report.txt"
 

@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     code = [
         backup[backup.index("nonisolated enum BackupFormat"):backup.index("/// القراءة والكتابة")],
         section(backup, "@ModelActor\nactor BackupActor", "\n}",) + "\n}",
-        "enum Restore {\n" + section(backup, "    nonisolated static func extractForRestore", "    private func open(") + "\n}",
+        "enum Restore {\n" + section(backup, "    nonisolated static func replaceVerifiedArchive", "    /// يسجل خط الأساس") + section(backup, "    nonisolated static func extractForRestore", "    private func open(") + "\n}",
         section(models, "/// شهر رواتب واحد", "/// يحفظ نتيجة"), section(models, "nonisolated enum MonthName", "extension PayrollMonth"),
         read("StaffModel").split("/// معلومات آخر استيراد")[0], read("ArabicText").split("enum Money")[0],
         section(accounts, "nonisolated struct SavedExecutionAccount", "    static func merge(") + "}\n",
