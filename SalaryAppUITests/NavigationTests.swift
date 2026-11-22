@@ -370,7 +370,10 @@ final class NavigationTests: XCTestCase {
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
                                                "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
         app.launch()
-        let result = element("resultCard")
+        // نتائج البحث المرحلية قد تبدأ باسم مشابه ترتيب كلماته مختلف.
+        let expectedName = "أحمد علي حسين الدليمي"
+        let result = app.buttons.matching(identifier: "resultCard")
+            .matching(NSPredicate(format: "label CONTAINS %@", expectedName)).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 20))
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: result)
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
@@ -383,7 +386,7 @@ final class NavigationTests: XCTestCase {
         deductionAction.tap()
         let selectedPerson = element("deductionSelectedPerson")
         XCTAssertTrue(selectedPerson.waitForExistence(timeout: 10))
-        XCTAssertTrue(selectedPerson.label.contains("أحمد علي حسين الدليمي"))
+        XCTAssertTrue(selectedPerson.label.contains(expectedName), selectedPerson.label)
         app.buttons["إغلاق"].tap()
         // افحص فتح القسيمة من نتيجة البحث نفسها بعد إغلاق كشف الاستقطاعات.
         guard XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: result)], timeout: 10) == .completed else {
