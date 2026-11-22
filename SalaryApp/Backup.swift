@@ -96,7 +96,7 @@ nonisolated enum BackupFormat {
 }
 
 enum BackupError: LocalizedError {
-    case notBackup, unavailableArchive, newerVersion, folderUnavailable, noFolder, emptyArchive, emptyData, emptyRestore, dataLossRisk
+    case notBackup, unavailableArchive, newerVersion, folderUnavailable, noFolder, emptyArchive, emptyData, emptyRestore, dataLossRisk, sourceChanged
     var errorDescription: String? {
         switch self {
         case .notBackup: tr("الملف ليس نسخة احتياطية من تطبيق الرواتب.", "This file isn't a payroll app backup.")
@@ -107,6 +107,7 @@ enum BackupError: LocalizedError {
         case .emptyArchive: tr("النسخة الناتجة فارغة؛ لم يُستبدل الملف السابق.", "The new backup is empty; the previous file was preserved.")
         case .emptyData: tr("لا توجد بيانات محفوظة للنسخ؛ لم يُستبدل ملف النسخة السابقة.", "There is no saved data to back up; the previous backup was preserved.")
         case .emptyRestore: tr("النسخة المختارة لا تحتوي بيانات؛ لم تُستبدل بيانات التطبيق.", "The selected backup contains no data; app data was preserved.")
+        case .sourceChanged: tr("تغيّرت البيانات أثناء تجهيز النسخة. أعد النسخ بعد اكتمال التعديلات.", "The data changed while preparing the backup. Retry once the changes are complete.")
         case .dataLossRisk: tr("النسخة السابقة تحتوي بيانات غير موجودة الآن. لم تُستبدل؛ استرجع البيانات أولاً أو احفظ النسخة الجديدة في مجلد آخر.", "The previous backup contains data missing from this app. It was preserved; restore first or save the new backup in another folder.")
         }
     }
@@ -661,6 +662,8 @@ final class BackupManager {
     // MARK: - إنشاء نسخة
 
     private func makeBackup(title: String) async throws -> (URL, BackupFormat.Manifest) {
+        let revision = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let staffRevision = StaffImportState.shared.version
         let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
@@ -674,6 +677,11 @@ final class BackupManager {
         let result = try await Task.detached(priority: .userInitiated) {
             try await BackupActor(modelContainer: container).export(settings: settings, progress: sink)
         }.value
+        guard revision == UserDefaults.standard.object(forKey: Self.changedKey) as? Date,
+              staffRevision == StaffImportState.shared.version, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
+            BackupFormat.removeExport(result.0)
+            throw BackupError.sourceChanged
+        }
         // حاوية جديدة فارغة بعد إعادة تثبيت التطبيق لا يجوز أن تمحو آخر نسخة صالحة.
         guard result.1.hasData else {
             BackupFormat.removeExport(result.0)

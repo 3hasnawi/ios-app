@@ -185,6 +185,12 @@ import CoreGraphics
         try Data("{}".utf8).write(to: settingsURL); try await rejectRestore()
         try goodSettings.write(to: settingsURL)
         // نبني نسخة قديمة كاملة من سجلات SwiftData الأصلية ثم نسترجعها عبر المسار المعتاد.
+        let firstBytes = try Data(contentsOf: url)
+        let (otherCandidate, _) = try await BackupActor(modelContainer: source).export(settings: settings, progress: nil)
+        precondition(url != otherCandidate && url.lastPathComponent == otherCandidate.lastPathComponent)
+        BackupFormat.removeExport(otherCandidate)
+        let keptBytes = try Data(contentsOf: url)
+        precondition(keptBytes == firstBytes && !FileManager.default.fileExists(atPath: otherCandidate.path))
         let sizes = try BackupSizes.read(url)
         let archive = try Archive(url: url, accessMode: .read)
         let files = try CheckedArchive.Index(archive).entries.map(\.path)
