@@ -13,20 +13,24 @@ nonisolated struct RefundCSVRecovery: Sendable {
         let legacyPrefix = EmployeeRefund.legacyReason + " - "
         var common: [String]?, payments: [EmployeeRefund.Payment] = []
         var seen = Set<String>(), references = Set<String>()
+        var remainingBytes = 64 * 1024 * 1024
         for url in files {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let text = try String(contentsOf: url, encoding: .utf8)
-            let lines = text.split(whereSeparator: \.isNewline)
-            guard lines.count > 1, let header = lines.first,
-                  header.trimmingPrefix("\u{FEFF}") == TransferRules.csvHeader else {
+            let data = try BoundedFile.read(url, limit: remainingBytes)
+            remainingBytes -= data.count
+            guard let text = String(data: data, encoding: .utf8) else { throw invalid }
+            var lines = text.lazy.split(whereSeparator: \.isNewline).makeIterator()
+            guard let header = lines.next(), String(header).trimmingPrefix("\u{FEFF}") == TransferRules.csvHeader else {
                 throw EmployeeRefund.error("الملف «" + url.lastPathComponent + "» لا يحتوي جدول CSV لإعادة المبالغ صدّره التطبيق.",
                                            "No exported refund CSV table in " + url.lastPathComponent)
             }
-            for (index, line) in lines.dropFirst().enumerated() {
-                let location = url.lastPathComponent + " — " + tr("السطر ", "line ") + String(index + 2)
-
-                let f = line.components(separatedBy: "|")
+            var number = 1
+            while let line = lines.next() {
+                try Task.checkCancellation()
+                number += 1
+                let location = url.lastPathComponent + " — " + tr("السطر ", "line ") + String(number)
+                let f = line.split(separator: "|", maxSplits: 11, omittingEmptySubsequences: false).map(String.init)
                 guard f.count == 11, f[0].hasPrefix(f[1]), f[5] == "IQD", f[10] == "SLEV",
                       f[9] == EmployeeRefund.remittanceInformation || f[9] == EmployeeRefund.legacyReason || f[9].hasPrefix(legacyPrefix),
                       TransferRules.safeField(f[2]), TransferRules.safeField(f[7]), TransferRules.safeField(f[9]),
@@ -57,6 +61,7 @@ nonisolated struct RefundCSVRecovery: Sendable {
                 }
                 payments.append(payment)
             }
+            guard number > 1 else { throw invalid }
         }
         let format = DateFormatter()
         format.locale = Locale(identifier: "en_US_POSIX")

@@ -16,3 +16,8 @@ struct TransferLetterCustomizationStore: Decodable {
     var common: Fields
 }
 enum PDFWork { static func run<T>(_ body: @escaping () throws -> T) async throws -> T { try body() } }
+// حارس العرض للنوافذ المعزولة في اختبار شاشة الإعادات.
+@MainActor final class AppLock {
+    static let shared = AppLock()
+    let isLocked = false, pendingForegroundCheck = false
+}

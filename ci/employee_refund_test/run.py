@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory() as tmp:
                    + (app / "PDFText.swift").read_text().split("/// تجهيز ملفات التصدير")[0])
     report.write_text(report_code.replace("import UIKit", "#if os(macOS)\nimport AppKit\n#else\nimport UIKit\n#endif"))
     mac = [str(renderer), str(tests / "MacPDF.swift"), str(root / "ci/report_layout_test/UIKitPreviewStubs.swift")]
-    files = [str(report), str(app / "RefundCSVRecovery.swift"), str(app / "TransferHeaderFont.swift"), str(app / "ReportTableStyle.swift"), str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
+    files = [str(report), str(app / "BoundedFile.swift"), str(app / "RefundCSVRecovery.swift"), str(app / "TransferHeaderFont.swift"), str(app / "ReportTableStyle.swift"), str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
     subprocess.run(["swiftc", "-o", str(work / "test"), *mac, *files, str(tests / "main.swift")], check=True)
     subprocess.run([str(work / "test")], cwd=root, check=True)
     model = section("Models.swift", "@Model\nfinal class Employee", "    var items: [String: Double]")
