@@ -187,7 +187,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup, reports, specialReports
+    case audit, salary, deductions, backup, reports, specialReports, payrollBreakdown
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
@@ -283,6 +283,24 @@ struct HomeDashboard: View {
         .navigationDestination(for: HomeRoute.self) { route in
             switch route {
             case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
+            case .payrollBreakdown:
+                List {
+                    if let current, let overview {
+                        Section(current.name) {
+                            LabeledContent(tr("صافي الرواتب", "Net payroll"), value: Money.format(overview.netTotal))
+                            ForEach(overview.categories, id: \.title) { category in
+                                LabeledContent {
+                                    Text(Money.format(category.total)).monospacedDigit()
+                                } label: {
+                                    Text(category.title)
+                                    Text(tr("\(Num.format(category.count)) منتسب", "\(category.count) people")).font(.caption)
+                                }
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView(tr("لا تتوفر تفاصيل الرواتب", "Payroll breakdown unavailable"), systemImage: "banknote")
+                    }
+                }.navigationTitle(tr("تفصيل صافي الرواتب", "Net payroll breakdown")).navigationBarTitleDisplayMode(.inline)
             case .specialReports:
                 if let current { ScrollView { workShortcuts(current, showAll: true).padding() }.navigationTitle(tr("الكشوف المثبّتة", "Pinned reports")) }
             case .entityAlert(let kind): DeductionAuditView(months: months.map(\.name), to: current?.name ?? "", initialEntityKind: kind)

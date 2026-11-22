@@ -423,9 +423,11 @@ struct ReportsView: View {
             }
         if ledger?.openingImported == true {
             let due = SalaryTrust.filtered(entries, month: 0, status: .unfinished, search: "")
+            let people = Set(due.map { ArabicText.matchKey($0.name) }).count
+            let remaining = Money.format(Double(SalaryTrust.outstanding(due)))
             Button { open(.salaryTrust(.unfinished)) } label: {
-                Label(tr("غير المصروفة · \(Num.format(Set(due.map { ArabicText.matchKey($0.name) }).count)) منتسب · \(Money.format(Double(SalaryTrust.outstanding(due))))",
-                         "Outstanding · \(Set(due.map { ArabicText.matchKey($0.name) }).count) people · \(Money.format(Double(SalaryTrust.outstanding(due))))"), systemImage: "tray.full")
+                Label(tr("غير المصروفة · \(Num.format(people)) منتسب · \(remaining)",
+                         "Outstanding · \(people) people · \(remaining)"), systemImage: "tray.full")
                     .font(.subheadline)
             }.padding(.horizontal)
         }

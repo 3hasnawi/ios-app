@@ -78,9 +78,9 @@ struct HomeAccounting<Shortcuts: View>: View {
     var body: some View {
         VStack(spacing: 14) {
             netCard
-                .onTapGesture { if showDeductions { openEntities() } else { openRoute(.salary) } }
+                .onTapGesture { if showDeductions { openEntities() } else { openRoute(.payrollBreakdown) } }
                 .accessibilityAddTraits(.isButton)
-                .accessibilityAction { if showDeductions { openEntities() } else { openRoute(.salary) } }
+                .accessibilityAction { if showDeductions { openEntities() } else { openRoute(.payrollBreakdown) } }
                 .contextMenu {
                     Button(tr("مجموع الاستقطاعات", "Total deductions")) { showDeductions = true }
                     Button(tr("صافي الرواتب", "Net payroll")) { showDeductions = false }

@@ -172,7 +172,7 @@ struct UnifiedSearchView: View {
                 } else if loadedKey != queryKey {
                     Section { ProgressView().frame(maxWidth: .infinity) }
                 } else if loadedKey == queryKey && smartResults.isEmpty && !completingSearch {
-                    if matchingReports.isEmpty && !matchesRefund {
+                    if (workMonth == nil || matchingReports.isEmpty) && !matchesRefund {
                         Section { ContentUnavailableView.search(text: trimmed).listRowBackground(Color.clear) }
                     }
                 } else {
@@ -234,11 +234,15 @@ struct UnifiedSearchView: View {
                                             .background(Color(.secondarySystemGroupedBackground))
                                     }
                                     if let summary = person.hit.trust {
-                                        Button { trustTarget = person.hit.key } label: {
-                                            TrustSearchSummaryView(summary: summary)
+                                        VStack(alignment: .leading) {
+                                            Button { trustTarget = person.hit.key } label: {
+                                                TrustSearchSummaryView(summary: summary)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityIdentifier("searchPersonTrust")
                                         }
-                                        .buttonStyle(.plain).foregroundStyle(Color.accentColor)
-                                        .accessibilityIdentifier("searchPersonTrust")
+                                        .accessibilityElement(children: .contain)
+                                        .accessibilityIdentifier("searchTrustSummary")
                                     }
                                 }
                             }
