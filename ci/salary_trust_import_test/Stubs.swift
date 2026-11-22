@@ -8,7 +8,7 @@ enum AppSettings {
 struct ProgressSink:Sendable { func callAsFunction(_ value:Double) {} }
 enum Color { case indigo,blue,orange,green,teal,gray }
 struct SavedExecutionAccount { let entity:String,iban:String,branch:String,swift:String }
-enum BackupError:Error { case notBackup,dataLossRisk }
+enum BackupError:Error { case notBackup,dataLossRisk,newerVersion }
 struct TransferLetterCustomizationStore:Codable { static let settingsKey="test-unified";var hasUnifiedTemplates=false }
 enum CustomTransferTemplate { static let settingsKey="test-custom" }
 enum FundingApproval { static let settingsKey="test-funding" }

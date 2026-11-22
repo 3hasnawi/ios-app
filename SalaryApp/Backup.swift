@@ -11,9 +11,9 @@ import CryptoKit
 /// ونسخ تلقائي بعد كل استيراد إلى مجلد يُختار مرة واحدة. نسخة واحدة فقط باسم ثابت: الجديدة تستبدل السابقة.
 nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
-    static let version = 11
+    static let version = 12
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 }
     static func exportVersion(for settings: [String: Data]) -> Int {
         // تمنع الصيغة الجديدة إسقاط تاريخ الصرف أو تعديل دفتر الملف بتطبيق قديم.
         if let raw = settings[SalaryTrust.settingsKey],
@@ -29,9 +29,9 @@ nonisolated enum BackupFormat {
     static func validateTrust(_ ledger: SalaryTrust.Ledger?, manifest: Manifest) throws {
         if let ledger {
             guard manifest.salaryTrustEntries == nil || manifest.salaryTrustEntries == ledger.entries.count,
-                  ledger.version < 2 || manifest.version == 11,
-                  manifest.version != 11 || (ledger.version == 2 && manifest.salaryTrustEntries == ledger.entries.count) else { throw BackupError.notBackup }
-        } else if manifest.version == 11 || (manifest.salaryTrustEntries ?? 0) > 0 { throw BackupError.notBackup }
+                  ledger.version < 2 || manifest.dataVersion == 11,
+                  manifest.dataVersion != 11 || (ledger.version == 2 && manifest.salaryTrustEntries == ledger.entries.count) else { throw BackupError.notBackup }
+        } else if manifest.dataVersion == 11 || (manifest.salaryTrustEntries ?? 0) > 0 { throw BackupError.notBackup }
     }
     static let prefix = "نسخة الرواتب"
 
@@ -45,6 +45,15 @@ nonisolated enum BackupFormat {
         var accounts: Int?
         var books: Int?
         var salaryTrustEntries: Int? = nil
+        var contentVersion: Int? = nil
+        var payrollDigest: Data? = nil
+        var dataVersion: Int { version == 12 ? contentVersion ?? -1 : version }
+        func validateFormat() throws {
+            guard BackupFormat.supports(version) else { throw BackupError.newerVersion }
+            if version == 12 {
+                guard [5, 6, 8, 9, 10, 11].contains(dataVersion), payrollDigest?.count == 32 else { throw BackupError.notBackup }
+            }
+        }
         var hasData: Bool {
             !months.isEmpty || employees > 0 || deductions > 0 || staff > 0 ||
             (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0
@@ -52,7 +61,7 @@ nonisolated enum BackupFormat {
     }
 
     struct MonthRecord: Codable { var name: String; var importedAt: Date; var employeeCount: Int; var deductionCount: Int; var summary: Data? }
-    struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data?; var details: Data?; var rawColumns: Data? }
+    struct EmployeeRecord: Codable { var month: String; var name: String; var rank: String; var workplace: String; var net: Double?; var items: Data?; var details: Data?; var rawColumns: Data?; var headerIndex: Int? = nil; var headerOffset: Int? = nil }
     struct DeductionRecord: Codable { var month: String; var name: String; var title: String; var amount: Double?; var note: String; var rank: String }
     struct StaffRecord: Codable { var name: String; var mother: String; var stat: String; var unified: String; var rank: String; var status: String; var workplace: String; var details: Data }
     struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String; var localAccount: String? = nil }
@@ -128,7 +137,7 @@ actor BackupActor {
             BackupFormat.MonthRecord(name: $0.name, importedAt: $0.importedAt, employeeCount: $0.employeeCount,
                                      deductionCount: $0.deductionCount, summary: $0.itemSummaryData)
         }, count: months.count, from: 0, to: 0.02)
-        func writeModels<T: PersistentModel, R: Encodable>(_ type: T.Type, file: String, from: Double, to: Double, convert: (T) -> R) throws -> Int {
+        func writeModels<T: PersistentModel, R: Encodable>(_ type: T.Type, file: String, from: Double, to: Double, convert: (T) throws -> R) throws -> Int {
             let count = try modelContext.fetchCount(FetchDescriptor<T>())
             let target = dir.appendingPathComponent(file)
             _ = fm.createFile(atPath: target.path, contents: nil)
@@ -154,8 +163,9 @@ actor BackupActor {
             }
             return count
         }
+        var payroll = CompactPayrollBackup.Writer()
         let employeeCount = try writeModels(Employee.self, file: "employees.jsonl", from: 0.02, to: 0.4) {
-            BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData, details: $0.detailsData, rawColumns: $0.rawColumnsData)
+            try payroll.pack(BackupFormat.EmployeeRecord(month: $0.month, name: $0.name, rank: $0.rank, workplace: $0.workplace, net: $0.netSalary, items: $0.itemsData, details: $0.detailsData, rawColumns: $0.rawColumnsData))
         }
         let deductionCount = try writeModels(Deduction.self, file: "deductions.jsonl", from: 0.4, to: 0.5) {
             BackupFormat.DeductionRecord(month: $0.month, name: $0.employeeName, title: $0.title, amount: $0.amount, note: $0.note, rank: $0.rank)
@@ -194,22 +204,25 @@ actor BackupActor {
             if !data.isEmpty { try JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data).validateUnifiedTemplates() }
         }
         let formatVersion = BackupFormat.exportVersion(for: settings)
-        let manifest = BackupFormat.Manifest(version: formatVersion, createdAt: .now,
+        let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
-                                             accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount)
+                                             accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount,
+                                             contentVersion: formatVersion, payrollDigest: payroll.fingerprint.digest)
+        try JSONEncoder().encode(payroll.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
         try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
 
         let out = fm.temporaryDirectory.appendingPathComponent(BackupFormat.fileName())
         try? fm.removeItem(at: out)
-        let archive = try Archive(url: out, accessMode: .create)
-        for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl"] {
-            try archive.addEntry(with: name, relativeTo: dir, compressionMethod: .deflate)
-        }
-        try archive.addEntry(with: "books/index.json", relativeTo: dir, compressionMethod: .deflate)
-        for book in books {
-            try archive.addEntry(with: "books/\(book.id.uuidString).pdf", relativeTo: dir, compressionMethod: .deflate)
+        let files = ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", CompactPayrollBackup.schemaFile,
+                     "deductions.jsonl", "staff.jsonl", "accounts.jsonl", "books/index.json"]
+            + books.map { "books/\($0.id.uuidString).pdf" }
+        do {
+            try BackupArchiveVerification.create(at: out, source: dir, files: files, manifest: manifest)
+        } catch {
+            try? fm.removeItem(at: out)
+            throw error
         }
         progress?(1)
         return (out, manifest)
@@ -247,10 +260,10 @@ actor BackupActor {
         }
         // نفحص النسخة كاملة قبل لمس البيانات الحالية.
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-        guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
+        try manifest.validateFormat()
         guard manifest.hasData else { throw BackupError.emptyRestore }
         let months = try records("months.jsonl", BackupFormat.MonthRecord.self)
-        let employees = try validate("employees.jsonl", BackupFormat.EmployeeRecord.self)
+        let employeeDigest = try CompactPayrollBackup.read(in: folder, manifest: manifest)
         let deductions = try validate("deductions.jsonl", BackupFormat.DeductionRecord.self)
         let staff = try validate("staff.jsonl", BackupFormat.StaffRecord.self)
         let accounts: [BackupFormat.AccountRecord]
@@ -260,32 +273,33 @@ actor BackupActor {
             accounts = []
         }
         guard months.map(\.name).sorted() == manifest.months.sorted(),
-              employees.count == manifest.employees, deductions.count == manifest.deductions,
+              deductions.count == manifest.deductions,
               staff.count == manifest.staff, manifest.version < 2 || manifest.accounts != nil,
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
+        if manifest.version == 12, manifest.dataVersion != BackupFormat.exportVersion(for: settings) { throw BackupError.notBackup }
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         if let serialized = settings[FundingApproval.settingsKey] {
-            guard (manifest.version == 8 || manifest.version == 9 || manifest.version == 10 || manifest.version == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.dataVersion == 8 || manifest.dataVersion == 9 || manifest.dataVersion == 10 || manifest.dataVersion == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
-        } else if manifest.version == 8 { throw BackupError.notBackup }
+        } else if manifest.dataVersion == 8 { throw BackupError.notBackup }
         if let serialized = settings[CustomTransferTemplate.settingsKey] {
-            guard (manifest.version == 9 || manifest.version == 10 || manifest.version == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard (manifest.dataVersion == 9 || manifest.dataVersion == 10 || manifest.dataVersion == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try CustomTransferTemplate.decode(data)
-        } else if manifest.version == 9 { throw BackupError.notBackup }
+        } else if manifest.dataVersion == 9 { throw BackupError.notBackup }
         if let serialized = settings[TransferLetterCustomizationStore.settingsKey] {
             guard let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             let templates = try (data.isEmpty ? TransferLetterCustomizationStore() : JSONDecoder().decode(TransferLetterCustomizationStore.self, from: data))
             try templates.validateUnifiedTemplates()
-            if templates.hasUnifiedTemplates && manifest.version < 10 { throw BackupError.notBackup }
-            if !templates.hasUnifiedTemplates && manifest.version == 10 { throw BackupError.notBackup }
-        } else if manifest.version == 10 { throw BackupError.notBackup }
+            if templates.hasUnifiedTemplates && manifest.dataVersion < 10 { throw BackupError.notBackup }
+            if !templates.hasUnifiedTemplates && manifest.dataVersion == 10 { throw BackupError.notBackup }
+        } else if manifest.dataVersion == 10 { throw BackupError.notBackup }
         if settings[ContractOverrides.settingsKey] == nil,
            let current = try ContractOverrides.currentData(), !(try ContractOverrides.decode(current)).isEmpty {
             throw NSError(domain: "ContractOverride", code: 3, userInfo: [NSLocalizedDescriptionKey: tr("النسخة المختارة لا تحتوي تعديلات العقود الموجودة على الجهاز. احفظ نسخة شاملة وراجع التعديلات قبل الاسترجاع.", "The selected backup does not contain this device’s contract adjustments. Save a full backup and review the adjustments before restoring.")])
         }
         if let serialized = settings[ContractOverrides.settingsKey] {
-            guard manifest.version >= 6, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
+            guard manifest.dataVersion >= 6, let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try ContractOverrides.decode(data)
         }
         if settings[SalaryTrust.settingsKey] == nil,
@@ -369,15 +383,16 @@ actor BackupActor {
             m.itemSummaryData = r.summary
             destination.insert(m)
         }
-        try insertRecords("employees.jsonl", BackupFormat.EmployeeRecord.self, expected: employees) { i, r in
+        let insertedDigest = try CompactPayrollBackup.read(in: folder, manifest: manifest) { i, r in
             let e = Employee(month: r.month, name: r.name, rank: r.rank, workplace: r.workplace, netSalary: r.net)
             e.itemsData = r.items
             e.detailsData = r.details
             e.rawColumnsData = r.rawColumns
             destination.insert(e)
             if recoverable && i % 256 == 255 { try flush() }
-            if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, employees.count))) }
+            if i % 1000 == 0 { progress?(0.6 * Double(i) / Double(max(1, manifest.employees))) }
         }
+        guard insertedDigest == employeeDigest else { throw BackupError.notBackup }
         try insertRecords("deductions.jsonl", BackupFormat.DeductionRecord.self, expected: deductions) { i, r in
             destination.insert(Deduction(month: r.month, employeeName: r.name, title: r.title, amount: r.amount, note: r.note, rank: r.rank))
             if recoverable && i % 256 == 255 { try flush() }
@@ -431,6 +446,22 @@ final class BackupManager {
     private static let folderKey = "autoBackupFolder"
     static let subfolder = "نسخ الرواتب"
     private static let lastKey = "autoBackupLast"
+    private static let sizesKey = "backupSectionSizes"
+    private static let previousSizesKey = "previousBackupSectionSizes"
+    private static let previousSizeKey = "previousBackupFileSize"
+    var sizes: BackupSizes? { Self.savedSizes(Self.sizesKey) }
+    var previousSizes: BackupSizes? { Self.savedSizes(Self.previousSizesKey) }
+    var previousSize: Int64 { Int64(UserDefaults.standard.integer(forKey: Self.previousSizeKey)) }
+    private static func savedSizes(_ key: String) -> BackupSizes? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(BackupSizes.self, from: $0) }
+    }
+    private static func recordSizes(_ sizes: BackupSizes) {
+        let defaults = UserDefaults.standard
+        defaults.set(defaults.data(forKey: sizesKey), forKey: previousSizesKey)
+        defaults.set(defaults.integer(forKey: lastSizeKey), forKey: previousSizeKey)
+        defaults.set(try? JSONEncoder().encode(sizes), forKey: sizesKey)
+        defaults.set(Int(sizes.total), forKey: lastSizeKey)
+    }
     private static let lastSizeKey = "autoBackupLastSize"
     private static let lastPlaceKey = "autoBackupLastPlace"
     private static let errorKey = "autoBackupLastError"
@@ -545,7 +576,7 @@ final class BackupManager {
             do {
                 let (url, _) = try await makeBackup(title: tr("تجهيز النسخة", "Preparing backup"))
                 defer { try? FileManager.default.removeItem(at: url) }
-                let size = try Self.archiveSize(url)
+                let sizes = try await Task.detached { try BackupSizes.read(url) }.value
                 await FilePicker.waitUntilSettled()
                 guard let saved = await FilePicker.exportBackup(url) else { return }
                 let defaults = UserDefaults.standard
@@ -555,7 +586,7 @@ final class BackupManager {
                 if !BackupServerConfig.ready {
                     defaults.set(Date(), forKey: Self.lastKey)
                     defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
-                    defaults.set(Int(size), forKey: Self.lastSizeKey)
+                    Self.recordSizes(sizes)
                     defaults.set(Self.placeName(saved.deletingLastPathComponent()), forKey: Self.lastPlaceKey)
                     defaults.removeObject(forKey: Self.errorKey)
                     defaults.removeObject(forKey: Self.errorAtKey)
@@ -809,9 +840,10 @@ final class BackupManager {
             let (url, manifest) = try await makeBackup(title: tr("نسخ احتياطي", "Backing up"))
             defer { try? FileManager.default.removeItem(at: url) }
             try Self.checkSafetyManifest(manifest)
-            let preparedSize = try Self.archiveSize(url)
+            let sizes = try await Task.detached { try BackupSizes.read(url) }.value
+            let preparedSize = sizes.total
             let scope = resolveBookmark(Self.folderKey) ?? file
-            let (size, refreshedBookmark) = try await Task.detached(priority: .utility) { () throws -> (Int64, Data?) in
+            let (_, refreshedBookmark) = try await Task.detached(priority: .utility) { () throws -> (Int64, Data?) in
                 let granted = scope.startAccessingSecurityScopedResource()
                 defer { if granted { scope.stopAccessingSecurityScopedResource() } }
                 try Self.checkReplacement(manifest, at: file)
@@ -846,7 +878,7 @@ final class BackupManager {
             let defaults = UserDefaults.standard
             defaults.set(Date(), forKey: Self.lastKey)
             defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
-            defaults.set(Int(size), forKey: Self.lastSizeKey)
+            Self.recordSizes(sizes)
             defaults.set(place, forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
             integrityWarning = false
@@ -936,6 +968,7 @@ final class BackupManager {
             defaults.removeObject(forKey: BackupServerConfig.firstChoiceKey)
             defaults.set(Date(), forKey: Self.lastKey)
             defaults.set(changeWatermark ?? Date.distantPast, forKey: Self.acknowledgedChangeKey)
+            defaults.removeObject(forKey: Self.sizesKey)
             defaults.set(Int(size), forKey: Self.lastSizeKey)
             defaults.set(tr("السيرفر المحلي", "Local server"), forKey: Self.lastPlaceKey)
             Self.rememberSafetyManifest(manifest)
@@ -1107,15 +1140,16 @@ final class BackupManager {
             guard let metadata = entries["manifest.json"] else { throw BackupError.notBackup }
             let data = try CheckedArchive.data(metadata, from: archive, limit: 1_000_000)
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
-            guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
+            try manifest.validateFormat()
             guard manifest.hasData else { throw BackupError.emptyRestore }
             try data.write(to: dir.appendingPathComponent("manifest.json"))
             var required = ["settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"]
+            if manifest.version == 12 { required.append(CompactPayrollBackup.schemaFile) }
             if manifest.version >= 2 || entries["accounts.jsonl"] != nil { required.append("accounts.jsonl") }
             for name in required {
                 guard let entry = entries[name] else { throw BackupError.notBackup }
                 try CheckedArchive.write(entry, from: archive, to: dir.appendingPathComponent(name),
-                                         limit: name == "settings.json" ? 64_000_000 : .max)
+                                         limit: name == "settings.json" ? 64_000_000 : name == CompactPayrollBackup.schemaFile ? UInt64(CompactPayrollBackup.schemaFileLimit) : .max)
             }
             if manifest.version >= 3 {
                 guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
@@ -1145,7 +1179,7 @@ final class BackupManager {
         do {
             let folder = try await Self.extractForRestore(url)
             let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-            guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
+            try manifest.validateFormat()
             if manifest.version >= 2, !FileManager.default.fileExists(atPath: folder.appendingPathComponent("accounts.jsonl").path) {
                 throw BackupError.notBackup
             }
@@ -1307,7 +1341,7 @@ final class BackupManager {
             let start = Date()
             let (url, testManifest) = try await makeBackup(title: "test")
             #if targetEnvironment(simulator)
-            guard testManifest.version == 10 || testManifest.version == 11 else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
+            guard testManifest.version == 12 && [10, 11].contains(testManifest.dataVersion) else { LaunchOptions.writeReport("backup=failed unifiedTemplateVersion=failed"); return }
             #endif
             let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
             // وقت السيرفر مستقل عن تاريخ الملف، ويختفي عند إلغاء الاختيار أو فتح ملف محلي.
@@ -1473,6 +1507,23 @@ struct BackupView: View {
                         "Before updating through AppStar, confirm a successful backup today. If the installer reinstalls the app, iOS may lose local data; restore it from the backup."))
             }
 
+            if let sizes = manager.sizes {
+                Section {
+                    DisclosureGroup(tr("تفصيل حجم النسخة", "Backup size breakdown")) {
+                        let previous = manager.previousSizes
+                        sizeRow(tr("الرواتب", "Payroll"), sizes.payroll, previous?.payroll)
+                        sizeRow(tr("الاستقطاعات", "Deductions"), sizes.deductions, previous?.deductions)
+                        sizeRow(tr("الملاك", "Staff"), sizes.staff, previous?.staff)
+                        sizeRow(tr("الكتب والمرفقات", "Archived documents"), sizes.books, previous?.books)
+                        sizeRow(tr("بقية البيانات وبنية الملف", "Other data and ZIP overhead"), sizes.other, previous?.other)
+                        sizeRow(tr("المجموع", "Total"), sizes.total, manager.previousSize > 0 ? manager.previousSize : nil)
+                    }
+                    .accessibilityIdentifier("backupSizeBreakdown")
+                } footer: {
+                    Text(tr("الأحجام بعد الضغط. يظهر الفرق عند توفر قياس لنسخة سابقة.", "Compressed sizes. Changes appear when a previous measurement is available."))
+                }
+            }
+
             Section {
                 Menu {
                     ForEach(["iCloud Drive", "OneDrive", "Google Drive"], id: \.self) { provider in
@@ -1569,6 +1620,20 @@ struct BackupView: View {
         } message: {
             Text(tr("ستظهر نافذة «حفظ» بعد تجهيز النسخة. اختر \(chosenProvider) والمجلد المناسب. لا يستبدل التصدير النسخ السابقة إلا إذا اخترت ذلك في تطبيق الملفات.",
                     "The Save window opens after preparing the backup. Choose \(chosenProvider) and a folder. Existing backups are replaced only if you choose to do so in Files."))
+        }
+    }
+
+    private func sizeRow(_ title: String, _ bytes: Int64, _ previous: Int64?) -> some View {
+        LabeledContent(title) {
+            VStack(alignment: .trailing) {
+                Text(Num.bytes(bytes))
+                if let previous {
+                    let delta = bytes - previous
+                    Text(delta == 0 ? tr("دون تغيير", "Unchanged")
+                         : (delta > 0 ? tr("زيادة ", "Up ") : tr("انخفاض ", "Down ")) + Num.bytes(abs(delta)))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

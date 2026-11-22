@@ -1,6 +1,6 @@
 import Foundation
 
-/// مكوّن تأسيسي للاختبار فقط؛ لا يُفعّل صيغة نسخ أو ترحيلاً تلقائياً.
+/// يفصل بايتات عناوين الأعمدة عن قيم السجل.
 /// تحفظ أجزاء JSON الأصلية حتى الأعمدة المكررة والحقول المستقبلية مهما كان ترتيب الخصائص.
 enum SharedPayrollColumns {
     struct Parts {
@@ -11,6 +11,13 @@ enum SharedPayrollColumns {
     }
 
     static func split(_ raw: Data, digest: (Data) -> String) -> Parts? {
+        guard let bytes = headerParts(raw) else { return nil }
+        let key = digest(bytes.prefix)
+        guard key.count == 64, key.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...70).contains($0.value) }) else { return nil }
+        return Parts(schemaID: key, prefix: bytes.prefix, before: bytes.before, tail: bytes.tail)
+    }
+
+    static func headerParts(_ raw: Data) -> (prefix: Data, before: Data, tail: Data)? {
         guard let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
               let headers = object["headers"] as? [String],
               let values = object["values"] as? [String], headers.count == values.count else { return nil }
@@ -48,9 +55,7 @@ enum SharedPayrollColumns {
                         } else if bytes[next] == 0x5D {
                             next += 1
                             let prefix = Data(bytes[start..<next])
-                            let key = digest(prefix)
-                            guard key.count == 64, key.unicodeScalars.allSatisfy({ (48...57).contains($0.value) || (65...70).contains($0.value) }) else { return nil }
-                            return Parts(schemaID: key, prefix: prefix, before: Data(bytes[..<start]), tail: Data(bytes[next...]))
+                            return (prefix, Data(bytes[..<start]), Data(bytes[next...]))
                         } else { next += 1 }
                     }
                     return nil

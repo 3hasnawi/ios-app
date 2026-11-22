@@ -49,7 +49,7 @@ nonisolated enum CheckedArchive {
         }
     }
 
-    private static func consume(_ entry: Entry, from archive: Archive, limit: UInt64, write: (Data) throws -> Void) throws {
+    static func consume(_ entry: Entry, from archive: Archive, limit: UInt64, write: (Data) throws -> Void) throws {
         guard entry.type == .file else { throw Failure.invalid }
         let expected = entry.uncompressedSize
         guard expected <= limit else { throw Failure.tooLarge }

@@ -90,6 +90,13 @@ jobs:
         if: ${{ inputs.large_backup }}
         timeout-minutes: 8
         run: '"$RUNNER_TEMP/backup-reader-test" --large'
+  compact-backup:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: SwiftData payroll archive migration and accounting round trip
+        run: python3 ci/compact_backup_test/run.py
   interface-types:
     runs-on: macos-26
     timeout-minutes: 12
