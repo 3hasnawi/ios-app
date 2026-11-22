@@ -31,6 +31,7 @@ struct OfficialBooksView: View {
     @State private var deleting: OfficialBook?
     @State private var error: String?
     @State private var showingImporter = false
+    @State private var readingPDF = false
     @State private var imported: ImportedBookDraft?
     /// الكتاب الذي يُستبدل ملفه (بالمسح أو من «الملفات») مع إبقاء معرّفه وارتباطاته.
     @State private var replacing: OfficialBook?
@@ -124,6 +125,8 @@ struct OfficialBooksView: View {
                 }
             }
         }
+        .disabled(readingPDF)
+        .overlay { if readingPDF { ProgressView() } }
         .searchable(text: $search, prompt: tr("ابحث عن كتاب أو جهة أو شهر", "Search documents, entities or months"))
         .navigationTitle(tr("الأرشيف", "Archive"))
         .navigationBarTitleDisplayMode(.inline)
@@ -145,15 +148,23 @@ struct OfficialBooksView: View {
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.pdf]) { result in
             let target = replacing
             replacing = nil
-            do {
-                let url = try result.get()
-                let access = url.startAccessingSecurityScopedResource()
-                defer { if access { url.stopAccessingSecurityScopedResource() } }
-                let data = try Data(contentsOf: url)
-                _ = try OfficialBookPDF.pageCount(data)
-                if let target { try store.replaceFile(target, pdf: data) }
-                else { imported = ImportedBookDraft(pdf: data, suggestedTitle: Self.meaningfulName(url.deletingPathExtension().lastPathComponent)) }
-            } catch { self.error = error.localizedDescription }
+            guard !readingPDF else { return }
+            readingPDF = true
+            Task { @MainActor in
+                defer { readingPDF = false }
+                do {
+                    let url = try result.get()
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        let access = url.startAccessingSecurityScopedResource()
+                        defer { if access { url.stopAccessingSecurityScopedResource() } }
+                        let data = try BoundedFile.read(url, limit: 60_000_000)
+                        _ = try OfficialBookPDF.pageCount(data)
+                        return data
+                    }.value
+                    if let target { try store.replaceFile(target, pdf: data) }
+                    else { imported = ImportedBookDraft(pdf: data, suggestedTitle: Self.meaningfulName(url.deletingPathExtension().lastPathComponent)) }
+                } catch { self.error = error.localizedDescription }
+            }
         }
         .sheet(item: $imported) { file in
             OfficialBookEditor(months: monthNames, initialMonth: selectedMonth.isEmpty ? (monthNames.contains(suggestedMonth) ? suggestedMonth : monthNames.first ?? "") : selectedMonth,

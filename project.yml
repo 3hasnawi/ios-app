@@ -6,7 +6,7 @@ options:
 packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
-    from: "0.9.19"
+    revision: "e7048f0569f0ba37df26f8357f560b9d25e9a284" # 0.9.21
 targets:
   SalaryApp:
     type: application

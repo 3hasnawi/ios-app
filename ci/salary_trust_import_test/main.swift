@@ -1,8 +1,31 @@
 import Foundation
+import ZIPFoundation
 func rejected(_ action:()throws->Void) {
     do { try action();fatalError("Unsafe input was accepted") } catch {}
 }
 let root=URL(fileURLWithPath:FileManager.default.currentDirectoryPath)
+let csv = root.appendingPathComponent("payroll.csv")
+let content = "\u{FEFF}Name_m;net\r\n\"مثال; اسم\";1234\r\n\"اسم \"\"ثان\"\"\";5678"
+try Data(content.utf8).write(to: csv)
+let parsedCSV = try ExcelImporter.load(url: csv)
+precondition(parsedCSV.employees.map(\.name) == ["مثال; اسم", "اسم \"ثان\""])
+precondition(parsedCSV.employees.map(\.netSalary) == [1234, 5678])
+let byteCount = content.utf8.count
+let bounded = try BoundedFile.read(csv, limit: byteCount)
+precondition(bounded == Data(content.utf8))
+rejected { _ = try BoundedFile.read(csv, limit: byteCount - 1) }
+let archive = try Archive(url: root.appendingPathComponent("ordinary.xlsx"), accessMode: .read)
+let parts = try CheckedArchive.Index(archive)
+let part = parts["xl/worksheets/sheet1.xml"]!
+let xml = try CheckedArchive.data(part, from: archive, limit: part.uncompressedSize)
+precondition(xml.count == Int(part.uncompressedSize))
+rejected { _ = try CheckedArchive.data(part, from: archive, limit: part.uncompressedSize - 1) }
+rejected { _ = try CheckedArchive.total([part, part], limit: part.uncompressedSize) }
+let output = root.appendingPathComponent("worksheet-copy.xml")
+try CheckedArchive.write(part, from: archive, to: output, limit: part.uncompressedSize)
+rejected { try CheckedArchive.write(part, from: archive, to: output, limit: part.uncompressedSize) }
+let savedXML = try Data(contentsOf: output)
+precondition(savedXML == xml)
 let ledger=try SalaryTrustSpreadsheet.read(root.appendingPathComponent("new.xlsx"))
 precondition(ledger.version==2 && ledger.entries.count==3)
 let paid=ledger.entries[0],unpaid=ledger.entries[1],review=ledger.entries[2]

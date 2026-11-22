@@ -58,9 +58,10 @@ enum FilePicker {
     }
 
     static func topController() -> UIViewController? {
+        guard !AppLock.shared.isLocked, !AppLock.shared.pendingForegroundCheck else { return nil }
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController ?? scene?.windows.first?.rootViewController
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) else { return nil }
+        var top = scene.windows.first(where: \.isKeyWindow)?.rootViewController ?? scene.windows.first?.rootViewController
         // لا يُعرض فوق نافذة تُغلق الآن (مثل تنبيه ضُغط زره للتو).
         while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
         return top
@@ -98,6 +99,16 @@ enum FilePicker {
             Task { @MainActor in FilePicker.delegate = nil }
         }
     }
+}
+
+/// تظل النسخة متاحة للصق على الجهاز مدة عشر دقائق.
+@MainActor
+private func setLocalClipboard(_ items: [[String: Any]]) {
+    UIPasteboard.general.setItems(items, options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(600)])
+}
+
+@MainActor func copyToClipboard(_ text: String) {
+    setLocalClipboard([[UTType.utf8PlainText.identifier: text]])
 }
 
 /// نافذة المشاركة من UIKit (واتساب، تيليجرام، البريد، حفظ في الملفات...).
@@ -139,7 +150,7 @@ enum ActivityShare {
             return [type.identifier: data]
         }
         guard !items.isEmpty else { return }
-        UIPasteboard.general.setItems(items, options: [.localOnly: false])
+        setLocalClipboard(items)
     }
 
     /// tmp/Sharing/<معرّف>/<اسم الملف>: نسخة مستقلة لكل مشاركة؛ النسخ القديمة تُحذف عند المشاركة التالية.

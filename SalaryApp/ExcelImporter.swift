@@ -161,7 +161,7 @@ nonisolated enum ExcelImporter {
         switch url.pathExtension.lowercased() {
         case "csv", "txt":
             let sheet = SheetParser()
-            for row in try readCSV(url) { sheet.consume(row) }
+            try readCSV(url, consume: sheet.consume)
             sheet.finish()
             result.merge(sheet.result)
             progress?(1)
@@ -205,14 +205,16 @@ nonisolated enum ExcelImporter {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let sheets = archive.filter {
+        let index = try CheckedArchive.Index(archive)
+        let sheets = index.entries.filter {
             $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml") && !$0.path.contains("_rels")
         }
         guard !sheets.isEmpty else { throw ImportError.cannotOpen(url.lastPathComponent) }
 
         // التقدّم بحسب حجم أجزاء XML: النصوص المشتركة ثم كل ورقة (فكّ الضغط ثم القراءة).
-        let stringsEntry = archive["xl/sharedStrings.xml"]
-        let total = Double(max(1, (stringsEntry?.uncompressedSize ?? 0) + sheets.reduce(0) { $0 + $1.uncompressedSize }))
+        let stringsEntry = index["xl/sharedStrings.xml"]
+        let expanded = try CheckedArchive.total(sheets + [stringsEntry].compactMap { $0 }, limit: 2 * 1024 * 1024 * 1024)
+        let total = Double(max(1, expanded))
         var done = 0.0
 
         var sharedStrings: [String] = []
@@ -224,7 +226,7 @@ nonisolated enum ExcelImporter {
             progress?(done / total)
         }
 
-        let sheetNames = (try? WorkbookSheetNames.read(archive: archive, directory: tempDir)) ?? [:]
+        let sheetNames = try WorkbookSheetNames.read(archive: archive, index: index, directory: tempDir)
         let fileYears = WorkbookSheetNames.years(in: url.deletingPathExtension().lastPathComponent)
         for (sheetIndex, entry) in sheets.enumerated() {
             let sheet = SheetParser()
@@ -252,14 +254,14 @@ nonisolated enum ExcelImporter {
 
     private static func extract(_ entry: Entry, from archive: Archive, to dir: URL) throws -> URL {
         let file = dir.appendingPathComponent(UUID().uuidString + ".xml")
-        _ = try archive.extract(entry, to: file, skipCRC32: true)
+        try CheckedArchive.write(entry, from: archive, to: file, limit: 1024 * 1024 * 1024)
         return file
     }
 
     // MARK: - csv
 
-    private static func readCSV(_ url: URL) throws -> [[String]] {
-        let data = try Data(contentsOf: url)
+    private static func readCSV(_ url: URL, consume: ([String]) -> Void) throws {
+        let data = try BoundedFile.read(url, limit: 128 * 1024 * 1024)
         let windowsArabic = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
             CFStringEncoding(CFStringEncodings.windowsArabic.rawValue)))
         guard var content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: windowsArabic) else {
@@ -267,23 +269,21 @@ nonisolated enum ExcelImporter {
         }
         if content.hasPrefix("\u{FEFF}") { content.removeFirst() }
 
-        let firstLine = content.prefix { $0 != "\n" }
+        let firstLine = content.prefix { !$0.isNewline }
         let separator: Character = firstLine.filter { $0 == ";" }.count > firstLine.filter { $0 == "," }.count ? ";" : ","
 
-        var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        let chars = Array(content)
-        var i = 0
-        while i < chars.count {
-            let char = chars[i]
-            i += 1
+        var i = content.startIndex
+        while i < content.endIndex {
+            let char = content[i]
+            content.formIndex(after: &i)
             if inQuotes {
                 if char == "\"" {
-                    if i < chars.count, chars[i] == "\"" {   // "" داخل الاقتباس تعني علامة " واحدة
+                    if i < content.endIndex, content[i] == "\"" {   // "" داخل الاقتباس تعني علامة " واحدة
                         field.append("\"")
-                        i += 1
+                        content.formIndex(after: &i)
                     } else {
                         inQuotes = false
                     }
@@ -293,19 +293,21 @@ nonisolated enum ExcelImporter {
             } else if char == "\"" {
                 inQuotes = true
             } else if char == separator {
+                guard row.count < 16_383 else { throw ImportError.cannotOpen(url.lastPathComponent) }
                 row.append(field); field = ""
-            } else if char == "\n" || char == "\r\n" {
+            } else if char.isNewline {
                 row.append(field); field = ""
-                rows.append(row); row = []
-            } else if char != "\r" {
+                try Task.checkCancellation()
+                consume(row); row = []
+            } else {
                 field.append(char)
             }
         }
+        guard !inQuotes else { throw ImportError.cannotOpen(url.lastPathComponent) }
         if !field.isEmpty || !row.isEmpty {
             row.append(field)
-            rows.append(row)
+            consume(row)
         }
-        return rows
     }
 }
 
@@ -715,16 +717,16 @@ nonisolated final class WorkbookSheetNames: NSObject, XMLParserDelegate {
         return Set(re.matches(in: value, range: range).compactMap { Range($0.range, in: value).flatMap { Int(value[$0]) } }.filter { (1900...2200).contains($0) })
     }
 
-    static func read(archive: Archive, directory: URL) throws -> [String: String] {
-        guard let workbook = archive["xl/workbook.xml"], let relations = archive["xl/_rels/workbook.xml.rels"],
-              workbook.uncompressedSize < 2_000_000, relations.uncompressedSize < 2_000_000 else { return [:] }
+    static func read(archive: Archive, index: CheckedArchive.Index, directory: URL) throws -> [String: String] {
+        guard let workbook = index["xl/workbook.xml"], let relations = index["xl/_rels/workbook.xml.rels"] else { return [:] }
         let reader = WorkbookSheetNames()
         for (entry, isRelations) in [(workbook, false), (relations, true)] {
             let file = directory.appendingPathComponent(UUID().uuidString + ".xml")
-            _ = try archive.extract(entry, to: file, skipCRC32: true)
+            try CheckedArchive.write(entry, from: archive, to: file, limit: 2_000_000)
             defer { try? FileManager.default.removeItem(at: file) }
             guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("workbook.xml") }
             let parser = XMLParser(stream: stream)
+            parser.shouldResolveExternalEntities = false
             reader.readingRelationships = isRelations
             parser.delegate = reader
             guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("workbook.xml") }
@@ -753,21 +755,27 @@ nonisolated final class SharedStringsReader: NSObject, XMLParserDelegate {
     private var strings: [String] = []
     private var current = ""
     private var inText = false
+    private var cellBytes = 0
+    private var storedBytes = 0
+    private var overLimit = false
     private var phoneticDepth = 0
 
     static func read(_ file: URL) throws -> [String] {
         let reader = SharedStringsReader()
         guard let stream = InputStream(url: file) else { throw ImportError.cannotOpen("sharedStrings.xml") }
         let parser = XMLParser(stream: stream)
+        parser.shouldResolveExternalEntities = false
         parser.delegate = reader
-        guard parser.parse() else { throw parser.parserError ?? ImportError.cannotOpen("sharedStrings.xml") }
+        let parsed = parser.parse()
+        guard !reader.overLimit else { throw CheckedArchive.Failure.tooLarge }
+        guard parsed else { throw parser.parserError ?? ImportError.cannotOpen("sharedStrings.xml") }
         return reader.strings
     }
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
                 qualifiedName qName: String?, attributes: [String: String] = [:]) {
         switch localName(elementName) {
-        case "si": current = ""
+        case "si": current = ""; cellBytes = 0
         case "t": inText = phoneticDepth == 0
         case "rPh": phoneticDepth += 1                 // نص النطق الياباني، لا يدخل في القيمة
         default: break
@@ -776,7 +784,10 @@ nonisolated final class SharedStringsReader: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         switch localName(elementName) {
-        case "si": strings.append(current)
+        case "si":
+            storedBytes += cellBytes + MemoryLayout<String>.stride
+            guard storedBytes <= 160 * 1024 * 1024 else { overLimit = true; parser.abortParsing(); return }
+            strings.append(current)
         case "t": inText = false
         case "rPh": phoneticDepth -= 1
         default: break
@@ -784,7 +795,10 @@ nonisolated final class SharedStringsReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if inText { current += string }
+        guard inText else { return }
+        cellBytes += string.utf8.count
+        guard cellBytes <= 4 * 32_767 else { overLimit = true; parser.abortParsing(); return }
+        current += string
     }
 }
 
@@ -799,6 +813,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     private var type: String?
     private var value = ""
     private var capturing = false
+    private var valueBytes = 0
     /// موضع القراءة في الملف لحساب التقدّم.
     private var stream: InputStream?
     private var fileSize: Double = 1
@@ -822,6 +837,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
         let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
         reader.fileSize = max(1, (attributes?[.size] as? NSNumber)?.doubleValue ?? 1)
         let parser = XMLParser(stream: stream)
+        parser.shouldResolveExternalEntities = false
         parser.delegate = reader
         guard parser.parse(), !reader.invalidCell else { throw ImportError.cannotOpen("worksheet: invalid cell reference or shared string") }
     }
@@ -839,6 +855,7 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
             column = parsed
             type = attributes["t"]
             value = ""
+            valueBytes = 0
         case "v", "t":
             capturing = true
         default:
@@ -876,7 +893,10 @@ nonisolated final class WorksheetReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if capturing { value += string }
+        guard capturing else { return }
+        valueBytes += string.utf8.count
+        guard valueBytes <= 4 * 32_767 else { invalidCell = true; parser.abortParsing(); return }
+        value += string
     }
 
     /// "A1" → 0، "B7" → 1، "AA3" → 26

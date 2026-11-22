@@ -69,9 +69,6 @@ enum RecentSearches {
     }
 }
 
-/// نسخ نص إلى الحافظة.
-@MainActor func copyToClipboard(_ text: String) { UIPasteboard.general.string = text }
-
 // MARK: - تبويب البحث
 
 struct UnifiedSearchView: View {
@@ -485,7 +482,7 @@ private struct SmartAccountDetailView: View {
                 if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
                 if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
                 Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") {
-                    UIPasteboard.general.string = account.iban
+                    copyToClipboard(account.iban)
                 }
             }
         }

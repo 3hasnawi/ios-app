@@ -216,6 +216,7 @@ enum PayslipResult {
 
 /// محتوى النافذة المنبثقة: بطاقة الراتب والاستقطاعات.
 struct PayslipSnippetIntent: SnippetIntent {
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "قسيمة راتب"
     static let isDiscoverable = false
 

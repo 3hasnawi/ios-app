@@ -14,19 +14,30 @@ final class AppLock {
     /// بالثواني: 0 فوراً.
     static var timeout: Int { UserDefaults.standard.integer(forKey: timeoutKey) }
     /// لصورة شاشة القفل في اختبار المحاكي فقط (-lockPreview YES).
-    private static var isPreview: Bool { UserDefaults.standard.bool(forKey: "lockPreview") }
+    private static var isPreview: Bool {
+        #if targetEnvironment(simulator)
+        UserDefaults.standard.bool(forKey: "lockPreview")
+        #else
+        false
+        #endif
+    }
 
     var isLocked: Bool
     var isAuthenticating = false
     var message: String?
     /// يُطلب Face ID تلقائياً مرة واحدة لكل قفل؛ بعد الإلغاء يكون بالزر فقط.
     private var autoPrompt: Bool
-    private var backgroundedAt: Date?
+    private var authenticationGeneration = 0
+    private var backgroundedAt: ContinuousClock.Instant?
     var pendingForegroundCheck: Bool { backgroundedAt != nil }
 
     private init() {
         // -skipLock: لصورة الإعدادات في اختبار المحاكي فقط.
+        #if targetEnvironment(simulator)
         let locked = (Self.isEnabled && !UserDefaults.standard.bool(forKey: "skipLock")) || Self.isPreview
+        #else
+        let locked = Self.isEnabled
+        #endif
         isLocked = locked
         autoPrompt = locked && !Self.isPreview
     }
@@ -84,19 +95,20 @@ final class AppLock {
 
     func unlock() async {
         guard isLocked, !isAuthenticating, !Self.isPreview else { return }
-        guard Self.kind != .none else {
-            // لا يوجد رمز قفل على الجهاز أصلاً: لا يمكن التحقق، فلا يُحبس المستخدم خارج التطبيق.
-            isLocked = false
-            return
-        }
+        let generation = authenticationGeneration
         isAuthenticating = true
         defer { isAuthenticating = false }
         switch await Self.authenticate(reason: tr("افتح تطبيق الرواتب", "Unlock the payroll app")) {
         case .success:
+            guard generation == authenticationGeneration else { return }
             withAnimation(.easeOut(duration: 0.2)) { isLocked = false }
             message = nil
         case .failure(let error):
             let code = (error as? LAError)?.code
+            if code == .passcodeNotSet {
+                message = tr("فعّل رمز قفل الآيفون من إعدادات الجهاز ثم أعد المحاولة.", "Set a passcode in iPhone Settings, then try again.")
+                return
+            }
             message = (code == .userCancel || code == .appCancel || code == .systemCancel)
                 ? nil
                 : tr("تعذّر التحقق. حاول مرة أخرى.", "Couldn't verify. Try again.")
@@ -107,9 +119,10 @@ final class AppLock {
         guard Self.isEnabled else { return }
         switch phase {
         case .background:
-            if !isLocked { backgroundedAt = Date() }
+            authenticationGeneration &+= 1
+            if !isLocked { backgroundedAt = .now }
         case .active:
-            if !isLocked, let since = backgroundedAt, Date().timeIntervalSince(since) >= Double(Self.timeout) {
+            if !isLocked, let since = backgroundedAt, since.duration(to: .now) >= .seconds(max(0, Self.timeout)) {
                 isLocked = true
                 autoPrompt = true
             }
@@ -125,6 +138,7 @@ final class AppLock {
 
     /// عند إيقاف القفل من الإعدادات.
     func disable() {
+        backgroundedAt = nil
         isLocked = false
         autoPrompt = false
     }
@@ -135,6 +149,10 @@ struct AppLockGate<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var lock = AppLock.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(AppLock.enabledKey) private var enabled = false
 
     var body: some View {
@@ -144,14 +162,13 @@ struct AppLockGate<Content: View>: View {
             .accessibilityHidden(covered)
             .allowsHitTesting(!covered)
             .overlay {
-                ZStack {
-                    if needsPrivacyCover {
-                        PrivacyCover().transition(.identity)
-                    } else if lock.isLocked {
-                        LockScreen(lock: lock)
-                            .transition(.asymmetric(insertion: .identity, removal: .opacity))
-                    }
-                }
+                if covered { Color(.systemBackground).ignoresSafeArea() }
+            }
+            .background {
+                SceneLockShield(enabled: enabled, mode: needsPrivacyCover ? .privacy : lock.isLocked ? .lock : .hidden,
+                                layoutDirection: layoutDirection, locale: locale, dynamicTypeSize: dynamicTypeSize,
+                                colorScheme: colorScheme)
+                    .frame(width: 0, height: 0)
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 lock.scenePhaseChanged(phase)
@@ -220,6 +237,94 @@ private struct PrivacyCover: View {
                 .scaledToFit()
                 .frame(width: 120)
                 .opacity(0.5)
+        }
+    }
+}
+
+/// نافذة خاصة بالمشهد تغطي أيضاً المعاينات ونوافذ التحرير المعروضة فوق جذر SwiftUI.
+private struct SceneLockShield: UIViewRepresentable {
+    var enabled: Bool
+    var mode: ShieldMode
+    var layoutDirection: LayoutDirection
+    var locale: Locale
+    var dynamicTypeSize: DynamicTypeSize
+    var colorScheme: ColorScheme
+
+    enum ShieldMode { case hidden, privacy, lock }
+
+    func makeUIView(context: Context) -> Anchor { Anchor() }
+    func updateUIView(_ view: Anchor, context: Context) {
+        view.settings = self
+        view.refresh()
+    }
+    static func dismantleUIView(_ view: Anchor, coordinator: ()) { view.detach() }
+
+    final class Anchor: UIView {
+        var settings: SceneLockShield?
+        private var shield: UIWindow?
+        private weak var previousKey: UIWindow?
+        private var visibleMode = ShieldMode.hidden
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            guard let scene = window?.windowScene else { detach(); return }
+            NotificationCenter.default.addObserver(self, selector: #selector(willDeactivate),
+                                                   name: UIScene.willDeactivateNotification, object: scene)
+            refresh()
+        }
+
+        @objc private func willDeactivate() {
+            if settings?.enabled == true { show(.privacy) }
+        }
+
+        func refresh() {
+            guard let settings, let scene = window?.windowScene else { return }
+            let inactive = settings.enabled && scene.activationState != .foregroundActive
+            show(inactive ? .privacy : settings.mode)
+        }
+
+        func detach() {
+            NotificationCenter.default.removeObserver(self)
+            hide()
+        }
+
+        private func hide() {
+            let restoreKey = shield?.isKeyWindow == true
+            shield?.isHidden = true
+            if restoreKey, let previousKey, !previousKey.isHidden { previousKey.makeKey() }
+            shield = nil
+            previousKey = nil
+            visibleMode = .hidden
+        }
+
+        private func show(_ mode: ShieldMode) {
+            guard mode != visibleMode else { return }
+            guard mode != .hidden else { hide(); return }
+            guard let settings, let scene = window?.windowScene else { return }
+            let cover = shield ?? UIWindow(windowScene: scene)
+            if shield == nil {
+                previousKey = scene.keyWindow
+                cover.windowLevel = .alert + 1
+                cover.backgroundColor = .systemBackground
+                shield = cover
+            }
+            let content: AnyView
+            switch mode {
+            case .lock: content = AnyView(LockScreen(lock: AppLock.shared))
+            case .privacy: content = AnyView(PrivacyCover())
+            case .hidden: return
+            }
+            let controller = UIHostingController(rootView: content
+                .environment(\.layoutDirection, settings.layoutDirection)
+                .environment(\.locale, settings.locale)
+                .dynamicTypeSize(settings.dynamicTypeSize))
+            controller.view.accessibilityViewIsModal = true
+            cover.overrideUserInterfaceStyle = settings.colorScheme == .dark ? .dark : .light
+            cover.rootViewController = controller
+            visibleMode = mode
+            if mode == .lock { cover.makeKeyAndVisible() }
+            else { cover.isHidden = false }
         }
     }
 }

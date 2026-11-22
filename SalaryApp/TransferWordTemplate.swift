@@ -101,7 +101,7 @@ nonisolated enum TransferWordTemplate {
             guard size <= 80_000_000, paths.count < 2000 else { throw Failure.oversized }
             let output = root.appendingPathComponent(path)
             try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-            _ = try archive.extract(entry, to: output)
+            try CheckedArchive.write(entry, from: archive, to: output, limit: 20_000_000)
             if isXMLPart(path) {
                 guard var xml = String(data: try Data(contentsOf: output), encoding: .utf8) else { throw Failure.invalidXML }
                 if path == "word/document.xml", let tableRows { xml = try expandTable(in: xml, rows: tableRows) }

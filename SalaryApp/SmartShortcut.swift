@@ -165,6 +165,7 @@ enum SmartShortcutSearch {
 }
 
 struct SmartLookupSnippetIntent: SnippetIntent {
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
     static let title: LocalizedStringResource = "نتيجة البحث الذكي"
     static let isDiscoverable = false
     @Parameter(title: "النتيجة") var result: SmartShortcutChoice

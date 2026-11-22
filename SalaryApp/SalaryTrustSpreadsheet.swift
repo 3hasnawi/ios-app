@@ -11,31 +11,30 @@ nonisolated enum SalaryTrustSpreadsheet {
             throw SalaryTrust.invalid(tr("حجم ملف الأمانات غير مدعوم.", "Unsupported trust spreadsheet size."))
         }
         let archive = try Archive(url: url, accessMode: .read)
-        let entries = Array(archive)
-        guard Set(entries.map(\.path)).count == entries.count,
-              entries.allSatisfy({ $0.uncompressedSize <= 128 * 1024 * 1024 }),
-              entries.reduce(UInt64(0), { $0 + $1.uncompressedSize }) <= 256 * 1024 * 1024 else {
-            throw SalaryTrust.invalid(tr("ملف Excel مكرر المحتويات أو كبير جداً.", "The Excel file contains duplicate entries or is too large."))
-        }
+        let index = try CheckedArchive.Index(archive)
+        let entries = index.entries
+        _ = try CheckedArchive.total(entries, limit: 256 * 1024 * 1024)
+        guard entries.allSatisfy({ $0.uncompressedSize <= 128 * 1024 * 1024 }) else { throw CheckedArchive.Failure.tooLarge }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("trust-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         func extract(_ e: Entry) throws -> URL {
             let target = dir.appendingPathComponent(UUID().uuidString + ".xml")
-            _ = try archive.extract(e, to: target)
+            try CheckedArchive.write(e, from: archive, to: target, limit: 128 * 1024 * 1024)
             return target
         }
         let strings: [String]
-        if let e = archive["xl/sharedStrings.xml"] { strings = try SharedStringsReader.read(extract(e)) }
+        if let e = index["xl/sharedStrings.xml"] { strings = try SharedStringsReader.read(extract(e)) }
         else { strings = [] }
         let sheets = entries.filter { $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml") && !$0.path.contains("_rels") }
         guard !sheets.isEmpty else { throw SalaryTrust.invalid(tr("لم توجد أوراق في الملف.", "No worksheets were found.")) }
         let uses1904: Bool
-        if let workbook = archive["xl/workbook.xml"] { uses1904 = try SalaryTrustWorkbookDates.read(extract(workbook)) }
+        if let workbook = index["xl/workbook.xml"] { uses1904 = try SalaryTrustWorkbookDates.read(extract(workbook)) }
         else { uses1904 = false }
         var result: [SalaryTrust.Entry] = []
         for sheet in sheets {
             let file = try extract(sheet)
+            defer { try? FileManager.default.removeItem(at: file) }
             var rows = SalaryTrustImportRows()
             try WorksheetReader.read(file, sharedStrings: strings, transformCell: { column, type, value in
                 column == rows.dateColumn ? SalaryTrustExcelDate.text(value, cellType: type, uses1904: uses1904) : value

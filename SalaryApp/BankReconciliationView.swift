@@ -282,8 +282,8 @@ struct BankReconciliationView: View {
                             }
                         }
                     }
-                    Button(tr("نسخ المبلغ", "Copy amount"), systemImage: "doc.on.doc") { UIPasteboard.general.string = String(movement.amount) }
-                    Button(tr("نسخ البيان", "Copy description"), systemImage: "doc.on.doc") { UIPasteboard.general.string = movement.description }
+                    Button(tr("نسخ المبلغ", "Copy amount"), systemImage: "doc.on.doc") { copyToClipboard(String(movement.amount)) }
+                    Button(tr("نسخ البيان", "Copy description"), systemImage: "doc.on.doc") { copyToClipboard(movement.description) }
                     if editable {
                         Button(tr("حذف الحركة", "Delete movement"), systemImage: "trash", role: .destructive) {
                             var candidate = period; candidate.movements.removeAll { $0.id == movement.id }; persist(candidate)

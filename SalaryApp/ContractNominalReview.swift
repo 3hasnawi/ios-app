@@ -49,7 +49,7 @@ struct ContractNominalReviewView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text(row.name.isEmpty ? tr("اسم غير متوفر", "Name unavailable") : row.name).font(.headline).textSelection(.enabled)
                             if !row.workplace.isEmpty { Text(row.workplace).font(.caption).foregroundStyle(.secondary) }
-                            if !row.name.isEmpty { Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { UIPasteboard.general.string = row.name }.font(.caption) }
+                            if !row.name.isEmpty { Button(tr("نسخ الاسم", "Copy name"), systemImage: "doc.on.doc") { copyToClipboard(row.name) }.font(.caption) }
                         }.padding(.vertical, 4)
                     }
                 } header: { Text(tr("عقود بلا اسمي مقروء · \(month)", "Contracts without readable nominal pay · \(month)")) } footer: { Text(tr("طابق السجل مع ملف الرواتب الأصلي. لا يخمّن التطبيق الراتب أو يعدّل البيانات.", "Check each record against the original payroll file. The app does not guess pay or change data.")) }

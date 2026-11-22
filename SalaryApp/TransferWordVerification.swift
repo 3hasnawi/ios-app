@@ -60,11 +60,7 @@ nonisolated enum TransferWordVerification {
         let archive = try Archive(url: url, accessMode: .read)
         guard let entry = archive["word/document.xml"], entry.type == .file,
               entry.uncompressedSize <= 80_000_000 else { throw Failure.mismatch }
-        var xml = Data()
-        _ = try archive.extract(entry) { chunk in
-            try Task.checkCancellation()
-            xml.append(chunk)
-        }
+        let xml = try CheckedArchive.data(entry, from: archive, limit: 80_000_000)
         let reader = Reader(), parser = XMLParser(data: xml)
         parser.shouldResolveExternalEntities = false; parser.delegate = reader
         let parsed = parser.parse()

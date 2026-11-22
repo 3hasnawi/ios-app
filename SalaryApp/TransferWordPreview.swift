@@ -27,7 +27,7 @@ struct TransferWordPreview: UIViewRepresentable {
         func load(_ url: URL, into view: WKWebView) {
             guard loaded != url else { return }
             loaded = url
-            view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+            view.loadFileURL(url, allowingReadAccessTo: url)
         }
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { report(error) }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { report(error) }
@@ -49,7 +49,7 @@ struct TransferWordPreview: UIViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
-            decisionHandler(url.isFileURL || url.scheme == "about" ? .allow : .cancel)
+            decisionHandler((url.isFileURL && url.standardizedFileURL == loaded?.standardizedFileURL) || url.absoluteString == "about:blank" ? .allow : .cancel)
         }
     }
 }

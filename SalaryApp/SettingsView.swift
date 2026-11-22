@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.textSizeKey) private var textSize = -1
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
+    @State private var changingLock = false
     @State private var lockMessage: String?
     @State private var storeSize: Int64?
     /// اختبار المحاكي: -openBackup YES يفتح صفحة النسخ الاحتياطي.
@@ -74,6 +75,7 @@ struct SettingsView: View {
                     } label: {
                         SettingRow(title: tr("قفل \(AppLock.methodName)", "\(AppLock.methodName) lock"), systemImage: AppLock.systemImage, color: .green) { EmptyView() }
                     }
+                    .disabled(changingLock)
                     .accessibilityIdentifier("faceIDToggle")
                     NavigationLink {
                         NotificationSettingsView()
@@ -181,35 +183,30 @@ struct SettingsView: View {
         Binding(
             get: { lockEnabled ? lockTimeout : -1 },
             set: { value in
-                if value < 0 {
-                    setLock(false)
-                } else if lockEnabled {
+                guard !changingLock, value != (lockEnabled ? lockTimeout : -1) else { return }
+                if lockEnabled, value >= 0, value < lockTimeout {
                     lockTimeout = value
-                } else {
-                    setLock(true) { lockTimeout = value }
+                    return
+                }
+                changingLock = true
+                lockMessage = nil
+                Task {
+                    defer { changingLock = false }
+                    switch await AppLock.authenticate(reason: tr("تأكيد تغيير إعداد قفل تطبيق الرواتب", "Confirm the payroll app lock change")) {
+                    case .success:
+                        if value < 0 {
+                            lockEnabled = false
+                            AppLock.shared.disable()
+                        } else {
+                            lockTimeout = value
+                            lockEnabled = true
+                        }
+                    case .failure:
+                        lockMessage = tr("تعذّر التحقق لتغيير إعداد القفل. تأكد من تفعيل رمز الجهاز ثم أعد المحاولة.", "Could not verify the lock change. Check the device passcode and try again.")
+                    }
                 }
             }
         )
-    }
-
-    /// التفعيل يحتاج تحققاً ناجحاً أولاً، حتى لا يُقفل المستخدم بقفل لا يعمل على جهازه.
-    private func setLock(_ on: Bool, then: (() -> Void)? = nil) {
-        lockMessage = nil
-        guard on else {
-            lockEnabled = false
-            AppLock.shared.disable()
-            return
-        }
-        guard AppLock.kind != .none else {
-            lockMessage = tr("فعّل رمز القفل أو Face ID في إعدادات الآيفون أولاً.", "Set up a passcode or Face ID in iPhone Settings first.")
-            return
-        }
-        Task {
-            switch await AppLock.authenticate(reason: tr("تفعيل قفل تطبيق الرواتب", "Turn on the payroll app lock")) {
-            case .success: lockEnabled = true; then?()
-            case .failure: lockMessage = tr("لم يُفعَّل القفل: لم يتم التحقق.", "Lock not turned on: verification failed.")
-            }
-        }
     }
 }
 

@@ -24,7 +24,7 @@ def fixture(path,rows,numeric=False,epoch=False,headers=None):
 def prepare(work):
  src=work/'Sources/TrustImportTests';src.mkdir(parents=True,exist_ok=True)
  vendor=os.environ.get('SALARY_ZIPFOUNDATION_PATH')
- dep=f'.package(path:{json.dumps(vendor)})' if vendor else '.package(url:"https://github.com/weichsel/ZIPFoundation.git",exact:"0.9.20")'
+ dep=f'.package(path:{json.dumps(vendor)})' if vendor else '.package(url:"https://github.com/weichsel/ZIPFoundation.git",revision:"e7048f0569f0ba37df26f8357f560b9d25e9a284")'
  (work/'Package.swift').write_text('// swift-tools-version:5.9\nimport PackageDescription\nlet package=Package(name:"TrustImportTests",platforms:[.macOS(.v13)],dependencies:['+dep+'],targets:[.executableTarget(name:"TrustImportTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])])\n')
  importer=(root/'SalaryApp/ExcelImporter.swift').read_text()
  models=(root/'SalaryApp/Models.swift').read_text();month=models[models.index('nonisolated enum MonthName'):models.index('extension PayrollMonth {')]
@@ -32,7 +32,7 @@ def prepare(work):
  backup=(root/'SalaryApp/Backup.swift').read_text()
  report=(root/'SalaryApp/SalaryTrustReport.swift').read_text();report=report[report.index('nonisolated struct SalaryTrustReportRequest'):report.index('    static func makePDF')]+'\n}\n'
  center=(root/'SalaryApp/ImportCenter.swift').read_text()
- parts=[importer,month,arabic,block(models,'nonisolated struct PayrollColumnSnapshot'),block(center,'nonisolated enum ImportKind'),block(center,'struct ImportCandidate')]+[(root/f'SalaryApp/{name}.swift').read_text() for name in ['SalaryTrust','SalaryTrustImport','SalaryTrustSpreadsheet']]
+ parts=[importer,month,arabic,block(models,'nonisolated struct PayrollColumnSnapshot'),block(center,'nonisolated enum ImportKind'),block(center,'struct ImportCandidate')]+[(root/f'SalaryApp/{name}.swift').read_text() for name in ['SalaryTrust','SalaryTrustImport','SalaryTrustSpreadsheet','CheckedArchive','BoundedFile']]
  parts+=[block((root/'SalaryApp/SalaryTrustView.swift').read_text(),'@MainActor enum SalaryTrustStore'),block(backup,'nonisolated enum BackupFormat'),'enum BackupReplacement {\n'+block(backup,'    nonisolated static func checkMissingData(')+'\n}',report]
  production='import Foundation\nimport CoreFoundation\n#if canImport(FoundationXML)\nimport FoundationXML\n#endif\n'+'\n'.join(parts)
  (src/'Production.swift').write_text(production.replace('nonisolated ',''))

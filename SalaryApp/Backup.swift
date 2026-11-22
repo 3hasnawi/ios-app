@@ -636,12 +636,10 @@ final class BackupManager {
         var previous: BackupFormat.Manifest?
         NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordinationError) { target in
             do {
-                guard let archive = try? Archive(url: target, accessMode: .read),
-                      let entry = archive["manifest.json"], entry.uncompressedSize < 1_000_000 else {
-                    throw BackupError.notBackup
-                }
-                var data = Data()
-                _ = try archive.extract(entry) { data.append($0) }
+                let archive = try Archive(url: target, accessMode: .read)
+                let entries = try CheckedArchive.Index(archive)
+                guard let entry = entries["manifest.json"] else { throw BackupError.notBackup }
+                let data = try CheckedArchive.data(entry, from: archive, limit: 1_000_000)
                 previous = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
             } catch { readError = error }
         }
@@ -1100,45 +1098,45 @@ final class BackupManager {
             let granted = url.startAccessingSecurityScopedResource()
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
 
-                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                var extracted = false
-                defer { if !extracted { try? FileManager.default.removeItem(at: dir) } }
-                guard let archive = try? Archive(url: url, accessMode: .read) else { throw BackupError.notBackup }
-                // الملفات المعروفة فقط، مع فحص سلامة الضغط قبل عرض تأكيد الاسترجاع.
-                for name in ["manifest.json", "settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"] {
-                    guard let entry = archive[name], entry.type == .file else { throw BackupError.notBackup }
-                    if name == "manifest.json" && entry.uncompressedSize > 1_000_000 { throw BackupError.notBackup }
-                    if name == "settings.json" && entry.uncompressedSize > 64_000_000 { throw BackupError.notBackup }
-                    _ = try archive.extract(entry, to: dir.appendingPathComponent(name))
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("restore-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var extracted = false
+            defer { if !extracted { try? FileManager.default.removeItem(at: dir) } }
+            guard let archive = try? Archive(url: url, accessMode: .read) else { throw BackupError.notBackup }
+            let entries = try CheckedArchive.Index(archive)
+            guard let metadata = entries["manifest.json"] else { throw BackupError.notBackup }
+            let data = try CheckedArchive.data(metadata, from: archive, limit: 1_000_000)
+            let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: data)
+            guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
+            guard manifest.hasData else { throw BackupError.emptyRestore }
+            try data.write(to: dir.appendingPathComponent("manifest.json"))
+            var required = ["settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"]
+            if manifest.version >= 2 || entries["accounts.jsonl"] != nil { required.append("accounts.jsonl") }
+            for name in required {
+                guard let entry = entries[name] else { throw BackupError.notBackup }
+                try CheckedArchive.write(entry, from: archive, to: dir.appendingPathComponent(name),
+                                         limit: name == "settings.json" ? 64_000_000 : .max)
+            }
+            if manifest.version >= 3 {
+                guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
+                      let index = entries["books/index.json"], index.type == .file,
+                      index.uncompressedSize < 10_000_000 else { throw BackupError.notBackup }
+                let booksDir = dir.appendingPathComponent("books", isDirectory: true)
+                try FileManager.default.createDirectory(at: booksDir, withIntermediateDirectories: true)
+                try CheckedArchive.write(index, from: archive, to: booksDir.appendingPathComponent("index.json"), limit: 10_000_000)
+                let books = try OfficialBookFiles.read(in: booksDir)
+                guard books.count == expected, Set(books.map(\.id)).count == expected else { throw BackupError.notBackup }
+                for book in books {
+                    let name = "books/\(book.id.uuidString).pdf"
+                    guard let entry = entries[name], entry.type == .file,
+                          entry.uncompressedSize < 60_000_000 else { throw BackupError.notBackup }
+                    try CheckedArchive.write(entry, from: archive, to: OfficialBookFiles.file(book.id, in: booksDir), limit: 60_000_000)
                 }
-                if let entry = archive["accounts.jsonl"], entry.type == .file {
-                    _ = try archive.extract(entry, to: dir.appendingPathComponent("accounts.jsonl"))
-                }
-                let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self,
-                    from: Data(contentsOf: dir.appendingPathComponent("manifest.json")))
-                guard BackupFormat.supports(manifest.version) else { throw BackupError.newerVersion }
-                guard manifest.hasData else { throw BackupError.emptyRestore }
-                if manifest.version >= 3 {
-                    guard let expected = manifest.books, expected >= 0 && expected <= 10_000,
-                          let index = archive["books/index.json"], index.type == .file,
-                          index.uncompressedSize < 10_000_000 else { throw BackupError.notBackup }
-                    let booksDir = dir.appendingPathComponent("books", isDirectory: true)
-                    try FileManager.default.createDirectory(at: booksDir, withIntermediateDirectories: true)
-                    _ = try archive.extract(index, to: booksDir.appendingPathComponent("index.json"))
-                    let books = try OfficialBookFiles.read(in: booksDir)
-                    guard books.count == expected, Set(books.map(\.id)).count == expected else { throw BackupError.notBackup }
-                    for book in books {
-                        let name = "books/\(book.id.uuidString).pdf"
-                        guard let entry = archive[name], entry.type == .file,
-                              entry.uncompressedSize < 60_000_000 else { throw BackupError.notBackup }
-                        _ = try archive.extract(entry, to: OfficialBookFiles.file(book.id, in: booksDir))
-                    }
-                    _ = try OfficialBookFiles.validateArchive(in: booksDir, expected: expected)
-                }
-                ImportCenter.removeCopy(url)
-                extracted = true
-                return dir
+                _ = try OfficialBookFiles.validateArchive(in: booksDir, expected: expected)
+            }
+            ImportCenter.removeCopy(url)
+            extracted = true
+            return dir
 
         }.value
     }

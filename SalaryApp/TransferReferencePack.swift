@@ -36,9 +36,7 @@ nonisolated enum TransferReferencePack {
     static let digitTemplateID = "month_digits"
     private static func read(_ entry: Entry, from archive: Archive, maxSize: UInt64) throws -> Data {
         guard entry.type == .file, UInt64(entry.uncompressedSize) <= maxSize else { throw Failure.oversized }
-        var result = Data()
-        _ = try archive.extract(entry) { result.append($0) }
-        return result
+        return try CheckedArchive.data(entry, from: archive, limit: maxSize)
     }
     private static func hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -64,9 +62,10 @@ nonisolated enum TransferReferencePack {
             throw Failure.invalid
         }
         let archive = try Archive(url: url, accessMode: .read)
+        let entries = try CheckedArchive.Index(archive)
         var result: [String: Data] = [:]
         for record in records {
-            guard let entry = archive[record.path] else { throw Failure.invalid }
+            guard let entry = entries[record.path] else { throw Failure.invalid }
             let contents = try read(entry, from: archive, maxSize: 10_000_000)
             guard hex(contents) == record.sha256.lowercased() else { throw Failure.damaged }
             result[record.id] = contents
@@ -75,7 +74,8 @@ nonisolated enum TransferReferencePack {
     }
     static func validate(_ url: URL) throws -> TransferReferenceManifest {
         let archive = try Archive(url: url, accessMode: .read)
-        guard let entry = archive["manifest.json"] else { throw Failure.invalid }
+        let entries = try CheckedArchive.Index(archive)
+        guard let entry = entries["manifest.json"] else { throw Failure.invalid }
         let manifest = try JSONDecoder().decode(TransferReferenceManifest.self, from: read(entry, from: archive, maxSize: 100_000))
         var expectedPages = expected
         if manifest.version == 2 { expectedPages[digitTemplateID] = 1 }
@@ -84,17 +84,17 @@ nonisolated enum TransferReferencePack {
         let allowed = Set(manifest.templates.map(\.path)).union(["manifest.json"])
         var seen: Set<String> = []
         var bytes: UInt64 = 0
-        for item in archive {
+        for item in entries.entries {
             if item.type == .directory && item.path == "templates/" { continue }
             guard item.type == .file, allowed.contains(item.path), seen.insert(item.path).inserted else { throw Failure.invalid }
-            bytes += UInt64(item.uncompressedSize)
-            guard bytes <= 40_000_000 else { throw Failure.oversized }
+            guard item.uncompressedSize <= 40_000_000 - bytes else { throw Failure.oversized }
+            bytes += item.uncompressedSize
         }
         guard seen == allowed else { throw Failure.invalid }
         for template in manifest.templates {
             try Task.checkCancellation()
             guard template.path == "templates/\(template.id).pdf", let pages = expectedPages[template.id],
-                  template.pages == pages, let item = archive[template.path] else { throw Failure.invalid }
+                  template.pages == pages, let item = entries[template.path] else { throw Failure.invalid }
             let data = try read(item, from: archive, maxSize: 10_000_000)
             guard hex(data) == template.sha256.lowercased(), let document = PDFDocument(data: data),
                   !document.isLocked, document.pageCount == pages else { throw Failure.damaged }

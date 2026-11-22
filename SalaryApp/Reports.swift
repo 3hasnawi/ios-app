@@ -238,7 +238,7 @@ struct ReportDetailView: View {
                     if let local = account.localAccount { LabeledContent(tr("الحساب المحلي", "Local account")) { Text(local).monospaced().textSelection(.enabled).privacySensitive() } }
                     if !account.branch.isEmpty { LabeledContent(tr("الفرع", "Branch"), value: account.branch) }
                     if !account.swift.isEmpty { LabeledContent("SWIFT", value: account.swift) }
-                    if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { UIPasteboard.general.string = account.iban } }
+                    if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { copyToClipboard(account.iban) } }
                 }
             }
 

@@ -118,8 +118,8 @@ struct ExecutionAccountsView: View {
                         }
                         .padding(.vertical, 5)
                         .contextMenu {
-                            if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { UIPasteboard.general.string = account.iban } }
-                            if let local = account.localAccount { Button(tr("نسخ الحساب المحلي", "Copy local account"), systemImage: "doc.on.doc") { UIPasteboard.general.string = local } }
+                            if !account.iban.isEmpty { Button(tr("نسخ IBAN", "Copy IBAN"), systemImage: "doc.on.doc") { copyToClipboard(account.iban) } }
+                            if let local = account.localAccount { Button(tr("نسخ الحساب المحلي", "Copy local account"), systemImage: "doc.on.doc") { copyToClipboard(local) } }
                         }
                     }
                 }
