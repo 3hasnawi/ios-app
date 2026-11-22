@@ -385,13 +385,17 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(selectedPerson.waitForExistence(timeout: 10))
         XCTAssertTrue(selectedPerson.label.contains("أحمد علي حسين الدليمي"))
         app.buttons["إغلاق"].tap()
-        app.terminate()
-        app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "search", "-openSettings", "NO",
-                                               "-search", "أحمد علي حسين الدليمي", "-openFirst", "NO",
-                                               "-openPerson", "YES", "-share", "NO"]
-        app.launch()
+        // افحص فتح القسيمة من نتيجة البحث نفسها بعد إغلاق كشف الاستقطاعات.
+        guard XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: result)], timeout: 10) == .completed else {
+            XCTFail("لم تعد نتيجة البحث بعد إغلاق الكشف: \(app.debugDescription)")
+            return
+        }
+        result.tap()
         let payslip = element("personPayslip")
-        XCTAssertTrue(payslip.waitForExistence(timeout: 20))
+        guard payslip.waitForExistence(timeout: 20) else {
+            XCTFail("لم تظهر قسيمة الراتب بعد فتح الاسم: \(app.debugDescription)")
+            return
+        }
         XCTAssertFalse(app.tabBars.buttons["مشاركة"].exists)
         XCTAssertFalse(app.tabBars.buttons["المزيد"].exists || app.tabBars.buttons["More"].exists)
         XCTAssertTrue(searchTab.exists)
