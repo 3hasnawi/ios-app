@@ -51,6 +51,7 @@ import CoreGraphics
             record.itemSummaryData = try encoder.encode(["حقل تجريبي": 42 + m])
             context.insert(record)
         }
+        var expectedMethods: [String: [Int: Double]] = [:]
         for i in 0..<count {
             let month = months[i % 2], name = "منتسب تجريبي " + String(i / 2)
             let net: Double? = i % 13 == 0 ? nil : Double(400_000 + i) + 0.25
@@ -63,8 +64,17 @@ import CoreGraphics
             case 1: raw = Data([0, 123, 255])
             default: raw = try encoder.encode(PayrollColumnSnapshot(headers: i.isMultiple(of: 2) ? headers : headers.reversed(), values: values))
             }
-            context.insert(Employee(month: month, name: name, rank: "عقود", workplace: "قسم تجريبي", netSalary: net,
-                                    items: [title: amount], details: ["رقم": String(i)], rawColumnsData: raw))
+            let method = i % 3
+            expectedMethods[month, default: [:]][method, default: 0] += net ?? 0
+            let details = ["رقم": String(i), "طريقة الدفع": ["بطاقة","كاش",""][method]]
+            var items = [title: amount, "مجموع استقطاعات المصارف": amount, "الرعاية الصحية": 3500,
+                         "صندوق شهداء الشرطة": 250, "الضريبة": 500, "الحماية الاجتماعية": 125, "عراق الجوال": 1000]
+            if i < 6 {
+                items["الاسمي"] = [60_000_000, 60_000_000, 58_723_001][i / 2]
+                items["توقيفات تقاعدية"] = [40_000, 40_000, 45_000][i / 2]
+            }
+            context.insert(Employee(month: month, name: name, rank: i < 6 ? "عقود" : "موظف", workplace: "قسم تجريبي", netSalary: net,
+                                    items: items, details: details, rawColumnsData: raw))
             context.insert(Deduction(month: month, employeeName: name, title: title, amount: amount, note: "تجريبي", rank: "عقود"))
             expectedNet[month, default: 0] += net ?? 0
             expectedDeduct[month + title, default: 0] += amount
@@ -104,6 +114,33 @@ import CoreGraphics
         bank.manualContractOverride = restoredOverrides[months[0]]
         bank.cardNet = restored.net[months[0]]!; bank.bankDeductions = 4800
         precondition(bank.bankTotal == expectedNet[months[0]]! + 4800 + manual.total)
+
+        let defaults = UserDefaults.standard
+        let oldOverride = defaults.object(forKey: ContractOverrides.settingsKey)
+        defer { defaults.set(oldOverride, forKey: ContractOverrides.settingsKey) }
+        defaults.set(restoredData, forKey: ContractOverrides.settingsKey)
+        for database in [source, destination] {
+            for month in months {
+                let statement = try await BankStatementEngine(modelContainer: database).summary(month: month)
+                let perMonth = Double(count / 2)
+                let expectedExecution = expectedDeduct.filter { $0.key.hasPrefix(month) }.values.reduce(0, +)
+                let expectedContribution = month == months[0] ? 22_000_000.0 : 21_571_760.0
+                precondition(statement.cashNet == expectedMethods[month]![1] && statement.cardNet == expectedMethods[month]![0])
+                precondition(statement.unclassifiedNet == expectedMethods[month]![2] && statement.netSalary == expectedNet[month])
+                precondition(statement.executionMatched && statement.executionCount == count / 2 && statement.executionDeductions == expectedExecution)
+                precondition(statement.contractNominalShare == 21_446_760 && statement.contractContribution == expectedContribution)
+                precondition(statement.breakdown["الرعاية الصحية"] == 3500 * perMonth && statement.breakdown["شركة عراق الجوال"] == 1000 * perMonth)
+                let expectedTotal = expectedNet[month]! + expectedExecution + (3500 + 250 + 500 + 125 + 1000) * perMonth + expectedContribution
+                precondition(statement.bankTotal == expectedTotal)
+                let split = FoodContractReport.Split(total: 1000 * perMonth)
+                precondition(split.fund == 48_000 && split.tax == 27_936 && split.company == 1_524_064)
+            }
+        }
+        for (nominal, rounded) in [(0.0, 0.0), (124, 10), (125, 20), (126, 20), (178_723_001, 21_446_760)] {
+            var example = BankStatementSummary(month: months[0]); example.contractNominal = nominal
+            precondition(example.contractNominalShare == rounded)
+        }
+        print("Production bank statements match independent cash, card, unclassified, deductions, company split, contract rounding, manual overrides and grand totals before and after restore.")
 
         let rowsURL = folder.appendingPathComponent("employees.jsonl")
         let rows = try Data(contentsOf: rowsURL)

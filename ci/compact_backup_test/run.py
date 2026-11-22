@@ -38,7 +38,11 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
         section(models, "/// شهر رواتب واحد", "/// يحفظ نتيجة"), section(models, "nonisolated enum MonthName", "extension PayrollMonth"),
         read("StaffModel").split("/// معلومات آخر استيراد")[0], read("ArabicText").split("enum Money")[0],
         section(accounts, "nonisolated struct SavedExecutionAccount", "    static func merge(") + "}\n",
-        section(read("BankStatement"), "nonisolated struct BankStatementSummary", "/// مبالغ تُدخل"), books
+        section(read("BankStatement"), "nonisolated struct BankStatementSummary", "/// مبالغ تُدخل"),
+        section(read("BankStatement"), "nonisolated enum ContractNominalValue", "/// ملخصات مؤقتة"),
+        section(read("BankStatement"), "@ModelActor", "struct BankStatementView"),
+        section(read("ExcelImporter"), "nonisolated enum DeductionStatus", "nonisolated enum AnnualDeductionAmount"),
+        section(read("FoodContractReport"), "nonisolated enum FoodContractReport", "    static func rows(") + "}", books
     ]
     (src / "Production.swift").write_text(imports + "\n".join(code))
     for name in ["Support.swift","Test.swift"]:

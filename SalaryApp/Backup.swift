@@ -1139,9 +1139,10 @@ final class BackupManager {
         #endif
         let trustOK = SalaryTrustSelfTest.run()
         let trustPDFOK = await SalaryTrustSelfTest.pdf()
-        let passed = firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
+        let breakdownOK = sizes?.total == Int64(periodicSize) && previousSizes?.total == Int64(replacementSize)
+        let passed = breakdownOK && firstSize > 0 && replacementSize > 0 && periodicSize > 0 && lastSize == Int64(periodicSize)
             && periodicDue && valid && lastError == nil && count == 1 && serverDatesOK && trustOK && trustPDFOK && scanOK && decorOK
-        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") serverDates=\(serverDatesOK) trust=\(trustOK) trustPDF=\(trustPDFOK) scan=\(scanOK) decor=\(decorOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)\(diagnostic)")
+        LaunchOptions.writeReport("autobackup=\(passed ? "ok" : "failed") sizeBreakdown=\(breakdownOK) serverDates=\(serverDatesOK) trust=\(trustOK) trustPDF=\(trustPDFOK) scan=\(scanOK) decor=\(decorOK) size=\(periodicSize) recorded=\(lastSize) due=\(periodicDue) zip=\(valid) files=\(count) line=\(line) again=\(again)\(diagnostic)")
     }
 
     // MARK: - الاسترجاع

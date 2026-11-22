@@ -724,6 +724,7 @@ jobs:
       - name: Check salary trust filters and optional payment fields
         if: ${{ !cancelled() && (inputs.quick != true || inputs.backup_only == true || inputs.safety_only == true) }}
         run: |
+          grep -q "sizeBreakdown=true" ci-output/autobackup-report.txt || { echo "::error::Saved backup size comparison failed"; exit 1; }
           grep -q "trust=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust self-test failed"; exit 1; }
           grep -q "trustPDF=true" ci-output/autobackup-report.txt || { echo "::error::Salary trust PDF test failed"; exit 1; }
 
