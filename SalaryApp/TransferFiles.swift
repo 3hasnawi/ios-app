@@ -265,6 +265,7 @@ struct TransferFilesView: View {
 
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
+    private var calculationKey: BankStatementCache.Key? { month.map { bankCache.key(for: $0) } }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
     private var categories: [String: String] { (try? JSONDecoder().decode([String: String].self, from: categoriesData)) ?? [:] }
     private var categoriesValid: Bool { categoriesData.isEmpty || (try? JSONDecoder().decode([String: String].self, from: categoriesData)) != nil }
@@ -519,28 +520,24 @@ struct TransferFilesView: View {
         .onChange(of: payerIBAN) { BackupManager.shared.markSettingChanged("bankStatementIBAN") }
         .onAppear { draftCoverage.discardIfDifferent(draftRevision) }
         .onChange(of: draftRevision) { draftCoverage.discardIfDifferent(draftRevision) }
-        .task(id: "\(loadKey)|\(bankCache.revision)") {
+        .task(id: calculationKey) {
             let key = loadKey
             let revision = bankCache.revision
-            guard loadedKey != key || loadedRevision != revision || error != nil else { return }
-            guard let name = month?.name else { groups = []; loadedKey = key; loadedRevision = revision; return }
             loadedKey = ""; error = nil; groups = []; missing = [:]; figures = nil; figuresError = nil
-            let container = SharedModel.container
-            let work = Task.detached(priority: .userInitiated) { try await TransferDataEngine(modelContainer: container).read(month: name) }
+            guard let source = calculationKey else { loadedKey = key; loadedRevision = revision; return }
             do {
-                let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-                guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }
+                let value = try await bankCache.groups(for: source)
+                guard !Task.isCancelled, calculationKey == source else { return }
                 groups = value.0; missing = value.1
                 do {
-                    let figureWork = Task.detached(priority: .userInitiated) { try await TransferLetterFigureEngine(modelContainer: container).figures(month: name) }
-                    let result = try await withTaskCancellationHandler { try await figureWork.value } onCancel: { figureWork.cancel() }
-                    guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }
+                    let result = try await bankCache.figures(for: source)
+                    guard !Task.isCancelled, calculationKey == source else { return }
                     figures = result
                 } catch is CancellationError { return }
-                catch { guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }; figuresError = error.localizedDescription }
+                catch { guard !Task.isCancelled, calculationKey == source else { return }; figuresError = error.localizedDescription }
                 loadedKey = key; loadedRevision = revision
             } catch is CancellationError { return }
-            catch { guard !Task.isCancelled, key == loadKey, revision == bankCache.revision else { return }; self.error = error.localizedDescription; loadedKey = key; loadedRevision = revision }
+            catch { guard !Task.isCancelled, calculationKey == source else { return }; self.error = error.localizedDescription; loadedKey = key; loadedRevision = revision }
         }
     }
 }

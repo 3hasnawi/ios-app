@@ -66,15 +66,49 @@ nonisolated enum ContractNominalValue {
 final class BankStatementCache {
     static let shared = BankStatementCache()
     private(set) var revision = 0
-    private var entries: [String: BankStatementSummary] = [:]
+    struct Key: Hashable, Sendable {
+        let id: PersistentIdentifier
+        let name: String
+        let importedAt: Date
+        let employees: Int
+        let deductions: Int
+        let revision: Int
+    }
+    typealias Groups = ([ReportGroup], [String: Int])
+    private let summaries = MonthlyCalculationCache<Key, BankStatementSummary>()
+    private let transferFigures = MonthlyCalculationCache<Key, TransferLetterFigures>()
+    private let transferGroups = MonthlyCalculationCache<Key, Groups>()
 
-    func value(for key: String) -> BankStatementSummary? { entries[key] }
-    func store(_ value: BankStatementSummary, for key: String) {
-        if entries.count >= 3 && entries[key] == nil { entries.removeAll() }
-        entries[key] = value
+    func key(for month: PayrollMonth) -> Key {
+        Key(id: month.persistentModelID, name: month.name, importedAt: month.importedAt,
+            employees: month.employeeCount, deductions: month.deductionCount, revision: revision)
+    }
+    func summary(for key: Key) async throws -> BankStatementSummary {
+        guard revision == key.revision else { throw CancellationError() }
+        let container = SharedModel.container
+        return try await summaries.value(for: key) {
+            try await BankStatementEngine(modelContainer: container).summary(month: key.name)
+        }
+    }
+    func figures(for key: Key) async throws -> TransferLetterFigures {
+        let summary = try await summary(for: key)
+        guard revision == key.revision else { throw CancellationError() }
+        let container = SharedModel.container
+        return try await transferFigures.value(for: key) {
+            try await TransferLetterFigureEngine(modelContainer: container).figures(summary: summary)
+        }
+    }
+    func groups(for key: Key) async throws -> Groups {
+        guard revision == key.revision else { throw CancellationError() }
+        let container = SharedModel.container
+        return try await transferGroups.value(for: key) {
+            try await TransferDataEngine(modelContainer: container).read(month: key.name)
+        }
     }
     func invalidate() {
-        entries.removeAll()
+        summaries.invalidate()
+        transferFigures.invalidate()
+        transferGroups.invalidate()
         revision += 1
     }
 }
@@ -148,18 +182,15 @@ struct BankStatementView: View {
     @AppStorage("bankStatementBranch") private var bankBranch = "الأنبار"
     @AppStorage("bankStatementLocalAccount") private var localAccount = ""
     @AppStorage("bankStatementManualAmounts") private var manualAmountsData = Data()
+    @State private var displayedKey: BankStatementCache.Key?
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
     @State private var showContractOverride = false
     @State private var cache = BankStatementCache.shared
-    @State private var requestID = UUID()
-    @State private var currentWork: Task<BankStatementSummary, Error>?
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
-    private var loadKey: String {
-        "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(cache.revision)"
-    }
+    private var loadKey: BankStatementCache.Key? { month.map { cache.key(for: $0) } }
     private var manualAmounts: BankManualAmounts { amounts(for: month?.name ?? "") }
 
     private func amounts(for name: String) -> BankManualAmounts {
@@ -211,7 +242,7 @@ struct BankStatementView: View {
                     }
                     Section {
                         NavigationLink {
-                            BankReconciliationPicker(currentMonth: month?.name ?? "", months: months.map(\.name))
+                            BankReconciliationPicker(currentMonth: month?.name ?? "", months: months)
                         } label: {
                             Label(tr("مطابقة حساب المصرف", "Bank account reconciliation"), systemImage: "checklist")
                         }
@@ -355,37 +386,20 @@ struct BankStatementView: View {
 
     @MainActor
     private func loadSummary(force: Bool) async {
-        currentWork?.cancel()
-        let id = UUID()
-        requestID = id
-        guard let month else { summary = nil; loadError = nil; return }
-        let key = loadKey
-        let name = month.name
-        if summary?.month != name { summary = nil }
-        if !force {
-            summary = cache.value(for: key)
-            loadError = nil
-            if summary != nil { return }
-        }
-        let container = SharedModel.container
-        let work = Task.detached(priority: .userInitiated) {
-            try await BankStatementEngine(modelContainer: container).summary(month: name)
-        }
-        currentWork = work
+        if force { cache.invalidate() }
+        guard let key = loadKey else { summary = nil; loadError = nil; return }
+        if displayedKey != key { summary = nil }
+        loadError = nil
         do {
-            let value = try await withTaskCancellationHandler {
-                try await work.value
-            } onCancel: {
-                work.cancel()
-            }
-            guard !Task.isCancelled, requestID == id, loadKey == key else { return }
-            cache.store(value, for: key)
+            let value = try await cache.summary(for: key)
+            guard !Task.isCancelled, loadKey == key else { return }
+            displayedKey = key
             summary = value
             loadError = nil
         } catch is CancellationError {
             return
         } catch {
-            guard !Task.isCancelled, requestID == id, loadKey == key else { return }
+            guard !Task.isCancelled, loadKey == key else { return }
             loadError = error.localizedDescription
         }
     }

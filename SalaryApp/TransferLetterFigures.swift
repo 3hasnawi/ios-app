@@ -107,6 +107,11 @@ nonisolated enum TransferLetterFigureRules {
 actor TransferLetterFigureEngine {
     func figures(month: String) async throws -> TransferLetterFigures {
         let summary = try await BankStatementEngine(modelContainer: modelContainer).summary(month: month)
+        return try figures(summary: summary)
+    }
+
+    func figures(summary: BankStatementSummary) throws -> TransferLetterFigures {
+        let month = summary.month
         var descriptor = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })
         descriptor.propertiesToFetch = [\.rawColumnsData, \.detailsData, \.itemsData]
         let sources: [(String, [String])] = [

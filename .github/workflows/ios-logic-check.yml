@@ -25,6 +25,10 @@ jobs:
         run: swiftc --version
       - name: Parse changed Swift files
         run: swiftc -frontend -parse SalaryApp/*.swift
+      - name: Reopen bank and transfer calculations
+        run: |
+          swiftc -parse-as-library SalaryApp/MonthlyCalculationCache.swift ci/monthly_calculation_test/main.swift -o "$RUNNER_TEMP/month-cache"
+          "$RUNNER_TEMP/month-cache"
       - name: Pinned reports and legacy home choices
         run: |
           swiftc SalaryApp/HomePinnedReports.swift ci/home_pins_test/main.swift -o "$RUNNER_TEMP/home-pins-test"
