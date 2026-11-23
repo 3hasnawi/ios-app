@@ -47,7 +47,7 @@ nonisolated struct ContractTransferBatch: Codable, Identifiable {
     var held: Double {
         parts.reduce(guarantee) { sum, part in sum + (part.portion(.deferred)?.group.total ?? 0) }
     }
-    func validate() throws {
+    func validate(allowEmptyHold: Bool = false) throws {
         guard month == figures.month, MonthName.sortKey(month) > 0, figures.contractTotal != nil,
               Self.validMoney(guarantee), TransferRules.safeField(payer), TransferRules.validIBAN(iban),
               Set(parts.map { $0.entity.id }).count == parts.count else { throw TransferIndividualPlan.Failure.invalidSource }
@@ -69,7 +69,7 @@ nonisolated struct ContractTransferBatch: Codable, Identifiable {
             total += entity.group.total
             guard Self.validMoney(total) else { throw TransferIndividualPlan.Failure.invalidSource }
         }
-        guard held > 0 else { throw ContractTransferIssue(tr("لا توجد استقطاعات عقود للتأجيل.", "There are no contract deductions to defer.")) }
+        guard held > 0 || allowEmptyHold else { throw ContractTransferIssue(tr("لا توجد استقطاعات عقود للتأجيل.", "There are no contract deductions to defer.")) }
     }
 
     static func validMoney(_ value: Double) -> Bool {
@@ -84,6 +84,7 @@ nonisolated struct ContractTransferArchive: Codable {
         let id: UUID
         let month: String
         let held: Double
+        let importedAt: Date
         let compressed: Data
         var prepared: [String: Date] = [:]
         var confirmed: [String: Date] = [:]
@@ -91,7 +92,7 @@ nonisolated struct ContractTransferArchive: Codable {
         func batch() throws -> ContractTransferBatch {
             let batch = try JSONDecoder().decode(ContractTransferBatch.self, from: ContractBatchPayload.unpack(compressed))
             try batch.validate()
-            guard batch.month == month, batch.id == id, batch.held == held, Set(confirmed.keys).isSubset(of: Set(prepared.keys)) else { throw TransferIndividualPlan.Failure.invalidSource }
+            guard batch.month == month, batch.id == id, batch.importedAt == importedAt, batch.held == held, Set(confirmed.keys).isSubset(of: Set(prepared.keys)) else { throw TransferIndividualPlan.Failure.invalidSource }
             return batch
         }
     }
@@ -108,7 +109,13 @@ nonisolated struct ContractTransferArchive: Codable {
         try batch.validate()
         guard !records.contains(where: { $0.month == batch.month }) else { throw TransferIndividualPlan.Failure.invalidSource }
         let payload = try ContractBatchPayload.pack(JSONEncoder().encode(batch))
-        records.insert(Record(id: batch.id, month: batch.month, held: batch.held, compressed: payload), at: 0)
+        records.insert(Record(id: batch.id, month: batch.month, held: batch.held, importedAt: batch.importedAt, compressed: payload), at: 0)
+    }
+    var executionMarkers: [String] {
+        records.flatMap { record in
+            record.prepared.keys.map { record.id.uuidString + "|P|" + $0 } +
+            record.confirmed.keys.map { record.id.uuidString + "|C|" + $0 }
+        }.sorted()
     }
     static func fromSettings(_ settings: [String: Data]) throws -> Self {
         guard let raw = settings[key] else { return Self() }

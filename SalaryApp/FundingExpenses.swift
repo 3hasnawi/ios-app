@@ -200,7 +200,8 @@ struct FundingExpensesView: View {
                             Section(tr("توزيع التمويل عند فصل العقود", "Funding split for contracts")) {
                                 LabeledContent(tr("استحقاق الشهر", "Monthly entitlement"), value: Money.format(report.total))
                                 LabeledContent(tr("دفعة العقود المحفوظة", "Saved contract batch"), value: Money.format(held.held))
-                                if report.total >= held.held && !report.isProvisional && report.difference == 0 {
+                                if months.first(where: { $0.name == report.month })?.importedAt == held.importedAt, !showSavedApproval,
+                                   report.total >= held.held && !report.isProvisional && report.difference == 0 {
                                     LabeledContent(tr("الاستحقاق عدا دفعة العقود", "Entitlement excluding held contracts"), value: Money.format(report.total - held.held))
                                 }
                                 NavigationLink { ContractTransferRecordView(id: held.id) } label: { Text(tr("تفاصيل الدفعتين", "Batch details")) }

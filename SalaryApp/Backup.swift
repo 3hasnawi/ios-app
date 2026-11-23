@@ -45,6 +45,8 @@ nonisolated enum BackupFormat {
         var accounts: Int?
         var books: Int?
         var salaryTrustEntries: Int? = nil
+        var contractBatchCount: Int? = nil
+        var contractExecutionMarkers: [String]? = nil
         var contentVersion: Int? = nil
         var payrollDigest: Data? = nil
         var supportingDigest: Data? = nil
@@ -68,7 +70,7 @@ nonisolated enum BackupFormat {
         }
         var hasData: Bool {
             !months.isEmpty || employees > 0 || deductions > 0 || staff > 0 ||
-            (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0
+            (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0 || (contractBatchCount ?? 0) > 0
         }
     }
 
@@ -122,11 +124,13 @@ actor BackupActor {
         let employees = try modelContext.fetchCount(FetchDescriptor<Employee>())
         let deductions = try modelContext.fetchCount(FetchDescriptor<Deduction>())
         let staff = try modelContext.fetchCount(FetchDescriptor<StaffMember>())
+        let batchArchive = try ContractTransferArchive.read(UserDefaults.standard.data(forKey: ContractTransferArchive.key) ?? Data())
         return BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now, months: months,
                                      employees: employees, deductions: deductions, staff: staff,
                                      accounts: try ExecutionAccountStore.load().count,
                                      books: try OfficialBookFiles.read().count,
-                                     salaryTrustEntries: try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()).entries.count)
+                                     salaryTrustEntries: try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()).entries.count,
+                                     contractBatchCount: batchArchive.records.count, contractExecutionMarkers: batchArchive.executionMarkers)
     }
 
     /// يكتب ملف النسخة (zip) ويعيد رابطه ووصفه.
@@ -234,7 +238,7 @@ actor BackupActor {
         }
         let formatVersion = BackupFormat.exportVersion(for: settings)
         try JSONEncoder().encode(payroll.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
-        _ = try ContractTransferArchive.fromSettings(settings)
+        let batchArchive = try ContractTransferArchive.fromSettings(settings)
         let settingsFile = try JSONEncoder().encode(settings)
         guard settingsFile.count <= 64_000_000 else { throw CheckedArchive.Failure.tooLarge }
         try settingsFile.write(to: dir.appendingPathComponent("settings.json"))
@@ -244,6 +248,7 @@ actor BackupActor {
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
                                              accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount,
+                                             contractBatchCount: batchArchive.records.count, contractExecutionMarkers: batchArchive.executionMarkers,
                                              contentVersion: formatVersion, payrollDigest: payroll.fingerprint.digest,
                                              supportingDigest: try BackupArchiveVerification.supportingDigest(in: dir, paths: supporting, expected: expectedDigests))
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
@@ -320,7 +325,8 @@ actor BackupActor {
         if manifest.version >= 12, manifest.dataVersion != BackupFormat.exportVersion(for: settings) { throw BackupError.notBackup }
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         let batches = try ContractTransferArchive.fromSettings(settings)
-        guard (manifest.version == 13) == !batches.records.isEmpty else { throw BackupError.notBackup }
+        guard (manifest.version == 13) == !batches.records.isEmpty, manifest.contractBatchCount ?? 0 == batches.records.count,
+              manifest.contractExecutionMarkers ?? [] == batches.executionMarkers else { throw BackupError.notBackup }
         let existing = try ContractTransferArchive.read(UserDefaults.standard.data(forKey: ContractTransferArchive.key) ?? Data())
         try batches.checkRestore(over: existing)
 
@@ -753,7 +759,7 @@ final class BackupManager {
             (previous.accounts ?? 0) > 0 && (current.accounts ?? 0) == 0 ||
             (previous.books ?? 0) > 0 && (current.books ?? 0) == 0 ||
             (previous.salaryTrustEntries ?? 0) > 0 && (current.salaryTrustEntries ?? 0) == 0
-        guard !lostMonth && !lostRows else { throw BackupError.dataLossRisk }
+        guard !lostMonth && !lostRows, Set(previous.contractExecutionMarkers ?? []).isSubset(of: Set(current.contractExecutionMarkers ?? [])) else { throw BackupError.dataLossRisk }
     }
 
     /// يسجل خط الأساس لأول مرة فقط بعد التأكد من وجود بيانات في القاعدة.

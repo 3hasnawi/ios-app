@@ -12,7 +12,7 @@ actor ContractTransferEngine {
     }
 
     func prepare(month: String, importedAt: Date, figures: TransferLetterFigures, entities: [TransferEntity],
-                 payer: String, iban: String, links: Data) throws -> ContractTransferBatch {
+                 payer: String, iban: String, links: Data, allowEmptyHold: Bool = false) throws -> ContractTransferBatch {
         guard figures.month == month, figures.contractTotal != nil else {
             throw ContractTransferIssue(tr("راجع الاسمي والتعديل المعتمد لضمان العقود في كشف البنك قبل الفصل.", "Review contract nominal pay and the approved guarantee before splitting."))
         }
@@ -91,7 +91,7 @@ actor ContractTransferEngine {
         }
         let batch = ContractTransferBatch(id: UUID(), month: month, importedAt: importedAt, created: .now,
             figures: figures, payer: payer, iban: iban, links: links, parts: parts)
-        try batch.validate()
+        try batch.validate(allowEmptyHold: allowEmptyHold)
         return batch
     }
 }

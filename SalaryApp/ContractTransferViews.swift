@@ -74,6 +74,7 @@ struct ContractTransferRecordView: View {
     @State private var confirm: ContractTransferDestination?
     @State private var cancel = false
     @State private var review = false
+    @State private var reviewStamp: Date?
     private var sourceRevision: Date? {
         guard let batch, let month = months.first(where: { $0.name == batch.month }), month.employeeCount > 0 else { return nil }
         return month.importedAt
@@ -97,7 +98,7 @@ struct ContractTransferRecordView: View {
                     LabeledContent(tr("شهر الاستحقاق", "Funding month"), value: batch.month)
                     if changed {
                         Text(tr("أُعيد استيراد الشهر بعد حفظ الدفعة. راجع الأسماء والمبالغ المحفوظة قبل متابعة إصدارها.", "The month was reimported. Review the saved names and amounts before issuing.")).foregroundStyle(.orange)
-                        Button(tr("مراجعة واعتماد الدفعة المحفوظة", "Review and retain the saved batch")) { review = true }
+                        Button(tr("مراجعة واعتماد الدفعة المحفوظة", "Review and retain the saved batch")) { reviewStamp = sourceRevision; review = true }
                     }
                 }
                 ContractBatchOverview(batch: batch)
@@ -166,11 +167,13 @@ struct ContractTransferRecordView: View {
                 } } catch { self.error = error.localizedDescription }
             }
         }
-        .alert(tr("اعتماد مبالغ وأسماء اللقطة الأصلية بعد المراجعة؟", "Keep the original amounts and names after review?"), isPresented: $review) {
-            Button(tr("اعتماد اللقطة", "Keep snapshot")) {
-                do { try mutate { $0.reviewedImport = sourceRevision } } catch { self.error = error.localizedDescription }
+        .sheet(isPresented: $review) {
+            if let batch, let stamp = reviewStamp {
+                ContractTransferReview(original: batch, stamp: stamp) {
+                    guard stamp == sourceRevision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+                    try mutate { $0.reviewedImport = stamp }
+                }
             }
-            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
         }
         .alert(tr("إلغاء تأجيل هذا الشهر؟", "Cancel deferral for this month?"), isPresented: $cancel) {
             Button(tr("إلغاء الفصل", "Remove split"), role: .destructive) {
