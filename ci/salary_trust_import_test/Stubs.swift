@@ -12,6 +12,7 @@ enum BackupError:Error { case notBackup,dataLossRisk,newerVersion }
 struct TransferLetterCustomizationStore:Codable { static let settingsKey="test-unified";var hasUnifiedTemplates=false }
 enum CustomTransferTemplate { static let settingsKey="test-custom" }
 enum FundingApproval { static let settingsKey="test-funding" }
+enum ContractTransferArchive { static let key="test-contract-batches" }
 enum ContractOverrides { static let settingsKey="test-contract" }
 enum BankReconciliation { static let settingsKey="test-bank" }
 enum TransferRules { static let settingsKey="test-rules";enum Category { case anbar };static func classify(_ account:SavedExecutionAccount)->Category{.anbar} }

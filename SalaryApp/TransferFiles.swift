@@ -245,14 +245,17 @@ struct TransferFilesView: View {
         do { try checkSplitEligibility() } catch { self.error = error.localizedDescription; return }
         if figures.missingContractNominal > 0 && !reviewed { reviewMissingNominal = true; return }
         figures.contractNominalReviewed = reviewed
+        let checkedFigures = figures
         let all = entities, source = draftRevision, revision = bankCache.revision, name = month.name, stamp = month.importedAt
         let payer = payerName, iban = payerIBAN, links = payrollLinksData, container = SharedModel.container
         preparingSplit = true; error = nil
         Task {
             defer { preparingSplit = false }
             do {
-                let result = try await ContractTransferEngine(modelContainer: container).prepare(month: name, importedAt: stamp,
-                    figures: figures, entities: all, payer: payer, iban: iban, links: links)
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try await ContractTransferEngine(modelContainer: container).prepare(month: name, importedAt: stamp,
+                        figures: checkedFigures, entities: all, payer: payer, iban: iban, links: links)
+                }.value
                 try checkSplitEligibility()
                 guard source == draftRevision, revision == bankCache.revision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
                 splitSource = source; splitRevision = revision; pendingSplit = result
