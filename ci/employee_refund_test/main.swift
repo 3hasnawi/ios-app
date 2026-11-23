@@ -210,3 +210,28 @@ for bankCount in [1, 4] {
     }
 }
 print("Refund letters rendered and checked on one A4 page; CSV retains full value date.")
+
+// مبالغ عقد مجمّعة في صف عربي واحد؛ قد يقسّم PDFKit قيمة الخلية عند التفاف النص.
+do {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    for signed in ["", "+٢,٤٥٠", "−٢,٤٥٠"] {
+        let total = signed.isEmpty ? "٢٥٣,١٩٠,٩١٥" : (signed.hasPrefix("+") ? "٢٥٣,١٩٣,٣٦٥" : "٢٥٣,١٨٨,٤٦٥")
+        var headers = ["مبلغ نسبة ٥٪", "مبلغ نسبة ١٢٪"]
+        var row = ["٧٤,٤٦٧,٩١٥", "١٧٨,\n٧٢٣,٠٠٠"]
+        if !signed.isEmpty { headers.append("التعديل اليدوي"); row.append(signed) }
+        headers.append("المجموع"); row.append(total)
+        var contract = blocks
+        contract[4] = .paragraph(.init(text: "نرجو تحويل مبلغ (\(total)) من (\(payer)) إلى (\(iban("RSHD", 3)))."))
+        contract[5] = .table(.init(headers: headers, rows: [row]))
+        let url = directory.appendingPathComponent(UUID().uuidString + ".pdf")
+        try TransferAdaptivePDF.write(blocks: contract, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+        try TransferAdaptivePDF.verify(url, required: [payer, iban("RSHD", 3), total])
+        precondition(PDFDocument(url: url)?.pageCount == 1)
+    }
+    precondition(TransferAdaptivePDF.tableAmountKey("−٢,٤٥٠") == "-2450")
+    precondition(TransferAdaptivePDF.tableAmountKey("٢,٤٥٠+") == "+2450")
+    precondition(TransferAdaptivePDF.tableAmountKey("٢,٤٥٠") == "2450")
+}
+print("Verified contract PDF cells, wrapped thousands and signed adjustments.")

@@ -299,8 +299,8 @@ import CryptoKit
         }
         var reviewed = TransferLetterFigures(month: month, foodFund: 3, foodTax: 5, foodCompany: 92,
             healthcare: 20, policeFundDonations: 30, sports: 40, incomeTax: 11, socialProtection: 13,
-            contractNominalShare: nil, contractRetirement: 19, payrollCash: 23, missingContractNominal: 1,
-            availableContractNominalShare: 17)
+            contractNominalShare: nil, contractRetirement: 74_467_915, payrollCash: 23, missingContractNominal: 1,
+            availableContractNominalShare: 178_723_000)
         do {
             _ = try TransferWordDraftGenerator.make(bookID: "contracts", figures: reviewed, entities: [], entity: nil,
                 individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
@@ -313,7 +313,7 @@ import CryptoKit
             individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",
             payerIBAN: payer, customization: custom, sakkalBold: syntheticFont, adaptivePDF: true)
         defer { try? FileManager.default.removeItem(at: reviewedPDF.letter.deletingLastPathComponent()) }
-        try check(PDFDocument(url: reviewedPDF.letter)?.pageCount == 1 && reviewed.contractTotal == 36, "reviewed contract PDF")
+        try check(PDFDocument(url: reviewedPDF.letter)?.pageCount == 1 && reviewed.contractTotal == 253_190_915, "reviewed contract PDF")
         do {
             let wrong = try TransferWordDraftGenerator.make(bookID: "food_company", figures: figures, entities: [], entity: nil,
                 individualPlan: nil, cashList: nil, references: references, accountLinks: Data(), payerName: "دافع وهمي",

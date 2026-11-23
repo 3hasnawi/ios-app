@@ -46,7 +46,12 @@ nonisolated enum TransferWordPayrollDraft {
         }
         blocks.append(.table(signatures))
         blocks.append(.paragraph(.init(text: text.footer, halfPoints: text.template?.halfPoints(.footer, default: 24) ?? 24, bold: adaptivePDF)))
-        if adaptivePDF { try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold, group: false, signatureOffset: text.signatureOffset, signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0, template: text.template) }
+        if adaptivePDF {
+            // تُطابق المبالغ في مواضعها لأن PDFKit قد يفصل مجموعات الآلاف عند استخراج نص الصفحة.
+            try TransferAdaptivePDF.write(blocks: blocks, destination: destination, sakkalBold: sakkalBold,
+                group: false, signatureOffset: text.signatureOffset, verifyNumericTableCells: plan.table != nil && plan.bookID != "cash_salary",
+                signatureHorizontalOffset: text.template?.signatureHorizontalOffset ?? 0, template: text.template)
+        }
         else { try TransferWordDocument.write(blocks: blocks, destination: destination, sakkalBold: nil) }
     }
 }

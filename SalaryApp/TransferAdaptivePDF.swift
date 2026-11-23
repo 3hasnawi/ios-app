@@ -6,7 +6,7 @@ import PDFKit
 /// لا تعني اجتياز التحقق على الجهاز أو السماح بالمشاركة.
 nonisolated enum TransferAdaptivePDF {
     enum Failure: LocalizedError {
-        case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, signaturePlacement, damaged
+        case invalid, noFont, doesNotFit, groupTableDoesNotFit, signatureDoesNotFit, signaturePlacement, damaged, tableAmountMismatch
         case diagnostic(String)
         var errorDescription: String? {
             switch self {
@@ -17,6 +17,7 @@ nonisolated enum TransferAdaptivePDF {
             case .groupTableDoesNotFit: tr("جدول المجموعة لا يتسع في صفحة واحدة بوضوح؛ راجع أطوال الأسماء وعدد الجهات.", "The group table does not fit legibly on one page; review entity names and count.")
             case .signatureDoesNotFit: tr("أحد أسماء اللجنة أو صفاتها لا يتسع في سطر التوقيع؛ راجع أسماء اللجنة.", "A committee name or title does not fit on its signature line; review the names.")
             case .signaturePlacement: tr("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.", "The committee overlaps the body or footer; adjust its position or shorten the text.")
+            case .tableAmountMismatch: tr("تعذّر مطابقة مبلغ في جدول الكتاب مع مصدره.", "A letter table amount could not be matched to its source.")
             case .damaged: tr("تعذّر التحقق من صفحات مسودة الكتاب.", "The letter draft pages could not be verified.")
             }
         }
@@ -149,6 +150,24 @@ nonisolated enum TransferAdaptivePDF {
         }
         return result
     }
+    /// قد يظهر رمز التعديل على يسار الرقم أو يمينه في النص المستخرج من PDF عربي.
+    static func tableAmountKey(_ text: String) -> String? {
+        var value = ArabicText.latinDigits(text).filter {
+            !$0.isWhitespace && $0 != "," && $0 != "٬" && $0 != "\u{200E}" && $0 != "\u{200F}" && $0 != "\u{061C}"
+        }
+        let signs = "+−-"
+        var sign = ""
+        if let first = value.first, signs.contains(first) {
+            sign = first == "+" ? "+" : "-"
+            value.removeFirst()
+        } else if let last = value.last, signs.contains(last) {
+            sign = last == "+" ? "+" : "-"
+            value.removeLast()
+        }
+        guard !value.isEmpty, value.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        return sign + value
+    }
+
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
                       sakkalBold: Data?, group: Bool, signatureOffset: Int = 0,
                       verifyNumericTableCells: Bool = false, signatureHorizontalOffset: Int = 0, template: CustomTransferTemplate? = nil,
@@ -342,9 +361,8 @@ nonisolated enum TransferAdaptivePDF {
                         let rect = CGRect(x: right, y: y, width: widths[index], height: height)
                         if table.showBorders { add(.box(rect, bold)) }
                         let value = values[index]
-                        if verifyNumericTableCells && table.showBorders && value.contains(where: \.isNumber) &&
-                            value.allSatisfy({ $0.isNumber || $0.isWhitespace || $0 == "," || $0 == "٬" }) {
-                            numericCells.append((pages.count - 1, rect, value))
+                        if verifyNumericTableCells && table.showBorders, let expected = tableAmountKey(value) {
+                            numericCells.append((pages.count - 1, rect, expected))
                         }
                         var baseline = y + (height - cells[index].reduce(CGFloat.zero) { $0 + $1.height }) / 2
                         for line in cells[index] {
@@ -456,16 +474,13 @@ nonisolated enum TransferAdaptivePDF {
                   return abs(page.bounds(for: .mediaBox).width - Self.page.width) < 2 && abs(page.bounds(for: .mediaBox).height - Self.page.height) < 2
               }) else { throw Failure.damaged }
         if verifyNumericTableCells && numericCells.isEmpty { throw Failure.damaged }
-        func digits(_ value: String) -> String {
-            ArabicText.latinDigits(value).filter { $0.isASCII && $0.isNumber }
-        }
         for cell in numericCells {
             try Task.checkCancellation()
             guard let output = document.page(at: cell.page) else { throw Failure.damaged }
             let box = CGRect(x: cell.rect.minX + 0.2, y: page.height - cell.rect.maxY + 0.2,
                              width: cell.rect.width - 0.4, height: cell.rect.height - 0.4)
-            let actual = digits(output.selection(for: box)?.string ?? "")
-            guard !actual.isEmpty, actual == digits(cell.expected) else { throw Failure.damaged }
+            guard let extracted = output.selection(for: box)?.string,
+                  tableAmountKey(extracted) == cell.expected else { throw Failure.tableAmountMismatch }
         }
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
         complete = true
