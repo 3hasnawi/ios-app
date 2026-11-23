@@ -52,7 +52,6 @@ actor ContractTransferEngine {
         }
         guard !employees.isEmpty else { throw TransferLetterFigureError.missingPayroll }
         var entries: [String: [(ReportRow, Bool)]] = [:]
-        var identities = Set<[String]>()
         let deductions = try modelContext.fetch(FetchDescriptor<Deduction>(predicate: #Predicate { $0.month == month }))
         for (index, d) in deductions.enumerated() {
             if index.isMultiple(of: 256) { try Task.checkCancellation() }
@@ -70,9 +69,6 @@ actor ContractTransferEngine {
             let contract = try classification(rank, person: d.employeeName)
             if !source.isEmpty, !payRank.isEmpty, try classification(payRank, person: d.employeeName) != contract {
                 throw ContractTransferIssue(tr("تعارض تصنيف \(d.employeeName) بين الرواتب والاستقطاعات.", "Contract classification conflicts for \(d.employeeName)."))
-            }
-            guard identities.insert([d.matchKey, d.title, d.note, String(Int64(value))]).inserted else {
-                throw ContractTransferIssue(tr("قيد مكرر للمنتسب \(d.employeeName) لدى \(d.title) بنفس المبلغ والإضبارة.", "Duplicate amount and case for \(d.employeeName) at \(d.title)."))
             }
             entries[d.title, default: []].append((.init(id: index, name: d.employeeName, rank: rank,
                 workplace: matches.first?.workplace ?? "", amount: value, note: d.note, entity: d.title, personKey: d.matchKey), contract))

@@ -18,11 +18,16 @@ struct ContractTransferReview: View {
         let new: Double
     }
     private static func comparison(_ old: ContractTransferBatch, _ new: ContractTransferBatch) -> [Change] {
-        func rows(_ part: ContractTransferPart?) -> Set<[String]> {
-            guard let part else { return [] }
-            return Set(ContractTransferPhase.allCases.flatMap { phase in part.rows(phase).map {
-                [phase.rawValue, $0.name, $0.rank, $0.workplace, $0.note, String($0.amount)]
-            } })
+        func rows(_ part: ContractTransferPart?) -> [[String]: Int] {
+            guard let part else { return [:] }
+            var counts: [[String]: Int] = [:]
+            for phase in ContractTransferPhase.allCases {
+                for row in part.rows(phase) {
+                    let key = [phase.rawValue, row.name, row.rank, row.workplace, row.note, String(row.amount)]
+                    counts[key, default: 0] += 1
+                }
+            }
+            return counts
         }
         let before = Dictionary(uniqueKeysWithValues: old.parts.map { ($0.entity.group.title,$0) })
         let after = Dictionary(uniqueKeysWithValues: new.parts.map { ($0.entity.group.title,$0) })

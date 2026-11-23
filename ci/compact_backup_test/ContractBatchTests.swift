@@ -5,13 +5,13 @@ import SwiftData
     let month = "تشرين الأول 2026", context = ModelContext(container)
     let date = Date(timeIntervalSince1970: 1_800_000_000)
     let p = "عقد تجريبي", q = "عقد ثان", x = "موظف تجريبي"
-    context.insert(PayrollMonth(name: month, employeeCount: 3, deductionCount: 6))
+    context.insert(PayrollMonth(name: month, employeeCount: 3, deductionCount: 8))
     for (name, rank, bank, fund) in [(p,"عقود",270000,2000),(q,"عقود",130000,2000),(x,"شرطي",1250000,4000)] {
         context.insert(Employee(month: month, name: name, rank: rank, workplace: "", netSalary: 100,
                                 items: ["مجموع استقطاعات المصارف":Double(bank),"صندوق الشهداء":Double(fund)]))
     }
-    for (name,title,amount,note) in [(p,"أ",120000,"1"),(q,"أ",80000,"2"),(x,"أ",800000,"3"),
-                                      (p,"ب",150000,"4"),(x,"ب",450000,"5"),(q,"ج",50000,"6")] {
+    for (name,title,amount,note) in [(p,"أ",60000,"1"),(p,"أ",60000,"1"),(q,"أ",80000,"2"),(x,"أ",800000,"3"),
+                                      (p,"ب",150000,"4"),(x,"ب",225000,"5"),(x,"ب",225000,"5"),(q,"ج",50000,"6")] {
         context.insert(Deduction(month: month, employeeName: name, title: title, amount: Double(amount), note: note))
     }
     try context.save()
@@ -40,6 +40,13 @@ import SwiftData
     precondition(batch.parts(.deferred,category:.rafidain).map(\.group.total)==[200000])
     precondition(batch.parts(.current,category:.anbar).isEmpty)
     precondition(batch.parts(.deferred,category:.anbar).map(\.group.total)==[50000])
+    func checkRepeatedRows(_ snapshot: ContractTransferBatch) {
+        let contracts = snapshot.parts.first { $0.entity.group.title == "أ" }!.deferred.filter { $0.name == p }
+        let regular = snapshot.parts.first { $0.entity.group.title == "ب" }!.current.filter { $0.name == x }
+        precondition(contracts.map(\.amount) == [60000,60000] && Set(contracts.map(\.id)).count == 2)
+        precondition(regular.map(\.amount) == [225000,225000] && Set(regular.map(\.id)).count == 2)
+    }
+    checkRepeatedRows(batch)
     var references = Set<String>()
     for phase in ContractTransferPhase.allCases {
         let lines = batch.parts(phase,category:.otherBanks)
@@ -65,6 +72,7 @@ import SwiftData
     let roundTrip = try ContractTransferArchive.fromSettings(restored)
     try roundTrip.checkRestore(over:archive)
     let after = try roundTrip.records[0].batch()
+    checkRepeatedRows(after)
     precondition(after.held==batch.held && after.parts(.deferred,category:.anbar).count==1)
     do { try ContractTransferArchive().checkRestore(over:archive); preconditionFailure("Allowed a rollback") } catch is ContractTransferIssue {}
     context.insert(Deduction(month:month, employeeName:p,title:"أ",amount:120000,note:"1",rank:"شرطي"))
