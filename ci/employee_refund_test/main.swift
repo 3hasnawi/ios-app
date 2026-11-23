@@ -226,7 +226,23 @@ do {
         contract[4] = .paragraph(.init(text: "نرجو تحويل مبلغ (\(total)) من (\(payer)) إلى (\(iban("RSHD", 3)))."))
         contract[5] = .table(.init(headers: headers, rows: [row]))
         let url = directory.appendingPathComponent(UUID().uuidString + ".pdf")
-        try TransferAdaptivePDF.write(blocks: contract, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+        do {
+            try TransferAdaptivePDF.write(blocks: contract, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+        } catch {
+            // تشخيص خاص بملف الاختبار الوهمي عند اختلاف استخراج PDFKit بين الأنظمة.
+            try TransferAdaptivePDF.write(blocks: contract, destination: url, sakkalBold: nil, group: false)
+            if let page = PDFDocument(url: url)?.page(at: 0), let content = page.string {
+                FileHandle.standardError.write(Data("Contract fixture expected \(row), PDF text \(content)\n".utf8))
+                let ns = content as NSString
+                for i in 0..<min(ns.length, page.numberOfCharacters) {
+                    let point = page.characterBounds(at: i)
+                    if (220...600).contains(point.midY) && point.height > 0 {
+                        FileHandle.standardError.write(Data("\(i) \(ns.substring(with: NSRange(location: i, length: 1))) \(point)\n".utf8))
+                    }
+                }
+            }
+            throw error
+        }
         try TransferAdaptivePDF.verify(url, required: [payer, iban("RSHD", 3), total])
         precondition(PDFDocument(url: url)?.pageCount == 1)
     }
