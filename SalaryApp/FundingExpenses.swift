@@ -243,7 +243,7 @@ struct FundingExpensesView: View {
         }
         .navigationTitle(tr("تفصيل المصروفات", "Expense details"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: "\(month)|\(revision)|\(cache.revision)|\(manualData.base64EncodedString())") { await load() }
+        .task(id: "\(month)|\(revision)|\(cache.revision(for: month))|\(manualData.base64EncodedString())") { await load() }
         .overlay { if exporter.isWorking { ProgressView(tr("جارٍ تجهيز الكشف", "Preparing statement")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
         .alert(tr("الكشف", "Statement"), isPresented: Binding(get: { exporter.error != nil }, set: { if !$0 { exporter.error = nil } })) { Button(tr("حسناً", "OK"), role: .cancel) {} } message: { Text(exporter.error ?? "") }
         .confirmationDialog(tr("تأكيد اعتماد الكشف", "Confirm statement approval"), isPresented: $showConfirmApproval, titleVisibility: .visible) {

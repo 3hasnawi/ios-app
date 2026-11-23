@@ -65,7 +65,11 @@ nonisolated enum ContractNominalValue {
 @MainActor @Observable
 final class BankStatementCache {
     static let shared = BankStatementCache()
-    private(set) var revision = 0
+    private var globalRevision = 0
+    private var monthRevisions: [String: Int] = [:]
+    @ObservationIgnored private var nextRevision = 0
+
+    func revision(for month: String) -> Int { monthRevisions[month] ?? globalRevision }
     struct Key: Hashable, Sendable {
         let id: PersistentIdentifier
         let name: String
@@ -81,10 +85,10 @@ final class BankStatementCache {
 
     func key(for month: PayrollMonth) -> Key {
         Key(id: month.persistentModelID, name: month.name, importedAt: month.importedAt,
-            employees: month.employeeCount, deductions: month.deductionCount, revision: revision)
+            employees: month.employeeCount, deductions: month.deductionCount, revision: revision(for: month.name))
     }
     func summary(for key: Key) async throws -> BankStatementSummary {
-        guard revision == key.revision else { throw CancellationError() }
+        guard revision(for: key.name) == key.revision else { throw CancellationError() }
         let container = SharedModel.container
         return try await summaries.value(for: key) {
             try await BankStatementEngine(modelContainer: container).summary(month: key.name)
@@ -92,24 +96,35 @@ final class BankStatementCache {
     }
     func figures(for key: Key) async throws -> TransferLetterFigures {
         let summary = try await summary(for: key)
-        guard revision == key.revision else { throw CancellationError() }
+        guard revision(for: key.name) == key.revision else { throw CancellationError() }
         let container = SharedModel.container
         return try await transferFigures.value(for: key) {
             try await TransferLetterFigureEngine(modelContainer: container).figures(summary: summary)
         }
     }
     func groups(for key: Key) async throws -> Groups {
-        guard revision == key.revision else { throw CancellationError() }
+        guard revision(for: key.name) == key.revision else { throw CancellationError() }
         let container = SharedModel.container
         return try await transferGroups.value(for: key) {
             try await TransferDataEngine(modelContainer: container).read(month: key.name)
         }
     }
+    func refresh(_ key: Key) {
+        guard revision(for: key.name) == key.revision else { return }
+        summaries.invalidate(key)
+        transferFigures.invalidate(key)
+        transferGroups.invalidate(key)
+        nextRevision += 1
+        monthRevisions[key.name] = nextRevision
+    }
+
     func invalidate() {
         summaries.invalidate()
         transferFigures.invalidate()
         transferGroups.invalidate()
-        revision += 1
+        nextRevision += 1
+        globalRevision = nextRevision
+        monthRevisions.removeAll()
     }
 }
 
@@ -386,7 +401,7 @@ struct BankStatementView: View {
 
     @MainActor
     private func loadSummary(force: Bool) async {
-        if force { cache.invalidate() }
+        if force, let key = loadKey { cache.refresh(key) }
         guard let key = loadKey else { summary = nil; loadError = nil; return }
         if displayedKey != key { summary = nil }
         loadError = nil

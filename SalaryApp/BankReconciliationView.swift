@@ -9,6 +9,8 @@ struct BankReconciliationView: View {
     let manual: BankManualAmounts
     let figures: TransferLetterFigures?
     let figuresFailure: String?
+    let sourcesCurrent: Bool
+    let refreshFailure: String?
     let entities: [TransferEntity]?
     @AppStorage(BankReconciliation.settingsKey) private var stored = Data()
     @AppStorage("bankStatementAccountName") private var accountName = ""
@@ -33,7 +35,9 @@ struct BankReconciliationView: View {
     @State private var showUnconfirm = false
     @State private var draggedMovementID: UUID?
 
-    init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?) {
+    init(month: String, summary: BankStatementSummary, manual: BankManualAmounts, figures: TransferLetterFigures?, figuresFailure: String?, entities: [TransferEntity]?, sourcesCurrent: Bool = true, refreshFailure: String? = nil) {
+        self.sourcesCurrent = sourcesCurrent
+        self.refreshFailure = refreshFailure
         self.month = month; self.summary = summary; self.manual = manual; self.figures = figures; self.figuresFailure = figuresFailure; self.entities = entities
         let now = Date()
         var initial = BankReconciliation.Period(month: month, start: now, end: now)
@@ -106,11 +110,21 @@ struct BankReconciliationView: View {
     }
     var body: some View {
         List {
-            periodSection
-            summarySection
-            addMovementSection
-            movementSection
-            finishSection
+            if !sourcesCurrent {
+                if let refreshFailure {
+                    Label(refreshFailure, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                } else {
+                    ProgressView(tr("جارٍ تحديث مبالغ الشهر", "Refreshing monthly amounts"))
+                }
+            }
+            Group {
+                periodSection
+                summarySection
+                addMovementSection
+                movementSection
+                finishSection
+            }
+            .disabled(!sourcesCurrent)
         }
         .environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current)
         .navigationTitle(tr("مطابقة حساب المصرف", "Bank account reconciliation"))

@@ -48,6 +48,17 @@ private actor Gate {
         let retained = try await cache.value(for: "December") { 99 }
         precondition(refreshed == 3 && retained == 3)
 
+        let waiting = Gate()
+        let previous = Task { try await cache.value(for: "October") { await waiting.wait(); return 10 } }
+        await waiting.waitUntilStarted()
+        cache.invalidate("October")
+        let updated = try await cache.value(for: "October") { 11 }
+        let untouched = try await cache.value(for: "December") { 99 }
+        await waiting.release()
+        do { _ = try await previous.value; preconditionFailure("Returned pre-refresh amount") } catch is CancellationError {}
+        let current = try await cache.value(for: "October") { 12 }
+        precondition(updated == 11 && current == 11 && untouched == 3)
+
         enum Failure: Error { case temporary }
         do { _ = try await cache.value(for: "retry") { throw Failure.temporary }; preconditionFailure("Lost load failure") } catch Failure.temporary {}
         let retry = try await cache.value(for: "retry") { 7 }

@@ -37,6 +37,11 @@ final class MonthlyCalculationCache<Key: Hashable, Value: Sendable> {
         return try result.get()
     }
 
+    func invalidate(_ key: Key) {
+        entries.removeValue(forKey: key)?.work.cancel()
+        order.removeAll { $0 == key }
+    }
+
     func invalidate() {
         for entry in entries.values { entry.work.cancel() }
         entries.removeAll()

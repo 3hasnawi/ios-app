@@ -50,7 +50,7 @@ struct TreasuryLetterView: View {
     private var accounts: [SavedExecutionAccount] { (try? ExecutionAccountStore.decode(accountsData)) ?? [] }
     private var sourceRevision: String {
         guard let month else { return "" }
-        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)"
+        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision(for: month.name))"
     }
     private var loadKey: String { sourceRevision + "|" + firstItem + "|" + secondItem }
     private var previewKey: String { loadKey + "|" + payerIBAN + "|" + beneficiaryIBAN + "|\(customizationData.hashValue)" }

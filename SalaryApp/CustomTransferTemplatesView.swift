@@ -297,7 +297,7 @@ private struct CustomTransferLetterView: View {
     private var month: PayrollMonth? { months.first { $0.name == monthName } }
     private var sourceKey: String {
         guard let month else { return "" }
-        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision)"
+        return "\(month.name)|\(String(describing: month.persistentModelID))|\(month.importedAt.timeIntervalSince1970)|\(bankCache.revision(for: month.name))"
     }
     var body: some View {
         List {

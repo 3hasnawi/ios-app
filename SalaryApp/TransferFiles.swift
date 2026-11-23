@@ -233,7 +233,7 @@ struct TransferFilesView: View {
 
     private func checkSplitEligibility() throws {
         guard loadedArchive == heldData, archiveError == nil, splitRecord == nil, loadedKey == loadKey,
-              loadedRevision == bankCache.revision, categoriesValid, linksValid, !ContractBatchStore.busy,
+              loadedRevision == (calculationKey?.revision ?? -1), categoriesValid, linksValid, !ContractBatchStore.busy,
               month?.employeeCount ?? 0 > 0 else { throw TransferWordDraftGenerator.Failure.sourceChanged }
         let ledger = try TransferIssuance.decode(issuedData)
         guard !ledger.records.contains(where: { $0.month == month?.name && ($0.groupCategory != nil || ["contracts", "rafidain_group", "other_banks_group", "ramadi", "housing", "water", "rafidain_anbar"].contains($0.book)) }) else {
@@ -246,7 +246,7 @@ struct TransferFilesView: View {
         if figures.missingContractNominal > 0 && !reviewed { reviewMissingNominal = true; return }
         figures.contractNominalReviewed = reviewed
         let checkedFigures = figures
-        let all = entities, source = draftRevision, revision = bankCache.revision, name = month.name, stamp = month.importedAt
+        let all = entities, source = draftRevision, revision = bankCache.revision(for: month.name), name = month.name, stamp = month.importedAt
         let payer = payerName, iban = payerIBAN, links = payrollLinksData, container = SharedModel.container
         preparingSplit = true; error = nil
         Task {
@@ -257,7 +257,7 @@ struct TransferFilesView: View {
                         figures: checkedFigures, entities: all, payer: payer, iban: iban, links: links)
                 }.value
                 try checkSplitEligibility()
-                guard source == draftRevision, revision == bankCache.revision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+                guard source == draftRevision, revision == (calculationKey?.revision ?? -1) else { throw TransferWordDraftGenerator.Failure.sourceChanged }
                 splitSource = source; splitRevision = revision; pendingSplit = result
             } catch { self.error = error.localizedDescription }
         }
@@ -453,6 +453,11 @@ struct TransferFilesView: View {
                 }
             }
         }
+        .refreshable {
+            guard let key = calculationKey else { return }
+            bankCache.refresh(key)
+            await loadTransfers()
+        }
         .navigationTitle(tr("ملفات التحويل", "Transfer files"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -483,7 +488,7 @@ struct TransferFilesView: View {
         .sheet(item: $pendingSplit) { batch in
             ContractBatchActivation(batch: batch) {
                 try checkSplitEligibility()
-                guard splitSource == draftRevision, splitRevision == bankCache.revision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+                guard splitSource == draftRevision, splitRevision == (calculationKey?.revision ?? -1) else { throw TransferWordDraftGenerator.Failure.sourceChanged }
                 try ContractBatchStore.update { try $0.insert(batch) }
             }
         }
@@ -520,25 +525,28 @@ struct TransferFilesView: View {
         .onChange(of: payerIBAN) { BackupManager.shared.markSettingChanged("bankStatementIBAN") }
         .onAppear { draftCoverage.discardIfDifferent(draftRevision) }
         .onChange(of: draftRevision) { draftCoverage.discardIfDifferent(draftRevision) }
-        .task(id: calculationKey) {
-            let key = loadKey
-            let revision = bankCache.revision
-            loadedKey = ""; error = nil; groups = []; missing = [:]; figures = nil; figuresError = nil
-            guard let source = calculationKey else { loadedKey = key; loadedRevision = revision; return }
+        .task(id: calculationKey) { await loadTransfers() }
+    }
+
+    @MainActor
+    private func loadTransfers() async {
+        let key = loadKey
+        let revision = calculationKey?.revision ?? -1
+        loadedKey = ""; error = nil; groups = []; missing = [:]; figures = nil; figuresError = nil
+        guard let source = calculationKey else { loadedKey = key; loadedRevision = revision; return }
+        do {
+            let value = try await bankCache.groups(for: source)
+            guard !Task.isCancelled, calculationKey == source else { return }
+            groups = value.0; missing = value.1
             do {
-                let value = try await bankCache.groups(for: source)
+                let result = try await bankCache.figures(for: source)
                 guard !Task.isCancelled, calculationKey == source else { return }
-                groups = value.0; missing = value.1
-                do {
-                    let result = try await bankCache.figures(for: source)
-                    guard !Task.isCancelled, calculationKey == source else { return }
-                    figures = result
-                } catch is CancellationError { return }
-                catch { guard !Task.isCancelled, calculationKey == source else { return }; figuresError = error.localizedDescription }
-                loadedKey = key; loadedRevision = revision
+                figures = result
             } catch is CancellationError { return }
-            catch { guard !Task.isCancelled, calculationKey == source else { return }; self.error = error.localizedDescription; loadedKey = key; loadedRevision = revision }
-        }
+            catch { guard !Task.isCancelled, calculationKey == source else { return }; figuresError = error.localizedDescription }
+            loadedKey = key; loadedRevision = revision
+        } catch is CancellationError { return }
+        catch { guard !Task.isCancelled, calculationKey == source else { return }; self.error = error.localizedDescription; loadedKey = key; loadedRevision = revision }
     }
 }
 
@@ -602,7 +610,7 @@ private struct TransferCategoryView: View {
     private var sourceIsCurrent: Bool {
         let record = months.first { $0.name == month }
         let active = months.first { $0.name == selectedMonth } ?? months.first
-        return record != nil && active?.name == month && sourceRevision == bankCache.revision &&
+        return record != nil && active?.name == month && sourceRevision == bankCache.revision(for: month) &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
     private var canExport: Bool {

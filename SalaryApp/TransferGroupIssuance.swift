@@ -127,7 +127,7 @@ struct TransferGroupIssuanceSection: View {
 
     private var current: Bool {
         let record = months.first { $0.name == month }
-        return record != nil && sourceRevision == bankCache.revision && currentAccounts == accounts &&
+        return record != nil && sourceRevision == bankCache.revision(for: month) && currentAccounts == accounts &&
             currentCategories == categories && currentLinks == accountLinks && currentPayerName == payerName && currentPayerIBAN == payerIBAN &&
             "\(String(describing: record?.persistentModelID))|\(record?.name ?? "")|\(record?.importedAt.timeIntervalSince1970 ?? 0)" == sourceKey
     }
