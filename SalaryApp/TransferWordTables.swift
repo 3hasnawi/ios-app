@@ -28,7 +28,7 @@ nonisolated enum TransferWordTables {
             ["1", "الحماية الاجتماعية", try letterAmount(figures.socialProtection, eastern: eastern)],
             ["2", "ضريبة الدخل", try letterAmount(figures.incomeTax, eastern: eastern)],
             ["", "المجموع", try letterAmount(figures.treasuryTotal, eastern: eastern)]
-        ], columnWeights: [1, 6, 3], boldLastRow: true, widthFraction: 0.56, alignRight: true)
+        ], columnWeights: [1, 6, 3], boldLastRow: true, widthFraction: 0.56, alignRight: true, compactRows: true)
     }
     static func contracts(_ figures: TransferLetterFigures, eastern: Bool = false) throws -> TransferWordDocument.Table {
         guard (figures.missingContractNominal == 0 || figures.contractNominalReviewed), let nominal = figures.effectiveContractNominalShare,

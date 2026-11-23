@@ -319,7 +319,7 @@ nonisolated enum TransferAdaptivePDF {
                         cellFont = try font(.init(text: "", font: table.font, halfPoints: halfPoints, bold: bold), sakkal: sakkalBold)
                         fonts[fontKey] = cellFont
                     }
-                    let tightRows = groupTable || (compact && !signature)
+                    let tightRows = table.compactRows || groupTable || (compact && !signature)
                     let spacing: CGFloat = tightRows ? 0.5 : (signature ? 1 : 3)
                     let padding: CGFloat = tightRows ? 2 : 6
                     var cells: [[TextLine]] = []

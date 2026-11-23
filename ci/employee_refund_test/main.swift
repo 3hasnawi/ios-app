@@ -258,5 +258,9 @@ do {
     try TransferAdaptivePDF.write(blocks: letter, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
     try TransferAdaptivePDF.verify(url, required: [payer, beneficiary, total])
     precondition(PDFDocument(url: url)?.pageCount == 1)
+    if let path = ProcessInfo.processInfo.environment["REFUND_PREVIEW_DIR"] {
+        let preview = URL(fileURLWithPath: path).appendingPathComponent("tax-social-letter.pdf")
+        try FileManager.default.copyItem(at: url, to: preview)
+    }
 }
 print("Verified tax and social protection PDF amounts, accounts and combined total.")

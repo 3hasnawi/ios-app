@@ -24,6 +24,7 @@ nonisolated enum TransferWordDocument {
         var boldLastRow = false
         var widthFraction: Double = 1
         var alignRight = false
+        var compactRows = false
     }
     enum Block: Sendable {
         case paragraph(Paragraph)
