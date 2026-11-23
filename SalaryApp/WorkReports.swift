@@ -7,8 +7,6 @@ extension WorkReport {
         case .transferFiles: tr("ملفات التحويل", "Transfer files")
         case .deductionAudit: tr("تدقيق الاستقطاعات", "Deduction audit")
         case .salaryAudit: tr("تدقيق الرواتب", "Payroll audit")
-        case .changes: tr("متغيرات الرواتب", "Payroll changes")
-        case .special: tr("الكشوف الخاصة", "Special reports")
         case .entities: tr("جهات التنفيذ", "Execution entities")
         case .food: tr("شركة عراق الجوال", "Iraq Mobile")
         case .fund: tr("صندوق الشهداء", "Martyrs fund")
@@ -21,8 +19,6 @@ extension WorkReport {
         case .transferFiles: "arrow.left.arrow.right"
         case .deductionAudit: "checkmark.shield"
         case .salaryAudit: "checklist"
-        case .changes: "chart.line.uptrend.xyaxis"
-        case .special: "star.square"
         case .entities: "building.columns"
         case .food: "iphone"
         case .fund: "star"

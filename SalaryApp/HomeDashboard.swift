@@ -187,7 +187,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup, reports, transferFiles, specialReports, payrollBreakdown
+    case audit, salary, deductions, backup, reports, transferFiles, payrollBreakdown
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
@@ -203,7 +203,6 @@ struct HomeDashboard: View {
     @State private var preview: ReportGroup?
     @AppStorage(PinnedEntities.key) private var pinnedData = Data()
     @AppStorage("homeHiddenWorkReports") private var hiddenReports = ""
-    @AppStorage("homeAccountingActions") private var legacyCards = ""
     @AppStorage(WorkReport.pinsKey) private var savedPins: String?
     @State private var refund = RefundDraft.shared
     @State private var overview: HomeOverview?
@@ -303,8 +302,6 @@ struct HomeDashboard: View {
                         ContentUnavailableView(tr("لا تتوفر تفاصيل الرواتب", "Payroll breakdown unavailable"), systemImage: "banknote")
                     }
                 }.navigationTitle(tr("تفصيل صافي الرواتب", "Net payroll breakdown")).navigationBarTitleDisplayMode(.inline)
-            case .specialReports:
-                if let current { ScrollView { workShortcuts(current, showAll: true).padding() }.navigationTitle(tr("الكشوف المثبّتة", "Pinned reports")) }
             case .entityAlert(let kind): DeductionAuditView(months: months.map(\.name), to: current?.name ?? "", initialEntityKind: kind)
             case .audit: AuditView(month: current?.name ?? "", months: months.map(\.name))
             case .salary: SalaryAuditView(months: months.map(\.name), to: current?.name ?? "")
@@ -321,26 +318,24 @@ struct HomeDashboard: View {
     }
 
     private var pinnedReports: [WorkReport] {
-        WorkReport.pins(saved: savedPins, legacyHidden: hiddenReports, legacyCards: legacyCards)
+        WorkReport.pins(saved: savedPins, legacyHidden: hiddenReports)
     }
 
-    private func workShortcuts(_ month: PayrollMonth, showAll: Bool = false) -> some View {
+    private func workShortcuts(_ month: PayrollMonth) -> some View {
         let summary = PayrollItems.decodeSummary(month.itemSummaryData) ?? [:]
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(tr("كشوفي المثبّتة", "Pinned reports")).font(.headline)
                 Spacer()
-                if !showAll {
-                    Menu {
-                        Section(tr("الأقسام", "Sections")) { pinOptions(WorkReport.sections) }
-                        Section(tr("الكشوف", "Reports")) { pinOptions(WorkReport.statements) }
-                    } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
-                    .menuActionDismissBehavior(.disabled)
-                    .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
-                }
+                Menu {
+                    Section(tr("الأقسام", "Sections")) { pinOptions(WorkReport.sections) }
+                    Section(tr("الكشوف", "Reports")) { pinOptions(WorkReport.statements) }
+                } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
+                .menuActionDismissBehavior(.disabled)
+                .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], alignment: .leading, spacing: 8) {
-                ForEach(showAll ? WorkReport.statements : pinnedReports) { report in
+                ForEach(pinnedReports) { report in
                     let group = report.group(month: month.name, summary: summary)
                     Button {
                         switch report {
@@ -348,9 +343,8 @@ struct HomeDashboard: View {
                         case .reports, .transferFiles:
                             UserDefaults.standard.set(month.name, forKey: "reportMonth")
                             open(report == .reports ? .reports : .transferFiles)
-                        case .salaryAudit, .changes: open(.salary)
+                        case .salaryAudit: open(.salary)
                         case .deductionAudit: open(.deductions)
-                        case .special: open(.specialReports)
                         case .food, .fund, .health: preview = group
                         }
                     } label: { shortcutLabel(report.title, icon: report.icon) }
@@ -366,7 +360,7 @@ struct HomeDashboard: View {
                     }
                 }
             }
-            if !showAll, let source = refund.month, !refund.rows.isEmpty {
+            if let source = refund.month, !refund.rows.isEmpty {
                 Button { openReports(.refunds(source), month: month) } label: {
                     VStack(alignment: .leading) {
                         Label(tr("متابعة مسودة إعادة المبالغ", "Resume refund draft"), systemImage: "arrow.uturn.backward.circle")

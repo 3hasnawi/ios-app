@@ -29,6 +29,7 @@ final class NavigationTests: XCTestCase {
     }
 
     func testReportsBackGestures() {
+        app.launchArguments += ["-homePinnedWorkItems", "reports|entities"]
         continueAfterFailure = false
         app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES"]
         app.launch()
@@ -347,6 +348,7 @@ final class NavigationTests: XCTestCase {
 
     /// يختبر شريط النظام والبحث والعودة والمشاركة دون فرض مقاس مخصص عليه.
     func testSystemNavigationBar() {
+        app.launchArguments += ["-homePinnedWorkItems", "reports|entities"]
         let baseArguments = app.launchArguments
         app.launchArguments = baseArguments + ["-skipLock", "YES", "-tab", "settings", "-openSettings", "NO",
                                                "-search", "", "-openFirst", "NO", "-openPerson", "NO", "-share", "NO"]
@@ -457,6 +459,7 @@ final class NavigationTests: XCTestCase {
     }
 
     func testNavigationFlow() {
+        app.launchArguments += ["-homePinnedWorkItems", "reports|entities"]
         step("تشغيل التطبيق") {
             app.launch()
             wait(app.navigationBars["الرئيسية"], "الشاشة الرئيسية", timeout: 30)

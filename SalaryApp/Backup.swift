@@ -80,7 +80,7 @@ nonisolated enum BackupFormat {
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
     static let settingsKeys = ["homePinnedEntityNames", "homeHeadlineDeductions", "homeHiddenWorkReports", "homePinnedWorkItems", "staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
-                               "autoBackupEnabled", "backupSchedule", "homeTileLayout", "homeAccountingActions",
+                               "autoBackupEnabled", "backupSchedule", "homeTileLayout",
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
 
@@ -1263,15 +1263,8 @@ final class BackupManager {
                         result[item.key] = normalized
                     }
                 }
-                for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted"] where settings[key] == nil {
+                for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted", WorkReport.pinsKey, "homeHiddenWorkReports"] where settings[key] == nil {
                     UserDefaults.standard.removeObject(forKey: key)
-                }
-                // النسخ الأقدم تخزّن اختيارات الرئيسية في مفتاحين منفصلين.
-                if settings[WorkReport.pinsKey] == nil,
-                   settings["homeHiddenWorkReports"] != nil || settings["homeAccountingActions"] != nil {
-                    for key in [WorkReport.pinsKey, "homeHiddenWorkReports", "homeAccountingActions"] where settings[key] == nil {
-                        UserDefaults.standard.removeObject(forKey: key)
-                    }
                 }
                 for (key, data) in settings {
                     if let value = try? PropertyListSerialization.propertyList(from: data, format: nil) {
