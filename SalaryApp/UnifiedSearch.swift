@@ -120,7 +120,7 @@ struct UnifiedSearchView: View {
         return query.tokens.allSatisfy { name.contains($0) }
     }
     private var matchingReports: [WorkReport] {
-        WorkReport.allCases.filter { $0 != .entities && matchesTask(tr("معاينة كشف ", "Preview report ") + $0.title) }
+        WorkReport.statements.filter { $0 != .entities && matchesTask(tr("معاينة كشف ", "Preview report ") + $0.title) }
     }
     private var matchesRefund: Bool { matchesTask(tr("إعادة مبالغ دفعة إعادة المبالغ", "Refund batch")) && (refundDraft.month != nil || months.contains { $0.employeeCount > 0 }) }
     @ViewBuilder private var workActions: some View {

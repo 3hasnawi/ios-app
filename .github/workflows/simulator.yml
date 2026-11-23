@@ -329,6 +329,8 @@ jobs:
             shot 03a-system-glass-bar 4
             shot 03b-home-audit-cards 1
             if [ "$DEDUCTIONS_ONLY" = true ]; then exit 0; fi
+            launch -homeScroll YES -homePinnedWorkItems "reports|transferFiles|deductionAudit|salaryAudit"
+            shot 03c-home-pinned-sections 4
             launch -tab search -search "أحمد علي حسين الدليمي" -openPerson YES
             shot 09a-system-glass-bar-share 6
             launch -tab search -search "تنفيذ الرمادي"

@@ -1,0 +1,11 @@
+let defaults = WorkReport.statements + [.reports, .salaryAudit]
+precondition(WorkReport.pins(saved: nil, legacyHidden: "", legacyCards: "") == defaults)
+precondition(WorkReport.pins(saved: nil, legacyHidden: "food|health", legacyCards: "entities|deductionAudit")
+             == [.entities, .fund, .deductionAudit])
+precondition(WorkReport.pins(saved: nil, legacyHidden: "entities", legacyCards: "special|entities")
+             == [.food, .fund, .health, .special, .entities])
+precondition(WorkReport.pins(saved: nil, legacyHidden: "", legacyCards: "reports|reports") == defaults)
+precondition(WorkReport.pins(saved: "", legacyHidden: "", legacyCards: "") == [])
+precondition(WorkReport.pins(saved: "salaryAudit|unknown|transferFiles|salaryAudit", legacyHidden: "", legacyCards: "")
+             == [.salaryAudit, .transferFiles])
+precondition(Set(WorkReport.sections + WorkReport.statements) == Set(WorkReport.allCases))

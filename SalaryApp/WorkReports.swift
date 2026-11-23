@@ -1,10 +1,14 @@
 import SwiftUI
 
-enum WorkReport: String, CaseIterable, Identifiable {
-    case entities, food, fund, health
-    var id: Self { self }
+extension WorkReport {
     var title: String {
         switch self {
+        case .reports: tr("التقارير", "Reports")
+        case .transferFiles: tr("ملفات التحويل", "Transfer files")
+        case .deductionAudit: tr("تدقيق الاستقطاعات", "Deduction audit")
+        case .salaryAudit: tr("تدقيق الرواتب", "Payroll audit")
+        case .changes: tr("متغيرات الرواتب", "Payroll changes")
+        case .special: tr("الكشوف الخاصة", "Special reports")
         case .entities: tr("جهات التنفيذ", "Execution entities")
         case .food: tr("شركة عراق الجوال", "Iraq Mobile")
         case .fund: tr("صندوق الشهداء", "Martyrs fund")
@@ -13,6 +17,12 @@ enum WorkReport: String, CaseIterable, Identifiable {
     }
     var icon: String {
         switch self {
+        case .reports: "doc.text"
+        case .transferFiles: "arrow.left.arrow.right"
+        case .deductionAudit: "checkmark.shield"
+        case .salaryAudit: "checklist"
+        case .changes: "chart.line.uptrend.xyaxis"
+        case .special: "star.square"
         case .entities: "building.columns"
         case .food: "iphone"
         case .fund: "star"
@@ -20,14 +30,14 @@ enum WorkReport: String, CaseIterable, Identifiable {
         }
     }
     func group(month: String, summary: [String: PayrollItems.Summary]) -> ReportGroup? {
-        let matches = summary.keys.sorted().filter { title in
-            switch self {
-            case .entities: false
-            case .food: FoodContractReport.applies(to: title)
-            case .fund: FundReport.applies(to: title)
-            case .health: HealthCareReport.applies(to: title)
-            }
+        let applies: (String) -> Bool
+        switch self {
+        case .food: applies = FoodContractReport.applies(to:)
+        case .fund: applies = FundReport.applies(to:)
+        case .health: applies = HealthCareReport.applies(to:)
+        default: return nil
         }
+        let matches = summary.keys.sorted().filter(applies)
         guard let name = matches.max(by: { summary[$0]!.total < summary[$1]!.total }), let item = summary[name] else { return nil }
         return ReportGroup(kind: .payroll, month: month, title: name, count: item.count, total: item.total, byEntity: false)
     }

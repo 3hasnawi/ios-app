@@ -1,47 +1,5 @@
 import SwiftUI
 
-/// موضعا العمل تحت صافي الرواتب؛ يبقيان قابلين للتبديل بالضغط المطوّل.
-enum HomeActionKind: String, CaseIterable, Identifiable {
-    case reports, salaryAudit, deductionAudit, entities, changes, special
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .reports: tr("التقارير", "Reports")
-        case .salaryAudit: tr("تدقيق الرواتب", "Payroll audit")
-        case .deductionAudit: tr("تدقيق الاستقطاعات", "Deduction audit")
-        case .entities: tr("جهات التنفيذ", "Execution entities")
-        case .changes: tr("متغيرات الرواتب", "Payroll changes")
-        case .special: tr("الكشوف الخاصة", "Special reports")
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .reports: "doc.text"
-        case .salaryAudit: "checklist"
-        case .deductionAudit: "checkmark.shield"
-        case .entities: "building.columns"
-        case .changes: "arrow.left.arrow.right"
-        case .special: "star.square"
-        }
-    }
-}
-
-enum HomeActionLayout {
-    static let key = "homeAccountingActions"
-    static let defaults: [HomeActionKind] = [.reports, .salaryAudit]
-    static func decode(_ raw: String) -> [HomeActionKind] {
-        let choices = raw.split(separator: "|").compactMap { HomeActionKind(rawValue: String($0)) }
-        return choices.count == 2 && choices[0] != choices[1] ? choices : defaults
-    }
-    static func select(_ kind: HomeActionKind, at index: Int, in raw: String) -> String {
-        var choices = decode(raw)
-        guard choices.indices.contains(index) else { return raw }
-        if let other = choices.firstIndex(of: kind), other != index { choices[other] = choices[index] }
-        choices[index] = kind
-        return choices.map(\.rawValue).joined(separator: "|")
-    }
-}
-
 /// حالة واحدة من نتائج التدقيق، وتفتح موضعها داخل التدقيق مباشرة.
 struct HomeReviewItem: Identifiable {
     let id: String
@@ -56,14 +14,11 @@ struct HomeAccounting<Shortcuts: View>: View {
     let previous: PayrollMonth?
     let overview: HomeOverview?
     let audit: HomeAudit?
-    let openReports: () -> Void
     let openRoute: (HomeRoute) -> Void
     let openEntities: () -> Void
     @ViewBuilder var shortcuts: () -> Shortcuts
 
-    @AppStorage(HomeActionLayout.key) private var actionsRaw = ""
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("homeHeadlineDeductions") private var showDeductions = true
     @ScaledMetric(relativeTo: .body) private var reviewHeight: CGFloat = 112
     @State private var selectedReviewID: String?
@@ -87,11 +42,6 @@ struct HomeAccounting<Shortcuts: View>: View {
                 }
             reviewStrip
             shortcuts()
-            HStack(alignment: .top, spacing: 12) {
-                actionCard(0)
-                actionCard(1)
-            }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: actionsRaw)
         }
     }
 
@@ -148,81 +98,6 @@ struct HomeAccounting<Shortcuts: View>: View {
         .foregroundStyle(accent)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-    }
-
-    private func actionCard(_ index: Int) -> some View {
-        let kind = HomeActionLayout.decode(actionsRaw)[index]
-        return Button { open(kind) } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: kind.symbol)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(accent)
-                Text(kind.title).font(.headline).foregroundStyle(.primary)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                Text(detail(kind)).font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-                Text(footnote(kind)).font(.caption2).foregroundStyle(accent)
-                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
-            .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(accent.opacity(0.18)))
-            .contentShape(RoundedRectangle(cornerRadius: 21))
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Menu {
-                ForEach(HomeActionKind.allCases) { choice in
-                    Button {
-                        actionsRaw = HomeActionLayout.select(choice, at: index, in: actionsRaw)
-                    } label: {
-                        if choice == kind { Label(choice.title, systemImage: "checkmark") }
-                        else { Text(choice.title) }
-                    }
-                }
-            } label: {
-                Label(tr("تخصيص بطاقة البيانات", "Customize data card"), systemImage: "slider.horizontal.3")
-            }
-        }
-        .accessibilityIdentifier(kind == .reports ? "homeReportsEntry" : "homeAction\(index)")
-    }
-
-    private func detail(_ kind: HomeActionKind) -> String {
-        switch kind {
-        case .reports: tr("كشوف الرواتب والاستقطاعات والجهات", "Payroll, deductions and entity reports")
-        case .salaryAudit: tr("فحوص الشهر ومقارنة الرواتب", "Monthly checks and payroll comparison")
-        case .deductionAudit: tr("التكرار والمطابقة وتغيّر المبالغ", "Duplicates, matching and amount changes")
-        case .entities: tr("مبالغ الاستقطاعات حسب الجهة", "Deductions by entity")
-        case .changes: tr("الجدد والخارجون وتغيّر الصافي", "New, removed and net pay changes")
-        case .special: tr("صندوق الشهداء والرعاية الصحية", "Martyrs fund and health care")
-        }
-    }
-
-    private func footnote(_ kind: HomeActionKind) -> String {
-        switch kind {
-        case .reports, .special: return tr("عرض الكشوف ←", "Open reports ←")
-        case .salaryAudit:
-            let count = audit?.issues.filter { $0.route == "salary" }.count ?? 0
-            return audit == nil ? tr("جارٍ الفحص…", "Checking…") :
-                tr("\(Num.format(count)) ملاحظات للمراجعة ←", "\(count) issues to review ←")
-        case .deductionAudit:
-            let count = audit?.issues.filter { $0.route == "deductions" }.count ?? 0
-            return audit == nil ? tr("جارٍ الفحص…", "Checking…") :
-                tr("\(Num.format(count)) ملاحظات للمراجعة ←", "\(count) issues to review ←")
-        case .entities: return tr("\(Num.format(overview?.entityCount ?? 0)) جهة ←", "\(overview?.entityCount ?? 0) entities ←")
-        case .changes: return tr("عرض المتغيرات ←", "Open changes ←")
-        }
-    }
-
-    private func open(_ kind: HomeActionKind) {
-        switch kind {
-        case .reports: openReports()
-        case .special: openRoute(.specialReports)
-        case .salaryAudit, .changes: openRoute(.salary)
-        case .deductionAudit: openRoute(.deductions)
-        case .entities: openEntities()
-        }
     }
 
     private var reviewItems: [HomeReviewItem] {

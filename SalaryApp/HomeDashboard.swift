@@ -187,7 +187,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
-    case audit, salary, deductions, backup, reports, specialReports, payrollBreakdown
+    case audit, salary, deductions, backup, reports, transferFiles, specialReports, payrollBreakdown
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
@@ -203,6 +203,8 @@ struct HomeDashboard: View {
     @State private var preview: ReportGroup?
     @AppStorage(PinnedEntities.key) private var pinnedData = Data()
     @AppStorage("homeHiddenWorkReports") private var hiddenReports = ""
+    @AppStorage("homeAccountingActions") private var legacyCards = ""
+    @AppStorage(WorkReport.pinsKey) private var savedPins: String?
     @State private var refund = RefundDraft.shared
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
@@ -246,7 +248,6 @@ struct HomeDashboard: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let current {
                     HomeAccounting(month: current, previous: previous, overview: overview, audit: audit,
-                                   openReports: { UserDefaults.standard.set(current.name, forKey: "reportMonth"); open(.reports) },
                                    openRoute: { open($0) },
                                    openEntities: { openReports(.entities, month: current) }) {
                         workShortcuts(current)
@@ -283,6 +284,7 @@ struct HomeDashboard: View {
         .navigationDestination(for: HomeRoute.self) { route in
             switch route {
             case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
+            case .transferFiles: TransferFilesView()
             case .payrollBreakdown:
                 List {
                     if let current, let overview {
@@ -318,33 +320,42 @@ struct HomeDashboard: View {
         .task(id: auditKey) { await loadAudit() }
     }
 
+    private var pinnedReports: [WorkReport] {
+        WorkReport.pins(saved: savedPins, legacyHidden: hiddenReports, legacyCards: legacyCards)
+    }
+
     private func workShortcuts(_ month: PayrollMonth, showAll: Bool = false) -> some View {
-        let hidden = Set(hiddenReports.split(separator: "|").map(String.init))
         let summary = PayrollItems.decodeSummary(month.itemSummaryData) ?? [:]
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(tr("كشوفي المثبّتة", "Pinned reports")).font(.headline)
                 Spacer()
-                Menu {
-                    ForEach(WorkReport.allCases) { report in
-                        Button {
-                            var updated = hidden
-                            if updated.contains(report.rawValue) { updated.remove(report.rawValue) } else { updated.insert(report.rawValue) }
-                            hiddenReports = updated.sorted().joined(separator: "|")
-                        } label: { Label(report.title, systemImage: hidden.contains(report.rawValue) ? "circle" : "checkmark.circle") }
-                    }
-                } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
-                .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
+                if !showAll {
+                    Menu {
+                        Section(tr("الأقسام", "Sections")) { pinOptions(WorkReport.sections) }
+                        Section(tr("الكشوف", "Reports")) { pinOptions(WorkReport.statements) }
+                    } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
+                    .menuActionDismissBehavior(.disabled)
+                    .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
+                }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], alignment: .leading, spacing: 8) {
-                ForEach(WorkReport.allCases.filter { showAll || !hidden.contains($0.rawValue) }) { report in
+                ForEach(showAll ? WorkReport.statements : pinnedReports) { report in
                     let group = report.group(month: month.name, summary: summary)
                     Button {
-                        if report == .entities { openReports(.entities, month: month) }
-                        else { preview = group }
+                        switch report {
+                        case .entities: openReports(.entities, month: month)
+                        case .reports, .transferFiles:
+                            UserDefaults.standard.set(month.name, forKey: "reportMonth")
+                            open(report == .reports ? .reports : .transferFiles)
+                        case .salaryAudit, .changes: open(.salary)
+                        case .deductionAudit: open(.deductions)
+                        case .special: open(.specialReports)
+                        case .food, .fund, .health: preview = group
+                        }
                     } label: { shortcutLabel(report.title, icon: report.icon) }
-                    .accessibilityIdentifier("pinned-" + report.rawValue)
-                    .disabled(report != .entities && group == nil)
+                    .accessibilityIdentifier(report == .reports ? "homeReportsEntry" : "pinned-" + report.rawValue)
+                    .disabled(WorkReport.statements.contains(report) && report != .entities && group == nil)
                 }
                 ForEach(PinnedEntities.read(pinnedData), id: \.self) { title in
                     Button {
@@ -364,6 +375,17 @@ struct HomeDashboard: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
                 }.buttonStyle(.bordered)
             }
+        }
+    }
+
+    private func pinOptions(_ choices: [WorkReport]) -> some View {
+        ForEach(choices) { choice in
+            Toggle(isOn: Binding(get: { pinnedReports.contains(choice) }, set: { enabled in
+                var updated = pinnedReports
+                if enabled && !updated.contains(choice) { updated.append(choice) }
+                if !enabled { updated.removeAll { $0 == choice } }
+                savedPins = updated.map(\.rawValue).joined(separator: "|")
+            })) { Label(choice.title, systemImage: choice.icon) }
         }
     }
 

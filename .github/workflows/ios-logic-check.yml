@@ -25,6 +25,10 @@ jobs:
         run: swiftc --version
       - name: Parse changed Swift files
         run: swiftc -frontend -parse SalaryApp/*.swift
+      - name: Pinned reports and legacy home choices
+        run: |
+          swiftc SalaryApp/HomePinnedReports.swift ci/home_pins_test/main.swift -o "$RUNNER_TEMP/home-pins-test"
+          "$RUNNER_TEMP/home-pins-test"
       - name: Real SwiftData split import and rollback
         run: python3 ci/data_importer_test/run.py
       - name: All-month entity unification and interrupted rename recovery
