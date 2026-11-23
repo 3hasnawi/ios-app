@@ -16,7 +16,7 @@ nonisolated enum TransferWordDraftGenerator {
     static func make(bookID: String, figures: TransferLetterFigures, entities: [TransferEntity],
                      entity: TransferEntity?, individualPlan: TransferIndividualPlan?, cashList: TransferCashList?,
                      references: Data, accountLinks: Data, payerName: String, payerIBAN: String,
-                     customization: TransferLetterCustomization, sakkalBold: Data? = nil, adaptivePDF: Bool = false) throws -> Result {
+                     customization: TransferLetterCustomization, sakkalBold: Data? = nil, adaptivePDF: Bool = false, referenceScope: String = "", valueDate: Date = .now) throws -> Result {
         let text = try TransferWordGroupDraft.letterText(from: customization, adaptivePDF: adaptivePDF)
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("word-draft-\(UUID().uuidString)", isDirectory: true)
@@ -30,7 +30,7 @@ nonisolated enum TransferWordDraftGenerator {
             let category: TransferCategory = bookID == "rafidain_group" ? .rafidain : .otherBanks
             try TransferWordReferenceAccounts.verifyGroup(bookID: bookID, references: references, payerIBAN: payerIBAN)
             let plan = try TransferWordGroupPlan(allEntities: entities, category: category, month: figures.month,
-                payer: payerName, payerIBAN: payerIBAN, adaptivePDF: adaptivePDF)
+                payer: payerName, payerIBAN: payerIBAN, date: valueDate, adaptivePDF: adaptivePDF, referenceScope: referenceScope)
             try TransferWordGroupDraft.write(plan: plan, month: figures.month, payerIBAN: payerIBAN, text: text, destination: letter, sakkalBold: sakkalBold, adaptivePDF: adaptivePDF)
             if adaptivePDF {
                 var checks = [plan.payerIBAN, String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), plan.total)]
@@ -43,7 +43,7 @@ nonisolated enum TransferWordDraftGenerator {
             guard try Data(contentsOf: csv) == plan.csv else { throw Failure.changed }
             let entries = entities.filter { $0.category == category }
             _ = try TransferGroupCSVCheck.validate(Data(contentsOf: csv), entities: entries, category: category,
-                month: figures.month, payer: payerName, payerIBAN: payerIBAN)
+                month: figures.month, payer: payerName, payerIBAN: payerIBAN, referenceScope: referenceScope)
             csvURL = csv
         case "food_company", "food_tax", "tax_social", "contracts", "cash_salary":
             let plan = try TransferWordPayrollPlan.prepare(bookID: bookID, figures: figures,

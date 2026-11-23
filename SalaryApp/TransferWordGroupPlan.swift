@@ -16,7 +16,7 @@ nonisolated struct TransferWordGroupPlan: Sendable {
     let payerIBAN: String
 
     init(allEntities: [TransferEntity], category: TransferCategory, month: String,
-         payer: String, payerIBAN: String, date: Date = .now, adaptivePDF: Bool = false) throws {
+         payer: String, payerIBAN: String, date: Date = .now, adaptivePDF: Bool = false, referenceScope: String = "") throws {
         guard category == .rafidain || category == .otherBanks, !allEntities.isEmpty,
               Set(allEntities.map(\.id)).count == allEntities.count,
               allEntities.allSatisfy({ $0.group.month == month && $0.category != .unresolved }) else { throw Failure.incomplete }
@@ -24,8 +24,8 @@ nonisolated struct TransferWordGroupPlan: Sendable {
         guard !entries.isEmpty, entries.allSatisfy({ TransferRules.issues($0).isEmpty }) else { throw Failure.incomplete }
         let sum = entries.reduce(0.0) { $0 + $1.group.total }
         guard sum.isFinite, sum > 0, sum.rounded() == sum, sum <= 9_007_199_254_740_991 else { throw Failure.incomplete }
-        let data = try TransferRules.csv(entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN, date: date)
-        let verified = try TransferGroupCSVCheck.validate(data, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN)
+        let data = try TransferRules.csv(entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN, date: date, referenceScope: referenceScope)
+        let verified = try TransferGroupCSVCheck.validate(data, entities: entries, category: category, month: month, payer: payer, payerIBAN: payerIBAN, referenceScope: referenceScope)
         let expected = entries.map { TransferReconcileLine(sourceID: $0.id, title: $0.group.title, amount: Int64($0.group.total)) }
         guard TransferReconciliation.check(expected: expected, book: expected, file: verified, target: .grouped).isEmpty else { throw Failure.incomplete }
         var rows: [[String]] = try entries.enumerated().map { index, entry in

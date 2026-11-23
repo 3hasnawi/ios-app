@@ -7,7 +7,7 @@ nonisolated enum TransferGroupCSVCheck {
         var errorDescription: String? { tr("ملف التحويل لا يطابق جهات المجموعة أو مبالغها؛ أُوقفت العملية.", "The transfer file does not match the group entities or amounts; the operation was stopped.") }
     }
     @discardableResult static func validate(_ data: Data, entities: [TransferEntity], category: TransferCategory,
-                         month: String, payer: String, payerIBAN: String) throws -> [TransferReconcileLine] {
+                         month: String, payer: String, payerIBAN: String, referenceScope: String = "") throws -> [TransferReconcileLine] {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               Set(entities.map(\.id)).count == entities.count, TransferRules.safeField(payer),
               TransferRules.validIBAN(payerIBAN), TransferRules.safeField(month),
@@ -36,7 +36,7 @@ nonisolated enum TransferGroupCSVCheck {
             if let firstDate, firstDate != day { throw Failure.mismatch }
             firstDate = day
             let amount = String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entity.group.total)
-            guard fields[0] == day + category.prefix + String(index + 1), fields[2] == payer,
+            guard fields[0] == day + category.prefix + referenceScope + String(index + 1), fields[2] == payer,
                   fields[3] == account(payerIBAN), fields[4] == amount, fields[5] == "IQD",
                   fields[6] == beneficiary.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
                   fields[7] == (entity.beneficiaryName ?? entity.group.title), fields[8] == account(beneficiary.iban),

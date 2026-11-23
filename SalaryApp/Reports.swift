@@ -3,7 +3,7 @@ import SwiftData
 import UIKit
 
 /// نوعا التقارير: من جدول الاستقطاعات (حسب الجهة)، ومن بنود ورقة الرواتب (صندوق الشهداء، الرعاية الصحية...).
-nonisolated enum ReportKind: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum ReportKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case deductions, payroll
     var id: String { rawValue }
     var title: String {
@@ -15,7 +15,7 @@ nonisolated enum ReportKind: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// مجموعة في التقرير: جهة استقطاع أو بند من ورقة الرواتب.
-nonisolated struct ReportGroup: Hashable, Sendable, Identifiable {
+nonisolated struct ReportGroup: Codable, Hashable, Sendable, Identifiable {
     var id: String { "\(kind.rawValue)|\(month)|\(byEntity)|\(title)" }
     let kind: ReportKind
     let month: String
@@ -33,7 +33,7 @@ nonisolated struct ReportGroup: Hashable, Sendable, Identifiable {
     }
 }
 
-nonisolated struct ReportRow: Sendable, Identifiable, Hashable {
+nonisolated struct ReportRow: Codable, Sendable, Identifiable, Hashable {
     let id: Int
     let name: String
     let rank: String

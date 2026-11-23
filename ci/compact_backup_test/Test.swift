@@ -41,6 +41,7 @@ import CoreGraphics
         func database() throws -> ModelContainer {
             try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
         }
+        try await testContractBatches(database(), destination: database())
         let source = try database(), destination = try database()
         let context = ModelContext(source), encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

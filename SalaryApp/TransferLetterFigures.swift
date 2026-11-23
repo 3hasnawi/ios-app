@@ -20,7 +20,7 @@ nonisolated struct TransferLetterPeriod: Sendable {
 }
 
 /// مصادر مبالغ الكتب الثابتة؛ لا تستبدل أي بيانات محفوظة ولا تُنشئ تحويلات.
-nonisolated struct TransferLetterFigures: Sendable {
+nonisolated struct TransferLetterFigures: Codable, Sendable {
     let month: String
     let foodFund: Double
     let foodTax: Double

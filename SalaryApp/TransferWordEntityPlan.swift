@@ -24,6 +24,13 @@ nonisolated struct TransferWordEntityPlan: Sendable {
         self.beneficiaryName = beneficiaryName; self.beneficiaryAccount = beneficiaryAccount; self.bank = bank
         self.personName = personName; self.personRank = personRank; self.table = table
     }
+    static func splitPayment(_ entity: TransferEntity, payer: String) throws -> Self {
+        guard entity.category == .anbar, let account = entity.account, TransferRules.issues(entity).isEmpty,
+              let local = TransferRules.individualLocalAccount(account), TransferRules.validIBAN(payer) else { throw Failure.incomplete }
+        return Self(bookID: "ramadi", month: entity.group.month, amount: entity.group.total,
+                    payerIBAN: TransferLetterCustomValues.normalizedAccount(payer), beneficiaryName: account.entity,
+                    beneficiaryAccount: local, bank: account.branch, personName: nil, personRank: nil, table: nil)
+    }
     static func prepare(plan: TransferIndividualPlan, account: SavedExecutionAccount?, payerIBAN: String,
                         references: Data, accountLinks: Data, customization: TransferLetterCustomization = .init()) throws -> Self {
         guard TransferRules.validIBAN(payerIBAN), plan.group.total.isFinite, plan.group.total > 0,

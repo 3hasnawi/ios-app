@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     (work / "Package.swift").write_text('// swift-tools-version:6.2\nimport PackageDescription\n' +
         'let package = Package(name:"BackupTests", platforms:[.macOS(.v26)], dependencies:[.package(url:"https://github.com/weichsel/ZIPFoundation.git",revision:"' +
         revision + '")], targets:[.executableTarget(name:"BackupTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])], swiftLanguageModes:[.v5])')
-    for name in ["CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride"]:
+    for name in ["CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride","ContractBatchPayload","ContractTransferBatch","ContractTransferEngine","TransferIndividualPlan","TransferGroupCSVCheck","TransferReconciliation"]:
         (src / (name + ".swift")).write_text(read(name))
     backup = read("Backup")
     models = read("Models")
@@ -32,6 +32,12 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     books = section(books, "nonisolated struct OfficialBook:", "    static var root: URL") + '    static var root: URL { URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test-books") }\n' + books[books.index("    static func file("):]
     imports = 'import Foundation\nimport SwiftData\nimport ZIPFoundation\nimport CryptoKit\nimport CoreGraphics\n'
     code = [
+        section(read("Reports"), "nonisolated enum ReportKind", "/// حسابات التقارير"),
+        section(read("TransferFiles"), "nonisolated enum TransferCategory", "@ModelActor"),
+        section(read("TransferLetterFigures"), "nonisolated struct TransferLetterFigures", "nonisolated enum TransferLetterFigureRules"),
+        section(read("HealthCareReport"), "nonisolated enum RankOrder", "/// اشتراكات"),
+        section(read("FundReport"), "nonisolated enum FundReport", "    static func summary(") + "}",
+
         backup[backup.index("nonisolated enum BackupFormat"):backup.index("/// القراءة والكتابة")],
         section(backup, "@ModelActor\nactor BackupActor", "\n}",) + "\n}",
         "enum Restore {\n" + section(backup, "    nonisolated static func replaceVerifiedArchive", "    /// يسجل خط الأساس") + section(backup, "    nonisolated static func extractForRestore", "    private func open(") + "\n}",
@@ -45,6 +51,6 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
         section(read("FoodContractReport"), "nonisolated enum FoodContractReport", "    static func rows(") + "}", books
     ]
     (src / "Production.swift").write_text(imports + "\n".join(code))
-    for name in ["Support.swift","Test.swift"]:
+    for name in ["Support.swift","Test.swift","ContractBatchTests.swift"]:
         (src / name).write_text((tests / name).read_text())
     subprocess.run(["swift","run","-c","release","BackupTests"],cwd=work,check=True)

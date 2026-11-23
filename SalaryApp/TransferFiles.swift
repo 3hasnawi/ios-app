@@ -18,7 +18,7 @@ nonisolated enum TransferCategory: String, CaseIterable, Identifiable, Codable, 
     var prefix: String { self == .rafidain ? "30000" : "20000" }
 }
 
-nonisolated struct TransferEntity: Identifiable, Sendable {
+nonisolated struct TransferEntity: Codable, Identifiable, Sendable {
     let group: ReportGroup
     let account: SavedExecutionAccount?
     let category: TransferCategory
@@ -149,7 +149,7 @@ nonisolated enum TransferRules {
         return result
     }
     static let csvHeader = "Reference|Value Date|Payer Name|Payer Account|Amount|Currency|Receiver BIC|Beneficiary Name|Beneficiary Account|Remittance Information|Details of Charges"
-    static func csv(_ entities: [TransferEntity], category: TransferCategory, month: String, payer: String, payerIBAN: String, date: Date = .now) throws -> Data {
+    static func csv(_ entities: [TransferEntity], category: TransferCategory, month: String, payer: String, payerIBAN: String, date: Date = .now, referenceScope: String = "") throws -> Data {
         guard category == .rafidain || category == .otherBanks, !entities.isEmpty,
               safeField(payer), validIBAN(payerIBAN), safeField(month),
               Set(entities.map(\.id)).count == entities.count,
@@ -165,7 +165,7 @@ nonisolated enum TransferRules {
         for (index, entity) in entities.enumerated() {
             guard let account = entity.account else { throw CocoaError(.fileWriteUnknown) }
             let amount = String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), entity.group.total)
-            let fields = [day + category.prefix + String(index + 1), day, payer,
+            let fields = [day + category.prefix + referenceScope + String(index + 1), day, payer,
                           ArabicText.latinDigits(payerIBAN).uppercased().filter { !$0.isWhitespace && $0 != "-" },
                           amount, "IQD", account.swift.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
                           entity.beneficiaryName ?? entity.group.title, ArabicText.latinDigits(account.iban).uppercased().filter { !$0.isWhitespace && $0 != "-" },
@@ -218,6 +218,48 @@ struct TransferFilesView: View {
     @State private var draftCoverage = TransferDraftCoverage.shared
     @State private var bankCache = BankStatementCache.shared
     @State private var loadedRevision = -1
+    @AppStorage(ContractTransferArchive.key) private var heldData = Data()
+    @AppStorage(TransferIssuance.settingsKey) private var issuedData = Data()
+    @State private var heldArchive = ContractTransferArchive()
+    @State private var loadedArchive: Data?
+    @State private var archiveError: String?
+    @State private var pendingSplit: ContractTransferBatch?
+    @State private var preparingSplit = false
+    @State private var reviewMissingNominal = false
+    @State private var splitSource: TransferDraftRevision?
+    @State private var splitRevision = -1
+
+    private var splitRecord: ContractTransferArchive.Record? { heldArchive.records.first { $0.month == month?.name } }
+
+    private func checkSplitEligibility() throws {
+        guard loadedArchive == heldData, archiveError == nil, splitRecord == nil, loadedKey == loadKey,
+              loadedRevision == bankCache.revision, categoriesValid, linksValid, !ContractBatchStore.busy,
+              month?.employeeCount ?? 0 > 0 else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+        let ledger = try TransferIssuance.decode(issuedData)
+        guard !ledger.records.contains(where: { $0.month == month?.name && ($0.groupCategory != nil || ["contracts", "rafidain_group", "other_banks_group", "ramadi", "housing", "water", "rafidain_anbar"].contains($0.book)) }) else {
+            throw ContractTransferIssue(tr("يوجد إصدار مؤكد لهذا الشهر. راجع سجل التحويل قبل تقسيم مبلغ قد صدر سابقاً.", "This month has confirmed letters. Review existing issuance before splitting."))
+        }
+    }
+    private func prepareSplit(reviewed: Bool) {
+        guard !preparingSplit, let month, var figures else { return }
+        do { try checkSplitEligibility() } catch { self.error = error.localizedDescription; return }
+        if figures.missingContractNominal > 0 && !reviewed { reviewMissingNominal = true; return }
+        figures.contractNominalReviewed = reviewed
+        let all = entities, source = draftRevision, revision = bankCache.revision, name = month.name, stamp = month.importedAt
+        let payer = payerName, iban = payerIBAN, links = payrollLinksData, container = SharedModel.container
+        preparingSplit = true; error = nil
+        Task {
+            defer { preparingSplit = false }
+            do {
+                let result = try await ContractTransferEngine(modelContainer: container).prepare(month: name, importedAt: stamp,
+                    figures: figures, entities: all, payer: payer, iban: iban, links: links)
+                try checkSplitEligibility()
+                guard source == draftRevision, revision == bankCache.revision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+                splitSource = source; splitRevision = revision; pendingSplit = result
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
     private var loadKey: String { "\(String(describing: month?.persistentModelID))|\(month?.name ?? "")|\(month?.importedAt.timeIntervalSince1970 ?? 0)" }
@@ -283,9 +325,9 @@ struct TransferFilesView: View {
                 accounts: Binding(get: { accounts }, set: { _ in }),
                 month: month?.name ?? "", sourceKey: loadKey, sourceRevision: loadedRevision,
                 figures: figures, figuresError: figuresError,
-                changeCategory: setCategory, setTransferAccount: setTransferAccount)
+                changeCategory: setCategory, setTransferAccount: setTransferAccount, splitActive: splitRecord != nil)
         } label: {
-            categoryLabel(category, items: items)
+            if splitRecord != nil { Label(tr("الكتب الأخرى للشهر", "Other monthly letters"), systemImage: "doc.text") } else { categoryLabel(category, items: items) }
         }
     }
     @ViewBuilder private func categoryLabel(_ category: TransferCategory, items: [TransferEntity]) -> some View {
@@ -351,15 +393,40 @@ struct TransferFilesView: View {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
                 let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first(where: { $0.employeeCount > 0 })
-                NavigationLink(value: ReportsRoute.refunds(payroll?.name ?? "")) {
+                NavigationLink { EmployeeRefundView(month: payroll?.name ?? "") } label: {
                     Label(tr("إعادة المبالغ", "Employee refunds"), systemImage: "arrow.uturn.backward.circle")
-                }
+                }.accessibilityIdentifier("transferRefundBatch")
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {
                     Label(tr("الكتب المخصصة", "Custom letters"), systemImage: "doc.text")
                 }
             }
             if let month {
-                Section { LabeledContent(tr("الشهر المختار", "Selected month"), value: month.name) }
+                Section {
+                    LabeledContent(tr("الشهر المختار", "Selected month"), value: month.name)
+                    if loadedArchive == heldData && archiveError == nil {
+                        if let splitRecord {
+                            NavigationLink { ContractTransferRecordView(id: splitRecord.id) } label: {
+                                Label(tr("مبالغ الشهر ودفعة العقود المؤجلة", "Current and deferred contract transfers"), systemImage: "clock.arrow.circlepath")
+                            }
+                        } else {
+                            Button { prepareSplit(reviewed: false) } label: {
+                                Label(tr("تأجيل تحويل استقطاعات العقود", "Defer contract deductions"), systemImage: "calendar.badge.clock")
+                            }.disabled(preparingSplit || figures == nil || month.employeeCount == 0)
+                        }
+                    }
+                    if preparingSplit { ProgressView() }
+                    if let figuresError { Text(figuresError).font(.footnote).foregroundStyle(.orange) }
+                }
+            }
+            if let archiveError { Text(archiveError).foregroundStyle(.red) }
+            if !heldArchive.records.isEmpty {
+                NavigationLink {
+                    List(heldArchive.records) { item in
+                        NavigationLink { ContractTransferRecordView(id: item.id) } label: {
+                            LabeledContent(item.month, value: Money.format(item.held))
+                        }
+                    }.navigationTitle(tr("دفعات العقود المؤجلة", "Deferred contract batches"))
+                } label: { Label(tr("دفعات العقود المؤجلة", "Deferred contract batches"), systemImage: "tray.full") }
             }
             if !linksValid { Section { Text(tr("تعذّرت قراءة روابط الحسابات؛ لا يمكن اعتماد التصنيف أو التصدير حتى استعادة الروابط.", "Account links could not be read; classification and export are unavailable until they are restored.")).foregroundStyle(.red) } }
             if !categoriesValid { Section { Text(tr("تعذّرت قراءة تصنيفات الجهات المحفوظة؛ لم تُستبدل البيانات، واستعدها قبل التصدير.", "Saved entity classifications could not be read; the data was not replaced. Restore it before export.")).foregroundStyle(.red) } }
@@ -367,7 +434,10 @@ struct TransferFilesView: View {
                 ProgressView().frame(maxWidth: .infinity)
             } else if month == nil {
                 ContentUnavailableView(tr("لا توجد أشهر محفوظة", "No saved months"), systemImage: "calendar")
-            } else {
+            } else if loadedArchive == heldData && archiveError == nil {
+                if splitRecord != nil {
+                    categoryRow(.anbar)
+                } else {
                 Section {
                     ForEach([TransferCategory.rafidain, .otherBanks, .anbar]) { category in
                         categoryRow(category)
@@ -376,6 +446,7 @@ struct TransferFilesView: View {
                 Section {
                     categoryRow(.unresolved)
                 } header: { Text(tr("مراجعة الجهات", "Entity review")) }
+                }
             }
         }
         .navigationTitle(tr("ملفات التحويل", "Transfer files"))
@@ -397,6 +468,21 @@ struct TransferFilesView: View {
                 Button(tr("إعدادات التحويل", "Transfer settings"), systemImage: "slider.horizontal.3") { showSettings = true }
             }
         }
+        .onChange(of: heldData, initial: true) { _, data in
+            do { heldArchive = try ContractTransferArchive.read(data); loadedArchive = data; archiveError = nil }
+            catch { heldArchive = .init(); loadedArchive = nil; archiveError = tr("تعذّرت قراءة دفعات العقود؛ استعد نسخة سليمة قبل إصدار تحويل.", "Restore valid contract batches before issuing transfers.") }
+        }
+        .alert(tr("يوجد اسمي ناقص لبعض العقود. اعتماد الضمان من الاسمي المتوفر والتوقيفات بعد المراجعة؟", "Some nominal pay is missing. Continue with the reviewed available guarantee?"), isPresented: $reviewMissingNominal) {
+            Button(tr("راجعت المبلغ", "Amount reviewed")) { prepareSplit(reviewed: true) }
+            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
+        } message: { Text(Money.format(figures?.contractOverrideTotal ?? figures.map { ($0.availableContractNominalShare ?? 0) + $0.contractRetirement })) }
+        .sheet(item: $pendingSplit) { batch in
+            ContractBatchActivation(batch: batch) {
+                try checkSplitEligibility()
+                guard splitSource == draftRevision, splitRevision == bankCache.revision else { throw TransferWordDraftGenerator.Failure.sourceChanged }
+                try ContractBatchStore.update { try $0.insert(batch) }
+            }
+        }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
                 Form {
@@ -413,7 +499,7 @@ struct TransferFilesView: View {
                         if let referenceError { Text(referenceError).font(.footnote).foregroundStyle(.red) }
                         NavigationLink { UnifiedLetterTemplateList() } label: { Label(tr("قالب الكتاب", "Letter template"), systemImage: "slider.horizontal.3") }
                     } footer: { Text(tr("تُحفظ المراجع ضمن النسخة الاحتياطية.", "References are included in the backup.")) }
-                    if let figures, error == nil {
+                    if let figures, error == nil, loadedArchive == heldData, archiveError == nil, splitRecord == nil {
                         Section {
                             NavigationLink {
                                 TransferIssuanceView(month: month?.name ?? "", figures: figures, entities: entities, sourceKey: loadKey,
@@ -482,6 +568,7 @@ private struct TransferCategoryView: View {
     let figuresError: String?
     let changeCategory: (TransferCategory, TransferEntity) -> Bool
     let setTransferAccount: (TransferEntity, String?) -> Bool
+    var splitActive = false
     @Query(sort: [SortDescriptor(\PayrollMonth.sortKey, order: .reverse)]) private var months: [PayrollMonth]
     @AppStorage(ExecutionAccountStore.storageKey) private var currentAccounts = Data()
     @AppStorage(TransferRules.settingsKey) private var currentCategories = Data()
@@ -527,7 +614,7 @@ private struct TransferCategoryView: View {
         List {
             Section {
                 LabeledContent(tr("الشهر", "Month"), value: month)
-                if sourceIsCurrent && linksValidHere && categoriesValidHere {
+                if !splitActive && sourceIsCurrent && linksValidHere && categoriesValidHere {
                     LabeledContent(category == .anbar ? tr("عدد جهات الاستقطاع", "Deduction entities") : tr("عدد الجهات", "Entities"), value: Num.format(entities.count))
                     LabeledContent(category == .anbar ? tr("مجموع جهات الاستقطاع", "Deduction entity total") : tr("المجموع", "Total"), value: Money.format(entities.reduce(0) { $0 + $1.group.total }))
                 }
@@ -559,7 +646,7 @@ private struct TransferCategoryView: View {
                         Label(figuresError ?? tr("تعذّر تحميل مبالغ الرواتب للشهر المختار.", "Could not load payroll amounts for the selected month."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                         treasuryBooks
                         Label(tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), systemImage: "doc.text").foregroundStyle(.secondary)
-                        ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }) { kind in
+                        ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks && (!splitActive || (!$0.requiresEntity && $0 != .contracts)) }) { kind in
                             Label(kind.title, systemImage: "doc.text").foregroundStyle(.secondary)
                         }
                     } header: { Text(tr("الكتب المنفردة", "Individual letters")) }
@@ -611,7 +698,7 @@ private struct TransferCategoryView: View {
                     }
                 } footer: { Text(tr("اختر ملف الحسابات الصحيح، ثم راجع نتيجة فحصه قبل الاستيراد.", "Choose the correct accounts file and review it before import.")) }
             }
-            if category != .unresolved {
+            if !splitActive && category != .unresolved {
                 Section {
                     NavigationLink {
                         entityList
@@ -767,7 +854,7 @@ private struct TransferCategoryView: View {
                     if context.figures.foodCompany <= 0 { Text(tr("لا مبلغ متاح؛ راجع بيانات الشهر", "Amount unavailable; review this month")).font(.caption).foregroundStyle(.orange) }
                 }
             }
-            ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks }) { kind in
+            ForEach(TransferLetterDraftKind.allCases.filter { $0 != .rafidain && $0 != .otherBanks && (!splitActive || (!$0.requiresEntity && $0 != .contracts)) }) { kind in
                 NavigationLink {
                     TransferLetterDraftView(kind: kind, month: context.figures.month, figures: context.figures,
                         entities: context.entities, sourceKey: context.sourceKey, sourceAccounts: context.accounts,
@@ -782,11 +869,11 @@ private struct TransferCategoryView: View {
                 }
             }
         } header: { Text(tr("الكتب المنفردة", "Individual letters")) } footer: { Text(tr("المبالغ حسب بيانات الشهر. اختر جهة الاستقطاع للكتب المرتبطة بها، وراجع الحساب والمبلغ قبل اعتماد أي كتاب. المعاينات قيد التحقق.", "Amounts come from this month. Select the deduction entity for linked letters and review accounts and amounts. Previews are under verification.")) }
-        Section {
+        if !splitActive { Section {
             NavigationLink {
                 TransferListsView(month: month, sourceKey: sourceKey, entities: context.entities)
             } label: { Label(tr("القوائم", "Lists"), systemImage: "list.bullet.rectangle") }
-        }
+        } }
     }
     @ViewBuilder private var treasuryBooks: some View {
         NavigationLink { TreasuryLetterView(kind: .guarantee, monthName: month) } label: {

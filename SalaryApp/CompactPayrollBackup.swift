@@ -83,7 +83,7 @@ nonisolated enum CompactPayrollBackup {
     static func read(in dir: URL, manifest: BackupFormat.Manifest,
                      visit: (Int, Record) throws -> Void = { _, _ in }) throws -> Data {
         let decoder = JSONDecoder()
-        let compact = manifest.version == 12
+        let compact = manifest.version >= 12
         let headers: [Data]
         if compact {
             guard manifest.payrollDigest?.count == 32 else { throw BackupError.notBackup }

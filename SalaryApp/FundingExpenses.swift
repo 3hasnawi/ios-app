@@ -93,6 +93,7 @@ nonisolated struct FundingExpenses: Sendable, Equatable, Codable {
 }
 
 struct FundingExpensesView: View {
+    @AppStorage(ContractTransferArchive.key) private var heldData = Data()
     let month: String
     let revision: String
     @Query private var months: [PayrollMonth]
@@ -192,6 +193,20 @@ struct FundingExpensesView: View {
                         if !report.hasExecutionRows { Text(tr("لا توجد سجلات استقطاعات محفوظة للشهر.", "No deduction records are saved for this month.")) }
                         if report.contractOverrideStale { Text(tr("تغيّر أساس حساب العقود؛ المبلغ اليدوي السابق غير مستخدم. راجعه من كشف البنك.", "The contract basis changed; the previous manual amount is not used. Review it in the bank statement.")) }
                     }
+                }
+                if !heldData.isEmpty {
+                    if let archive = try? ContractTransferArchive.read(heldData) {
+                        if let held = archive.records.first(where: { $0.month == report.month }) {
+                            Section(tr("توزيع التمويل عند فصل العقود", "Funding split for contracts")) {
+                                LabeledContent(tr("استحقاق الشهر", "Monthly entitlement"), value: Money.format(report.total))
+                                LabeledContent(tr("دفعة العقود المحفوظة", "Saved contract batch"), value: Money.format(held.held))
+                                if report.total >= held.held && !report.isProvisional && report.difference == 0 {
+                                    LabeledContent(tr("الاستحقاق عدا دفعة العقود", "Entitlement excluding held contracts"), value: Money.format(report.total - held.held))
+                                }
+                                NavigationLink { ContractTransferRecordView(id: held.id) } label: { Text(tr("تفاصيل الدفعتين", "Batch details")) }
+                            }
+                        }
+                    } else { Text(tr("تعذّرت قراءة دفعات العقود المحفوظة.", "Cannot read saved contract batches.")).foregroundStyle(.red) }
                 }
                 Section(tr("المطابقة مع كشف البنك", "Bank statement comparison")) {
                     LabeledContent(report.isProvisional ? tr("مجموع المصروفات المتوفرة", "Available expenses") : tr("مجموع المصروفات", "Total expenses"), value: Money.format(report.total))

@@ -13,7 +13,7 @@ nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
     static let version = 12
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 }
     static func exportVersion(for settings: [String: Data]) -> Int {
         // تمنع الصيغة الجديدة إسقاط تاريخ الصرف أو تعديل دفتر الملف بتطبيق قديم.
         if let raw = settings[SalaryTrust.settingsKey],
@@ -59,10 +59,10 @@ nonisolated enum BackupFormat {
             default: return .max
             }
         }
-        var dataVersion: Int { version == 12 ? contentVersion ?? -1 : version }
+        var dataVersion: Int { version >= 12 ? contentVersion ?? -1 : version }
         func validateFormat() throws {
             guard BackupFormat.supports(version) else { throw BackupError.newerVersion }
-            if version == 12 {
+            if version >= 12 {
                 guard [5, 6, 8, 9, 10, 11].contains(dataVersion), payrollDigest?.count == 32, supportingDigest?.count == 32 else { throw BackupError.notBackup }
             }
         }
@@ -79,7 +79,7 @@ nonisolated enum BackupFormat {
     struct AccountRecord: Codable { var entity: String; var iban: String; var branch: String; var swift: String; var localAccount: String? = nil }
 
     /// إعدادات تُحفظ مع البيانات (بدون قفل Face ID).
-    static let settingsKeys = ["homePinnedEntityNames", "homeHeadlineDeductions", "homeHiddenWorkReports", "homePinnedWorkItems", "staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
+    static let settingsKeys = [ContractTransferArchive.key, "homePinnedEntityNames", "homeHeadlineDeductions", "homeHiddenWorkReports", "homePinnedWorkItems", "staffCount", "staffImportedAt", "staffFileName", "staffStatuses", "unifiedRecentSearches",
                                "autoBackupEnabled", "backupSchedule", "homeTileLayout",
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey]
@@ -234,10 +234,13 @@ actor BackupActor {
         }
         let formatVersion = BackupFormat.exportVersion(for: settings)
         try JSONEncoder().encode(payroll.headers).write(to: dir.appendingPathComponent(CompactPayrollBackup.schemaFile))
-        try JSONEncoder().encode(settings).write(to: dir.appendingPathComponent("settings.json"))
+        _ = try ContractTransferArchive.fromSettings(settings)
+        let settingsFile = try JSONEncoder().encode(settings)
+        guard settingsFile.count <= 64_000_000 else { throw CheckedArchive.Failure.tooLarge }
+        try settingsFile.write(to: dir.appendingPathComponent("settings.json"))
         guard books.count <= 10_000 else { throw CheckedArchive.Failure.tooLarge }
         let supporting = BackupArchiveVerification.supportingPaths(bookIDs: books.map(\.id))
-        let manifest = BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now,
+        let manifest = BackupFormat.Manifest(version: settings[ContractTransferArchive.key] == nil ? BackupFormat.version : 13, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
                                              accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount,
@@ -292,7 +295,7 @@ actor BackupActor {
         let manifest = try decoder.decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
         try manifest.validateFormat()
         guard manifest.hasData else { throw BackupError.emptyRestore }
-        if manifest.version == 12 {
+        if manifest.version >= 12 {
             let archivedBooks = try OfficialBookFiles.read(in: folder.appendingPathComponent("books"))
             let paths = BackupArchiveVerification.supportingPaths(bookIDs: archivedBooks.map(\.id))
             guard try BackupArchiveVerification.supportingDigest(in: folder, paths: paths) == manifest.supportingDigest else {
@@ -314,8 +317,13 @@ actor BackupActor {
               staff.count == manifest.staff, manifest.version < 2 || manifest.accounts != nil,
               accounts.count == (manifest.accounts ?? 0) else { throw BackupError.notBackup }
         let settings = try decoder.decode([String: Data].self, from: Data(contentsOf: folder.appendingPathComponent("settings.json")))
-        if manifest.version == 12, manifest.dataVersion != BackupFormat.exportVersion(for: settings) { throw BackupError.notBackup }
+        if manifest.version >= 12, manifest.dataVersion != BackupFormat.exportVersion(for: settings) { throw BackupError.notBackup }
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
+        let batches = try ContractTransferArchive.fromSettings(settings)
+        guard (manifest.version == 13) == !batches.records.isEmpty else { throw BackupError.notBackup }
+        let existing = try ContractTransferArchive.read(UserDefaults.standard.data(forKey: ContractTransferArchive.key) ?? Data())
+        try batches.checkRestore(over: existing)
+
         if let serialized = settings[FundingApproval.settingsKey] {
             guard (manifest.dataVersion == 8 || manifest.dataVersion == 9 || manifest.dataVersion == 10 || manifest.dataVersion == 11), let data = try PropertyListSerialization.propertyList(from: serialized, format: nil) as? Data else { throw BackupError.notBackup }
             _ = try FundingApproval.decode(data)
@@ -666,6 +674,7 @@ final class BackupManager {
         let staffRevision = StaffImportState.shared.version
         let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
             if let value = UserDefaults.standard.object(forKey: key) {
+                if key == ContractTransferArchive.key, (value as? Data)?.isEmpty == true { return }
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
             }
         }
@@ -1182,7 +1191,7 @@ final class BackupManager {
             guard manifest.hasData else { throw BackupError.emptyRestore }
             try data.write(to: dir.appendingPathComponent("manifest.json"))
             var required = ["settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"]
-            if manifest.version == 12 { required.append(CompactPayrollBackup.schemaFile) }
+            if manifest.version >= 12 { required.append(CompactPayrollBackup.schemaFile) }
             if manifest.version >= 2 || entries["accounts.jsonl"] != nil { required.append("accounts.jsonl") }
             for name in required {
                 guard let entry = entries[name] else { throw BackupError.notBackup }
@@ -1263,7 +1272,7 @@ final class BackupManager {
                         result[item.key] = normalized
                     }
                 }
-                for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted", WorkReport.pinsKey, "homeHiddenWorkReports"] where settings[key] == nil {
+                for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted", WorkReport.pinsKey, "homeHiddenWorkReports", ContractTransferArchive.key] where settings[key] == nil {
                     UserDefaults.standard.removeObject(forKey: key)
                 }
                 for (key, data) in settings {

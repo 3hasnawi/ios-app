@@ -18,6 +18,8 @@ nonisolated enum RankOrder {
             .split(separator: " ").joined(separator: " ")
     }
 
+    static func recognizes(_ text: String) -> Bool { index[key(text)] != nil }
+
     static func rank(_ text: String) -> Int { index[key(text)] ?? order.count }
 }
 

@@ -28,6 +28,19 @@ final class NavigationTests: XCTestCase {
         XCTAssertFalse(element("homeNetCard").exists)
     }
 
+    func testPinnedTransferFilesOpensRefundBatch() {
+        continueAfterFailure = false
+        app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES", "-homePinnedWorkItems", "transferFiles"]
+        app.launch()
+        let pin = element("pinned-transferFiles")
+        XCTAssertTrue(pin.waitForExistence(timeout: 30))
+        pin.tap()
+        let refunds = element("transferRefundBatch")
+        XCTAssertTrue(refunds.waitForExistence(timeout: 10))
+        refunds.tap()
+        XCTAssertTrue(app.navigationBars["إعادة المبالغ"].waitForExistence(timeout: 15))
+    }
+
     func testReportsBackGestures() {
         app.launchArguments += ["-homePinnedWorkItems", "reports|entities"]
         continueAfterFailure = false
