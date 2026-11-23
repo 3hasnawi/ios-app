@@ -43,7 +43,12 @@ with tempfile.TemporaryDirectory() as tmp:
     report.write_text(report_code.replace("import UIKit", "#if os(macOS)\nimport AppKit\n#else\nimport UIKit\n#endif"))
     mac = [str(renderer), str(tests / "MacPDF.swift"), str(root / "ci/report_layout_test/UIKitPreviewStubs.swift")]
     files = [str(report), str(app / "BoundedFile.swift"), str(app / "RefundCSVRecovery.swift"), str(app / "TransferHeaderFont.swift"), str(app / "ReportTableStyle.swift"), str(common), str(app / "ArabicAmountWords.swift"), str(app / "EmployeeRefund.swift"), str(app / "EmployeeRefundExport.swift")]
-    subprocess.run(["swiftc", "-o", str(work / "test"), *mac, *files, str(tests / "main.swift")], check=True)
+    treasury = work / "TreasuryTable.swift"
+    treasury.write_text("import Foundation\n" +
+        section("TransferLetterFigures.swift", "nonisolated struct TransferLetterFigures:", "    var effectiveContractNominalShare") + "}\n" +
+        section("TransferWordTables.swift", "nonisolated enum TransferWordTables", "    static func contracts(") + "}\n")
+    subprocess.run(["swiftc", "-o", str(work / "test"), *mac, *files, str(treasury), str(app / "TransferLetterBody.swift"),
+                    str(tests / "main.swift")], check=True)
     subprocess.run([str(work / "test")], cwd=root, check=True)
     model = section("Models.swift", "@Model\nfinal class Employee", "    var items: [String: Double]")
     model = model[:model.index("    init(")] + """

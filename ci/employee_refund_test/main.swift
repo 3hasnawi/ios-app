@@ -237,3 +237,26 @@ do {
     precondition(TransferAdaptivePDF.tableAmountKey("٢,٤٥٠") == "2450")
 }
 print("Verified contract PDF cells, wrapped thousands and signed adjustments.")
+
+// نقرأ النموذج الفعلي بعمود المبلغ الضيق وصفّ المجموع العريض.
+do {
+    let figures = TransferLetterFigures(month: "تشرين الأول 2026", foodFund: 0, foodTax: 0, foodCompany: 0,
+        healthcare: 0, policeFundDonations: 0, sports: 0, incomeTax: 123_456_789, socialProtection: 98_765_432,
+        contractNominalShare: nil, contractRetirement: 0, payrollCash: nil)
+    let table = try TransferWordTables.treasury(figures, eastern: true)
+    precondition(table.rows.map { ArabicText.latinDigits($0[2]) } == ["98,765,432", "123,456,789", "222,222,221"])
+    let beneficiary = iban("RSHD", 3)
+    let total = ReportSheet.easternDigits(try TransferWordValues.groupedAmount(figures.treasuryTotal))
+    let body = try TransferLetterBody.render(id: "tax_social", custom: nil, values: [
+        "المبلغ": total, "المبلغ كتابة": try ArabicAmountWords.dinars(Int64(figures.treasuryTotal)),
+        "حسابنا": payer, "حساب المستفيد": beneficiary, "المستفيد": "مديرية خزينة الأنبار",
+        "الشهر": "تشرين الأول", "السنة": "٢٠٢٦"
+    ])
+    let letter = Array(blocks.prefix(4)) + [.paragraph(.init(text: body)), .table(table)] + Array(blocks.suffix(2))
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try TransferAdaptivePDF.write(blocks: letter, destination: url, sakkalBold: nil, group: false, verifyNumericTableCells: true)
+    try TransferAdaptivePDF.verify(url, required: [payer, beneficiary, total])
+    precondition(PDFDocument(url: url)?.pageCount == 1)
+}
+print("Verified tax and social protection PDF amounts, accounts and combined total.")
