@@ -150,22 +150,21 @@ nonisolated enum TransferAdaptivePDF {
         }
         return result
     }
-    /// قد يظهر رمز التعديل على يسار الرقم أو يمينه في النص المستخرج من PDF عربي.
+    /// قد يضع PDFKit الإشارة بين مجموعات الآلاف عند استخراج خلية عربية.
+    /// تُطابق أرقام الخلية بالترتيب والإشارة مرة واحدة، بما فيها غياب الإشارة.
     static func tableAmountKey(_ text: String) -> String? {
-        var value = ArabicText.latinDigits(text).filter {
-            !$0.isWhitespace && $0 != "," && $0 != "٬" && $0 != "\u{200E}" && $0 != "\u{200F}" && $0 != "\u{061C}"
+        var digits = "", sign = ""
+        for character in ArabicText.latinDigits(text) {
+            if character.isASCII && character.isNumber {
+                digits.append(character)
+            } else if "+−-".contains(character) {
+                guard sign.isEmpty else { return nil }
+                sign = character == "+" ? "+" : "-"
+            } else if !character.isWhitespace && !",٬\u{200E}\u{200F}\u{061C}".contains(character) {
+                return nil
+            }
         }
-        let signs = "+−-"
-        var sign = ""
-        if let first = value.first, signs.contains(first) {
-            sign = first == "+" ? "+" : "-"
-            value.removeFirst()
-        } else if let last = value.last, signs.contains(last) {
-            sign = last == "+" ? "+" : "-"
-            value.removeLast()
-        }
-        guard !value.isEmpty, value.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
-        return sign + value
+        return digits.isEmpty ? nil : sign + digits
     }
 
     static func write(blocks: [TransferWordDocument.Block], destination: URL,
@@ -479,35 +478,8 @@ nonisolated enum TransferAdaptivePDF {
             guard let output = document.page(at: cell.page) else { throw Failure.damaged }
             let box = CGRect(x: cell.rect.minX + 0.2, y: page.height - cell.rect.maxY + 0.2,
                              width: cell.rect.width - 0.4, height: cell.rect.height - 0.4)
-            guard let selection = output.selection(for: box) else { throw Failure.tableAmountMismatch }
-            if tableAmountKey(selection.string ?? "") == cell.expected { continue }
-            // قد يشمل نطاق النص خلية مجاورة أو يعكس ترتيب مجموعات الآلاف في سطر عربي.
-            // نقرأ الحروف الموجودة فعلاً داخل المستطيل بحسب السطر ثم موضعها المطبوع.
-            guard let pageText = output.string as NSString? else { throw Failure.tableAmountMismatch }
-            var glyphs: [(bounds: CGRect, text: String)] = []
-            for index in 0..<selection.numberOfTextRanges(on: output) {
-                let range = selection.range(at: index, on: output)
-                guard range.location != NSNotFound, NSMaxRange(range) <= min(pageText.length, output.numberOfCharacters) else {
-                    throw Failure.tableAmountMismatch
-                }
-                for position in range.location..<NSMaxRange(range) {
-                    let bounds = output.characterBounds(at: position)
-                    if !bounds.isEmpty && box.contains(CGPoint(x: bounds.midX, y: bounds.midY)) {
-                        glyphs.append((bounds, pageText.substring(with: NSRange(location: position, length: 1))))
-                    }
-                }
-            }
-            var visual = ""
-            var line: [(bounds: CGRect, text: String)] = []
-            for glyph in glyphs.sorted(by: { $0.bounds.midY > $1.bounds.midY }) {
-                if let first = line.first, glyph.bounds.midY < first.bounds.minY {
-                    visual += line.sorted { $0.bounds.minX < $1.bounds.minX }.map(\.text).joined()
-                    line.removeAll(keepingCapacity: true)
-                }
-                line.append(glyph)
-            }
-            visual += line.sorted { $0.bounds.minX < $1.bounds.minX }.map(\.text).joined()
-            guard tableAmountKey(visual) == cell.expected else { throw Failure.tableAmountMismatch }
+            guard let extracted = output.selection(for: box)?.string,
+                  tableAmountKey(extracted) == cell.expected else { throw Failure.tableAmountMismatch }
         }
         try fm.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
         complete = true
