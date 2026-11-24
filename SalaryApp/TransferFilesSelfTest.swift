@@ -19,6 +19,12 @@ import CoreText
         catch { }
         try check(BankReconciliation.previousMonthKey("تشرين الاول 2026") == 202609, "reconciliation previous calendar month")
         try check(BankReconciliation.previousMonthKey("كانون الثاني 2026") == 202512, "reconciliation previous year")
+        let baghdadMidnight = Date(timeIntervalSince1970: 1_798_750_800) // ٢٠٢٦/١٢/٣١ الساعة ٢١ بتوقيت غرينتش
+        try check(BankReconciliation.displayDate(baghdadMidnight) == Num.digits("2027/01/01"), "full bank date at Baghdad midnight")
+        try check(BankReconciliation.inputAmount("١2۳") == 123 && BankReconciliation.inputAmount("") == 0, "reconciliation editing and clearing")
+        try check(BankReconciliation.inputAmount(String(BankReconciliation.maximumAmount)) == BankReconciliation.maximumAmount &&
+                  BankReconciliation.inputAmount(String(BankReconciliation.maximumAmount + 1)) == nil &&
+                  BankReconciliation.inputAmount("-12") == nil, "reconciliation input boundaries")
         let date = Date(timeIntervalSince1970: 1_790_899_200)
         let laterDate = date.addingTimeInterval(86_400)
         var statement = BankReconciliation.Period(month: "تشرين الاول 2026", start: date, end: laterDate)

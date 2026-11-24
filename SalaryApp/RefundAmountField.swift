@@ -6,13 +6,15 @@ struct RefundAmountField: UIViewRepresentable {
     let title: String
     let identifier: String
     @Binding var text: String
+    let acceptsText: (String) -> Bool
     var editingChanged: (Bool) -> Void = { _ in }
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.layoutDirection) private var direction
 
-    init(_ title: String, identifier: String, text: Binding<String>, editingChanged: @escaping (Bool) -> Void = { _ in }) {
+    init(_ title: String, identifier: String, text: Binding<String>, acceptsText: @escaping (String) -> Bool = { _ in true }, editingChanged: @escaping (Bool) -> Void = { _ in }) {
         self.title = title
         self.identifier = identifier
+        self.acceptsText = acceptsText
         _text = text
         self.editingChanged = editingChanged
     }
@@ -53,6 +55,11 @@ struct RefundAmountField: UIViewRepresentable {
         var parent: RefundAmountField
         init(_ parent: RefundAmountField) { self.parent = parent }
 
+        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+            let current = textField.text ?? ""
+            guard let range = Range(range, in: current) else { return false }
+            return parent.acceptsText(current.replacingCharacters(in: range, with: string))
+        }
         @objc func changed(_ field: UITextField) { parent.text = field.text ?? "" }
         func textFieldDidBeginEditing(_ textField: UITextField) { parent.editingChanged(true) }
         func textFieldDidEndEditing(_ textField: UITextField) { parent.editingChanged(false) }

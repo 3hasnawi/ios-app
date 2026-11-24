@@ -95,7 +95,9 @@ struct BankReconciliationView: View {
     private var editable: Bool { canEdit && !period.isConfirmed }
     private func confirmedText(_ value: BankReconciliation.Period) -> String {
         guard let date = value.confirmedAt else { return "" }
-        return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute())
+        let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: AppSettings.locale,
+                                    calendar: BankReconciliation.dayCalendar, timeZone: BankReconciliation.dayCalendar.timeZone)
+        return "\(BankReconciliation.displayDate(date))، \(date.formatted(time))"
     }
     private func status(_ value: BankReconciliation.Period) -> String {
         if value.isConfirmed { return tr("معتمدة \(confirmedText(value))", "Confirmed \(confirmedText(value))") }
@@ -126,7 +128,7 @@ struct BankReconciliationView: View {
             }
             .disabled(!sourcesCurrent)
         }
-        .environment(\.timeZone, TimeZone(identifier: "Asia/Baghdad") ?? .current)
+        .environment(\.timeZone, BankReconciliation.dayCalendar.timeZone)
         .navigationTitle(tr("مطابقة حساب المصرف", "Bank account reconciliation"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
@@ -183,7 +185,7 @@ struct BankReconciliationView: View {
             if savedPeriods.count > 1 {
                 Picker(tr("فترة محفوظة", "Saved period"), selection: Binding(get: { period.id }, set: { id in
                     if let saved = savedPeriods.first(where: { $0.id == id }) { period = BankReconciliation.preparedSignatures(saved) }
-                })) { ForEach(savedPeriods) { value in Text("\(value.start.formatted(date: .numeric, time: .omitted)) – \(value.end.formatted(date: .numeric, time: .omitted)) · \(status(value))").tag(value.id) } }
+                })) { ForEach(savedPeriods) { value in Text("\(BankReconciliation.displayDate(value.start)) – \(BankReconciliation.displayDate(value.end)) · \(status(value))").tag(value.id) } }
             }
             if savedPeriods.contains(where: { $0.id == period.id }) {
                 Label(status(period), systemImage: period.isConfirmed ? "lock.fill" : "pencil.circle")
@@ -191,8 +193,8 @@ struct BankReconciliationView: View {
             }
             LabeledContent(tr("شهر التمويل والبيانات", "Funding and data month"), value: month)
             Group {
-                DatePicker(tr("من", "From"), selection: $period.start, displayedComponents: .date)
-                DatePicker(tr("إلى", "To"), selection: $period.end, displayedComponents: .date)
+                BankReconciliationDateRow(title: tr("من", "From"), date: $period.start)
+                BankReconciliationDateRow(title: tr("إلى", "To"), date: $period.end)
                 BankReconciliationIntegerField(title: tr("الرصيد الافتتاحي", "Opening balance"), amount: $period.openingBalance)
             }.disabled(period.isConfirmed)
             Button(tr("حفظ الفترة", "Save period"), systemImage: "checkmark.circle") { persist(period) }.disabled(!editable)
@@ -260,7 +262,7 @@ struct BankReconciliationView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(movement.description).foregroundStyle(.primary)
                             if !period.isConfirmed && staleSources.contains(where: { $0.id == movement.id }) { Text(tr("تغيّر المصدر؛ احذف الحركة وأعد إضافتها.", "Source changed; delete and re-add this movement.")).font(.caption).foregroundStyle(.red) }
-                            Text("\(movement.date.formatted(date: .numeric, time: .omitted)) · \(movement.direction.title)")
+                            Text("\(BankReconciliation.displayDate(movement.date)) · \(movement.direction.title)")
                                 .font(.caption).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.buttonStyle(.plain).disabled(!editable)
@@ -497,13 +499,12 @@ private struct MovementDraft: Identifiable {
     var refundOf: UUID? = nil
     var isRefund = false
     var isFunding = false
-    var dateReviewed = false
     init(date: Date, description: String = "", amount: Int64 = 0, sourceID: String? = nil, sourceLineIDs: [String]? = nil) {
         self.date = date; self.description = description; self.amount = amount; self.sourceID = sourceID; self.sourceLineIDs = sourceLineIDs
     }
     init(_ value: BankReconciliation.Movement) {
         id = value.id; date = value.date; description = value.description; amount = value.amount; direction = value.direction
-        sourceID = value.sourceID; sourceLineIDs = value.sourceLineIDs; refundOf = value.refundOf; isRefund = value.isRefund == true; isFunding = value.isFunding == true; dateReviewed = true
+        sourceID = value.sourceID; sourceLineIDs = value.sourceLineIDs; refundOf = value.refundOf; isRefund = value.isRefund == true; isFunding = value.isFunding == true
     }
     var movement: BankReconciliation.Movement {
         .init(id: id, date: date, description: description, amount: amount, direction: direction, sourceID: sourceID, sourceLineIDs: sourceLineIDs, refundOf: refundOf, isRefund: isRefund, isFunding: isFunding)
@@ -518,9 +519,7 @@ private struct BankReconciliationMovementEditor: View {
     let save: (BankReconciliation.Movement) -> Bool
     var body: some View {
         Form {
-            DatePicker(tr("تاريخ المصرف", "Bank date"), selection: $draft.date, displayedComponents: .date)
-                .onChange(of: draft.date) { draft.dateReviewed = false }
-            Toggle(tr("تأكدت من التاريخ في كشف المصرف", "I checked the date on the bank statement"), isOn: $draft.dateReviewed)
+            BankReconciliationDateRow(title: tr("تاريخ المصرف", "Bank date"), date: $draft.date)
             TextField(tr("البيان", "Description"), text: $draft.description)
             Picker(tr("نوع الحركة", "Direction"), selection: $draft.direction) { ForEach(BankReconciliation.Direction.allCases, id: \.self) { Text($0.title).tag($0) } }
                 .onChange(of: draft.direction) { if draft.direction == .credit { draft.refundOf = nil } else { draft.isRefund = false; draft.isFunding = false } }
@@ -542,12 +541,11 @@ private struct BankReconciliationMovementEditor: View {
             if BankReconciliation.day(draft.date) == BankReconciliation.day(period.end) {
                 Text(tr("أدرج في اليوم الأخير الحركات التي سبقت التمويل الجديد فقط؛ التمويل الجديد لا يدخل في الكشف.", "On the final day, include only movements before the new funding; the new funding does not belong to this statement.")).font(.footnote).foregroundStyle(.orange)
             }
-            Text(tr("تأكد من التاريخ والمبلغ وفق كشف المصرف الورقي.", "Confirm the date and amount against the paper bank statement.")).font(.footnote).foregroundStyle(.secondary)
         }
         .navigationTitle(tr("حركة الحساب", "Account movement"))
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { if save(draft.movement) { dismiss() } }.disabled(!draft.dateReviewed) }
+            ToolbarItem(placement: .confirmationAction) { Button(tr("حفظ", "Save")) { if save(draft.movement) { dismiss() } }.disabled(draft.amount <= 0 || draft.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .alert(tr("تعذّر حفظ الحركة", "Could not save movement"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
@@ -558,28 +556,12 @@ private struct BankReconciliationMovementEditor: View {
 private struct BankReconciliationIntegerField: View {
     let title: String
     @Binding var amount: Int64
-    @State private var text: String
-    @FocusState private var focused: Bool
-    init(title: String, amount: Binding<Int64>) {
-        self.title = title; self._amount = amount
-        self._text = State(initialValue: amount.wrappedValue == 0 ? "" : String(amount.wrappedValue))
-    }
     var body: some View {
-        TextField(title, text: $text)
-            .keyboardType(.numberPad)
-            .focused($focused)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
-            .simultaneousGesture(TapGesture().onEnded { focused = true })
-            .onChange(of: text) { previous, value in
-                let digits = ArabicText.latinDigits(value)
-                if digits.isEmpty { amount = 0; return }
-                guard digits.utf8.allSatisfy({ (48...57).contains($0) }), let parsed = Int64(digits), parsed <= BankReconciliation.maximumAmount else { text = previous; return }
-                amount = parsed
-            }
-            .onChange(of: amount) { _, value in
-                if !focused { text = value == 0 ? "" : String(value) }
-            }
+        RefundAmountField(title, identifier: "reconciliationAmount", text: Binding(
+            get: { amount == 0 ? "" : Num.digits(String(amount)) },
+            set: { if let value = BankReconciliation.inputAmount($0) { amount = value } }
+        ), acceptsText: { BankReconciliation.inputAmount($0) != nil })
+        .frame(minHeight: 44)
     }
 }
 

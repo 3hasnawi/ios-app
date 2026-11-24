@@ -144,7 +144,7 @@ nonisolated enum BankReconciliation {
         let lines: [Line]
         let outstandingRefunds: [OutstandingRefund]
     }
-    private static var dayCalendar: Calendar {
+    static var dayCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Baghdad") ?? .current
         return calendar
@@ -154,6 +154,21 @@ nonisolated enum BankReconciliation {
         guard year >= 1900, (1...12).contains(month) else { return nil }
         return month == 1 ? (year - 1) * 100 + 12 : year * 100 + month - 1
     }
+    static func displayDate(_ date: Date) -> String {
+        let calendar = dayCalendar
+        let style = Date.VerbatimFormatStyle(format: "\(year: .padded(4))/\(month: .twoDigits)/\(day: .twoDigits)",
+                                             locale: Locale(identifier: "en_US_POSIX"), timeZone: calendar.timeZone, calendar: calendar)
+        return Num.digits(date.formatted(style))
+    }
+
+    static func inputAmount(_ text: String) -> Int64? {
+        if text.isEmpty { return 0 }
+        let digits = ArabicText.latinDigits(text)
+        guard digits.utf8.allSatisfy({ (48...57).contains($0) }),
+              let value = Int64(digits), value <= maximumAmount else { return nil }
+        return value
+    }
+
     static func day(_ value: Date) -> Date { dayCalendar.startOfDay(for: value) }
     static func reorder(_ period: Period, sourceID: UUID, targetID: UUID) throws -> Period {
         guard !period.isConfirmed else { throw Failure.locked }
