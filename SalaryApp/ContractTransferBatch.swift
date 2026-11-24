@@ -89,6 +89,7 @@ nonisolated struct ContractTransferArchive: Codable {
         var prepared: [String: Date] = [:]
         var confirmed: [String: Date] = [:]
         var reviewedImport: Date?
+        var cancelledAt: Date?
         func batch() throws -> ContractTransferBatch {
             let batch = try JSONDecoder().decode(ContractTransferBatch.self, from: ContractBatchPayload.unpack(compressed))
             try batch.validate()
@@ -98,21 +99,41 @@ nonisolated struct ContractTransferArchive: Codable {
     }
     var version = 1
     var records: [Record] = []
+    func activeRecord(for month: String) -> Record? {
+        records.first { $0.month == month && $0.cancelledAt == nil }
+    }
+
     static func read(_ data: Data) throws -> Self {
         if data.isEmpty { return Self() }
         let archive = try PropertyListDecoder().decode(Self.self, from: data)
-        guard archive.version == 1, Set(archive.records.map(\.month)).count == archive.records.count,
+        let active = archive.records.filter { $0.cancelledAt == nil }
+        guard archive.version == (active.count == archive.records.count ? 1 : 2),
+              Set(active.map(\.month)).count == active.count,
               Set(archive.records.map(\.id)).count == archive.records.count else { throw TransferIndividualPlan.Failure.invalidSource }
         return archive
     }
     mutating func insert(_ batch: ContractTransferBatch) throws {
         try batch.validate()
-        guard !records.contains(where: { $0.month == batch.month }) else { throw TransferIndividualPlan.Failure.invalidSource }
+        guard activeRecord(for: batch.month) == nil, !records.contains(where: { $0.id == batch.id }) else { throw TransferIndividualPlan.Failure.invalidSource }
         let payload = try ContractBatchPayload.pack(JSONEncoder().encode(batch))
         records.insert(Record(id: batch.id, month: batch.month, held: batch.held, importedAt: batch.importedAt, compressed: payload), at: 0)
     }
+    mutating func cancel(_ reviewed: Record, at date: Date = .now) throws {
+        guard let index = records.firstIndex(where: { $0.id == reviewed.id }),
+              records[index].cancelledAt == nil,
+              records[index].prepared == reviewed.prepared,
+              records[index].confirmed == reviewed.confirmed else { throw TransferIndividualPlan.Failure.invalidSource }
+        if records[index].prepared.isEmpty {
+            records.remove(at: index)
+        } else {
+            records[index].cancelledAt = date
+            version = 2
+        }
+    }
+
     var executionMarkers: [String] {
         records.flatMap { record in
+            (record.cancelledAt == nil ? [] : [record.id.uuidString + "|cancelled"]) +
             record.prepared.keys.map { record.id.uuidString + "|P|" + $0 } +
             record.confirmed.keys.map { record.id.uuidString + "|C|" + $0 }
         }.sorted()
@@ -128,6 +149,7 @@ nonisolated struct ContractTransferArchive: Codable {
     func checkRestore(over old: Self) throws {
         for item in old.records {
             guard let restored = records.first(where: { $0.id == item.id && $0.compressed == item.compressed }),
+                  (item.cancelledAt == nil || restored.cancelledAt == item.cancelledAt),
                   item.prepared.allSatisfy({ restored.prepared[$0.key] == $0.value }),
                   item.confirmed.allSatisfy({ restored.confirmed[$0.key] == $0.value }) else {
                 throw ContractTransferIssue(tr("النسخة المختارة تفتقد دفعة عقود محفوظة أو آخر حالة تنفيذها.", "The selected backup lacks an existing contract batch or its latest execution state."))

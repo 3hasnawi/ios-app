@@ -229,7 +229,7 @@ struct TransferFilesView: View {
     @State private var splitSource: TransferDraftRevision?
     @State private var splitRevision = -1
 
-    private var splitRecord: ContractTransferArchive.Record? { heldArchive.records.first { $0.month == month?.name } }
+    private var splitRecord: ContractTransferArchive.Record? { month.flatMap { heldArchive.activeRecord(for: $0.name) } }
 
     private func checkSplitEligibility() throws {
         guard loadedArchive == heldData, archiveError == nil, splitRecord == nil, loadedKey == loadKey,
@@ -418,6 +418,12 @@ struct TransferFilesView: View {
                             }.disabled(preparingSplit || figures == nil || month.employeeCount == 0)
                         }
                     }
+                    if let previous = heldArchive.records.first(where: { $0.month == month.name && $0.cancelledAt != nil && !$0.confirmed.isEmpty }) {
+                        NavigationLink { ContractTransferRecordView(id: previous.id) } label: {
+                            Label(tr("تحويلات مؤكدة قبل إلغاء التأجيل. راجعها قبل إرسال المبلغ الشامل.", "Transfers were confirmed before cancellation. Review them before sending the full amount."), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
+                    }
                     if preparingSplit { ProgressView() }
                     if let figuresError { Text(figuresError).font(.footnote).foregroundStyle(.orange) }
                 }
@@ -427,7 +433,13 @@ struct TransferFilesView: View {
                 NavigationLink {
                     List(heldArchive.records) { item in
                         NavigationLink { ContractTransferRecordView(id: item.id) } label: {
-                            LabeledContent(item.month, value: Money.format(item.held))
+                            VStack(alignment: .leading) {
+                                LabeledContent(item.month, value: Money.format(item.held))
+                                if let date = item.cancelledAt {
+                                    LabeledContent(tr("أُلغي التأجيل", "Deferral cancelled")) { Text(date, style: .date) }
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }.navigationTitle(tr("دفعات العقود المؤجلة", "Deferred contract batches"))
                 } label: { Label(tr("دفعات العقود المؤجلة", "Deferred contract batches"), systemImage: "tray.full") }

@@ -60,8 +60,26 @@ import SwiftData
     }
     var archive = ContractTransferArchive()
     try archive.insert(batch)
+    var untouched = archive
+    try untouched.cancel(untouched.records[0], at: date)
+    precondition(untouched.records.isEmpty)
     archive.records[0].prepared["deferred|group|otherBanks"] = date
+    let prepared = archive.records[0]
+    var preparedOnly = archive
+    try preparedOnly.cancel(prepared, at: date)
+    precondition(preparedOnly.activeRecord(for: month) == nil && preparedOnly.records[0].prepared == prepared.prepared)
     archive.records[0].confirmed["deferred|group|otherBanks"] = date
+    let activeArchive = try ContractTransferArchive.read(archive.encoded())
+    precondition(activeArchive.activeRecord(for: month)?.id == batch.id && activeArchive.version == 1)
+    do { try archive.cancel(prepared); preconditionFailure("Ignored newer confirmation") } catch TransferIndividualPlan.Failure.invalidSource {}
+    try archive.cancel(archive.records[0], at: date)
+    precondition(archive.activeRecord(for: month) == nil && archive.records[0].confirmed == activeArchive.records[0].confirmed)
+    do { try activeArchive.checkRestore(over: archive); preconditionFailure("Restored a cancelled deferral as active") } catch is ContractTransferIssue {}
+    let replacement = try await engine.prepare(month:month, importedAt:date, figures:figures, entities:entities, payer:"دافع تجريبي",iban:pay,links:Data())
+    var repeated = archive
+    try repeated.insert(replacement)
+    let reloaded = try ContractTransferArchive.read(repeated.encoded())
+    precondition(reloaded.records.count == 2 && reloaded.activeRecord(for: month)?.id == replacement.id)
     let data = try archive.encoded(), settings = [ContractTransferArchive.key:try PropertyListSerialization.data(fromPropertyList:data,format:.binary,options:0)]
     let (file, manifest) = try await BackupActor(modelContainer:container).export(settings:settings,progress:nil)
     defer { BackupFormat.removeExport(file) }
@@ -71,6 +89,8 @@ import SwiftData
     let restored = try await BackupActor(modelContainer:destination).restore(from:folder,progress:nil)
     let roundTrip = try ContractTransferArchive.fromSettings(restored)
     try roundTrip.checkRestore(over:archive)
+    precondition(roundTrip.records[0].cancelledAt == date && roundTrip.activeRecord(for: month) == nil)
+    precondition(roundTrip.executionMarkers == archive.executionMarkers && roundTrip.version == 2)
     let after = try roundTrip.records[0].batch()
     checkRepeatedRows(after)
     precondition(after.held==batch.held && after.parts(.deferred,category:.anbar).count==1)

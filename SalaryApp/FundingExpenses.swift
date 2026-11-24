@@ -196,7 +196,7 @@ struct FundingExpensesView: View {
                 }
                 if !heldData.isEmpty {
                     if let archive = try? ContractTransferArchive.read(heldData) {
-                        if let held = archive.records.first(where: { $0.month == report.month }) {
+                        if let held = archive.activeRecord(for: report.month) {
                             Section(tr("توزيع التمويل عند فصل العقود", "Funding split for contracts")) {
                                 LabeledContent(tr("استحقاق الشهر", "Monthly entitlement"), value: Money.format(report.total))
                                 LabeledContent(tr("دفعة العقود المحفوظة", "Saved contract batch"), value: Money.format(held.held))

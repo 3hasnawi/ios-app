@@ -72,7 +72,7 @@ struct ContractTransferRecordView: View {
     @State private var working = false
     @State private var error: String?
     @State private var confirm: ContractTransferDestination?
-    @State private var cancel = false
+    @State private var cancellation: ContractTransferArchive.Record?
     @State private var review = false
     @State private var reviewStamp: Date?
     private var sourceRevision: Date? {
@@ -86,7 +86,7 @@ struct ContractTransferRecordView: View {
     private func key(_ dest: ContractTransferDestination) -> String { phase.rawValue + "|" + dest.id }
     private func mutate(_ change: (inout ContractTransferArchive.Record) throws -> Void) throws {
         try ContractBatchStore.update { archive in
-            guard let i = archive.records.firstIndex(where: { $0.id == id }) else { throw TransferIndividualPlan.Failure.invalidSource }
+            guard let i = archive.records.firstIndex(where: { $0.id == id && $0.cancelledAt == nil }) else { throw TransferIndividualPlan.Failure.invalidSource }
             try change(&archive.records[i])
             record = archive.records[i]
         }
@@ -96,7 +96,9 @@ struct ContractTransferRecordView: View {
             if let batch, let record {
                 Section {
                     LabeledContent(tr("شهر الاستحقاق", "Funding month"), value: batch.month)
-                    if changed {
+                    if let date = record.cancelledAt {
+                        LabeledContent(tr("أُلغي التأجيل", "Deferral cancelled")) { Text(date, style: .date) }
+                    } else if changed {
                         Text(tr("أُعيد استيراد الشهر بعد حفظ الدفعة. راجع الأسماء والمبالغ المحفوظة قبل متابعة إصدارها.", "The month was reimported. Review the saved names and amounts before issuing.")).foregroundStyle(.orange)
                         Button(tr("مراجعة واعتماد الدفعة المحفوظة", "Review and retain the saved batch")) { reviewStamp = sourceRevision; review = true }
                     }
@@ -127,17 +129,21 @@ struct ContractTransferRecordView: View {
                                 } label: { LabeledContent(entity.group.title, value: Money.format(entity.group.total)) }
                             }
                         }
-                        Button(tr("تجهيز الكتاب وملفات الدفعة", "Prepare letter and batch files"), systemImage: "square.and.arrow.up") { export(batch, dest) }
-                            .disabled(working || changed)
+                        if record.cancelledAt == nil {
+                            Button(tr("تجهيز الكتاب وملفات الدفعة", "Prepare letter and batch files"), systemImage: "square.and.arrow.up") { export(batch, dest) }
+                                .disabled(working || changed)
+                        }
                         if let date = record.confirmed[key(dest)] {
                             LabeledContent(tr("تم التحويل", "Transferred")) { Text(date, style: .date) }
+                        } else if let date = record.prepared[key(dest)], record.cancelledAt != nil {
+                            LabeledContent(tr("تاريخ تجهيز الملفات", "Files prepared")) { Text(date, style: .date) }
                         } else if record.prepared[key(dest)] != nil {
                             Button(tr("تأكيد تنفيذ التحويل", "Confirm bank execution"), systemImage: "checkmark.seal") { confirm = dest }.disabled(changed || working)
                         }
                     } header: { Text(dest.title(batch, phase)) }
                 }
-                if record.prepared.isEmpty {
-                    Button(tr("إلغاء الفصل والعودة للتحويل الكامل", "Cancel split and restore full transfers"), role: .destructive) { cancel = true }.disabled(working)
+                if record.cancelledAt == nil {
+                    Button(tr("إلغاء الفصل والعودة للتحويل الكامل", "Cancel split and restore full transfers"), role: .destructive) { cancellation = record }.disabled(working)
                 }
             } else if error == nil { ProgressView() }
             if let error { Text(error).foregroundStyle(.red) }
@@ -175,17 +181,22 @@ struct ContractTransferRecordView: View {
                 }
             }
         }
-        .alert(tr("إلغاء تأجيل هذا الشهر؟", "Cancel deferral for this month?"), isPresented: $cancel) {
+        .alert(tr("إلغاء تأجيل هذا الشهر؟", "Cancel deferral for this month?"), isPresented: Binding(get: { cancellation != nil }, set: { if !$0 { cancellation = nil } }), presenting: cancellation) { reviewed in
             Button(tr("إلغاء الفصل", "Remove split"), role: .destructive) {
                 do {
-                    try ContractBatchStore.update { archive in
-                        guard let i = archive.records.firstIndex(where: { $0.id == id }), archive.records[i].prepared.isEmpty else { throw TransferIndividualPlan.Failure.invalidSource }
-                        archive.records.remove(at: i)
-                    }
+                    try ContractBatchStore.update { try $0.cancel(reviewed) }
                     dismiss()
                 } catch { self.error = error.localizedDescription }
             }
             Button(tr("رجوع", "Back"), role: .cancel) {}
+        } message: { reviewed in
+            if !reviewed.confirmed.isEmpty {
+                Text(tr("سيشمل التحويل الكامل المبالغ المؤكدة سابقاً. يبقى سجل التنفيذ محفوظاً؛ راجعه قبل الإرسال لتجنب تكرار الصرف.", "Full transfers include previously confirmed amounts. Review the saved execution history before sending to avoid duplicate payment."))
+            } else if !reviewed.prepared.isEmpty {
+                Text(tr("ستعود مبالغ العقود إلى تحويلات الشهر. استخدم الملفات الشاملة الجديدة واترك ملفات الدفعة السابقة.", "Contract amounts will return to monthly transfers. Use the new full transfer files and set aside the previous batch files."))
+            } else {
+                Text(tr("ستعود استقطاعات العقود إلى تحويلات هذا الشهر.", "Contract deductions will return to this month’s full transfers."))
+            }
         }
     }
 
