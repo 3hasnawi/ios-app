@@ -187,7 +187,10 @@ struct HomeAccounting<Shortcuts: View>: View {
             VStack(spacing: 2) {
                 TabView(selection: selection) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        Button { openRoute(item.route) } label: {
+                        Button {
+                            selectedReviewID = item.id
+                            openRoute(item.route)
+                        } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: item.symbol).font(.title3).foregroundStyle(accent)
                                 VStack(alignment: .leading, spacing: 5) {
@@ -215,6 +218,7 @@ struct HomeAccounting<Shortcuts: View>: View {
                                 Button(tr("الحالة التالية", "Next review item")) { selectedReviewID = items[index + 1].id }
                             }
                         }
+                        .accessibilityIdentifier("homeReview-" + item.id)
                         .tag(item.id)
                     }
                 }

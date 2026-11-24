@@ -583,6 +583,10 @@ struct ChangeExportSheet: View {
 
 // MARK: - تدقيق الرواتب
 
+@MainActor private var missingReviewCase: some View {
+    ContentUnavailableView(tr("الحالة غير متاحة في بيانات الشهر الحالية", "This case is unavailable in the current month’s data"), systemImage: "doc.text.magnifyingglass")
+}
+
 struct SalaryAuditView: View {
     let months: [String]
     let initialKind: SalaryChangeKind?
@@ -595,8 +599,6 @@ struct SalaryAuditView: View {
     @State private var exporting = false
     @State private var error: String?
     @State private var openKind: SalaryChangeKind?
-    @State private var openCheck: AuditCheck?
-    @State private var openedInitial = false
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
@@ -620,7 +622,7 @@ struct SalaryAuditView: View {
         return "\(from)|\(to)|\(stamps)|\(importState.version)"
     }
 
-    var body: some View {
+    private var overview: some View {
         List {
             Section {
                 MonthPairPicker(months: months, from: $from, to: $to)
@@ -681,9 +683,6 @@ struct SalaryAuditView: View {
         .navigationDestination(item: $openKind) { kind in
             if let audit { SalaryChangeListView(audit: audit, kind: kind) }
         }
-        .navigationDestination(item: $openCheck) { check in
-            AuditCheckView(check: check, month: to)
-        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -714,6 +713,26 @@ struct SalaryAuditView: View {
         .alert(tr("التصدير", "Export"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+
+    var body: some View {
+        ZStack {
+            if initialKind == nil && initialCheckID == nil {
+                overview
+            } else if let audit {
+                if let initialKind {
+                    SalaryChangeListView(audit: audit, kind: initialKind)
+                } else if let check = audit.checks.first(where: { $0.id == initialCheckID }) {
+                    AuditCheckView(check: check, month: audit.to)
+                } else {
+                    missingReviewCase
+                }
+            } else if let loadError {
+                Text(loadError).foregroundStyle(.red)
+            } else {
+                ProgressView(tr("جارٍ تدقيق الرواتب…", "Checking payroll…"))
+            }
+        }
         .task(id: loadKey) {
             audit = nil
             loadError = nil
@@ -722,11 +741,6 @@ struct SalaryAuditView: View {
                 let loaded = try await AuditResults.shared.salary(from: from, to: to, container: SharedModel.container)
                 guard !Task.isCancelled else { return }
                 audit = loaded
-                if !openedInitial {
-                    openedInitial = true
-                    if let initialKind, !loaded.rows(initialKind).isEmpty { openKind = initialKind }
-                    else if let initialCheckID { openCheck = loaded.checks.first { $0.id == initialCheckID } }
-                }
                 // اختبار المحاكي: -salaryAuditKind net يفتح قائمة، -auditExportSheet YES نافذة التصدير.
                 let defaults = UserDefaults.standard
                 if let raw = defaults.string(forKey: "salaryAuditKind"), let kind = SalaryChangeKind(rawValue: raw) {
@@ -938,8 +952,6 @@ struct DeductionAuditView: View {
     @State private var exporting = false
     @State private var error: String?
     @State private var openKind: DeductionGroupKind?
-    @State private var openCheck: AuditCheck?
-    @State private var openedInitial = false
     @Query private var savedMonths: [PayrollMonth]
     @State private var importState = StaffImportState.shared
 
@@ -972,7 +984,7 @@ struct DeductionAuditView: View {
 
     private var entityAlertKey: String { "\(loadKey)|\(result != nil)|\(confirmedEmpty)" }
 
-    var body: some View {
+    private var overview: some View {
         List {
             Section {
                 MonthPairPicker(months: months, from: $from, to: $to)
@@ -1048,9 +1060,6 @@ struct DeductionAuditView: View {
         .navigationDestination(item: $openKind) { kind in
             if let result { DeductionChangeListView(result: result, kind: kind) }
         }
-        .navigationDestination(item: $openCheck) { check in
-            AuditCheckView(check: check, month: to)
-        }
         .navigationDestination(item: $openEntityKind) { kind in
             if ready, let result, let entitySummary {
                 DeductionEntityAlertsList(comparison: result, summary: entitySummary, kind: kind)
@@ -1088,6 +1097,36 @@ struct DeductionAuditView: View {
         .alert(tr("التصدير", "Export"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
+    }
+
+    var body: some View {
+        ZStack {
+            if let initialCheckID {
+                if let checks {
+                    if let check = checks.first(where: { $0.id == initialCheckID }) {
+                        AuditCheckView(check: check, month: to)
+                    } else {
+                        missingReviewCase
+                    }
+                } else if let loadError {
+                    Text(loadError).foregroundStyle(.red)
+                } else {
+                    ProgressView(tr("جارٍ تدقيق الاستقطاعات…", "Checking deductions…"))
+                }
+            } else if initialEntityKind == nil && initialKind == nil {
+                overview
+            } else if let result, ready, let initialKind {
+                DeductionChangeListView(result: result, kind: initialKind)
+            } else if let result, ready, let initialEntityKind, let entitySummary {
+                DeductionEntityAlertsList(comparison: result, summary: entitySummary, kind: initialEntityKind)
+            } else if let message = loadError ?? entityError {
+                Text(message).foregroundStyle(.red)
+            } else if months.count < 2 || from == to || (result != nil && !ready) {
+                missingReviewCase
+            } else {
+                ProgressView(tr("جارٍ مقارنة الاستقطاعات…", "Comparing deductions…"))
+            }
+        }
         .task(id: entityAlertKey) {
             let expectedKey = entityAlertKey
             entitySummary = nil; entityError = nil
@@ -1101,10 +1140,6 @@ struct DeductionAuditView: View {
                 try Task.checkCancellation()
                 guard expectedKey == entityAlertKey else { return }
                 entitySummary = summary
-                if !openedInitial, let initialEntityKind {
-                    openedInitial = true
-                    openEntityKind = initialEntityKind
-                }
                 #if targetEnvironment(simulator)
                 if UserDefaults.standard.bool(forKey: "deductionEntityAlertsPreview") { openEntityKind = .added }
                 #endif
@@ -1123,20 +1158,20 @@ struct DeductionAuditView: View {
             guard !to.isEmpty else { return }
             let container = SharedModel.container
             let month = to
-            checks = try? await AuditResults.shared.deductionChecks(month: month, container: container)
-            if !openedInitial, let initialCheckID, let check = checks?.first(where: { $0.id == initialCheckID }) {
-                openedInitial = true
-                openCheck = check
+            do {
+                let loaded = try await AuditResults.shared.deductionChecks(month: month, container: container)
+                try Task.checkCancellation()
+                checks = loaded
+            } catch {
+                guard !Task.isCancelled else { return }
+                if initialCheckID != nil { loadError = error.localizedDescription }
             }
+            if initialCheckID != nil { return }
             guard months.count >= 2, from != to else { return }
             do {
                 let loaded = try await AuditResults.shared.deductions(from: from, to: to, container: container)
                 guard !Task.isCancelled else { return }
                 result = loaded
-                if !openedInitial, let initialKind, !loaded.rows(initialKind).isEmpty {
-                    openedInitial = true
-                    openKind = initialKind
-                }
                 let defaults = UserDefaults.standard
                 if let raw = defaults.string(forKey: "deductionKind"), let kind = DeductionGroupKind(rawValue: raw) {
                     defaults.removeObject(forKey: "deductionKind")

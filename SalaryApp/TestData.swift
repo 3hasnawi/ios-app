@@ -80,6 +80,18 @@ enum TestData {
             UserDefaults.standard.set(original, forKey: SalaryTrust.settingsKey)
             UserDefaults.standard.removeObject(forKey: trustOriginalKey)
         }
+        if UserDefaults.standard.bool(forKey: "seedHomeReviewNavigation") {
+            let context = SharedModel.container.mainContext
+            for (month, entity) in [("أيلول 2099", "جهة تجريبية قديمة"), ("تشرين الأول 2099", "جهة تجريبية جديدة")] {
+                let existing = FetchDescriptor<PayrollMonth>(predicate: #Predicate { $0.name == month })
+                if (try? context.fetchCount(existing)) == 0 {
+                    context.insert(PayrollMonth(name: month, employeeCount: 1, deductionCount: 1))
+                    context.insert(Employee(month: month, name: "اسم تجريبي", rank: "شرطي", workplace: "", netSalary: 1000))
+                    context.insert(Deduction(month: month, employeeName: "اسم تجريبي", title: entity, amount: 100, note: "1", rank: "شرطي"))
+                }
+            }
+            try? context.save()
+        }
         if UserDefaults.standard.bool(forKey: "seedReportNavigation") {
             let context = SharedModel.container.mainContext
             if (try? context.fetchCount(FetchDescriptor<PayrollMonth>())) == 0 {

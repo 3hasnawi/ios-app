@@ -41,6 +41,26 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["إعادة المبالغ"].waitForExistence(timeout: 15))
     }
 
+    func testHomeReviewReturnsToSameCardWithOneBack() {
+        continueAfterFailure = false
+        app.launchArguments += ["-skipLock", "YES", "-seedHomeReviewNavigation", "YES", "-selectedMonth", "تشرين الأول 2099"]
+        app.launch()
+        let first = element("homeReview-entity-added")
+        let second = element("homeReview-entity-missing")
+        XCTAssertTrue(first.waitForExistence(timeout: 40))
+        first.swipeRight()
+        if !second.isHittable { first.swipeLeft() }
+        XCTAssertTrue(second.isHittable)
+        let position = second.frame.midY
+        second.tap()
+        let detail = app.navigationBars["جهات غائبة عن الشهر"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 20))
+        detail.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["الرئيسية"].waitForExistence(timeout: 8))
+        XCTAssertTrue(second.isHittable)
+        XCTAssertEqual(second.frame.midY, position, accuracy: 5)
+    }
+
     func testReportsBackGestures() {
         app.launchArguments += ["-homePinnedWorkItems", "reports|entities"]
         continueAfterFailure = false
