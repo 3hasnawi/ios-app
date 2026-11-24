@@ -8,7 +8,7 @@ extension WorkReport {
         case .deductionAudit: tr("تدقيق الاستقطاعات", "Deduction audit")
         case .salaryAudit: tr("تدقيق الرواتب", "Payroll audit")
         case .salaryTrust: tr("أمانات الرواتب", "Salary trust")
-        case .fundingExpenses: tr("تفصيل المصروفات والتمويل", "Expenses and funding details")
+        case .fundingExpenses: tr("المصروفات والتمويل", "Expenses and funding")
         case .employeeDeductions: tr("كشف استقطاعات موظف", "Employee deduction statement")
         case .payrollItems: tr("بنود الرواتب", "Payroll items")
         case .refunds: tr("إعادة المبالغ", "Employee refunds")

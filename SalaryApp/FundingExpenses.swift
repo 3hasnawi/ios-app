@@ -241,7 +241,7 @@ struct FundingExpensesView: View {
                 }.disabled(exporter.isWorking)
             } else if let error { Text(error).foregroundStyle(.red) }
         }
-        .navigationTitle(tr("تفصيل المصروفات", "Expense details"))
+        .navigationTitle(WorkReport.fundingExpenses.title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: "\(month)|\(revision)|\(cache.revision(for: month))|\(manualData.base64EncodedString())") { await load() }
         .overlay { if exporter.isWorking { ProgressView(tr("جارٍ تجهيز الكشف", "Preparing statement")).padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }

@@ -50,7 +50,7 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(trust.waitForExistence(timeout: 30))
         XCTAssertTrue(funding.exists)
         XCTAssertEqual(trust.frame.minY, funding.frame.minY, accuracy: 2)
-        for (button, title) in [(trust, "أمانات الرواتب"), (funding, "تفصيل المصروفات")] {
+        for (button, title) in [(trust, "أمانات الرواتب"), (funding, "المصروفات والتمويل")] {
             button.tap()
             let detail = app.navigationBars[title]
             XCTAssertTrue(detail.waitForExistence(timeout: 15))
@@ -566,10 +566,10 @@ final class NavigationTests: XCTestCase {
                 app.navigationBars.buttons.element(boundBy: 0).tap()
             }
             let expenses = element("fundingExpensesCard")
-            if wait(expenses, "بطاقة تفصيل المصروفات") {
+            if wait(expenses, "بطاقة المصروفات والتمويل") {
                 if !expenses.isHittable { app.swipeUp() }
                 expenses.tap()
-                wait(app.navigationBars["تفصيل المصروفات"], "تفصيل المصروفات")
+                wait(app.navigationBars["المصروفات والتمويل"], "المصروفات والتمويل")
                 app.navigationBars.buttons.element(boundBy: 0).tap()
                 app.swipeDown()
             }

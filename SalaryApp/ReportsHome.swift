@@ -460,7 +460,7 @@ struct ReportsView: View {
                     .frame(width: 46, height: 46)
                     .background(Color.teal.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(tr("تفصيل المصروفات والتمويل", "Expenses and funding details")).font(.headline).foregroundStyle(.primary)
+                    Text(WorkReport.fundingExpenses.title).font(.headline).foregroundStyle(.primary)
                     Text(tr("الرواتب والاستقطاعات والجهات مع مطابقة كشف البنك", "Payroll, deductions and entities compared with the bank statement"))
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
                 }
