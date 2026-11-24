@@ -143,6 +143,10 @@ nonisolated enum BankReconciliation {
         let balance: Int64
         let lines: [Line]
         let outstandingRefunds: [OutstandingRefund]
+
+        // الرصيد يشمل الافتتاحي وجميع الواردات، ومنها المبالغ المسترجعة.
+        var fullyDisbursed: Bool { funding > 0 && balance == 0 }
+        var canConfirm: Bool { fullyDisbursed || (!lines.isEmpty && lines.allSatisfy { $0.movement.matched }) }
     }
     static var dayCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)

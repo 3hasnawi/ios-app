@@ -67,6 +67,24 @@ import CoreText
         refundStatement.movements = [refundCredit, repayment]
         let refundTotals = try BankReconciliation.calculate(refundStatement)
         try check(refundTotals.balance == 200_000 && refundTotals.outstandingRefunds.first?.remaining == 200_000, "linked refund balance")
+        var paidPeriod = statement
+        var laterFunding = incoming
+        laterFunding.date = laterDate
+        var unlinkedRepayment = repayment
+        unlinkedRepayment.refundOf = nil
+        unlinkedRepayment.amount = refundCredit.amount
+        paidPeriod.movements = [laterFunding, outgoing, refundCredit, unlinkedRepayment]
+        let paid = try BankReconciliation.calculate(paidPeriod)
+        try check(paid.fullyDisbursed && paid.canConfirm && !paid.outstandingRefunds.isEmpty && paidPeriod.movements.allSatisfy { !$0.matched }, "full disbursement includes unlinked refunds without altering checkmarks")
+        paidPeriod.movements[3].amount -= 1
+        let unpaid = try BankReconciliation.calculate(paidPeriod)
+        try check(!unpaid.fullyDisbursed && !unpaid.canConfirm && unpaid.balance == 1, "one dinar remaining prevents automatic reconciliation")
+        paidPeriod.movements[3].amount += 2
+        let overdrawn = try BankReconciliation.calculate(paidPeriod)
+        try check(!overdrawn.fullyDisbursed && !overdrawn.canConfirm && overdrawn.balance == -1, "one dinar overdrawn prevents automatic reconciliation")
+        paidPeriod.movements = []
+        let emptyPeriod = try BankReconciliation.calculate(paidPeriod)
+        try check(!emptyPeriod.fullyDisbursed && !emptyPeriod.canConfirm, "empty zero-balance period cannot reconcile")
         var excessiveRefund = repayment; excessiveRefund.id = UUID(); excessiveRefund.amount = 200_001
         refundStatement.movements.append(excessiveRefund)
         do { _ = try BankReconciliation.calculate(refundStatement); throw Failure(errorDescription: "excess refund accepted") }
@@ -173,7 +191,15 @@ import CoreText
         }
         let longStatementPDF = try await BankReconciliationPDF.make(longStatement)
         defer { try? FileManager.default.removeItem(at: longStatementPDF) }
-        try check((PDFDocument(url: longStatementPDF)?.pageCount ?? 0) > 1, "reconciliation PDF paginates without losing rows")
+        guard let longPDF = PDFDocument(url: longStatementPDF), longPDF.pageCount > 1 else { throw Failure(errorDescription: "missing continuation pages") }
+        for index in 1..<longPDF.pageCount {
+            guard let follow = longPDF.page(at: index) else { throw Failure(errorDescription: "missing statement page") }
+            let topLeft = follow.selection(for: CGRect(x: 30, y: 842 - 41, width: 135, height: 20))?.string ?? ""
+            let numbers = ArabicText.latinDigits(topLeft).components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            try check(numbers.sorted() == [String(index + 1), String(longPDF.pageCount)].sorted(), "continuation page counter and total at top left")
+            let topRight = follow.selection(for: CGRect(x: 380, y: 842 - 42, width: 182, height: 21))?.string ?? ""
+            try check(topRight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "no organization letterhead on continuation")
+        }
         let ledger = BankReconciliation.Ledger(periods: [statement])
         let reconciliationLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))
         try check(reconciliationLedger.periods == [statement], "bank reconciliation storage roundtrip")

@@ -73,13 +73,7 @@ struct BankReconciliationView: View {
         let funding = period.movements.filter { $0.isFunding == true }
         return !funding.isEmpty && funding.allSatisfy { BankReconciliation.day($0.date) == BankReconciliation.day(period.start) }
     }
-    private var isComplete: Bool {
-        totals?.balance == 0 && (totals?.funding ?? 0) > 0 && fundingDatesMatch && unmatched == 0 && missingSuggestions == 0 &&
-        (totals?.outstandingRefunds.isEmpty == true) && summary.missingNet == 0 &&
-        !summary.contractOverrideStale && (summary.missingContractNominal == 0 || contractAmount != nil) &&
-        (summary.executionMatched || (summary.executionCount == 0 && summary.bankDeductions == 0)) &&
-        unresolvedCount == 0 && incompleteSources == 0 && staleSources.isEmpty && figuresFailure == nil && entities != nil
-    }
+    private var isComplete: Bool { totals?.fullyDisbursed == true }
     private var previewIsCurrent: Bool {
         pdfPeriod == period && pdfAccount == account && pdfSources == suggestedAmounts && pdfComplete == (period.isConfirmed || isComplete)
     }
@@ -94,6 +88,7 @@ struct BankReconciliationView: View {
     }
     private func status(_ value: BankReconciliation.Period) -> String {
         if value.isConfirmed { return tr("معتمدة \(confirmedText(value))", "Confirmed \(confirmedText(value))") }
+        if (try? BankReconciliation.calculate(value).fullyDisbursed) == true { return tr("مطابق · بانتظار الاعتماد", "Balanced · awaiting confirmation") }
         let matched = value.movements.filter(\.matched).count
         return tr("قيد العمل · \(Num.format(matched)) من \(Num.format(value.movements.count)) مؤشرة", "In progress · \(matched) of \(value.movements.count) checked")
     }
@@ -174,8 +169,8 @@ struct BankReconciliationView: View {
                 })) { ForEach(savedPeriods) { value in Text("\(BankReconciliation.displayDate(value.start)) – \(BankReconciliation.displayDate(value.end)) · \(status(value))").tag(value.id) } }
             }
             if savedPeriods.contains(where: { $0.id == period.id }) {
-                Label(status(period), systemImage: period.isConfirmed ? "lock.fill" : "pencil.circle")
-                    .foregroundStyle(period.isConfirmed ? Color.green : Color.orange)
+                Label(status(period), systemImage: period.isConfirmed ? "lock.fill" : (isComplete ? "checkmark.circle.fill" : "pencil.circle"))
+                    .foregroundStyle(period.isConfirmed || isComplete ? Color.green : Color.orange)
             }
             LabeledContent(tr("شهر التمويل والبيانات", "Funding and data month"), value: month)
             Group {
@@ -194,7 +189,7 @@ struct BankReconciliationView: View {
     @ViewBuilder private var summarySection: some View {
         if let totals {
             Section(tr("ملخص الحساب", "Account summary")) {
-                if !period.isConfirmed && account.isIncomplete {
+                if !period.isConfirmed && !totals.fullyDisbursed && account.isIncomplete {
                     Label(tr("أكمل اسم الحساب والفرع وIBAN من إعداد الحساب لتظهر في الكشف.", "Complete the account name, branch and IBAN in Account settings so they appear on the statement."), systemImage: "info.circle")
                         .foregroundStyle(.orange)
                 }
@@ -202,11 +197,14 @@ struct BankReconciliationView: View {
                 LabeledContent(tr("مجموع الدائن", "Total credits"), value: Money.format(Double(totals.credits)))
                 LabeledContent(tr("مجموع المدين", "Total debits"), value: Money.format(Double(totals.debits)))
                 LabeledContent(tr("الرصيد الختامي", "Closing balance"), value: Money.format(Double(totals.balance)))
-                ForEach(totals.outstandingRefunds) { item in
-                    Label(tr("متبقي من \(item.movement.description): \(Money.format(Double(item.remaining)))", "Remaining from \(item.movement.description): \(Money.format(Double(item.remaining)))"), systemImage: "arrow.uturn.backward.circle")
-                        .foregroundStyle(.orange)
-                }
-                if !period.isConfirmed {
+                if totals.fullyDisbursed {
+                    Label(tr("مطابق · صُرف كامل المبلغ", "Balanced · fully disbursed"), systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else if !period.isConfirmed {
+                    ForEach(totals.outstandingRefunds) { item in
+                        Label(tr("متبقي من \(item.movement.description): \(Money.format(Double(item.remaining)))", "Remaining from \(item.movement.description): \(Money.format(Double(item.remaining)))"), systemImage: "arrow.uturn.backward.circle")
+                            .foregroundStyle(.orange)
+                    }
                     if totals.funding > 0 && !fundingDatesMatch { Label(tr("تاريخ التمويل لا يوافق بداية الفترة؛ راجعه قبل الاعتماد.", "The funding date does not match the period start; review it before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if totals.funding == 0 { Label(tr("لم تُسجّل حركة التمويل بعد.", "No funding movement has been recorded."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if totals.balance != 0 { Label(tr("الرصيد الختامي ليس صفراً.", "The closing balance is not zero."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
@@ -224,7 +222,7 @@ struct BankReconciliationView: View {
         }
     }
     @ViewBuilder private var addMovementSection: some View {
-        if !period.isConfirmed, let figuresFailure {
+        if !period.isConfirmed, !isComplete, let figuresFailure {
             Section { Text(tr("تعذّر تحميل بعض مبالغ الكتب: \(figuresFailure)", "Some letter amounts could not be loaded: \(figuresFailure)")).foregroundStyle(.orange) }
         }
         Section {
@@ -339,11 +337,11 @@ struct BankReconciliationView: View {
                         .font(.footnote).foregroundStyle(.orange)
                 }
                 Button(tr("اعتماد مطابقة الفترة", "Confirm reconciliation"), systemImage: "checkmark.shield") { showConfirmPeriod = true }
-                    .disabled(!editable || totals == nil || period.movements.isEmpty || unmatched > 0 || preparing)
-                if unmatched > 0 && !period.movements.isEmpty {
+                    .disabled(!editable || totals?.canConfirm != true || preparing)
+                if !isComplete && unmatched > 0 && !period.movements.isEmpty {
                     Text(tr("أشّر كل الحركات أولاً (بقي \(Num.format(unmatched))).", "Check all movements first (\(unmatched) left).")).font(.footnote).foregroundStyle(.secondary)
                 }
-                Button(tr("معاينة الكشف PDF", "Preview PDF"), systemImage: "doc.text.magnifyingglass") { showConfirm = true }
+                Button(tr("معاينة الكشف PDF", "Preview PDF"), systemImage: "doc.text.magnifyingglass") { if isComplete { preview() } else { showConfirm = true } }
                     .disabled(!canEdit || totals == nil || period.movements.isEmpty || preparing)
             }
             if preparing { ProgressView() }
@@ -426,7 +424,7 @@ struct BankReconciliationView: View {
         } catch { self.error = error.localizedDescription; return false }
     }
     private func confirmPeriod() {
-        guard editable, totals != nil, !period.movements.isEmpty, unmatched == 0 else {
+        guard editable, totals?.canConfirm == true else {
             error = tr("تغيّرت بيانات الفترة؛ راجع الحركات قبل الاعتماد.", "The period changed; review the movements before confirming.")
             return
         }
