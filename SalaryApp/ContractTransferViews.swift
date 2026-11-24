@@ -40,9 +40,23 @@ struct ContractBatchActivation: View {
             List {
                 Section { LabeledContent(tr("شهر الاستحقاق", "Funding month"), value: batch.month) }
                 ContractBatchOverview(batch: batch)
-                Section(tr("جهات التنفيذ", "Execution entities")) {
-                    ForEach(batch.parts.filter { $0.entity.payrollRecipient == nil && !$0.deferred.isEmpty }, id: \.entity.id) { part in
-                        LabeledContent(part.entity.group.title, value: Money.format(part.portion(.deferred)?.group.total))
+                let letters = ContractExecutionLetterImpact.affected(in: batch)
+                if letters.isEmpty {
+                    Section(tr("كتب جهات التنفيذ المتأثرة", "Affected execution letters")) {
+                        Text(tr("لا توجد استقطاعات عقود مفصولة من كتب جهات التنفيذ.", "No contract deductions were separated from execution letters."))
+                    }
+                }
+                ForEach(letters) { letter in
+                    Section {
+                        LabeledContent(tr("مبلغ الكتاب قبل الفصل", "Letter total before deferral"), value: Money.format(letter.original))
+                        LabeledContent(tr("المؤجل من الكتاب", "Deferred from this letter"), value: Money.format(letter.deferred))
+                        LabeledContent(tr("المتبقي للتحويل الحالي", "Remaining in current transfer"), value: Money.format(letter.current)).bold()
+                        Text(tr("تفصيل المبلغ المؤجل", "Deferred amount breakdown")).font(.subheadline.weight(.semibold))
+                        ForEach(letter.recipients) { entity in
+                            LabeledContent(entity.group.title, value: Money.format(entity.group.total))
+                        }
+                    } header: {
+                        Label(letter.title, systemImage: "doc.text")
                     }
                 }
                 Section {

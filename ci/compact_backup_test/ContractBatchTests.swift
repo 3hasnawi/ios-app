@@ -40,6 +40,24 @@ import SwiftData
     precondition(batch.parts(.deferred,category:.rafidain).map(\.group.total)==[200000])
     precondition(batch.parts(.current,category:.anbar).isEmpty)
     precondition(batch.parts(.deferred,category:.anbar).map(\.group.total)==[50000])
+    let impacts = ContractExecutionLetterImpact.affected(in: batch)
+    precondition(impacts.map(\.id) == [.group(.rafidain), .group(.otherBanks), .individual(entities[2].id)])
+    precondition(impacts.map(\.original) == [1000000, 608000, 50000])
+    precondition(impacts.map(\.current) == [800000, 454000, 0])
+    precondition(impacts.map(\.deferred) == [200000, 154000, 50000])
+    for impact in impacts {
+        precondition(impact.original == impact.current + impact.deferred)
+        precondition(impact.current == impact.id.total(batch, .current))
+        precondition(impact.deferred == impact.id.total(batch, .deferred))
+        precondition(impact.recipients.map(\.id) == impact.id.entities(batch, .deferred).map(\.id))
+    }
+    // A book can include transfers that stay entirely in the current phase.
+    let unchanged = batch.parts.first { $0.entity.id == entities[1].id }!
+    let fund = batch.parts.first { $0.entity.payrollRecipient != nil }!
+    let noExecutionHold = ContractTransferPart(entity: unchanged.entity, current: unchanged.current + unchanged.deferred, deferred: [])
+    let onlyFund = ContractTransferBatch(id: batch.id, month: month, importedAt: date, created: date, figures: figures,
+        payer: batch.payer, iban: pay, links: batch.links, parts: [noExecutionHold, fund])
+    precondition(ContractExecutionLetterImpact.affected(in: onlyFund).isEmpty)
     func checkRepeatedRows(_ snapshot: ContractTransferBatch) {
         let contracts = snapshot.parts.first { $0.entity.group.title == "أ" }!.deferred.filter { $0.name == p }
         let regular = snapshot.parts.first { $0.entity.group.title == "ب" }!.current.filter { $0.name == x }

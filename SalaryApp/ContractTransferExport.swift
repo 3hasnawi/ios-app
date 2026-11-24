@@ -1,39 +1,5 @@
 import Foundation
 
-nonisolated enum ContractTransferDestination: Hashable, Identifiable {
-    case group(TransferCategory), individual(String), guarantee
-    var id: String {
-        switch self {
-        case .group(let category): "group|\(category.rawValue)"
-        case .individual(let id): "entity|\(id)"
-        case .guarantee: "guarantee"
-        }
-    }
-    func entities(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> [TransferEntity] {
-        switch self {
-        case .group(let category): batch.parts(phase, category: category)
-        case .individual(let id): batch.parts(phase, category: .anbar).filter { $0.id == id }
-        case .guarantee: []
-        }
-    }
-    func title(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> String {
-        switch self {
-        case .group(let category): category.title
-        case .individual: entities(batch, phase).first?.group.title ?? ""
-        case .guarantee: tr("الضمان الاجتماعي للعقود", "Contract social security")
-        }
-    }
-    func total(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> Double {
-        self == .guarantee ? batch.guarantee : entities(batch, phase).reduce(0) { $0 + $1.group.total }
-    }
-    static func all(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> [Self] {
-        var result: [Self] = [TransferCategory.rafidain, .otherBanks].compactMap { batch.parts(phase, category: $0).isEmpty ? nil : .group($0) }
-        result += batch.parts(phase, category: .anbar).map { .individual($0.id) }
-        if phase == .deferred && batch.guarantee > 0 { result.append(.guarantee) }
-        return result
-    }
-}
-
 nonisolated enum ContractTransferExport {
     static func files(batch: ContractTransferBatch, phase: ContractTransferPhase, destination: ContractTransferDestination,
                       references: Data, customization: Data, font: Data, date: Date) throws -> [URL] {
