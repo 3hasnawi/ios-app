@@ -132,11 +132,14 @@ nonisolated struct ContractTransferArchive: Codable {
     }
 
     var executionMarkers: [String] {
-        records.flatMap { record in
-            (record.cancelledAt == nil ? [] : [record.id.uuidString + "|cancelled"]) +
-            record.prepared.keys.map { record.id.uuidString + "|P|" + $0 } +
-            record.confirmed.keys.map { record.id.uuidString + "|C|" + $0 }
-        }.sorted()
+        var markers: [String] = []
+        for record in records {
+            let prefix = record.id.uuidString
+            if record.cancelledAt != nil { markers.append(prefix + "|cancelled") }
+            markers += record.prepared.keys.map { prefix + "|P|" + $0 }
+            markers += record.confirmed.keys.map { prefix + "|C|" + $0 }
+        }
+        return markers.sorted()
     }
     static func fromSettings(_ settings: [String: Data]) throws -> Self {
         guard let raw = settings[key] else { return Self() }
