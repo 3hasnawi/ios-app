@@ -188,6 +188,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
     case audit, salary, deductions, backup, reports, transferFiles, payrollBreakdown
+    case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds(String)
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
@@ -207,6 +208,7 @@ struct HomeDashboard: View {
     @State private var refund = RefundDraft.shared
     @State private var overview: HomeOverview?
     @State private var audit: HomeAudit?
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var navigationPath: NavigationPath
 
     private func open(_ route: HomeRoute) { navigationPath.append(route) }
@@ -254,7 +256,10 @@ struct HomeDashboard: View {
                     if !recents.isEmpty && !hidden.contains(.recents) {
                         recentRow
                     }
-                } else { welcome }
+                } else {
+                    welcome
+                    workShortcuts(nil)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
@@ -284,6 +289,11 @@ struct HomeDashboard: View {
             switch route {
             case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
             case .transferFiles: TransferFilesView()
+            case .salaryTrust: SalaryTrustView(initialStatus: .all)
+            case .fundingExpenses: FundingExpensesView(month: current?.name ?? "", revision: statsKey)
+            case .employeeDeductions: EmployeeDeductionsView()
+            case .payrollItems: PayrollItemsView(groups: current?.payrollReportGroups ?? [], month: current?.name ?? "")
+            case .refunds(let month): EmployeeRefundView(month: month)
             case .payrollBreakdown:
                 List {
                     if let current, let overview {
@@ -321,8 +331,8 @@ struct HomeDashboard: View {
         WorkReport.pins(saved: savedPins, legacyHidden: hiddenReports)
     }
 
-    private func workShortcuts(_ month: PayrollMonth) -> some View {
-        let summary = PayrollItems.decodeSummary(month.itemSummaryData) ?? [:]
+    private func workShortcuts(_ month: PayrollMonth?) -> some View {
+        let summary = PayrollItems.decodeSummary(month?.itemSummaryData) ?? [:]
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(tr("كشوفي المثبّتة", "Pinned reports")).font(.headline)
@@ -330,18 +340,26 @@ struct HomeDashboard: View {
                 Menu {
                     Section(tr("الأقسام", "Sections")) { pinOptions(WorkReport.sections) }
                     Section(tr("الكشوف", "Reports")) { pinOptions(WorkReport.statements) }
-                } label: { Image(systemName: "slider.horizontal.3").frame(minWidth: 44, minHeight: 44) }
+                } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(HomePalette.accent(for: colorScheme)).frame(minWidth: 44, minHeight: 44) }
                 .menuActionDismissBehavior(.disabled)
                 .accessibilityLabel(tr("تخصيص الكشوف", "Customize reports"))
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: 2), alignment: .leading, spacing: 8) {
                 ForEach(pinnedReports) { report in
-                    let group = report.group(month: month.name, summary: summary)
+                    let group = report.group(month: month?.name ?? "", summary: summary)
                     Button {
                         switch report {
-                        case .entities: openReports(.entities, month: month)
+                        case .salaryTrust: open(.salaryTrust)
+                        case .fundingExpenses: open(.fundingExpenses)
+                        case .employeeDeductions: open(.employeeDeductions)
+                        case .payrollItems: open(.payrollItems)
+                        case .refunds:
+                            let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first { $0.employeeCount > 0 }
+                            open(.refunds(refund.month ?? payroll?.name ?? ""))
+                        case .entities:
+                            if let month { openReports(.entities, month: month) }
                         case .reports, .transferFiles:
-                            UserDefaults.standard.set(month.name, forKey: "reportMonth")
+                            if let month { UserDefaults.standard.set(month.name, forKey: "reportMonth") }
                             open(report == .reports ? .reports : .transferFiles)
                         case .salaryAudit: open(.salary)
                         case .deductionAudit: open(.deductions)
@@ -349,19 +367,22 @@ struct HomeDashboard: View {
                         }
                     } label: { shortcutLabel(report.title, icon: report.icon) }
                     .accessibilityIdentifier(report == .reports ? "homeReportsEntry" : "pinned-" + report.rawValue)
-                    .disabled(WorkReport.statements.contains(report) && report != .entities && group == nil)
+                    .disabled((month == nil && ![WorkReport.salaryTrust, .reports, .refunds].contains(report)) || WorkReport.statements.contains(report) && report != .entities && group == nil)
                 }
                 ForEach(PinnedEntities.read(pinnedData), id: \.self) { title in
                     Button {
+                        guard let month else { return }
                         openReports(.group(ReportGroup(kind: .deductions, month: month.name, title: title, count: 0, total: 0, byEntity: false)), month: month)
                     } label: { shortcutLabel(title, icon: "pin") }
+                    .disabled(month == nil)
                     .contextMenu {
                         Button(tr("إلغاء التثبيت", "Unpin"), systemImage: "pin.slash") { pinnedData = PinnedEntities.toggle(title, in: pinnedData) }
                     }
                 }
             }
+            .buttonStyle(.plain)
             if let source = refund.month, !refund.rows.isEmpty {
-                Button { openReports(.refunds(source), month: month) } label: {
+                Button { open(.refunds(source)) } label: {
                     VStack(alignment: .leading) {
                         Label(tr("متابعة مسودة إعادة المبالغ", "Resume refund draft"), systemImage: "arrow.uturn.backward.circle")
                         Text(refund.date, format: .dateTime.year().month().day())
@@ -384,9 +405,26 @@ struct HomeDashboard: View {
     }
 
     private func shortcutLabel(_ title: String, icon: String) -> some View {
-        Label(title, systemImage: icon).font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .padding(.horizontal, 8).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+        let accent = HomePalette.accent(for: colorScheme)
+        return HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(accent)
+                .frame(width: 36, height: 36)
+                .background(accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 61, maxHeight: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 15))
+        .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(accent.opacity(0.14)) }
+        .contentShape(RoundedRectangle(cornerRadius: 15))
     }
 
     // MARK: التحميل

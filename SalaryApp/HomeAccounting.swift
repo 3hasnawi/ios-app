@@ -9,6 +9,13 @@ struct HomeReviewItem: Identifiable {
     let route: HomeRoute
 }
 
+enum HomePalette {
+    static let green = Color(red: 0.07, green: 0.25, blue: 0.22)
+    static func accent(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 0.43, green: 0.86, blue: 0.71) : green
+    }
+}
+
 struct HomeAccounting<Shortcuts: View>: View {
     let month: PayrollMonth
     let previous: PayrollMonth?
@@ -23,10 +30,9 @@ struct HomeAccounting<Shortcuts: View>: View {
     @ScaledMetric(relativeTo: .body) private var reviewHeight: CGFloat = 112
     @State private var selectedReviewID: String?
 
-    private let green = Color(red: 0.07, green: 0.25, blue: 0.22)
     // الأخضر الداكن مناسب لسطح البطاقة العلوية، لكنه لا يُقرأ فوق بطاقات الوضع الليلي.
     private var accent: Color {
-        colorScheme == .dark ? Color(red: 0.43, green: 0.86, blue: 0.71) : green
+        HomePalette.accent(for: colorScheme)
     }
     private var cardSurface: Color { Color(.secondarySystemGroupedBackground) }
 
@@ -69,7 +75,7 @@ struct HomeAccounting<Shortcuts: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
-            .background(green)
+            .background(HomePalette.green)
             HStack(spacing: 0) {
                 category(0, title: tr("ضباط", "Officers"), symbol: "shield.lefthalf.filled")
                 category(1, title: tr("موظفون", "Employees"), symbol: "briefcase")
@@ -80,7 +86,7 @@ struct HomeAccounting<Shortcuts: View>: View {
             .background(cardSurface)
         }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(green.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(HomePalette.green.opacity(0.10)))
         .accessibilityIdentifier("homeNetCard")
     }
 

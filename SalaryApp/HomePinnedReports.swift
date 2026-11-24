@@ -1,8 +1,12 @@
 enum WorkReport: String, CaseIterable, Identifiable {
     case entities, food, fund, health
     case reports, transferFiles, deductionAudit, salaryAudit
+    case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds
     static let statements: [Self] = [.entities, .food, .fund, .health]
-    static let sections: [Self] = [.reports, .transferFiles, .deductionAudit, .salaryAudit]
+    static let sections: [Self] = [
+        .reports, .transferFiles, .deductionAudit, .salaryAudit, .salaryTrust,
+        .fundingExpenses, .employeeDeductions, .payrollItems, .refunds
+    ]
     static let pinsKey = "homePinnedWorkItems"
 
     // تستمر قراءة خيارات الإصدارات السابقة حتى يعدّل المستخدم القائمة الموحّدة.

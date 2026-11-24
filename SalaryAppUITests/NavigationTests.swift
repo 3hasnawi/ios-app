@@ -41,6 +41,24 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["إعادة المبالغ"].waitForExistence(timeout: 15))
     }
 
+    func testTrustAndFundingPinsShareARowAndOpenDirectly() {
+        continueAfterFailure = false
+        app.launchArguments += ["-skipLock", "YES", "-seedReportNavigation", "YES", "-homePinnedWorkItems", "salaryTrust|fundingExpenses"]
+        app.launch()
+        let trust = element("pinned-salaryTrust")
+        let funding = element("pinned-fundingExpenses")
+        XCTAssertTrue(trust.waitForExistence(timeout: 30))
+        XCTAssertTrue(funding.exists)
+        XCTAssertEqual(trust.frame.minY, funding.frame.minY, accuracy: 2)
+        for (button, title) in [(trust, "أمانات الرواتب"), (funding, "تفصيل المصروفات")] {
+            button.tap()
+            let detail = app.navigationBars[title]
+            XCTAssertTrue(detail.waitForExistence(timeout: 15))
+            detail.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(app.navigationBars["الرئيسية"].waitForExistence(timeout: 8))
+        }
+    }
+
     func testHomeReviewReturnsToSameCardWithOneBack() {
         continueAfterFailure = false
         app.launchArguments += ["-skipLock", "YES", "-seedHomeReviewNavigation", "YES", "-selectedMonth", "تشرين الأول 2099"]

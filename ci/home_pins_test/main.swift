@@ -4,5 +4,8 @@ precondition(WorkReport.pins(saved: nil, legacyHidden: "entities|food|fund|healt
 precondition(WorkReport.pins(saved: "", legacyHidden: "") == [])
 precondition(WorkReport.pins(saved: "salaryAudit|unknown|transferFiles|salaryAudit", legacyHidden: "")
              == [.salaryAudit, .transferFiles])
-precondition(WorkReport.sections == [.reports, .transferFiles, .deductionAudit, .salaryAudit])
+let expanded: [WorkReport] = [.salaryTrust, .fundingExpenses, .employeeDeductions, .payrollItems, .refunds]
+precondition(WorkReport.sections == [.reports, .transferFiles, .deductionAudit, .salaryAudit] + expanded)
+let selected = [.fund, .salaryAudit] + expanded
+precondition(WorkReport.pins(saved: selected.map(\.rawValue).joined(separator: "|"), legacyHidden: "") == selected)
 precondition(Set(WorkReport.sections + WorkReport.statements) == Set(WorkReport.allCases))

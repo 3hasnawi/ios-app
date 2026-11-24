@@ -19,6 +19,14 @@ enum ReportsRoute: Hashable {
     case group(ReportGroup)
 }
 
+extension PayrollMonth {
+    var payrollReportGroups: [ReportGroup]? {
+        guard let summary = PayrollItems.decodeSummary(itemSummaryData) else { return nil }
+        return summary.map { ReportGroup(kind: .payroll, month: name, title: $0.key, count: $0.value.count, total: $0.value.total, byEntity: false) }
+            .sorted { $0.total > $1.total }
+    }
+}
+
 // MARK: - تبويب التقارير
 
 /// بطاقات للكشوف الخاصة (صندوق الشهداء، عقد الإطعام، الرعاية الصحية، بنود الرواتب) مع زر تصدير سريع في كل بطاقة،
@@ -53,11 +61,7 @@ struct ReportsView: View {
 
     private var month: PayrollMonth? { months.first { $0.name == monthName } ?? months.first }
 
-    private var payrollGroups: [ReportGroup]? {
-        guard let month, let summary = PayrollItems.decodeSummary(month.itemSummaryData) else { return nil }
-        return summary.map { ReportGroup(kind: .payroll, month: month.name, title: $0.key, count: $0.value.count, total: $0.value.total, byEntity: false) }
-            .sorted { $0.total > $1.total }
-    }
+    private var payrollGroups: [ReportGroup]? { month?.payrollReportGroups }
 
     private var loadKey: String { "\(month?.name ?? "")|\(month?.deductionCount ?? 0)|\(month?.importedAt.timeIntervalSince1970 ?? 0)|\(byEntity)" }
 
