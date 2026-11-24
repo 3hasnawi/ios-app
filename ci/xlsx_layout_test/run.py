@@ -47,7 +47,14 @@ enum HealthCareReport {
     static func title(month: String, others: Bool) -> String { "رعاية " + month }
 '''
     (directory / "Health.swift").write_text(health_stubs + health_production + "}\n")
-    (directory / "Stubs.swift").write_text(stubs)
+    audit = (root / "SalaryApp/Audit.swift").read_text()
+    salary = (root / "SalaryApp/SalaryAudit.swift").read_text()
+    models = salary[salary.index("nonisolated enum SalaryChangeKind"):salary.index("nonisolated struct SalaryAudit:")]
+    method = audit[audit.index("    private static func salarySheet("):audit.index("    /// الكشف الشامل:")]
+    digits = source[source.index("    static func easternDigits("):source.index("    static var defaultHeader")]
+    (directory / "Salary.swift").write_text("import Foundation\n" + models + "enum AuditExport {\nstatic let header = \"اختبار\"\n" +
+        method.replace("private static func salarySheet", "static func salarySheet") + "}\nextension ReportSheet {\n" + digits + "}\n")
+    (directory / "Stubs.swift").write_text(stubs + "\nenum AppSettings { static let locale = Locale(identifier: \"ar_IQ\") }\n")
     (directory / "main.swift").write_text((root / "ci/xlsx_layout_test/main.swift").read_text())
-    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
+    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "Salary.swift", str(root / "SalaryApp/ArabicText.swift"), "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "xlsx-test")], cwd=directory, check=True)

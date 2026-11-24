@@ -786,7 +786,11 @@ struct SalaryChangeListView: View {
         let rows = audit.rows(kind)
         guard !tokens.isEmpty else { return rows }
         return rows.filter { r in
-            let text = ArabicText.normalize(r.name + " " + r.line + " " + r.reasons.joined(separator: " "))
+            var fields = [r.name, r.line] + r.reasons
+            if let accounts = r.bankChange {
+                fields += [accounts.before.bank, accounts.before.iban, accounts.after.bank, accounts.after.iban]
+            }
+            let text = ArabicText.normalize(fields.joined(separator: " "))
             return tokens.allSatisfy { text.contains($0) }
         }
     }
@@ -855,13 +859,19 @@ private struct SalaryChangeRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(row.name).font(.subheadline.weight(.semibold))
                 Spacer(minLength: 8)
-                Text(amountText).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(amountColor)
+                if kind != .bank {
+                    Text(amountText).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(amountColor)
+                }
             }
             if !row.line.isEmpty { Text(row.line).font(.caption).foregroundStyle(.secondary) }
             if row.before != nil && row.after != nil && kind == .net {
                 Text("\(Money.format(row.before)) ← \(Money.format(row.after))").font(.caption.monospacedDigit())
             }
-            if !row.reasons.isEmpty {
+            if let accounts = row.bankChange {
+                accountDetails(tr("السابق", "Previous"), month: from, account: accounts.before)
+                Divider()
+                accountDetails(tr("الجديد", "New"), month: to, account: accounts.after)
+            } else if !row.reasons.isEmpty {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 5) { chips }
                     VStack(alignment: .leading, spacing: 4) { chips }
@@ -869,6 +879,18 @@ private struct SalaryChangeRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func accountDetails(_ period: String, month: String, account: SalaryAuditAccount) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(period) · \(month)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(tr("المصرف: \(account.bankText)", "Bank: \(account.bankText)"))
+            Text(verbatim: "IBAN  " + account.ibanText)
+                .font(.subheadline.monospacedDigit())
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.subheadline)
+        .privacySensitive()
     }
 
     @ViewBuilder private var chips: some View {

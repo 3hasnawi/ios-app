@@ -181,6 +181,29 @@ nonisolated enum AuditExport {
     // MARK: الرواتب
 
     private static func salarySheet(_ kind: SalaryChangeKind, _ rows: [SalaryChange], from: String, to: String) -> ReportSheet {
+        if kind == .bank {
+            return ReportSheet(
+                header: header,
+                title: "\(kind.reportTitle) · السابق \(ReportSheet.easternDigits(from)) · الجديد \(ReportSheet.easternDigits(to))",
+                columns: [
+                    .init(title: "ت", width: 5, kind: .serial),
+                    .init(title: "الاسم الكامل", width: 24, kind: .text),
+                    .init(title: "الرتبة", width: 10, kind: .text),
+                    .init(title: "محل العمل", width: 19, kind: .text),
+                    .init(title: "المصرف السابق", width: 15, kind: .text),
+                    .init(title: "الحساب السابق (IBAN)", width: 43, kind: .text),
+                    .init(title: "المصرف الجديد", width: 15, kind: .text),
+                    .init(title: "الحساب الجديد (IBAN)", width: 43, kind: .text)
+                ],
+                rows: rows.enumerated().map { i, row in
+                    let accounts = row.bankChange
+                    return [String(i + 1), row.name, row.rank, row.workplace,
+                            accounts?.before.bankText ?? "—", accounts?.before.ibanText ?? "—",
+                            accounts?.after.bankText ?? "—", accounts?.after.ibanText ?? "—"]
+                },
+                amounts: Array(repeating: 0, count: rows.count), showTotal: false
+            )
+        }
         let span = "\(ReportSheet.easternDigits(from)) ← \(ReportSheet.easternDigits(to))"
         return ReportSheet(
             header: header, title: "\(kind.reportTitle) · \(span)",

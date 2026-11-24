@@ -72,3 +72,24 @@ do {
     fatalError("Invalid health amount accepted")
 } catch { }
 print("Health care Excel wrapping and warning cell tests passed")
+
+// An account can change while its last four digits and the bank name stay the same.
+let oldAccount = SalaryAuditAccount(bank: "مصرف تجريبي", iban: "IQ00TEST000000000001234")
+let newAccount = SalaryAuditAccount(bank: oldAccount.bank, iban: "IQ00TEST000000000991234")
+let emptyAccount = SalaryAuditAccount(bank: "", iban: "")
+let renamedBank = SalaryAuditAccount(bank: "مصرف تجريبي آخر", iban: oldAccount.iban)
+precondition(SalaryBankChange(before: oldAccount, after: oldAccount) == nil)
+precondition(SalaryBankChange(before: oldAccount, after: renamedBank) != nil)
+precondition(SalaryBankChange(before: oldAccount, after: .init(bank: "", iban: oldAccount.iban)) != nil)
+let comparison = SalaryBankChange(before: oldAccount, after: newAccount)!
+let missing = SalaryBankChange(before: newAccount, after: emptyAccount)!
+let bankRows = [comparison, missing].enumerated().map { i, change in
+    SalaryChange(id: i, key: "test", name: "اسم تجريبي", rank: "", workplace: "", before: 100, after: 100, reasons: [], bankChange: change)
+}
+let bankSheet = AuditExport.salarySheet(.bank, bankRows, from: "أيلول", to: "تشرين الأول")
+precondition(bankSheet.title.contains("السابق أيلول") && bankSheet.title.contains("الجديد تشرين الأول"))
+precondition(Array(bankSheet.rows[0].suffix(4)) == [oldAccount.bank, oldAccount.iban, newAccount.bank, newAccount.iban])
+precondition(Array(bankSheet.rows[1].suffix(2)) == ["غير مسجل", "غير مسجل"])
+try XLSXWriter.validate(bankSheet)
+let bankXML = XLSXWriter.worksheet(bankSheet)
+precondition(bankXML.contains(oldAccount.iban) && bankXML.contains(newAccount.iban))

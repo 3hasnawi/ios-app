@@ -30,6 +30,26 @@ nonisolated enum SalaryChangeKind: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
+nonisolated struct SalaryAuditAccount: Hashable, Sendable {
+    let bank: String
+    let iban: String
+
+    var bankText: String { bank.isEmpty ? tr("غير مسجل", "Not recorded") : bank }
+    var ibanText: String { iban.isEmpty ? tr("غير مسجل", "Not recorded") : iban }
+}
+
+nonisolated struct SalaryBankChange: Hashable, Sendable {
+    let before: SalaryAuditAccount
+    let after: SalaryAuditAccount
+
+    init?(before: SalaryAuditAccount, after: SalaryAuditAccount) {
+        guard before.iban != after.iban ||
+              (before.bank != after.bank && ArabicText.matchKey(before.bank) != ArabicText.matchKey(after.bank)) else { return nil }
+        self.before = before
+        self.after = after
+    }
+}
+
 /// موظف تغيّر بين الشهرين.
 nonisolated struct SalaryChange: Identifiable, Sendable, Hashable {
     let id: Int
@@ -42,6 +62,7 @@ nonisolated struct SalaryChange: Identifiable, Sendable, Hashable {
     let after: Double?
     /// السبب أو التفاصيل: "الاسمي +20,000"، "نقيب ← رائد"...
     let reasons: [String]
+    var bankChange: SalaryBankChange? = nil
     var difference: Double { (after ?? 0) - (before ?? 0) }
     var line: String { [rank, workplace].filter { !$0.isEmpty }.joined(separator: " · ") }
 }
@@ -81,8 +102,8 @@ extension ReportEngine {
         let net: Double
         /// المخصصات والاستحقاق والاستقطاعات (بأسماء أعمدتها) لهذا الموظف.
         let values: [String: Double]
-        let iban: String
-        let bank: String
+        let account: SalaryAuditAccount
+        var iban: String { account.iban }
         let jobNumber: String
         let unified: String
         var line: String { [rank, workplace].filter { !$0.isEmpty }.joined(separator: " · ") }
@@ -101,7 +122,7 @@ extension ReportEngine {
             func text(_ key: String) -> String { (details[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
             return Snapshot(name: emp.name, key: emp.matchKey, rank: emp.rank, workplace: emp.workplace,
                             net: emp.netSalary ?? 0, values: values,
-                            iban: SalaryAuditRules.iban(text("IBAN")), bank: text("توطين المصرف"),
+                            account: SalaryAuditAccount(bank: text("توطين المصرف"), iban: SalaryAuditRules.iban(text("IBAN"))),
                             jobNumber: SalaryAuditRules.number(text("الرقم الوظيفي")),
                             unified: SalaryAuditRules.number(text("الرقم الموحد")))
         }
@@ -119,10 +140,10 @@ extension ReportEngine {
 
         var changes: [SalaryChangeKind: [SalaryChange]] = [:]
         var id = 0
-        func change(_ s: Snapshot, before: Double?, after: Double?, reasons: [String]) -> SalaryChange {
+        func change(_ s: Snapshot, before: Double?, after: Double?, reasons: [String], bankChange: SalaryBankChange? = nil) -> SalaryChange {
             id += 1
             return SalaryChange(id: id, key: s.key, name: s.name, rank: s.rank, workplace: s.workplace,
-                                before: before, after: after, reasons: reasons)
+                                before: before, after: after, reasons: reasons, bankChange: bankChange)
         }
         func signed(_ v: Double) -> String { (v > 0 ? "+" : v < 0 ? "−" : "") + Money.format(abs(v)) }
         if compared && !old.isEmpty {
@@ -153,13 +174,8 @@ extension ReportEngine {
                    ArabicText.matchKey(o.workplace) != ArabicText.matchKey(n.workplace) {
                     changes[.workplace, default: []].append(change(n, before: o.net, after: n.net, reasons: ["\(o.workplace) ← \(n.workplace)"]))
                 }
-                let ibanChanged = !o.iban.isEmpty && !n.iban.isEmpty && o.iban != n.iban
-                let bankChanged = !o.bank.isEmpty && !n.bank.isEmpty && o.bank != n.bank && ArabicText.matchKey(o.bank) != ArabicText.matchKey(n.bank)
-                if ibanChanged || bankChanged || (o.iban.isEmpty != n.iban.isEmpty) {
-                    var reasons: [String] = []
-                    if bankChanged { reasons.append("\(o.bank) ← \(n.bank)") }
-                    reasons.append("IBAN " + SalaryAuditRules.tail(o.iban) + " ← " + SalaryAuditRules.tail(n.iban))
-                    changes[.bank, default: []].append(change(n, before: o.net, after: n.net, reasons: reasons))
+                if let accounts = SalaryBankChange(before: o.account, after: n.account) {
+                    changes[.bank, default: []].append(change(n, before: o.net, after: n.net, reasons: [], bankChange: accounts))
                 }
             }
             for kind in SalaryChangeKind.allCases {
