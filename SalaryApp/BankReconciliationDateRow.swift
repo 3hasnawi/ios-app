@@ -64,7 +64,7 @@ private struct ReconciliationCalendar: UIViewRepresentable {
         let selection = UICalendarSelectionSingleDate(delegate: context.coordinator)
         view.selectionBehavior = selection
         view.setVisibleDateComponents(components, animated: false)
-        selection.setSelected(components, animated: false)
+        selection.selectedDate = components
         return view
     }
 
@@ -73,6 +73,9 @@ private struct ReconciliationCalendar: UIViewRepresentable {
     final class Coordinator: NSObject, UICalendarSelectionSingleDateDelegate {
         var parent: ReconciliationCalendar
         init(_ parent: ReconciliationCalendar) { self.parent = parent }
+
+        // يسمح باختيار اليوم المعروض نفسه لإغلاق التقويم من اللمسة الأولى.
+        func dateSelection(_ selection: UICalendarSelectionSingleDate, canSelectDate components: DateComponents?) -> Bool { true }
 
         func dateSelection(_ selection: UICalendarSelectionSingleDate, didSelectDate components: DateComponents?) {
             let calendar = BankReconciliation.dayCalendar
