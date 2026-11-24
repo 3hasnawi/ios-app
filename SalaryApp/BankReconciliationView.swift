@@ -29,7 +29,6 @@ struct BankReconciliationView: View {
     @State private var error: String?
     @State private var showConfirm = false
     @State private var showSuggestions = false
-    @State private var showContractReview = false
     @State private var showConfirmPeriod = false
     @State private var showManualConfirmation = false
     @State private var showUnconfirm = false
@@ -66,15 +65,9 @@ struct BankReconciliationView: View {
             return item.amount != movement.amount || Set(item.sourceLineIDs) != Set(movement.sourceLineIDs ?? []) || movement.direction != .debit
         }
     }
-    private var availableContractAmount: Int64? {
-        guard let figures, !figures.contractOverrideStale, figures.missingContractNominal > 0, let share = figures.availableContractNominalShare else { return nil }
-        let value = share + figures.contractRetirement
-        guard value.isFinite, value >= 0, value.rounded() == value, value <= Double(BankReconciliation.maximumAmount) else { return nil }
-        return Int64(value)
-    }
-    private var contractReviewAccepted: Bool {
-        guard let availableContractAmount else { return false }
-        return period.acceptedContractMissing == summary.missingContractNominal && period.acceptedContractAmount == availableContractAmount
+    private var contractAmount: Double? {
+        summary.reconciliationContractAmount(figures: figures, acceptedMissing: period.acceptedContractMissing,
+                                             acceptedAmount: period.acceptedContractAmount)
     }
     private var fundingDatesMatch: Bool {
         let funding = period.movements.filter { $0.isFunding == true }
@@ -83,7 +76,7 @@ struct BankReconciliationView: View {
     private var isComplete: Bool {
         totals?.balance == 0 && (totals?.funding ?? 0) > 0 && fundingDatesMatch && unmatched == 0 && missingSuggestions == 0 &&
         (totals?.outstandingRefunds.isEmpty == true) && summary.missingNet == 0 &&
-        (summary.missingContractNominal == 0 || contractReviewAccepted) &&
+        !summary.contractOverrideStale && (summary.missingContractNominal == 0 || contractAmount != nil) &&
         (summary.executionMatched || (summary.executionCount == 0 && summary.bankDeductions == 0)) &&
         unresolvedCount == 0 && incompleteSources == 0 && staleSources.isEmpty && figuresFailure == nil && entities != nil
     }
@@ -169,13 +162,6 @@ struct BankReconciliationView: View {
                 var candidate = period; candidate.confirmedAt = nil; persist(candidate)
             }
         } message: { Text(tr("تعود الفترة «قيد العمل» للتعديل، ويلزم اعتمادها من جديد بعد المراجعة.", "The period returns to in progress for editing and must be confirmed again after review.")) }
-        .confirmationDialog(tr("مراجعة مبلغ العقود", "Review contract amount"), isPresented: $showContractReview, titleVisibility: .visible) {
-            Button(tr("اعتماد المبلغ المتوفر", "Accept available amount")) {
-                guard let amount = availableContractAmount else { return }
-                var candidate = period; candidate.acceptedContractMissing = summary.missingContractNominal; candidate.acceptedContractAmount = amount
-                persist(candidate)
-            }
-        } message: { Text(tr("المبلغ يحسب من الاسمي المتوفر فقط، ولا يحتسب اسمي العقود الناقصة. تأكد من مطابقته لكشف المصرف قبل اعتماده.", "This uses available nominal amounts only and excludes missing contract nominal amounts. Verify it against the bank statement before accepting.")) }
         .alert(tr("تعذّرت العملية", "Operation failed"), isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
         } message: { Text(error ?? "") }
@@ -228,7 +214,7 @@ struct BankReconciliationView: View {
                     if incompleteSources > 0 { Label(tr("\(Num.format(incompleteSources)) جهة تحتاج مراجعة بياناتها في ملفات التحويل.", "\(Num.format(incompleteSources)) entities need data review in transfer files."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if missingSuggestions > 0 { Label(tr("\(Num.format(missingSuggestions)) مبالغ مقترحة لم تُدرج؛ راجعها قبل اعتماد الكشف.", "\(Num.format(missingSuggestions)) suggested amounts were not added; review them before accepting the statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if !summary.executionMatched && (summary.executionCount > 0 || summary.bankDeductions != 0) { Label(tr("استقطاعات المصارف لا تطابق ملف جهات التنفيذ أو بيانات المطابقة ناقصة.", "Bank deductions do not match the execution data, or reconciliation data is incomplete."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
-                    if summary.missingNet > 0 || summary.missingContractNominal > 0 { Label(tr("بعض بيانات الرواتب أو اسمي العقود ناقصة؛ راجع المبالغ قبل الاعتماد.", "Some payroll or contract nominal data is missing; review amounts before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if summary.missingNet > 0 || (summary.missingContractNominal > 0 && contractAmount == nil) { Label(tr("بعض بيانات الرواتب أو اسمي العقود ناقصة؛ راجع المبالغ قبل الاعتماد.", "Some payroll or contract nominal data is missing; review amounts before accepting."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if !staleSources.isEmpty { Label(tr("تغيّرت مصادر مبالغ مقترحة؛ احذف الحركات المتأثرة وأضفها بعد المراجعة.", "Suggested source amounts changed; remove affected movements and add them again after review."), systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
                     if unmatched > 0 { Label(tr("\(Num.format(unmatched)) حركة لم تؤشر مطابقتها مع الكشف الورقي.", "\(Num.format(unmatched)) movements are not checked against the paper statement."), systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                 }
@@ -398,8 +384,10 @@ struct BankReconciliationView: View {
             add("foodCompany", tr("شركة عراق الجوال", "Iraq Al-Jawwal Company"), figures.foodCompany, sourceLines: payrollIDs(["foodCompany"]))
             add("foodTax", tr("ضريبة عقد الإطعام", "Food contract tax"), figures.foodTax, sourceLines: payrollIDs(["foodTax"]))
             add("treasury", tr("الضريبة والحماية الاجتماعية", "Tax and social protection"), figures.treasuryTotal, sourceLines: payrollIDs(["incomeTax", "socialProtection"]))
-            let contractAmount = figures.contractTotal ?? (contractReviewAccepted ? availableContractAmount.map { Double($0) } : nil)
-            if let contractAmount { add("contracts", tr("ضمان العقود", "Contract social security"), contractAmount, sourceLines: payrollIDs(["contractNominal", "contractRetirement"])) }
+        }
+        if let contractAmount {
+            add("contracts", tr("الضمان الاجتماعي للعقود", "Contract social security"), contractAmount,
+                sourceLines: ["payroll|\(month)|contractNominal", "payroll|\(month)|contractRetirement"])
         }
         if let entities {
             let unresolved = entities.contains { $0.category == .unresolved }

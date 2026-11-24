@@ -32,9 +32,21 @@ nonisolated struct BankStatementSummary: Sendable {
     }
     var calculatedContractContribution: Double { contractNominalShare + contractRetirement }
     var contractOverrideStale: Bool { manualContractOverride.map { !$0.matches(self) } ?? false }
-    var contractContribution: Double {
-        if let manualContractOverride, manualContractOverride.matches(self) { return manualContractOverride.total }
-        return calculatedContractContribution
+    var approvedContractTotal: Double? {
+        guard let manualContractOverride, manualContractOverride.matches(self) else { return nil }
+        return manualContractOverride.total
+    }
+    var contractContribution: Double { approvedContractTotal ?? calculatedContractContribution }
+    func reconciliationContractAmount(figures: TransferLetterFigures?, acceptedMissing: Int?, acceptedAmount: Int64?) -> Double? {
+        guard !contractOverrideStale else { return nil }
+        if let approvedContractTotal { return approvedContractTotal }
+        guard let figures, figures.month == month, !figures.contractOverrideStale else { return nil }
+        if let total = figures.contractTotal { return total }
+        // الفترات القديمة قد تحتوي اعتماداً محلياً للمبلغ المتوفر قبل إضافة الاعتماد الشهري.
+        guard missingContractNominal > 0, figures.missingContractNominal == missingContractNominal,
+              acceptedMissing == missingContractNominal, let acceptedAmount, let share = figures.availableContractNominalShare,
+              Int64(exactly: share + figures.contractRetirement) == acceptedAmount else { return nil }
+        return Double(acceptedAmount)
     }
     var executionDifference: Double { bankDeductions - executionDeductions }
     var executionMatched: Bool { executionCount > 0 && missingExecutionAmount == 0 && abs(executionDifference) < 1 }
@@ -201,7 +213,7 @@ struct BankStatementView: View {
     @State private var summary: BankStatementSummary?
     @State private var loadError: String?
     @State private var showSettings = false
-    @State private var showContractOverride = false
+    @State private var contractAction: ContractOverrideEditor.Request?
     @State private var cache = BankStatementCache.shared
 
     private var month: PayrollMonth? { months.first { $0.name == selectedMonth } ?? months.first }
@@ -288,17 +300,23 @@ struct BankStatementView: View {
                         copyAmountRow(tr("12% من اسمي العقود", "12% of contract nominal pay"), amount: summary.contractNominalShare)
                         copyAmountRow(tr("توقيفات عقود التقاعدية", "Contract retirement deductions"), amount: summary.contractRetirement)
                         copyAmountRow(tr("المبلغ المحسوب تلقائياً", "Automatically calculated amount"), amount: summary.calculatedContractContribution)
-                        if let manual = summary.manualContractOverride {
-                            copyAmountRow(tr("المبلغ اليدوي المحفوظ", "Saved manual amount"), amount: manual.total)
-                            if summary.contractOverrideStale {
-                                Label(tr("تغيّر أساس العقود؛ راجع المبلغ اليدوي قبل استخدامه.", "The contract basis changed; review the manual amount before using it."), systemImage: "exclamationmark.triangle")
-                                    .font(.footnote).foregroundStyle(.orange)
-                            } else {
-                                copyAmountRow(tr("فرق التعديل اليدوي", "Manual adjustment"), amount: summary.contractContribution - summary.calculatedContractContribution)
-                            }
+                        if summary.contractOverrideStale {
+                            Label(tr("تغيّر أساس حساب العقود؛ راجع مبلغ الشهر وأعد اعتماده.", "The contract basis changed. Review and approve this month's amount again."), systemImage: "exclamationmark.triangle")
+                                .font(.footnote).foregroundStyle(.orange)
+                        } else if let approved = summary.approvedContractTotal, approved != summary.calculatedContractContribution {
+                            copyAmountRow(tr("فرق التعديل اليدوي", "Manual adjustment"), amount: approved - summary.calculatedContractContribution)
                         }
                         copyAmountRow(tr("المبلغ النهائي المستخدم", "Final included amount"), amount: summary.contractContribution)
-                        Button(tr("تعديل المبلغ النهائي للعقود", "Edit final contract amount"), systemImage: "pencil") { showContractOverride = true }
+                        Button(summary.approvedContractTotal == nil ? tr("اعتماد مبلغ العقود", "Approve contract amount") : tr("مبلغ العقود معتمد", "Contract amount approved"),
+                               systemImage: summary.approvedContractTotal == nil ? "checkmark.circle" : "checkmark.seal.fill") {
+                            contractAction = .init(summary: summary, editing: false)
+                        }
+                        .contextMenu {
+                            Button(tr("تعديل المبلغ", "Edit amount"), systemImage: "pencil") {
+                                contractAction = .init(summary: summary, editing: true)
+                            }
+                        }
+                        .disabled(summary.contractCount == 0 && summary.manualContractOverride == nil)
                         Menu {
                             copyAction(Num.format(summary.contractCount), title: tr("نسخ العدد", "Copy count"))
                         } label: {
@@ -384,8 +402,8 @@ struct BankStatementView: View {
                 }
             }
             .sheet(isPresented: $showSettings) { bankSettingsSheet }
-            .sheet(isPresented: $showContractOverride) {
-                if let summary { ContractOverrideEditor(summary: summary) }
+            .sheet(item: $contractAction) { request in
+                ContractOverrideEditor(request: request)
             }
             .task(id: loadKey) { await loadSummary(force: false) }
             .onChange(of: accountName) { BackupManager.shared.markSettingChanged("bankStatementAccountName") }

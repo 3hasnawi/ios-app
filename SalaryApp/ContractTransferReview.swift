@@ -73,7 +73,7 @@ struct ContractTransferReview: View {
                 let fresh = try await Task.detached {
                     var figures = try await TransferLetterFigureEngine(modelContainer: source).figures(month: month)
                     // The user may retain an explicitly reviewed incomplete basis, but never introduce a new one silently.
-                    figures.contractNominalReviewed = snapshot.figures.contractNominalReviewed && snapshot.figures.missingContractNominal == figures.missingContractNominal
+                    figures.contractNominalReviewed = figures.contractNominalReviewed || (snapshot.figures.contractOverrideSnapshot == nil && snapshot.figures.contractNominalReviewed && snapshot.figures.missingContractNominal == figures.missingContractNominal)
                     let (groups, missing) = try await TransferDataEngine(modelContainer: source).read(month: month)
                     let entities = TransferEntityResolution.make(groups: groups, missing: missing, figures: figures,
                         accounts: try ExecutionAccountStore.decode(a), categories: c.isEmpty ? [:] : try JSONDecoder().decode([String:String].self, from: c),

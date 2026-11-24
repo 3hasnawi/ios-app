@@ -73,7 +73,10 @@ nonisolated enum TransferLetterFigureRules {
     static func make(summary: BankStatementSummary, available: Set<String>) throws -> TransferLetterFigures {
         guard summary.payrollCount > 0 else { throw TransferLetterFigureError.missingPayroll }
         var required = ["الرعاية الصحية", "صندوق شهداء الشرطة", "النشاط الرياضي", "الضريبة", "الحماية الاجتماعية", "شركة عراق الجوال"]
-        if summary.contractCount > 0 { required += ["الاسمي", "التوقيفات التقاعدية"] }
+        if summary.contractCount > 0 {
+            required.append("التوقيفات التقاعدية")
+            if summary.approvedContractTotal == nil || summary.missingContractNominal != summary.contractCount { required.append("الاسمي") }
+        }
         let missing = required.filter { !available.contains($0) }
         guard missing.isEmpty else { throw TransferLetterFigureError.missingColumns(missing) }
         func checked(_ name: String, _ value: Double) throws -> Double {
@@ -95,11 +98,12 @@ nonisolated enum TransferLetterFigureRules {
             contractRetirement: checked("توقيفات العقود", summary.contractRetirement),
             payrollCash: available.contains("طريقة الدفع") && summary.unclassifiedCount == 0 && summary.missingNet == 0
                 ? checked("الرواتب كاش", summary.cashNet) : nil,
-            contractOverrideTotal: summary.contractOverrideStale ? nil : summary.manualContractOverride?.total,
+            contractOverrideTotal: summary.approvedContractTotal,
             contractOverrideSnapshot: summary.manualContractOverride,
             contractOverrideStale: summary.contractOverrideStale,
             missingContractNominal: summary.missingContractNominal,
-            availableContractNominalShare: checked("حصة اسمي العقود المتوفرة", summary.contractNominalShare))
+            availableContractNominalShare: checked("حصة اسمي العقود المتوفرة", summary.contractNominalShare),
+            contractNominalReviewed: summary.missingContractNominal > 0 && summary.approvedContractTotal != nil)
     }
 }
 
@@ -111,9 +115,20 @@ actor TransferLetterFigureEngine {
     }
 
     func figures(summary: BankStatementSummary) throws -> TransferLetterFigures {
-        let month = summary.month
+        let available = try validatedColumns(month: summary.month, contractsOnly: false)
+        return try TransferLetterFigureRules.make(summary: summary, available: available)
+    }
+
+    func validateContractBasis(_ summary: BankStatementSummary) throws {
+        let available = try validatedColumns(month: summary.month, contractsOnly: true)
+        let required = summary.missingContractNominal == summary.contractCount ? ["التوقيفات التقاعدية"] : ["الاسمي", "التوقيفات التقاعدية"]
+        let missing = required.filter { !available.contains($0) }
+        guard missing.isEmpty else { throw TransferLetterFigureError.missingColumns(missing) }
+    }
+
+    private func validatedColumns(month: String, contractsOnly: Bool) throws -> Set<String> {
         var descriptor = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })
-        descriptor.propertiesToFetch = [\.rawColumnsData, \.detailsData, \.itemsData]
+        descriptor.propertiesToFetch = [\.rank, \.rawColumnsData, \.detailsData, \.itemsData]
         let sources: [(String, [String])] = [
             ("الرعاية الصحية", ["الرعاية الصحية", "رعاية صحية"]),
             ("صندوق شهداء الشرطة", ["صندوق الشهداء", "صندوق شهداء الشرطة"]),
@@ -123,24 +138,25 @@ actor TransferLetterFigureEngine {
             ("الاسمي", ["الاسمي"]),
             ("التوقيفات التقاعدية", ["توقيفات تقاعدية", "التوقيفات التقاعدية"])
         ]
-        let matching = sources.map { ($0.0, Set($0.1.map(ArabicText.normalize))) }
+        let relevant = contractsOnly ? sources.filter { $0.0 == "الاسمي" || $0.0 == "التوقيفات التقاعدية" } : sources
+        let matching = relevant.map { ($0.0, Set($0.1.map(ArabicText.normalize))) }
+        func amountLabel(_ header: String) -> String? {
+            let key = ArabicText.normalize(header)
+            return matching.first { $0.1.contains(key) }?.0 ?? (!contractsOnly && FoodContractReport.applies(to: header) ? "شركة عراق الجوال" : nil)
+        }
         var available: Set<String> = []
         for (index, employee) in try modelContext.fetch(descriptor).enumerated() {
             if index.isMultiple(of: 512) { try Task.checkCancellation() }
+            if contractsOnly && ArabicText.normalize(employee.rank) != ArabicText.normalize("عقود") { continue }
             let raw = employee.rawColumns
             let headers = (raw?.headers ?? []) + Array(employee.details.keys) + Array(employee.items.keys)
             for header in headers {
-                let normalized = ArabicText.normalize(header)
-                for (label, choices) in matching where choices.contains(normalized) { available.insert(label) }
-                if FoodContractReport.applies(to: header) { available.insert("شركة عراق الجوال") }
-                if normalized == ArabicText.normalize("طريقة الدفع") { available.insert("طريقة الدفع") }
+                if let label = amountLabel(header) { available.insert(label) }
+                if !contractsOnly && ArabicText.normalize(header) == ArabicText.normalize("طريقة الدفع") { available.insert("طريقة الدفع") }
             }
             if let raw {
                 for i in raw.headers.indices {
-                    let normalized = ArabicText.normalize(raw.headers[i])
-                    let label = matching.first { $0.1.contains(normalized) }?.0
-                        ?? (FoodContractReport.applies(to: raw.headers[i]) ? "شركة عراق الجوال" : nil)
-                    guard let label else { continue }
+                    guard let label = amountLabel(raw.headers[i]) else { continue }
                     let value = raw.values[i].trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !value.isEmpty else { continue }
                     guard let amount = AnnualDeductionAmount.parse(value), amount.rounded() == amount else {
@@ -149,10 +165,7 @@ actor TransferLetterFigureEngine {
                 }
             }
             for (header, rawValue) in employee.details {
-                let normalized = ArabicText.normalize(header)
-                let label = matching.first { $0.1.contains(normalized) }?.0
-                    ?? (FoodContractReport.applies(to: header) ? "شركة عراق الجوال" : nil)
-                guard let label else { continue }
+                guard let label = amountLabel(header) else { continue }
                 let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty else { continue }
                 guard let amount = AnnualDeductionAmount.parse(value), amount.rounded() == amount else {
@@ -160,16 +173,13 @@ actor TransferLetterFigureEngine {
                 }
             }
             for (header, amount) in employee.items {
-                let normalized = ArabicText.normalize(header)
-                let label = matching.first { $0.1.contains(normalized) }?.0
-                    ?? (FoodContractReport.applies(to: header) ? "شركة عراق الجوال" : nil)
-                guard let label else { continue }
+                guard let label = amountLabel(header) else { continue }
                 guard amount.isFinite, amount >= 0, amount.rounded() == amount else {
                     throw TransferLetterFigureError.invalidAmount(label)
                 }
             }
         }
-        return try TransferLetterFigureRules.make(summary: summary, available: available)
+        return available
     }
 }
 

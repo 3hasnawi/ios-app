@@ -13,7 +13,7 @@ nonisolated struct ContractOverride: Codable, Equatable, Sendable {
     }
     var isValid: Bool {
         let amounts = [total, nominal, retirement]
-        return amounts.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 9_007_199_254_740_991 && $0.rounded() == $0 } && count > 0 && missing == 0
+        return amounts.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 9_007_199_254_740_991 && $0.rounded() == $0 } && count > 0 && (0...count).contains(missing)
     }
 }
 

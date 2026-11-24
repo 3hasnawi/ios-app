@@ -243,8 +243,8 @@ struct TransferFilesView: View {
     private func prepareSplit(reviewed: Bool) {
         guard !preparingSplit, let month, var figures else { return }
         do { try checkSplitEligibility() } catch { self.error = error.localizedDescription; return }
-        if figures.missingContractNominal > 0 && !reviewed { reviewMissingNominal = true; return }
-        figures.contractNominalReviewed = reviewed
+        if figures.missingContractNominal > 0 && !figures.contractNominalReviewed && !reviewed { reviewMissingNominal = true; return }
+        figures.contractNominalReviewed = figures.contractNominalReviewed || reviewed
         let checkedFigures = figures
         let all = entities, source = draftRevision, revision = bankCache.revision(for: month.name), name = month.name, stamp = month.importedAt
         let payer = payerName, iban = payerIBAN, links = payrollLinksData, container = SharedModel.container

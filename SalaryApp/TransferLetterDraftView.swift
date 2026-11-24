@@ -119,7 +119,7 @@ struct TransferLetterDraftView: View {
     private var selectedEntity: TransferEntity? { candidates.first { $0.id == selectedID } }
     private var preparedFigures: TransferLetterFigures {
         var result = figures
-        result.contractNominalReviewed = kind == .contracts && reviewedContractAmount && figures.missingContractNominal > 0
+        result.contractNominalReviewed = figures.contractNominalReviewed || (kind == .contracts && reviewedContractAmount && figures.missingContractNominal > 0)
         return result
     }
 
@@ -171,8 +171,12 @@ struct TransferLetterDraftView: View {
                         LabeledContent(tr("١٢٪ من الاسمي المتوفر", "12% of available nominal pay"), value: Money.format(nominal))
                         LabeledContent(tr("التوقيفات التقاعدية", "Pension deductions"), value: Money.format(figures.contractRetirement))
                         LabeledContent(tr("المجموع المتاح", "Available total"), value: Money.format(nominal + figures.contractRetirement))
-                        Toggle(tr("راجعت المبلغ وأتجاوز التنبيه لهذا الكتاب", "I reviewed the amount and accept this warning for this letter"), isOn: $reviewedContractAmount)
-                            .disabled(!current || working)
+                        if figures.contractNominalReviewed {
+                            LabeledContent(tr("المبلغ المعتمد في كشف البنك", "Bank-approved amount"), value: Money.format(figures.contractTotal))
+                        } else {
+                            Toggle(tr("راجعت المبلغ وأتجاوز التنبيه لهذا الكتاب", "I reviewed the amount and accept this warning for this letter"), isOn: $reviewedContractAmount)
+                                .disabled(!current || working)
+                        }
                     }
                 }
                 if kind == .housing || kind == .water {

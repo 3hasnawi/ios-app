@@ -859,6 +859,18 @@ import CoreText
         try check(partialFigures.contractNominalShare == nil && partialFigures.contractTotal == nil && partialFigures.missingContractNominal == 1, "missing nominal must not become a partial contract total")
         try check(partialFigures.foodCompany == figures.foodCompany && partialFigures.treasuryTotal == figures.treasuryTotal, "missing contract nominal must not block unrelated figures")
         try check(partialFigures.availableContractNominalShare == 1200, "available nominal share preserved for review")
+        var reviewedBank = missingNominal
+        reviewedBank.contractCount = 2
+        let bankApproval = ContractOverride(total: 1550, nominal: reviewedBank.contractNominal, retirement: reviewedBank.contractRetirement,
+                                            count: reviewedBank.contractCount, missing: reviewedBank.missingContractNominal)
+        let savedApproval = try ContractOverrides.setting(nil, month: reviewedBank.month, value: bankApproval)
+        reviewedBank.manualContractOverride = try ContractOverrides.decode(savedApproval)[reviewedBank.month]
+        let bankFigures = try TransferLetterFigureRules.make(summary: reviewedBank, available: columns)
+        try check(bankFigures.contractTotal == 1550 && bankFigures.contractNominalReviewed && bankFigures.contractAdjustment == 150, "bank approval follows the month into contract letters")
+        try check(reviewedBank.reconciliationContractAmount(figures: nil, acceptedMissing: nil, acceptedAmount: nil) == 1550, "bank-approved adjusted amount survives unrelated letter failure")
+        reviewedBank.contractRetirement += 1
+        try check(reviewedBank.reconciliationContractAmount(figures: bankFigures, acceptedMissing: 1, acceptedAmount: 1400) == nil, "stale bank approval cannot reuse older figures or period approval")
+        try check(missingNominal.reconciliationContractAmount(figures: partialFigures, acceptedMissing: 1, acceptedAmount: 1400) == 1400, "legacy reconciliation approval still works")
         var reviewedContracts = partialFigures
         reviewedContracts.contractNominalReviewed = true
         try check(reviewedContracts.contractTotal == 1400 && reviewedContracts.missingContractNominal == 1, "explicit review uses available total and preserves warning")
