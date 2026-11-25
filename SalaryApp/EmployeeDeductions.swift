@@ -23,6 +23,29 @@ nonisolated struct DeductionAvailableMonths: Sendable {
     let unrecognizedCount: Int
 }
 
+nonisolated struct DeductionCaseReference: Identifiable, Hashable, Sendable {
+    let title: String
+    let id: String
+
+    init?(note: String, amount: Double?) {
+        var text = note[...]
+        if DeductionStatus.read(note, amount: amount) != nil, let end = text.firstIndex(of: "⟧") {
+            text = text[text.index(after: end)...]
+        }
+        title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        // نحفظ الرقم وتاريخه كاملين؛ نساوي فقط اختلاف الأرقام والمسافات حول الفاصل.
+        let normalized = ArabicText.latinDigits(title).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        id = normalized.replacingOccurrences(of: " /", with: "/").replacingOccurrences(of: "/ ", with: "/")
+    }
+}
+
+nonisolated struct DeductionPeriodOptions: Sendable {
+    let all: DeductionAvailableMonths
+    let references: [DeductionCaseReference]
+    let byReference: [String: DeductionAvailableMonths]
+}
+
 nonisolated struct EmployeeDeductionStatement: Sendable {
     let person: DeductionPerson
     let rank: String
@@ -113,23 +136,34 @@ actor EmployeeDeductionEngine {
     }
 
     /// نطاق الاختيار من قيود الشخص والجهة فقط، بما فيها الحالات النصية.
-    func availableMonths(person: DeductionPerson, entity: String) throws -> DeductionAvailableMonths {
+    func availableMonths(person: DeductionPerson, entity: String) throws -> DeductionPeriodOptions {
         try Task.checkCancellation()
         let key = person.key, title = entity
         var d = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey == key && $0.title == title })
-        d.propertiesToFetch = [\.month]
-        var keys = Set<Int>()
-        var unrecognized = Set<String>()
+        d.propertiesToFetch = [\.month, \.note, \.amount]
+        var names = Set<String>()
+        var monthsByReference: [String: Set<String>] = [:]
+        var references: [String: DeductionCaseReference] = [:]
         for record in try modelContext.fetch(d) {
             try Task.checkCancellation()
-            let month = MonthName.sortKey(record.month)
-            if month >= 190001 && month <= 220012 && (1...12).contains(month % 100) { keys.insert(month) }
-            else { unrecognized.insert(record.month) }
+            names.insert(record.month)
+            if let ref = DeductionCaseReference(note: record.note, amount: record.amount) {
+                monthsByReference[ref.id, default: []].insert(record.month)
+                if references[ref.id].map({ ref.title < $0.title }) ?? true { references[ref.id] = ref }
+            }
         }
-        return DeductionAvailableMonths(keys: keys.sorted(), unrecognizedCount: unrecognized.count)
+        func periods(_ names: Set<String>) -> DeductionAvailableMonths {
+            let keys = names.map(MonthName.sortKey)
+            let valid = keys.filter { (190001...220012).contains($0) && (1...12).contains($0 % 100) }
+            return DeductionAvailableMonths(keys: Set(valid).sorted(), unrecognizedCount: keys.count - valid.count)
+        }
+        return DeductionPeriodOptions(all: periods(names), references: references.values.sorted {
+            ArabicText.alphabeticalOrder($0.title, $1.title) == .orderedAscending
+        }, byReference: monthsByReference.mapValues(periods))
     }
 
-    func statement(person: DeductionPerson, entity: String, from: Int, to: Int) throws -> EmployeeDeductionStatement {
+    func statement(person: DeductionPerson, entity: String, from: Int, to: Int,
+                   reference: DeductionCaseReference? = nil) throws -> EmployeeDeductionStatement {
         try Task.checkCancellation()
         let span = try DeductionCalendar.span(from: from, to: to)
         let key = person.key
@@ -161,18 +195,15 @@ actor EmployeeDeductionEngine {
         var latestRankDate = 0
         for d in try modelContext.fetch(dd) {
             try Task.checkCancellation()
+            let rowReference = DeductionCaseReference(note: d.note, amount: d.amount)
+            if let reference, rowReference?.id != reference.id { continue }
             let date = MonthName.sortKey(d.month)
             if date == 0 { hasUnrecognizedMonths = true; continue }
             guard date >= from && date <= to else { continue }
             if date >= latestRankDate && !d.rank.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 deductionRank = d.rank; latestRankDate = date
             }
-            var reference = d.note
-            if DeductionStatus.read(d.note, amount: d.amount) != nil, let end = reference.range(of: "⟧") {
-                reference = String(reference[end.upperBound...])
-            }
-            reference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !reference.isEmpty { references.insert(reference) }
+            if let rowReference { references.insert(reference?.title ?? rowReference.title) }
             if let status = DeductionStatus.read(d.note, amount: d.amount) {
                 statuses[d.month, default: []].insert(status)
                 continue
@@ -209,8 +240,14 @@ struct EmployeeDeductionsView: View {
     @State private var person: DeductionPerson?
     @State private var entities: [String] = []
     @State private var entity = ""
-    @State private var availableMonths: [Int] = []
-    @State private var unrecognizedMonths = 0
+    @State private var options: DeductionPeriodOptions?
+    @State private var selectedReference: DeductionCaseReference?
+    private var periods: DeductionAvailableMonths? {
+        if let selectedReference { return options?.byReference[selectedReference.id] }
+        return options?.all
+    }
+    private var availableMonths: [Int] { periods?.keys ?? [] }
+    private var unrecognizedMonths: Int { periods?.unrecognizedCount ?? 0 }
     @State private var fromMonth = 0
     @State private var toMonth = 0
     @State private var loadedPeriodKey = ""
@@ -219,6 +256,7 @@ struct EmployeeDeductionsView: View {
     @State private var loadingPeriods = false
     @State private var showingSearch = false
     @State private var report: EmployeeDeductionStatement?
+    @State private var reportKey = ""
     @State private var error: String?
     @State private var loading = false
     @State private var pdf: StatementPDF?
@@ -230,7 +268,7 @@ struct EmployeeDeductionsView: View {
     }
     private var dataVersion: String { months.map { "\($0.name):\($0.importedAt.timeIntervalSince1970)" }.joined(separator: ",") }
     private var periodKey: String { "\(person?.key ?? "")|\(entity)|\(dataVersion)" }
-    private var selectionKey: String { "\(periodKey)|\(loadedPeriodKey)|\(fromMonth)|\(toMonth)" }
+    private var selectionKey: String { "\(periodKey)|\(loadedPeriodKey)|\(selectedReference?.id ?? "")|\(fromMonth)|\(toMonth)" }
 
     var body: some View {
         ScrollView {
@@ -246,6 +284,24 @@ struct EmployeeDeductionsView: View {
                         ForEach(entities, id: \.self) { name in Button(name) { entity = name } }
                     } label: { selectionRow(tr("جهة الاستقطاع", "Deduction entity"), entity.isEmpty ? tr("اختر الجهة", "Choose an entity") : entity) }
                     .disabled(entities.isEmpty)
+                    if loadedPeriodKey == periodKey, let options, !options.references.isEmpty {
+                        Divider()
+                        Menu {
+                            Button { selectReference(nil) } label: {
+                                if selectedReference == nil { Label(tr("كل الإضبارات", "All cases"), systemImage: "checkmark") }
+                                else { Text(tr("كل الإضبارات", "All cases")) }
+                            }
+                            ForEach(options.references) { reference in
+                                Button { selectReference(reference) } label: {
+                                    if selectedReference?.id == reference.id { Label(reference.title, systemImage: "checkmark") }
+                                    else { Text(verbatim: reference.title) }
+                                }
+                            }
+                        } label: {
+                            selectionRow(tr("رقم الإضبارة", "Case reference"), selectedReference?.title ?? tr("كل الإضبارات", "All cases"))
+                        }
+                    }
+
                 }.background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
                 if let entityError { Label(entityError, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
                 else if person != nil && entities.isEmpty {
@@ -267,7 +323,7 @@ struct EmployeeDeductionsView: View {
                 }
                 if loading { ProgressView(tr("جارٍ إعداد الكشف…", "Preparing statement…")).frame(maxWidth: .infinity).padding() }
                 if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.subheadline) }
-                if let report {
+                if let report, reportKey == selectionKey {
                     Text(tr("تُربط الاستقطاعات بالاسم؛ راجع الأسماء المتشابهة قبل اعتماد الكشف.", "Deductions are matched by name; check similar names before relying on the statement."))
                         .font(.caption).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 8) {
@@ -318,7 +374,7 @@ struct EmployeeDeductionsView: View {
             } catch { if !Task.isCancelled { entityError = error.localizedDescription } }
         }
         .task(id: periodKey) {
-            availableMonths = []; unrecognizedMonths = 0; fromMonth = 0; toMonth = 0
+            options = nil; selectedReference = nil; fromMonth = 0; toMonth = 0
             loadedPeriodKey = ""; periodError = nil; loadingPeriods = false
             guard let person, !entity.isEmpty else { return }
             loadingPeriods = true
@@ -329,10 +385,8 @@ struct EmployeeDeductionsView: View {
                 }
                 let result = try await awaitDeductionWork(work)
                 guard !Task.isCancelled, requested == periodKey else { return }
-                availableMonths = result.keys
-                unrecognizedMonths = result.unrecognizedCount
-                fromMonth = result.keys.first ?? 0
-                toMonth = result.keys.last ?? 0
+                options = result
+                selectReference(nil)
                 loadedPeriodKey = requested
             } catch {
                 guard !Task.isCancelled, requested == periodKey else { return }
@@ -345,12 +399,13 @@ struct EmployeeDeductionsView: View {
             guard let person, !entity.isEmpty, loadedPeriodKey == periodKey,
                   availableMonths.contains(fromMonth), availableMonths.contains(toMonth) else { return }
             loading = true
-            let title = entity, from = fromMonth, to = toMonth
+            let title = entity, from = fromMonth, to = toMonth, reference = selectedReference, requested = selectionKey
             do {
                 let container = SharedModel.container
-                let work = Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).statement(person: person, entity: title, from: from, to: to) }
+                let work = Task.detached(priority: .userInitiated) { try await EmployeeDeductionEngine(modelContainer: container).statement(person: person, entity: title, from: from, to: to, reference: reference) }
                 let result = try await awaitDeductionWork(work)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, requested == selectionKey else { return }
+                reportKey = requested
                 report = result
             } catch {
                 guard !Task.isCancelled else { return }
@@ -358,6 +413,12 @@ struct EmployeeDeductionsView: View {
             }
             loading = false
         }
+    }
+
+    private func selectReference(_ reference: DeductionCaseReference?) {
+        selectedReference = reference
+        fromMonth = availableMonths.first ?? 0
+        toMonth = availableMonths.last ?? 0
     }
 
     private func selectionRow(_ label: String, _ value: String) -> some View {

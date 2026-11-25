@@ -5,6 +5,10 @@ models=(root/'SalaryApp/Models.swift').read_text()
 source=(root/'SalaryApp/ExcelImporter.swift').read_text()
 records=source[:source.index('/// تحفظ الحالة')].replace('import ZIPFoundation','')
 arabic=(root/'SalaryApp/ArabicText.swift').read_text().split('\nenum Money')[0]
+statement=(root/'SalaryApp/EmployeeDeductions.swift').read_text()
+engine='import Foundation\nimport SwiftData\n'+statement[statement.index('nonisolated struct DeductionPerson'):statement.index('struct EmployeeDeductionsView:')]
+engine += source[source.index('nonisolated enum DeductionStatus'):source.index('nonisolated enum AnnualDeductionAmount')]
+engine += '\nenum Num { static func digits(_ text: String) -> String { text } }\n'
 main='''import Foundation
 import SwiftData
 func tr(_ a:String,_ b:String)->String { a }
@@ -36,6 +40,7 @@ struct ImportResult: Sendable { var employees:[ImportedEmployee]=[]; var deducti
   verify=ModelContext(container)
   precondition(try verify.fetchCount(FetchDescriptor<Employee>()) == 2)
   precondition(try verify.fetchCount(FetchDescriptor<Deduction>()) == 2)
+  try await testCaseReferences(container: container)
   print("Split payroll/deduction import preserves the other dataset; old payroll rejected without mutation")
  }
 }
@@ -44,6 +49,6 @@ struct ImportResult: Sendable { var employees:[ImportedEmployee]=[]; var deducti
 main=main.replace('precondition(try verify.fetchCount(FetchDescriptor<Deduction>()) == 1)','let firstDeductions=try verify.fetchCount(FetchDescriptor<Deduction>())\n  precondition(firstDeductions == 1)').replace('precondition(try verify.fetchCount(FetchDescriptor<Employee>()) == 2)','let finalEmployees=try verify.fetchCount(FetchDescriptor<Employee>())\n  precondition(finalEmployees == 2)').replace('precondition(try verify.fetchCount(FetchDescriptor<Deduction>()) == 2)','let finalDeductions=try verify.fetchCount(FetchDescriptor<Deduction>())\n  precondition(finalDeductions == 2)')
 with tempfile.TemporaryDirectory() as temp:
  p=Path(temp)
- for file,text in [('Models.swift',models),('Records.swift',records),('Arabic.swift',arabic),('Test.swift',main)]: (p/file).write_text(text)
- subprocess.run(['swiftc','Models.swift','Records.swift','Arabic.swift','Test.swift','-o','test'],cwd=p,check=True)
+ for file,text in [('Models.swift',models),('Records.swift',records),('Arabic.swift',arabic),('Engine.swift',engine),('Test.swift',main)]: (p/file).write_text(text)
+ subprocess.run(['swiftc','Models.swift','Records.swift','Arabic.swift','Engine.swift',str(root/'ci/data_importer_test/CaseReferenceTests.swift'),'Test.swift','-o','test'],cwd=p,check=True)
  subprocess.run([str(p/'test')],cwd=p,check=True)
