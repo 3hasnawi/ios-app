@@ -198,8 +198,9 @@ import CoreText
             let numbers = footer.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
             try check(numbers.sorted() == [String(index + 1), String(longPDF.pageCount)].sorted(), "page counter and total at bottom center")
             let department = follow.selection(for: CGRect(x: 360, y: 24, width: 205, height: 20))?.string ?? ""
-            let words = ArabicText.normalize(department.precomposedStringWithCompatibilityMapping)
-            try check(["قيادة", "شرطة", "محافظة", "الانبار", "/", "قسم", "الحسابات"].allSatisfy { words.contains(ArabicText.normalize($0)) }, "department in the right footer of every page")
+            let footerWords = ArabicText.normalize(department.precomposedStringWithCompatibilityMapping).filter { !$0.isWhitespace && !$0.isPunctuation }
+            let expectedWords = ArabicText.normalize("قيادة شرطة محافظة الانبار قسم الحسابات").filter { !$0.isWhitespace }
+            try check(department.contains("/") && TransferAnbarTablePDF.matchesExtractedCell(footerWords, expected: expectedWords), "department in the right footer of every page")
             guard index > 0 else { continue }
             let topLeft = follow.selection(for: CGRect(x: 30, y: 842 - 41, width: 135, height: 20))?.string ?? ""
             try check(topLeft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "old continuation counter removed")

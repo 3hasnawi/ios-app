@@ -158,7 +158,7 @@ nonisolated enum BankReconciliationPDF {
             let signatureHeight = signatureHeights.map { $0.reduce(0, +) }.max() ?? 0
             guard signatureHeight <= 170 else { throw Failure.tooLong }
             let footerTop: CGFloat = 800
-            let bodyBottom = footerTop - 8
+            let bodyBottom = footerTop - 24
             let signatureTop = bodyBottom - signatureHeight
             let tableBottom = signatureTop - 16
             guard rowTop + totalHeight < tableBottom else { throw Failure.tooLong }
