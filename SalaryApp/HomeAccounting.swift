@@ -163,6 +163,7 @@ struct HomeAccounting<Shortcuts: View>: View {
         addSalary(.net, audit.net)
         addSalary(.rank, audit.rank)
         addSalary(.workplace, audit.workplace)
+        for kind in SalaryChangeKind.profileKinds { addSalary(kind, audit.profileCounts[kind.rawValue] ?? 0) }
         addSalary(.added, audit.added)
         addDeduction(.started, audit.started)
         return items

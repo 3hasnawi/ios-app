@@ -67,10 +67,14 @@ enum AuditNotifications {
                                   body: names, route: "salary"))
             }
             if defaults.bool(forKey: salaryKey) {
+                let profileSummary = SalaryChangeKind.profileKinds.compactMap { kind -> String? in
+                    let count = s.rows(kind).count
+                    return count > 0 ? "\(kind.title) \(Num.format(count))" : nil
+                }
                 notes.append(Note(id: "audit-salary",
                                   title: tr("متغيرات رواتب \(d.month)", "\(d.month) payroll changes"),
                                   body: tr("مقارنة بـ\(d.previous): جدد \(Num.format(s.rows(.added).count)) · خارجون \(Num.format(s.rows(.removed).count)) · تغيّر الصافي \(Num.format(s.rows(.net).count)) · الفرق \(signed(s.netTo - s.netFrom))",
-                                           "vs \(d.previous): new \(s.rows(.added).count) · removed \(s.rows(.removed).count) · net changed \(s.rows(.net).count) · \(signed(s.netTo - s.netFrom))"),
+                                           "vs \(d.previous): new \(s.rows(.added).count) · removed \(s.rows(.removed).count) · net changed \(s.rows(.net).count) · \(signed(s.netTo - s.netFrom))") + profileSummary.map { " · " + $0 }.joined(),
                                   route: "salary"))
             }
         }

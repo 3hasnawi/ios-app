@@ -763,6 +763,7 @@ struct SalaryAuditView: View {
         case .removed: .red
         case .net: .blue
         case .rank, .workplace: .primary
+        case .children, .marital, .education: .blue
         case .bank: .red
         }
     }
@@ -801,6 +802,7 @@ struct SalaryChangeListView: View {
         guard !tokens.isEmpty else { return rows }
         return rows.filter { r in
             var fields = [r.name, r.line] + r.reasons
+            for field in r.fieldChanges { fields += [field.label, field.before, field.after] }
             if let accounts = r.bankChange {
                 fields += [accounts.before.bank, accounts.before.iban, accounts.after.bank, accounts.after.iban]
             }
@@ -873,7 +875,7 @@ private struct SalaryChangeRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(row.name).font(.subheadline.weight(.semibold))
                 Spacer(minLength: 8)
-                if kind != .bank {
+                if kind != .bank && row.fieldChanges.isEmpty {
                     Text(amountText).font(.subheadline.weight(.bold).monospacedDigit()).foregroundStyle(amountColor)
                 }
             }
@@ -885,6 +887,15 @@ private struct SalaryChangeRow: View {
                 accountDetails(tr("السابق", "Previous"), month: from, account: accounts.before)
                 Divider()
                 accountDetails(tr("الجديد", "New"), month: to, account: accounts.after)
+            } else if !row.fieldChanges.isEmpty {
+                ForEach(row.fieldChanges, id: \.label) { field in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(field.label).font(.caption.weight(.semibold))
+                        Text("\(from) · \(field.before)")
+                        Text("\(to) · \(field.after)")
+                    }
+                    .font(.subheadline)
+                }
             } else if !row.reasons.isEmpty {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 5) { chips }

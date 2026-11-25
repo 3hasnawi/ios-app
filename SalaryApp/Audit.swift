@@ -181,6 +181,16 @@ nonisolated enum AuditExport {
     // MARK: الرواتب
 
     private static func salarySheet(_ kind: SalaryChangeKind, _ rows: [SalaryChange], from: String, to: String) -> ReportSheet {
+        if SalaryChangeKind.profileKinds.contains(kind) {
+            let lines = rows.flatMap { row in row.fieldChanges.map { (row.name, $0) } }
+            return ReportSheet(header: header, title: kind.reportTitle, columns: [
+                .init(title: "ت", width: 5, kind: .serial), .init(title: "الاسم الكامل", width: 30, kind: .text),
+                .init(title: "البيان", width: 20, kind: .text), .init(title: from, width: 20, kind: .text),
+                .init(title: to, width: 20, kind: .text)
+            ], rows: lines.enumerated().map { i, line in
+                [String(i + 1), line.0, line.1.label, line.1.before, line.1.after]
+            }, amounts: Array(repeating: 0, count: lines.count), showTotal: false).fitted()
+        }
         if kind == .bank {
             return ReportSheet(
                 header: header,

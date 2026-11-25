@@ -55,6 +55,11 @@ enum HealthCareReport {
     (directory / "Salary.swift").write_text("import Foundation\n" + models + "enum AuditExport {\nstatic let header = \"اختبار\"\n" +
         method.replace("private static func salarySheet", "static func salarySheet") + "}\nextension ReportSheet {\n" + digits + "}\n")
     (directory / "Stubs.swift").write_text(stubs + "\nenum AppSettings { static let locale = Locale(identifier: \"ar_IQ\") }\n")
+    importer = (root / "SalaryApp/ExcelImporter.swift").read_text()
+    synonyms = importer[importer.index("    enum Synonyms {"):importer.index("    private struct EmployeeColumns")]
+    employees = (root / "SalaryApp/Models.swift").read_text()
+    snapshot = employees[employees.index("nonisolated struct PayrollColumnSnapshot"):employees.index("nonisolated enum PayrollItems")]
+    (directory / "ProfileInput.swift").write_text("import Foundation\nenum ExcelImporter {\n" + synonyms + "}\n" + snapshot)
     (directory / "main.swift").write_text((root / "ci/xlsx_layout_test/main.swift").read_text())
-    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "Salary.swift", str(root / "SalaryApp/ArabicText.swift"), "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
+    subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "Salary.swift", "ProfileInput.swift", str(root / "SalaryApp/SalaryReviewProfile.swift"), str(root / "SalaryApp/ArabicText.swift"), "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "xlsx-test")], cwd=directory, check=True)

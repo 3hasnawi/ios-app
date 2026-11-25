@@ -5,7 +5,9 @@ import SwiftData
 
 /// حالات المقارنة بين شهرين في الرواتب.
 nonisolated enum SalaryChangeKind: String, CaseIterable, Identifiable, Sendable {
-    case added, removed, net, rank, workplace, bank
+    case added, removed, net, rank, workplace, bank, children, marital, education
+
+    static let profileKinds: [Self] = [.children, .marital, .education]
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -15,6 +17,9 @@ nonisolated enum SalaryChangeKind: String, CaseIterable, Identifiable, Sendable 
         case .rank: tr("ترفيع", "Rank changed")
         case .workplace: tr("نقل", "Transferred")
         case .bank: tr("تغيّر الحساب", "Bank account changed")
+        case .children: tr("عدد الأطفال", "Child count")
+        case .marital: tr("الزوجية", "Marriage")
+        case .education: tr("الشهادة", "Qualification")
         }
     }
     /// عنوان الكشف المصدَّر.
@@ -26,6 +31,9 @@ nonisolated enum SalaryChangeKind: String, CaseIterable, Identifiable, Sendable 
         case .rank: tr("تغيّر الرتبة", "Rank changes")
         case .workplace: tr("تغيّر محل العمل", "Workplace changes")
         case .bank: tr("تغيّر الحساب المصرفي", "Bank account changes")
+        case .children: tr("تغيّر عدد الأطفال", "Child count changes")
+        case .marital: tr("تغيّر الزوجية", "Marital changes")
+        case .education: tr("تغيّر الشهادة", "Qualification changes")
         }
     }
 }
@@ -50,6 +58,12 @@ nonisolated struct SalaryBankChange: Hashable, Sendable {
     }
 }
 
+nonisolated struct SalaryFieldChange: Hashable, Sendable {
+    let label: String
+    let before: String
+    let after: String
+}
+
 /// موظف تغيّر بين الشهرين.
 nonisolated struct SalaryChange: Identifiable, Sendable, Hashable {
     let id: Int
@@ -63,6 +77,7 @@ nonisolated struct SalaryChange: Identifiable, Sendable, Hashable {
     /// السبب أو التفاصيل: "الاسمي +20,000"، "نقيب ← رائد"...
     let reasons: [String]
     var bankChange: SalaryBankChange? = nil
+    var fieldChanges: [SalaryFieldChange] = []
     var difference: Double { (after ?? 0) - (before ?? 0) }
     var line: String { [rank, workplace].filter { !$0.isEmpty }.joined(separator: " · ") }
 }
@@ -102,6 +117,7 @@ extension ReportEngine {
         let net: Double
         /// المخصصات والاستحقاق والاستقطاعات (بأسماء أعمدتها) لهذا الموظف.
         let values: [String: Double]
+        let profile: SalaryReviewProfile
         let account: SalaryAuditAccount
         var iban: String { account.iban }
         let jobNumber: String
@@ -111,21 +127,25 @@ extension ReportEngine {
 
     private func snapshots(_ month: String) throws -> [Snapshot] {
         var e = FetchDescriptor<Employee>(predicate: #Predicate { $0.month == month })
-        e.propertiesToFetch = [\.name, \.matchKey, \.netSalary, \.itemsData, \.detailsData, \.rank, \.workplace]
-        return try modelContext.fetch(e).enumerated().map { i, emp in
-            if i.isMultiple(of: 512) { try Task.checkCancellation() }
+        e.propertiesToFetch = [\.name, \.matchKey, \.netSalary, \.itemsData, \.detailsData, \.rawColumnsData, \.rank, \.workplace]
+        var snapshots: [Snapshot] = []
+        var legacyColumns = SalaryReviewProfile.Columns()
+        try modelContext.enumerate(e, batchSize: 256) { emp in
+            if snapshots.count.isMultiple(of: 256) { try Task.checkCancellation() }
             let details = emp.details
             var values = PayrollItems.decode(emp.itemsData)
             for key in SalaryItems.allowances + [SalaryItems.entitlement] {
                 if let v = details[key].flatMap(ArabicText.number(from:)), v != 0 { values[key] = v }
             }
             func text(_ key: String) -> String { (details[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
-            return Snapshot(name: emp.name, key: emp.matchKey, rank: emp.rank, workplace: emp.workplace,
-                            net: emp.netSalary ?? 0, values: values,
+            let profile = SalaryReviewProfile(details: details, raw: emp.rawColumns, columns: &legacyColumns)
+            snapshots.append(Snapshot(name: emp.name, key: emp.matchKey, rank: emp.rank, workplace: emp.workplace,
+                            net: emp.netSalary ?? 0, values: values, profile: profile,
                             account: SalaryAuditAccount(bank: text("توطين المصرف"), iban: SalaryAuditRules.iban(text("IBAN"))),
                             jobNumber: SalaryAuditRules.number(text("الرقم الوظيفي")),
-                            unified: SalaryAuditRules.number(text("الرقم الموحد")))
+                            unified: SalaryAuditRules.number(text("الرقم الموحد"))))
         }
+        return snapshots
     }
 
     /// تدقيق الرواتب: مقارنة شهر "من" مع "إلى"، وفحوص شهر "إلى"، ومطابقة الملاك.
@@ -134,9 +154,8 @@ extension ReportEngine {
         let compared = !from.isEmpty && from != to
         var old: [Snapshot] = []
         if compared { old = try snapshots(from) }
-        var oldMap: [String: Snapshot] = [:], newMap: [String: Snapshot] = [:]
-        for s in old where oldMap[s.key] == nil { oldMap[s.key] = s }
-        for s in new where newMap[s.key] == nil { newMap[s.key] = s }
+        let oldByName = Dictionary(grouping: old, by: \.key)
+        let newByName = Dictionary(grouping: new, by: \.key)
 
         var changes: [SalaryChangeKind: [SalaryChange]] = [:]
         var id = 0
@@ -147,14 +166,27 @@ extension ReportEngine {
         }
         func signed(_ v: Double) -> String { (v > 0 ? "+" : v < 0 ? "−" : "") + Money.format(abs(v)) }
         if compared && !old.isEmpty {
-            for s in newMap.values where oldMap[s.key] == nil {
+            for (key, rows) in newByName where oldByName[key] == nil {
+                let s = rows[0]
                 changes[.added, default: []].append(change(s, before: nil, after: s.net, reasons: []))
             }
-            for s in oldMap.values where newMap[s.key] == nil {
+            for (key, rows) in oldByName where newByName[key] == nil {
+                let s = rows[0]
                 changes[.removed, default: []].append(change(s, before: s.net, after: nil, reasons: []))
             }
-            for (key, n) in newMap {
-                guard let o = oldMap[key] else { continue }
+            func compareProfile(_ o: Snapshot, _ n: Snapshot) {
+                for kind in SalaryChangeKind.profileKinds {
+                    let fields = n.profile.changes(from: o.profile, kind: kind)
+                    if !fields.isEmpty {
+                        var row = change(n, before: o.net, after: n.net, reasons: [])
+                        row.fieldChanges = fields
+                        changes[kind, default: []].append(row)
+                    }
+                }
+            }
+            for (key, current) in newByName {
+                guard let previous = oldByName[key] else { continue }
+                let n = current[0], o = previous[0]
                 if key.hashValue & 0x3FF == 0 { try Task.checkCancellation() }
                 // البنود التي تغيّرت (المجاميع لا تُذكر سبباً).
                 var deltas: [(title: String, diff: Double)] = []
@@ -176,6 +208,24 @@ extension ReportEngine {
                 }
                 if let accounts = SalaryBankChange(before: o.account, after: n.account) {
                     changes[.bank, default: []].append(change(n, before: o.net, after: n.net, reasons: [], bankChange: accounts))
+                }
+                // عند تشابه الأسماء نعتمد الرقم الموحّد أو الوظيفي للمقارنة.
+                if current.count == 1, previous.count == 1 {
+                    if !n.unified.isEmpty && !o.unified.isEmpty {
+                        guard n.unified == o.unified else { continue }
+                    } else if !n.jobNumber.isEmpty && !o.jobNumber.isEmpty && n.jobNumber != o.jobNumber { continue }
+                    compareProfile(o, n)
+                } else {
+                    func identity(_ s: Snapshot) -> String? {
+                        if !s.unified.isEmpty { return "u:" + s.unified }
+                        return s.jobNumber.isEmpty ? nil : "j:" + s.jobNumber
+                    }
+                    let priorIDs = Dictionary(grouping: previous, by: identity)
+                    for (id, rows) in Dictionary(grouping: current, by: identity) {
+                        if id != nil, rows.count == 1, let prior = priorIDs[id], prior.count == 1 {
+                            compareProfile(prior[0], rows[0])
+                        }
+                    }
                 }
             }
             for kind in SalaryChangeKind.allCases {

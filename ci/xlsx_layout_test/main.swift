@@ -93,3 +93,32 @@ precondition(Array(bankSheet.rows[1].suffix(2)) == ["غير مسجل", "غير �
 try XLSXWriter.validate(bankSheet)
 let bankXML = XLSXWriter.worksheet(bankSheet)
 precondition(bankXML.contains(oldAccount.iban) && bankXML.contains(newAccount.iban))
+
+// Previous imports stored the count only in the original columns. Its allowance is a different field.
+var profileColumns = SalaryReviewProfile.Columns()
+let priorProfile = SalaryReviewProfile(details: [:], raw: .init(
+    headers: ["الأطفال", "عدد الأطفال", "الحالة الاجتماعية", "الزوجية", "اسم الشهدة", "الشهادة"],
+    values: ["30,000", "٠", "أعزب", "0", "دبلوم", "20000"]), columns: &profileColumns)
+let currentProfile = SalaryReviewProfile(details: ["عدد الاطفال": "٢", "الحالة الزوجية": "متزوج", "الزوجية": "٥٠٬٠٠٠",
+                                                   "اسم الشهادة": "بكالوريوس", "الشهادة": "٢٠٬٠٠٠"],
+                                         raw: nil, columns: &profileColumns)
+let childrenChanges = currentProfile.changes(from: priorProfile, kind: .children)
+precondition(childrenChanges == [.init(label: "عدد الأطفال", before: Money.format(0), after: Money.format(2))])
+let marriageChanges = currentProfile.changes(from: priorProfile, kind: .marital)
+precondition(marriageChanges.count == 2 && marriageChanges[0].before == "أعزب" && marriageChanges[1].after == Money.format(50000))
+precondition(currentProfile.changes(from: priorProfile, kind: .education) == [.init(label: "اسم الشهادة", before: "دبلوم", after: "بكالوريوس")])
+let equivalent = SalaryReviewProfile(details: ["اسم الشهادة": "بكالوريُوس", "عدد الاطفال": "2.0", "الزوجية": "50,000"],
+                                    raw: nil, columns: &profileColumns)
+precondition(SalaryChangeKind.profileKinds.allSatisfy { equivalent.changes(from: currentProfile, kind: $0).isEmpty })
+let noCount = SalaryReviewProfile(details: [:], raw: .init(headers: ["الشهادة", "الاطفال", "الزوجية"],
+                                                          values: ["30000", "15000", ""]), columns: &profileColumns)
+precondition(noCount.changes(from: priorProfile, kind: .children).isEmpty)
+precondition(noCount.changes(from: priorProfile, kind: .marital).isEmpty)
+precondition(noCount.changes(from: priorProfile, kind: .education).first?.after == Money.format(30000))
+let profileRow = SalaryChange(id: 1, key: "test", name: "منتسب تجريبي", rank: "", workplace: "",
+                              before: 100, after: 100, reasons: [], fieldChanges: marriageChanges)
+let profileSheet = AuditExport.salarySheet(.marital, [profileRow], from: "أيلول", to: "تشرين الأول")
+precondition(profileSheet.rows.count == 2 && !profileSheet.showTotal && profileSheet.columns.suffix(2).map(\.title) == ["أيلول", "تشرين الأول"])
+precondition(Array(profileSheet.rows[0].suffix(2)) == ["أعزب", "متزوج"])
+try XLSXWriter.validate(profileSheet)
+print("Payroll family and qualification comparison and report tests passed")

@@ -36,6 +36,7 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
     var salaryAvailable = false
     var compared = false
     var added = 0, removed = 0, rank = 0, workplace = 0, net = 0, bank = 0
+    var profileCounts: [String: Int] = [:]
     var hasDeductions = false
     var deductionComparisonBlocked = false
     var addedEntities = 0, missingEntities = 0
@@ -53,6 +54,7 @@ nonisolated struct HomeAudit: Sendable, Equatable, Codable {
             workplace = s.rows(.workplace).count
             net = s.rows(.net).count
             bank = s.rows(.bank).count
+            for kind in SalaryChangeKind.profileKinds { profileCounts[kind.rawValue] = s.rows(kind).count }
             if bank > 0 {
                 issues.append(Issue(id: "bank", title: tr("تغيّر الحساب المصرفي", "Bank account changed"),
                                     detail: tr("مقارنة بـ\(d.previous)", "vs \(d.previous)"), count: bank, route: "salary"))
@@ -239,7 +241,7 @@ struct HomeDashboard: View {
         } + trendMonths).joined(separator: ";")
     }
 
-    private var auditKey: String { "v4|\(statsKey)|\(AppSettings.locale.identifier)" }
+    private var auditKey: String { "v5|\(statsKey)|\(AppSettings.locale.identifier)" }
 
     private var summary: [String: PayrollItems.Summary] { PayrollItems.decodeSummary(current?.itemSummaryData) ?? [:] }
 
