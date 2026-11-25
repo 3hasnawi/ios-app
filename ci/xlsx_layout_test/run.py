@@ -59,7 +59,7 @@ enum HealthCareReport {
     synonyms = importer[importer.index("    enum Synonyms {"):importer.index("    private struct EmployeeColumns")]
     employees = (root / "SalaryApp/Models.swift").read_text()
     snapshot = employees[employees.index("nonisolated struct PayrollColumnSnapshot"):employees.index("nonisolated enum PayrollItems")]
-    (directory / "ProfileInput.swift").write_text("import Foundation\nenum ExcelImporter {\n" + synonyms + "}\n" + snapshot)
+    (directory / "ProfileInput.swift").write_text("import Foundation\nenum SheetParser {\n" + synonyms + "}\n" + snapshot)
     (directory / "main.swift").write_text((root / "ci/xlsx_layout_test/main.swift").read_text())
     subprocess.run(["swiftc", "Stubs.swift", "Production.swift", "Health.swift", "Salary.swift", "ProfileInput.swift", str(root / "SalaryApp/SalaryReviewProfile.swift"), str(root / "SalaryApp/ArabicText.swift"), "main.swift", "-o", "xlsx-test"], cwd=directory, check=True)
     subprocess.run([str(directory / "xlsx-test")], cwd=directory, check=True)

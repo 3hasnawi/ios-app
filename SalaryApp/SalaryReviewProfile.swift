@@ -11,7 +11,7 @@ nonisolated struct SalaryReviewProfile {
     struct Columns {
         private var headers: [String] = []
         private var selected: [(Int, String)] = []
-        private static let keys = Dictionary(uniqueKeysWithValues: ExcelImporter.Synonyms.reviewFields.map {
+        private static let keys: [String: String] = Dictionary(uniqueKeysWithValues: SheetParser.Synonyms.reviewFields.map {
             (ArabicText.normalize($0), $0)
         })
 
