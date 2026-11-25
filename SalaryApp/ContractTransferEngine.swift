@@ -5,7 +5,10 @@ import SwiftData
 actor ContractTransferEngine {
     private func classification(_ rank: String, person: String) throws -> Bool {
         let key = RankOrder.key(rank)
-        if FundReport.category(of: rank) == 3 { return true }
+        // تمويل «عقد» يبقى ضمن الدفعة الحالية حتى عند فصل تمويل «عقود».
+        let words = key.split(separator: " ")
+        if words.contains("عقود") { return true }
+        if words.contains("عقد") { return false }
         if RankOrder.recognizes(rank) || key.hasPrefix("موظف") ||
             ["مفوض", "شرطي", "رئيس عرفاء", "نائب عريف", "عريف", "وكيل"].contains(where: { key.hasPrefix($0) }) { return false }
         throw ContractTransferIssue(tr("راجع رتبة \(person) قبل الفصل: \(rank)", "Review the rank for \(person): \(rank)"))

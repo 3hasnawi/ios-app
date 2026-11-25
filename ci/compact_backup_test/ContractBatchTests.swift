@@ -4,15 +4,16 @@ import SwiftData
 @MainActor func testContractBatches(_ container: ModelContainer, destination: ModelContainer) async throws {
     let month = "تشرين الأول 2026", context = ModelContext(container)
     let date = Date(timeIntervalSince1970: 1_800_000_000)
-    let p = "عقد تجريبي", q = "عقد ثان", x = "موظف تجريبي"
-    context.insert(PayrollMonth(name: month, employeeCount: 3, deductionCount: 8))
-    for (name, rank, bank, fund) in [(p,"عقود",270000,2000),(q,"عقود",130000,2000),(x,"شرطي",1250000,4000)] {
+    let p = "عقد تجريبي", q = "عقد ثان", x = "منتسب تجريبي", officer = "شرطي تجريبي"
+    context.insert(PayrollMonth(name: month, employeeCount: 4, deductionCount: 9))
+    for (name, rank, bank, fund) in [(p,"عقود",270000,2000),(q,"عقود",130000,2000),(x,"عقد",1150000,2000),(officer,"شرطي",100000,2000)] {
         context.insert(Employee(month: month, name: name, rank: rank, workplace: "", netSalary: 100,
                                 items: ["مجموع استقطاعات المصارف":Double(bank),"صندوق الشهداء":Double(fund)]))
     }
-    for (name,title,amount,note) in [(p,"أ",60000,"1"),(p,"أ",60000,"1"),(q,"أ",80000,"2"),(x,"أ",800000,"3"),
+    for (name,title,amount,note) in [(p,"أ",60000,"1"),(p,"أ",60000,"1"),(q,"أ",80000,"2"),(x,"أ",700000,"3"),(officer,"أ",100000,"7"),
                                       (p,"ب",150000,"4"),(x,"ب",225000,"5"),(x,"ب",225000,"5"),(q,"ج",50000,"6")] {
-        context.insert(Deduction(month: month, employeeName: name, title: title, amount: Double(amount), note: note))
+        context.insert(Deduction(month: month, employeeName: name, title: title, amount: Double(amount), note: note,
+                                 rank: name == x && title == "أ" ? "عقد" : ""))
     }
     try context.save()
     func iban(_ serial: Int) -> String {
@@ -25,7 +26,7 @@ import SwiftData
         }
         return String(format: "IQ%02d",98-rem) + bban
     }
-    let totals = [("أ",1000000,3,TransferCategory.rafidain),("ب",600000,2,.otherBanks),("ج",50000,1,.anbar),
+    let totals = [("أ",1000000,4,TransferCategory.rafidain),("ب",600000,2,.otherBanks),("ج",50000,1,.anbar),
                   (TransferPayrollRecipient.fundDonations.arabicTitle,8000,1,.otherBanks)]
     let entities = totals.enumerated().map { i, v in
         TransferEntity(group: .init(kind:.deductions, month:month,title:v.0,count:v.2,total:Double(v.1),byEntity:false),
@@ -36,6 +37,12 @@ import SwiftData
         policeFundDonations:8000,sports:0,incomeTax:0,socialProtection:0,contractNominalShare:120000,contractRetirement:50000,payrollCash:nil)
     let engine = ContractTransferEngine(modelContainer: container)
     let batch = try await engine.prepare(month:month, importedAt:date, figures:figures, entities:entities, payer:"دافع تجريبي",iban:pay,links:Data())
+    // «عقد» من ملف التنفيذ في «أ»، ومن رتبة الرواتب في «ب»، وكذلك تبرع الصندوق.
+    for (title, expected) in [("أ", 700000.0), ("ب", 450000.0), (TransferPayrollRecipient.fundDonations.arabicTitle, 2000.0)] {
+        let part = batch.parts.first { $0.entity.group.title == title }!
+        precondition(part.current.filter { $0.name == x }.reduce(0) { $0 + $1.amount } == expected)
+        precondition(!part.deferred.contains { $0.name == x })
+    }
     precondition(batch.held==574000)
     precondition(batch.parts(.deferred,category:.rafidain).map(\.group.total)==[200000])
     precondition(batch.parts(.current,category:.anbar).isEmpty)
