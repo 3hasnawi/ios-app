@@ -126,10 +126,18 @@ struct UnifiedSearchView: View {
     @ViewBuilder private var workActions: some View {
         if let month = workMonth {
             ForEach(matchingReports) { report in
-                let group = report.group(month: month.name, summary: PayrollItems.decodeSummary(month.itemSummaryData) ?? [:])
-                Button { quickPreview = group } label: {
-                    Label(report.title + " · " + month.name, systemImage: ReportSymbols.preview)
-                }.disabled(group == nil)
+                if report == .commandDeductions {
+                    NavigationLink {
+                        CommandDeductionReportView(month: month)
+                    } label: {
+                        Label(report.title + " · " + month.name, systemImage: ReportSymbols.preview)
+                    }
+                } else {
+                    let group = report.group(month: month.name, summary: PayrollItems.decodeSummary(month.itemSummaryData) ?? [:])
+                    Button { quickPreview = group } label: {
+                        Label(report.title + " · " + month.name, systemImage: ReportSymbols.preview)
+                    }.disabled(group == nil)
+                }
             }
         }
         if matchesRefund {

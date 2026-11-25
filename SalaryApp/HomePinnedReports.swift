@@ -1,8 +1,8 @@
 enum WorkReport: String, CaseIterable, Identifiable {
-    case entities, food, fund, health
+    case entities, food, fund, health, commandDeductions
     case reports, transferFiles, deductionAudit, salaryAudit
     case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds
-    static let statements: [Self] = [.entities, .food, .fund, .health]
+    static let statements: [Self] = [.entities, .food, .fund, .health, .commandDeductions]
     static let sections: [Self] = [
         .reports, .transferFiles, .deductionAudit, .salaryAudit, .salaryTrust,
         .fundingExpenses, .employeeDeductions, .payrollItems, .refunds

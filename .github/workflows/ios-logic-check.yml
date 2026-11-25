@@ -60,8 +60,10 @@ jobs:
       - name: Report layout calculations
         run: |
           if [ "${{ inputs.report_preview }}" = "true" ]; then
+            python3 ci/command_deductions_test/run.py --preview-dir "$RUNNER_TEMP/deduction-style-preview"
             python3 ci/report_layout_test/run.py --preview-dir "$RUNNER_TEMP/deduction-style-preview"
           else
+            python3 ci/command_deductions_test/run.py
             python3 ci/report_layout_test/run.py
           fi
       - name: Upload fictional deduction preview

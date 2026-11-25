@@ -191,6 +191,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 enum HomeRoute: Hashable, Identifiable {
     case audit, salary, deductions, backup, reports, transferFiles, payrollBreakdown
     case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds(String)
+    case commandDeductions
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
     case salaryCheck(String), deductionCheck(String)
@@ -291,6 +292,8 @@ struct HomeDashboard: View {
             switch route {
             case .reports: ReportsView(pushedFromHome: true, homePath: $navigationPath)
             case .transferFiles: TransferFilesView()
+            case .commandDeductions:
+                if let current { CommandDeductionReportView(month: current) }
             case .salaryTrust: SalaryTrustView(initialStatus: .all)
             case .fundingExpenses: FundingExpensesView(month: current?.name ?? "", revision: statsKey)
             case .employeeDeductions: EmployeeDeductionsView()
@@ -351,6 +354,7 @@ struct HomeDashboard: View {
                     let group = report.group(month: month?.name ?? "", summary: summary)
                     Button {
                         switch report {
+                        case .commandDeductions: open(.commandDeductions)
                         case .salaryTrust: open(.salaryTrust)
                         case .fundingExpenses: open(.fundingExpenses)
                         case .employeeDeductions: open(.employeeDeductions)
@@ -369,7 +373,7 @@ struct HomeDashboard: View {
                         }
                     } label: { shortcutLabel(report.title, icon: report.icon) }
                     .accessibilityIdentifier(report == .reports ? "homeReportsEntry" : "pinned-" + report.rawValue)
-                    .disabled((month == nil && ![WorkReport.salaryTrust, .reports, .refunds].contains(report)) || WorkReport.statements.contains(report) && report != .entities && group == nil)
+                    .disabled((month == nil && ![WorkReport.salaryTrust, .reports, .refunds].contains(report)) || [WorkReport.food, .fund, .health].contains(report) && group == nil)
                 }
                 ForEach(PinnedEntities.read(pinnedData), id: \.self) { title in
                     Button {

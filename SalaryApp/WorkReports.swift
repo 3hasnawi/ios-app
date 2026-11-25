@@ -12,6 +12,7 @@ extension WorkReport {
         case .employeeDeductions: tr("كشف استقطاعات موظف", "Employee deduction statement")
         case .payrollItems: tr("بنود الرواتب", "Payroll items")
         case .refunds: tr("إعادة المبالغ", "Employee refunds")
+        case .commandDeductions: tr("كشف استقطاعات القيادة", "Command deductions statement")
         case .entities: tr("جهات التنفيذ", "Execution entities")
         case .food: tr("شركة عراق الجوال", "Iraq Mobile")
         case .fund: tr("صندوق الشهداء", "Martyrs fund")
@@ -29,6 +30,7 @@ extension WorkReport {
         case .employeeDeductions: "person.text.rectangle"
         case .payrollItems: "list.bullet.rectangle"
         case .refunds: "arrow.uturn.backward.circle"
+        case .commandDeductions: "tablecells"
         case .entities: "building.columns"
         case .food: "iphone"
         case .fund: "star"
