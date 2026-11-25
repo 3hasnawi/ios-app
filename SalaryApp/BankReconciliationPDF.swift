@@ -239,11 +239,6 @@ nonisolated enum BankReconciliationPDF {
                         UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: ReportTableStyle.borderWidth)
                         PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
                     }
-                    let counterRect = CGRect(x: page.midX - 56, y: footerTop, width: 112, height: 16)
-                    let departmentLeft = counterRect.maxX + 8
-                    let departmentRect = CGRect(x: departmentLeft, y: footerTop, width: page.maxX - margin - departmentLeft, height: counterRect.height)
-                    PDFText.draw("صفحة \(pageIndex + 1) من \(pages.count)", in: counterRect, font: footerFont, color: .darkGray, align: .center)
-                    PDFText.draw("قيادة شرطة محافظة الانبار / قسم الحسابات", in: departmentRect, font: footerFont, color: .darkGray, align: .right)
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
@@ -286,6 +281,11 @@ nonisolated enum BankReconciliationPDF {
                             }
                         }
                     }
+                    let counterRect = CGRect(x: page.midX - 56, y: footerTop, width: 112, height: 16)
+                    let departmentLeft = counterRect.maxX + 8
+                    let departmentRect = CGRect(x: departmentLeft, y: footerTop, width: page.maxX - margin - departmentLeft, height: counterRect.height)
+                    PDFText.draw("صفحة \(pageIndex + 1) من \(pages.count)", in: counterRect, font: footerFont, color: .darkGray, align: .center)
+                    PDFText.draw("قيادة شرطة محافظة الانبار / قسم الحسابات", in: departmentRect, font: footerFont, color: .darkGray, align: .right)
                 }
             }
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: destination.path)
