@@ -92,7 +92,7 @@ nonisolated enum BankReconciliationPDF {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
             // الأحجام (طلب المالك 2026-11-02، مطابق لويندوز ReconciliationPdf.Statement): Arial لكل الكشف؛ الترويسة 11 والعنوان 14،
-            // رؤوس الأعمدة والمبالغ والمجموع عريض 11، البيان 10.5 ينزل إلى سطر آخر، الصف لا يقل عن 24 مع تظليل متناوب، والتواقيع عريض 16.
+            // رؤوس الأعمدة والمبالغ والمجموع عريض 11، البيان عريض 10.5 ينزل إلى سطر آخر، الصف لا يقل عن 24 مع تظليل متناوب، والتواقيع عريض 16.
             let bold = ReportFont.bold(11)
             let signatureFont = ReportFont.bold(16)
             let headingFont = ReportFont.bold(14)
@@ -100,8 +100,8 @@ nonisolated enum BankReconciliationPDF {
             let labelFont = ReportFont.bold(10.5)
             let valueFont = ReportFont.regular(10.5)
             let periodFont = ReportFont.bold(11)
-            let font = ReportFont.regular(10.5)
-            let amountFont = ReportFont.bold(11)
+            let cellFonts = [valueFont, labelFont, bold, bold, bold]
+            let footerFont = ReportFont.regular(9)
             let shade = UIColor(red: 0xF3 / 255, green: 0xF7 / 255, blue: 0xFB / 255, alpha: 1)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
@@ -157,7 +157,9 @@ nonisolated enum BankReconciliationPDF {
             }
             let signatureHeight = signatureHeights.map { $0.reduce(0, +) }.max() ?? 0
             guard signatureHeight <= 170 else { throw Failure.tooLong }
-            let signatureTop = 812 - signatureHeight
+            let footerTop: CGFloat = 800
+            let bodyBottom = footerTop - 8
+            let signatureTop = bodyBottom - signatureHeight
             let tableBottom = signatureTop - 16
             guard rowTop + totalHeight < tableBottom else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
@@ -174,10 +176,10 @@ nonisolated enum BankReconciliationPDF {
             // البيان ينزل إلى سطر آخر بدل تصغير الخط، والكشف يمتد على صفحات.
             var rows: [(values: [String], height: CGFloat)] = []
             for values in valuesByRow {
-                let description = lines(values[1], font: font, width: widths[1] - 8)
-                guard description != Int.max, description <= 5, lines(values[0], font: font, width: widths[0] - 8) == 1,
-                      (2...4).allSatisfy({ lines(values[$0], font: amountFont, width: widths[$0] - 8) == 1 }) else { throw Failure.tooLong }
-                let height = max(24, ceil(CGFloat(description) * font.lineHeight + 6))
+                let description = lines(values[1], font: cellFonts[1], width: widths[1] - 8)
+                guard description != Int.max, description <= 5, lines(values[0], font: cellFonts[0], width: widths[0] - 8) == 1,
+                      (2...4).allSatisfy({ lines(values[$0], font: cellFonts[$0], width: widths[$0] - 8) == 1 }) else { throw Failure.tooLong }
+                let height = max(24, ceil(CGFloat(description) * cellFonts[1].lineHeight + 6))
                 guard height <= tableBottom - rowTop - totalHeight else { throw Failure.tooLong }
                 rows.append((values, height))
             }
@@ -193,7 +195,7 @@ nonisolated enum BankReconciliationPDF {
                 var end = start
                 var y = (pages.isEmpty ? firstTableTop : continuationTableTop) + headerHeight
                 while end < rows.count {
-                    let limit = end == rows.count - 1 ? tableBottom - totalHeight : 812
+                    let limit = end == rows.count - 1 ? tableBottom - totalHeight : bodyBottom
                     guard y + rows[end].height <= limit else { break }
                     y += rows[end].height
                     end += 1
@@ -236,11 +238,12 @@ nonisolated enum BankReconciliationPDF {
                         shade.setFill(); cg.fill(periodBar)
                         UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: ReportTableStyle.borderWidth)
                         PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
-                    } else {
-                        let counter = ReportSheet.easternDigits("الصفحة \(pageIndex + 1) من \(pages.count)")
-                        PDFText.draw(counter, in: CGRect(x: margin, y: 24, width: 130, height: 16),
-                                     font: ReportFont.regular(9), color: .darkGray, align: .left)
                     }
+                    let counterRect = CGRect(x: page.midX - 56, y: footerTop, width: 112, height: 16)
+                    let departmentLeft = counterRect.maxX + 8
+                    let departmentRect = CGRect(x: departmentLeft, y: footerTop, width: page.maxX - margin - departmentLeft, height: counterRect.height)
+                    PDFText.draw("صفحة \(pageIndex + 1) من \(pages.count)", in: counterRect, font: footerFont, color: .darkGray, align: .center)
+                    PDFText.draw("قيادة شرطة محافظة الانبار / قسم الحسابات", in: departmentRect, font: footerFont, color: .darkGray, align: .right)
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
@@ -258,7 +261,7 @@ nonisolated enum BankReconciliationPDF {
                         for i in values.indices {
                             let cell = CGRect(x: rects[i].minX, y: y, width: widths[i], height: height)
                             UIColor.darkGray.setStroke(); cg.stroke(cell, width: ReportTableStyle.borderWidth)
-                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: (2...4).contains(i) ? amountFont : font, align: i == 1 ? .right : .center, wrap: true)
+                            PDFText.draw(values[i], in: cell.insetBy(dx: 4, dy: 2), font: cellFonts[i], align: i == 1 ? .right : .center, wrap: true)
                             if values[i] != "—" && !values[i].isEmpty { placements.append((pageIndex, cell, values[i], i, index + 1)) }
                         }
                         y += height

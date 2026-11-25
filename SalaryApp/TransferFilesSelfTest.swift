@@ -192,11 +192,17 @@ import CoreText
         let longStatementPDF = try await BankReconciliationPDF.make(longStatement)
         defer { try? FileManager.default.removeItem(at: longStatementPDF) }
         guard let longPDF = PDFDocument(url: longStatementPDF), longPDF.pageCount > 1 else { throw Failure(errorDescription: "missing continuation pages") }
-        for index in 1..<longPDF.pageCount {
+        for index in 0..<longPDF.pageCount {
             guard let follow = longPDF.page(at: index) else { throw Failure(errorDescription: "missing statement page") }
+            let footer = follow.selection(for: CGRect(x: 240, y: 24, width: 115, height: 20))?.string ?? ""
+            let numbers = footer.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            try check(numbers.sorted() == [String(index + 1), String(longPDF.pageCount)].sorted(), "page counter and total at bottom center")
+            let department = follow.selection(for: CGRect(x: 360, y: 24, width: 205, height: 20))?.string ?? ""
+            let words = ArabicText.normalize(department.precomposedStringWithCompatibilityMapping)
+            try check(["قيادة", "شرطة", "محافظة", "الانبار", "/", "قسم", "الحسابات"].allSatisfy { words.contains(ArabicText.normalize($0)) }, "department in the right footer of every page")
+            guard index > 0 else { continue }
             let topLeft = follow.selection(for: CGRect(x: 30, y: 842 - 41, width: 135, height: 20))?.string ?? ""
-            let numbers = ArabicText.latinDigits(topLeft).components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
-            try check(numbers.sorted() == [String(index + 1), String(longPDF.pageCount)].sorted(), "continuation page counter and total at top left")
+            try check(topLeft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "old continuation counter removed")
             let topRight = follow.selection(for: CGRect(x: 380, y: 842 - 42, width: 182, height: 21))?.string ?? ""
             try check(topRight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "no organization letterhead on continuation")
         }
