@@ -21,10 +21,10 @@ public partial class MainWindow : Window
     private List<MonthInfo> months=[];
     private List<string> agencies=[];
     private MonthInfo? SelectedMonth=>Period.SelectedItem as MonthInfo;
-    private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),("التحويلات","\uE8AB"),("كشف البنك","\uE8C7"),("الإعدادات","\uE713")];
+    private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),("التحويلات","\uE8AB"),("كشف البنك","\uE825"),("الإعدادات","\uE713")];
     private static readonly (string Name,string Desc,string Icon)[] Cards=[
-        ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uE8EC"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
-        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE8C7"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7")];
+        ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uEC06"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
+        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7")];
     private List<string> pins=Cards.Take(4).Select(x=>x.Name).ToList();
     private readonly DispatcherTimer debounce=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private int generation,offset;private const int PageSize=150;
@@ -90,7 +90,7 @@ public partial class MainWindow : Window
         hero.Children.Add(intro);hero.Children.Add(value);var banner=Box(hero,"#1E5646");banner.Padding=new Thickness(25,24,25,24);panel.Children.Add(banner);
         if(store.Active==null)panel.Children.Add(ButtonFor("اختيار نسخة الرواتب.zip",()=>_=Import(),"\uE8E5",true));
         var pair=new Grid();pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
-        var reviews=Column(Bar(Glyph("\uEA39","#8E6126"),Text("حالات المراجعة",19,true)));
+        var reviews=Column(Bar(Glyph("\uEA8F","#8E6126"),Text("حالات المراجعة",19,true)));
         var alerts=SelectedMonth is {} selected?store.Reviews(selected):[];
         if(alerts.Count==0)reviews.Children.Add(Text(SelectedMonth==null?"تظهر حالات المراجعة بعد استعادة البيانات.":!SelectedMonth.Verified||!months.Any(m=>m.Key<SelectedMonth.Key&&m.Verified)?"المقارنة تتطلب شهرين متحققين من الاستقطاعات.":"لا توجد جهات جديدة أو غائبة في المقارنة.",14));
         foreach(var r in alerts){var button=ButtonFor(r.Title+" · "+r.Agency,()=>{backPage="الرئيسية";ShowPage("جهات التنفيذ",r);});
@@ -107,7 +107,14 @@ public partial class MainWindow : Window
             var symbol=new Border{Width=32,Height=32,CornerRadius=new CornerRadius(8),Background=BrushOf(accent.Item1),Child=glyph};
             var row=new Grid();row.ColumnDefinitions.Add(new());row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});symbol.HorizontalAlignment=HorizontalAlignment.Right;row.Children.Add(symbol);
             var arrow=Glyph("\uE76B","#779385");arrow.FontSize=12;Grid.SetColumn(arrow,1);row.Children.Add(arrow);
-            var name=Text(c.Name,15,true);name.Margin=new Thickness(0,8,0,0);button.Content=Column(row,name,caption);tiles.Children.Add(button);}
+            var name=Text(c.Name,15,true);name.Margin=new Thickness(0,8,0,0);button.Content=Column(row,name,caption);
+            var shift=new TranslateTransform();button.RenderTransform=shift;
+            void Lift(double y){
+                if(!SystemParameters.ClientAreaAnimation||SystemParameters.HighContrast){shift.BeginAnimation(TranslateTransform.YProperty,null);shift.Y=0;return;}
+                shift.BeginAnimation(TranslateTransform.YProperty,new DoubleAnimation(y,TimeSpan.FromMilliseconds(110)){EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});
+            }
+            button.MouseEnter+=(_,_)=>Lift(-2);button.MouseLeave+=(_,_)=>Lift(0);
+            tiles.Children.Add(button);}
         left.Children.Add(tiles);var leftBox=Box(left);Grid.SetColumn(leftBox,1);pair.Children.Add(Box(reviews));pair.Children.Add(leftBox);panel.Children.Add(pair);
         var recent=Column(Text("الأشهر المحفوظة",18,true));
         foreach(var m in months.Take(4)){var line=Bar(ButtonFor(m.Name,()=>{initializing=true;Period.SelectedItem=m;initializing=false;Activate("جهات التنفيذ");},"\uE787"),
@@ -186,7 +193,7 @@ public partial class MainWindow : Window
         grid.RowHeight=double.NaN;grid.MinRowHeight=35;
         grid.MouseDoubleClick+=(_,_)=>OpenEmployee();
         grid.SelectionChanged+=(_,_)=>{if(employee!=null)employee.IsEnabled=gridView.SelectedItem is Deduction;};
-        export=ButtonFor("معاينة كشف الجهات",()=>_=EntityReport(),"\uE8A1",true);export.IsEnabled=false;
+        export=ButtonFor("معاينة كشف الجهات",()=>_=EntityReport(),"\uE890",true);export.IsEnabled=false;
         employee=ButtonFor("كشف المنتسب",OpenEmployee,"\uE77B");employee.IsEnabled=false;
         previous=ButtonFor("السابق",()=>{offset=Math.Max(0,offset-PageSize);_=LoadGrid();});previous.IsEnabled=false;
         next=ButtonFor("التالي",()=>{offset+=PageSize;_=LoadGrid();});next.IsEnabled=false;
@@ -236,7 +243,7 @@ public partial class MainWindow : Window
         var start=new ComboBox{ItemsSource=periods,SelectedIndex=0};var end=new ComboBox{ItemsSource=periods,SelectedIndex=periods.Count-1};
         var dialog=new Window{Owner=this,Title="كشف استقطاعات منتسب",SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         dialog.Content=Box(Column(Text(row.Name,20,true),Labeled("جهة الاستقطاع",agenciesBox,335),Labeled("رقم وتاريخ الإضبارة",refs,335),
-            Bar(Labeled("من شهر",start),Labeled("إلى شهر",end)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE8A1",true)));
+            Bar(Labeled("من شهر",start),Labeled("إلى شهر",end)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true)));
         if(dialog.ShowDialog()!=true)return;
         Guard(()=>{var report=Statement.Employee(choices,months,row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
             ((MonthInfo)start.SelectedItem).Key,((MonthInfo)end.SelectedItem).Key,ReportHeader());new ReportWindow(report){Owner=this}.ShowDialog();});
