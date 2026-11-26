@@ -67,7 +67,7 @@ public sealed partial class Store(string root)
         db.CreateFunction<string,string>("agency_category",Arabic.Category,isDeterministic:true);
         return db;
     }
-    private SqliteConnection Open()=>Connect(Active??throw new InvalidOperationException("اختر نسخة الآيفون أولاً."));
+    private SqliteConnection Open()=>Connect(Active??throw new InvalidOperationException("استورد نسخة احتياطية أو ملف بيانات أولاً."));
     internal static void Exec(SqliteConnection db,string sql){using var cmd=db.CreateCommand();cmd.CommandText=sql;cmd.ExecuteNonQuery();}
     public bool HasPayroll(string month){
         using var db=Open();using var query=db.CreateCommand();query.CommandText="SELECT EXISTS(SELECT 1 FROM payidentity WHERE period=$key)";query.Parameters.AddWithValue("$key",Arabic.Period(month));return Convert.ToInt32(query.ExecuteScalar())!=0;

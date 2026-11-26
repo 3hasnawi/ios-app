@@ -155,7 +155,7 @@ public partial class MainWindow : Window
         var panel=new StackPanel();
         var selectedPeriod=SelectedMonth;
         var hero=new Grid();hero.ColumnDefinitions.Add(new());hero.ColumnDefinitions.Add(new());
-        var intro=Column(Text("الاستقطاعات الشهرية",26,true),Text(selectedPeriod?.Name??"استعادة أول نسخة من الآيفون",16));
+        var intro=Column(Text("الاستقطاعات الشهرية",26,true),Text(selectedPeriod?.Name??"استيراد أول نسخة احتياطية",16));
         var balance=Text("—",30,true);var totalCaption=Text("إجمالي المبالغ المسجلة · دينار عراقي",13);
         var value=Column(balance,totalCaption);value.HorizontalAlignment=HorizontalAlignment.Left;Grid.SetColumn(value,1);
         foreach(var t in intro.Children.OfType<TextBlock>().Concat(value.Children.OfType<TextBlock>()))t.Foreground=Brushes.White;
@@ -246,7 +246,7 @@ public partial class MainWindow : Window
             var original=new Border{Height=7,Background=BrushOf("#33785C")};var index=new Border{Height=7,Background=BrushOf("#7494AD")};Grid.SetColumn(index,1);sizes.Children.Add(original);sizes.Children.Add(index);
             sizes.Margin=new Thickness(0,10,0,8);
             storage.Children.Add(sizes);
-            storage.Children.Add(Bar(Glyph("\uE8B7","#33785C"),Text("أرشيف الآيفون　"+Size(archive),14)));
+            storage.Children.Add(Bar(Glyph("\uE8B7","#33785C"),Text("ملف النسخة الاحتياطية　"+Size(archive),14)));
             storage.Children.Add(Bar(Glyph("\uE721","#486D8A"),Text("فهرس البحث المحلي　"+Size(lookup),14)));
             storage.Children.Add(Text("يُنقل الأرشيف عند الحفظ. يُنشأ فهرس البحث محلياً عند فتح النسخة.",14));
         }else{
