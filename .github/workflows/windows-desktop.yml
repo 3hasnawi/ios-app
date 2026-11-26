@@ -74,7 +74,10 @@ jobs:
           $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
           if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
           if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\screens\capture-error.txt" -ErrorAction SilentlyContinue; throw "Desktop exited with $($p.ExitCode)" }
-          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 21) { throw "Incomplete captures" }
+          $requiredScreens = 'home','deductions','employee-search','transfers','bank','settings','transfer-files','funding','audit','search','refunds','trusts','deferred-transfers','health','fund','anbar-letters','bank-month','account-directory','deductions-compact','employee-profile','letter-editor','window-frame'
+          foreach ($screen in $requiredScreens) {
+            if (!(Test-Path "$env:RUNNER_TEMP\screens\$screen.png")) { throw "Missing screen: $screen" }
+          }
       - name: Inspect printed tables and page bounds
         run: |
           python -m pip install pymupdf==1.26.6

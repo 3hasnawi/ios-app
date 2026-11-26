@@ -468,7 +468,7 @@ public partial class MainWindow : Window
                             ??throw new InvalidDataException("تعذّر فتح أوامر الصف بنقرة يسرى.");
                         try{
                             var commands=menu.Items.OfType<MenuItem>().ToDictionary(i=>i.Header.ToString()!);
-                            if(books.SelectedItem!=item || !commands.ContainsKey("تعديل الكتاب") ||
+                            if(!ReferenceEquals(books.SelectedItem,item) || !commands.ContainsKey("تعديل الكتاب") ||
                                 commands["معاينة الكتاب"].IsEnabled==item.Book!.NeedsLink ||
                                 commands["تصدير الكتاب"].IsEnabled==item.Book.NeedsLink ||
                                 commands.ContainsKey("ربط جهة بالكتاب")!=linkable)
@@ -501,7 +501,8 @@ public partial class MainWindow : Window
             }
             if(name=="الرئيسية"){
                 await homeLoad;
-                Button ReviewCard()=>Controls<Button>(CanvasArea).Single(b=>AutomationProperties.GetAutomationId(b)=="HomeReviewCard");
+                Button ReviewCard()=>Controls<Button>(CanvasArea).SingleOrDefault(b=>AutomationProperties.GetAutomationId(b)=="HomeReviewCard")
+                    ??throw new InvalidDataException($"لم تظهر بطاقة المراجعة في {SelectedMonth?.Name}. {Status.Text} {string.Join(" | ",Controls<TextBlock>(CanvasArea).Select(t=>t.Text))}");
                 string first=AutomationProperties.GetName(ReviewCard());
                 if(Controls<Button>(CanvasArea).Any(b=>AutomationProperties.GetName(b)=="التالي")){
                     Click(CanvasArea,"التالي");
