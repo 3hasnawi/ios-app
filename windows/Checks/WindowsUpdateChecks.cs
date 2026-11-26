@@ -11,7 +11,7 @@ internal static class WindowsUpdateChecks
     public static async Task Run(string dir,Action<bool,string> check){
         byte[] original="synthetic installer"u8.ToArray();
         byte[] responseBytes=original;
-        string tag="windows-v0.10.0",baseUrl="https://github.com/3hasnawi/ios-app/releases/download/";
+        string tag="windows-v1.0.0",baseUrl="https://github.com/3hasnawi/ios-app/releases/download/";
         string digest="sha256:"+Convert.ToHexString(SHA256.HashData(original));
         string assetUrl=baseUrl+tag+"/"+WindowsRelease.FileName;
         HttpResponseMessage Json(object value)=>new(HttpStatusCode.OK){Content=new StringContent(JsonSerializer.Serialize(value))};
@@ -19,17 +19,18 @@ internal static class WindowsUpdateChecks
         using var client=new HttpClient(new Handler(request=>{
             var path=request.RequestUri!.AbsolutePath;
             if(fail)return new(HttpStatusCode.ServiceUnavailable);
-            if(path.Contains("matching-refs"))return Json(new[]{"build-140","windows-v0.10.0","windows-v0.9.0","windows-v0.12.0-beta","windows-v0.11.0","windows-v3.0.0"}.Select(t=>new{ @ref="refs/tags/"+t}));
+            if(path.Contains("matching-refs"))return Json(new[]{"build-140",tag,"windows-v0.9.0","windows-v0.12.0-beta","windows-v1.1.0","windows-v3.0.0"}.Select(t=>new{ @ref="refs/tags/"+t}));
             if(path.EndsWith("windows-v3.0.0"))return new(HttpStatusCode.NotFound);
-            if(path.EndsWith("windows-v0.11.0"))return Json(new{tag_name="windows-v0.11.0",draft=false,prerelease=true});
+            if(path.EndsWith("windows-v1.1.0"))return Json(new{tag_name="windows-v1.1.0",draft=false,prerelease=true});
             if(path.EndsWith(tag))return Json(new{tag_name=tag,draft=false,prerelease=false,body="تعديل تجريبي",assets=new[]{new{name=WindowsRelease.FileName,state="uploaded",digest,size=original.Length,browser_download_url=assetUrl}}});
             if(request.RequestUri.AbsoluteUri==baseUrl+tag+"/"+WindowsRelease.FileName)return new(HttpStatusCode.OK){Content=new ByteArrayContent(responseBytes)};
             throw new Exception("Unexpected update request "+path);
         }));
         var api=new WindowsUpdates(client);
-        var update=await api.LatestAfter(new(0,9,0),default);
-        check(update?.Version==new Version(0,10,0)&&update.Notes=="تعديل تجريبي","newest published Windows release by numeric version; beta, tags without releases and iPhone tags ignored");
-        check(await api.LatestAfter(new(0,10,0),default)==null,"no update for the installed version");
+        var update=await api.LatestAfter(new(0,3,4),default);
+        check(WindowsRelease.DisplayVersion(new(1,0,0))=="1.0" && WindowsRelease.DisplayVersion(new(1,1,0))=="1.1" && WindowsRelease.DisplayVersion(new(0,3,4))=="0.3.4","new Windows numbering and legacy versions display correctly");
+        check(update?.Version==new Version(1,0,0)&&update.Notes=="تعديل تجريبي","newest published Windows release by numeric version; beta, tags without releases and iPhone tags ignored");
+        check(await api.LatestAfter(new(1,0,0),default)==null,"no update for the installed version");
         var folder=Path.Combine(dir,"updates");
         string saved=await api.Download(update!,folder,null,default);
         check(File.ReadAllBytes(saved).SequenceEqual(original),"verified installer downloads from the release asset");

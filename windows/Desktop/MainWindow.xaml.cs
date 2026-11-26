@@ -243,7 +243,7 @@ public partial class MainWindow : Window
             p.Children.Add(Box(Column(heading,sizes,legend,Text("عند الحفظ ينتقل أرشيف الآيفون وحده. يُعاد إنشاء فهرس البحث على الحاسبة عند فتح النسخة.",14))));
         }
         p.Children.Add(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"));
-        p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+InstalledVersion,14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
+        p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
         CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
     }
     void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;var temp=d.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.Copy(store.Archive,temp);File.Move(temp,d.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}Status.Text="حُفظ الأرشيف الأصلي كاملاً.";});

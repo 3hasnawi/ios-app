@@ -7,6 +7,9 @@ namespace AnbarPayroll;
 public sealed record WindowsRelease(Version Version,string Notes,long Bytes,string Sha256)
 {
     public const string FileName="AnbarPayroll-Setup.exe";
+    public static string DisplayVersion(Version version) =>
+        version.Major >= 1 && version.Build <= 0 ? version.ToString(2) : version.ToString();
+
     public Uri Installer=>new($"https://github.com/3hasnawi/ios-app/releases/download/windows-v{Version}/{FileName}");
 }
 

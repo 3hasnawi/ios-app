@@ -36,9 +36,9 @@ public partial class MainWindow
             var result=await check;
             if(updateLifetime.IsCancellationRequested)return;
             newerRelease=result;UpdateNotice.Visibility=result==null?Visibility.Collapsed:Visibility.Visible;
-            if(result!=null)UpdateNotice.Content=$"تحديث ويندوز {result.Version} متاح　·　عرض التغييرات والتثبيت";
+            if(result!=null)UpdateNotice.Content=$"تحديث ويندوز {WindowsRelease.DisplayVersion(result.Version)} متاح　·　عرض التغييرات والتثبيت";
             if(manual){
-                Status.Text=result==null?$"تستخدم أحدث إصدار ويندوز منشور ({InstalledVersion}).":"يتوفر تحديث لويندوز.";
+                Status.Text=result==null?$"تستخدم أحدث إصدار ويندوز منشور ({WindowsRelease.DisplayVersion(InstalledVersion)}).":"يتوفر تحديث لويندوز.";
                 if(result!=null)ShowUpdate(result);
             }
         }catch(Exception ex){
@@ -55,7 +55,7 @@ public partial class MainWindow
         var progress=new ProgressBar{Minimum=0,Maximum=100,Height=8,Visibility=Visibility.Collapsed,Margin=new Thickness(2,8,2,8)};
         var install=ButtonFor("تنزيل وتثبيت",()=>{},"\uE896",true);var back=ButtonFor("لاحقاً",dialog.Close);
         var dock=new DockPanel{Margin=new Thickness(14)};
-        var header=Text("إصدار ويندوز "+release.Version+"　·　"+(release.Bytes/1048576d).ToString("N1")+" ميغابايت",18,true);
+        var header=Text("إصدار ويندوز "+WindowsRelease.DisplayVersion(release.Version)+"　·　"+(release.Bytes/1048576d).ToString("N1")+" ميغابايت",18,true);
         DockPanel.SetDock(header,Dock.Top);dock.Children.Add(header);
         var actions=Column(status,progress,Bar(install,back));DockPanel.SetDock(actions,Dock.Bottom);dock.Children.Add(actions);
         dock.Children.Add(new ScrollViewer{Content=notes,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Margin=new Thickness(2,12,2,12)});dialog.Content=dock;

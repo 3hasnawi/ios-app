@@ -146,7 +146,10 @@ jobs:
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           printf '%s\n' "${RELEASE_NOTES:-تحديث برنامج الحسابات لويندوز.}" > "$RUNNER_TEMP/release-notes.txt"
-          gh release create "windows-v$RELEASE_VERSION" installer/AnbarPayroll-Setup.exe \
+          # Installed 0.x clients discover three-component tags.
+          tag_version="$RELEASE_VERSION"
+          if [[ "$tag_version" =~ ^[0-9]+\.[0-9]+$ ]]; then tag_version="$tag_version.0"; fi
+          gh release create "windows-v$tag_version" installer/AnbarPayroll-Setup.exe \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
             --title "برنامج الحسابات لويندوز $RELEASE_VERSION" \
             --notes-file "$RUNNER_TEMP/release-notes.txt"
