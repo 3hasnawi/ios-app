@@ -68,11 +68,12 @@ jobs:
           }
       - name: Exercise installed application and capture screens
         run: |
-          $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
-          if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
-          if ($p.ExitCode -ne 0) { throw "Desktop exited with $($p.ExitCode)" }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\screens" | Out-Null
           powershell.exe -NoProfile -File ./windows/Checks/window-frame.ps1 -Executable "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -Image "$env:RUNNER_TEMP\screens\window-frame.png"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
+          if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\screens\capture-error.txt" -ErrorAction SilentlyContinue; throw "Desktop exited with $($p.ExitCode)" }
           if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 19) { throw "Incomplete captures" }
       - name: Inspect printed tables and page bounds
         run: |

@@ -14,7 +14,7 @@ public partial class App : Application
         string root=capture?e.Args[1]:Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AnbarPayroll");
         if(!capture){mutex=new Mutex(true,@"Local\AnbarPayroll.Desktop",out var created);if(!created){MessageBox.Show("برنامج الحسابات مفتوح بالفعل.");Shutdown();return;}}
         var window=new MainWindow(new Store(root));MainWindow=window;
-        if(capture)window.Loaded+=async (_,_)=>{try{await window.Capture(e.Args[2]);Shutdown(0);}catch(Exception ex){Console.Error.WriteLine(ex);Shutdown(1);}};
+        if(capture)window.Loaded+=async (_,_)=>{try{await window.Capture(e.Args[2]);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(e.Args[2],"capture-error.txt"),ex.ToString());Shutdown(1);}};
         window.Show();
         if(!capture)window.StartUpdateChecks();
     }

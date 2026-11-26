@@ -133,9 +133,9 @@ internal sealed class LetterPreview:Window
                 web.WebResourceRequested+=(_,e)=>e.Response=env.CreateWebResourceResponse(new MemoryStream(pdf,false),200,"OK","Content-Type: application/pdf\r\nCache-Control: no-store");
                 web.NavigationStarting+=(_,e)=>e.Cancel=e.Uri!=url;
                 web.NewWindowRequested+=(_,e)=>e.Handled=true;
-                web.NavigationCompleted+=(_,e)=>loaded.TrySetResult(e.IsSuccess);
+                web.NavigationCompleted+=(_,e)=>{if(e.IsSuccess)loaded.TrySetResult(true);else loaded.TrySetException(new IOException("تعذّرت معاينة الكتاب: "+e.WebErrorStatus));};
                 web.Navigate(url);
-            }catch(Exception e){loaded.TrySetResult(false);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
+            }catch(Exception e){loaded.TrySetException(e);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
         };
     }
 }
