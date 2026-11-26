@@ -45,10 +45,10 @@ public partial class MainWindow : Window
     void Reload(){initializing=true;months=store.Months();agencies=store.Agencies();Period.ItemsSource=months;Period.SelectedIndex=months.Count>0?0:-1;initializing=false;}
     static Brush BrushOf(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c));
     static TextBlock Text(string s,double size=15,bool bold=false)=>new(){Text=s,FontSize=size,FontWeight=bold?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
-    static TextBlock Icon(string s,string color="#29644E")=>new(){Text=s,FontFamily=new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),FontSize=20,Foreground=BrushOf(color),VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5,0,6,0)};
+    static TextBlock Glyph(string s,string color="#29644E")=>new(){Text=s,FontFamily=new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),FontSize=20,Foreground=BrushOf(color),VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5,0,6,0)};
     static Button ButtonFor(string title,Action click,string glyph="",bool primary=false)
     {
-        var label=new StackPanel{Orientation=Orientation.Horizontal};if(glyph!="")label.Children.Add(Icon(glyph,primary?"#FFFFFF":"#38735A"));label.Children.Add(Text(title,14,true));
+        var label=new StackPanel{Orientation=Orientation.Horizontal};if(glyph!="")label.Children.Add(Glyph(glyph,primary?"#FFFFFF":"#38735A"));label.Children.Add(Text(title,14,true));
         var b=new Button{Content=label,Margin=new Thickness(3),HorizontalContentAlignment=HorizontalAlignment.Center};if(primary){b.Background=BrushOf("#1B5945");b.Foreground=Brushes.White;}
         AutomationProperties.SetName(b,title);b.Click+=(_,_)=>click();return b;
     }
@@ -71,7 +71,7 @@ public partial class MainWindow : Window
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
         if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else DeductionGrid(name=="بحث الاستقطاعات",review);
-        if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop});}
+        if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void Activate(string name)
     {
@@ -84,21 +84,30 @@ public partial class MainWindow : Window
         var selectedPeriod=SelectedMonth;
         var hero=new Grid();hero.ColumnDefinitions.Add(new());hero.ColumnDefinitions.Add(new());
         var intro=Column(Text("الاستقطاعات الشهرية",26,true),Text(selectedPeriod?.Name??"استعادة أول نسخة من الآيفون",16));
-        var balance=Text("—",30,true);var caption=Text("إجمالي المبالغ المسجلة · دينار عراقي",13);
-        var value=Column(balance,caption);value.HorizontalAlignment=HorizontalAlignment.Left;Grid.SetColumn(value,1);
+        var balance=Text("—",30,true);var totalCaption=Text("إجمالي المبالغ المسجلة · دينار عراقي",13);
+        var value=Column(balance,totalCaption);value.HorizontalAlignment=HorizontalAlignment.Left;Grid.SetColumn(value,1);
         foreach(var t in intro.Children.OfType<TextBlock>().Concat(value.Children.OfType<TextBlock>()))t.Foreground=Brushes.White;
         hero.Children.Add(intro);hero.Children.Add(value);var banner=Box(hero,"#1E5646");banner.Padding=new Thickness(25,24,25,24);panel.Children.Add(banner);
         if(store.Active==null)panel.Children.Add(ButtonFor("اختيار نسخة الرواتب.zip",()=>_=Import(),"\uE8E5",true));
         var pair=new Grid();pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
-        var reviews=Column(Text("حالات المراجعة",19,true));
+        var reviews=Column(Bar(Glyph("\uEA39","#8E6126"),Text("حالات المراجعة",19,true)));
         var alerts=SelectedMonth is {} selected?store.Reviews(selected):[];
         if(alerts.Count==0)reviews.Children.Add(Text(SelectedMonth==null?"تظهر حالات المراجعة بعد استعادة البيانات.":!SelectedMonth.Verified||!months.Any(m=>m.Key<SelectedMonth.Key&&m.Verified)?"المقارنة تتطلب شهرين متحققين من الاستقطاعات.":"لا توجد جهات جديدة أو غائبة في المقارنة.",14));
-        foreach(var r in alerts){var title=r.Title+" · "+r.Agency;reviews.Children.Add(ButtonFor(title,()=>{backPage="الرئيسية";ShowPage("جهات التنفيذ",r);},"\uE7BA"));}
+        foreach(var r in alerts){var button=ButtonFor(r.Title+" · "+r.Agency,()=>{backPage="الرئيسية";ShowPage("جهات التنفيذ",r);});
+            var hint=Text(r.Title,12);hint.Foreground=BrushOf("#775125");hint.Margin=new Thickness(0,0,0,3);
+            button.Content=Bar(Glyph("\uE7BA","#94692D"),Column(hint,Text(r.Agency,15,true)));button.Background=BrushOf("#FCF8EF");
+            button.HorizontalContentAlignment=HorizontalAlignment.Right;button.Margin=new Thickness(0,8,0,0);reviews.Children.Add(button);}
         var left=Column(Bar(Text("كشوفي المثبتة",19,true),ButtonFor("تخصيص",EditPins,"\uE713")));
         var tiles=new System.Windows.Controls.Primitives.UniformGrid{Columns=2};foreach(var pin in pins){var c=Cards.First(x=>x.Name==pin);
-            var button=ButtonFor(c.Name,()=>Activate(c.Name));button.Background=BrushOf("#F0F5EF");button.HorizontalContentAlignment=HorizontalAlignment.Right;
-            var caption=Text(c.Desc,12);caption.Foreground=BrushOf("#516D5E");var glyph=Icon(c.Icon);glyph.Margin=new Thickness(0,1,0,6);
-            button.Content=Column(glyph,Text(c.Name,15,true),caption);tiles.Children.Add(button);}
+            var button=ButtonFor(c.Name,()=>Activate(c.Name));button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
+            button.Padding=new Thickness(13);button.MinHeight=100;button.Margin=new Thickness(4,7,4,0);
+            var accent=c.Name switch{"جهات التنفيذ"=>("#E6F1E9","#245C43"),"كشف استقطاعات منتسب"=>("#E7EDF5","#385E82"),"بحث الاستقطاعات"=>("#F2EDE1","#765E31"),_=>("#EEEBF5","#625178")};
+            var caption=Text(c.Desc,12);caption.Foreground=BrushOf("#50635B");caption.Margin=new Thickness(0,4,0,0);
+            var glyph=Glyph(c.Icon,accent.Item2);glyph.Margin=new Thickness(0);glyph.HorizontalAlignment=HorizontalAlignment.Center;
+            var symbol=new Border{Width=32,Height=32,CornerRadius=new CornerRadius(8),Background=BrushOf(accent.Item1),Child=glyph};
+            var row=new Grid();row.ColumnDefinitions.Add(new());row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});symbol.HorizontalAlignment=HorizontalAlignment.Right;row.Children.Add(symbol);
+            var arrow=Glyph("\uE76B","#779385");arrow.FontSize=12;Grid.SetColumn(arrow,1);row.Children.Add(arrow);
+            var name=Text(c.Name,15,true);name.Margin=new Thickness(0,8,0,0);button.Content=Column(row,name,caption);tiles.Children.Add(button);}
         left.Children.Add(tiles);var leftBox=Box(left);Grid.SetColumn(leftBox,1);pair.Children.Add(Box(reviews));pair.Children.Add(leftBox);panel.Children.Add(pair);
         var recent=Column(Text("الأشهر المحفوظة",18,true));
         foreach(var m in months.Take(4)){var line=Bar(ButtonFor(m.Name,()=>{initializing=true;Period.SelectedItem=m;initializing=false;Activate("جهات التنفيذ");},"\uE787"),

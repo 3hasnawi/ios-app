@@ -112,10 +112,18 @@ public sealed class Store(string root)
         var previous=Months().FirstOrDefault(m=>m.Key>0&&m.Key<month.Key);
         if(previous is null||!month.Verified||!previous.Verified)return [];
         using var db=Open();
-        HashSet<string> Set(string name){using var cmd=db.CreateCommand();cmd.CommandText="SELECT DISTINCT agency FROM deductions WHERE month=$m AND amount IS NOT NULL";cmd.Parameters.AddWithValue("$m",name);using var r=cmd.ExecuteReader();var s=new HashSet<string>();while(r.Read())s.Add(r.GetString(0));return s;}
+        Dictionary<string,string> Set(string name)
+        {
+            using var cmd=db.CreateCommand();
+            cmd.CommandText="SELECT DISTINCT agency FROM deductions WHERE month=$m AND amount IS NOT NULL AND CAST(amount AS REAL)>0 ORDER BY agency COLLATE ARABIC";
+            cmd.Parameters.AddWithValue("$m",name);
+            using var rows=cmd.ExecuteReader();var result=new Dictionary<string,string>();
+            while(rows.Read()){var title=rows.GetString(0);result.TryAdd(Arabic.Key(title),title);}
+            return result;
+        }
         var curr=Set(month.Name);var prev=Set(previous.Name);
-        return curr.Except(prev).Order().Select(e=>new Review("جهة ظهرت في الشهر المختار",e,month.Name))
-            .Concat(prev.Except(curr).Order().Select(e=>new Review("جهة غابت عن الشهر المختار",e,previous.Name))).ToList();
+        return curr.Keys.Except(prev.Keys).Select(e=>new Review("جهة ظهرت في الشهر المختار",curr[e],month.Name))
+            .Concat(prev.Keys.Except(curr.Keys).Select(e=>new Review("جهة غابت عن الشهر المختار",prev[e],previous.Name))).ToList();
     }
     public string Metadata(string key){if(Active==null)return "";using var db=Open();using var cmd=db.CreateCommand();cmd.CommandText="SELECT value FROM meta WHERE key=$k";cmd.Parameters.AddWithValue("$k",key);return cmd.ExecuteScalar() as string??"";}
 }
