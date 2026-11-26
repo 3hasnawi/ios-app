@@ -54,7 +54,7 @@ static class AccountingTests
                 excel.Worksheet(1).Cell("F4").GetString()==updated.LocalAccount,"XLSX preserves IBAN and leading zeros in local accounts");
         }
         var bank="مصرف الرشيد / فرع تجريبي";var other="مديرية تنفيذ تجريبية";
-        string[] names=["أول مثال","ثاني مثال","ثالث مثال"];string[] ranks=["عقود","عقد","شرطي"];
+        string[] names=["أول مثال","ثاني مثال","ثالث مثال"];string[] ranks=["عقود","عقد","ر.ع"];
         string[] bankCodes=["RDBA","RDBA","RAFB"];string[] bics=["RDBAIQBA111","RDBAIQBA222","RAFBIQBA111"];
         string xlsx=Path.Combine(dir,"monthly.xlsx");
         using(var w=new XLWorkbook()){
@@ -106,7 +106,11 @@ static class AccountingTests
         using(var zip=ZipFile.OpenRead(s.Archive)){using var schemas=JsonDocument.Parse(zip.GetEntry("payroll-headers.json")!.Open());check(schemas.RootElement.GetArrayLength()==1,"one shared header for two payroll months");}
         var payer=Iban("RAFB",42);s.SaveAccounts(snapshot,"جهة دافعة تجريبية",payer,[new(bank,Iban("RDBA",31),bank,"RDBAIQBA111",null),new(other,Iban("RAFB",32),"مصرف الرافدين / فرع تجريبي","RAFBIQBA111",null)]);
         var snap=s.Snapshot(month);
+        check(new[]{"ر.ع","ر . ع","ر ع","ع.م","ن.ع","ش١.م","عقد"}.All(rank=>A.RankOrder.IsDeferredContract(rank)==false)
+            && A.RankOrder.IsDeferredContract("عقود")==true && A.RankOrder.IsDeferredContract("رتبة للمراجعة")==null,
+            "contract classification matches the iPhone rank abbreviations and flags unknown ranks");
         var batch=Store.PrepareBatch(snap,month);
+        check(batch.Parts.SelectMany(p=>p.Current).Any(r=>r.Rank=="ر.ع") && !batch.Parts.SelectMany(p=>p.Deferred).Any(r=>r.Rank=="ر.ع"),"abbreviated rank stays in current deductions");
         check(batch.Guarantee==21446760m+50&&batch.Held==batch.Guarantee+300,"nearest ten, guarantee plus two deferred agencies");
         check(batch.Plan(false).Entries.Sum(x=>x.Amount)==200&&batch.Plan(true).Entries.Sum(x=>x.Amount)==300,"rank عقد remains current, عقود deferred");
         s.UpdateBatch(snap,month,batch);snap=s.Snapshot(month);

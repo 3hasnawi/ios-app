@@ -425,6 +425,18 @@ public static class RankOrder
         "مفوض1", "مفوض2", "مفوض3", "مفوض4", "مفوض5", "مفوض6", "مفوض7", "مفوض8",
         "ر ع", "ع م", "ن ع", "ش1 م", "ش م", "شرطي", "عقود", "عقد" }.Select(Key).ToArray();
     private static readonly Dictionary<string, int> Index = Order.Select((k, i) => (k, i)).GroupBy(p => p.k).ToDictionary(g => g.Key, g => g.First().i, StringComparer.Ordinal);
+    private static readonly string[] CurrentPrefixes =
+        new[] { "موظف", "مفوض", "شرطي", "رئيس عرفاء", "نائب عريف", "عريف", "وكيل" }.Select(Key).ToArray();
+
+    public static bool? IsDeferredContract(string rank)
+    {
+        var key = Key(rank);
+        var words = key.Split(' ');
+        if (words.Contains("عقود")) return true;
+        if (words.Contains("عقد") || Index.ContainsKey(key) || CurrentPrefixes.Any(prefix => key.StartsWith(prefix, StringComparison.Ordinal))) return false;
+        return null;
+    }
+
     public static int Rank(string rank) => Index.TryGetValue(Key(rank), out var i) ? i : Order.Length;
 }
 

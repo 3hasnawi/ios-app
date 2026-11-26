@@ -99,12 +99,8 @@ public sealed partial class Store
         if(t.SourceWarnings.Count>0)throw new InvalidDataException(string.Join("\n",t.SourceWarnings));
         if(!bank.ExecutionMatched||s.Employees.All(p=>p.Month!=month))throw new InvalidDataException("راجع تطابق استقطاعات المصارف مع جهات التنفيذ.");
         var employees=s.Employees.Where(p=>p.Month==month).ToLookup(p=>Arabic.Match(p.Name));
-        bool Contract(string rank){
-            var key=Arabic.Key(rank);var words=key.Split(' ');if(words.Contains("عقود"))return true;
-            if(words.Contains("عقد")||new[]{"موظف","مفوض","شرطي","رئيس عرفاء","نائب عريف","عريف","وكيل"}.Select(Arabic.Key).Any(v=>key.StartsWith(v,StringComparison.Ordinal)))return false;
-            if(new[]{"لواء","فريق","فريق اول","عميد","عقيد","مقدم","رائد","نقيب","ملازم","ملازم اول","م اول","ر ع","ع م","ن ع","ش1 م","ش م"}.Contains(key.Replace(".","").Trim()))return false;
-            throw new InvalidDataException("رتبة غير معروفة عند الفصل: "+rank);
-        }
+        static bool Contract(string rank,string person)=>A.RankOrder.IsDeferredContract(rank)
+            ??throw new InvalidDataException($"راجع رتبة {person} قبل الفصل: {rank}");
         var cuts=s.Deductions.Where(d=>d.Month==month&&!A.PayrollAnalysis.IsInactive(d)).ToLookup(d=>d.Title);
         var parts=new List<SplitPart>();int serial=0;
         foreach(var e in t.Entries){
@@ -112,13 +108,13 @@ public sealed partial class Store
             var current=new List<SplitRow>();var deferred=new List<SplitRow>();
             void Add(string name,string rank,string place,decimal? amount,string note){
                 if(amount is null or <=0||amount!=decimal.Truncate(amount.Value))throw new InvalidDataException("راجع مبلغ "+name);
-                (Contract(rank)?deferred:current).Add(new(++serial,name,rank,place,amount.Value,note,e.Title,Arabic.Match(name)));
+                (Contract(rank,name)?deferred:current).Add(new(++serial,name,rank,place,amount.Value,note,e.Title,Arabic.Match(name)));
             }
             string? recipient=e.Id.StartsWith("payroll|")?e.Id[8..]:null;
             if(recipient==null)foreach(var d in cuts[e.Title]){
                 var matches=employees[Arabic.Match(d.Name)].ToArray();if(matches.Length>1)throw new InvalidDataException("هوية مكررة: "+d.Name);
                 var p=matches.FirstOrDefault();string rank=string.IsNullOrWhiteSpace(d.Rank)?p?.Rank??"":d.Rank;
-                if(!string.IsNullOrWhiteSpace(p?.Rank)&&Contract(rank)!=Contract(p.Rank))throw new InvalidDataException("تعارض رتبة "+d.Name);
+                if(!string.IsNullOrWhiteSpace(p?.Rank)&&Contract(rank,d.Name)!=Contract(p.Rank,d.Name))throw new InvalidDataException("تعارض رتبة "+d.Name);
                 Add(d.Name,rank,p?.Workplace??"",d.Amount,d.Note);
             }
             if(recipient=="fundDonations")foreach(var p in s.Employees.Where(p=>p.Month==month)){
