@@ -68,10 +68,24 @@ public partial class MainWindow
         return new(entry,book,book.Title,sourceName,entry==null||!originals.TryGetValue(entry.Id,out var original)?amount:original,amount,issue);
     }
 
-    void OpenIndividual(A.BackupSnapshot s,A.TransferSnapshot transfer,ContractBatch? split,bool held,IndividualBook selected){
+    enum BookCommand { Preview, Export, EditForExport }
+
+    async Task PreviewTransferLetter(string title,Func<byte[]> generate,Action export)
+    {
+        if(busy)return;
+        byte[] pdf;
+        busy=true;IsEnabled=false;
+        try{pdf=await Task.Run(generate);}
+        catch(Exception ex){Error(ex);return;}
+        finally{busy=false;IsEnabled=true;}
+        var preview=new LetterPreview(pdf,title,exportLetter:true){Owner=this};
+        if(preview.ShowDialog()==true)export();
+    }
+
+    void OpenIndividual(A.BackupSnapshot s,A.TransferSnapshot transfer,ContractBatch? split,bool held,IndividualBook selected,BookCommand command){
         var (title,id,entity)=selected;
         if(selected.NeedsLink)throw new System.IO.InvalidDataException("اربط جهة التنفيذ بهذا الكتاب أولاً.");
-        if(id.StartsWith("treasury_")){TreasuryBook(s,transfer.Month,id);return;}
+        if(id.StartsWith("treasury_")){TreasuryBook(s,transfer.Month,id,command);return;}
         string marker=(held?"deferred":"current")+"|"+(entity==null?"guarantee":("entity|deductions|"+transfer.Month+"|false|"+entity.Title+"|execution"));
         // Payroll letters unrelated to the suspended amounts are issued from the current month.
         bool mark=split!=null&&(id=="contracts"||entity!=null);
@@ -108,9 +122,19 @@ public partial class MainWindow
         var book=id=="split"?(entity?.Account==null?"rafidain_anbar":"ramadi"):id;
         var initial=Builtin(s,book);
         if(id=="split")initial=initial with{Body=DefaultBody(book)};
-        var draft=EditLetter(initial,book,s,transfer.Month,render:t=>Generate(t.Style())["الكتاب.pdf"]);
-        if(draft==null)return;
-        if(id!="split"){store.SaveLetterTemplate(s,id,draft);s=store.Snapshot(transfer.Month);ShowPage(held?DeferredTransfers:CurrentTransfers);}
-        _=SaveFile(title,"zip",()=>Package(Generate(draft.Style())),mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,mark?()=>ShowPage(held?DeferredTransfers:CurrentTransfers):null);
+        if(command==BookCommand.EditForExport){
+            var draft=EditLetter(initial,book,s,transfer.Month,render:t=>Generate(t.Style())["الكتاب.pdf"]);
+            if(draft==null)return;
+            initial=draft;
+        }
+        initial.Validate();
+        A.IndividualLetterBody.Validate(book,initial.Body);
+        var style=initial.Style();
+        var files=new Lazy<Dictionary<string,byte[]>>(()=>Generate(style));
+        void Export()=>_=SaveFile(title,"zip",()=>Package(files.Value),
+            mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,
+            mark?()=>ShowPage(held?DeferredTransfers:CurrentTransfers):null);
+        if(command==BookCommand.Preview)_=PreviewTransferLetter(title,()=>files.Value["الكتاب.pdf"],Export);
+        else Export();
     }
 }

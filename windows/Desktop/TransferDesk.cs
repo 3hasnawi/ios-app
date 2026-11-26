@@ -2,6 +2,8 @@ using System.IO;
 using System.IO.Compression;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using A=SalaryDesktop.Core;
 
 namespace AnbarPayroll.Desktop;
@@ -48,9 +50,9 @@ public partial class MainWindow
         button.ContextMenuOpening+=(_,e)=>{e.Handled=true;button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));};
         return button;
     }
-    void MenuAction(ContextMenu menu,string title,Action action)
+    void MenuAction(ContextMenu menu,string title,Action action,bool enabled=true)
     {
-        var item=new MenuItem{Header=title};item.Click+=(_,_)=>Guard(action);menu.Items.Add(item);
+        var item=new MenuItem{Header=title,IsEnabled=enabled};item.Click+=(_,_)=>Guard(action);menu.Items.Add(item);
     }
 
     void TransferDesk(A.BackupSnapshot s,string month,bool held)
@@ -106,39 +108,67 @@ public partial class MainWindow
             if(!branch)table.Columns.RemoveAt(1);
             dock.Children.Add(table);
             actions.Children.Clear();
-            IndividualBook? SelectedBook()=>(table.SelectedItem as TransferRow)?.Book;
+
             if(branch){
                 var list=BranchBooks(s,plan,batch,held).Select(book=>BookRow(book,s,month,batch,originals,hasPayroll,bank,items)).ToArray();
                 table.ItemsSource=list;
                 System.Windows.Automation.AutomationProperties.SetName(table,"كتب فرع الأنبار والكتب المنفردة");
                 info.Text="عدد الجهات والكتب　"+list.Length+"　·　مجموع قيود التحويل　"+Arabic.Money(rows.Sum(e=>e.Amount));
-                void OpenSelected(){
-                    if(SelectedBook() is not {} book)return;
-                    CheckSource();
-                    if(book.NeedsLink)LinkBook(s,book,rows,null);
-                    else if(book.Id!="entry_only")OpenIndividual(s,plan,batch,held,book);
-                    else if(batch==null && book.Entry?.Id.StartsWith("deduction|")==true){
-                        var ids=LinkableBooks.Where(id=>id!="rafidain_anbar"||A.TransferPreparation.IsDirectAnbar(book.Entry.Title)).ToArray();
-                        var choices=Choices(ids.Select(id=>BookTitles[id]));choices.SelectedIndex=-1;
-                        if(Form("ربط الجهة بكتاب",Text(book.Title),Labeled("الكتاب",choices,300)) && choices.SelectedIndex>=0)
-                            LinkBook(s,new IndividualBook((string)choices.SelectedItem,ids[choices.SelectedIndex]),rows,book.Entry);
+                void OpenActions(DataGridRow row,PlacementMode placement){
+                    if(row.Item is not TransferRow {Book:{} book} || ItemsControl.ItemsControlFromItemContainer(row)!=table)return;
+                    table.SelectedItem=row.Item;
+                    var menu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft,PlacementTarget=row,Placement=placement};
+                    if(book.Id!="entry_only"){
+                        MenuAction(menu,"معاينة الكتاب",()=>{CheckSource();OpenIndividual(s,plan,batch,held,book,BookCommand.Preview);},!book.NeedsLink);
+                        MenuAction(menu,"تصدير الكتاب",()=>{CheckSource();OpenIndividual(s,plan,batch,held,book,BookCommand.Export);},!book.NeedsLink);
+                        if(book.Id=="split")
+                            MenuAction(menu,"تعديل وتصدير كتاب هذه الدفعة",()=>{CheckSource();OpenIndividual(s,plan,batch,held,book,BookCommand.EditForExport);});
+                        else MenuAction(menu,"تعديل الكتاب",()=>EditTransferTemplate(s,month,book.Id));
                     }
+                    if(batch==null && LinkableBooks.Contains(book.Id))
+                        MenuAction(menu,"ربط جهة بالكتاب",()=>LinkBook(s,book,rows,book.Entry));
+                    if(batch==null && book.Id=="entry_only" && book.Entry is {} entry && entry.Id.StartsWith("deduction|"))
+                        MenuAction(menu,"ربط الجهة بكتاب",()=>{
+                            var ids=LinkableBooks.Where(id=>id!="rafidain_anbar"||A.TransferPreparation.IsDirectAnbar(entry.Title)).ToArray();
+                            var choices=Choices(ids.Select(id=>BookTitles[id]));choices.SelectedIndex=-1;
+                            if(Form("ربط الجهة بكتاب",Text(book.Title),Labeled("الكتاب",choices,300)) && choices.SelectedIndex>=0){
+                                var id=ids[choices.SelectedIndex];
+                                _=Working(()=>store.LinkIndividual(s,id,entry),"حُفظ ربط الكتاب.",()=>ShowPage(CurrentTransfers));
+                            }
+                        });
+                    if(!held && book.Entry is {} accountEntry)
+                        MenuAction(menu,batch==null?"تعديل الحساب وربط الجهة":"حساب الجهة للتحويلات اللاحقة",()=>{
+                            var live=batch==null?plan:A.TransferPreparation.Prepare(s,month);
+                            TransferAccounts(s,live,live.Entries.SingleOrDefault(e=>e.Id==accountEntry.Id),batch!=null);
+                        });
+                    if(menu.Items.Count==0)return;
+                    menu.IsOpen=true;
                 }
-                var open=ButtonFor("فتح الكتاب",()=>Guard(OpenSelected),"\uE8A5",true);
-                void Availability(){
-                    var book=SelectedBook();
-                    open.IsEnabled=book!=null && (book.Id!="entry_only" || batch==null && book.Entry?.Id.StartsWith("deduction|")==true);
-                    open.ToolTip=book?.NeedsLink==true||book?.Id=="entry_only"?"اختيار ربط الكتاب بالجهة":"معاينة وتصدير الكتاب المحدد";
-                }
-                table.SelectionChanged+=(_,_)=>Availability();
-                table.MouseDoubleClick+=(_,e)=>{
-                    for(var hit=e.OriginalSource as DependencyObject;hit!=null;hit=ElementTree.Parent(hit)){
-                        if(hit is DataGridRow){if(open.IsEnabled)Guard(OpenSelected);break;}
-                        if(hit==table)break;
+                TransferRow? pressed=null;
+                Point pressPoint=default;
+                table.PreviewMouseDown+=(_,e)=>{
+                    if(e.ChangedButton!=MouseButton.Left)return;
+                    pressPoint=e.GetPosition(table);
+                    pressed=e.OriginalSource is DependencyObject hit && ItemsControl.ContainerFromElement(table,hit) is DataGridRow row
+                        ?row.Item as TransferRow:null;
+                };
+                // يعالج الجدول رفع الزر أولاً كي ينهي تحديد الخلية ويفك التقاط الفأرة.
+                table.AddHandler(Mouse.MouseUpEvent,new MouseButtonEventHandler((_,e)=>{
+                    if(e.ChangedButton!=MouseButton.Left)return;
+                    var clicked=pressed;pressed=null;
+                    var point=e.GetPosition(table);
+                    if(clicked==null || Math.Abs(point.X-pressPoint.X)>SystemParameters.MinimumHorizontalDragDistance ||
+                        Math.Abs(point.Y-pressPoint.Y)>SystemParameters.MinimumVerticalDragDistance)return;
+                    var hit=e.OriginalSource as DependencyObject;
+                    if(hit==table)hit=table.InputHitTest(point) as DependencyObject;
+                    if(hit!=null && ItemsControl.ContainerFromElement(table,hit) is DataGridRow row && ReferenceEquals(clicked,row.Item))
+                        OpenActions(row,PlacementMode.MousePoint);
+                }),true);
+                table.PreviewKeyDown+=(_,e)=>{
+                    if(e.Key==Key.Enter && table.SelectedItem!=null && table.ItemContainerGenerator.ContainerFromItem(table.SelectedItem) is DataGridRow row){
+                        e.Handled=true;OpenActions(row,PlacementMode.Bottom);
                     }
                 };
-                table.SelectedIndex=list.Length>0?0:-1;
-                Availability();actions.Children.Add(open);
             }else{
                 table.ItemsSource=rows.Select(e=>new TransferRow(e,null,e.Title,"",originals.GetValueOrDefault(e.Id,e.Amount),e.Amount,string.Join("، ",A.TransferPreparation.Issues(e)))).ToArray();
                 info.Text="عدد الجهات والبنود　"+rows.Length+"　·　مجموع المجموعة　"+Arabic.Money(rows.Sum(e=>e.Amount));
@@ -164,26 +194,18 @@ public partial class MainWindow
                         return Task.Run(()=>SplitFundPdf(s,month,fund,held));
                     },caption:"معاينة كشف الصندوق"));
             }
+            if(branch)return;
             var options=OptionsButton(menu=>{
-                if(SelectedBook() is {} book && book.Id is not ("split" or "entry_only"))
-                    MenuAction(menu,"تعديل الكتاب",()=>EditTransferTemplate(s,month,book.Id));
                 if(g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks)
                     MenuAction(menu,"تعديل كتاب المجموعة",()=>EditTransferTemplate(s,month,g==A.TransferGroup.Rafidain?"rafidain_group":"other_banks_group"));
-                if(batch==null){
-                    if(SelectedBook() is {} individual && LinkableBooks.Contains(individual.Id))
-                        MenuAction(menu,"ربط جهة بالكتاب",()=>LinkBook(s,individual,rows,(table.SelectedItem as TransferRow)?.Entry));
-
-                }
                 if(!held)MenuAction(menu,batch==null?"تعديل الحساب وربط الجهة":"حسابات وربط التحويلات اللاحقة",()=>{
                     var live=batch==null?plan:A.TransferPreparation.Prepare(s,month);
                     var selected=(table.SelectedItem as TransferRow)?.Entry;
                     TransferAccounts(s,live,live.Entries.FirstOrDefault(e=>e.Id==selected?.Id),batch!=null);
                 });
                 if(!held)MenuAction(menu,"الكتب المخصصة",()=>TemplatesDesk(s,month));
-                if(SelectedBook() is {Id:"split"} splitBook)
-                    MenuAction(menu,"تعديل كتاب الجهة لهذه الدفعة",()=>{CheckSource();OpenIndividual(s,plan,batch,held,splitBook);});
             });
-            if(!held||g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks||SelectedBook()!=null)actions.Children.Add(options);
+            if(!held||g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks)actions.Children.Add(options);
         }
         group.SelectionChanged+=(_,_)=>Guard(Draw);
         Draw();

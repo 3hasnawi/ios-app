@@ -448,12 +448,35 @@ public partial class MainWindow : Window
                             throw new InvalidDataException("مبالغ كتب عقد الإطعام لا تطابق حصص الكشف.");
                     }else if(foodCompany.Value!=null || foodTax.Value!=null)
                         throw new InvalidDataException("ظهر مبلغ لكتاب رواتب في شهر بلا بيانات رواتب.");
-                    books.SelectedItem=letters.Single(row=>row.Book?.Id=="ramadi");
-                    var options=FindAction(CanvasArea,"خيارات");
-                    options.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    if(options.ContextMenu?.IsOpen!=true||!options.ContextMenu.Items.Cast<MenuItem>().Any(m=>Equals(m.Header,"ربط جهة بالكتاب")))
-                        throw new InvalidDataException("تعذّر فتح خيارات الربط بالزر الأيسر.");
-                    options.ContextMenu.IsOpen=false;
+                    if(Controls<Button>(CanvasArea).Any(btn=>AutomationProperties.GetName(btn) is "فتح الكتاب" or "خيارات"))
+                        throw new InvalidDataException("ظهرت أوامر الكتاب خارج صفّه.");
+                    async Task CheckActions(TransferRow item,bool linkable){
+                        books.ScrollIntoView(item);books.UpdateLayout();
+                        var row=(DataGridRow)books.ItemContainerGenerator.ContainerFromItem(item);
+                        var cell=books.Columns[0].GetCellContent(row)??throw new InvalidDataException("تعذّر الوصول إلى خلية الكتاب.");
+                        MouseButtonEventArgs Left(RoutedEvent route)=>new(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=route};
+                        cell.RaiseEvent(Left(Mouse.PreviewMouseDownEvent));cell.RaiseEvent(Left(Mouse.MouseUpEvent));
+                        await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                        static ContextMenu? FindMenu(DependencyObject visual){
+                            if(visual is ContextMenu menu)return menu;
+                            for(int i=0;i<VisualTreeHelper.GetChildrenCount(visual);i++)
+                                if(FindMenu(VisualTreeHelper.GetChild(visual,i)) is {} found)return found;
+                            return null;
+                        }
+                        var menu=PresentationSource.CurrentSources.OfType<PresentationSource>().Select(p=>p.RootVisual)
+                            .OfType<Visual>().Select(FindMenu).FirstOrDefault(m=>m?.IsOpen==true && m.PlacementTarget==row)
+                            ??throw new InvalidDataException("تعذّر فتح أوامر الصف بنقرة يسرى.");
+                        try{
+                            var commands=menu.Items.OfType<MenuItem>().ToDictionary(i=>i.Header.ToString()!);
+                            if(books.SelectedItem!=item || !commands.ContainsKey("تعديل الكتاب") ||
+                                commands["معاينة الكتاب"].IsEnabled==item.Book!.NeedsLink ||
+                                commands["تصدير الكتاب"].IsEnabled==item.Book.NeedsLink ||
+                                commands.ContainsKey("ربط جهة بالكتاب")!=linkable)
+                                throw new InvalidDataException("قائمة الأوامر لا تطابق الكتاب المحدد.");
+                        }finally{menu.IsOpen=false;}
+                    }
+                    await CheckActions(letters.Single(row=>row.Book?.Id=="ramadi"),true);
+                    await CheckActions(letters.Single(row=>row.Book?.Id=="cash_salary"),false);
                     UpdateLayout();
                     await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
                     CaptureWindow((FrameworkElement)Content,"anbar-letters");

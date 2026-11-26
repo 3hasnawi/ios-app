@@ -18,7 +18,7 @@ public partial class MainWindow
             [Resolve(0,"رسم طابع","رسم الطابع","رسم الطابع الضريبي"),Resolve(1,"بناء المدارس","بناء مدارس")];
     }
 
-    void TreasuryBook(A.BackupSnapshot s,string month,string id){
+    void TreasuryBook(A.BackupSnapshot s,string month,string id,BookCommand command){
         bool schools=id=="treasury_schools";var names=A.TemplateLetterPdf.Items(s,month);
         if(names.Length==0)throw new InvalidDataException("لا توجد بنود رواتب ذات مبالغ لهذا الشهر.");
         var first=Choices(names);var second=Choices(names);var reason=new TextBox();
@@ -74,8 +74,10 @@ public partial class MainWindow
             if(document.NumberOfPages!=1)throw new InvalidDataException("لا يتسع كتاب الخزينة في صفحة واحدة. راجع حجم الخط وطول المتن والجدول.");
             return result;
         }
-        var draft=EditLetter(template,id,s,month,true,Render);if(draft==null)return;
-        var pdf=Render(draft);store.SaveLetterTemplate(s,id,draft);ShowPage(CurrentTransfers);
-        _=SaveFile(BookTitles[id],"pdf",()=>pdf);
+        var pdf=new Lazy<byte[]>(()=>Render(template));
+        void Export()=>_=SaveFile(BookTitles[id],"pdf",()=>pdf.Value,
+            ()=>store.SaveLetterTemplate(s,id,template),()=>ShowPage(CurrentTransfers));
+        if(command==BookCommand.Preview)_=PreviewTransferLetter(BookTitles[id],()=>pdf.Value,Export);
+        else Export();
     }
 }

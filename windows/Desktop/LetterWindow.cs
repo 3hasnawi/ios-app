@@ -115,7 +115,7 @@ internal sealed class LetterPreview:Window
 {
     readonly TaskCompletionSource<bool> loaded=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal Task<bool> Ready=>loaded.Task;
-    public LetterPreview(byte[] pdf,string? statementTitle=null){
+    public LetterPreview(byte[] pdf,string? statementTitle=null,bool exportLetter=false){
         Title=statementTitle==null?"معاينة الكتاب":"معاينة "+statementTitle;Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel=new DockPanel();Content=panel;
         var edit=new Button{Content=statementTitle==null?"✎  العودة إلى التحرير":"إغلاق المعاينة",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};
@@ -124,9 +124,10 @@ internal sealed class LetterPreview:Window
         toolbar.Children.Add(edit);DockPanel.SetDock(toolbar,Dock.Top);panel.Children.Add(toolbar);
         Button? save=null;
         if(statementTitle!=null){
-            save=new Button{Content="تصدير PDF",IsEnabled=false,Margin=new Thickness(4)};
+            save=new Button{Content=exportLetter?"تصدير الكتاب":"تصدير PDF",IsEnabled=false,Margin=new Thickness(4)};
             toolbar.Children.Add(save);
             save.Click+=async (_,_)=>{
+                if(exportLetter){DialogResult=true;return;}
                 var dialog=new Microsoft.Win32.SaveFileDialog{FileName=A.ReportSheet.FileName(statementTitle),Filter="PDF|*.pdf",DefaultExt=".pdf"};
                 if(dialog.ShowDialog(this)!=true)return;
                 IsEnabled=false;
