@@ -10,8 +10,7 @@ static class AccessImportCheck
         dynamic catalog=Activator.CreateInstance(Type.GetTypeFromProgID("ADOX.Catalog",true)!)!;
         string file=Path.Combine(folder,"fictional-staff.accdb");
         try{
-            try{catalog.Create("Provider=Microsoft.ACE.OLEDB.12.0;Data Source="+file);}
-            catch(COMException e) when((e.ErrorCode&65535)==3706){Console.WriteLine("SKIP Access file test: x64 ACE provider unavailable");return;}
+            catalog.Create("Provider=Microsoft.ACE.OLEDB.12.0;Data Source="+file);
             dynamic db=catalog.ActiveConnection;
             try{
                 db.Execute("CREATE TABLE [الرئيسي] ([الاسم الكامل] TEXT(80), [الرقم الاحصائي] TEXT(30), [الرتبة] INTEGER)");

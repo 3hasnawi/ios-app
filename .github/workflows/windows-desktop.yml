@@ -11,6 +11,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Install the x64 Access provider for the native database import test
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'access-provider.exe'
+          curl.exe -fsSL --retry 3 'https://download.microsoft.com/download/3/5/c/35c84c36-661a-44e6-9324-8786b8dbe231/accessdatabaseengine_X64.exe' -o $installer
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $sig = Get-AuthenticodeSignature $installer
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*CN=Microsoft Corporation,*') { throw "Invalid Microsoft provider signature" }
+          $p = Start-Process $installer -ArgumentList '/quiet', '/norestart' -Wait -PassThru
+          if ($p.ExitCode -notin 0,3010) { throw "Access test provider installation failed ($($p.ExitCode))" }
       - name: Test archive compatibility, totals, reports and restore
         run: |
           python windows/Checks/fixture.py "$env:RUNNER_TEMP/fixture"

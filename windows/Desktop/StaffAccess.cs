@@ -16,7 +16,7 @@ internal static class StaffAccess
         dynamic db=Activator.CreateInstance(Type.GetTypeFromProgID("ADODB.Connection",true)!)!;
         try{
             var cs=new DbConnectionStringBuilder{["Provider"]="Microsoft.ACE.OLEDB.12.0",["Data Source"]=Path.GetFullPath(file),["Mode"]="Read"};
-            try{db.Open(cs.ConnectionString);}catch(COMException error) when((error.ErrorCode & 65535)==3706){throw new InvalidDataException("قراءة ملفات Access تتطلب Microsoft 365 Access Runtime بنواة 64 بت على هذه الحاسبة.",error);}
+            try{db.Open(cs.ConnectionString);}catch(COMException error) when((error.ErrorCode & 65535)==3706||error.ErrorCode==unchecked((int)0x80040154)){throw new InvalidDataException("قراءة ملفات Access تتطلب Microsoft 365 Access Runtime بنواة 64 بت على هذه الحاسبة.",error);}
             var names=new List<string>();dynamic schema=db.OpenSchema(20);
             try{while(!schema.EOF){if(Str(schema.Fields["TABLE_TYPE"].Value)=="TABLE")names.Add(Str(schema.Fields["TABLE_NAME"].Value));schema.MoveNext();}}finally{schema.Close();Release(schema);}
             List<Dictionary<string,string>> ReadTable(string table,bool schemaOnly=false){
