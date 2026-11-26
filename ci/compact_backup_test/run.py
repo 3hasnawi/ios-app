@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     (work / "Package.swift").write_text('// swift-tools-version:6.2\nimport PackageDescription\n' +
         'let package = Package(name:"BackupTests", platforms:[.macOS(.v26)], dependencies:[.package(url:"https://github.com/weichsel/ZIPFoundation.git",revision:"' +
         revision + '")], targets:[.executableTarget(name:"BackupTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])], swiftLanguageModes:[.v5])')
-    for name in ["RefundBackup","CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride","ContractBatchPayload","ContractTransferBatch","ContractTransferDestination","ContractTransferEngine","TransferIndividualPlan","TransferGroupCSVCheck","TransferReconciliation"]:
+    for name in ["FundingApproval","RefundBackup","CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride","ContractBatchPayload","ContractTransferBatch","ContractTransferDestination","ContractTransferEngine","TransferIndividualPlan","TransferGroupCSVCheck","TransferReconciliation"]:
         (src / (name + ".swift")).write_text(read(name))
     backup = read("Backup")
     models = read("Models")
@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     books = section(books, "nonisolated struct OfficialBook:", "    static var root: URL") + '    static var root: URL { URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test-books") }\n' + books[books.index("    static func file("):]
     imports = 'import Foundation\nimport SwiftData\nimport ZIPFoundation\nimport CryptoKit\nimport CoreGraphics\n'
     code = [
+        section(read("FundingExpenses"), "nonisolated struct FundingExpenses", "    static func build(") + "}",
         section(read("Reports"), "nonisolated enum ReportKind", "/// حسابات التقارير"),
         section(read("TransferFiles"), "nonisolated enum TransferCategory", "@ModelActor"),
         section(read("TransferLetterFigures"), "nonisolated struct TransferLetterFigures", "nonisolated enum TransferLetterFigureRules"),

@@ -57,7 +57,7 @@ public partial class MainWindow
         var list=GridView(("المصدر","Kind",.65),("الاسم","Name",1.5),("الشهر","Month",.9),("التفاصيل","Info",1.9));dock.Children.Add(list);CanvasArea.Children.Add(dock);
         int serial=0;input.TextChanged+=async (_,_)=>{var q=input.Text;int current=++serial;await Task.Delay(180);if(serial!=current||page!=SearchName)return;
             try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||page!=SearchName)return;list.ItemsSource=hits.Take(300);Status.Text=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";}catch(Exception e){Error(e);}};
-        list.MouseDoubleClick+=(_,_)=>{if(list.SelectedItem is not Store.SearchResult hit)return;if(hit.Kind=="أمانات")ShowPage(TrustName);else if(hit.Kind=="استقطاع"){ShowPage("بحث الاستقطاعات");search!.Text=hit.Name;}else Form(hit.Name,Text(hit.Kind+"　·　"+hit.Month),Text(hit.Info));};input.Focus();
+        list.MouseDoubleClick+=async (_,_)=>{if(list.SelectedItem is Store.SearchResult hit)await OpenPerson(hit);};input.Focus();
     }
     async void WorkPage(string key)
     {
@@ -67,7 +67,7 @@ public partial class MainWindow
         try{
             if(key==AuditName){
                 string? initial=auditFilter;auditFilter=null;var result=await Audit(month);
-                if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
+                if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
                 CanvasArea.Children.Remove(loading);
                 var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>r.Kind).Distinct()));if(initial!=null)filter.SelectedItem=initial;
                 var head=FilterBar(("حالة المراجعة",filter,0),("",ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")),0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
@@ -76,15 +76,21 @@ public partial class MainWindow
                 filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
-            if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
+            if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             CanvasArea.Children.Remove(loading);
             if(key==TransfersName){TransferDesk(snapshot,month);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
-            var report=await Task.Run(()=>key==FundingName?WorkReports.Funding(snapshot,month):WorkReports.Command(snapshot,month));
-            if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
+            var funding=key==FundingName&&snapshot.Employees.Count>0?await Task.Run(()=>WorkReports.FundingData(snapshot,month)):null;
+            if(key==FundingName&&funding==null){
+                var history=Bar();FundingActions(snapshot,month,history,null);
+                CanvasArea.Children.Add(Column(Text("لا توجد رواتب محفوظة لهذه الفترة."),history));return;
+            }
+            var report=funding?.Report(A.ReportSheet.HeaderFor(snapshot),Store.IsFundingApproved(snapshot,funding))??await Task.Run(()=>WorkReports.Command(snapshot,month));
+            if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             var panel=new DockPanel();
             var reportBar=Bar(Text(month,18,true),ButtonFor("معاينة وتصدير",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
+            if(key==FundingName)FundingActions(snapshot,month,reportBar,funding);
             DockPanel.SetDock(reportBar,Dock.Top);panel.Children.Add(reportBar);
             var tabs=new TabControl();
             foreach(var sheet in report.Sheets){

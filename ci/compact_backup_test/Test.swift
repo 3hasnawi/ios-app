@@ -51,6 +51,15 @@ import CoreGraphics
             let batch = try archive.records.first!.batch()
             precondition(state.payroll.count == 6 && state.deductions.values.reduce(0, +) == 1500)
             precondition(batch.held == 21_447_110 && batch.parts.flatMap(\.deferred).map(\.amount).reduce(0,+) == 300)
+            if let raw = settings[FundingApproval.settingsKey] {
+                let data = try PropertyListSerialization.propertyList(from: raw, format: nil) as! Data
+                let ledger = try FundingApproval.decode(data)
+                precondition(ledger.records.count == 1 && ledger.records[0].snapshot.bankTotal > 0)
+                let trustRaw = try PropertyListSerialization.propertyList(from: settings[SalaryTrust.settingsKey]!, format: nil) as! Data
+                let trusts = try SalaryTrust.decode(trustRaw)
+                precondition(trusts.entries.count == 2 && trusts.entries.reduce(0) { $0 + $1.amount } == 201 && state.staff.count == 1)
+                print("PASS Windows archived expenses, Excel trusts and staff restored with Apple models")
+            } else { precondition(!path.hasSuffix("windows-month.zip")) }
             print("PASS Windows archive restored by the production SwiftData BackupActor, including LZFSE deferred batch")
             return
         }

@@ -38,15 +38,24 @@ public sealed partial class Store
         Integer(row.Net.HasValue?1UL:0UL);if(row.Net.HasValue)Integer(BitConverter.DoubleToUInt64Bits((double)row.Net.Value));
         Bytes(row.Items);Bytes(row.Details);Bytes(row.RawColumns);
     }
-    public A.BackupSnapshot Snapshot(params string[] periods)
+    public A.BackupSnapshot Snapshot(params string[] periods)=>ReadSnapshot(periods,null);
+    public static List<A.StaffMember> StaffForPerson(A.BackupSnapshot snapshot,string name){
+        using var zip=ZipFile.OpenRead(snapshot.SourcePath);var list=new List<A.StaffMember>();var key=A.PersonProfiles.Key(name);
+        Records(zip,"staff.jsonl",row=>{
+            if(A.PersonProfiles.Key(row.GetProperty("name").GetString()??"")==key)list.Add(row.Deserialize<A.StaffMember>(IosJson)!);
+        });
+        return list;
+    }
+    public A.BackupSnapshot PersonSnapshot(string name)=>ReadSnapshot([],A.PersonProfiles.Key(name));
+    A.BackupSnapshot ReadSnapshot(string[] periods,string? person)
     {
         var file=Archive;using var zip=ZipFile.OpenRead(file);
         var manifest=ReadJson<JsonObject>(zip,"manifest.json")!;
         var schemas=ReadJson<byte[][]>(zip,"payroll-headers.json")??[];
         var emps=new List<A.Employee>();var deductions=new List<A.Deduction>();var accounts=new List<A.ExecutionAccount>();var months=new List<A.PayrollMonth>();
-        bool Selected(JsonElement row)=>periods.Contains(row.GetProperty("month").GetString(),StringComparer.Ordinal);
-        if(periods.Length>0)Records(zip,"employees.jsonl",r=>{if(Selected(r))emps.Add(Expanded(r,schemas));});
-        if(periods.Length>0)Records(zip,"deductions.jsonl",r=>{if(Selected(r))deductions.Add(r.Deserialize<A.Deduction>(IosJson)!);});
+        bool Selected(JsonElement row)=>person!=null?A.PersonProfiles.Key(row.GetProperty("name").GetString()??"")==person:periods.Contains(row.GetProperty("month").GetString(),StringComparer.Ordinal);
+        if(periods.Length>0||person!=null)Records(zip,"employees.jsonl",r=>{if(Selected(r))emps.Add(Expanded(r,schemas));});
+        if(periods.Length>0||person!=null)Records(zip,"deductions.jsonl",r=>{if(Selected(r))deductions.Add(r.Deserialize<A.Deduction>(IosJson)!);});
         Records(zip,"accounts.jsonl",r=>accounts.Add(r.Deserialize<A.ExecutionAccount>(IosJson)!));
         Records(zip,"months.jsonl",r=>months.Add(r.Deserialize<A.PayrollMonth>(IosJson)!));
         return new(file,File.ReadAllText(Path.Combine(Path.GetDirectoryName(file)!,"archive.sha256")),manifest["version"]!.GetValue<int>(),months,emps,deductions,
@@ -79,7 +88,7 @@ public sealed partial class Store
         foreach(var p in periods)A.BankReconciliation.Calculate(p);
         Rewrite(Path.GetDirectoryName(snapshot.SourcePath),null,new Dictionary<string,byte[]>{{A.BankReconciliation.SettingsKey,A.BankReconciliation.LedgerPlist(periods)}});
     }
-    internal void Rewrite(string? expected,A.PayrollImportPreview? payroll,IReadOnlyDictionary<string,byte[]>? changes, Action<JsonObject>? changeManifest=null, IReadOnlyDictionary<string,byte[]?>? refunds=null,IReadOnlyCollection<A.ExecutionAccount>? accounts=null)
+    internal void Rewrite(string? expected,A.PayrollImportPreview? payroll,IReadOnlyDictionary<string,byte[]>? changes, Action<JsonObject>? changeManifest=null, IReadOnlyDictionary<string,byte[]?>? refunds=null,IReadOnlyCollection<A.ExecutionAccount>? accounts=null, IReadOnlyList<A.StaffMember>? staff=null, (A.ArchiveBook Book,byte[] Pdf)? book=null, (string From,string To)? rename=null)
     {
         if(expected!=Active)throw new IOException("تغيّرت النسخة بعد فتح الشاشة.");
         Directory.CreateDirectory(Root);
@@ -119,11 +128,22 @@ public sealed partial class Store
                 void Json(string name,object value,bool supporting=true)=>Entry(name,s=>JsonSerializer.Serialize(s,value,IosJson),supporting);
                 void Line(Stream stream,JsonElement row){using(var writer=new Utf8JsonWriter(stream))row.WriteTo(writer);stream.WriteByte(10);}
                 var replaced=new HashSet<string>{"settings.json","employees.jsonl","payroll-headers.json","months.jsonl","deductions.jsonl","manifest.json"};
+                if(staff!=null)replaced.Add("staff.jsonl");
+                if(book!=null)replaced.Add("books/index.json");
                 foreach(var entry in source?.Entries.AsEnumerable()??Enumerable.Empty<ZipArchiveEntry>()){
                     if(replaced.Contains(entry.FullName)||refunds!=null&&entry.FullName=="refunds.jsonl"||accounts!=null&&entry.FullName=="accounts.jsonl")continue;
                     Entry(entry.FullName,d=>{using var s=entry.Open();s.CopyTo(d);});
                 }
                 if(accounts!=null){Entry("accounts.jsonl",s=>{foreach(var account in accounts)Line(s,JsonSerializer.SerializeToElement(account,IosJson));});manifest["accounts"]=accounts.Count;}
+                if(staff!=null){
+                    Entry("staff.jsonl",stream=>{foreach(var member in staff)Line(stream,JsonSerializer.SerializeToElement(member,IosJson));});manifest["staff"]=staff.Count;
+                }
+                if(book is {} addition){
+                    var index=ReadJson<JsonArray>(source,"books/index.json")??new JsonArray();
+                    index.Add(JsonSerializer.SerializeToNode(addition.Book,IosJson));
+                    Json("books/index.json",index);Entry("books/"+addition.Book.Id.ToString().ToUpperInvariant()+".pdf",s=>s.Write(addition.Pdf));
+                    manifest["books"]=index.Count;
+                }
                 foreach(var name in new[]{"accounts.jsonl","staff.jsonl","books/index.json"})if(!digests.ContainsKey(name))Entry(name,s=>{if(name.EndsWith(".json"))s.Write("[]"u8);});
                 using var payHash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 bool copyPayroll=source!=null&&version>=12&&!(payroll?.Employees.Count>0);
@@ -154,7 +174,9 @@ public sealed partial class Store
                 manifest["employees"]=payCounts.Values.Sum();manifest["payrollDigest"]=Convert.ToBase64String(payHash.GetHashAndReset());
                 }
                 Entry("deductions.jsonl",s=>{
-                    void Emit(JsonElement row){string m=row.GetProperty("month").GetString()!;cutCounts[m]=cutCounts.GetValueOrDefault(m)+1;Line(s,row);}
+                    void Emit(JsonElement row){string m=row.GetProperty("month").GetString()!;cutCounts[m]=cutCounts.GetValueOrDefault(m)+1;
+                        if(rename is {} edit&&row.GetProperty("title").GetString()==edit.From){var node=row.Deserialize<JsonObject>()!;node["title"]=edit.To;row=JsonSerializer.SerializeToElement(node);}
+                        Line(s,row);}
                     Records(source,"deductions.jsonl",r=>{if(payroll?.Deductions.Count>0&&r.GetProperty("month").GetString()==replacing)return;Emit(r);});
                     if(payroll!=null)foreach(var d in payroll.Deductions)Emit(JsonSerializer.SerializeToElement(d with{Month=replacing!},IosJson));
                 });

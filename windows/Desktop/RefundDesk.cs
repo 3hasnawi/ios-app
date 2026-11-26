@@ -30,7 +30,7 @@ public partial class MainWindow
                 rows.Add(p with{Amount=Value()});Redraw();searchBox.Clear();amounts.Clear();searchBox.Focus();
             }),"\uE710");
         var open=ButtonFor("فتح الدفعة",()=>Guard(()=>{if(options.SelectedIndex>=0)RefundDesk(source,month,history[options.SelectedIndex]);}));
-        var head=Column(Bar(ButtonFor("ملفات التحويل",Return,"\uE72A"),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month))),
+        var head=Column(Bar(ButtonFor("ملفات التحويل",Return,"\uE72A"),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month)),ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
             FilterBar(("الدفعات المحفوظة",options,1.45),("",open,0),("ابحث في رواتب "+month,searchBox,1),("المنتسب",results,1.2),("المبلغ",amounts,.75),("",add,0)),
             FilterBar(("جهة الإعادة",agency,1),("تاريخ الدفعة",date,0),("الجهة الدافعة",payer,1),("آيبان الجهة الدافعة",account,1.5)),note);
         var actions=Bar(ButtonFor("تعديل مبلغ المنتسب",()=>Guard(()=>{if(selected.SelectedItem is RefundPayee p){rows[rows.IndexOf(p)]=p with{Amount=Value()};Redraw();}})),ButtonFor("إزالة المنتسب",()=>{if(selected.SelectedItem is RefundPayee p){rows.Remove(p);Redraw();}}),
@@ -51,7 +51,7 @@ public partial class MainWindow
                     return Package(files);
                 },()=>store.SaveRefund(b,revision),Return);
             }),"\uE8B7"));
-        if(editing!=null)actions.Children.Add(ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(editing.Date.ToString("yyyy/MM/dd")+"　·　"+editing.Source)))_=Working(()=>store.SaveRefund(editing,revision,true),"حُذفت الدفعة.",Return);}));
+        if(editing?.ArchiveId!=null)actions.Children.Add(ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(editing.Date.ToString("yyyy/MM/dd")+"　·　"+editing.Source)))_=Working(()=>store.SaveRefund(editing,revision,true),"حُذفت الدفعة.",Return);}));
         head.Children.Add(actions);DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);dock.Children.Add(selected);CanvasArea.Children.Add(dock);Redraw();
     }
 }

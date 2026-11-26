@@ -49,6 +49,19 @@ public partial class MainWindow
                 }
                 if(!p.IsConfirmed){
                     ops.Children.Add(ButtonFor("تعديل الفترة",()=>{var e=new ReconciliationEditor(p,month){Owner=this};if(e.ShowDialog()==true)_=Save(e.ResultPeriod!);}));
+                    ops.Children.Add(ButtonFor("المبالغ المقترحة",async ()=>{
+                        try{
+                            var suggestions=await Task.Run(()=>BankSuggestions.For(store.Snapshot(p.Month),p));
+                            if(page!="كشف البنك"||stamp!=store.Active||Period()?.Id!=p.Id)return;
+                            if(suggestions.Count==0){Status.Text="لا توجد مبالغ متاحة للاقتراح لهذه الفترة.";return;}
+                            var choice=Choices(suggestions.Select(x=>x.Title+"　·　"+Arabic.Money(x.Amount)));
+                            var date=new DatePicker{SelectedDate=p.Start.ToDateTime(TimeOnly.MinValue),DisplayDateStart=p.Start.ToDateTime(TimeOnly.MinValue),DisplayDateEnd=p.End.ToDateTime(TimeOnly.MinValue)};
+                            if(!Form("تسجيل حركة من كشف المصرف",Labeled("المبلغ المقترح",choice,440),Labeled("تاريخ تنفيذ الحركة في المصرف",date,270)))return;
+                            var item=suggestions[choice.SelectedIndex];
+                            var movement=new A.BankMovement(Guid.NewGuid(),DateOnly.FromDateTime(date.SelectedDate??throw new InvalidDataException("اختر تاريخ التنفيذ.")),item.Title,item.Amount,A.MovementDirection.Debit,item.Id,item.Lines);
+                            await Save(p with{Movements=p.Movements.Append(movement).ToArray()});
+                        }catch(Exception e){Error(e);}
+                    }));
                     ops.Children.Add(ButtonFor("إضافة حركة",()=>Edit(null),"\uE710"));
                     ops.Children.Add(ButtonFor("تعديل الحركة",()=>{if(table.SelectedItem is MovementView row)Edit(row.Item);else Status.Text="حدّد حركة من الجدول."; }));
                 }

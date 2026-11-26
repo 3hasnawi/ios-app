@@ -60,13 +60,18 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
             return new RefundBank(pair.Key,name,bic,pair.Value);
         }).ToList();
     }
+    internal static string Reference(DateOnly date,string account,string iban,long amount,string source,string bic){
+        var day=date.ToString("yyyyMMdd",CultureInfo.InvariantCulture);
+        var reason="إعادة مبالغ زائدة في التسديد"+(source.Length>0?" - "+source:"");
+        var hash=SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|',day,account,iban,amount.ToString(CultureInfo.InvariantCulture),reason,bic)));
+        return day+(iban.Substring(4,4)=="RAFB"?"30000":"20000")+"0"+BinaryPrimitives.ReadUInt64BigEndian(hash).ToString(CultureInfo.InvariantCulture);
+    }
     public byte[] Csv(RefundBank group){
-        var day=Date.ToString("yyyyMMdd",CultureInfo.InvariantCulture);var reason="إعادة مبالغ زائدة في التسديد"+(Source.Length>0?" - "+Source:"");
-        var lines=new List<string>{"Reference|Value Date|Payer Name|Payer Account|Amount|Currency|Receiver BIC|Beneficiary Name|Beneficiary Account|Remittance Information|Details of Charges"};
+        var day=Date.ToString("yyyyMMdd",CultureInfo.InvariantCulture);
+        var lines=new List<string>{RefundRecovery.Header};
         foreach(var p in group.People){
             var amount=p.Amount.ToString(CultureInfo.InvariantCulture);
-            var hash=SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|',day,Account,p.Iban,amount,reason,p.Bic)));
-            string reference=day+(group.Code=="RAFB"?"30000":"20000")+"0"+BinaryPrimitives.ReadUInt64BigEndian(hash).ToString(CultureInfo.InvariantCulture);
+            string reference=Reference(Date,Account,p.Iban,p.Amount,Source,p.Bic);
             var recovered=p.Original?["recoveredReference"];if((string?)recovered?["computed"]==reference&&((string?)recovered?["original"]) is {} original&&original.All(char.IsAsciiDigit))reference=original;
             lines.Add(string.Join('|',reference,day,Payer,Account,amount,"IQD",p.Bic,p.Name,p.Iban,"اعادة مبالغ تنفيذ","SLEV"));
         }

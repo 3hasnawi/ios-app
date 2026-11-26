@@ -47,6 +47,7 @@ try{
 }catch(InvalidDataException){Console.WriteLine("PASS duplicate payroll identity cannot issue a statement");}
 alternative.Import(Path.Combine(path,"refunds.zip"));
 Check(alternative.Metadata("refunds")=="1"&&File.ReadAllBytes(alternative.Archive).SequenceEqual(File.ReadAllBytes(Path.Combine(path,"refunds.zip"))),"v14 draft, batch and binary supporting data survive intact");
+if(OperatingSystem.IsWindows())AccessImportCheck.Run(path,Check);
 AccountingTests.Run(path,Check);
 
 PrintChecks.Run(path,Check);

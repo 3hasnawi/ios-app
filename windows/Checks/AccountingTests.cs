@@ -83,6 +83,7 @@ static class AccountingTests
         var approved=A.BankReconciliation.Confirm(period,DateTime.UtcNow);s.SaveBank(snap,[approved]);snap=s.Snapshot(month);
         var reopened=A.BankReconciliation.ReadFromBackup(snap).Single();var totals=A.BankReconciliation.Calculate(reopened);check(reopened.IsConfirmed&&totals.Balance==0&&totals.OutstandingRefunds.Count==0,"approved reconciliation with linked refund survives Windows edit");
         try{s.SaveBank(snap,[reopened with{OpeningBalance=1}]);throw new Exception("modified locked ledger");}catch(InvalidDataException){check(true,"approved period rejects editing");}
+        MonthlyCycleTests.Run(dir,s,returned,period,check);
         string exchange=Path.Combine(dir,"exchange");Directory.CreateDirectory(exchange);
         File.Copy(s.Archive,Path.Combine(exchange,"windows-exchange.zip"),true);
         using(var zip=ZipFile.OpenRead(s.Archive)){

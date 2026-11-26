@@ -59,6 +59,14 @@ public partial class MainWindow
             _=Working(()=>store.UpdateBatch(s,month,proposed),"حُفظت حالة الشهر.",()=>ShowPage(TransfersName));}),"\uE8B5"));
         bool Changed()=>batch!=null&&s.Months.Single(m=>m.Name==month).ImportedAt!=batch.ImportedAt;
         void CheckSource(){if(Changed())throw new InvalidDataException("تغير استيراد الشهر بعد اعتماده. راجع التغييرات وألغ الفصل ثم اعتمده بالمبالغ المحدثة.");}
+        if(batch==null)actions.Children.Add(ButtonFor("ربط جهة بكتاب",()=>Guard(()=>{
+            CheckSource();var entities=Plan().Entries.Where(e=>e.Group==A.TransferGroup.Anbar).ToArray();
+            if(entities.Length==0){Status.Text="لا توجد جهات مصنفة ضمن فرع الأنبار لهذا الشهر.";return;}
+            string[] keys=["ramadi","housing","water","rafidain_anbar"];var names=Choices(keys.Select(k=>BookTitles[k]));var list=Choices(entities.Select(e=>e.Title));
+            if(!Form("ربط كتاب منفرد",Labeled("الكتاب",names,350),Labeled("جهة التنفيذ",list,350)))return;
+            var id=keys[names.SelectedIndex];var entity=entities[list.SelectedIndex];
+            _=Working(()=>store.LinkIndividual(s,id,entity),"حُفظ ربط الكتاب.",()=>ShowPage(TransfersName));
+        })));
         actions.Children.Add(ButtonFor("الكتب المنفردة",()=>Guard(()=>{CheckSource();IndividualBooks(s,Plan(),batch,phase.SelectedIndex==1);}),"\uE8A5"));
         actions.Children.Add(ButtonFor("تصدير الكتاب وملف CSV",()=>Guard(()=>{
             CheckSource();var g=Group();if(g is not (A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks))throw new InvalidDataException("اختر مجموعة الرافدين أو الرشيد والمصارف الأخرى.");

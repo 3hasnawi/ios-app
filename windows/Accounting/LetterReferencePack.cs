@@ -20,7 +20,7 @@ public static class LetterReferencePack
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     public static IReadOnlyDictionary<string, byte[]> Read(BackupSnapshot snapshot)
     {
-        if (!snapshot.SettingsPlists.TryGetValue("transferReferenceArchiveData", out var plist)) throw new InvalidDataException("مراجع الكتب غير موجودة في النسخة؛ استورد مراجع الكتب في الآيفون ثم احفظ نسخة جديدة.");
+        if (!snapshot.SettingsPlists.TryGetValue("transferReferenceArchiveData", out var plist)) throw new InvalidDataException("مراجع الكتب غير موجودة في النسخة؛ استورد حزمة مراجع الكتب من الإعدادات.");
         try
         {
             if (PropertyListParser.Parse(plist) is not NSData data || data.Bytes.Length is 0 or > 10_000_000) throw new InvalidDataException("حزمة مراجع الكتب غير صالحة.");

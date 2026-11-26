@@ -215,7 +215,8 @@ public partial class MainWindow : Window
             p.Children.Add(Box(Column(heading,sizes,legend,Text("عند الحفظ ينتقل أرشيف الآيفون وحده. يُعاد إنشاء فهرس البحث على الحاسبة عند فتح النسخة.",14))));
         }
         p.Children.Add(ButtonFor("استيراد رواتب أو استقطاعات من Excel",()=>_=ImportExcel(),"\uE8B5"));
-        CanvasArea.Children.Add(p);
+        p.Children.Add(Bar(new[]{"الأمانات","الملاك","مراجع الكتب"}.Select(kind=>(UIElement)ButtonFor("استيراد "+kind,()=>_=ImportLocal(kind))).ToArray()));
+        CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
     }
     void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;var temp=d.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.Copy(store.Archive,temp);File.Move(temp,d.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}Status.Text="حُفظ الأرشيف الأصلي كاملاً.";});
     async Task Import()
@@ -266,6 +267,7 @@ public partial class MainWindow : Window
         next=ButtonFor("التالي",()=>{offset+=PageSize;_=LoadGrid();});next.IsEnabled=false;
         footer=Text("",14,true);
         var reportActions=page==EmployeePage?Bar(footer,previous,next,employee):Bar(footer,previous,next,export,employee);
+        if(page==AgencyPage&&agencies.Count>0)reportActions.Children.Add(ButtonFor("توحيد تسمية الجهة",()=>Guard(RenameAgency)));
         var bottom=Box(reportActions);DockPanel.SetDock(bottom,Dock.Bottom);dock.Children.Add(bottom);
         dock.Children.Add(grid);CanvasArea.Children.Add(dock);
         void Changed(){query?.Cancel();generation++;offset=0;export.IsEnabled=false;employee.IsEnabled=false;gridView.ItemsSource=null;debounce.Stop();debounce.Start();}
@@ -323,7 +325,7 @@ public partial class MainWindow : Window
         var entries=store.Books();var dock=new DockPanel();CanvasArea.Children.Add(dock);
         var picker=Choices(new[]{"كل الأشهر"}.Concat(entries.Select(b=>b.Month).Distinct()));
         if(entries.Any(b=>b.Month==SelectedMonth?.Name))picker.SelectedItem=SelectedMonth!.Name;
-        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("العودة",()=>ShowPage(backPage??TransfersName),"\uE72A")),FilterBar(("شهر الكتاب",picker,0)));
+        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("إضافة كتاب موقّع",()=>Guard(ImportSigned)),ButtonFor("العودة",()=>ShowPage(backPage??TransfersName),"\uE72A")),FilterBar(("شهر الكتاب",picker,0)));
         DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var list=GridView(("اسم الكتاب","Title",2.3),("الجهة","Agency",1.5),("الشهر","Month",1),("الصفحات","Pages",.6));
         var save=ButtonFor("حفظ PDF الأصلي",()=>Guard(()=>{
@@ -405,6 +407,9 @@ public partial class MainWindow : Window
             }
             CaptureWindow((FrameworkElement)Content,file);
         }
+        ShowPage(SearchName);
+        var hit=store.SearchPeople(sample.Name).First(r=>r.Name==sample.Name);
+        await OpenPerson(hit with{Kind="راتب"},target=>CaptureWindow(target,"employee-profile"));
         var editorMonth="تشرين الثاني 2026";
         var editorSource=store.Snapshot(editorMonth);
         var demoTemplate=new SalaryDesktop.Core.LetterTemplate{Title="كتاب تجريبي",Body="يرجى تحويل مبلغ ({{المبلغ}}) إلى الحساب ({{الحساب}}).",FirstSigner="عضو اللجنة"};

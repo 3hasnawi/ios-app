@@ -4,29 +4,26 @@ using A=SalaryDesktop.Core;
 namespace AnbarPayroll;
 public static class WorkReports
 {
-    static Sheet Amounts(string name,string title,IEnumerable<(string,decimal)> source)
-    {
-        var data=source.ToList();
-        return new(name,title,["ت","البيان","المبلغ"],data.Select((v,i)=>new object?[]{i+1,v.Item1,v.Item2}).ToList(),2,data.Sum(x=>x.Item2));
-    }
-    public static Statement Funding(A.BackupSnapshot snapshot,string month)
+    public static Statement Funding(A.BackupSnapshot snapshot,string month)=>FundingData(snapshot,month).Report(A.ReportSheet.HeaderFor(snapshot),false);
+    public static FundingSnapshot FundingData(A.BackupSnapshot snapshot,string month)
     {
         if(!snapshot.Employees.Any(p=>p.Month==month))throw new InvalidDataException("لا توجد رواتب لهذا الشهر.");
         var b=A.BankStatementCalculator.Calculate(snapshot,month);var groups=A.PayrollAnalysis.Groups(snapshot,month);
         var food=new A.FoodContractReport.Split(b.Breakdown.GetValueOrDefault("شركة عراق الجوال"));
-        var lines=new List<(string,decimal)>{("رواتب البطاقة",b.Card),("رواتب الكاش",b.Cash),("الإجازات المتراكمة",b.Manual.AccumulatedLeave),("مكافآت المنتسبين",b.Manual.EmployeeRewards)};
-        if(b.UnclassifiedCount>0)lines.Add(("رواتب غير مصنفة",b.Unclassified));
-        lines.AddRange(b.Breakdown.Where(k=>k.Key!="شركة عراق الجوال").Select(k=>(k.Key,k.Value)));
-        lines.AddRange([("عقد عراق الجوال · حصة الصندوق",food.Fund),("عقد عراق الجوال · الضريبة",food.Tax),("عقد عراق الجوال · صافي الشركة",food.Company)]);
-        if(b.ContractCount>0||b.ContractContribution!=0)lines.Add(("الضمان الاجتماعي للعقود",b.ContractContribution));
-        if(b.Manual.SingleList!=0)lines.Add(("المفردة",b.Manual.SingleList));
-        lines.AddRange(groups.Select(g=>(g.Title,g.Total)));
-        if(lines.Any(x=>x.Item2<0||x.Item2!=decimal.Truncate(x.Item2))||groups.Sum(g=>g.Total)!=b.ExecutionDeductions)throw new InvalidDataException("راجع مصادر مبالغ الشهر.");
-        var details=Amounts("المصروفات","المصروفات والتمويل · "+month,lines);
-        string status=b.BankTotal==details.Total?"تطابق المبالغ":"يوجد فرق";
-        if(b.ExecutionCount==0||b.MissingNet+b.MissingExecutionAmounts+b.MissingContractNominal+b.UnclassifiedCount>0||b.ContractOverrideStale)status+=" · بيانات تحتاج مراجعة";
-        var comparison=Amounts("المطابقة",status,[("مجموع المصروفات",details.Total),("مجموع كشف البنك",b.BankTotal),("الفرق",b.BankTotal-details.Total)]) with{ShowTotal=false};
-        return new(A.ReportSheet.HeaderFor(snapshot),[details,comparison]);
+        var lines=new List<FundingRow>();
+        void Add(string title,decimal amount)=>lines.Add(new(lines.Count,title,amount));
+        Add("رواتب البطاقة",b.Card);Add("رواتب الكاش",b.Cash);
+        if(b.UnclassifiedCount>0)Add("رواتب غير مصنفة حسب طريقة الدفع",b.Unclassified);
+        Add("الإجازات المتراكمة",b.Manual.AccumulatedLeave);Add("مكافآت المنتسبين",b.Manual.EmployeeRewards);
+        string[] known=["الرعاية الصحية","صندوق شهداء الشرطة","الضريبة","الحماية الاجتماعية"];
+        foreach(var title in known)Add(title,b.Breakdown.GetValueOrDefault(title));
+        Add("عقد عراق الجوال - حصة صندوق الشهداء ٣٪",food.Fund);Add("عقد عراق الجوال - الضريبة ١٫٨٪ من الباقي",food.Tax);Add("عقد عراق الجوال - صافي الشركة",food.Company);
+        foreach(var kv in b.Breakdown.OrderBy(k=>k.Key,StringComparer.Ordinal))if(kv.Key!="شركة عراق الجوال"&&!known.Contains(kv.Key))Add(kv.Key,kv.Value);
+        if(b.ContractCount>0||b.ContractContribution!=0)Add("الضمان الاجتماعي للعقود",b.ContractContribution);
+        if(b.Manual.SingleList!=0)Add("المفردة",b.Manual.SingleList);
+        foreach(var g in groups.OrderByDescending(g=>g.Total).ThenBy(g=>g.Title,StringComparer.Ordinal))Add("جهة تنفيذ: "+g.Title,g.Total);
+        if(lines.Any(r=>r.Amount<0||r.Amount!=decimal.Truncate(r.Amount))||lines.Sum(r=>r.Amount)>A.SalaryTrust.Maximum||b.BankTotal>A.SalaryTrust.Maximum||groups.Sum(g=>g.Total)!=b.ExecutionDeductions)throw new InvalidDataException("راجع مصادر مبالغ الشهر.");
+        return new(month,lines,b.BankTotal,b.UnclassifiedCount,b.ExecutionCount>0,b.MissingNet,b.MissingContractNominal,b.MissingExecutionAmounts,b.ContractOverrideStale);
     }
     internal static Dictionary<string,string> Fields(A.Employee e)
     {
