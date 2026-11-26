@@ -18,7 +18,7 @@ public static class IndividualEntityPdf
         if (plan.Id is "water" or "housing" && (plan.BeneficiaryAccount!.Length != 15 || plan.BeneficiaryAccount.Any(c => !char.IsAsciiDigit(c)))) throw new InvalidDataException("حساب المستفيد المحلي غير صالح.");
         if (plan.Id == "water" && (plan.People != 1 || plan.Rows.Any(r => string.IsNullOrWhiteSpace(r.Rank)) || plan.Rows.Select(r => PayrollAnalysis.Normalize(r.Rank)).Distinct().Count() != 1)) throw new InvalidDataException("كتاب الموارد المائية يحتاج منتسباً واحداً ورتبة موحدة.");
         var key = MonthNames.SortKey(plan.Month); var bodyKey = string.IsNullOrWhiteSpace(settings.BodyMonth) ? key : MonthNames.SortKey(settings.BodyMonth);
-        if (key == 0 || bodyKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60 || new[] { settings.Header, settings.Number, settings.First, settings.Second, settings.Third }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
+        if (key == 0 || bodyKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60 || new[] { settings.Header, settings.Number }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
         if (fontBytes.Length is 0 or > 3_000_000 || logoBytes.Length is 0 or > 5_000_000) throw new InvalidDataException("خط الكتاب أو الشعار غير صالح.");
         var bodyValues = new Dictionary<string, string> { ["المبلغ"] = Number(plan.Total), ["المبلغ كتابة"] = plan.Words, ["حسابنا"] = plan.PayerAccount,
             ["الشهر"] = Months[bodyKey % 100 - 1], ["السنة"] = Eastern((bodyKey / 100).ToString(CultureInfo.InvariantCulture)) };

@@ -67,19 +67,21 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             return result.Append("</tbody></table></html>").ToString();
         }
         var b=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>");
-        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}@page{size:A4 ");
+        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}td.num{white-space:nowrap;direction:ltr;overflow-wrap:normal;font-variant-numeric:tabular-nums}@page{size:A4 ");
         b.Append(Person==""?"portrait;margin:28pt 28pt 32pt":"landscape;margin:18pt 22pt 32pt");
         string footer=Person==""?"( قيادة شرطة محافظة الانبار - قسم الحسابات )":"كشف الاستقطاعات";
         var stamp=Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture));
         b.Append("; @bottom-right{content:'"+footer+"';font:bold 8.5pt Arial;color:#444}@bottom-center{content:'صفحة ' counter(page,arabic-indic) ' من ' counter(pages,arabic-indic);font:8.5pt Arial;color:#444}@bottom-left{content:'"+stamp+"';font:8.5pt Arial;color:#444}");
         b.Append("}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body,section{background:white;margin:0;padding:0;max-width:none}}</style>");
         void Table(Sheet s,bool entity){
-            b.Append("<table><thead>");
+            b.Append("<table>");
+            if(s.Columns.Length==5 && s.AmountColumn==3)b.Append("<colgroup><col style='width:6%'><col style='width:13%'><col style='width:31%'><col style='width:18%'><col style='width:32%'></colgroup>");
+            b.Append("<thead>");
             if(entity)b.Append($"<tr><th class='org' colspan='{s.Columns.Length}'>{Display(Header)}</th></tr><tr><th class='title' colspan='{s.Columns.Length}'>{Display(s.Title)}</th></tr>");
             b.Append("<tr>");foreach(var c in s.Columns)b.Append("<th>"+Display(c)+"</th>");b.Append("</tr></thead><tbody>");
-            foreach(var row in s.Rows){b.Append("<tr>");foreach(var value in row)b.Append("<td>"+Display(value)+"</td>");b.Append("</tr>");}
+            foreach(var row in s.Rows){b.Append("<tr>");foreach(var value in row)b.Append((value is decimal?"<td class=num>":"<td>")+Display(value)+"</td>");b.Append("</tr>");}
             if(!s.ShowTotal){b.Append("</tbody></table>");return;}
-            b.Append($"<tr class='sum'><td colspan='{s.AmountColumn}'>المجموع</td><td>{Display(s.Total)}</td>");
+            b.Append($"<tr class='sum'><td colspan='{s.AmountColumn}'>المجموع</td><td class='num'>{Display(s.Total)}</td>");
             for(int i=s.AmountColumn+1;i<s.Columns.Length;i++)b.Append("<td></td>");b.Append("</tr></tbody></table>");
         }
         if(Person==""){foreach(var s in Sheets){b.Append("<section>");Table(s,true);b.Append("</section>");}}

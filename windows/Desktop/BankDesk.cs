@@ -40,9 +40,11 @@ public partial class MainWindow
                     ops.Children.Add(ButtonFor("تعديل الحركة",()=>{if(table.SelectedItem is MovementView row)Edit(row.Item);else Status.Text="حدّد حركة من الجدول."; }));
                 }
                 ops.Children.Add(ButtonFor(p.IsConfirmed?"إلغاء الاعتماد":"اعتماد الفترة",()=>{
-                    if(Form(p.IsConfirmed?"إلغاء اعتماد الفترة":"اعتماد الفترة",Text(p.Month+"　·　الرصيد الختامي "+Arabic.Money(totals.Balance))))
+                    bool balanced=totals.Funding>0&&totals.Balance==0;
+                    if(Form(p.IsConfirmed?"إلغاء اعتماد الفترة":balanced?"اعتماد الفترة":"اعتماد يدوي رغم التنبيهات",Text(p.Month+"　·　الرصيد الختامي "+Arabic.Money(totals.Balance)),
+                        Text(!balanced&&!p.IsConfirmed?"التمويل أو الرصيد يحتاج مراجعة. تأكد من كشف المصرف الورقي قبل المتابعة.":"راجعت حركات الفترة ورصيدها.")))
                         _=Save(p.IsConfirmed?A.BankReconciliation.Unconfirm(p):A.BankReconciliation.Confirm(p,DateTime.UtcNow));}));
-                ops.Children.Add(ButtonFor("تصدير كشف PDF",()=>_=SaveFile("مطابقة كشف البنك","pdf",()=>A.ReconciliationPdf.Statement(p,A.TransferPreparation.Account(source),p.IsConfirmed,Fonts())),"\uE74E"));
+                ops.Children.Add(ButtonFor("تصدير كشف PDF",()=>_=SaveFile("مطابقة كشف البنك","pdf",()=>A.ReconciliationPdf.Statement(p,A.TransferPreparation.Account(source),p.IsConfirmed||totals.Funding>0&&totals.Balance==0,Fonts())),"\uE74E"));
             }
             picker.SelectionChanged+=(_,_)=>Guard(Draw);Draw();
         }catch(Exception e){if(page=="كشف البنك"){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message));}}

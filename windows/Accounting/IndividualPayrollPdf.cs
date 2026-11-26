@@ -15,7 +15,7 @@ public static class IndividualPayrollPdf
             throw new InvalidDataException("المبلغ أو حسابا الكتاب غير صالحين.");
         var key = MonthNames.SortKey(plan.Month); var bodyKey = string.IsNullOrWhiteSpace(settings.BodyMonth) ? key : MonthNames.SortKey(settings.BodyMonth);
         if (key == 0 || bodyKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60 ||
-            new[] { settings.Header, settings.Number, settings.First, settings.Second, settings.Third }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
+            new[] { settings.Header, settings.Number }.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("راجع الشهر والترويسة والعدد وأسماء اللجنة.");
         if (plan.Id is "food_company" or "food_tax" && (string.IsNullOrWhiteSpace(foodContract) || foodContract.Length > 200 || foodContract.Any(char.IsControl))) throw new InvalidDataException("أكمل رقم وتاريخ عقد الإطعام قبل إعداد الكتاب.");
         if (plan.Id == "cash_salary" && (cashList is null || cashList.Month != plan.Month || cashList.Total != plan.Total || cashList.Rows.Count == 0 || cashList.Rows.Sum(r => (decimal)r.Net) != plan.Total)) throw new InvalidDataException("قائمة الكاش غير مطابقة للمبلغ؛ راجع الرواتب.");
         if (fontBytes.Length is 0 or > 3_000_000 || tableFontBytes.Length is 0 or > 3_000_000 || logoBytes.Length is 0 or > 5_000_000) throw new InvalidDataException("الخط أو الشعار غير صالح.");

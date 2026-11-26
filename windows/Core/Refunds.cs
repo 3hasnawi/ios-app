@@ -15,9 +15,15 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
         var fields=WorkReports.Fields(e);
         string Get(string label)=>fields.GetValueOrDefault(Arabic.Key(label))??"";
         string Format(string v)=>A.TransferPreparation.NormalizeAccount(string.Concat(v.Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.Format)));
-        var bicKeys=new[]{"الرفرنس","رفرنس","reference","الرفرنس كود","SWIFT","BIC","SWIFT CODE","Receiver BIC","Bank BIC","سويفت","سوفت","رمز السويفت","السويفت كود","السويفت","كود السويفت","Branch BIC","Bank Swift Code","Beneficiary BIC"}.Select(Arabic.Key).ToHashSet();
+        string HeaderKey(string t)=>string.Concat(Arabic.Key(t).Where(char.IsLetterOrDigit));
+        var bicKeys=new[]{"الرفرنس", "رفرنس", "SWIFT", "BIC", "SWIFT Code", "BIC Code", "SWIFT/BIC", "BIC/SWIFT", "Receiver BIC", "Bank BIC",
+        "Bank Swift Code", "Branch BIC", "Branch Swift Code", "Beneficiary BIC",
+        "سويفت", "سوفت", "سويفت كود", "سوفت كود", "رمز السويفت", "رمز السوفت",
+        "رمز سويفت", "رمز سوفت", "كود السويفت", "كود السوفت", "السويفت كود", "السوفت كود",
+        "السويفت", "السوفت", "سويفت المصرف", "سوفت المصرف", "سويفت الفرع", "سوفت الفرع",
+        "رمز السويفت للمصرف", "رمز السويفت للفرع", "رمز SWIFT", "رمز BIC"}.Select(HeaderKey).ToHashSet();
         var codes=new HashSet<string>();
-        void Add(string key,string value){if(bicKeys.Contains(Arabic.Key(key))&&Format(value) is {Length:>0} code&&code!="0")codes.Add(code);}
+        void Add(string key,string value){if(bicKeys.Contains(HeaderKey(key))&&Format(value) is {Length:>0} code&&code!="0")codes.Add(code);}
         if(e.RawColumns!=null){using var doc=JsonDocument.Parse(e.RawColumns);foreach(var (k,v) in doc.RootElement.GetProperty("headers").EnumerateArray().Zip(doc.RootElement.GetProperty("values").EnumerateArray()))Add(k.GetString()!,v.GetString()!);}
         if(e.Details!=null)foreach(var (k,v) in JsonSerializer.Deserialize<Dictionary<string,string>>(e.Details)!)Add(k,v);
         return new(e.Name,e.Rank,e.Workplace,e.Month,Format(Get("IBAN")),Get("توطين المصرف"),codes.Count==1?codes.Single():"",0);
@@ -76,7 +82,7 @@ public sealed partial class Store
         Records(zip,"refunds.jsonl",line=>{
             var data=JsonNode.Parse(line.GetProperty("contents").GetBytesFromBase64())!.AsObject();
             var entries=new List<RefundPayee>();foreach(var row in data["rows"]!.AsArray()){
-                var c=row!["candidate"]!;var p=c["person"]!;long.TryParse((string?)row["amount"],out long value);
+                var c=row!["candidate"]!;var p=c["person"]!;var parsed=A.PayrollSpreadsheet.ParseMoney((string?)row["amount"]??"");long value=parsed is >0 and <=999_999_999_999_999m && parsed==decimal.Truncate(parsed.Value)?(long)parsed.Value:0;
                 entries.Add(new((string)p["name"]!,(string)p["rank"]!,(string)p["workplace"]!,(string)c["month"]!,(string)p["iban"]!,(string)p["bank"]!,(string?)p["payrollBIC"]?["value"]?["_0"]??"",value,row.AsObject()));
             }
             var date=AppleEpoch.AddSeconds((double)data["date"]!).ToLocalTime();
