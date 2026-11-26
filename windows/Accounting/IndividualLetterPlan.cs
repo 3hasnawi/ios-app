@@ -37,9 +37,9 @@ public static class IndividualLetterPreparation
                 lines.Add(new("ضريبة الدخل", Amount(summary.Breakdown["الضريبة"]))); break;
             case "contracts":
                 if (summary.ContractOverrideStale) throw new InvalidDataException("تغيّر أساس العقود بعد التعديل اليدوي؛ راجع المبلغ أولاً.");
-                if (summary.MissingContractNominal > 0 && !acceptMissingContractNominal)
+                if (summary.MissingContractNominal > 0 && !acceptMissingContractNominal && summary.ManualContractOverride is null)
                     throw new InvalidDataException($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ راجع المبلغ وأكد التجاوز لإعداد الكتاب.");
-                if (summary.MissingContractNominal > 0) notices.Add($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ يلزم تأكيد مراجعة المبلغ.");
+                if (summary.MissingContractNominal > 0) notices.Add($"يوجد {summary.MissingContractNominal} عقد بلا راتب اسمي؛ تمّت مراجعة المبلغ.");
                 lines.Add(new("حصة التقاعد من الراتب الاسمي", Amount(summary.ContractNominalShare)));
                 lines.Add(new("التوقيفات التقاعدية", Amount(summary.ContractRetirement)));
                 if (summary.ManualContractOverride is not null && summary.ContractContribution != summary.CalculatedContractContribution)

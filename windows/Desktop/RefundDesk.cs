@@ -36,8 +36,8 @@ public partial class MainWindow
             ButtonFor("تصدير الكتب والملفات",()=>Guard(()=>{
                 var b=Model();var groups=b.Groups();var sets=new List<(List<RefundBank> Banks,A.GroupLetterSettings Style)>();
                 foreach(var grouping in groups.GroupBy(g=>g.Code=="RAFB")){
-                    var style=LetterForm(A.GroupLetterSettingsReader.Read(source,grouping.Key?A.TransferGroup.Rafidain:A.TransferGroup.OtherBanks));
-                    if(style==null)return;sets.Add((grouping.ToList(),style));
+                    var style=LetterForm(b.LetterStyle(grouping.Key,A.GroupLetterSettingsReader.Read(source,grouping.Key?A.TransferGroup.Rafidain:A.TransferGroup.OtherBanks)),fixedRefund:true);
+                    if(style==null)return;b=b.WithLetter(grouping.Key,style);sets.Add((grouping.ToList(),style));
                 }
                 _=SaveFile("إعادة المبالغ "+b.Date.ToString("yyyy-MM-dd"),"zip",()=>{
                     var files=groups.ToDictionary(g=>g.Code+".csv",b.Csv);var sheet=b.ListSheet(A.ReportSheet.HeaderFor(source));files["قائمة المستفيدين.xlsx"]=A.XlsxReport.Generate(sheet);

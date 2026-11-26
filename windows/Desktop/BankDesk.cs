@@ -25,6 +25,19 @@ public partial class MainWindow
             void Draw(){
                 var p=Period();ops.Children.Clear();metrics.Children.Clear();
                 ops.Children.Add(ButtonFor("فترة جديدة",()=>{var e=new ReconciliationEditor(null,month,p){Owner=this};if(e.ShowDialog()==true)_=Save(e.ResultPeriod!);},"\uE710"));
+                if(month.Length>0)ops.Children.Add(ButtonFor("اعتماد ضمان العقود",async ()=>{
+                    try{
+                        var snap=await Task.Run(()=>store.Snapshot(month));
+                        if(page!="كشف البنك"||stamp!=store.Active||month!=(SelectedMonth?.Name??""))return;
+                        var summary=A.BankStatementCalculator.Calculate(snap,month);
+                        if(summary.ContractCount==0){Status.Text="لا توجد رواتب عقود لهذا الشهر.";return;}
+                        var amount=new TextBox{Text=summary.ContractContribution.ToString("0")};
+                        if(!Form("اعتماد الضمان الاجتماعي للعقود",Text(month+"　·　المحتسب "+Arabic.Money(summary.CalculatedContractContribution)),
+                            Text("عدد العقود "+summary.ContractCount+"　·　بلا راتب اسمي "+summary.MissingContractNominal),Labeled("المبلغ النهائي بعد المراجعة",amount,310)))return;
+                        var total=A.PayrollSpreadsheet.ParseMoney(amount.Text)??throw new InvalidDataException("راجع المبلغ النهائي.");
+                        await Working(()=>store.ApproveContract(snap,month,total),"اعتُمد ضمان العقود لهذا الشهر.",()=>ShowPage("كشف البنك"));
+                    }catch(Exception ex){Error(ex);}
+                }));
                 if(p==null)return;
                 var totals=A.BankReconciliation.Calculate(p);
                 foreach(var (label,value) in new[]{("الافتتاحي",p.OpeningBalance),("الدائن",totals.Credits),("المدين",totals.Debits),("الختامي",totals.Balance)})

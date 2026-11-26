@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -65,6 +66,26 @@ public sealed partial class Store
         var root=(NSDictionary)PropertyListParser.Parse(((NSData)PropertyListParser.Parse(bytes)).Bytes);
         return ((NSArray)root["records"]).Cast<NSDictionary>().ToList();
     }
+    static void CheckRestoredTransfers(string before,string after){
+        static byte[]? Ledger(string path){
+            using var zip=ZipFile.OpenRead(path);
+            var settings=ReadJson<Dictionary<string,byte[]>>(zip,"settings.json");
+            return settings?.GetValueOrDefault(ContractKey) is {} raw?((NSData)PropertyListParser.Parse(raw)).Bytes:null;
+        }
+        var old=Ledger(before);if(old==null)return;
+        var error="النسخة المختارة تفتقد دفعة عقود محفوظة أو آخر حالة تنفيذها.";
+        var next=Ledger(after)??throw new InvalidDataException(error);
+        static Dictionary<string,byte[]> Batches(byte[] ledger){
+            var root=(NSDictionary)PropertyListParser.Parse(ledger);
+            return ((NSArray)root["records"]).Cast<NSDictionary>().ToDictionary(r=>r["id"].ToString()!,r=>((NSData)r["compressed"]).Bytes);
+        }
+        var recovered=Batches(next);
+        foreach(var (id,payload) in Batches(old))
+            if(!recovered.TryGetValue(id,out var copy)||!copy.AsSpan().SequenceEqual(payload))throw new InvalidDataException(error);
+        var dates=ContractDates.Values(next);
+        foreach(var (key,value) in ContractDates.Values(old))
+            if(key.Item2!="reviewedImport"&&(!dates.TryGetValue(key,out var restored)||restored!=value))throw new InvalidDataException(error);
+    }
     static NSDictionary? ActiveRecord(IEnumerable<NSDictionary> records,string month)=>records.SingleOrDefault(r=>r["month"].ToString()==month&&!r.ContainsKey("cancelledAt"));
     public static ContractBatch? ActiveBatch(A.BackupSnapshot s,string month){
         var r=ActiveRecord(ContractRecords(s),month);if(r==null)return null;
@@ -111,7 +132,7 @@ public sealed partial class Store
             parts.Add(new(entity,current.OrderBy(r=>r.Name,StringComparer.Create(new("ar-IQ"),false)).ToArray(),deferred.OrderBy(r=>r.Name,StringComparer.Create(new("ar-IQ"),false)).ToArray()));
         }
         var food=new A.FoodContractReport.Split(bank.Breakdown["شركة عراق الجوال"]);
-        var figures=JsonSerializer.SerializeToNode(new{month,foodFund=food.Fund,foodTax=food.Tax,foodCompany=food.Company,healthcare=bank.Breakdown["الرعاية الصحية"],policeFundDonations=bank.Breakdown["صندوق شهداء الشرطة"],sports=bank.Breakdown["النشاط الرياضي"],incomeTax=bank.Breakdown["الضريبة"],socialProtection=bank.Breakdown["الحماية الاجتماعية"],contractNominalShare=bank.ContractNominalShare,contractRetirement=bank.ContractRetirement,payrollCash=bank.Cash,contractOverrideTotal=bank.ManualContractOverride?.Total,contractOverrideSnapshot=bank.ManualContractOverride,contractOverrideStale=false,missingContractNominal=bank.MissingContractNominal,availableContractNominalShare=bank.ContractNominalShare,contractNominalReviewed=bank.MissingContractNominal>0&&bank.ManualContractOverride!=null},IosJson)!.AsObject();
+        var figures=JsonSerializer.SerializeToNode(new{month,foodFund=food.Fund,foodTax=food.Tax,foodCompany=food.Company,healthcare=bank.Breakdown["الرعاية الصحية"],policeFundDonations=bank.Breakdown["صندوق شهداء الشرطة"],sports=bank.Breakdown["النشاط الرياضي"],incomeTax=bank.Breakdown["الضريبة"],socialProtection=bank.Breakdown["الحماية الاجتماعية"],contractNominalShare=bank.MissingContractNominal==0?(decimal?)bank.ContractNominalShare:null,contractRetirement=bank.ContractRetirement,payrollCash=bank.Cash,contractOverrideTotal=bank.ManualContractOverride?.Total,contractOverrideSnapshot=bank.ManualContractOverride,contractOverrideStale=false,missingContractNominal=bank.MissingContractNominal,availableContractNominalShare=bank.ContractNominalShare,contractNominalReviewed=bank.MissingContractNominal>0&&bank.ManualContractOverride!=null},IosJson)!.AsObject();
         var b=new ContractBatch(Guid.NewGuid().ToString().ToUpperInvariant(),month,s.Months.Single(m=>m.Name==month).ImportedAt,NowIos,figures,t.Payer,t.PayerAccount,
             s.SettingsPlists.TryGetValue("transferPayrollAccountLinks",out var links)?((NSData)PropertyListParser.Parse(links)).Bytes:[],parts.ToArray());
         if(b.Held<=0)throw new InvalidDataException("لا توجد استقطاعات عقود للتأجيل.");return b;

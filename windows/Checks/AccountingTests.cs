@@ -91,11 +91,22 @@ static class AccountingTests
         var rev=s.Active;s.UpdateBatch(snap,month,prepared:"current|group|otherBanks",date:day.ToDateTime(TimeOnly.MinValue));snap=s.Snapshot(month);s.UpdateBatch(snap,month);
         check(Store.ActiveBatch(s.Snapshot(),month)==null&&A.TransferPreparation.Prepare(s.Snapshot(month),month).Entries.Sum(e=>e.Amount)==500,"cancel a prepared split restores full amounts");
         try{s.SaveRefund(returned,rev,true);throw new Exception("stale writer");}catch(IOException){check(true,"concurrent stale changes blocked");}
+        var cancelled=s.Active;
+        try{s.Import(Path.Combine(exchange,"windows-exchange.zip"));throw new Exception("rolled back a prepared batch");}catch(InvalidDataException){check(s.Active==cancelled,"restore cannot erase a prepared or cancelled payment");}
         var firstSize=new FileInfo(s.Archive).Length;for(int i=0;i<2;i++)s.ApplyExcel(s.PreviewExcel(xlsx,month),s.Active);
         check(Math.Abs(new FileInfo(s.Archive).Length-firstSize)<400&&s.Refunds().Count==1,"reimport does not inflate archive or discard saved refund");
         check(s.SearchPeople("ثاني").Count>=2,"global lookup includes both payroll and deductions");
         s.SaveRefund(returned with{People=returned.People.Select(p=>p with{Amount=p.Amount+10}).ToList()},s.Active);
         check(s.Refunds().Single().People.Sum(p=>p.Amount)==3033,"saved refund can be edited without duplication");
+        var style=new A.GroupLetterSettings("ترويسة","", "توقيع تجريبي","","","",null,null,10,null);
+        var edited=s.Refunds().Single().WithLetter(false,style);
+        s.SaveRefund(edited,s.Active);
+        check(s.Refunds().Single().LetterStyle(false,style with{First=""}).First==style.First,"edited refund letter signature survives archive");
+        s.ApproveContract(s.Snapshot(month),month,12345);
+        check(A.BankStatementCalculator.Calculate(s.Snapshot(month),month).ContractContribution==12345,"approved contract amount survives archive");
+        var partial=new A.ContractOverride(770,0,20,2,2);
+        var encoded=A.ContractOverrides.Set(null,month,partial);
+        check(A.ContractOverrides.Read(snap with{SettingsPlists=new Dictionary<string,byte[]>{{A.ContractOverrides.SettingsKey,encoded}}},month)==partial,"iPhone approval with two missing nominal salaries is readable");
         s.SaveRefund(s.Refunds().Single(),s.Active,true);check(s.Refunds().Count==0,"delete selected refund only");
     }
 }

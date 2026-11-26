@@ -63,6 +63,15 @@ public sealed partial class Store
         if(preview.Problems.Count>0||preview.Employees.Count+preview.Deductions.Count==0)throw new InvalidDataException("راجع ملف Excel.");
         Rewrite(expected,preview,null);
     }
+    public void ApproveContract(A.BackupSnapshot snapshot,string month,decimal total)
+    {
+        var summary=A.BankStatementCalculator.Calculate(snapshot,month);
+        var value=new A.ContractOverride(total,summary.ContractNominal,summary.ContractRetirement,summary.ContractCount,summary.MissingContractNominal);
+        var key=A.ContractOverrides.SettingsKey;
+        var data=A.ContractOverrides.Set(snapshot.SettingsPlists.GetValueOrDefault(key),month,value);
+        Rewrite(Path.GetDirectoryName(snapshot.SourcePath),null,new Dictionary<string,byte[]>{{key,data}},
+            manifest=>{if((int?)manifest["contentVersion"]==5)manifest["contentVersion"]=6;});
+    }
     public void SaveBank(A.BackupSnapshot snapshot,IReadOnlyList<A.BankPeriod> periods)
     {
         var before=A.BankReconciliation.ReadFromBackup(snapshot);

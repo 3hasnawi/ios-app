@@ -28,6 +28,20 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
         if(e.Details!=null)foreach(var (k,v) in JsonSerializer.Deserialize<Dictionary<string,string>>(e.Details)!)Add(k,v);
         return new(e.Name,e.Rank,e.Workplace,e.Month,Format(Get("IBAN")),Get("توطين المصرف"),codes.Count==1?codes.Single():"",0);
     }
+    internal const string Copies="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.";
+    static JsonObject DefaultLetter()=>new(){["header"]="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات",["number"]="١‏/٢٢/ح/",["recipient"]="مصرف الرافدين / فرع الأنبار",["first"]="",["second"]="",["third"]="",["signatureOffset"]=0,["footer"]=Copies};
+    internal static JsonObject DefaultLetters()=>new(){["rafidain"]=DefaultLetter(),["otherBanks"]=DefaultLetter()};
+    public A.GroupLetterSettings LetterStyle(bool rafidain,A.GroupLetterSettings fallback){
+        if(Original?["letters"]?[rafidain?"rafidain":"otherBanks"] is not JsonObject saved)return fallback with{Footer=Copies};
+        return fallback with{Header=(string?)saved["header"]??fallback.Header,First=(string?)saved["first"]??fallback.First,Second=(string?)saved["second"]??fallback.Second,
+            Third=(string?)saved["third"]??fallback.Third,SignatureOffset=(int?)saved["signatureOffset"]??fallback.SignatureOffset,Footer=Copies};
+    }
+    public RefundBatch WithLetter(bool rafidain,A.GroupLetterSettings style){
+        var data=Original?.DeepClone().AsObject()??new();data["letters"]??=DefaultLetters();var letters=data["letters"]!.AsObject();
+        var letter=letters[rafidain?"rafidain":"otherBanks"]!.AsObject();
+        letter["header"]=style.Header;letter["first"]=style.First;letter["second"]=style.Second;letter["third"]=style.Third;letter["signatureOffset"]=style.SignatureOffset;letter["footer"]=Copies;
+        return this with{Original=data};
+    }
     public List<RefundBank> Groups(){
         static bool Safe(string s)=>s.Trim().Length>0&&s.IndexOfAny(['|','\n','\r','"'])<0;
         if(!A.TransferPreparation.ValidIban(Account)||!Safe(Payer)||Source.Length>0&&!Safe(Source)||People.Count==0)throw new InvalidDataException("أكمل بيانات الجهة الدافعة والمستفيدين.");
@@ -66,7 +80,7 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
         string Dest()=>raf?"إلى حساب "+groups[0].Name+" المرقم ("+groups[0].Bic+") وحسب ما مؤشر في قرص CD":groups.Count==1?"إلى حساب "+groups[0].Name+"، رمز السويفت ("+groups[0].Bic+")، وحسب ما مؤشر في ملف CSV المرفق":"إلى حسابات المصارف المبينة في الجدول أدناه وحسب ما مؤشر في ملفات CSV المرفقة";
         string date=A.AdaptiveLetterPdf.Eastern(" / "+Date.Month+" / "+Date.Year);
         var body="نرجو تحويل مبلغ قدره ("+Arabic.Eastern(Arabic.Money(sum))+") ("+A.ArabicAmountWords.Dinars(sum)+") لا غيرها من حسابنا المرقم ("+Account+") المفتوح لديكم "+Dest()+"، والذي يمثل إعادة مبالغ"+(Source.Length>0?" من "+Source:"")+" لمنتسبي قيادة شرطة محافظة الأنبار والبالغ عددهم ("+Arabic.Eastern(count.ToString())+")، وتزويدنا بالإشعار اللازم بذلك.";
-        var blocks=A.AdaptiveLetterPdf.Opening(style with{Number="١‏/٢٢/ح/"},date,body);
+        var blocks=A.AdaptiveLetterPdf.Opening(style with{Number="١‏/٢٢/ح/"},date,body,(string?)Original?["letters"]?[raf?"rafidain":"otherBanks"]?["recipient"]??"مصرف الرافدين / فرع الأنبار");
         if(!raf){var rows=groups.Select((g,i)=>new[]{Arabic.Eastern((i+1).ToString()),g.Name,Arabic.Eastern(Arabic.Money(g.Total)),Arabic.Eastern(g.People.Count.ToString()),g.Bic}).ToList();
             if(groups.Count>1)rows.Add(["","المجموع",Arabic.Eastern(Arabic.Money(sum)),Arabic.Eastern(count.ToString()),""]);
             blocks.Add(A.LetterBlock.Of(new A.LetterTable(["ت","اسم المصرف","المبلغ","عدد المنتسبين","Receiver BIC"],rows,"Arial",19,[1,8,5,4,5],BoldLastRow:groups.Count>1)));}
@@ -106,8 +120,7 @@ public sealed partial class Store
         }
         data["rows"]=rows;
         data["banks"]=JsonSerializer.SerializeToNode(groups.ToDictionary(g=>g.Code,g=>new{name=g.Name,bic=g.Bic}));
-        var letter=new{header="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات",number="١‏/٢٢/ح/",recipient="مصرف الرافدين / فرع الأنبار",first="",second="",third="",signatureOffset=0,footer="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة."};
-        data["letters"]??=JsonSerializer.SerializeToNode(new{rafidain=letter,otherBanks=letter});
+        data["letters"]??=RefundBatch.DefaultLetters();
         Rewrite(revision,null,null,refunds:new Dictionary<string,byte[]?>{{key,JsonSerializer.SerializeToUtf8Bytes(data,IosJson)}});
     }
     static object SwiftIdentity(string storage,string pk)=>new{implementation=new{storeIdentifier=storage,entityName="Employee",primaryKey=pk,isTemporary=false,uriRepresentation="x-coredata://"+storage+"/Employee/"+pk}};

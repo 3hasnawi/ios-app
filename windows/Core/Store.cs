@@ -42,6 +42,7 @@ public sealed partial class Store(string root)
             }
             File.WriteAllText(Path.Combine(stage,"archive.sha256"),Convert.ToHexString(fileHash.GetHashAndReset()));
             using(var db=Connect(stage,false)) BackupReader.Index(zip,db,progress,token);
+            if(!checkRevision && Active is {} before)CheckRestoredTransfers(Path.Combine(before,BackupName),zip);
             token.ThrowIfCancellationRequested();
             File.WriteAllText(next,id);
             File.Move(next,Pointer,true);

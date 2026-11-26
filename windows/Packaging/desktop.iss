@@ -17,5 +17,27 @@ WizardStyle=modern
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+Source: "{#WebRuntime}"; DestName: "WebView2.exe"; DestDir: "{tmp}"; Flags: nocompression deleteafterinstall; Check: NeedsRuntime
+
+[Code]
+function HasRuntime(Root: Integer): Boolean;
+var Version: String;
+begin
+  Result := RegQueryStringValue(Root, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) and (Version <> '') and (Version <> '0.0.0.0');
+end;
+
+function NeedsRuntime(): Boolean;
+begin
+  Result := not (HasRuntime(HKLM32) or HasRuntime(HKCU));
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var ExitCode: Integer;
+begin
+  if (CurStep = ssPostInstall) and NeedsRuntime() then
+    if not Exec(ExpandConstant('{tmp}\WebView2.exe'), '/silent /install', '', SW_HIDE, ewWaitUntilTerminated, ExitCode) or NeedsRuntime() then
+      RaiseException('Microsoft Edge WebView2 Runtime installation failed.');
+end;
+
 [Icons]
 Name: "{userprograms}\Anbar Payroll"; Filename: "{app}\AnbarPayroll.exe"

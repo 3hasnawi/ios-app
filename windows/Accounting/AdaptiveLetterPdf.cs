@@ -490,11 +490,11 @@ public static class AdaptiveLetterPdf
         return [$"معاون مدير تدقيق\n{Name(settings.First)}\nالمصروفات\n{date}", $"العميد\n{Name(settings.Second)}\nمدير الحسابات\n{date}", $"لواء الشرطة الحقوقي\n{Name(settings.Third)}\nقائد شرطة محافظة الأنبار\n{date}"];
     }
     /// الكتل الأولى في كل الكتب: الترويسة، العدد والتاريخ، الجهة، الموضوع، المتن.
-    public static List<LetterBlock> Opening(GroupLetterSettings settings, string date, string body) =>
+    public static List<LetterBlock> Opening(GroupLetterSettings settings, string date, string body,string recipient="مصرف الرافدين / فرع الأنبار") =>
     [
         LetterBlock.Of(new LetterParagraph(settings.Header, "Times New Roman", 32, true)),
         LetterBlock.Of(new LetterParagraph(ReferenceText(settings.Number, date), "Times New Roman", 36, true)),
-        LetterBlock.Of(new LetterParagraph("إلى / مصرف الرافدين / فرع الأنبار", "Arial", 32, true, true)),
+        LetterBlock.Of(new LetterParagraph("إلى / "+recipient, "Arial", 32, true, true)),
         LetterBlock.Of(new LetterParagraph("م / تحويل مبلغ", "Arial", 32, true, true)),
         LetterBlock.Of(new LetterParagraph(body, "Times New Roman", 28)),
     ];

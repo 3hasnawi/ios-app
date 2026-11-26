@@ -32,7 +32,7 @@ public static class ContractOverrides
         {
             if (node is not JsonObject obj) throw new InvalidDataException("قيد تعديل العقود غير صالح.");
             var value = new ContractOverride(obj["total"]!.GetValue<decimal>(), obj["nominal"]!.GetValue<decimal>(), obj["retirement"]!.GetValue<decimal>(), obj["count"]!.GetValue<int>(), obj["missing"]!.GetValue<int>());
-            if (!Money(value.Total) || !Money(value.Nominal) || !Money(value.Retirement) || value.Count <= 0 || value.Missing != 0) throw new InvalidDataException("قيم تعديل العقود غير صالحة.");
+            if (!Money(value.Total) || !Money(value.Nominal) || !Money(value.Retirement) || value.Count <= 0 || value.Missing < 0 || value.Missing > value.Count) throw new InvalidDataException("قيم تعديل العقود غير صالحة.");
             return value;
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or NullReferenceException or FormatException or OverflowException)
@@ -56,7 +56,7 @@ public static class ContractOverrides
         if (value is null) all.Remove(month);
         else
         {
-            if (!Money(value.Total) || !Money(value.Nominal) || !Money(value.Retirement) || value.Count <= 0 || value.Missing != 0) throw new InvalidDataException("قيم تعديل العقود غير صالحة.");
+            if (!Money(value.Total) || !Money(value.Nominal) || !Money(value.Retirement) || value.Count <= 0 || value.Missing < 0 || value.Missing > value.Count) throw new InvalidDataException("قيم تعديل العقود غير صالحة.");
             var entry = all[month] is JsonObject existing ? (JsonObject)existing.DeepClone() : new JsonObject();
             entry["total"] = value.Total; entry["nominal"] = value.Nominal; entry["retirement"] = value.Retirement; entry["count"] = value.Count; entry["missing"] = value.Missing;
             all[month] = entry;

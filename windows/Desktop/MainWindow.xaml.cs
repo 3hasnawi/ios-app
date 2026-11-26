@@ -323,8 +323,10 @@ public partial class MainWindow : Window
         string[] refNames=["أحمد سامر محمود","باسم علي حسن","حسن فاضل ناصر","خالد سعد كريم","رائد عماد علي","سامي كاظم حسن","عادل حامد سالم","علي حسن ناصر","محمد ناصر علي","مصطفى سعد سالم","نزار حامد فاضل","يوسف سامر كريم"];
         var reference=Statement.Entities(refNames.Select((name,i)=>sample with{Month="تشرين الثاني 2026",Period=202611,Agency="جهة تجريبية",Name=name,Rank=i%2==0?"مفوض":"شرطي",Reference=(101+i)+" / ٢٠٢٦",Amount=125000+i*2500}),"قيادة شرطة محافظة الانبار",false);
 
+        var annualRows=Enumerable.Range(0,60).Select(i=>sample with{Period=(2022+i/12)*100+i%12+1,Month=Arabic.Months[i%12]+" "+(2022+i/12),Amount=1000+i}).ToArray();
+        var annual=Statement.Employee(annualRows,annualRows.Select(r=>new MonthInfo(r.Month,r.Period,1,1)).ToList(),sample.Name,sample.Agency,sample.Reference,202201,202612,ReportHeader());
         var command=WorkReports.Command(store.Snapshot(SelectedMonth!.Name),SelectedMonth.Name);
-        foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee"),(longSheet,"agency-long"),(command,"command"),(reference,"entity-reference")}){
+        foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee"),(longSheet,"agency-long"),(command,"command"),(reference,"entity-reference"),(annual,"employee-years")}){
             var preview=new ReportWindow(model){Owner=this};preview.Show();
             try{await preview.PrintPdf(Path.Combine(directory,file+".pdf"));model.Excel(Path.Combine(directory,file+".xlsx"));}
             finally{preview.Close();}

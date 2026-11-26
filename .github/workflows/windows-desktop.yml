@@ -24,7 +24,12 @@ jobs:
         run: dotnet publish windows/Desktop/Payroll.Desktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/app"
       - name: Build and install single setup
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DPublishDir=$env:RUNNER_TEMP\app" "/DInstallerDir=$env:RUNNER_TEMP\installer" windows/Packaging/desktop.iss
+          $runtime = "$env:RUNNER_TEMP\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+          curl.exe -fsSL --retry 3 'https://go.microsoft.com/fwlink/p/?LinkId=2124701' -o $runtime
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $sig = Get-AuthenticodeSignature $runtime
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*CN=Microsoft Corporation,*') { throw "Invalid Microsoft runtime signature" }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DWebRuntime=$runtime" "/DPublishDir=$env:RUNNER_TEMP\app" "/DInstallerDir=$env:RUNNER_TEMP\installer" windows/Packaging/desktop.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $p = Start-Process "$env:RUNNER_TEMP\installer\AnbarPayroll-Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$env:RUNNER_TEMP\installed" -Wait -PassThru
           exit $p.ExitCode
@@ -80,6 +85,7 @@ jobs:
           "$RUNNER_TEMP/pdf-tools/bin/pip" install pymupdf==1.26.6
           "$RUNNER_TEMP/pdf-tools/bin/python" windows/Checks/reference.py "$RUNNER_TEMP/win-pages" "$RUNNER_TEMP/apple-pages"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: apple-print-reference
           path: ${{ runner.temp }}/apple-pages

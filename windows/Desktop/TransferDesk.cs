@@ -14,10 +14,11 @@ public partial class MainWindow
         }
         return memory.ToArray();
     }
-    A.GroupLetterSettings? LetterForm(A.GroupLetterSettings saved){
+    A.GroupLetterSettings? LetterForm(A.GroupLetterSettings saved,bool fixedRefund=false){
         TextBox Field(string value)=>new(){Text=value,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
         var head=Field(saved.Header.Length>0?saved.Header:"جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات");
         var num=Field(saved.Number.Length>0?saved.Number:"١‏/٢٢/ح/");var first=Field(saved.First);var second=Field(saved.Second);var third=Field(saved.Third);var footer=Field(saved.Footer);
+        if(fixedRefund){num.Text="١‏/٢٢/ح/";num.IsReadOnly=true;footer.IsReadOnly=true;}
         if(!Form("مراجعة الكتاب",Bar(Labeled("الترويسة",head,300),Labeled("العدد",num,145)),Bar(Labeled("التوقيع الأول",first),Labeled("التوقيع الثاني",second),Labeled("التوقيع الثالث",third)),Labeled("نسخة منه إلى",footer,480)))return null;
         return saved with{Header=head.Text,Number=num.Text,First=first.Text,Second=second.Text,Third=third.Text,Footer=footer.Text};
     }

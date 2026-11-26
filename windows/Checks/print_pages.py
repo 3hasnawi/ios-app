@@ -22,6 +22,10 @@ for path in sorted([*screens.glob("*.pdf"), *native.glob("*.pdf")]):
             # Header labels, not just the page number, must be repeated on each page.
             tops = [{w[4] for w in p.get_text("words") if w[1] < 140} for p in document]
             assert len(set.intersection(*tops)) > 4
+        if path.stem == "employee-years":
+            assert len(document) == 2 and all(p.rect.width > p.rect.height for p in document)
+            assert all(str(year) in document[0].get_text() for year in range(2022,2026))
+            assert "2026" in document[-1].get_text() and "61,770" in document[-1].get_text()
         if path.stem == "bank-long":
             assert len(document) >= 3
             for page in document:
