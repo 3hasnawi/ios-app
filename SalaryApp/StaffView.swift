@@ -115,6 +115,26 @@ struct RootView: View {
         )
     }
 
+    private var restoreConfirmationMessage: String {
+        guard let m = backup.pendingRestore?.manifest else { return "" }
+            let created = m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
+            let counts = tr("\(Num.format(m.months.count)) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك · \(Num.format(m.books ?? 0)) كتب PDF", "\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff · \(m.books ?? 0) PDFs")
+            let warning: String
+            if let count = m.refundBatchCount {
+                let draft = m.hasRefundDraft == true ? tr("مع مسودة", "with draft") : tr("بدون مسودة", "no draft")
+                warning = tr("سيُستبدل سجل الإعادات بالنسخة المحددة (عدد الدفعات \(Num.format(count))، \(draft)) مع بقية بيانات النسخة.", "Current data will be replaced, including refunds (\(count) batches, \(draft)).")
+            } else {
+                warning = tr("ستُستبدل بيانات الرواتب والكتب بمحتوى النسخة. لا تتضمن هذه النسخة قسم الإعادات، وستبقى الإعادات الموجودة على الجهاز.", "Payroll and documents will be replaced. This backup has no refunds section. Refunds on this device will be kept.")
+            }
+            if let uploadedAt = backup.pendingServerRestoreDate {
+                let uploaded = uploadedAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
+                let device = backup.pendingServerRestoreDevice ?? tr("غير معروف", "Unknown")
+                return tr("وقت رفع الملف إلى السيرفر: \(uploaded)\nالجهاز الذي رفع النسخة: \(device)\n\(counts)\n\(warning)", "Uploaded to the server: \(uploaded)\nUploaded by: \(device)\n\(counts)\n\(warning)")
+            } else {
+                return tr("تاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى قديماً بعد إعادة حفظ الملف في ويندوز.\n\(counts)\n\(warning)", "Creation date recorded in the file: \(created)\nThis date may be older after saving the file in Windows.\n\(counts)\n\(warning)")
+            }
+    }
+
     var body: some View {
         TabView(selection: selection) {
             Tab(tr("الرئيسية", "Home"), systemImage: "house", value: AppRouter.Tab.payroll) {
@@ -225,24 +245,7 @@ struct RootView: View {
             Button(tr("استرجاع", "Restore"), role: .destructive) { backup.confirmRestore() }
             Button(tr("إلغاء", "Cancel"), role: .cancel) { backup.cancelRestore() }
         } message: {
-            if let m = backup.pendingRestore?.manifest {
-                let created = m.createdAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
-                let counts = tr("\(Num.format(m.months.count)) أشهر رواتب · \(Num.format(m.employees)) سجل رواتب · \(Num.format(m.staff)) في الملاك · \(Num.format(m.books ?? 0)) كتب PDF", "\(m.months.count) months · \(m.employees) payroll rows · \(m.staff) staff · \(m.books ?? 0) PDFs")
-                let warning: String
-                if let count = m.refundBatchCount {
-                    let draft = m.hasRefundDraft == true ? tr("مع مسودة", "with draft") : tr("بدون مسودة", "no draft")
-                    warning = tr("سيُستبدل سجل الإعادات بالنسخة المحددة (عدد الدفعات \(Num.format(count))، \(draft)) مع بقية بيانات النسخة.", "Current data will be replaced, including refunds (\(count) batches, \(draft)).")
-                } else {
-                    warning = tr("ستُستبدل بيانات الرواتب والكتب بمحتوى النسخة. لا تتضمن هذه النسخة قسم الإعادات، وستبقى الإعادات الموجودة على الجهاز.", "Payroll and documents will be replaced. This backup has no refunds section. Refunds on this device will be kept.")
-                }
-                if let uploadedAt = backup.pendingServerRestoreDate {
-                    let uploaded = uploadedAt.formatted(.dateTime.year().month().day().hour().minute().locale(AppSettings.locale))
-                    let device = backup.pendingServerRestoreDevice ?? tr("غير معروف", "Unknown")
-                    Text(tr("وقت رفع الملف إلى السيرفر: \(uploaded)\nالجهاز الذي رفع النسخة: \(device)\n\(counts)\n\(warning)", "Uploaded to the server: \(uploaded)\nUploaded by: \(device)\n\(counts)\n\(warning)"))
-                } else {
-                    Text(tr("تاريخ الإنشاء المسجّل داخل الملف: \(created)\nقد يبقى قديماً بعد إعادة حفظ الملف في ويندوز.\n\(counts)\n\(warning)", "Creation date recorded in the file: \(created)\nThis date may be older after saving the file in Windows.\n\(counts)\n\(warning)"))
-                }
-            }
+            Text(restoreConfirmationMessage)
         }
         .alert(tr("النسخ الاحتياطي", "Backup"), isPresented: Binding(get: { backup.message != nil }, set: { if !$0 { backup.message = nil } })) {
             Button(tr("حسناً", "OK"), role: .cancel) {}
