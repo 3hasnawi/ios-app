@@ -115,11 +115,25 @@ internal sealed class LetterPreview:Window
 {
     readonly TaskCompletionSource<bool> loaded=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal Task<bool> Ready=>loaded.Task;
-    public LetterPreview(byte[] pdf){
-        Title="معاينة الكتاب";Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
+    public LetterPreview(byte[] pdf,string? statementTitle=null){
+        Title=statementTitle==null?"معاينة الكتاب":"معاينة "+statementTitle;Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel=new DockPanel();Content=panel;
-        var edit=new Button{Content="✎  العودة إلى التحرير",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};
-        edit.Click+=(_,_)=>Close();DockPanel.SetDock(edit,Dock.Top);panel.Children.Add(edit);
+        var edit=new Button{Content=statementTitle==null?"✎  العودة إلى التحرير":"إغلاق المعاينة",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};
+        edit.Click+=(_,_)=>Close();
+        var toolbar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,FlowDirection=FlowDirection.RightToLeft};
+        toolbar.Children.Add(edit);DockPanel.SetDock(toolbar,Dock.Top);panel.Children.Add(toolbar);
+        if(statementTitle!=null){
+            var save=new Button{Content="حفظ PDF",Margin=new Thickness(4)};
+            toolbar.Children.Add(save);
+            save.Click+=async (_,_)=>{
+                var dialog=new Microsoft.Win32.SaveFileDialog{FileName=A.ReportSheet.FileName(statementTitle),Filter="PDF|*.pdf",DefaultExt=".pdf"};
+                if(dialog.ShowDialog(this)!=true)return;
+                save.IsEnabled=false;
+                try{await Task.Run(()=>A.ReportFiles.Save(pdf,dialog.FileName,".pdf"));}
+                catch(Exception ex){MessageBox.Show(this,ex.Message,Title,MessageBoxButton.OK,MessageBoxImage.Warning);}
+                finally{save.IsEnabled=true;}
+            };
+        }
         var viewer=new WebView2();panel.Children.Add(viewer);bool closed=false;
         Closed+=(_,_)=>{closed=true;loaded.TrySetResult(false);viewer.Dispose();};
         Loaded+=async (_,_)=>{
@@ -133,7 +147,7 @@ internal sealed class LetterPreview:Window
                 web.WebResourceRequested+=(_,e)=>e.Response=env.CreateWebResourceResponse(new MemoryStream(pdf,false),200,"OK","Content-Type: application/pdf\r\nCache-Control: no-store");
                 web.NavigationStarting+=(_,e)=>e.Cancel=e.Uri!=url;
                 web.NewWindowRequested+=(_,e)=>e.Handled=true;
-                web.NavigationCompleted+=(_,e)=>{if(e.IsSuccess)loaded.TrySetResult(true);else loaded.TrySetException(new IOException("تعذّرت معاينة الكتاب: "+e.WebErrorStatus));};
+                web.NavigationCompleted+=(_,e)=>{if(e.IsSuccess)loaded.TrySetResult(true);else loaded.TrySetException(new IOException("تعذّرت معاينة المستند: "+e.WebErrorStatus));};
                 web.Navigate(url);
             }catch(Exception e){loaded.TrySetException(e);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
         };

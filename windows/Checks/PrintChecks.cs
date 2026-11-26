@@ -34,6 +34,8 @@ static class PrintChecks
         var split=Store.ActiveBatch(snapshot,"تشرين الثاني 2026")!;
         var groupPlan=A.GroupLetterPreparation.Prepare(split.Plan(true),A.TransferGroup.OtherBanks,refund.Date);
         Pdf("deferred-group",A.GroupLetterPdf.Generate(groupPlan,style,times,assets.Bold,logo),n=>n==2);
+        var monthly=A.MonthlyBankReport.Sheet(snapshot,A.BankStatementCalculator.Calculate(snapshot,"تشرين الثاني 2026"));
+        Pdf("bank-month",A.ReportPdf.Generate([monthly],assets,DateTime.UtcNow),n=>n==1);
         var period=A.BankReconciliation.ReadFromBackup(snapshot).Single();
         var extra=Enumerable.Range(1,90).Select(i=>new A.BankMovement(Guid.NewGuid(),period.Start,"صرف دفعة تجريبية من المصرف "+i,i,A.MovementDirection.Debit,Matched:true));
         Pdf("bank-long",A.ReconciliationPdf.Statement(period with{Movements=period.Movements.Concat(extra).ToArray(),OpeningBalance=10000},A.TransferPreparation.Account(snapshot),true,assets),n=>n>=3);

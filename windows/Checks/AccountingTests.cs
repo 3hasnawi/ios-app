@@ -107,6 +107,12 @@ static class AccountingTests
         check(s.Refunds().Single().LetterStyle(false,style with{First=""}).First==style.First,"edited refund letter signature survives archive");
         s.ApproveContract(s.Snapshot(month),month,12345);
         check(A.BankStatementCalculator.Calculate(s.Snapshot(month),month).ContractContribution==12345,"approved contract amount survives archive");
+        var bankSource=s.Snapshot(month);
+        var monthly=A.BankStatementCalculator.Calculate(bankSource,month);
+        var monthlySheet=A.MonthlyBankReport.Sheet(bankSource,monthly);
+        monthlySheet.Validate();
+        check(!monthlySheet.ShowTotal && monthlySheet.Amounts.Last()==monthly.Net+monthly.BankDeductions+monthly.Breakdown.Values.Sum()+12345+monthly.Manual.Total
+            && monthlySheet.Title.Contains(month),"monthly bank report includes approved contracts once and excludes execution comparison and subtotals");
         var partial=new A.ContractOverride(770,0,20,2,2);
         var encoded=A.ContractOverrides.Set(null,month,partial);
         check(A.ContractOverrides.Read(snap with{SettingsPlists=new Dictionary<string,byte[]>{{A.ContractOverrides.SettingsKey,encoded}}},month)==partial,"iPhone approval with two missing nominal salaries is readable");

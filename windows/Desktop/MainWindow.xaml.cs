@@ -399,6 +399,37 @@ public partial class MainWindow : Window
                 }
                 ShowPage(name);
             }
+            if(name=="كشف البنك"){
+                await bankLoad;
+                if(bankLedgerSelected)throw new InvalidDataException("لم يفتح كشف الشهر أولاً.");
+                UpdateLayout();
+                CaptureWindow((FrameworkElement)Content,"bank-month");
+                // Verify both preview actions through the same controls used by the accountant.
+                async Task CheckPreview(){
+                    bool opened=false;
+                    var probe=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
+                    var deadline=DateTime.UtcNow.AddSeconds(25);
+                    probe.Tick+=async (_,_)=>{
+                        var preview=OwnedWindows.OfType<LetterPreview>().FirstOrDefault();
+                        if(preview==null){if(DateTime.UtcNow>=deadline)probe.Stop();return;}
+                        probe.Stop();
+                        try{opened=await preview.Ready.WaitAsync(TimeSpan.FromSeconds(15));}
+                        catch(Exception){opened=false;}
+                        finally{preview.Close();}
+                    };
+                    probe.Start();
+                    try{
+                        Click(CanvasArea,"معاينة الكشف");
+                        while(probe.IsEnabled)await Task.Delay(80);
+                        while(!opened && OwnedWindows.OfType<LetterPreview>().Any())await Task.Delay(80);
+                        if(!opened)throw new InvalidDataException("تعذّرت معاينة كشف البنك.");
+                    }finally{probe.Stop();}
+                }
+                await CheckPreview();
+                Click(CanvasArea,BankLedger);
+                await bankLoad;
+                await CheckPreview();
+            }
             if(grid!=null&&name!=EmployeePage)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             if(name is DeductionsName or EmployeePage or "التحويلات" or TransfersName or "كشف البنك" or AuditName or SearchName or "إعادة المبالغ" or TrustName or "الكتب المحفوظة" or HealthName or FundName){
