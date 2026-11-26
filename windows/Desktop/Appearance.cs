@@ -26,7 +26,7 @@ internal sealed record Appearance(int Level=0,bool Hindi=false)
 
     public void Apply()
     {
-        A.ReportNumerals.Style=Hindi?A.NumeralStyle.Hindi:A.NumeralStyle.Arabic;
+        DisplayNumerals.Hindi=Hindi;
         double scale=1+Level*.05;
         var resources=Application.Current.Resources;
         for(int half=20;half<=64;half++){
@@ -43,7 +43,7 @@ internal sealed record Appearance(int Level=0,bool Hindi=false)
         var value=field.Text;
         bool numeric=value.Length>0 && value.All(c=>char.IsDigit(c)||"/.,: -٬٫".Contains(c));
         bool localAccount=value.Length==15 && value.All(char.IsDigit);
-        bool hindi=A.ReportNumerals.Style==A.NumeralStyle.Hindi && numeric && !localAccount;
+        bool hindi=DisplayNumerals.Hindi && numeric && !localAccount;
         System.Windows.Media.NumberSubstitution.SetCultureSource(field,System.Windows.Media.NumberCultureSource.Override);
         System.Windows.Media.NumberSubstitution.SetCultureOverride(field,CultureInfo.GetCultureInfo(hindi?"ar-EG":"en-US"));
         System.Windows.Media.NumberSubstitution.SetSubstitution(field,hindi?System.Windows.Media.NumberSubstitutionMethod.NativeNational:System.Windows.Media.NumberSubstitutionMethod.European);
@@ -54,13 +54,13 @@ internal sealed record Appearance(int Level=0,bool Hindi=false)
 
 public sealed class DisplayNumberConverter:IValueConverter
 {
-    public object Convert(object value,Type targetType,object parameter,CultureInfo culture)=>A.ReportNumerals.Format(value?.ToString()??"");
+    public object Convert(object value,Type targetType,object parameter,CultureInfo culture)=>DisplayNumerals.Format(value?.ToString()??"");
     public object ConvertBack(object value,Type targetType,object parameter,CultureInfo culture)=>Binding.DoNothing;
 }
 
 public sealed class DisplayText:TextBlock
 {
-    static DisplayText()=>TextProperty.OverrideMetadata(typeof(DisplayText),new FrameworkPropertyMetadata("",null,(_,raw)=>A.ReportNumerals.Format((string?)raw??"")));
+    static DisplayText()=>TextProperty.OverrideMetadata(typeof(DisplayText),new FrameworkPropertyMetadata("",null,(_,raw)=>DisplayNumerals.Format((string?)raw??"")));
 }
 
 public partial class MainWindow
@@ -84,6 +84,6 @@ public partial class MainWindow
             }catch(Exception ex){Error(ex);}
         }
         sizes.SelectionChanged+=(_,_)=>Change();numbers.SelectionChanged+=(_,_)=>Change();
-        return Box(Column(Text("المظهر والأرقام",18,true),FilterBar(("حجم خط المحتوى",sizes,1),("شكل الأرقام",numbers,1)),sample));
+        return Box(Column(Text("المظهر والأرقام",18,true),FilterBar(("حجم خط المحتوى",sizes,1),("شكل أرقام الواجهة",numbers,1)),sample));
     }
 }

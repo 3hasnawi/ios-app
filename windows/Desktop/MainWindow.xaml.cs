@@ -445,11 +445,15 @@ public partial class MainWindow : Window
             }
             if(name=="الإعدادات"){
                 ComboBox Setting(string name)=>Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)==name);
-                Setting("حجم خط المحتوى").SelectedIndex=4;Setting("شكل الأرقام").SelectedIndex=1;
+                string statementMonth=months.Single(m=>m.Key==202610).Name;
+                var statement=WorkReports.Command(store.Snapshot(statementMonth),statementMonth);
+                var originalPreview=statement.Html();
+                Setting("حجم خط المحتوى").SelectedIndex=4;Setting("شكل أرقام الواجهة").SelectedIndex=1;
                 var sampleText=Controls<TextBlock>(CanvasArea).FirstOrDefault(t=>t.Text.Contains("١٢,٥٠٠"));
                 if(sampleText==null||Math.Abs(sampleText.FontSize-19.2)>.1||Appearance.Read(store.Root)!=new Appearance(4,true))
                     throw new InvalidDataException("تعذّر تطبيق وحفظ حجم الخط والأرقام.");
-                Setting("حجم خط المحتوى").SelectedIndex=0;Setting("شكل الأرقام").SelectedIndex=0;
+                if(statement.Html()!=originalPreview)throw new InvalidDataException("تغيّرت أرقام كشف القيادة عند تبديل أرقام الواجهة.");
+                Setting("حجم خط المحتوى").SelectedIndex=0;Setting("شكل أرقام الواجهة").SelectedIndex=0;
                 if(!Controls<TextBlock>(CanvasArea).Any(t=>t.Text.Contains("12,500")))throw new InvalidDataException("تعذر استرجاع الأرقام العربية.");
             }
             if(name=="كشف البنك"){

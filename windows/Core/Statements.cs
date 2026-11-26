@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using SalaryDesktop.Core;
 using System.Text;
 using ClosedXML.Excel;
 
@@ -55,7 +54,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
         return new(header,sums,person,rows.OrderByDescending(r=>r.Period).Select(r=>r.Rank).FirstOrDefault()??"",agency,
             reference!=""?reference:string.Join(" | ",rows.Select(r=>r.Reference).Where(s=>s!="").Distinct()),paid,partial);
     }
-    static string Display(object? v)=>WebUtility.HtmlEncode(ReportNumerals.Format(v switch{decimal d=>Arabic.Money(d),_=>v?.ToString()??""}));
+    static string Display(object? v)=>WebUtility.HtmlEncode(v switch{decimal d=>Arabic.Money(d),_=>v?.ToString()??""});
     public bool Landscape=>Person!=""||Sheets.Count==1&&Sheets[0].Command;
     public string Html()
     {
@@ -64,16 +63,15 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             result.Append(Display(command.Title)+"</h1><table><thead><tr>");
             foreach(var col in command.Columns)result.Append("<th>"+Display(col)+"</th>");result.Append("</tr></thead><tbody>");
             foreach(var row in command.Rows){result.Append("<tr>");for(int i=0;i<row.Length;i++){
-                if(row[i]==null)continue;result.Append(i==2&&row[3]==null?"<td colspan='4'>":"<td>");result.Append((ReportNumerals.Style==NumeralStyle.Original?Arabic.Eastern(Display(row[i])):Display(row[i]))+"</td>");}result.Append("</tr>");}
+                if(row[i]==null)continue;result.Append(i==2&&row[3]==null?"<td colspan='4'>":"<td>");result.Append(Arabic.Eastern(Display(row[i]))+"</td>");}result.Append("</tr>");}
             return result.Append("</tbody></table></html>").ToString();
         }
         var b=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>");
         b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.agency{color:#000;table-layout:fixed}.agency th{height:24pt;font-size:11pt}.agency th.org{height:24pt;font-size:14pt}.agency th.title{height:30pt;font-size:14pt}.agency tr:not(.sum) td:nth-child(2),.agency tr:not(.sum) td:nth-child(3),.agency tr:not(.sum) td:nth-child(5){text-align:right}.agency td{line-height:14pt}.agency tbody tr.sum{height:24pt;background:#deebf7}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands{align-items:start;break-inside:avoid}.bands th,.bands td{height:22.1pt;font-size:12pt;line-height:15pt;padding:1pt 3pt}.identity td,.identity th{line-height:15pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}td.num{white-space:nowrap;direction:ltr;overflow-wrap:normal;font-variant-numeric:tabular-nums}@page{size:A4 ");
         b.Append(Person==""?"portrait;margin:28pt 28pt 32pt":"landscape;margin:18pt 22pt 32pt");
         string footer=Person==""?"( قيادة شرطة محافظة الانبار - قسم الحسابات )":"كشف الاستقطاعات";
-        var stamp=ReportNumerals.Format(Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture)));
-        string counter=ReportNumerals.Style==NumeralStyle.Arabic?"decimal":"arabic-indic";
-        b.Append("; @bottom-right{content:'"+footer+"';font:bold 8.5pt Arial;color:#444}@bottom-center{content:'صفحة ' counter(page,"+counter+") ' من ' counter(pages,"+counter+");font:8.5pt Arial;color:#444}@bottom-left{content:'"+stamp+"';font:8.5pt Arial;color:#444}");
+        var stamp=Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture));
+        b.Append("; @bottom-right{content:'"+footer+"';font:bold 8.5pt Arial;color:#444}@bottom-center{content:'صفحة ' counter(page,arabic-indic) ' من ' counter(pages,arabic-indic);font:8.5pt Arial;color:#444}@bottom-left{content:'"+stamp+"';font:8.5pt Arial;color:#444}");
         b.Append("}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body,section{background:white;margin:0;padding:0;max-width:none}}</style>");
         void Table(Sheet s,bool entity){
             bool agency=entity && s.Columns.Length==5 && s.AmountColumn==3;
@@ -105,7 +103,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
         if(Person==""){foreach(var s in Sheets){b.Append("<section>");Table(s,true);b.Append("</section>");}}
         else for(int i=0;i<Sheets.Count;i+=4){
             b.Append("<section><div class='banner'><b>قيادة شرطة محافظة الأنبار / قسم الحسابات</b><b>كشف استقطاعات</b></div>");
-            b.Append($"<table class='identity'><tr><th>الاسم الكامل</th><td colspan='3'>{Display(Person)}</td></tr><tr><th>الرتبة</th><td>{Display(Rank)}</td><th>جهة الاستقطاع</th><td>{Display(Agency)}</td></tr><tr><th>عدد الأشهر</th><td>{Display(PaidMonths)}</td><th>رقم وتاريخ الإضبارة</th><td>{Display(Reference)}</td></tr></table><div class='bands'>");
+            b.Append($"<table class='identity'><tr><th>الاسم الكامل</th><td colspan='3'>{Display(Person)}</td></tr><tr><th>الرتبة</th><td>{Display(Rank)}</td><th>جهة الاستقطاع</th><td>{Display(Agency)}</td></tr><tr><th>عدد الأشهر</th><td>{PaidMonths}</td><th>رقم وتاريخ الإضبارة</th><td>{Display(Reference)}</td></tr></table><div class='bands'>");
             foreach(var s in Sheets.Skip(i).Take(4))Table(s,false);b.Append("</div>");
             if(i+4>=Sheets.Count){b.Append($"<div class='banner'>{(Partial?"مجموع القيود المتوفرة":"المجموع الكلي للاستقطاعات")}　{Display(Sheets.Sum(s=>s.Total))}</div>");if(Partial)b.Append("<p class='warn'>توجد أشهر غير متحققة؛ المجموع للقيود المتوفرة فقط.</p>");b.Append("<p>التدقيق</p>");}b.Append("</section>");
         }
@@ -118,17 +116,16 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             throw new InvalidDataException("تعذّر تمثيل جميع بيانات الكشف بدقة في Excel.");
         using var book=new XLWorkbook();
         foreach(var s in Sheets){
-            var stem=string.Concat(ReportNumerals.Format(s.Name).Select(c=>"[]:*?/\\".Contains(c)?' ':c)).Trim(' ','\'');
+            var stem=string.Concat(s.Name.Select(c=>"[]:*?/\\".Contains(c)?' ':c)).Trim(' ','\'');
             if(stem.Length==0)stem="كشف";stem=stem[..Math.Min(31,stem.Length)];var name=stem;
             for(int i=2;book.Worksheets.Contains(name);i++){var end=" "+i;name=stem[..Math.Min(stem.Length,31-end.Length)]+end;}
-            var w=book.Worksheets.Add(name);w.RightToLeft=true;
-            if(ReportNumerals.Style!=NumeralStyle.Original)w.Style.NumberFormat.Format=ReportNumerals.ExcelFormat("General");int width=s.Columns.Length;
-            void Heading(int row,string title){w.Range(row,1,row,width).Merge().FirstCell().SetValue(ReportNumerals.Format(title));}
+            var w=book.Worksheets.Add(name);w.RightToLeft=true;int width=s.Columns.Length;
+            void Heading(int row,string title){w.Range(row,1,row,width).Merge().FirstCell().SetValue(title);}
             Heading(1,Header);Heading(2,s.Title);int head=3;
             if(s.Annual){Heading(3,Person+"　"+Rank+"　"+Agency);Heading(4,"رقم وتاريخ الإضبارة　"+Reference);head=5;}
-            for(int j=0;j<width;j++)w.Cell(head,j+1).SetValue(ReportNumerals.Format(s.Columns[j]));int row=head+1;
+            for(int j=0;j<width;j++)w.Cell(head,j+1).SetValue(s.Columns[j]);int row=head+1;
             foreach(var values in s.Rows){
-                for(int j=0;j<values.Length;j++){var c=w.Cell(row,j+1);switch(values[j]){case decimal d:c.SetValue((double)d);break;case int n:c.SetValue(n);break;default:c.SetValue(ReportNumerals.Format(values[j]?.ToString()??""));break;}}
+                for(int j=0;j<values.Length;j++){var c=w.Cell(row,j+1);switch(values[j]){case decimal d:c.SetValue((double)d);break;case int n:c.SetValue(n);break;default:c.SetValue(values[j]?.ToString()??"");break;}}
                 w.Row(row).Height=s.Annual?22.1:Math.Max(20,20*values.Select((v,index)=>v is string t?(int)Math.Ceiling(t.Length/(double)(index==3||index==1?14:32)):1).Max());row++;
             }
             if(s.ShowTotal){
@@ -139,7 +136,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             var used=w.RangeUsed()!;used.Style.Font.FontName="Arial";used.Style.Font.FontSize=s.Annual?12:11.5;used.Style.Font.Bold=true;used.Style.Alignment.WrapText=true;used.Style.Alignment.Vertical=XLAlignmentVerticalValues.Center;
             w.Range(head,1,row,width).Style.Border.InsideBorder=XLBorderStyleValues.Thin;w.Range(head,1,row,width).Style.Border.OutsideBorder=XLBorderStyleValues.Thin;
             w.Range(2,1,2,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#1F4F78");w.Range(2,1,2,width).Style.Font.FontColor=XLColor.White;
-            w.Range(head,1,head,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#DEEBF7");w.Column(s.AmountColumn+1).Style.NumberFormat.Format=ReportNumerals.ExcelFormat("#,##0.###############");
+            w.Range(head,1,head,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#DEEBF7");w.Column(s.AmountColumn+1).Style.NumberFormat.Format="#,##0.###############";
             for(int j=1;j<=width;j++)w.Column(j).Width=s.Annual?34:j==1?7:j==3||j==5?39:20;
             if(s.Command){
                 w.Range(1,1,1,width).FirstCell().Clear();w.Range(2,1,2,width).Style.Fill.BackgroundColor=XLColor.White;w.Range(2,1,2,width).Style.Font.FontColor=XLColor.Black;

@@ -95,7 +95,7 @@ public static class XlsxReport
     internal static string Esc(string text) => new string(text.Where(c => c is '\n' or '\t' || c >= ' ').ToArray())
         .Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
     internal static string Text(string reference, string text, int style) =>
-        $"<c r=\"{reference}\" s=\"{style}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">{Esc(ReportNumerals.Format(text))}</t></is></c>";
+        $"<c r=\"{reference}\" s=\"{style}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">{Esc(text)}</t></is></c>";
     internal static string Number(decimal value) => value.ToString(value == decimal.Truncate(value) ? "0" : "0.############", CultureInfo.InvariantCulture);
 
     public static byte[] Generate(ReportSheet sheet) => Package([("الكشف", Worksheet(sheet))], Styles, "$1:$3");
@@ -165,7 +165,7 @@ public static class XlsxReport
     internal static byte[] Package(IReadOnlyList<(string Name, string Xml)> sheets, string styles, string? printTitles)
     {
         if (sheets.Count == 0) throw new InvalidDataException("لا توجد أوراق للتصدير.");
-        var names = sheets.Select(s => SheetName(ReportNumerals.Format(s.Name))).ToArray();
+        var names = sheets.Select(s => SheetName(s.Name)).ToArray();
         for (int i = 0; i < names.Length; i++) for (int j = 0; j < i; j++) if (string.Equals(names[i], names[j], StringComparison.OrdinalIgnoreCase)) names[i] = SheetName(names[i][..Math.Min(names[i].Length, 27)] + " " + (i + 1));
         var overrides = string.Concat(sheets.Select((_, i) => $"<Override PartName=\"/xl/worksheets/sheet{i + 1}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"));
         var types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
@@ -183,7 +183,7 @@ public static class XlsxReport
         using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
         {
             void Add(string path, string text) { var entry = zip.CreateEntry(path, CompressionLevel.Optimal); using var stream = entry.Open(); stream.Write(new UTF8Encoding(false).GetBytes(text)); }
-            Add("[Content_Types].xml", types); Add("_rels/.rels", rootRels); Add("xl/workbook.xml", book); Add("xl/_rels/workbook.xml.rels", rels); Add("xl/styles.xml", ReportNumerals.ExcelStyles(styles));
+            Add("[Content_Types].xml", types); Add("_rels/.rels", rootRels); Add("xl/workbook.xml", book); Add("xl/_rels/workbook.xml.rels", rels); Add("xl/styles.xml", styles);
             for (int i = 0; i < sheets.Count; i++) Add($"xl/worksheets/sheet{i + 1}.xml", sheets[i].Xml);
         }
         return output.ToArray();
