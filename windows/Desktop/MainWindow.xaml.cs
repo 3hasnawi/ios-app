@@ -38,7 +38,7 @@ public partial class MainWindow : Window
         catch(IOException){}catch(JsonException){}
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.K&&Keyboard.Modifiers==ModifierKeys.Control&&!busy){ShowPage("بحث الاستقطاعات");e.Handled=true;}};
-        Loaded+=(_,_)=>Guard(()=>{Reload();initializing=false;ShowPage("الرئيسية");});
+        Loaded+=(_,_)=>Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
     }
     void Guard(Action work){try{work();}catch(Exception e){Error(e);}}
     void Error(Exception e){Status.Text="تعذّر إكمال العملية. "+e.Message;MessageBox.Show(this,e.Message,"قسم الحسابات",MessageBoxButton.OK,MessageBoxImage.Warning);}
@@ -245,7 +245,7 @@ public partial class MainWindow : Window
         dialog.Content=Box(Column(Text(row.Name,20,true),Labeled("جهة الاستقطاع",agenciesBox,335),Labeled("رقم وتاريخ الإضبارة",refs,335),
             Bar(Labeled("من شهر",start),Labeled("إلى شهر",end)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true)));
         if(dialog.ShowDialog()!=true)return;
-        Guard(()=>{var report=Statement.Employee(choices,months,row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
+        Guard(()=>{var report=store.PersonStatement(row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
             ((MonthInfo)start.SelectedItem).Key,((MonthInfo)end.SelectedItem).Key,ReportHeader());new ReportWindow(report){Owner=this}.ShowDialog();});
     }
     void Books()
@@ -312,7 +312,7 @@ public partial class MainWindow : Window
         var sample=store.Find(new()).First();
         var f=new Filters(Agency:sample.Agency,Year:sample.Period/100,Month:sample.Period%100);
         var agencyStatement=Statement.Entities(store.Find(f),ReportHeader(),true);
-        var employeeStatement=Statement.Employee(store.Find(new(Person:sample.Name)),months,sample.Name,sample.Agency,sample.Reference,months[^1].Key,months[0].Key,ReportHeader());
+        var employeeStatement=store.PersonStatement(sample.Name,sample.Agency,sample.Reference,months[^1].Key,months[0].Key,ReportHeader());
         foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee")}){
             var preview=new ReportWindow(model){Owner=this};preview.Show();
             try{await preview.PrintPdf(Path.Combine(directory,file+".pdf"));model.Excel(Path.Combine(directory,file+".xlsx"));}

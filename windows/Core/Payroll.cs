@@ -15,10 +15,11 @@ public static class Arabic
         foreach (var c in Digits(text))
         {
             if (c=='ـ' || CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.NonSpacingMark) continue;
-            result.Append(c switch { 'أ' or 'آ' or 'إ' or 'ٱ' => 'ا', 'ى'=>'ي','ة'=>'ه',_=>char.ToLowerInvariant(c) });
+            result.Append(c switch { 'أ' or 'آ' or 'إ' or 'ٱ' => 'ا', 'ى' or 'ئ'=>'ي','ؤ'=>'و','ة'=>'ه',_=>char.ToLowerInvariant(c) });
         }
         return Regex.Replace(result.ToString().Trim(), @"\s+"," ");
     }
+    public static string Match(string name)=>Key(name).Replace(" ","");
     public static string CaseKey(string note) => Regex.Replace(Regex.Replace(Digits(note).Trim(),@"\s+"," "),@"\s*/\s*","/");
     public static int Period(string label)
     {

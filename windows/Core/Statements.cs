@@ -26,9 +26,12 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
     public static Statement Employee(IEnumerable<Deduction> input,IReadOnlyList<MonthInfo> months,string person,string agency,string reference,int start,int end,string header)
     {
         if(start<=0||end<start||end/100-start/100>=100)throw new InvalidOperationException("راجع بداية الفترة ونهايتها.");
-        var rows=input.Where(r=>r.Name==person&&r.Agency==agency&&(reference==""||Arabic.CaseKey(r.Reference)==Arabic.CaseKey(reference))&&r.Period>=start&&r.Period<=end).ToList();
-        var sources=months.GroupBy(m=>m.Key).ToDictionary(g=>g.Key,g=>g.Count()==1&&g.First().Verified);
-        var sums=new List<Sheet>();bool partial=false;int paid=0;
+        var matching=input.Where(r=>Arabic.Match(r.Name)==Arabic.Match(person)&&r.Agency==agency&&(reference==""||Arabic.CaseKey(r.Reference)==Arabic.CaseKey(reference))).ToList();
+        var rows=matching.Where(r=>r.Period>=start&&r.Period<=end).ToList();
+        var periods=months.Where(m=>m.Key>=start&&m.Key<=end).GroupBy(m=>m.Key).ToList();
+        if(periods.Any(g=>g.Count()>1))throw new InvalidDataException("يوجد أكثر من ملف محفوظ للشهر نفسه. راجع الأشهر قبل إصدار الكشف.");
+        var sources=periods.ToDictionary(g=>g.Key,g=>g.Single().Verified);
+        var sums=new List<Sheet>();bool partial=matching.Any(r=>r.Period==0);int paid=0;
         for(int y=start/100;y<=end/100;y++){
             decimal total=0;var annual=new List<object?[]>();
             for(int m=1;m<=12;m++){

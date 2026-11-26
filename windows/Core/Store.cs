@@ -58,6 +58,7 @@ public sealed class Store(string root)
             Mode=read?SqliteOpenMode.ReadOnly:SqliteOpenMode.ReadWriteCreate}.ToString());
         db.Open();
         db.CreateCollation("ARABIC",(a,b)=>CultureInfo.GetCultureInfo("ar-IQ").CompareInfo.Compare(a,b,CompareOptions.None));
+        db.CreateFunction<string,string>("person_key",Arabic.Match,isDeterministic:true);
         db.CreateFunction<string,string>("agency_category",Arabic.Category,isDeterministic:true);
         return db;
     }
@@ -98,7 +99,7 @@ public sealed class Store(string root)
         if(f.Month!=0)Where("period % 100 = $m","$m",f.Month);
         if(f.Agency.Length>0)Where("agency=$e","$e",f.Agency);
         if(f.Category.Length>0)Where("agency_category(agency)=$g","$g",f.Category);
-        if(f.Person.Length>0)Where("person=$p","$p",f.Person);
+        if(f.Person.Length>0)Where("person_key(person)=$p","$p",Arabic.Match(f.Person));
         if(f.Reference.Length>0)Where(f.ExactReference?"casekey=$c":"instr(casekey,$c)>0","$c",Arabic.CaseKey(f.Reference));
         int i=0;
         foreach(var word in Arabic.Key(f.Search).Split(' ',StringSplitOptions.RemoveEmptyEntries)){var key="$q"+i++;Where("instr(search,"+key+")>0",key,word);}
@@ -127,6 +128,25 @@ public sealed class Store(string root)
         var curr=Set(month.Name);var prev=Set(previous.Name);
         return curr.Keys.Except(prev.Keys).Select(e=>new Review("جهة ظهرت في الشهر المختار",curr[e],month.Name))
             .Concat(prev.Keys.Except(curr.Keys).Select(e=>new Review("جهة غابت عن الشهر المختار",prev[e],previous.Name))).ToList();
+    }
+    public Statement PersonStatement(string person,string agency,string reference,int start,int end,string header)
+    {
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="SELECT count(*),max(rank) FROM payidentity WHERE personkey=$p AND period BETWEEN $a AND $b GROUP BY period ORDER BY period DESC";
+        cmd.Parameters.AddWithValue("$p",Arabic.Match(person));cmd.Parameters.AddWithValue("$a",start);cmd.Parameters.AddWithValue("$b",end);
+        using var rows=cmd.ExecuteReader();string? rank=null;
+        while(rows.Read()){
+            if(rows.GetInt32(0)>1)throw new InvalidDataException("يوجد أكثر من سجل راتب بالاسم نفسه في شهر واحد. راجع الهوية قبل إصدار الكشف.");
+            rank??=rows.GetString(1);
+        }
+        var statement=Statement.Employee(Find(new(Person:person)),Months(),person,agency,reference,start,end,header);
+        return string.IsNullOrEmpty(rank)?statement:statement with {Rank=rank};
+    }
+    public void UpgradeIndex()
+    {
+        if(Active==null)return;
+        using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=1)return;}
+        Import(Archive);
     }
     public List<ArchivedBook> Books()
     {

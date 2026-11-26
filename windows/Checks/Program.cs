@@ -27,3 +27,8 @@ Check(Arabic.Period("رواتب تشرين٢_٢٠٢٦ تجريبي")==202611,"iP
 Check(store.Summary(new(Year:2026,Month:11,Category:"مديريات التنفيذ")).Total==232000,"exact group scope shared by grid and export");
 var archived=store.Books().Single();var copy=Path.Combine(path,"book.pdf");store.SaveBook(archived,copy);
 Check(File.ReadAllBytes(copy).SequenceEqual(File.ReadAllBytes(Path.Combine(path,"original-book.pdf"))),"archived iPhone PDF is byte-identical");
+Check(store.PersonStatement(one.Name.Replace("آ","ا").Replace(" ",""),one.Agency,one.Reference,202611,202611,"").Sheets.Single().Total==13000,"iPhone employee-name normalization");
+try{
+    Statement.Employee([one],[months[0],months[0]],one.Name,one.Agency,one.Reference,202611,202611,"");
+    throw new Exception("ambiguous period allowed");
+}catch(InvalidDataException){Console.WriteLine("PASS duplicate periods cannot produce a statement");}
