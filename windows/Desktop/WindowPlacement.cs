@@ -57,6 +57,11 @@ internal static class WindowPlacement
             window.Dispatcher.InvokeAsync(()=>{queued=false;Fit();},DispatcherPriority.Loaded);
         }
         IntPtr MonitorChanges(IntPtr handle,int message,IntPtr wParam,IntPtr lParam,ref bool handled){
+            const int mouseHorizontalWheel=0x020E;
+            if(message==mouseHorizontalWheel){
+                if(!handled)handled=PrecisionScroll.HorizontalWheel(window,wParam,lParam);
+                return IntPtr.Zero;
+            }
             bool changedWorkArea=message==0x001A&&wParam.ToInt64()==47;
             bool movedToAnotherScreen=message==0x0232&&MonitorFromWindow(hwnd,2)!=lastMonitor;
             if(message is 0x02E0 or 0x007E || changedWorkArea||movedToAnotherScreen)QueueFit();

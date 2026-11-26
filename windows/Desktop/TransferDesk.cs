@@ -120,6 +120,21 @@ public partial class MainWindow
                 }),"\uE74E",true);
                 export.IsEnabled=rows.Length>0;actions.Children.Add(export);
             }
+            if(batch!=null && g!=A.TransferGroup.Unresolved){
+                var parts=batch.Parts.Where(p=>p.Portion(held)?.Group==g).ToList();
+                var entities=parts.Where(p=>p.Entity.PayrollRecipient==null).ToList();
+                if(entities.Count>0){
+                    actions.Children.Add(PreviewButton("كشوف جهات التنفيذ - "+month,()=>{
+                        CheckSource();
+                        return Task.Run(()=>ExecutionSheetsPdf(s,entities,held));
+                    },caption:"معاينة كشوف جهات التنفيذ"));
+                }
+                if(parts.FirstOrDefault(p=>p.Entity.PayrollRecipient=="fundDonations") is {} fund)
+                    actions.Children.Add(PreviewButton("كشف صندوق الشهداء - "+month,()=>{
+                        CheckSource();
+                        return Task.Run(()=>SplitFundPdf(s,month,fund,held));
+                    },caption:"معاينة كشف الصندوق"));
+            }
             var options=OptionsButton(menu=>{
                 if(SelectedBook() is {} book && book.Id!="split")
                     MenuAction(menu,"تعديل الكتاب",()=>EditTransferTemplate(s,month,book.Id));
@@ -177,6 +192,16 @@ public partial class MainWindow
         string who=name.Text,value=iban.Text;_=Working(()=>store.SaveAccounts(s,who,value,accounts,links),"حُفظت الحسابات.",()=>ShowPage(CurrentTransfers));
     }
 
+    static byte[] ExecutionSheetsPdf(A.BackupSnapshot source,List<SplitPart> parts,bool held) =>
+        A.ReportPdf.Generate(parts.Select(p=>SplitSheet(source,p,held)).ToList(),Fonts(),DateTime.Now);
+
+    static byte[] SplitFundPdf(A.BackupSnapshot source,string month,SplitPart fund,bool held)
+    {
+        var amounts=(held?fund.Deferred:fund.Current).ToLookup(r=>A.FundReport.CategoryOf(r.Rank));
+        var data=A.FundReport.Categories.Select((cat,i)=>new A.FundReport.Row(cat,amounts[i].Count(),amounts[i].Sum(r=>r.Amount))).ToList();
+        return A.FundReport.Pdf(data,A.FundReport.Title(source,month),Fonts(),DateTime.Now);
+    }
+
     void ExportGroup(A.BackupSnapshot s,string month,A.TransferSnapshot plan,A.TransferGroup g,ContractBatch? batch,bool held,DateTime day)
     {
         string marker=(held?"deferred":"current")+"|group|"+System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
@@ -193,14 +218,10 @@ public partial class MainWindow
             var files=new Dictionary<string,byte[]>{{"كتاب التحويل.pdf",pdf},{"التحويل.csv",letter.Csv}};
             if(batch!=null){
                 var parts=batch.Parts.Where(p=>p.Portion(held)?.Group==g).ToList();
-                var sheets=parts.Where(p=>p.Entity.PayrollRecipient==null).Select(p=>SplitSheet(s,p,held)).ToList();
-                if(sheets.Count>0)files["كشوف جهات التنفيذ.pdf"]=A.ReportPdf.Generate(sheets,Fonts(),DateTime.Now);
+                var entities=parts.Where(p=>p.Entity.PayrollRecipient==null).ToList();
+                if(entities.Count>0)files["كشوف جهات التنفيذ.pdf"]=ExecutionSheetsPdf(s,entities,held);
                 var fund=parts.FirstOrDefault(p=>p.Entity.PayrollRecipient=="fundDonations");
-                if(fund!=null){
-                    var amounts=(held?fund.Deferred:fund.Current).ToLookup(r=>A.FundReport.CategoryOf(r.Rank));
-                    var data=A.FundReport.Categories.Select((cat,i)=>new A.FundReport.Row(cat,amounts[i].Count(),amounts[i].Sum(r=>r.Amount))).ToList();
-                    files["كشف صندوق الشهداء.pdf"]=A.FundReport.Pdf(data,A.FundReport.Title(s,month),Fonts(),DateTime.Now);
-                }
+                if(fund!=null)files["كشف صندوق الشهداء.pdf"]=SplitFundPdf(s,month,fund,held);
             }
             var bytes=Package(files);
             return bytes;

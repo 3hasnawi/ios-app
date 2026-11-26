@@ -31,10 +31,16 @@ public partial class MainWindow
             var salaries=profile.Months.Where(m=>m.Employees.Count>0).ToArray();
             if(salaries.Length>0){
                 var months=Choices(salaries.Select(m=>m.Month));if(salaries.Any(m=>m.Month==hit.Month))months.SelectedItem=hit.Month;
-                var pane=new DockPanel();DockPanel.SetDock(months,Dock.Top);pane.Children.Add(months);
+                var pane=new DockPanel();
+                var preview=PreviewButton("تقرير راتب - "+profile.Name,()=>{
+                    var month=salaries[months.SelectedIndex];
+                    return Task.Run(()=>A.SalaryReportPdf.Generate([A.SalaryReports.Make(month,true,false)],Fonts(),Logo(),DateTime.Now));
+                },caption:"معاينة تقرير الراتب");
+                var actions=Bar(months,preview);DockPanel.SetDock(actions,Dock.Top);pane.Children.Add(actions);
                 var table=ProfileGrid(("البيان","Title",1),("القيمة","Value",1.4));pane.Children.Add(table);
                 void Draw(){
                     var m=salaries[months.SelectedIndex];
+                    preview.IsEnabled=m.Employee!=null;
                     if(m.Employee is not {} employee){table.ItemsSource=new[]{new A.ProfileLine("تشابه أسماء","أكثر من راتب بالاسم نفسه في هذا الشهر")};return;}
                     var slip=A.PersonProfiles.Payslip(m);var lines=new List<A.ProfileLine>{new("الرتبة",employee.Rank),new("محل العمل",employee.Workplace)};
                     lines.AddRange(slip.Info);lines.AddRange(slip.Allowances);if(slip.Gross!=null)lines.Add(slip.Gross);

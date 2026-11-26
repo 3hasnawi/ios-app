@@ -51,6 +51,10 @@ public partial class MainWindow
                     return Package(files);
                 },()=>store.SaveRefund(b,revision),Return);
             }),"\uE8B7"));
+        actions.Children.Add(PreviewButton("قائمة المستفيدين",()=>{
+            var batch=Model();
+            return Task.Run(()=>A.ReportPdf.Generate([batch.ListSheet(A.ReportSheet.HeaderFor(source))],Fonts(),DateTime.Now));
+        },caption:"معاينة قائمة المستفيدين"));
         if(editing?.ArchiveId!=null)actions.Children.Add(ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(editing.Date.ToString("yyyy/MM/dd")+"　·　"+editing.Source)))_=Working(()=>store.SaveRefund(editing,revision,true),"حُذفت الدفعة.",Return);}));
         head.Children.Add(actions);DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);dock.Children.Add(selected);CanvasArea.Children.Add(dock);Redraw();
     }

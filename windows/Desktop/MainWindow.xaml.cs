@@ -288,8 +288,8 @@ public partial class MainWindow : Window
         grid.RowHeight=double.NaN;grid.MinRowHeight=35;
         grid.MouseDoubleClick+=(_,_)=>OpenEmployee();
         grid.SelectionChanged+=(_,_)=>{if(employee!=null)employee.IsEnabled=gridView.SelectedItem is Deduction;};
-        export=ButtonFor("كشف جهات التنفيذ",()=>_=EntityReport(),"\uE890",true);export.IsEnabled=false;
-        employee=ButtonFor("كشف المنتسب",OpenEmployee,"\uE77B");employee.IsEnabled=false;
+        export=ButtonFor("معاينة كشف جهات التنفيذ",()=>_=EntityReport(),"\uE890",true);export.IsEnabled=false;
+        employee=ButtonFor("معاينة كشف المنتسب",OpenEmployee,"\uE77B");employee.IsEnabled=false;
         previous=ButtonFor("السابق",()=>{offset=Math.Max(0,offset-PageSize);_=LoadGrid();});previous.IsEnabled=false;
         next=ButtonFor("التالي",()=>{offset+=PageSize;_=LoadGrid();});next.IsEnabled=false;
         footer=Text("",14,true);
@@ -480,22 +480,31 @@ public partial class MainWindow : Window
                 // Verify both preview actions through the same controls used by the accountant.
                 async Task CheckPreview(){
                     bool opened=false;
+                    var finished=new TaskCompletionSource<bool>();
                     var probe=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
                     var deadline=DateTime.UtcNow.AddSeconds(25);
                     probe.Tick+=async (_,_)=>{
                         var preview=OwnedWindows.OfType<LetterPreview>().FirstOrDefault();
-                        if(preview==null){if(DateTime.UtcNow>=deadline)probe.Stop();return;}
+                        if(preview==null){if(DateTime.UtcNow>=deadline){probe.Stop();finished.TrySetResult(false);}return;}
                         probe.Stop();
                         try{opened=await preview.Ready.WaitAsync(TimeSpan.FromSeconds(15));}
                         catch(Exception){opened=false;}
-                        finally{preview.Close();}
+                        finally{
+                            if(opened){
+                                opened=Controls<Button>((FrameworkElement)preview.Content).Any(b=>Equals(b.Content,"تصدير PDF")&&b.IsEnabled);
+                                var escape=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(preview)!,Environment.TickCount,Key.Escape){RoutedEvent=Keyboard.KeyDownEvent};
+                                preview.RaiseEvent(escape);
+                                await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                                opened=opened && escape.Handled && !preview.IsVisible;
+                            }
+                            if(preview.IsVisible)preview.Close();
+                            finished.TrySetResult(opened);
+                        }
                     };
                     probe.Start();
                     try{
                         Click(CanvasArea,"معاينة الكشف");
-                        while(probe.IsEnabled)await Task.Delay(80);
-                        while(!opened && OwnedWindows.OfType<LetterPreview>().Any())await Task.Delay(80);
-                        if(!opened)throw new InvalidDataException("تعذّرت معاينة كشف البنك.");
+                        if(!await finished.Task.WaitAsync(TimeSpan.FromSeconds(45)))throw new InvalidDataException("تعذّرت معاينة كشف البنك.");
                     }finally{probe.Stop();}
                 }
                 await CheckPreview();
@@ -541,6 +550,29 @@ public partial class MainWindow : Window
             CaptureWindow((FrameworkElement)Content,"deductions-compact");
             Width=560;Height=390;UpdateLayout();
             if(BodyViewport.ScrollableWidth<=0||BodyViewport.ScrollableHeight<=0)throw new InvalidDataException("تعذّر الوصول إلى كامل المحتوى في النافذة الصغيرة.");
+            var inner=new ScrollViewer{Width=150,Height=90,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,
+                Content=new Border{Width=400,Height=250}};
+            CanvasArea.Children.Add(inner);
+            try{
+                UpdateLayout();
+                async Task NextFrame(){
+                    var rendered=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    void Frame(object? sender,EventArgs e)=>rendered.TrySetResult(true);
+                    CompositionTarget.Rendering+=Frame;
+                    try{await rendered.Task.WaitAsync(TimeSpan.FromSeconds(5));}
+                    finally{CompositionTarget.Rendering-=Frame;}
+                    await Dispatcher.InvokeAsync(UpdateLayout,DispatcherPriority.ApplicationIdle);
+                }
+                PrecisionScroll.Move(inner,.25,false,3);PrecisionScroll.Move(inner,.25,false,3);
+                await NextFrame();
+                if(Math.Abs(inner.VerticalOffset-24)>1)throw new InvalidDataException("لم تُجمع حركات التمرير القصيرة.");
+                inner.ScrollToVerticalOffset(inner.ScrollableHeight-4);inner.ScrollToHorizontalOffset(25);
+                BodyViewport.ScrollToTop();UpdateLayout();
+                PrecisionScroll.Move(inner,.25,false,3);PrecisionScroll.Move(inner,.25,true,3);
+                await NextFrame();
+                if(Math.Abs(BodyViewport.VerticalOffset-8)>1 || Math.Abs(inner.HorizontalOffset-19)>1)
+                    throw new InvalidDataException("اتجاه التمرير الأفقي أو انتقال الحركة عند حافة الجدول غير صحيح.");
+            }finally{CanvasArea.Children.Remove(inner);}
             BodyViewport.ScrollToRightEnd();BodyViewport.ScrollToBottom();UpdateLayout();
             if(BodyViewport.VerticalOffset<=0)throw new InvalidDataException("تعذّر تمرير المحتوى.");
         }finally{Width=savedWidth;Height=savedHeight;UpdateLayout();}

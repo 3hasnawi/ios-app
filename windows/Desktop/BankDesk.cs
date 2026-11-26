@@ -79,19 +79,6 @@ public partial class MainWindow
         return work;
     }
 
-    void PdfActions(Panel actions,string title,Func<byte[]> generate,Func<bool> current)
-    {
-        var document = new Lazy<byte[]>(generate);
-        var preview = ButtonFor("معاينة الكشف", async () => {
-            try {
-                var pdf = await Task.Run(() => document.Value);
-                if (current()) new LetterPreview(pdf,title){Owner=this}.ShowDialog();
-            } catch(Exception ex) { if(current()) Error(ex); }
-        }, "\uE890");
-        actions.Children.Add(preview);
-        actions.Children.Add(ButtonFor("تصدير PDF", () => _=SaveFile(A.ReportSheet.FileName(title),"pdf",()=>document.Value), "\uE74E"));
-    }
-
     void MonthlyStatement(Grid host,A.BackupSnapshot source,A.BankSummary summary,Func<bool> current)
     {
         var sheet = A.MonthlyBankReport.Sheet(source,summary);
@@ -102,7 +89,7 @@ public partial class MainWindow
         foreach(var (label,value) in new[]{("مجموع كشف البنك",summary.BankTotal),("صافي الرواتب",summary.Net),("استقطاعات المصارف",summary.BankDeductions)})
             figures.Children.Add(Box(Column(Text(label,13),Text(Arabic.Money(value),20,true))));
         var actions = Bar();
-        PdfActions(actions,MonthlyBank+" - "+summary.Month,()=>A.ReportPdf.Generate([sheet],Fonts(),DateTime.Now),current);
+        actions.Children.Add(PreviewButton(MonthlyBank+" - "+summary.Month,()=>Task.Run(()=>A.ReportPdf.Generate([sheet],Fonts(),DateTime.Now)),current));
         var head = Column(Text(string.Join("　·　",new[]{summary.Month,account.Name,account.Iban}.Where(t=>!string.IsNullOrWhiteSpace(t))),16,true),figures,actions);
         if(!summary.ExecutionMatched || summary.ContractOverrideStale || summary.MissingNet>0)
             head.Children.Add(Text(string.Join("　·　", new[]{
@@ -181,9 +168,9 @@ public partial class MainWindow
                     Text(!balanced&&!p.IsConfirmed?"التمويل أو الرصيد يحتاج مراجعة. تأكد من كشف المصرف الورقي قبل المتابعة.":"راجعت حركات الفترة ورصيدها.")))
                     _=Save(p.IsConfirmed?A.BankReconciliation.Unconfirm(p):A.BankReconciliation.Confirm(p,DateTime.UtcNow));}));
             if(p.Movements.Count>0)
-                PdfActions(ops,$"{BankLedger} - {p.Month} - {p.Start:yyyy-MM-dd} - {p.End:yyyy-MM-dd}",
-                    ()=>A.ReconciliationPdf.Statement(p,A.TransferPreparation.Account(source),p.IsConfirmed||totals.Funding>0&&totals.Balance==0,Fonts()),
-                    ()=>current()&&Period()?.Id==p.Id);
+                ops.Children.Add(PreviewButton($"{BankLedger} - {p.Month} - {p.Start:yyyy-MM-dd} - {p.End:yyyy-MM-dd}",
+                    ()=>Task.Run(()=>A.ReconciliationPdf.Statement(p,A.TransferPreparation.Account(source),p.IsConfirmed||totals.Funding>0&&totals.Balance==0,Fonts())),
+                    ()=>current()&&Period()?.Id==p.Id));
 
         }
         picker.SelectionChanged+=(_,_)=>Guard(Draw);Draw();

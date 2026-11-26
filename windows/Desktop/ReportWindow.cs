@@ -11,7 +11,7 @@ internal sealed class ReportWindow : Window
 {
     private readonly Statement report;
     private readonly WebView2 viewer=new();
-    private readonly Button pdf=new(){Content="حفظ PDF",Margin=new Thickness(4),IsEnabled=false};
+    private readonly Button pdf=new(){Content="تصدير PDF",Margin=new Thickness(4),IsEnabled=false};
     private readonly TextBlock status=new(){Margin=new Thickness(10),VerticalAlignment=VerticalAlignment.Center};
     private readonly string folder=Path.Combine(Path.GetTempPath(),"AnbarPayroll",Guid.NewGuid().ToString("N"));
     private readonly TaskCompletionSource<bool> ready=new(TaskCreationOptions.RunContinuationsAsynchronously);

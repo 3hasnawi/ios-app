@@ -122,16 +122,17 @@ internal sealed class LetterPreview:Window
         edit.Click+=(_,_)=>Close();
         var toolbar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,FlowDirection=FlowDirection.RightToLeft};
         toolbar.Children.Add(edit);DockPanel.SetDock(toolbar,Dock.Top);panel.Children.Add(toolbar);
+        Button? save=null;
         if(statementTitle!=null){
-            var save=new Button{Content="حفظ PDF",Margin=new Thickness(4)};
+            save=new Button{Content="تصدير PDF",IsEnabled=false,Margin=new Thickness(4)};
             toolbar.Children.Add(save);
             save.Click+=async (_,_)=>{
                 var dialog=new Microsoft.Win32.SaveFileDialog{FileName=A.ReportSheet.FileName(statementTitle),Filter="PDF|*.pdf",DefaultExt=".pdf"};
                 if(dialog.ShowDialog(this)!=true)return;
-                save.IsEnabled=false;
+                IsEnabled=false;
                 try{await Task.Run(()=>A.ReportFiles.Save(pdf,dialog.FileName,".pdf"));}
                 catch(Exception ex){MessageBox.Show(this,ex.Message,Title,MessageBoxButton.OK,MessageBoxImage.Warning);}
-                finally{save.IsEnabled=true;}
+                finally{IsEnabled=true;}
             };
         }
         var viewer=new WebView2();panel.Children.Add(viewer);bool closed=false;
@@ -147,7 +148,11 @@ internal sealed class LetterPreview:Window
                 web.WebResourceRequested+=(_,e)=>e.Response=env.CreateWebResourceResponse(new MemoryStream(pdf,false),200,"OK","Content-Type: application/pdf\r\nCache-Control: no-store");
                 web.NavigationStarting+=(_,e)=>e.Cancel=e.Uri!=url;
                 web.NewWindowRequested+=(_,e)=>e.Handled=true;
-                web.NavigationCompleted+=(_,e)=>{if(e.IsSuccess)loaded.TrySetResult(true);else loaded.TrySetException(new IOException("تعذّرت معاينة المستند: "+e.WebErrorStatus));};
+                web.NavigationCompleted+=(_,e)=>{
+                    if(save!=null)save.IsEnabled=e.IsSuccess;
+                    if(e.IsSuccess)loaded.TrySetResult(true);
+                    else loaded.TrySetException(new IOException("تعذّرت معاينة المستند: "+e.WebErrorStatus));
+                };
                 web.Navigate(url);
             }catch(Exception e){loaded.TrySetException(e);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
         };

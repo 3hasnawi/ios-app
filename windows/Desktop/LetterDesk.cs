@@ -61,7 +61,7 @@ public partial class MainWindow
                 var field=new TextBox();if(!Form("مبلغ الكتاب",Labeled("المبلغ بالدينار",field)))return;
                 if(field.Text.Any(c=>!char.IsDigit(c)&&c!=','&&c!='٬')||!decimal.TryParse(A.TransferPreparation.NormalizeAccount(field.Text.Replace(",","").Replace("٬","")),out var n))throw new InvalidDataException("أدخل مبلغاً صحيحاً.");amount=n;
             }
-            var bytes=A.TemplateLetterPdf.Custom(template,s,month,amount,DocumentFonts());new LetterPreview(bytes){Owner=this}.ShowDialog();_=SaveFile(title,"pdf",()=>bytes);return;
+            var bytes=A.TemplateLetterPdf.Custom(template,s,month,amount,DocumentFonts());new LetterPreview(bytes,title){Owner=this}.ShowDialog();return;
         }
         if(command.SelectedIndex==2)template=template! with{Id=Guid.NewGuid(),Title=title+" (نسخة)"};
         EditTransferTemplate(s,month,"custom",template);

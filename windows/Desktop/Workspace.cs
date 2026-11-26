@@ -14,6 +14,23 @@ public partial class MainWindow
         string dir=Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
         return new(File.ReadAllBytes(Path.Combine(dir,"arial.ttf")),File.ReadAllBytes(Path.Combine(dir,"arialbd.ttf")),null);
     }
+    Button PreviewButton(string title,Func<Task<byte[]>> prepare,Func<bool>? current=null,string caption="معاينة الكشف")
+    {
+        Button button = ButtonFor(caption,()=>{}, "\uE890");
+        button.Click += async (_,_) => {
+            button.IsEnabled = false;
+            try {
+                var bytes = await prepare();
+                if (button.IsLoaded && (current?.Invoke() ?? true))
+                    new LetterPreview(bytes,title){Owner=Window.GetWindow(button)}.ShowDialog();
+            } catch (Exception ex) {
+                if (button.IsLoaded) Error(ex);
+            } finally {
+                button.IsEnabled = true;
+            }
+        };
+        return button;
+    }
     async Task SaveFile(string name,string ext,Func<byte[]> generate,Action? record=null,Action? finish=null)
     {
         var dialog=new SaveFileDialog{Filter=ext+"|*."+ext,FileName=name,DefaultExt=ext};if(dialog.ShowDialog(this)!=true)return;
@@ -61,6 +78,12 @@ public partial class MainWindow
                 var head=FilterBar(("حالة المراجعة",filter,0),("",ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")),0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
                 var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
                 void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||r.Kind==(string)filter.SelectedItem).ToList();}
+                var preview = ButtonFor("معاينة الكشف",()=>Guard(()=>{
+                    var rows = list.ItemsSource.Cast<A.SalaryReviewRow>().Select(r=>new object?[]{r.Kind,r.Name,r.Detail,r.Before,r.After}).ToList();
+                    var sheet = new Sheet(AuditName,AuditName+" · "+month+" · "+filter.SelectedItem,["الحالة","المنتسب","التفاصيل","السابق","الحالي"],rows,4,0,ShowTotal:false);
+                    new ReportWindow(new Statement(ReportHeader(),[sheet])){Owner=this}.ShowDialog();
+                }),"\uE890");
+                var buttons=Bar(preview);DockPanel.SetDock(buttons,Dock.Top);dock.Children.Add(buttons);
                 filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
@@ -78,7 +101,7 @@ public partial class MainWindow
             var report=funding?.Report(A.ReportSheet.HeaderFor(snapshot),Store.IsFundingApproved(snapshot,funding))??await Task.Run(()=>WorkReports.Command(snapshot,month));
             if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             var panel=new DockPanel();
-            var reportBar=Bar(Text(month,18,true),ButtonFor("معاينة وتصدير",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
+            var reportBar=Bar(Text(month,18,true),ButtonFor("معاينة الكشف",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
             if(key==FundingName)FundingActions(snapshot,month,reportBar,funding);
             DockPanel.SetDock(reportBar,Dock.Top);panel.Children.Add(reportBar);
             var tabs=new TabControl();
@@ -109,7 +132,7 @@ public partial class MainWindow
                 var data=A.FundReport.Summary(s,month,item);string title=A.FundReport.Title(s,month);name=A.FundReport.FileName(month);
                 rows.ItemsSource=data.Select(r=>new{Name=r.Category.Name,State=r.Count,Value=Arabic.Money(r.Total)});excel=()=>A.FundReport.Excel(data,title);pdf=()=>A.FundReport.Pdf(data,title,Fonts(),DateTime.Now);
             }
-            actions.Children.Add(ButtonFor("تصدير PDF",()=>_=SaveFile(name,"pdf",pdf)));actions.Children.Add(ButtonFor("تصدير Excel",()=>_=SaveFile(name,"xlsx",excel)));
+            actions.Children.Add(PreviewButton(name,()=>Task.Run(pdf)));actions.Children.Add(ButtonFor("تصدير Excel",()=>_=SaveFile(name,"xlsx",excel)));
         }
         picker.SelectionChanged+=(_,_)=>Guard(Draw);Draw();
     }
@@ -122,10 +145,10 @@ public partial class MainWindow
         void Draw(){g.ItemsSource=byPerson.Where(p=>p.Key.Contains(Arabic.Match(q.Text))).Select(p=>new TrustPerson(p.Key,p.Value[0].Name,p.Value.Length,Arabic.Money(p.Value.Sum(e=>e.Amount)),Arabic.Money(A.SalaryTrust.Outstanding(p.Value)))).ToList();}
         q.TextChanged+=(_,_)=>Draw();Draw();
         g.MouseDoubleClick+=(_,_)=>{if(g.SelectedItem is not TrustPerson p)return;var grid=GridView(("الشهر","Month",1),("المبلغ","Amount",1),("الحالة","Status",1),("تاريخ الصرف","Date",1),("الملاحظات","Note",1.6));
-            grid.Width=720;grid.Height=320;grid.ItemsSource=byPerson[p.Key].Select(e=>new{Month=A.SalaryTrust.MonthLabel(e.Year,e.Month),Amount=Arabic.Money(e.Amount),Status=e.ImportedStatus,Date=e.ImportedPaymentDate??string.Join("، ",e.Payments.Select(x=>x.BookDate)),Note=string.Join(" · ",new[]{e.CaseStatus,e.Note}.Where(x=>x.Length>0).Distinct())});Form(p.Name,grid,Text("المجموع　"+p.Total));};
-        A.ReportSheet Sheet(A.SalaryTrustEntry[] entries)=>A.SalaryTrustReports.Sheet(ledger,entries,A.ReportSheet.HeaderFor(s),"كل الأشهر","كل الحالات","");
-        A.SalaryTrustEntry[] Selected()=>ledger.Entries.Where(e=>Arabic.Match(e.Name).Contains(Arabic.Match(q.Text))).ToArray();
-        top.Children.Add(Bar(ButtonFor("تصدير PDF",()=>{var entries=Selected();_=SaveFile(TrustName,"pdf",()=>A.SalaryTrustReports.Pdf(Sheet(entries),Fonts(),DateTime.Now));}),ButtonFor("تصدير Excel",()=>{var entries=Selected();_=SaveFile(TrustName,"xlsx",()=>A.SalaryTrustReports.Excel(Sheet(entries),entries));})));
+            grid.Width=720;grid.Height=320;grid.ItemsSource=byPerson[p.Key].Select(e=>new{Month=A.SalaryTrust.MonthLabel(e.Year,e.Month),Amount=Arabic.Money(e.Amount),Status=e.ImportedStatus,Date=e.ImportedPaymentDate??string.Join("، ",e.Payments.Select(x=>x.BookDate)),Note=string.Join(" · ",new[]{e.CaseStatus,e.Note}.Where(x=>x.Length>0).Distinct())});Form(p.Name,grid,Text("المجموع　"+p.Total),PreviewButton(TrustName+" - "+p.Name,()=>Task.Run(()=>A.SalaryTrustReports.Pdf(Sheet(byPerson[p.Key],p.Name),Fonts(),DateTime.Now))));};
+        A.ReportSheet Sheet(A.SalaryTrustEntry[] entries,string query)=>A.SalaryTrustReports.Sheet(ledger,entries,A.ReportSheet.HeaderFor(s),"كل الأشهر","كل الحالات",query);
+        A.SalaryTrustEntry[] Selected(string query)=>ledger.Entries.Where(e=>Arabic.Match(e.Name).Contains(Arabic.Match(query))).ToArray();
+        top.Children.Add(Bar(PreviewButton(TrustName,()=>{var query=q.Text;var entries=Selected(query);return Task.Run(()=>A.SalaryTrustReports.Pdf(Sheet(entries,query),Fonts(),DateTime.Now));}),ButtonFor("تصدير Excel",()=>{var query=q.Text;var entries=Selected(query);_=SaveFile(TrustName,"xlsx",()=>A.SalaryTrustReports.Excel(Sheet(entries,query),entries));})));
     }
     record TrustPerson(string Key,string Name,int Count,string Total,string Remaining);
 }
