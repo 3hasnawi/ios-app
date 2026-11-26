@@ -23,14 +23,16 @@ public partial class MainWindow
         selected.SelectionChanged+=(_,_)=>{if(selected.SelectedItem is RefundPayee row)amounts.Text=row.Amount.ToString();};
         RefundBatch Model()=>new(editing?.Id??Guid.NewGuid().ToString().ToUpperInvariant(),agency.Text.Trim(),DateOnly.FromDateTime(date.SelectedDate??throw new InvalidDataException("اختر التاريخ.")),payer.Text.Trim(),A.TransferPreparation.NormalizeAccount(account.Text),rows.ToList(),editing?.Original,editing?.ArchiveId);
         void Return()=>ShowPage(TransfersName);
-        var head=Column(Bar(ButtonFor("ملفات التحويل",Return,"\uE72A"),Labeled("الدفعات المحفوظة",options,310),ButtonFor("فتح الدفعة",()=>Guard(()=>{if(options.SelectedIndex>=0)RefundDesk(source,month,history[options.SelectedIndex]);})),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month))),
-            Bar(Labeled("جهة الإعادة",agency,215),Labeled("تاريخ الدفعة",date,150),Labeled("الجهة الدافعة",payer,210),Labeled("آيبان الجهة الدافعة",account,235)),
-            Bar(Labeled("ابحث في رواتب "+month,searchBox,205),Labeled("المنتسب",results,250),Labeled("المبلغ",amounts,135),ButtonFor("إضافة",()=>Guard(()=>{
+        var add=ButtonFor("إضافة",()=>Guard(()=>{
                 if(results.SelectedItem is not RefundPayee p)throw new InvalidDataException("اختر المنتسب من النتائج.");
                 if(rows.Any(x=>x.Iban==p.Iban))throw new InvalidDataException("الحساب موجود في الدفعة.");
                 if(!A.TransferPreparation.ValidIban(p.Iban)||!A.TransferPreparation.ValidSwift(p.Bic)||!p.Bic.StartsWith(p.Iban.Substring(4,4)+"IQ"))throw new InvalidDataException("راجع آيبان المنتسب وعمود الرفرنس في الرواتب.");
                 rows.Add(p with{Amount=Value()});Redraw();searchBox.Clear();amounts.Clear();searchBox.Focus();
-            }),"\uE710")),note);
+            }),"\uE710");
+        var open=ButtonFor("فتح الدفعة",()=>Guard(()=>{if(options.SelectedIndex>=0)RefundDesk(source,month,history[options.SelectedIndex]);}));
+        var head=Column(Bar(ButtonFor("ملفات التحويل",Return,"\uE72A"),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month))),
+            FilterBar(("الدفعات المحفوظة",options,1.45),("",open,0),("ابحث في رواتب "+month,searchBox,1),("المنتسب",results,1.2),("المبلغ",amounts,.75),("",add,0)),
+            FilterBar(("جهة الإعادة",agency,1),("تاريخ الدفعة",date,0),("الجهة الدافعة",payer,1),("آيبان الجهة الدافعة",account,1.5)),note);
         var actions=Bar(ButtonFor("تعديل مبلغ المنتسب",()=>Guard(()=>{if(selected.SelectedItem is RefundPayee p){rows[rows.IndexOf(p)]=p with{Amount=Value()};Redraw();}})),ButtonFor("إزالة المنتسب",()=>{if(selected.SelectedItem is RefundPayee p){rows.Remove(p);Redraw();}}),
             ButtonFor("حفظ الدفعة",()=>Guard(()=>{var model=Model();_=Working(()=>store.SaveRefund(model,revision),"حُفظت الدفعة بتاريخها ضمن النسخة.",Return);}),"\uE74E",true),
             ButtonFor("تصدير الكتب والملفات",()=>Guard(()=>{

@@ -16,8 +16,8 @@ var f=new Filters(Search:"ادم",Month:11,Year:2026);var one=store.Find(f).Sing
 Check(one.Amount==13000&&store.Summary(f)==(1,13000m),"combined filters / precise amount");
 var employeeSearch=f with{SearchField=DeductionSearchField.Employee};
 Check(store.Find(employeeSearch).Single()==one&&store.Summary(employeeSearch)==(1,13000m),"employee search returns only that employee's deductions for the selected month");
-Check(!store.Find(employeeSearch with{Search="مديرية"}).Any()&&!store.Find(f with{SearchField=DeductionSearchField.Agency}).Any(),"employee and agency searches exclude matches in unrelated fields");
-var agencySearch=new Filters(Search:"الربيع",Year:2026,Month:11,Category:"مديريات التنفيذ",SearchField:DeductionSearchField.Agency);
+Check(!store.Find(employeeSearch with{Search="مديرية"}).Any(),"employee search excludes matches in unrelated fields");
+var agencySearch=new Filters(Agency:"مديرية تنفيذ الربيع",Year:2026,Month:11,Category:"مديريات التنفيذ");
 var scopedRows=store.Find(agencySearch).ToArray();
 var scopedSheet=Statement.Entities(scopedRows,"قسم الحسابات",true).Sheets.Single();
 Check(scopedRows.Length==4&&scopedRows.All(r=>r.Period==202611&&r.Agency=="مديرية تنفيذ الربيع")&&store.Summary(agencySearch).Total==scopedSheet.Total&&scopedSheet.Total==232000,"agency search, grid, and export share the selected directorate and month");

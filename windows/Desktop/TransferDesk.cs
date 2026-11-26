@@ -26,8 +26,8 @@ public partial class MainWindow
     static byte[] LetterFont()=>File.ReadAllBytes(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"timesbd.ttf"));
     void TransferDesk(A.BackupSnapshot s,string month)
     {
-        var dock=new DockPanel();var actions=Bar();var controls=Bar();var note=Text("",14);
-        var top=Column(Text("تحويل استقطاعات "+month,21,true),actions,controls,note);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
+        var dock=new DockPanel();var actions=Bar();var note=Text("",14);
+        var top=Column(Text("تحويل استقطاعات "+month,21,true),actions,note);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var grid=GridView(("الجهة","Title",1.7),("المصرف","Bank",1.3),("قبل الفصل","Original",.8),("مبلغ الدفعة","Amount",.8),("المراجعة","Issues",1.4));dock.Children.Add(grid);CanvasArea.Children.Add(dock);
         actions.Children.Add(ButtonFor("الكتب المحفوظة",()=>{backPage=TransfersName;ShowPage("الكتب المحفوظة");},"\uE8B7"));
         actions.Children.Add(ButtonFor("إعادة مبالغ المنتسبين",()=>Guard(()=>RefundDesk(s,month)),"\uE8AB"));
@@ -39,7 +39,7 @@ public partial class MainWindow
             saved.SelectionChanged+=(_,_)=>{if(saved.SelectedItem is A.ExecutionAccount a){entity.Text=a.Entity;branch.Text=a.Branch;bic.Text=a.Swift;beneficiary.Text=a.Iban;local.Text=a.LocalAccount??"";}};
             var entries=all?.Entries??[];var link=new ComboBox{ItemsSource=entries,DisplayMemberPath="Title"};
             if(!Form("الحسابات",Bar(Labeled("الجهة الدافعة",name,250),Labeled("آيبان الجهة الدافعة",iban,250)),
-                Bar(Labeled("اختيار حساب محفوظ",saved,250),Labeled("ربط ببند أو جهة",link,250)),Bar(Labeled("اسم حساب المستفيد",entity,250),Labeled("المصرف والفرع",branch,250)),Bar(Labeled("آيبان المستفيد",beneficiary,240),Labeled("SWIFT",bic,120),Labeled("الحساب المحلي",local,145))))return;
+                FilterBar(("اختيار حساب محفوظ",saved,1),("ربط ببند أو جهة",link,1)),Bar(Labeled("اسم حساب المستفيد",entity,250),Labeled("المصرف والفرع",branch,250)),Bar(Labeled("آيبان المستفيد",beneficiary,240),Labeled("SWIFT",bic,120),Labeled("الحساب المحلي",local,145))))return;
             var accounts=s.Accounts.ToList();Dictionary<string,string>? links=null;
             if(entity.Text.Trim().Length>0){
                 var a=new A.ExecutionAccount(entity.Text.Trim(),A.TransferPreparation.NormalizeAccount(beneficiary.Text),branch.Text.Trim(),bic.Text.Trim().ToUpperInvariant(),string.IsNullOrWhiteSpace(local.Text)?null:A.TransferPreparation.NormalizeAccount(local.Text));
@@ -52,7 +52,7 @@ public partial class MainWindow
         })));
         var phase=Choices(batch==null?["التحويل الشامل"]:["الدفعة الحالية","دفعة العقود المؤجلة"]);
         var group=Choices(["الرافدين","الرشيد والمصارف الأخرى","فرع الأنبار","جهات تحتاج مراجعة"]);var date=new DatePicker{SelectedDate=DateTime.Today};
-        controls.Children.Add(Labeled("الدفعة",phase,180));controls.Children.Add(Labeled("مجموعة التحويل",group,200));controls.Children.Add(Labeled("تاريخ التحويل",date,155));
+        top.Children.Insert(top.Children.IndexOf(note),FilterBar(("الدفعة",phase,0),("مجموعة التحويل",group,0),("تاريخ التحويل",date,0)));
         A.TransferSnapshot Plan()=>batch?.Plan(phase.SelectedIndex==1)??all!;
         A.TransferGroup Group()=>(A.TransferGroup)group.SelectedIndex;
         void Draw(){

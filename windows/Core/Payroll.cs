@@ -55,7 +55,7 @@ public record MonthInfo(string Name,int Key,int Expected,int Actual)
     public bool Verified=>Expected>0&&Expected==Actual;
     public override string ToString()=>Name;
 }
-public enum DeductionSearchField { Any, Agency, Employee }
+public enum DeductionSearchField { Any, Employee }
 public record Filters(string Search="",string Agency="",string Reference="",int Year=0,int Month=0,string Person="",bool ExactReference=false,string Category="",DeductionSearchField SearchField=DeductionSearchField.Any);
 public record Review(string Title,string Agency,string Month);
 public record ArchivedBook(Guid Id,string Title,string Month,string Agency,int Pages);

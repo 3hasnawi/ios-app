@@ -53,7 +53,7 @@ public partial class MainWindow
     void SearchAll()
     {
         var dock=new DockPanel();var input=new TextBox();var title=Text("ابحث بالاسم أو اسم الأم أو الرقم الإحصائي أو الجهة أو الإضبارة",15);
-        var top=Column(title,Labeled("بحث في الرواتب والملاك والاستقطاعات والأمانات",input,430));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
+        var top=Column(title,FilterBar(("بحث في الرواتب والملاك والاستقطاعات والأمانات",input,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var list=GridView(("المصدر","Kind",.65),("الاسم","Name",1.5),("الشهر","Month",.9),("التفاصيل","Info",1.9));dock.Children.Add(list);CanvasArea.Children.Add(dock);
         int serial=0;input.TextChanged+=async (_,_)=>{var q=input.Text;int current=++serial;await Task.Delay(180);if(serial!=current||page!=SearchName)return;
             try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||page!=SearchName)return;list.ItemsSource=hits.Take(300);Status.Text=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";}catch(Exception e){Error(e);}};
@@ -70,7 +70,7 @@ public partial class MainWindow
                 if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
                 CanvasArea.Children.Remove(loading);
                 var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>r.Kind).Distinct()));if(initial!=null)filter.SelectedItem=initial;
-                var head=Bar(Labeled("حالة المراجعة",filter,250),ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
+                var head=FilterBar(("حالة المراجعة",filter,0),("",ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")),0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
                 var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
                 void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||r.Kind==(string)filter.SelectedItem).ToList();}
                 filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
@@ -101,7 +101,7 @@ public partial class MainWindow
         var items=s.Employees.Where(e=>e.Month==month).SelectMany(e=>e.Items==null?[]:System.Text.Json.JsonSerializer.Deserialize<Dictionary<string,decimal>>(e.Items)!.Keys.AsEnumerable())
             .Distinct().Where(t=>health?A.HealthCareReport.Applies(t):A.FundReport.Applies(t)).ToArray();
         if(items.Length==0){CanvasArea.Children.Add(Text("لم يُعثر على بند لهذا الكشف في رواتب الشهر."));return;}
-        var picker=Choices(items);var dock=new DockPanel();var top=Column(Labeled("بند الرواتب",picker,330));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
+        var picker=Choices(items);var dock=new DockPanel();var top=Column(FilterBar(("بند الرواتب",picker,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var rows=GridView(("الاسم أو الفئة","Name",2),("الحالة أو العدد","State",1.4),("المبلغ","Value",1));dock.Children.Add(rows);CanvasArea.Children.Add(dock);
         var actions=Bar();top.Children.Add(actions);
         void Draw(){
@@ -122,7 +122,7 @@ public partial class MainWindow
     {
         var ledger=A.SalaryTrust.ReadFromBackup(s);
         var dock=new DockPanel();var q=new TextBox();var g=GridView(("الاسم","Name",2),("عدد القيود","Count",1),("المجموع","Total",1),("المتبقي المؤكد","Remaining",1));
-        var top=Column(Labeled("بحث عن منتسب",q,300));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);dock.Children.Add(g);CanvasArea.Children.Add(dock);
+        var top=Column(FilterBar(("بحث عن منتسب",q,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);dock.Children.Add(g);CanvasArea.Children.Add(dock);
         var byPerson=ledger.Entries.GroupBy(e=>Arabic.Match(e.Name)).ToDictionary(k=>k.Key,k=>k.OrderByDescending(e=>e.Year*100+e.Month).ToArray());
         void Draw(){g.ItemsSource=byPerson.Where(p=>p.Key.Contains(Arabic.Match(q.Text))).Select(p=>new TrustPerson(p.Key,p.Value[0].Name,p.Value.Length,Arabic.Money(p.Value.Sum(e=>e.Amount)),Arabic.Money(A.SalaryTrust.Outstanding(p.Value)))).ToList();}
         q.TextChanged+=(_,_)=>Draw();Draw();

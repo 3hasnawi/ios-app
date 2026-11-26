@@ -9,7 +9,7 @@
 <Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
 <Button Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="19" TextAlignment="Center" VerticalAlignment="Center"/>
-<ComboBox Grid.Column="2" x:Name="Period" HorizontalAlignment="Left" MinWidth="159" VerticalAlignment="Center" ToolTip="شهر العمل" SelectionChanged="PeriodChanged"/></Grid></Border>
+<ComboBox Grid.Column="2" x:Name="Period" HorizontalAlignment="Left" MinHeight="30" Padding="5,2" VerticalAlignment="Center" ToolTip="شهر العمل" SelectionChanged="PeriodChanged"/></Grid></Border>
 <Grid Grid.Row="1" x:Name="CanvasArea" Margin="26,22,26,10"/>
 <Border Grid.Row="2" Background="White" Padding="25,6"><TextBlock x:Name="Status" Foreground="#50645A" FontSize="12" TextWrapping="Wrap"/></Border></Grid>
 </Grid></Window>

@@ -15,6 +15,13 @@ static class PrintChecks
         var logo=File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"IraqEmblem.png"));var times=File.ReadAllBytes(Path.Combine(fonts,"timesbd.ttf"));
         var style=new A.GroupLetterSettings("ترويسة تجريبية\nقسم الحسابات","١‏/٢٢/ح/","العضو الأول","العضو الثاني","العضو الثالث","نسخة منه إلى\nشعبة الحسابات",null,null,0,null);
         var s=new Store(Path.Combine(dir,"print-source"));s.Import(Path.Combine(dir,"exchange","windows-exchange.zip"));
+        // يضم شهر المقارنة بندين فعليين حتى تُختبر تصفية كشفي الرعاية والصندوق من الواجهة.
+        using(var demo=new XLWorkbook(Path.Combine(dir,"monthly.xlsx"))){
+            var pay=demo.Worksheet("الرواتب");
+            pay.Cell(2,12).Value=2000;pay.Cell(2,13).Value=3500;
+            var path=Path.Combine(dir,"screen-october.xlsx");demo.SaveAs(path);
+            s.ApplyExcel(s.PreviewExcel(path,"تشرين الأول 2026"),s.Active);
+        }
         var snapshot=s.Snapshot("تشرين الثاني 2026");var refund=s.Refunds().Single();var groups=refund.Groups();
         void Pdf(string name,byte[] bytes,Func<int,bool> pages){using var pdf=PdfDocument.Open(bytes);check(pages(pdf.NumberOfPages)&&pdf.GetPages().All(p=>p.Letters.Count>0),"vector PDF page count and selectable text "+name);File.WriteAllBytes(Path.Combine(folder,name+".pdf"),bytes);}
         foreach(var group in groups)Pdf("refund-"+group.Code,refund.Letter([group],style,A.LetterFonts.Resolve(times,assets.Bold,logo)),n=>n==1);

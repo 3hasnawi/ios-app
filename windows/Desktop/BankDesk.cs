@@ -16,7 +16,7 @@ public partial class MainWindow
             var picker=Choices(periods.Select(p=>$"{p.Month}　·　{p.Start:yyyy/MM/dd} – {p.End:yyyy/MM/dd}"));
             var match=periods.FindIndex(p=>p.Month==month);picker.SelectedIndex=match<0?(periods.Count>0?0:-1):match;
             A.BankPeriod? Period()=>picker.SelectedIndex>=0?periods[picker.SelectedIndex]:null;
-            var head=Column(Text("مطابقة كشف البنك",22,true),Labeled("الفترة",picker,410));var ops=Bar();var metrics=new System.Windows.Controls.Primitives.UniformGrid{Columns=4};head.Children.Add(ops);head.Children.Add(metrics);
+            var head=Column(Text("مطابقة كشف البنك",22,true),FilterBar(("الفترة",picker,1)));var ops=Bar();var metrics=new System.Windows.Controls.Primitives.UniformGrid{Columns=4};head.Children.Add(ops);head.Children.Add(metrics);
             DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);var table=GridView(("تاريخ المصرف","Date",1),("البيان","Description",2),("الحركة","Direction",.85),("المبلغ","Value",1),("الرصيد","Balance",1));dock.Children.Add(table);
             async Task Save(A.BankPeriod updated){
                 var after=periods.Where(p=>p.Id!=updated.Id).Append(updated).ToList();

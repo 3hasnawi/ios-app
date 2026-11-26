@@ -22,7 +22,7 @@ public partial class MainWindow
         }
         if(choices.Count==0)throw new System.IO.InvalidDataException("لا توجد كتب منفردة لهذه الدفعة.");
         var picker=Choices(choices.Select(x=>x.Title));
-        if(!Form("الكتب المنفردة",Labeled("الكتاب",picker,370)))return;
+        if(!Form("الكتب المنفردة",FilterBar(("الكتاب",picker,0))))return;
         var (title,id,entity)=choices[picker.SelectedIndex];
         var style=LetterForm(A.GroupLetterSettingsReader.Read(s,id=="split"?"ramadi":id));if(style==null)return;
         string marker=(held?"deferred":"current")+"|"+(entity==null?"guarantee":("entity|deductions|"+transfer.Month+"|false|"+entity.Title+"|execution"));

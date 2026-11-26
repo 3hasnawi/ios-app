@@ -68,6 +68,38 @@ public partial class MainWindow : Window
     static Border Box(UIElement content,string bg="#FFFFFF")=>new(){Child=content,Background=BrushOf(bg),Padding=new Thickness(17),BorderBrush=BrushOf("#D2DED5"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Margin=new Thickness(4)};
     static WrapPanel Bar(params UIElement[] items){var b=new WrapPanel();foreach(var item in items)b.Children.Add(item);return b;}
     static FrameworkElement Labeled(string title,FrameworkElement input,double width=160){var p=new StackPanel{Width=width,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(4)};p.Children.Add(Text(title,12,true));input.Margin=new Thickness(0,4,0,0);AutomationProperties.SetName(input,title);p.Children.Add(input);return p;}
+    static Border FilterBar(params (string Label,Control Input,double Weight)[] fields)
+    {
+        var row=new Grid();
+        AutomationProperties.SetAutomationId(row,"ReportFilterRow");
+        int inputCount=fields.Count(f=>f.Input is not Button);
+        foreach(var (label,input,weight) in fields){
+            int index=row.ColumnDefinitions.Count;
+            var width=weight>0?new GridLength(weight,GridUnitType.Star):GridLength.Auto;
+            row.ColumnDefinitions.Add(new ColumnDefinition{Width=width,MaxWidth=inputCount==1?440:double.PositiveInfinity});
+            FrameworkElement cell;
+            if(input is Button){
+                input.VerticalAlignment=VerticalAlignment.Bottom;
+                cell=input;
+            }else{
+                var caption=Text(label,12,true);
+                caption.TextWrapping=TextWrapping.NoWrap;
+                caption.TextTrimming=TextTrimming.CharacterEllipsis;
+                caption.ToolTip=label;
+                input.MinHeight=30;input.Padding=new Thickness(5,2,5,2);
+                input.Margin=new Thickness(0,2,0,0);
+                AutomationProperties.SetName(input,label);
+                if(input is ComboBox combo){
+                    string path=string.IsNullOrEmpty(combo.DisplayMemberPath)?"SelectedItem":"SelectedItem."+combo.DisplayMemberPath;
+                    combo.SetBinding(ToolTipProperty,new Binding(path){Source=combo});
+                }
+                cell=Column(caption,input);
+            }
+            cell.Margin=new Thickness(3,0,3,0);
+            Grid.SetColumn(cell,index);row.Children.Add(cell);
+        }
+        var border=Box(row);border.Padding=new Thickness(5);return border;
+    }
     static ComboBox Choices(IEnumerable<string> values){var c=new ComboBox{ItemsSource=values.ToList(),SelectedIndex=0};return c;}
     static StackPanel Column(params UIElement[] items){var p=new StackPanel();foreach(var i in items)p.Children.Add(i);return p;}
     static DataGrid GridView(params (string Title,string Field,double Width)[] cols)
@@ -197,12 +229,12 @@ public partial class MainWindow : Window
     Button? export,employee;
     Filters Current()=>new(search?.Text??"",agency?.SelectedIndex>0?agency.SelectedItem.ToString()!:"",
         reference?.Text??"",int.TryParse(year?.SelectedItem?.ToString(),out int y)?y:0,Math.Max(0,monthFilter?.SelectedIndex??0),Category:category?.SelectedIndex>0?(string)category.SelectedItem:"",
-        SearchField:page switch{AgencyPage=>DeductionSearchField.Agency,EmployeePage=>DeductionSearchField.Employee,_=>DeductionSearchField.Any});
+        SearchField:page==EmployeePage?DeductionSearchField.Employee:DeductionSearchField.Any);
     void DeductionGrid(Review? review)
     {
         offset=0;
         var dock=new DockPanel();
-        search=new TextBox();reference=new TextBox();
+        search=page==AgencyPage?null:new TextBox();reference=new TextBox();
         agency=Choices(new[]{"كل الجهات"}.Concat(agencies));
         year=Choices(new[]{"كل السنوات"}.Concat(months.Where(m=>m.Key>0).Select(m=>(m.Key/100).ToString()).Distinct()));
         monthFilter=Choices(new[]{"كل الأشهر"}.Concat(Arabic.Months));
@@ -214,31 +246,10 @@ public partial class MainWindow : Window
             title.Children.Add(ButtonFor(label,()=>{if(page!=route)ShowPage(route);},icon,page==route));
         if(backPage=="الرئيسية")title.Children.Add(ButtonFor("العودة للرئيسية",()=>{backPage=null;ShowPage("الرئيسية");},"\uE72A"));
         category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
-        var filters=new Grid();
-        void AddFilter(string label,Control input,GridLength width){
-            int index=filters.ColumnDefinitions.Count;
-            filters.ColumnDefinitions.Add(new ColumnDefinition{Width=width});
-            var caption=Text(label,12,true);
-            caption.TextWrapping=TextWrapping.NoWrap;
-            caption.TextTrimming=TextTrimming.CharacterEllipsis;
-            input.MinHeight=30;
-            input.Padding=new Thickness(5,2,5,2);
-            input.Margin=new Thickness(0,2,0,0);
-            AutomationProperties.SetName(input,label);
-            var field=Column(caption,input);
-            field.Margin=new Thickness(3,0,3,0);
-            Grid.SetColumn(field,index);
-            filters.Children.Add(field);
-        }
-        AddFilter("مجموعة الجهات",category,GridLength.Auto);
-        AddFilter(page switch{AgencyPage=>"بحث باسم الجهة",EmployeePage=>"بحث باسم المنتسب",_=>"كلمة البحث"},search,new GridLength(1,GridUnitType.Star));
-        AddFilter("جهة التنفيذ",agency,new GridLength(1.4,GridUnitType.Star));
-        AddFilter("رقم وتاريخ الإضبارة",reference,new GridLength(1,GridUnitType.Star));
-        AddFilter("السنة",year,GridLength.Auto);
-        AddFilter("الشهر",monthFilter,GridLength.Auto);
-        agency.SetBinding(ToolTipProperty,new Binding("SelectedItem"){Source=agency});
-        var filterBar=Box(filters);
-        filterBar.Padding=new Thickness(5);
+        var fields=new List<(string,Control,double)>{("مجموعة الجهات",category,0)};
+        if(search!=null)fields.Add((page==EmployeePage?"بحث باسم المنتسب":"كلمة البحث",search,1));
+        fields.AddRange([("جهة التنفيذ",agency,1.4),("رقم وتاريخ الإضبارة",reference,1),("السنة",year,0),("الشهر",monthFilter,0)]);
+        var filterBar=FilterBar(fields.ToArray());
         var top=Column(title,filterBar);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var gridView=GridView(("الرتبة","Rank",0.7),("الاسم الكامل","Name",1.4),("المبلغ","Value",0.8),("جهة التنفيذ","Agency",1.6),("رقم وتاريخ الإضبارة","Reference",1.6),("الشهر","Month",1.0));
         grid=gridView;grid.CanUserSortColumns=false;
@@ -258,9 +269,10 @@ public partial class MainWindow : Window
         var bottom=Box(reportActions);DockPanel.SetDock(bottom,Dock.Bottom);dock.Children.Add(bottom);
         dock.Children.Add(grid);CanvasArea.Children.Add(dock);
         void Changed(){query?.Cancel();generation++;offset=0;export.IsEnabled=false;employee.IsEnabled=false;gridView.ItemsSource=null;debounce.Stop();debounce.Start();}
-        search.TextChanged+=(_,_)=>Changed();reference.TextChanged+=(_,_)=>Changed();
+        if(search!=null)search.TextChanged+=(_,_)=>Changed();
+        reference.TextChanged+=(_,_)=>Changed();
         foreach(var c in new[]{agency,year,monthFilter,category})c.SelectionChanged+=(_,_)=>Changed();
-        _=LoadGrid();if(page==EmployeePage)search.Focus();
+        _=LoadGrid();if(page==EmployeePage)search?.Focus();
     }
     async Task LoadGrid()
     {
@@ -300,9 +312,8 @@ public partial class MainWindow : Window
         var f=Current();
         var scope=periods.Where(m=>(f.Year==0||m.Key/100==f.Year)&&(f.Month==0||m.Key%100==f.Month)).ToList();
         var start=new ComboBox{ItemsSource=periods,SelectedItem=scope.FirstOrDefault()??periods[0]};var end=new ComboBox{ItemsSource=periods,SelectedItem=scope.LastOrDefault()??periods[^1]};
-        var dialog=new Window{Owner=this,Title="كشف استقطاعات منتسب",SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner};
-        dialog.Content=Box(Column(Text(row.Name,20,true),Labeled("جهة الاستقطاع",agenciesBox,335),Labeled("رقم وتاريخ الإضبارة",refs,335),
-            Bar(Labeled("من شهر",start),Labeled("إلى شهر",end)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true)));
+        var dialog=new Window{Owner=this,Title="كشف استقطاعات منتسب",Width=Math.Min(800,SystemParameters.WorkArea.Width*.94),SizeToContent=SizeToContent.Height,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+        dialog.Content=Box(Column(Text(row.Name,20,true),FilterBar(("جهة الاستقطاع",agenciesBox,1.25),("رقم وتاريخ الإضبارة",refs,1.4),("من شهر",start,0),("إلى شهر",end,0)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true)));
         if(dialog.ShowDialog()!=true)return;
         Guard(()=>{var report=store.PersonStatement(row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
             ((MonthInfo)start.SelectedItem).Key,((MonthInfo)end.SelectedItem).Key,ReportHeader());new ReportWindow(report){Owner=this}.ShowDialog();});
@@ -312,7 +323,7 @@ public partial class MainWindow : Window
         var entries=store.Books();var dock=new DockPanel();CanvasArea.Children.Add(dock);
         var picker=Choices(new[]{"كل الأشهر"}.Concat(entries.Select(b=>b.Month).Distinct()));
         if(entries.Any(b=>b.Month==SelectedMonth?.Name))picker.SelectedItem=SelectedMonth!.Name;
-        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("العودة",()=>ShowPage(backPage??TransfersName),"\uE72A")),Labeled("شهر الكتاب",picker,210));
+        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("العودة",()=>ShowPage(backPage??TransfersName),"\uE72A")),FilterBar(("شهر الكتاب",picker,0)));
         DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var list=GridView(("اسم الكتاب","Title",2.3),("الجهة","Agency",1.5),("الشهر","Month",1),("الصفحات","Pages",.6));
         var save=ButtonFor("حفظ PDF الأصلي",()=>Guard(()=>{
@@ -342,11 +353,13 @@ public partial class MainWindow : Window
             var button=FindButton(root)??throw new InvalidDataException("زر غير موجود في مسار الاختبار: "+label);
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }
-        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(TransfersName,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds")}){
+        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(TransfersName,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds"),(TrustName,"trusts"),("الكتب المحفوظة","books"),(HealthName,"health"),(FundName,"fund")}){
             if(name==DeductionsName){
                 var order=Nav.Children.OfType<Button>().Select(AutomationProperties.GetName).ToList();
                 if(order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
                 Click(Nav,DeductionsName);
+                agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
+                if(search!=null||grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Agency!=sample.Agency))throw new InvalidDataException("تصفية القائمة لا تطابق الجهة المختارة.");
                 if(page!=AgencyPage||Current().Month!=SelectedMonth!.Key%100)throw new InvalidDataException("تعذّر فتح استقطاعات الشهر.");
             }else if(name==EmployeePage){
                 Click(CanvasArea,"استقطاعات المنتسبين");search!.Text=sample.Name;
@@ -359,20 +372,34 @@ public partial class MainWindow : Window
                 if(page!=TransfersName||grid!=null)throw new InvalidDataException("مسار التحويلات يفتح قيود الاستقطاعات.");
             }else if(name=="إعادة المبالغ"){
                 ShowPage(TransfersName);await Task.Delay(500);RefundDesk(store.Snapshot(SelectedMonth!.Name),SelectedMonth.Name,store.Refunds().FirstOrDefault());
-            }else ShowPage(name);
+            }else{
+                if(name is HealthName or FundName){
+                    initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
+                }
+                ShowPage(name);
+            }
             if(grid!=null&&name!=EmployeePage)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
-            if(name is DeductionsName or EmployeePage){
-                var inputs=new Control[]{category!,search!,agency!,this.reference!,year!,monthFilter!};
+            if(name is DeductionsName or EmployeePage or "التحويلات" or TransfersName or "كشف البنك" or AuditName or SearchName or "إعادة المبالغ" or TrustName or "الكتب المحفوظة" or HealthName or FundName){
+                static IEnumerable<Grid> FilterRows(DependencyObject root){
+                    if(root is Grid row&&AutomationProperties.GetAutomationId(row)=="ReportFilterRow"){yield return row;yield break;}
+                    foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+                        foreach(var result in FilterRows(child))yield return result;
+                }
+                var rows=FilterRows(CanvasArea).ToArray();
+                if(rows.Length!=(name=="إعادة المبالغ"?2:1))throw new InvalidDataException("شريط التصفية غير موجود في "+name);
                 var original=CanvasArea.MaxWidth;
                 try{
                     foreach(double available in new[]{628d,original}){
                         CanvasArea.MaxWidth=available;UpdateLayout();
-                        var bounds=inputs.Select(c=>c.TransformToAncestor(CanvasArea).TransformBounds(new Rect(c.RenderSize))).OrderBy(r=>r.Left).ToArray();
-                        if(bounds.Any(r=>Math.Abs(r.Top-bounds[0].Top)>1||r.Left<0||r.Right>CanvasArea.ActualWidth+1||r.Width<42)||
-                            bounds.Zip(bounds.Skip(1),(a,b)=>a.Right>b.Left+1).Any(overlap=>overlap)||
-                            grid!.TranslatePoint(new Point(),CanvasArea).Y>120)
-                            throw new InvalidDataException("حقول الاستقطاعات لا تتسع في سطر واحد فوق الجدول.");
+                        foreach(var row in rows){
+                            var inputs=row.Children.OfType<StackPanel>().Select(field=>(Control)field.Children[1]);
+                            var bounds=inputs.Select(c=>c.TransformToAncestor(CanvasArea).TransformBounds(new Rect(c.RenderSize))).OrderBy(r=>r.Left).ToArray();
+                            if(bounds.Any(r=>Math.Abs(r.Top-bounds[0].Top)>1||r.Left<0||r.Right>CanvasArea.ActualWidth+1||r.Width<42)||
+                                bounds.Zip(bounds.Skip(1),(a,b)=>a.Right>b.Left+1).Any(overlap=>overlap))
+                                throw new InvalidDataException("عرض حقول التصفية غير مناسب في "+name);
+                        }
+                        if(grid!=null&&grid.TranslatePoint(new Point(),CanvasArea).Y>120)throw new InvalidDataException("شريط الاستقطاعات مرتفع.");
                     }
                 }finally{CanvasArea.MaxWidth=original;UpdateLayout();}
             }
@@ -386,6 +413,7 @@ public partial class MainWindow : Window
             var screen=new RenderTargetBitmap(bitmap.PixelWidth,bitmap.PixelHeight,96,96,PixelFormats.Pbgra32);screen.Render(visual);
             var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(screen));using var stream=File.Create(Path.Combine(directory,file+".png"));png.Save(stream);
         }
+        initializing=true;Period.SelectedIndex=0;initializing=false;
         var f=new Filters(Agency:sample.Agency,Year:sample.Period/100,Month:sample.Period%100);
         var agencyStatement=Statement.Entities(store.Find(f),ReportHeader(),true);
         var employeeStatement=store.PersonStatement(sample.Name,sample.Agency,sample.Reference,months[^1].Key,months[0].Key,ReportHeader());
