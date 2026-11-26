@@ -214,8 +214,32 @@ public partial class MainWindow : Window
             title.Children.Add(ButtonFor(label,()=>{if(page!=route)ShowPage(route);},icon,page==route));
         if(backPage=="الرئيسية")title.Children.Add(ButtonFor("العودة للرئيسية",()=>{backPage=null;ShowPage("الرئيسية");},"\uE72A"));
         category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
-        var tools=Bar(Labeled("مجموعة الجهات",category,150),Labeled(page switch{AgencyPage=>"بحث باسم جهة التنفيذ",EmployeePage=>"بحث باسم المنتسب",_=>"كلمة البحث"},search,190),Labeled("جهة التنفيذ",agency,224),Labeled("رقم وتاريخ الإضبارة",reference,160),Labeled("السنة",year,104),Labeled("الشهر",monthFilter,134));
-        var top=Column(title,Box(tools));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
+        var filters=new Grid();
+        void AddFilter(string label,Control input,GridLength width){
+            int index=filters.ColumnDefinitions.Count;
+            filters.ColumnDefinitions.Add(new ColumnDefinition{Width=width});
+            var caption=Text(label,12,true);
+            caption.TextWrapping=TextWrapping.NoWrap;
+            caption.TextTrimming=TextTrimming.CharacterEllipsis;
+            input.MinHeight=30;
+            input.Padding=new Thickness(5,2,5,2);
+            input.Margin=new Thickness(0,2,0,0);
+            AutomationProperties.SetName(input,label);
+            var field=Column(caption,input);
+            field.Margin=new Thickness(3,0,3,0);
+            Grid.SetColumn(field,index);
+            filters.Children.Add(field);
+        }
+        AddFilter("مجموعة الجهات",category,GridLength.Auto);
+        AddFilter(page switch{AgencyPage=>"بحث باسم الجهة",EmployeePage=>"بحث باسم المنتسب",_=>"كلمة البحث"},search,new GridLength(1,GridUnitType.Star));
+        AddFilter("جهة التنفيذ",agency,new GridLength(1.4,GridUnitType.Star));
+        AddFilter("رقم وتاريخ الإضبارة",reference,new GridLength(1,GridUnitType.Star));
+        AddFilter("السنة",year,GridLength.Auto);
+        AddFilter("الشهر",monthFilter,GridLength.Auto);
+        agency.SetBinding(ToolTipProperty,new Binding("SelectedItem"){Source=agency});
+        var filterBar=Box(filters);
+        filterBar.Padding=new Thickness(5);
+        var top=Column(title,filterBar);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var gridView=GridView(("الرتبة","Rank",0.7),("الاسم الكامل","Name",1.4),("المبلغ","Value",0.8),("جهة التنفيذ","Agency",1.6),("رقم وتاريخ الإضبارة","Reference",1.6),("الشهر","Month",1.0));
         grid=gridView;grid.CanUserSortColumns=false;
         var cellText=new Style(typeof(TextBlock));
@@ -338,6 +362,20 @@ public partial class MainWindow : Window
             }else ShowPage(name);
             if(grid!=null&&name!=EmployeePage)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+            if(name is DeductionsName or EmployeePage){
+                var inputs=new Control[]{category!,search!,agency!,this.reference!,year!,monthFilter!};
+                var original=CanvasArea.MaxWidth;
+                try{
+                    foreach(double available in new[]{628d,original}){
+                        CanvasArea.MaxWidth=available;UpdateLayout();
+                        var bounds=inputs.Select(c=>c.TransformToAncestor(CanvasArea).TransformBounds(new Rect(c.RenderSize))).OrderBy(r=>r.Left).ToArray();
+                        if(bounds.Any(r=>Math.Abs(r.Top-bounds[0].Top)>1||r.Left<0||r.Right>CanvasArea.ActualWidth+1||r.Width<42)||
+                            bounds.Zip(bounds.Skip(1),(a,b)=>a.Right>b.Left+1).Any(overlap=>overlap)||
+                            grid!.TranslatePoint(new Point(),CanvasArea).Y>120)
+                            throw new InvalidDataException("حقول الاستقطاعات لا تتسع في سطر واحد فوق الجدول.");
+                    }
+                }finally{CanvasArea.MaxWidth=original;UpdateLayout();}
+            }
             var target=(FrameworkElement)Content;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             // RenderTargetBitmap omits the RTL transform normally supplied by the Window.
             var visual=new DrawingVisual();using(var draw=visual.RenderOpen()){
