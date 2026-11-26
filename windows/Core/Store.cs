@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using System.Globalization;
+using System.IO.Compression;
 using System.Text.Json;
 
 namespace AnbarPayroll;
@@ -126,6 +127,27 @@ public sealed class Store(string root)
         var curr=Set(month.Name);var prev=Set(previous.Name);
         return curr.Keys.Except(prev.Keys).Select(e=>new Review("جهة ظهرت في الشهر المختار",curr[e],month.Name))
             .Concat(prev.Keys.Except(curr.Keys).Select(e=>new Review("جهة غابت عن الشهر المختار",prev[e],previous.Name))).ToList();
+    }
+    public List<ArchivedBook> Books()
+    {
+        if(Active==null)return [];
+        using var zip=ZipFile.OpenRead(Archive);
+        var index=zip.GetEntry("books/index.json");
+        if(index==null)return [];
+        using var stream=index.Open();using var data=JsonDocument.Parse(stream);
+        return data.RootElement.EnumerateArray().Select(e=>new ArchivedBook(
+            e.GetProperty("id").GetGuid(),e.GetProperty("title").GetString()!,e.GetProperty("month").GetString()!,
+            e.TryGetProperty("entity",out var agency)?agency.GetString()??"":"",e.GetProperty("pages").GetInt32()))
+            .OrderByDescending(b=>Arabic.Period(b.Month)).ThenBy(b=>b.Title).ToList();
+    }
+    public void SaveBook(ArchivedBook book,string output)
+    {
+        using var zip=ZipFile.OpenRead(Archive);
+        var entry=zip.GetEntry("books/"+book.Id.ToString().ToUpperInvariant()+".pdf")??throw new InvalidDataException("ملف الكتاب غير موجود.");
+        if(entry.Length is <=0 or >60_000_000)throw new InvalidDataException("حجم ملف الكتاب غير صالح.");
+        var temp=output+"."+Guid.NewGuid().ToString("N")+".tmp";
+        try{using(var file=File.Create(temp)){using var input=entry.Open();input.CopyTo(file);if(file.Length!=entry.Length)throw new InvalidDataException();file.Flush(true);}File.Move(temp,output,true);}
+        finally{if(File.Exists(temp))File.Delete(temp);}
     }
     public string Metadata(string key){if(Active==null)return "";using var db=Open();using var cmd=db.CreateCommand();cmd.CommandText="SELECT value FROM meta WHERE key=$k";cmd.Parameters.AddWithValue("$k",key);return cmd.ExecuteScalar() as string??"";}
 }

@@ -60,7 +60,23 @@ period=dict(id=str(uuid.uuid4()),month=names[-1],start=815000000,end=817500000,o
             memberFirst="",memberSecond="", movements=[movement("تمويل الشهر",580000,"credit",815000000),
             movement("تحويل استقطاعات الجهات",580000,"debit",815086400)])
 bank=dict(version=1,periods=[period])
-entries={"books/index.json":b"[]","deductions.jsonl":lines(cuts),"months.jsonl":lines(months),
+book_id = str(uuid.UUID(int=42)).upper()
+# Build a one-page PDF with a valid cross-reference table.
+pdf = bytearray(b"%PDF-1.4\n")
+offsets = [0]
+for number, body in enumerate((b"<< /Type /Catalog /Pages 2 0 R >>",
+                               b"<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+                               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>"), 1):
+    offsets.append(len(pdf))
+    pdf.extend(f"{number} 0 obj\n".encode()+body+b"\nendobj\n")
+xref=len(pdf)
+pdf.extend(b"xref\n0 4\n0000000000 65535 f \n")
+for pos in offsets[1:]:
+    pdf.extend(f"{pos:010} 00000 n \n".encode())
+pdf.extend(f"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
+(dest/"original-book.pdf").write_bytes(pdf)
+books=[dict(id=book_id,title="كتاب تجريبي",month=names[-1],pages=1,createdAt=0,entity=entities[0])]
+entries={"books/index.json":pack(books),"books/"+book_id+".pdf":pdf,"deductions.jsonl":lines(cuts),"months.jsonl":lines(months),
          "employees.jsonl":lines([employee]),"staff.jsonl":b"","accounts.jsonl":b"",
          "payroll-headers.json":pack([b64(header)]),
          "settings.json":pack({"bankReconciliations":plist(pack(bank)),"reportHeader":plist("قيادة شرطة محافظة الانبار")})}
@@ -69,7 +85,7 @@ for name, data in sorted(entries.items()):
     if name!="employees.jsonl":
         support.update(name.encode()+b"\0"+hashlib.sha256(data).digest())
 entries["manifest.json"]=pack(dict(version=12,contentVersion=5,createdAt=0,months=names,employees=1,deductions=len(cuts),
-                                    staff=0,accounts=0,books=0,payrollDigest=b64(digest),supportingDigest=b64(support.digest())))
+                                    staff=0,accounts=0,books=1,payrollDigest=b64(digest),supportingDigest=b64(support.digest())))
 for label in ("valid","damaged"):
     with zipfile.ZipFile(dest/(label+".zip"),"w",zipfile.ZIP_DEFLATED) as archive:
         for name,data in entries.items():

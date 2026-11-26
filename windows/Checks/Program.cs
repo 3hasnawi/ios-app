@@ -25,3 +25,5 @@ Check(employee.Partial&&employee.PaidMonths==1&&employee.Sheets.Sum(y=>y.Total)=
 Check(entity.Html().Contains("580,000")&&employee.Html().Contains("13,000"),"preview values");
 Check(Arabic.Period("رواتب تشرين٢_٢٠٢٦ تجريبي")==202611,"iPhone short month labels");
 Check(store.Summary(new(Year:2026,Month:11,Category:"مديريات التنفيذ")).Total==232000,"exact group scope shared by grid and export");
+var archived=store.Books().Single();var copy=Path.Combine(path,"book.pdf");store.SaveBook(archived,copy);
+Check(File.ReadAllBytes(copy).SequenceEqual(File.ReadAllBytes(Path.Combine(path,"original-book.pdf"))),"archived iPhone PDF is byte-identical");

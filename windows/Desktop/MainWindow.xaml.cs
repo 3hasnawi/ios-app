@@ -24,8 +24,8 @@ public partial class MainWindow : Window
     private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),("التحويلات","\uE8AB"),("كشف البنك","\uE8C7"),("الإعدادات","\uE713")];
     private static readonly (string Name,string Desc,string Icon)[] Cards=[
         ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uE8EC"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
-        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE8C7")];
-    private List<string> pins=Cards.Select(x=>x.Name).ToList();
+        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE8C7"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7")];
+    private List<string> pins=Cards.Take(4).Select(x=>x.Name).ToList();
     private readonly DispatcherTimer debounce=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private int generation,offset;private const int PageSize=150;
     private TextBox? search,reference;private ComboBox? agency,year,monthFilter,category;
@@ -66,11 +66,11 @@ public partial class MainWindow : Window
     void ShowPage(string name,Review? review=null)
     {
         if(busy)return;query?.Cancel();generation++;debounce.Stop();page=name;PageTitle.Text=name;Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
-        string active=name is "جهات التنفيذ" or "بحث الاستقطاعات"?"التحويلات":name;
+        string active=name is "جهات التنفيذ" or "بحث الاستقطاعات" or "الكتب المحفوظة"?"التحويلات":name;
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else DeductionGrid(name=="بحث الاستقطاعات",review);
+        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(name=="الكتب المحفوظة")Books();else DeductionGrid(name=="بحث الاستقطاعات",review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void Activate(string name)
@@ -172,6 +172,7 @@ public partial class MainWindow : Window
         if(!history&&key is >0){year.SelectedItem=(key.Value/100).ToString();monthFilter.SelectedIndex=key.Value%100;}
         if(review!=null)agency.SelectedItem=review.Agency;
         var title=Bar(Text(history?"البحث في القيود":"قيود جهات التنفيذ",23,true));
+        if(!history)title.Children.Add(ButtonFor("الكتب المحفوظة",()=>ShowPage("الكتب المحفوظة"),"\uE8B7"));
         if(backPage!=null)title.Children.Add(ButtonFor("العودة للرئيسية",()=>{backPage=null;ShowPage("الرئيسية");},"\uE72A"));
         category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
         var tools=Bar(Labeled("مجموعة الجهات",category,150),Labeled("الاسم أو كلمة بحث",search,180),Labeled("جهة التنفيذ",agency,224),Labeled("رقم وتاريخ الإضبارة",reference,160),Labeled("السنة",year,104),Labeled("الشهر",monthFilter,134));
@@ -239,6 +240,26 @@ public partial class MainWindow : Window
         if(dialog.ShowDialog()!=true)return;
         Guard(()=>{var report=Statement.Employee(choices,months,row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
             ((MonthInfo)start.SelectedItem).Key,((MonthInfo)end.SelectedItem).Key,ReportHeader());new ReportWindow(report){Owner=this}.ShowDialog();});
+    }
+    void Books()
+    {
+        var entries=store.Books();var dock=new DockPanel();CanvasArea.Children.Add(dock);
+        var picker=Choices(new[]{"كل الأشهر"}.Concat(entries.Select(b=>b.Month).Distinct()));
+        if(entries.Any(b=>b.Month==SelectedMonth?.Name))picker.SelectedItem=SelectedMonth!.Name;
+        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("العودة",()=>ShowPage(backPage??"التحويلات"),"\uE72A")),Labeled("شهر الكتاب",picker,210));
+        DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
+        var list=GridView(("اسم الكتاب","Title",2.3),("الجهة","Agency",1.5),("الشهر","Month",1),("الصفحات","Pages",.6));
+        var save=ButtonFor("حفظ PDF الأصلي",()=>Guard(()=>{
+            if(list.SelectedItem is not ArchivedBook book)return;
+            var name=string.Concat(book.Title.Select(c=>Path.GetInvalidFileNameChars().Contains(c)?' ':c)).Trim();
+            var dialog=new SaveFileDialog{Filter="ملف الكتاب|*.pdf",FileName=name};
+            if(dialog.ShowDialog(this)==true){store.SaveBook(book,dialog.FileName);Status.Text="تم حفظ ملف الكتاب الأصلي.";}
+        }),"\uE74E",true);
+        var hint=Text("",14);var bottom=Box(Bar(hint,save));DockPanel.SetDock(bottom,Dock.Bottom);dock.Children.Add(bottom);
+        dock.Children.Add(list);save.IsEnabled=false;
+        void Draw(){var rows=entries.Where(b=>picker.SelectedIndex==0||b.Month==(string?)picker.SelectedItem).ToList();list.ItemsSource=rows;hint.Text=rows.Count==0?"لا توجد كتب محفوظة ضمن هذه الفترة.":rows.Count+" كتاب محفوظ";}
+        list.SelectionChanged+=(_,_)=>save.IsEnabled=list.SelectedItem is ArchivedBook;
+        picker.SelectionChanged+=(_,_)=>Draw();Draw();
     }
     static string BankDate(JsonElement e,string key)=>new DateTimeOffset(2001,1,1,0,0,0,TimeSpan.Zero).AddSeconds(e.GetProperty(key).GetDouble()).ToOffset(TimeSpan.FromHours(3)).ToString("yyyy/MM/dd");
     void Bank()

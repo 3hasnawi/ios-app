@@ -56,4 +56,4 @@ public record MonthInfo(string Name,int Key,int Expected,int Actual)
 }
 public record Filters(string Search="",string Agency="",string Reference="",int Year=0,int Month=0,string Person="",bool ExactReference=false,string Category="");
 public record Review(string Title,string Agency,string Month);
-public record BankRow(string Month,string Date,string Description,string Direction,long Amount);
+public record ArchivedBook(Guid Id,string Title,string Month,string Agency,int Pages);
