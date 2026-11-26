@@ -38,7 +38,7 @@ static class PrintChecks
         Pdf("bank-month",A.ReportPdf.Generate([monthly],assets,DateTime.UtcNow),n=>n==1);
         var period=A.BankReconciliation.ReadFromBackup(snapshot).Single();
         var extra=Enumerable.Range(1,90).Select(i=>new A.BankMovement(Guid.NewGuid(),period.Start,"صرف دفعة تجريبية من المصرف "+i,i,A.MovementDirection.Debit,Matched:true));
-        Pdf("bank-long",A.ReconciliationPdf.Statement(period with{Movements=period.Movements.Concat(extra).ToArray(),OpeningBalance=10000},A.TransferPreparation.Account(snapshot),true,assets),n=>n>=3);
+        Pdf("bank-long",A.ReconciliationPdf.Statement(period with{Movements=period.Movements.Concat(extra).ToArray(),OpeningBalance=10000,Committee=(period.Committee??new A.BankCommittee()) with{SecondDate="٢٠٢٦ / ١٢"}},A.TransferPreparation.Account(snapshot),true,assets),n=>n>=3);
         var trust=new A.SalaryTrustEntry(Guid.NewGuid().ToString(),"اسم أمانة تجريبي","عقد","مركز تجريبي",2026,11,3500,"حالة تجريبية","ملاحظة طويلة","مصروف",true,false,[],null,"٢٠٢٦/١١/١٠");
         var trustSheet=A.SalaryTrustReports.Sheet(new(2,[trust],true),[trust],"اختبار","الكل","الكل","");
         Pdf("trust",A.SalaryTrustReports.Pdf(trustSheet,assets,DateTime.UtcNow),n=>n==1);

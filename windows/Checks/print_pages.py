@@ -30,6 +30,14 @@ for path in sorted([*screens.glob("*.pdf"), *native.glob("*.pdf")]):
             assert len(document) >= 3
             for page in document:
                 assert len([w for w in page.get_text("words") if w[1] > 817]) >= 4
+            chars = [c for block in document[-1].get_text("rawdict")["blocks"]
+                     for line in block.get("lines", []) for span in line["spans"] for c in span["chars"]
+                     if c["c"] in "٠١٢٣٤٥٦٧٨٩/" and 780 < c["origin"][1] < 817]
+            # ترتيب المحارف الفعلي من يسار الورقة إلى يمينها، لكل توقيع على حدة.
+            for right_column, month in [(True, "١١"), (False, "١٢")]:
+                signature = [c for c in chars if (c["origin"][0] > document[-1].rect.width / 2) == right_column]
+                visual = "".join(c["c"] for c in sorted(signature, key=lambda c: c["origin"][0]))
+                assert visual == "٢٠٢٦/" + month, (path, right_column, visual)
         if path.stem == "command":
             assert len(document) == 1 and document[0].rect.width > document[0].rect.height
         print("PASS printed", path.name, len(document), "A4 pages with selectable text")

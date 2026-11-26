@@ -16,6 +16,16 @@ public static class ReconciliationPdf
     }
     private static string ShapeRun(string run) => run.Any(c => c is >= '٠' and <= '٩' or >= '۰' and <= '۹') && !run.Any(char.IsAsciiLetter)
         ? string.Concat(run.EnumerateRunes().Reverse()) : run;
+    private static (string Month, string Year)? SignatureMonthYear(string date)
+    {
+        var fields = date.Trim(' ', '/').Split('/', StringSplitOptions.TrimEntries);
+        if (fields.Length != 2) return null;
+        static bool IsYear(string field) => field.Length == 4 && field.All(char.IsDigit);
+        var (month, year) = IsYear(fields[0]) ? (fields[1], fields[0]) : (fields[0], fields[1]);
+        if (!IsYear(year) || MonthNames.SortKey(month + " " + year) == 0) return null;
+        return (month, year);
+    }
+
     internal static float Width(string text, SKShaper shaper, SKPaint paint) => Runs(text).Sum(run => shaper.Shape(ShapeRun(run), paint).Width);
     internal static void DrawRight(SKCanvas canvas, SKShaper shaper, SKPaint paint, string text, float right, float y)
     {
@@ -250,9 +260,25 @@ public static class ReconciliationPdf
                     for (int column = 0; column < 2; column++)
                     {
                         float x = column == 0 ? 306 : 44, signatureY = signatureTop;
-                        foreach (var (lines, height) in signatureLayout[column])
+                        var fields = signatureLayout[column];
+                        for (int field = 0; field < fields.Length; field++)
                         {
-                            Draw(lines, signatureFont, SKRect.Create(x, signatureY, SignatureWidth, height), 1);
+                            var (lines, height) = fields[field];
+                            var rect = SKRect.Create(x, signatureY, SignatureWidth, height);
+                            if (field == fields.Length - 1 && lines.Count == 1 && SignatureMonthYear(lines[0]) is { } date)
+                            {
+                                // نرسم أجزاء التاريخ منفصلة كي لا يعامل محرك النص الشهر والسنة كرقم واحد.
+                                float monthWidth = W(date.Month, signatureFont), yearWidth = W(date.Year, signatureFont);
+                                float slashWidth = W("/", signatureFont);
+                                float gap = W(" ", signatureFont);
+                                float left = rect.MidX - (monthWidth + yearWidth + slashWidth + 2 * gap) / 2;
+                                Draw([date.Year], signatureFont, SKRect.Create(left, signatureY, yearWidth, height), 1);
+                                left += yearWidth + gap;
+                                Draw(["/"], signatureFont, SKRect.Create(left, signatureY, slashWidth, height), 1);
+                                left += slashWidth + gap;
+                                Draw([date.Month], signatureFont, SKRect.Create(left, signatureY, monthWidth, height), 1);
+                            }
+                            else Draw(lines, signatureFont, rect, 1);
                             signatureY += height;
                         }
                     }
