@@ -30,10 +30,10 @@ public partial class MainWindow
     }
     bool Form(string title,params FrameworkElement[] fields)
     {
-        var dialog=new Window{Title=title,Owner=this,SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner,MaxHeight=SystemParameters.WorkArea.Height*.9,FlowDirection=FlowDirection.RightToLeft};
+        var dialog=new Window{Title=title,Owner=this,SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner,FlowDirection=FlowDirection.RightToLeft};
         var stack=Column(Text(title,19,true));foreach(var f in fields)stack.Children.Add(f);
         stack.Children.Add(Bar(ButtonFor("متابعة",()=>dialog.DialogResult=true,"\uE73E",true),ButtonFor("إلغاء",()=>dialog.DialogResult=false)));
-        dialog.Content=new ScrollViewer{Content=Box(stack),VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return dialog.ShowDialog()==true;
+        dialog.Content=new ScrollViewer{Content=Box(stack),HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return dialog.ShowDialog()==true;
     }
     async Task ImportExcel()
     {

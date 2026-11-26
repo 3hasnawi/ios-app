@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     public MainWindow(Store source)
     {
         InitializeComponent();store=source;
+        SizeChanged+=(_,_)=>AdaptNavigation();
         try{var path=Path.Combine(store.Root,"pins.json");if(File.Exists(path))pins=(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path))??pins).Where(n=>Cards.Any(c=>c.Name==n)).Distinct().ToList();}
         catch(IOException){}catch(JsonException){}
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
@@ -118,9 +119,26 @@ public partial class MainWindow : Window
         string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or "الكتب المحفوظة"=>"التحويلات",_=>name};
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
+        AdaptNavigation();
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
         if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name))WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
+    }
+    void AdaptNavigation()
+    {
+        bool compact=ActualWidth<1050;
+        NavColumn.Width=new GridLength(compact?62:194);
+        Brand.Visibility=NavFoot.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+        SidePanel.Padding=compact?new Thickness(3,12,3,8):new Thickness(17,30,17,18);
+        BodyViewport.Margin=compact?new Thickness(6):new Thickness(26,22,26,10);
+        SearchButton.Content=ActualWidth<760?"بحث":"البحث الشامل　 Ctrl+K";
+        foreach(var button in Nav.Children.OfType<Button>()){
+            var parts=(StackPanel)button.Content;
+            parts.Children[1].Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+            button.ToolTip=compact?AutomationProperties.GetName(button):null;
+            button.HorizontalContentAlignment=compact?HorizontalAlignment.Center:HorizontalAlignment.Right;
+            button.Padding=compact?new Thickness(4,9,4,9):new Thickness(12,11,12,11);
+        }
     }
     void Activate(string name)
     {
@@ -190,7 +208,7 @@ public partial class MainWindow : Window
     void EditPins()
     {
         var pending=pins.ToList();var body=new StackPanel{Margin=new Thickness(15)};
-        var dialog=new Window{Owner=this,Title="تخصيص كشوفي المثبتة",Content=body,SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+        var dialog=new Window{Owner=this,Title="تخصيص كشوفي المثبتة",Content=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto},SizeToContent=SizeToContent.WidthAndHeight,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         void Draw(){body.Children.Clear();foreach(var name in pending.Concat(Cards.Select(c=>c.Name).Except(pending)).ToArray()){
             var check=new CheckBox{Content=name,IsChecked=pending.Contains(name),Width=200,VerticalAlignment=VerticalAlignment.Center};
             check.Click+=(_,_)=>{if(check.IsChecked==true)pending.Add(name);else pending.Remove(name);Draw();};
@@ -216,6 +234,7 @@ public partial class MainWindow : Window
         }
         p.Children.Add(ButtonFor("استيراد رواتب أو استقطاعات من Excel",()=>_=ImportExcel(),"\uE8B5"));
         p.Children.Add(Bar(new[]{"الأمانات","الملاك","مراجع الكتب"}.Select(kind=>(UIElement)ButtonFor("استيراد "+kind,()=>_=ImportLocal(kind))).ToArray()));
+        p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+InstalledVersion,14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
         CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
     }
     void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;var temp=d.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.Copy(store.Archive,temp);File.Move(temp,d.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}Status.Text="حُفظ الأرشيف الأصلي كاملاً.";});
@@ -407,6 +426,20 @@ public partial class MainWindow : Window
             }
             CaptureWindow((FrameworkElement)Content,file);
         }
+        ShowPage(DeductionsName);
+        agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
+        double savedWidth=Width,savedHeight=Height;
+        try{
+            Width=820;Height=560;UpdateLayout();
+            await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+            if(NavColumn.Width.Value>70||agency.SelectedItem?.ToString()!=sample.Agency||grid!.ActualHeight<80)
+                throw new InvalidDataException("تعذّر تصغير نافذة الاستقطاعات مع الاحتفاظ بالجهة والجدول.");
+            CaptureWindow((FrameworkElement)Content,"deductions-compact");
+            Width=560;Height=390;UpdateLayout();
+            if(BodyViewport.ScrollableWidth<=0||BodyViewport.ScrollableHeight<=0)throw new InvalidDataException("تعذّر الوصول إلى كامل المحتوى في النافذة الصغيرة.");
+            BodyViewport.ScrollToRightEnd();BodyViewport.ScrollToBottom();UpdateLayout();
+            if(BodyViewport.VerticalOffset<=0)throw new InvalidDataException("تعذّر تمرير المحتوى.");
+        }finally{Width=savedWidth;Height=savedHeight;UpdateLayout();}
         ShowPage(SearchName);
         var hit=store.SearchPeople(sample.Name).First(r=>r.Name==sample.Name);
         await OpenPerson(hit with{Kind="راتب"},target=>CaptureWindow(target,"employee-profile"));

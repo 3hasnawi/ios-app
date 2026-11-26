@@ -17,12 +17,14 @@ public partial class MainWindow
                 return (A.PersonProfiles.Build(source,hit.Name,matches),ledger,matches);
             });
             if(revision!=store.Active||page!=SearchName)return;
-            var tabs=new TabControl{Width=Math.Min(850,SystemParameters.WorkArea.Width*.85),Height=Math.Min(470,SystemParameters.WorkArea.Height*.55)};
+            var tabs=new TabControl();
             DataGrid ProfileGrid(params (string Title,string Field,double Width)[] columns){
                 var grid=GridView(columns);
-                double available=tabs.Width-36;
                 double weights=columns.Sum(c=>c.Width);
-                for(int i=0;i<columns.Length;i++)grid.Columns[i].Width=new DataGridLength(Math.Floor(available*columns[i].Width/weights));
+                grid.SizeChanged+=(_,_)=>{
+                    double available=Math.Max(0,grid.ActualWidth-24);
+                    for(int i=0;i<columns.Length;i++)grid.Columns[i].Width=new DataGridLength(Math.Floor(available*columns[i].Width/weights));
+                };
                 return grid;
             }
             void Tab(string title,UIElement body)=>tabs.Items.Add(new TabItem{Header=title,Content=body});
@@ -58,7 +60,9 @@ public partial class MainWindow
             }
             var target=hit.Kind switch{"أمانات"=>"الأمانات","استقطاع"=>"الاستقطاعات","ملاك"=>"الملاك",_=>"قسيمة الراتب"};
             foreach(TabItem item in tabs.Items)if(Equals(item.Header,target)){tabs.SelectedItem=item;break;}
-            var window=new Window{Owner=this,Title=profile.Name,WindowStartupLocation=WindowStartupLocation.CenterOwner,SizeToContent=SizeToContent.WidthAndHeight,FlowDirection=FlowDirection.RightToLeft,Content=Box(Column(Text(profile.Name,21,true),tabs))};
+            var panel=new DockPanel();var title=Text(profile.Name,21,true);DockPanel.SetDock(title,Dock.Top);
+            panel.Children.Add(title);panel.Children.Add(tabs);
+            var window=new Window{Owner=this,Title=profile.Name,WindowStartupLocation=WindowStartupLocation.CenterOwner,Width=900,Height=550,MinWidth=350,MinHeight=280,FlowDirection=FlowDirection.RightToLeft,Content=Box(panel)};
             if(capture==null)window.ShowDialog();else{window.Show();try{
                 await window.Dispatcher.InvokeAsync(()=>window.UpdateLayout(),System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 if(salaries.Length>0&&tabs.SelectedItem is TabItem {Content:DockPanel pay}&&pay.Children.OfType<DataGrid>().FirstOrDefault() is {} grid&&grid.Columns[1].ActualWidth<240)
