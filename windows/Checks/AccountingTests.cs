@@ -32,6 +32,27 @@ static class AccountingTests
             var decimalText=string.Concat((bban+"IQ00").Select(c=>char.IsAsciiLetter(c)?(c-'A'+10).ToString():c.ToString()));
             return "IQ"+(98-(int)(BigInteger.Parse(decimalText)%97)).ToString("D2")+bban;
         }
+        {
+            var directory=new Store(Path.Combine(dir,"account-directory"));
+            var account=AccountDirectory.Account("جهة تجريبية","الرافدين / فرع الأنبار",Iban("RAFB",31),"","000000000000031");
+            directory.SaveDirectoryAccount(null,null,account);
+            var original=directory.Snapshot();
+            check(original.Accounts.Single()==account && original.Months.Count==0,"create beneficiary directory before importing a payroll month");
+            var entry=new A.TransferEntry("deduction|تجريبي","تشرين الثاني 2026","تجريبي",10,1,0,account,A.TransferGroup.Anbar,null,false);
+            directory.LinkIndividual(original,"housing",entry);
+            var linked=directory.Snapshot();
+            var updated=account with{Entity="اسم محدث",Iban=Iban("RAFB",32),LocalAccount="000000000000032"};
+            directory.SaveDirectoryAccount(linked,account,updated);
+            var after=directory.Snapshot();
+            check(after.Accounts.Single()==updated &&
+                A.TransferPreparation.SettingDictionary(after,"transferPayrollAccountLinks")["deduction|"+A.PayrollAnalysis.Normalize(account.Entity)]==A.PayrollAnalysis.Normalize(updated.Entity) &&
+                A.IndividualLetterLinks.Resolve(after,"housing",[entry with{Account=updated}])!=null,"renaming a directory entry updates beneficiary and individual-letter references atomically");
+            try{directory.SaveDirectoryAccount(after,null,updated);throw new Exception("duplicate directory entry accepted");}catch(InvalidDataException){}
+            check(directory.Snapshot().Accounts.SequenceEqual(after.Accounts),"duplicate beneficiary leaves the archive intact");
+            using var excel=new XLWorkbook(new MemoryStream(AccountDirectory.Excel(after.Accounts,A.ReportSheet.DefaultHeader)));
+            check(excel.Worksheet(1).Cell("D4").GetString()==updated.Iban && excel.Worksheet(1).Cell("F4").DataType==XLDataType.Text &&
+                excel.Worksheet(1).Cell("F4").GetString()==updated.LocalAccount,"XLSX preserves IBAN and leading zeros in local accounts");
+        }
         var bank="مصرف الرشيد / فرع تجريبي";var other="مديرية تنفيذ تجريبية";
         string[] names=["أول مثال","ثاني مثال","ثالث مثال"];string[] ranks=["عقود","عقد","شرطي"];
         string[] bankCodes=["RDBA","RDBA","RAFB"];string[] bics=["RDBAIQBA111","RDBAIQBA222","RAFBIQBA111"];

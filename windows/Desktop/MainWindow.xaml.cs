@@ -111,7 +111,7 @@ public partial class MainWindow : Window
         var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field){Mode=BindingMode.OneWay,Converter=(DisplayNumberConverter)Application.Current.FindResource("NumeralConverter")},Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
     }
     void OpenMonthList(object sender,RoutedEventArgs e){Period.Focus();Period.IsDropDownOpen=!Period.IsDropDownOpen;}
-    void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy)ShowPage(page);}
+    void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy&&page!=DirectoryName)ShowPage(page);}
     void SearchClick(object s,RoutedEventArgs e){if(!busy)ShowPage(SearchName);}
     void ShowPage(string name,Review? review=null)
     {
@@ -125,7 +125,7 @@ public partial class MainWindow : Window
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
+        if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name==DirectoryName)workPageLoad=ShowAccountDirectory();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void AdaptNavigation()
@@ -135,6 +135,7 @@ public partial class MainWindow : Window
         Brand.Visibility=NavFoot.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
         SidePanel.Padding=compact?new Thickness(3,12,3,8):new Thickness(17,30,17,18);
         BodyViewport.Margin=compact?new Thickness(6):new Thickness(26,22,26,10);
+        AccountDirectoryButton.Content=compact?"IBAN":"حسابات IBAN";
         SearchButton.Content=ActualWidth<760?"بحث":"البحث الشامل　 Ctrl+K";
         foreach(var button in Nav.Children.OfType<Button>()){
             var parts=(StackPanel)button.Content;
@@ -567,6 +568,17 @@ public partial class MainWindow : Window
             }
             CaptureWindow((FrameworkElement)Content,file);
         }
+        AccountDirectoryButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await workPageLoad;
+        var accountGrid=Controls<DataGrid>(CanvasArea).Single();
+        if(page!=DirectoryName || accountGrid.Items.Count!=store.Snapshot().Accounts.Count)
+            throw new InvalidDataException("لم يعرض الدليل جميع الحسابات المحفوظة.");
+        FindAction(CanvasArea,"إضافة حساب");
+        FindAction(CanvasArea,"تصدير Excel");
+        accountGrid.SelectedIndex=accountGrid.Items.Count>0?0:-1;
+        if(FindAction(CanvasArea,"تعديل الحساب").IsEnabled!=(accountGrid.SelectedItem!=null))
+            throw new InvalidDataException("خيار تعديل الحساب لا يوافق الصف المحدد.");
+        UpdateLayout();CaptureWindow((FrameworkElement)Content,"account-directory");
         ShowPage(DeductionsName);
         agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
         double savedWidth=Width,savedHeight=Height;

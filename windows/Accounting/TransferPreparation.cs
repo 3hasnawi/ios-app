@@ -122,11 +122,12 @@ public static class TransferPreparation
             SettingString(snapshot, "bankStatementLocalAccount"), SettingString(snapshot, "bankStatementIBAN"));
     }
     public static (string Name, string Iban) Payer(BackupSnapshot snapshot) => (SettingString(snapshot, "bankStatementAccountName"), SettingString(snapshot, "bankStatementIBAN"));
-    private static Dictionary<string, string> SettingDictionary(BackupSnapshot snapshot, string key)
+    public static Dictionary<string, string> SettingDictionary(BackupSnapshot snapshot, string key)
     {
         var value = ReadSetting(snapshot, key);
         if (value is null) return new(StringComparer.Ordinal);
         if (value is not NSData data) throw new InvalidDataException($"صيغة إعداد {key} غير صالحة.");
+        if (data.Bytes.Length == 0) return new(StringComparer.Ordinal);
         try
         {
             var values = JsonSerializer.Deserialize<Dictionary<string, string>>(data.Bytes) ?? throw new JsonException();

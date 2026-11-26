@@ -217,7 +217,7 @@ public partial class MainWindow
         if(link.SelectedItem!=null&&string.IsNullOrWhiteSpace(entity.Text))throw new InvalidDataException("اختر حساباً محفوظاً أو أدخل بيانات حساب المستفيد للربط.");
         var accounts=s.Accounts.ToList();Dictionary<string,string>? links=null;
         if(entity.Text.Trim().Length>0){
-            var a=new A.ExecutionAccount(entity.Text.Trim(),A.TransferPreparation.NormalizeAccount(beneficiary.Text),branch.Text.Trim(),bic.Text.Trim().ToUpperInvariant(),string.IsNullOrWhiteSpace(local.Text)?null:A.TransferPreparation.NormalizeAccount(local.Text));
+            var a=AccountDirectory.Account(entity.Text,branch.Text,beneficiary.Text,bic.Text,local.Text);
             if(saved.SelectedItem is A.ExecutionAccount old&&old.Entity!=a.Entity)throw new InvalidDataException("احتفظ باسم الحساب لتعديل بياناته.");
             var group=A.TransferPreparation.Classify(a);if(group==A.TransferGroup.Unresolved||(group==A.TransferGroup.Anbar?A.TransferPreparation.LocalAccount(a)==null:!A.TransferPreparation.ValidIban(a.Iban)||!A.TransferPreparation.ValidSwift(a.Swift)))throw new InvalidDataException("راجع الفرع ورموز الحساب.");
             accounts.RemoveAll(x=>A.PayrollAnalysis.Normalize(x.Entity)==A.PayrollAnalysis.Normalize(a.Entity));accounts.Add(a);

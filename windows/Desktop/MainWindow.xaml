@@ -6,7 +6,7 @@
 <TextBlock Text="قسم الحسابات" FontSize="{DynamicResource UiFont23}" FontWeight="Bold" Foreground="White"/><TextBlock Text="قيادة شرطة محافظة الأنبار" FontSize="{DynamicResource UiFont12}" Foreground="#CDDFD3" Margin="0,5,0,0"/></StackPanel>
 <TextBlock x:Name="NavFoot" DockPanel.Dock="Bottom" Text="بيانات محلية على هذه الحاسبة" Foreground="#CEE0D5" FontSize="{DynamicResource UiFont12}"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Nav"/></ScrollViewer></DockPanel></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+<Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
 <Button x:Name="SearchButton" Height="40" Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
 <ComboBox Grid.Column="2" x:Name="Period" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
@@ -35,7 +35,9 @@
       </ControlTemplate.Triggers>
     </ControlTemplate>
   </ComboBox.Template>
-</ComboBox></Grid></Border>
+</ComboBox>
+<Button x:Name="AccountDirectoryButton" Grid.Column="3" Height="40" Margin="6,0,0,0" Click="OpenAccountDirectory" ToolTip="دليل الحسابات المصرفية (IBAN)" AutomationProperties.Name="دليل الحسابات المصرفية" Content="حسابات IBAN"/>
+</Grid></Border>
 <DockPanel Grid.Row="1">
   <Button x:Name="UpdateNotice" DockPanel.Dock="Top" Visibility="Collapsed" Click="OpenUpdate" HorizontalContentAlignment="Center" Margin="8,4" Background="#D8EEE0"/>
   <ScrollViewer x:Name="BodyViewport" Margin="26,22,26,10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
