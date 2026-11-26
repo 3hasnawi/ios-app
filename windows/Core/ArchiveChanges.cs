@@ -49,7 +49,7 @@ public sealed partial class Store
         if(periods.Length>0)Records(zip,"deductions.jsonl",r=>{if(Selected(r))deductions.Add(r.Deserialize<A.Deduction>(IosJson)!);});
         Records(zip,"accounts.jsonl",r=>accounts.Add(r.Deserialize<A.ExecutionAccount>(IosJson)!));
         Records(zip,"months.jsonl",r=>months.Add(r.Deserialize<A.PayrollMonth>(IosJson)!));
-        return new(file,Path.GetFileName(Path.GetDirectoryName(file))!,manifest["version"]!.GetValue<int>(),months,emps,deductions,
+        return new(file,File.ReadAllText(Path.Combine(Path.GetDirectoryName(file)!,"archive.sha256")),manifest["version"]!.GetValue<int>(),months,emps,deductions,
             manifest["staff"]!.GetValue<int>(),accounts,ReadJson<List<A.ArchiveBook>>(zip,"books/index.json")??[],ReadJson<Dictionary<string,byte[]>>(zip,"settings.json")??[]);
     }
     public A.PayrollImportPreview PreviewExcel(string file,string month)

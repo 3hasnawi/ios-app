@@ -32,6 +32,12 @@ public static class GroupLetterSettingsReader
                 if (!int.TryParse(digits, out var n) || n is < 1 or > 12) throw new InvalidDataException("شهر الصادر المحفوظ غير صالح.");
                 parsed = n;
             }
+            JsonElement template;
+            if(item is {} specific&&specific.TryGetProperty("letterTemplate",out template)&&template.ValueKind==JsonValueKind.Object||
+                common.TryGetProperty("letterTemplate",out template)&&template.ValueKind==JsonValueKind.Object){
+                var formatted=new GroupLetterSettings(Value(template,"header")??"",Value(template,"number")??"",Value(template,"firstSigner")??"",Value(template,"secondSigner")??"",Value(template,"thirdSigner")??"",Value(template,"footer")??"",Effective("bodyMonth"),parsed,template.TryGetProperty("signatureVerticalOffset",out var pos)&&pos.ValueKind==JsonValueKind.Number?pos.GetInt32():0,Value(template,"body"),Value(common,"foodContractReference"));
+                return formatted;
+            }
             return new(Effective("header") ?? "", Value(common, "fixedNumber") ?? "", Effective("committeeFirst") ?? "", Effective("committeeSecond") ?? "", Effective("committeeThird") ?? "", Effective("footer") ?? "", Effective("bodyMonth"), parsed, offset ?? 0, Effective("bodyTemplate"), Value(common, "foodContractReference"));
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException or FormatException)

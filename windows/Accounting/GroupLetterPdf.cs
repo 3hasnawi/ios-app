@@ -38,7 +38,7 @@ public static class GroupLetterPdf
             throw new InvalidDataException("بيانات كتاب المجموعة غير متطابقة.");
         var key = MonthNames.SortKey(plan.Month); var displayKey = string.IsNullOrWhiteSpace(settings.BodyMonth) ? key : MonthNames.SortKey(settings.BodyMonth);
         if (key == 0 || displayKey == 0 || settings.OutgoingMonth is < 1 or > 12 || settings.SignatureOffset is < -60 or > 60) throw new InvalidDataException("شهر الكتاب أو موضع اللجنة غير صالح.");
-        string[] required = [settings.Header, settings.Number, settings.First, settings.Second, settings.Third];
+        string[] required = [settings.Header, settings.Number];
         if (required.Any(s => string.IsNullOrWhiteSpace(s)) || required.Any(s => s.Length > 2000 || s.Any(c => char.IsControl(c) && c != '\n')) || settings.Footer.Length > 4000 || settings.Footer.Any(c => char.IsControl(c) && c != '\n'))
             throw new InvalidDataException("أكمل الترويسة والعدد وأسماء أعضاء اللجنة قبل إنشاء الكتاب.");
         // نفس كتل «مسودة PDF» في الآيفون (TransferWordGroupDraft): الكتاب في الصفحة الأولى وجدول المجموعة في صفحة واحدة مستقلة.

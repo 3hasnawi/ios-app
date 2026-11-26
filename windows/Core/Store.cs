@@ -32,13 +32,15 @@ public sealed partial class Store(string root)
         bool committed=false;
         try {
             var zip=Path.Combine(stage,BackupName);
+            using var fileHash=System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
             progress?.Report("نسخ الأرشيف المحلي…");
             using(var input=File.OpenRead(source))
             using(var output=new FileStream(zip,FileMode.CreateNew,FileAccess.Write,FileShare.None)){
                 byte[] buffer=new byte[262144];int n;
-                while((n=input.Read(buffer))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);}
+                while((n=input.Read(buffer))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);fileHash.AppendData(buffer,0,n);}
                 output.Flush(true);
             }
+            File.WriteAllText(Path.Combine(stage,"archive.sha256"),Convert.ToHexString(fileHash.GetHashAndReset()));
             using(var db=Connect(stage,false)) BackupReader.Index(zip,db,progress,token);
             token.ThrowIfCancellationRequested();
             File.WriteAllText(next,id);
@@ -65,6 +67,9 @@ public sealed partial class Store(string root)
     }
     private SqliteConnection Open()=>Connect(Active??throw new InvalidOperationException("اختر نسخة الآيفون أولاً."));
     internal static void Exec(SqliteConnection db,string sql){using var cmd=db.CreateCommand();cmd.CommandText=sql;cmd.ExecuteNonQuery();}
+    public bool HasPayroll(string month){
+        using var db=Open();using var query=db.CreateCommand();query.CommandText="SELECT EXISTS(SELECT 1 FROM payidentity WHERE period=$key)";query.Parameters.AddWithValue("$key",Arabic.Period(month));return Convert.ToInt32(query.ExecuteScalar())!=0;
+    }
     public List<MonthInfo> Months()
     {
         if(Active==null)return [];
@@ -146,7 +151,7 @@ public sealed partial class Store(string root)
     public void UpgradeIndex()
     {
         if(Active==null)return;
-        using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=2)return;}
+        using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=2&&File.Exists(Path.Combine(Active!,"archive.sha256")))return;}
         Import(Archive);
     }
     public record SearchResult(string Kind,string Name,string Month,string Info);

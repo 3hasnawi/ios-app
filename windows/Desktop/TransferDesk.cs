@@ -28,7 +28,7 @@ public partial class MainWindow
         var dock=new DockPanel();var actions=Bar();var controls=Bar();var note=Text("",14);
         var top=Column(Text("تحويل استقطاعات "+month,21,true),actions,controls,note);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var grid=GridView(("الجهة","Title",1.7),("المصرف","Bank",1.3),("قبل الفصل","Original",.8),("مبلغ الدفعة","Amount",.8),("المراجعة","Issues",1.4));dock.Children.Add(grid);CanvasArea.Children.Add(dock);
-        actions.Children.Add(ButtonFor("إعادة مبالغ المنتسبين",()=>RefundDesk(s,month),"\uE8AB"));
+        actions.Children.Add(ButtonFor("إعادة مبالغ المنتسبين",()=>Guard(()=>RefundDesk(s,month)),"\uE8AB"));
         var batch=Store.ActiveBatch(s,month);
         var all=batch==null?A.TransferPreparation.Prepare(s,month):null;
         actions.Children.Add(ButtonFor("الحسابات والربط",()=>Guard(()=>{
@@ -62,17 +62,32 @@ public partial class MainWindow
             var proposed=batch==null?Store.PrepareBatch(s,month):null;
             if(!Form(proposed==null?"العودة إلى التحويل الشامل":"اعتماد الفصل",Text(month),Text("استقطاعات الجهات والصندوق　"+Arabic.Money((proposed??batch!).Held-(proposed??batch!).Guarantee)),Text("ضمان العقود　"+Arabic.Money((proposed??batch!).Guarantee))))return;
             _=Working(()=>store.UpdateBatch(s,month,proposed),"حُفظت حالة الشهر.",()=>ShowPage(TransfersName));}),"\uE8B5"));
+        bool Changed()=>batch!=null&&s.Months.Single(m=>m.Name==month).ImportedAt!=batch.ImportedAt;
+        void CheckSource(){if(Changed())throw new InvalidDataException("تغير استيراد الشهر بعد اعتماده. راجع التغييرات وألغ الفصل ثم اعتمده بالمبالغ المحدثة.");}
+        actions.Children.Add(ButtonFor("الكتب المنفردة",()=>Guard(()=>{CheckSource();IndividualBooks(s,Plan(),batch,phase.SelectedIndex==1);}),"\uE8A5"));
         actions.Children.Add(ButtonFor("تصدير الكتاب وملف CSV",()=>Guard(()=>{
-            var g=Group();if(g is not (A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks))throw new InvalidDataException("اختر مجموعة الرافدين أو الرشيد والمصارف الأخرى.");
+            CheckSource();var g=Group();if(g is not (A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks))throw new InvalidDataException("اختر مجموعة الرافدين أو الرشيد والمصارف الأخرى.");
             var plan=Plan();var day=date.SelectedDate??throw new InvalidDataException("حدد تاريخ التحويل.");
             string marker=(phase.SelectedIndex==1?"deferred":"current")+"|group|"+System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
             if(batch!=null)day=Store.PreparedDate(s,month,marker)??day;
-            var letter=A.GroupLetterPreparation.Prepare(plan,g,DateOnly.FromDateTime(day));
+            bool held=phase.SelectedIndex==1;var letter=A.GroupLetterPreparation.Prepare(plan,g,DateOnly.FromDateTime(day));
             var style=LetterForm(A.GroupLetterSettingsReader.Read(s,g));if(style==null)return;
             var filename=(string)group.SelectedItem+" - "+(string)phase.SelectedItem;
             _=SaveFile(filename,"zip",()=>{
                 var pdf=A.GroupLetterPdf.Generate(letter,style,LetterFont(),Fonts().Bold,Logo());
-                var bytes=Package(new(){{"كتاب التحويل.pdf",pdf},{"التحويل.csv",letter.Csv}});
+                var files=new Dictionary<string,byte[]>{{"كتاب التحويل.pdf",pdf},{"التحويل.csv",letter.Csv}};
+                if(batch!=null){
+                    var parts=batch.Parts.Where(p=>p.Portion(held)?.Group==g).ToList();
+                    var sheets=parts.Where(p=>p.Entity.PayrollRecipient==null).Select(p=>SplitSheet(s,p,held)).ToList();
+                    if(sheets.Count>0)files["كشوف جهات التنفيذ.pdf"]=A.ReportPdf.Generate(sheets,Fonts(),DateTime.Now);
+                    var fund=parts.FirstOrDefault(p=>p.Entity.PayrollRecipient=="fundDonations");
+                    if(fund!=null){
+                        var amounts=(held?fund.Deferred:fund.Current).ToLookup(r=>A.FundReport.CategoryOf(r.Rank));
+                        var data=A.FundReport.Categories.Select((cat,i)=>new A.FundReport.Row(cat,amounts[i].Count(),amounts[i].Sum(r=>r.Amount))).ToList();
+                        files["كشف صندوق الشهداء.pdf"]=A.FundReport.Pdf(data,A.FundReport.Title(s,month),Fonts(),DateTime.Now);
+                    }
+                }
+                var bytes=Package(files);
                 return bytes;
             },batch==null?null:()=>store.UpdateBatch(s,month,prepared:marker,date:day),batch==null?null:()=>ShowPage(TransfersName));
         }),"\uE74E",true));

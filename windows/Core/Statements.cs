@@ -5,7 +5,7 @@ using ClosedXML.Excel;
 
 namespace AnbarPayroll;
 
-public record Sheet(string Name,string Title,string[] Columns,List<object?[]> Rows,int AmountColumn,decimal Total,bool Annual=false,bool ShowTotal=true);
+public record Sheet(string Name,string Title,string[] Columns,List<object?[]> Rows,int AmountColumn,decimal Total,bool Annual=false,bool ShowTotal=true,bool Command=false);
 public record Statement(string Header,List<Sheet> Sheets,string Person="",string Rank="",string Agency="",string Reference="",int PaidMonths=0,bool Partial=false)
 {
     private static readonly StringComparer ArabicOrder=StringComparer.Create(CultureInfo.GetCultureInfo("ar-IQ"),false);
@@ -55,10 +55,19 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             reference!=""?reference:string.Join(" | ",rows.Select(r=>r.Reference).Where(s=>s!="").Distinct()),paid,partial);
     }
     static string Display(object? v)=>WebUtility.HtmlEncode(v switch{decimal d=>Arabic.Money(d),_=>v?.ToString()??""});
+    public bool Landscape=>Person!=""||Sheets.Count==1&&Sheets[0].Command;
     public string Html()
     {
+        if(Sheets.Count==1&&Sheets[0].Command){
+            var command=Sheets[0];var result=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>@page{size:A4 landscape;margin:0}body{font:bold 14pt Arial;margin:73pt auto 0;width:581pt;text-align:center}h1{font:inherit;margin:0 0 17pt}table{width:100%;border-collapse:collapse}td,th{height:17.2pt;border:1pt solid black;padding:0 2pt;font-size:12pt}th,td:first-child{background:#ff0}*{-webkit-print-color-adjust:exact}</style><h1>");
+            result.Append(Display(command.Title)+"</h1><table><thead><tr>");
+            foreach(var col in command.Columns)result.Append("<th>"+Display(col)+"</th>");result.Append("</tr></thead><tbody>");
+            foreach(var row in command.Rows){result.Append("<tr>");for(int i=0;i<row.Length;i++){
+                if(row[i]==null)continue;result.Append(i==2&&row[3]==null?"<td colspan='4'>":"<td>");result.Append(Arabic.Eastern(Display(row[i]))+"</td>");}result.Append("</tr>");}
+            return result.Append("</tbody></table></html>").ToString();
+        }
         var b=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>");
-        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}@page{size:A4 ");
+        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}@page{size:A4 ");
         b.Append(Person==""?"portrait;margin:28pt 28pt 32pt":"landscape;margin:18pt 22pt 32pt");
         string footer=Person==""?"( قيادة شرطة محافظة الانبار - قسم الحسابات )":"كشف الاستقطاعات";
         var stamp=Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture));
@@ -111,7 +120,14 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             w.Range(2,1,2,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#1F4F78");w.Range(2,1,2,width).Style.Font.FontColor=XLColor.White;
             w.Range(head,1,head,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#DEEBF7");w.Column(s.AmountColumn+1).Style.NumberFormat.Format="#,##0.###############";
             for(int j=1;j<=width;j++)w.Column(j).Width=s.Annual?34:j==1?7:j==3||j==5?39:20;
-            w.SheetView.FreezeRows(head);w.PageSetup.PaperSize=XLPaperSize.A4Paper;w.PageSetup.PageOrientation=s.Annual?XLPageOrientation.Landscape:XLPageOrientation.Portrait;w.PageSetup.FitToPages(1,0);w.PageSetup.SetRowsToRepeatAtTop(1,head);
+            if(s.Command){
+                w.Range(1,1,1,width).FirstCell().Clear();w.Range(2,1,2,width).Style.Fill.BackgroundColor=XLColor.White;w.Range(2,1,2,width).Style.Font.FontColor=XLColor.Black;
+                w.Range(head,1,head,width).Style.Fill.BackgroundColor=XLColor.Yellow;w.Range(head+1,1,row,1).Style.Fill.BackgroundColor=XLColor.Yellow;
+                w.Range(head+3,3,head+3,6).Merge();w.Columns(3,6).Width=13;w.Column(2).Width=44;w.Column(7).Width=31;
+            }
+            w.PageSetup.Footer.Center.AddText("صفحة ");w.PageSetup.Footer.Center.AddText(XLHFPredefinedText.PageNumber);w.PageSetup.Footer.Center.AddText(" من ");w.PageSetup.Footer.Center.AddText(XLHFPredefinedText.NumberOfPages);
+            w.PageSetup.Footer.Right.AddText("قيادة شرطة محافظة الانبار / قسم الحسابات");
+            w.SheetView.FreezeRows(head);w.PageSetup.PaperSize=XLPaperSize.A4Paper;w.PageSetup.PageOrientation=s.Annual||s.Command?XLPageOrientation.Landscape:XLPageOrientation.Portrait;w.PageSetup.FitToPages(1,0);w.PageSetup.SetRowsToRepeatAtTop(1,head);
         }
         book.SaveAs(file);
     }

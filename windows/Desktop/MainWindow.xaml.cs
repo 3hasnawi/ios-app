@@ -16,6 +16,15 @@ namespace AnbarPayroll.Desktop;
 public partial class MainWindow : Window
 {
     private readonly Store store;
+    private (string? Revision,string Month,Task<SalaryDesktop.Core.SalaryReviewResult> Work)? auditCache;
+    Task<SalaryDesktop.Core.SalaryReviewResult> Audit(string month)
+    {
+        var revision=store.Active;
+        if(auditCache is {} hit&&hit.Revision==revision&&hit.Month==month&&!hit.Work.IsFaulted)return hit.Work;
+        var prev=months.FirstOrDefault(m=>m.Key==SalaryDesktop.Core.MonthNames.Previous(month))?.Name??"";
+        var task=Task.Run(()=>SalaryDesktop.Core.SalaryReview.Prepare(store.Snapshot(month,prev),month));
+        auditCache=(revision,month,task);return task;
+    }
     private bool initializing=true,busy;
     private string page="الرئيسية";
     private List<MonthInfo> months=[];
@@ -130,6 +139,15 @@ public partial class MainWindow : Window
         if(selectedPeriod is {Key:>0})try{
             var sum=await Task.Run(()=>store.Summary(new(Year:selectedPeriod.Key/100,Month:selectedPeriod.Key%100)));
             balance.Text=Arabic.Money(sum.Total);
+            if(page=="الرئيسية"&&SelectedMonth?.Name==selectedPeriod.Name&&store.HasPayroll(selectedPeriod.Name)){
+                var audit=await Audit(selectedPeriod.Name);
+                if(page=="الرئيسية"&&SelectedMonth?.Name==selectedPeriod.Name){
+                    foreach(var change in audit.Rows.GroupBy(r=>r.Kind).OrderByDescending(g=>g.Count()).Take(5)){
+                        var type=change.Key;
+                        reviews.Children.Add(ButtonFor(type+"　·　"+change.Count(),()=>{auditFilter=type;Activate(AuditName);},"\uE7BA"));
+                    }
+                }
+            }
         }catch(Exception e){Status.Text=e.Message;}
     }
     void EditPins()
@@ -280,8 +298,11 @@ public partial class MainWindow : Window
     public async Task Capture(string directory)
     {
         Directory.CreateDirectory(directory);
-        foreach(var (name,file) in new[]{("الرئيسية","home"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings")}){
-            ShowPage(name);if(grid!=null)await LoadGrid();
+        foreach(var (name,file) in new[]{("الرئيسية","home"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(TransfersName,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds")}){
+            if(name=="إعادة المبالغ"){
+                ShowPage(TransfersName);await Task.Delay(500);RefundDesk(store.Snapshot(SelectedMonth!.Name),SelectedMonth.Name,store.Refunds().FirstOrDefault());
+            }else ShowPage(name);
+            if(grid!=null)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             var target=(FrameworkElement)Content;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             // RenderTargetBitmap omits the RTL transform normally supplied by the Window.
@@ -297,7 +318,10 @@ public partial class MainWindow : Window
         var f=new Filters(Agency:sample.Agency,Year:sample.Period/100,Month:sample.Period%100);
         var agencyStatement=Statement.Entities(store.Find(f),ReportHeader(),true);
         var employeeStatement=store.PersonStatement(sample.Name,sample.Agency,sample.Reference,months[^1].Key,months[0].Key,ReportHeader());
-        foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee")}){
+        var longRows=Enumerable.Range(1,180).Select(i=>sample with{Name="منتسب تجريبي "+i,Reference="إضبارة رقم "+i+" / ٢٠٢٦ بتاريخ ١٢ / ٣ / ٢٠٢٦ ضمن كتاب التنفيذ المؤرخ في ٢٥ / ١١ / ٢٠٢٦",Amount=i}).ToList();
+        var longSheet=Statement.Entities(longRows,ReportHeader(),false);
+        var command=WorkReports.Command(store.Snapshot(SelectedMonth!.Name),SelectedMonth.Name);
+        foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee"),(longSheet,"agency-long"),(command,"command")}){
             var preview=new ReportWindow(model){Owner=this};preview.Show();
             try{await preview.PrintPdf(Path.Combine(directory,file+".pdf"));model.Excel(Path.Combine(directory,file+".xlsx"));}
             finally{preview.Close();}

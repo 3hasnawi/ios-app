@@ -483,13 +483,17 @@ public static class AdaptiveLetterPdf
     public static string[] SignatureCells(GroupLetterSettings settings, string date)
     {
         string Name(string value) => string.Join(' ', value.Replace("ـ", "", StringComparison.Ordinal).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if(new[]{settings.First,settings.Second,settings.Third}.Any(v=>v.Contains('\n')||string.IsNullOrWhiteSpace(v))){
+            var signers=new[]{settings.First,settings.Second,settings.Third}.Where(v=>!string.IsNullOrWhiteSpace(v)).Select(v=>v.Trim()+"\n"+date).ToArray();
+            return signers.Length switch{0=>["","",""],1=>["","",signers[0]],2=>[signers[0],"",signers[1]],_=>signers};
+        }
         return [$"معاون مدير تدقيق\n{Name(settings.First)}\nالمصروفات\n{date}", $"العميد\n{Name(settings.Second)}\nمدير الحسابات\n{date}", $"لواء الشرطة الحقوقي\n{Name(settings.Third)}\nقائد شرطة محافظة الأنبار\n{date}"];
     }
     /// الكتل الأولى في كل الكتب: الترويسة، العدد والتاريخ، الجهة، الموضوع، المتن.
     public static List<LetterBlock> Opening(GroupLetterSettings settings, string date, string body) =>
     [
         LetterBlock.Of(new LetterParagraph(settings.Header, "Times New Roman", 32, true)),
-        LetterBlock.Of(new LetterParagraph(ReferenceText(settings.Number, date), "Sakkal Majalla", 36, true)),
+        LetterBlock.Of(new LetterParagraph(ReferenceText(settings.Number, date), "Times New Roman", 36, true)),
         LetterBlock.Of(new LetterParagraph("إلى / مصرف الرافدين / فرع الأنبار", "Arial", 32, true, true)),
         LetterBlock.Of(new LetterParagraph("م / تحويل مبلغ", "Arial", 32, true, true)),
         LetterBlock.Of(new LetterParagraph(body, "Times New Roman", 28)),

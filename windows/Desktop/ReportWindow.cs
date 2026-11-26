@@ -49,7 +49,7 @@ internal sealed class ReportWindow : Window
     {
         if(!await ready.Task.WaitAsync(TimeSpan.FromSeconds(30)))throw new IOException("تعذّرت معاينة الكشف.");
         var settings=viewer.CoreWebView2.Environment.CreatePrintSettings();
-                settings.Orientation=report.Person==""?CoreWebView2PrintOrientation.Portrait:CoreWebView2PrintOrientation.Landscape;
+                settings.Orientation=report.Landscape?CoreWebView2PrintOrientation.Landscape:CoreWebView2PrintOrientation.Portrait;
                 settings.PageWidth=8.2677;settings.PageHeight=11.6929;settings.ShouldPrintBackgrounds=true;settings.ShouldPrintHeaderAndFooter=false;
                 if(!await viewer.CoreWebView2.PrintToPdfAsync(path,settings))throw new IOException("تعذّر إنشاء PDF.");
     }

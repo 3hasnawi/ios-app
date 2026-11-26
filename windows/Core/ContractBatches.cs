@@ -24,14 +24,14 @@ public sealed record SplitPart(SplitEntity Entity,SplitRow[] Current,SplitRow[] 
 }
 public sealed record ContractBatch(string Id,string Month,double ImportedAt,double Created,JsonObject Figures,string Payer,string Iban,byte[] Links,SplitPart[] Parts)
 {
-    public decimal Guarantee=>(decimal?)Figures["contractOverrideTotal"]??((decimal?)Figures["contractNominalShare"]??(decimal?)Figures["availableContractNominalShare"]??0)+(decimal)Figures["contractRetirement"]!;
-    public decimal Held=>Guarantee+Parts.Sum(p=>p.Deferred.Sum(r=>r.Amount));
+    [System.Text.Json.Serialization.JsonIgnore] public decimal Guarantee=>(decimal?)Figures["contractOverrideTotal"]??((decimal?)Figures["contractNominalShare"]??(decimal?)Figures["availableContractNominalShare"]??0)+(decimal)Figures["contractRetirement"]!;
+    [System.Text.Json.Serialization.JsonIgnore] public decimal Held=>Guarantee+Parts.Sum(p=>p.Deferred.Sum(r=>r.Amount));
     public A.TransferSnapshot Plan(bool deferred)=>new(Month,Payer,Iban,Parts.Select(p=>p.Portion(deferred)).OfType<A.TransferEntry>().ToArray(),[],"0"+Arabic.Period(Month)+(deferred?"2":"1"));
 }
 public sealed partial class Store
 {
     const string ContractKey="contractTransferBatchesV1";
-    static readonly DateTime AppleEpoch=new(2001,1,1,0,0,0,DateTimeKind.Utc);
+    internal static readonly DateTime AppleEpoch=new(2001,1,1,0,0,0,DateTimeKind.Utc);
     [DllImport("lzfse",CallingConvention=CallingConvention.Cdecl)] static extern nuint lzfse_decode_buffer([Out]byte[] dst,nuint dstLength,byte[] src,nuint srcLength,IntPtr scratch);
     [DllImport("lzfse",CallingConvention=CallingConvention.Cdecl)] static extern nuint lzfse_encode_buffer([Out]byte[] dst,nuint dstLength,byte[] src,nuint srcLength,IntPtr scratch);
     static byte[] Packed(byte[] bytes,bool encode){
@@ -80,7 +80,8 @@ public sealed partial class Store
         var employees=s.Employees.Where(p=>p.Month==month).ToLookup(p=>Arabic.Match(p.Name));
         bool Contract(string rank){
             var key=Arabic.Key(rank);var words=key.Split(' ');if(words.Contains("عقود"))return true;
-            if(words.Contains("عقد")||new[]{"موظف","مفوض","شرطي","رئيس عرفاء","نائب عريف","عريف","وكيل","لواء","فريق","عميد","عقيد","مقدم","رائد","نقيب","ملازم","مدني","مساعد"}.Select(Arabic.Key).Any(v=>key==v||key.StartsWith(v+" ")))return false;
+            if(words.Contains("عقد")||new[]{"موظف","مفوض","شرطي","رئيس عرفاء","نائب عريف","عريف","وكيل"}.Select(Arabic.Key).Any(v=>key.StartsWith(v,StringComparison.Ordinal)))return false;
+            if(new[]{"لواء","فريق","فريق اول","عميد","عقيد","مقدم","رائد","نقيب","ملازم","ملازم اول","م اول","ر ع","ع م","ن ع","ش1 م","ش م"}.Contains(key.Replace(".","").Trim()))return false;
             throw new InvalidDataException("رتبة غير معروفة عند الفصل: "+rank);
         }
         var cuts=s.Deductions.Where(d=>d.Month==month&&!A.PayrollAnalysis.IsInactive(d)).ToLookup(d=>d.Title);
@@ -134,7 +135,11 @@ public sealed partial class Store
         var markers=new List<string>();
         foreach(var r in records){var id=r["id"].ToString();if(r.ContainsKey("cancelledAt"))markers.Add(id+"|cancelled");
             foreach(var k in ((NSDictionary)r["prepared"]).Keys)markers.Add(id+"|P|"+k);foreach(var k in ((NSDictionary)r["confirmed"]).Keys)markers.Add(id+"|C|"+k);}
-        Rewrite(Path.GetDirectoryName(s.SourcePath),null,new Dictionary<string,byte[]>{{ContractKey,records.Count==0?[]:Plist(new NSData(Plist(data)))}},m=>{
+        var ledger=Plist(data);
+        var dates=s.SettingsPlists.TryGetValue(ContractKey,out var original)?ContractDates.Values(((NSData)PropertyListParser.Parse(original)).Bytes):new();
+        if(insert!=null)dates[(insert.Id,"importedAt")]=BitConverter.DoubleToInt64Bits(insert.ImportedAt);
+        ContractDates.Restore(ledger,dates);
+        Rewrite(Path.GetDirectoryName(s.SourcePath),null,new Dictionary<string,byte[]>{{ContractKey,records.Count==0?[]:Plist(new NSData(ledger))}},m=>{
             m["contractBatchCount"]=records.Count;m["contractExecutionMarkers"]=JsonSerializer.SerializeToNode(markers.Order(StringComparer.Ordinal));if((int)m["version"]!<14)m["version"]=records.Count==0?12:13;});
     }
 }

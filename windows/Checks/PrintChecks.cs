@@ -1,0 +1,34 @@
+using System.IO.Compression;
+using System.Text.Json;
+using AnbarPayroll;
+using ClosedXML.Excel;
+using UglyToad.PdfPig;
+using A=SalaryDesktop.Core;
+
+static class PrintChecks
+{
+    public static void Run(string dir,Action<bool,string> check){
+        if(!OperatingSystem.IsWindows())return;
+        string folder=Path.Combine(dir,"printed");Directory.CreateDirectory(folder);
+        string fonts=Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+        var assets=new A.ReportAssets(File.ReadAllBytes(Path.Combine(fonts,"arial.ttf")),File.ReadAllBytes(Path.Combine(fonts,"arialbd.ttf")),null);
+        var logo=File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"IraqEmblem.png"));var times=File.ReadAllBytes(Path.Combine(fonts,"timesbd.ttf"));
+        var style=new A.GroupLetterSettings("ترويسة تجريبية\nقسم الحسابات","١‏/٢٢/ح/","العضو الأول","العضو الثاني","العضو الثالث","نسخة منه إلى\nشعبة الحسابات",null,null,0,null);
+        var s=new Store(Path.Combine(dir,"print-source"));s.Import(Path.Combine(dir,"exchange","windows-exchange.zip"));
+        var snapshot=s.Snapshot("تشرين الثاني 2026");var refund=s.Refunds().Single();var groups=refund.Groups();
+        void Pdf(string name,byte[] bytes,Func<int,bool> pages){using var pdf=PdfDocument.Open(bytes);check(pages(pdf.NumberOfPages)&&pdf.GetPages().All(p=>p.Letters.Count>0),"vector PDF page count and selectable text "+name);File.WriteAllBytes(Path.Combine(folder,name+".pdf"),bytes);}
+        foreach(var group in groups)Pdf("refund-"+group.Code,refund.Letter([group],style,A.LetterFonts.Resolve(times,assets.Bold,logo)),n=>n==1);
+        var sheet=refund.ListSheet("اختبار");Pdf("refund-list",A.ReportPdf.Generate([sheet],assets,DateTime.UtcNow),n=>n==1);
+        var split=Store.ActiveBatch(snapshot,"تشرين الثاني 2026")!;
+        var groupPlan=A.GroupLetterPreparation.Prepare(split.Plan(true),A.TransferGroup.OtherBanks,refund.Date);
+        Pdf("deferred-group",A.GroupLetterPdf.Generate(groupPlan,style,times,assets.Bold,logo),n=>n==2);
+        var period=A.BankReconciliation.ReadFromBackup(snapshot).Single();
+        var extra=Enumerable.Range(1,90).Select(i=>new A.BankMovement(Guid.NewGuid(),period.Start,"صرف دفعة تجريبية من المصرف "+i,i,A.MovementDirection.Debit,Matched:true));
+        Pdf("bank-long",A.ReconciliationPdf.Statement(period with{Movements=period.Movements.Concat(extra).ToArray(),OpeningBalance=10000},A.TransferPreparation.Account(snapshot),true,assets),n=>n>=3);
+        var trust=new A.SalaryTrustEntry(Guid.NewGuid().ToString(),"اسم أمانة تجريبي","عقد","مركز تجريبي",2026,11,3500,"حالة تجريبية","ملاحظة طويلة","مصروف",true,false,[],null,"٢٠٢٦/١١/١٠");
+        var trustSheet=A.SalaryTrustReports.Sheet(new(2,[trust],true),[trust],"اختبار","الكل","الكل","");
+        Pdf("trust",A.SalaryTrustReports.Pdf(trustSheet,assets,DateTime.UtcNow),n=>n==1);
+        using var xl=new XLWorkbook(new MemoryStream(A.SalaryTrustReports.Excel(trustSheet,[trust])));
+        check(xl.Worksheet(1).Cell(4,10).GetString()==trust.ImportedPaymentDate,"trust date and notes survive Excel output");
+    }
+}

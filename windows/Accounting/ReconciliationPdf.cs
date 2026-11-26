@@ -166,7 +166,7 @@ public static class ReconciliationPdf
         for (int c = 0; c < 5; c++) if (W(totalRow[c], bold) > widths[c] - 6) throw new InvalidDataException("مجموع الكشف لا يتسع في الجدول.");
 
         var gray = new SKColor(237, 237, 237); var dark = new SKColor(85, 85, 85);
-        using var cellStroke = new SKPaint { Color = dark, Style = SKPaintStyle.Stroke, StrokeWidth = 0.5f, IsAntialias = true };
+        using var cellStroke = new SKPaint { Color = dark, Style = SKPaintStyle.Stroke, StrokeWidth = 1f, IsAntialias = true };
         using var border = new SKPaint { Color = new SKColor(115, 115, 115), Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
         using var fill = new SKPaint { Color = gray, Style = SKPaintStyle.Fill };
         using var shade = new SKPaint { Color = new SKColor(0xF3, 0xF7, 0xFB), Style = SKPaintStyle.Fill };

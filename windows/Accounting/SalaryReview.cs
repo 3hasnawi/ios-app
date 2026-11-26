@@ -17,7 +17,13 @@ public static class SalaryReview
     private static string Key(string text) => PayrollAnalysis.Normalize(text).Replace(" ", "", StringComparison.Ordinal);
     private static Dictionary<string, string> Details(Employee e)
     {
-        try { return e.Details is null ? new() : JsonSerializer.Deserialize<Dictionary<string, string>>(e.Details) ?? throw new JsonException(); }
+        try {
+            var fields=e.Details is null?new Dictionary<string,string>():JsonSerializer.Deserialize<Dictionary<string,string>>(e.Details)??throw new JsonException();
+            if(e.RawColumns!=null){using var doc=JsonDocument.Parse(e.RawColumns);foreach(var (k,v) in doc.RootElement.GetProperty("headers").EnumerateArray().Zip(doc.RootElement.GetProperty("values").EnumerateArray())){
+                string name=k.GetString()!;if(name is "عدد الاطفال" or "عدد الأطفال" or "الاطفال" or "الحالة الزوجية" or "الزوجية" or "الحالة الاجتماعية" or "اسم الشهادة" or "اسم الشهدة" or "الشهادة" or "IBAN" or "توطين المصرف")fields.TryAdd(name,v.GetString()!);
+            }}
+            return fields;
+        }
         catch (JsonException ex) { throw new InvalidDataException("تعذّر قراءة بيانات أحد الرواتب للتدقيق.", ex); }
     }
     private static string Identifier(string value)
@@ -137,7 +143,7 @@ public static class SalaryReview
                     var oldBank=previousDetails.GetValueOrDefault("توطين المصرف","");var newBank=currentDetails.GetValueOrDefault("توطين المصرف","");
                     if(oldIban!=newIban||PayrollAnalysis.Normalize(oldBank)!=PayrollAnalysis.Normalize(newBank))
                         rows.Add(new("تغيّر الحساب",after.Name,$"السابق {oldBank} {oldIban} — الجديد {newBank} {newIban}",null,null));
-                    foreach(var fields in new[]{new[]{"عدد الاطفال","عدد الأطفال"},new[]{"الحالة الزوجية","الزوجية","الحالة الاجتماعية"},new[]{"اسم الشهادة","اسم الشهدة","الشهادة"}}){
+                    foreach(var fields in new[]{new[]{"عدد الاطفال","عدد الأطفال","الاطفال"},new[]{"الحالة الزوجية","الزوجية","الحالة الاجتماعية"},new[]{"اسم الشهادة","اسم الشهدة","الشهادة"}}){
                         string Read(Dictionary<string,string> data)=>data.FirstOrDefault(x=>fields.Any(f=>PayrollAnalysis.Normalize(f)==PayrollAnalysis.Normalize(x.Key))).Value??"";
                         var was=Read(previousDetails);var now=Read(currentDetails);
                         if(was!=now)rows.Add(new(fields[0],after.Name,$"السابق {was} — الجديد {now}",null,null));

@@ -9,7 +9,7 @@ namespace SalaryDesktop.Core;
 /// يُرفض PDF برسالة (Excel يبقى متاحاً). بعد الإنشاء يُقرأ الملف ويُطابق التسلسل والمبالغ في كل صف.
 public static class SalaryTrustPdf
 {
-    private static readonly float[] Widths = [24,124,69,65,75,71,71,71,140,76];
+    private static readonly float[] Widths = [24,120,65,70,70,85,80,80,120,72];
     private const float PageW = 842, PageH = 595, Margin = 28, Bottom = 560, Content = 786;
     private static readonly SKColor Dark = new(31, 79, 120), HeadFill = new(235, 235, 235), Line = new(90, 90, 90), Zebra = new(243, 247, 251);
     private static readonly int[] NumberColumns = [0, 5, 6, 7];

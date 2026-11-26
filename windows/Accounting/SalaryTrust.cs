@@ -33,6 +33,12 @@ public static class SalaryTrust
                 e.Year is < 1900 or > 2200 || e.Month is < 1 or > 12 || e.Amount is <= 0 or > Maximum || e.Payments is null ||
                 !keys.Add($"{e.Year}-{e.Month}|{PersonProfiles.Key(e.Name)}") || (e.LegacyPaid && e.Payments.Count != 0) || (e.ReviewPending && (e.LegacyPaid || e.Payments.Count != 0)))
                 throw new InvalidDataException("سجل أمانة غير صالح أو مكرر؛ لم تُحفظ التغييرات.");
+            if(e.ImportedPaymentDate?.Length>300)throw new InvalidDataException("تاريخ صرف الأمانة طويل.");
+            if(ledger.Version==2){
+                var key=PersonProfiles.Key(e.ImportedStatus);bool paidState=new[]{"صرف","مصروف","مصروف بالكامل","تم الصرف"}.Select(PersonProfiles.Key).Contains(key);
+                bool unpaid=new[]{"","غير مصروف","لم يصرف","لم يتم الصرف"}.Select(PersonProfiles.Key).Contains(key);
+                if(e.Payments.Count!=0||e.LegacyPaid!=paidState||e.ReviewPending!=( !unpaid && !paidState))throw new InvalidDataException("حالة الأمانة لا تطابق ملف الاستيراد.");
+            }
             var books = new HashSet<Guid>();
             if (e.BookIds is { Count: > 100 } || (e.BookIds is not null && e.BookIds.Any(x => !Guid.TryParse(x, out var bookId) || !books.Add(bookId))))
                 throw new InvalidDataException("روابط كتب الأمانة غير صالحة أو مكررة.");

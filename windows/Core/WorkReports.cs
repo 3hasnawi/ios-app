@@ -52,6 +52,11 @@ public static class WorkReports
             }
         }
         if(found.Contains(false))throw new InvalidDataException("لم تُستكمل أعمدة استقطاعات القيادة.");
-        return new(A.ReportSheet.HeaderFor(snapshot),[Amounts("استقطاعات القيادة","جدول استقطاعات قيادة شرطة الانبار · "+month,titles.Select((t,i)=>(t,sums[i])))]);
+        List<object?[]> rows=[
+            [1,titles[0],5000,4000,4000,2000,sums[0]],
+            [2,titles[1],4000,2000,2000,0,sums[1]],
+            [3,titles[2],"لكل فرد بالعائلة ٣٬٥٠٠",null,null,null,sums[2]]];
+        return new(A.ReportSheet.HeaderFor(snapshot),[new("استقطاعات القيادة","جدول استقطاعات قيادة شرطة الانبار لشهر ( "+Arabic.Eastern(month)+" )",
+            ["ت","نوع الاستقطاع","ضباط","موظفين","مراتب","عقود","مجموع التسديد الشهري"],rows,6,sums.Sum(),ShowTotal:false,Command:true)]);
     }
 }

@@ -1,0 +1,31 @@
+"""Check actual pages exported from the installed copy using a separate PDF engine."""
+from pathlib import Path
+import re
+import sys
+
+import pymupdf
+
+screens, native = map(Path, sys.argv[1:])
+for path in sorted([*screens.glob("*.pdf"), *native.glob("*.pdf")]):
+    with pymupdf.open(path) as document:
+        assert len(document) > 0, path
+        for page in document:
+            width, height = sorted((page.rect.width, page.rect.height))
+            assert abs(width - 595.3) < 2 and abs(height - 841.9) < 2, (path, page.rect)
+            words = page.get_text("words")
+            assert len(words) > 5, (path, page.number)
+            for x0, y0, x1, y1, *_ in words:
+                assert x0 >= -1 and y0 >= -1 and x1 <= page.rect.width + 1 and y1 <= page.rect.height + 1, (path,page.number,x0,y0,x1,y1)
+        if path.stem == "agency-long":
+            assert len(document) >= 4
+            assert "16,290" in document[-1].get_text(), "Missing final amount"
+            # Header labels, not just the page number, must be repeated on each page.
+            tops = [{w[4] for w in p.get_text("words") if w[1] < 140} for p in document]
+            assert len(set.intersection(*tops)) > 4
+        if path.stem == "bank-long":
+            assert len(document) >= 3
+            for page in document:
+                assert len([w for w in page.get_text("words") if w[1] > 817]) >= 4
+        if path.stem == "command":
+            assert len(document) == 1 and document[0].rect.width > document[0].rect.height
+        print("PASS printed", path.name, len(document), "A4 pages with selectable text")

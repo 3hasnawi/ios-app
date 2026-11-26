@@ -49,6 +49,7 @@ public partial class MainWindow
             await Working(()=>store.ApplyExcel(preview,expected),"حُفظ الاستيراد وتحقق البرنامج من النسخة الجديدة.",()=>{Reload();ShowPage("الرئيسية");});
         }catch(Exception e){Error(e);}
     }
+    string? auditFilter;
     void SearchAll()
     {
         var dock=new DockPanel();var input=new TextBox();var title=Text("ابحث بالاسم أو اسم الأم أو الرقم الإحصائي أو الجهة أو الإضبارة",15);
@@ -64,22 +65,26 @@ public partial class MainWindow
         if(store.Active==null){CanvasArea.Children.Add(Text("افتح نسخة الآيفون أو استورد ملف Excel من الإعدادات."));return;}
         var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
         try{
-            var prev=months.FirstOrDefault(m=>m.Key==A.MonthNames.Previous(month))?.Name??"";
-            var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month,key==AuditName?prev:""));
+            if(key==AuditName){
+                string? initial=auditFilter;auditFilter=null;var result=await Audit(month);
+                if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
+                CanvasArea.Children.Remove(loading);
+                var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>r.Kind).Distinct()));if(initial!=null)filter.SelectedItem=initial;
+                var head=Bar(Labeled("حالة المراجعة",filter,250),ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
+                var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
+                void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||r.Kind==(string)filter.SelectedItem).ToList();}
+                filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
+            }
+            var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
             if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
             CanvasArea.Children.Remove(loading);
             if(key==TransfersName){TransferDesk(snapshot,month);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
-            if(key==AuditName){
-                var result=await Task.Run(()=>A.SalaryReview.Prepare(snapshot,month));if(page!=key)return;
-                var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
-                list.ItemsSource=result.Rows;CanvasArea.Children.Add(list);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
-            }
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var report=await Task.Run(()=>key==FundingName?WorkReports.Funding(snapshot,month):WorkReports.Command(snapshot,month));
-            if(page!=key)return;
+            if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
             var content=Column(Text(key+"　·　"+month,20,true));
-            foreach(var sheet in report.Sheets){content.Children.Add(Text(sheet.Title,16,true));foreach(var row in sheet.Rows)content.Children.Add(Bar(Text(row[1]?.ToString()??"",14),Text(Arabic.Money((decimal)row[2]!),16,true)));}
+            foreach(var sheet in report.Sheets){content.Children.Add(Text(sheet.Title,16,true));foreach(var row in sheet.Rows)content.Children.Add(Bar(Text(row[1]?.ToString()??"",14),Text(Arabic.Money((decimal)row[sheet.AmountColumn]!),16,true)));}
             content.Children.Add(ButtonFor("معاينة وتصدير",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
             CanvasArea.Children.Add(new ScrollViewer{Content=Box(content),VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
         }catch(Exception e){if(page==key){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message,16));}}

@@ -8,6 +8,23 @@ using A=SalaryDesktop.Core;
 
 static class AccountingTests
 {
+    public static void Volume(string dir,Action<bool,string> check){
+        string[] headers=Enumerable.Range(0,72).Select(i=>"بند حسابي تجريبي "+i).ToArray();
+        string[] vals=Enumerable.Repeat("0",headers.Length).ToArray();
+        var raw=JsonSerializer.SerializeToUtf8Bytes(new{headers,values=vals});
+        const int count=20_000;var clock=Stopwatch.StartNew();
+        var store=new Store(Path.Combine(dir,"volume"));
+        foreach(var month in new[]{"أيلول 2026","تشرين الأول 2026"}){
+            var rows=Enumerable.Range(1,count).Select(i=>new A.Employee(month,"اسم اختباري "+i,"موظف","قسم تجريبي",i,null,null,raw)).ToList();
+            var cuts=Enumerable.Range(1,count).Select(i=>new A.Deduction(month,"اسم اختباري "+i,"جهة تجريبية",i,"إضبارة طويلة رقم "+i,"موظف")).ToList();
+            store.ApplyExcel(new(month,rows,cuts,[]),store.Active);
+        }
+        using var zip=ZipFile.OpenRead(store.Archive);
+        using var schemas=JsonDocument.Parse(zip.GetEntry("payroll-headers.json")!.Open());
+        long size=new FileInfo(store.Archive).Length;
+        check(schemas.RootElement.GetArrayLength()==1&&size<(long)raw.Length*count/10&&store.Summary(new(Year:2026)).Total==(decimal)count*(count+1),"40,000 payroll + 40,000 deductions, one schema, all amounts verified");
+        Console.WriteLine($"Fictional stress archive {size:N0} bytes; {clock.Elapsed.TotalSeconds:F1} seconds");
+    }
     public static void Run(string dir, Action<bool,string> check){
         string[] periods=["أيلول 2026","تشرين الأول 2026","تشرين الثاني 2026"];
         string Iban(string code,int number){

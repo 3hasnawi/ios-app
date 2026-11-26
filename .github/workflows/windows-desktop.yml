@@ -30,10 +30,15 @@ jobs:
           exit $p.ExitCode
       - name: Exercise installed application and capture screens
         run: |
-          $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\store $env:RUNNER_TEMP\screens" -PassThru
+          $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
           if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
           if ($p.ExitCode -ne 0) { throw "Desktop exited with $($p.ExitCode)" }
-          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 4) { throw "Incomplete captures" }
+          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 9) { throw "Incomplete captures" }
+      - name: Inspect printed tables and page bounds
+        run: |
+          python -m pip install pymupdf==1.26.6
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python windows/Checks/print_pages.py "$env:RUNNER_TEMP/screens" "$env:RUNNER_TEMP/fixture/printed"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-setup
@@ -41,7 +46,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-screens
-          path: ${{ runner.temp }}/screens
+          path: |
+            ${{ runner.temp }}/screens
+            ${{ runner.temp }}/fixture/printed
 
   apple-readback:
     needs: desktop
