@@ -125,7 +125,7 @@ public partial class MainWindow : Window
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
+        if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void AdaptNavigation()
@@ -149,7 +149,7 @@ public partial class MainWindow : Window
         backPage="الرئيسية";
         ShowPage(name);
     }
-    async void Home()
+    async Task Home()
     {
         var panel=new StackPanel();
         var selectedPeriod=SelectedMonth;
@@ -161,14 +161,13 @@ public partial class MainWindow : Window
         hero.Children.Add(intro);hero.Children.Add(value);var banner=Box(hero,"#1E5646");banner.Padding=new Thickness(25,24,25,24);panel.Children.Add(banner);
         if(store.Active==null)panel.Children.Add(ButtonFor("اختيار نسخة الرواتب.zip",()=>_=Import(),"\uE8E5",true));
         var pair=new Grid();pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
-        var reviews=Column(Bar(Glyph("\uEA8F","#8E6126"),Text("حالات المراجعة",19,true)));
-        var alerts=SelectedMonth is {} selected?store.Reviews(selected):[];
-        if(alerts.Count==0)reviews.Children.Add(Text(SelectedMonth==null?"تظهر حالات المراجعة بعد استعادة البيانات.":!SelectedMonth.Verified||!months.Any(m=>m.Key<SelectedMonth.Key&&m.Verified)?"المقارنة تتطلب شهرين متحققين من الاستقطاعات.":"لا توجد جهات جديدة أو غائبة في المقارنة.",14));
-        foreach(var r in alerts){var button=ButtonFor(r.Title+" · "+r.Agency,()=>{backPage="الرئيسية";ShowPage("جهات التنفيذ",r);});
-            var hint=Text(r.Title,12);hint.Foreground=BrushOf("#775125");hint.Margin=new Thickness(0,0,0,3);
-            button.Content=Bar(Glyph("\uE7BA","#94692D"),Column(hint,Text(r.Agency,15,true)));button.Background=BrushOf("#FCF8EF");
-            button.HorizontalContentAlignment=HorizontalAlignment.Right;button.Margin=new Thickness(0,8,0,0);reviews.Children.Add(button);}
-        reviews.Children.Add(ButtonFor("مراجعة تغيّرات الرواتب",()=>Activate(AuditName),"\uEA8F"));
+        var reviewHost=new StackPanel();
+        var revision=store.Active;
+        if(reviewMonth!=selectedPeriod?.Name||reviewRevision!=revision){
+            selectedReviewKey=null;reviewMonth=selectedPeriod?.Name;reviewRevision=revision;
+        }
+        reviewHost.Children.Add(Text(selectedPeriod is {Key:>0}?"جارٍ تحميل حالات الشهر…":"تظهر حالات المراجعة بعد استيراد البيانات.",15));
+        var reviews=Column(Bar(Glyph("\uEA8F","#8E6126"),Text("حالات المراجعة",19,true)),reviewHost);
         var left=Column(Bar(Text("كشوفي المثبتة",19,true),ButtonFor("تخصيص",EditPins,"\uE713")));
         var tiles=new System.Windows.Controls.Primitives.UniformGrid{Columns=2};foreach(var pin in pins){var c=Cards.First(x=>x.Name==pin);
             var button=ButtonFor(c.Name,()=>Activate(c.Name));button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
@@ -194,20 +193,26 @@ public partial class MainWindow : Window
         foreach(var m in months.Take(4)){var line=Bar(ButtonFor(m.Name,()=>{initializing=true;Period.SelectedItem=m;initializing=false;Activate("جهات التنفيذ");},"\uE787"),
             Text(Arabic.Money(m.Actual)+" قيد استقطاع",14));recent.Children.Add(line);}
         if(months.Count>0)panel.Children.Add(Box(recent));
-        CanvasArea.Children.Add(new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
-        if(selectedPeriod is {Key:>0})try{
-            var sum=await Task.Run(()=>store.Summary(new(Year:selectedPeriod.Key/100,Month:selectedPeriod.Key%100)));
-            balance.Text=Arabic.Money(sum.Total);
-            if(page=="الرئيسية"&&SelectedMonth?.Name==selectedPeriod.Name&&store.HasPayroll(selectedPeriod.Name)){
-                var audit=await Audit(selectedPeriod.Name);
-                if(page=="الرئيسية"&&SelectedMonth?.Name==selectedPeriod.Name){
-                    foreach(var change in audit.Rows.GroupBy(r=>r.Kind).OrderByDescending(g=>g.Count()).Take(5)){
-                        var type=change.Key;
-                        reviews.Children.Add(ButtonFor(type+"　·　"+change.Count(),()=>{auditFilter=type;Activate(AuditName);},"\uE7BA"));
-                    }
-                }
+        var viewport=new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+        CanvasArea.Children.Add(viewport);
+        bool Current()=>CanvasArea.Children.Contains(viewport) && SelectedMonth?.Name==selectedPeriod?.Name && store.Active==revision;
+        if(selectedPeriod is not {Key:>0})return;
+        try{
+            var summary=await Task.Run(()=>store.Summary(new(Year:selectedPeriod.Key/100,Month:selectedPeriod.Key%100)));
+            if(!Current())return;
+            balance.Text=Arabic.Money(summary.Total);
+            var data=await Task.Run(()=>(Alerts:store.Reviews(selectedPeriod),Salary:store.HasPayroll(selectedPeriod.Name)));
+            if(!Current())return;
+            var prior=months.FirstOrDefault(m=>m.Key>0&&m.Key<selectedPeriod.Key);
+            SalaryDesktop.Core.SalaryReviewResult? audit=null;
+            if(data.Salary){
+                try{audit=await Audit(selectedPeriod.Name);}
+                catch(Exception ex){if(Current())Status.Text=ex.Message;}
             }
-        }catch(Exception e){Status.Text=e.Message;}
+            if(Current())ShowReviewCards(reviewHost,selectedPeriod,data.Alerts,data.Salary,audit,prior);
+        }catch(Exception e){
+            if(Current()){reviewHost.Children.Clear();reviewHost.Children.Add(Text("تعذّر تحميل حالات المراجعة.",16));Status.Text=e.Message;}
+        }
     }
     void EditPins()
     {
@@ -441,6 +446,17 @@ public partial class MainWindow : Window
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
                 }
                 ShowPage(name);
+            }
+            if(name=="الرئيسية"){
+                await homeLoad;
+                Button ReviewCard()=>Controls<Button>(CanvasArea).Single(b=>AutomationProperties.GetAutomationId(b)=="HomeReviewCard");
+                string first=AutomationProperties.GetName(ReviewCard());
+                if(Controls<Button>(CanvasArea).Any(b=>AutomationProperties.GetName(b)=="التالي")){
+                    Click(CanvasArea,"التالي");
+                    if(AutomationProperties.GetName(ReviewCard())==first)throw new InvalidDataException("لم ينتقل العرض إلى حالة المراجعة التالية.");
+                    Click(CanvasArea,"السابق");
+                    if(AutomationProperties.GetName(ReviewCard())!=first)throw new InvalidDataException("تعذرت العودة إلى بطاقة المراجعة السابقة.");
+                }
             }
             if(name=="الإعدادات"){
                 FindAction(CanvasArea,"استيراد ملف بيانات");
