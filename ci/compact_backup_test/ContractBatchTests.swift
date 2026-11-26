@@ -53,6 +53,7 @@ import SwiftData
     precondition(impacts.map(\.current) == [800000, 454000, 0])
     precondition(impacts.map(\.deferred) == [200000, 154000, 50000])
     for impact in impacts {
+        precondition(impact.id.originalTotal(in: batch) == impact.original)
         precondition(impact.original == impact.current + impact.deferred)
         precondition(impact.current == impact.id.total(batch, .current))
         precondition(impact.deferred == impact.id.total(batch, .deferred))
@@ -65,6 +66,10 @@ import SwiftData
     let onlyFund = ContractTransferBatch(id: batch.id, month: month, importedAt: date, created: date, figures: figures,
         payer: batch.payer, iban: pay, links: batch.links, parts: [noExecutionHold, fund])
     precondition(ContractExecutionLetterImpact.affected(in: onlyFund).isEmpty)
+    let otherBanks = ContractTransferDestination.group(.otherBanks)
+    precondition(otherBanks.originalTotal(in: onlyFund) == 608000)
+    precondition(otherBanks.total(onlyFund, .current) == 604000)
+    precondition(otherBanks.total(onlyFund, .deferred) == 4000)
     func checkRepeatedRows(_ snapshot: ContractTransferBatch) {
         let contracts = snapshot.parts.first { $0.entity.group.title == "أ" }!.deferred.filter { $0.name == p }
         let regular = snapshot.parts.first { $0.entity.group.title == "ب" }!.current.filter { $0.name == x }

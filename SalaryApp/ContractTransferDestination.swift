@@ -33,6 +33,13 @@ nonisolated enum ContractTransferDestination: Hashable, Identifiable {
     func total(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> Double {
         self == .guarantee ? batch.guarantee : entities(batch, phase).reduce(0) { $0 + $1.group.total }
     }
+    func originalTotal(in batch: ContractTransferBatch) -> Double {
+        if self == .guarantee { return batch.guarantee }
+        return batch.parts.reduce(0) { total, part in
+            Self(entity: part.entity) == self ? total + part.entity.group.total : total
+        }
+    }
+
     static func all(_ batch: ContractTransferBatch, _ phase: ContractTransferPhase) -> [Self] {
         var result: [Self] = [TransferCategory.rafidain, .otherBanks].compactMap { batch.parts(phase, category: $0).isEmpty ? nil : .group($0) }
         result += batch.parts(phase, category: .anbar).map { .individual($0.id) }

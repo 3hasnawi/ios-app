@@ -51,10 +51,7 @@ struct ContractBatchActivation: View {
                         LabeledContent(tr("مبلغ الكتاب قبل الفصل", "Letter total before deferral"), value: Money.format(letter.original))
                         LabeledContent(tr("المؤجل من الكتاب", "Deferred from this letter"), value: Money.format(letter.deferred))
                         LabeledContent(tr("المتبقي للتحويل الحالي", "Remaining in current transfer"), value: Money.format(letter.current)).bold()
-                        Text(tr("تفصيل المبلغ المؤجل", "Deferred amount breakdown")).font(.subheadline.weight(.semibold))
-                        ForEach(letter.recipients) { entity in
-                            LabeledContent(entity.group.title, value: Money.format(entity.group.total))
-                        }
+                        ContractRecipientListLink(batch: batch, phase: .deferred, entities: letter.recipients, title: letter.title)
                     } header: {
                         Label(letter.title, systemImage: "doc.text")
                     }
@@ -68,6 +65,52 @@ struct ContractBatchActivation: View {
                 }
             }.navigationTitle(tr("مراجعة تأجيل العقود", "Review contract deferral")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button(tr("إلغاء", "Cancel")) { dismiss() } } }
+        }
+    }
+}
+
+private struct ContractRecipientListLink: View {
+    let batch: ContractTransferBatch
+    let phase: ContractTransferPhase
+    let entities: [TransferEntity]
+    let title: String
+
+    var body: some View {
+        NavigationLink {
+            List {
+                Section(phase.title) { ContractRecipientRows(batch: batch, phase: phase, entities: entities) }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            LabeledContent(tr("عرض الجهات", "View recipients"), value: Num.format(entities.count))
+        }
+    }
+}
+
+private struct ContractRecipientRows: View {
+    let batch: ContractTransferBatch
+    let phase: ContractTransferPhase
+    let entities: [TransferEntity]
+
+    var body: some View {
+        ForEach(entities) { entity in
+            if let source = batch.parts.first(where: { $0.entity.id == entity.id }) {
+                NavigationLink {
+                    List {
+                        Section {
+                            LabeledContent(tr("المستفيد", "Beneficiary"), value: entity.beneficiaryName ?? entity.account?.entity ?? entity.group.title)
+                            if let a = entity.account { Text(a.branch); Text(a.iban.isEmpty ? a.localAccount ?? "" : a.iban).privacySensitive() }
+                        }
+                        ForEach(source.rows(phase)) { row in
+                            VStack(alignment: .leading) {
+                                LabeledContent(row.name, value: Money.format(row.amount))
+                                Text([row.rank, row.note].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption)
+                            }
+                        }
+                    }.navigationTitle(entity.group.title)
+                } label: { LabeledContent(entity.group.title, value: Money.format(entity.group.total)) }
+            }
         }
     }
 }
@@ -124,24 +167,17 @@ struct ContractTransferRecordView: View {
                 let destinations = ContractTransferDestination.all(batch, phase)
                 ForEach(destinations) { dest in
                     Section {
-                        LabeledContent(tr("المبلغ", "Amount"), value: Money.format(dest.total(batch, phase)))
-                        ForEach(dest.entities(batch, phase)) { entity in
-                            if let source = batch.parts.first(where: { $0.entity.id == entity.id }) {
-                                NavigationLink {
-                                    List {
-                                        Section {
-                                            LabeledContent(tr("المستفيد", "Beneficiary"), value: entity.beneficiaryName ?? entity.account?.entity ?? entity.group.title)
-                                            if let a = entity.account { Text(a.branch); Text(a.iban.isEmpty ? a.localAccount ?? "" : a.iban).privacySensitive() }
-                                        }
-                                        ForEach(source.rows(phase)) { row in
-                                            VStack(alignment: .leading) {
-                                                LabeledContent(row.name, value: Money.format(row.amount))
-                                                Text([row.rank, row.note].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption)
-                                            }
-                                        }
-                                    }.navigationTitle(entity.group.title)
-                                } label: { LabeledContent(entity.group.title, value: Money.format(entity.group.total)) }
+                        let entities = dest.entities(batch, phase)
+                        if case .group = dest {
+                            LabeledContent(tr("المبلغ قبل الفصل", "Amount before split"), value: Money.format(dest.originalTotal(in: batch)))
+                            LabeledContent(tr("مبلغ الدفعة الحالية", "Current batch amount"), value: Money.format(dest.total(batch, .current))).bold()
+                            if phase == .deferred {
+                                LabeledContent(tr("مبلغ الدفعة المؤجلة", "Deferred batch amount"), value: Money.format(dest.total(batch, .deferred)))
                             }
+                            ContractRecipientListLink(batch: batch, phase: phase, entities: entities, title: dest.title(batch, phase))
+                        } else {
+                            LabeledContent(tr("المبلغ", "Amount"), value: Money.format(dest.total(batch, phase)))
+                            ContractRecipientRows(batch: batch, phase: phase, entities: entities)
                         }
                         if record.cancelledAt == nil {
                             Button(tr("تجهيز الكتاب وملفات الدفعة", "Prepare letter and batch files"), systemImage: "square.and.arrow.up") { export(batch, dest) }
