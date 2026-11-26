@@ -46,7 +46,7 @@ public partial class MainWindow : Window
     private string? backPage;
     public MainWindow(Store source)
     {
-        InitializeComponent();store=source;
+        store=source;appearance=Appearance.Read(store.Root);appearance.Apply();InitializeComponent();
         SizeChanged+=(_,_)=>AdaptNavigation();
         try{var path=Path.Combine(store.Root,"pins.json");if(File.Exists(path))pins=(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path))??pins).Where(n=>Cards.Any(c=>c.Name==n)).Distinct().ToList();}
         catch(IOException){}catch(JsonException){}
@@ -58,7 +58,10 @@ public partial class MainWindow : Window
     void Error(Exception e){Status.Text="تعذّر إكمال العملية. "+e.Message;MessageBox.Show(this,e.Message,"قسم الحسابات",MessageBoxButton.OK,MessageBoxImage.Warning);}
     void Reload(){initializing=true;months=store.Months();agencies=store.Agencies();Period.ItemsSource=months;Period.SelectedIndex=months.Count>0?0:-1;initializing=false;}
     static Brush BrushOf(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c));
-    static TextBlock Text(string s,double size=15,bool bold=false)=>new(){Text=s,FontSize=size,FontWeight=bold?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
+    static TextBlock Text(string s,double size=15,bool bold=false){
+        var text=new DisplayText{Text=s,FontWeight=bold?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
+        text.SetResourceReference(TextBlock.FontSizeProperty,Appearance.FontKey(size));return text;
+    }
     static TextBlock Glyph(string s,string color="#29644E")=>new(){Text=s,FontFamily=new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),FontSize=20,Foreground=BrushOf(color),VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5,0,6,0)};
     static Button ButtonFor(string title,Action click,string glyph="",bool primary=false)
     {
@@ -101,11 +104,11 @@ public partial class MainWindow : Window
         }
         var border=Box(row);border.Padding=new Thickness(5);return border;
     }
-    static ComboBox Choices(IEnumerable<string> values){var c=new ComboBox{ItemsSource=values.ToList(),SelectedIndex=0};return c;}
+    static ComboBox Choices(IEnumerable<string> values){var c=new ComboBox{ItemsSource=values.ToList(),ItemTemplate=(DataTemplate)Application.Current.FindResource("DisplayNumberItem"),SelectedIndex=0};return c;}
     static StackPanel Column(params UIElement[] items){var p=new StackPanel();foreach(var i in items)p.Children.Add(i);return p;}
     static DataGrid GridView(params (string Title,string Field,double Width)[] cols)
     {
-        var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field),Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
+        var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field){Mode=BindingMode.OneWay,Converter=(DisplayNumberConverter)Application.Current.FindResource("NumeralConverter")},Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
     }
     void OpenMonthList(object sender,RoutedEventArgs e){Period.Focus();Period.IsDropDownOpen=!Period.IsDropDownOpen;}
     void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy)ShowPage(page);}
@@ -220,7 +223,7 @@ public partial class MainWindow : Window
     }
     void Settings()
     {
-        var p=Column(Text("البيانات والنسخ الاحتياطي",23,true),Text("تُفتح النسخة من الحاسبة أو من مجلد iCloud Drive بعد تنزيل الملف.",14));
+        var p=Column(AppearanceSettings(),Text("البيانات والنسخ الاحتياطي",23,true),Text("تُفتح النسخة من الحاسبة أو من مجلد iCloud Drive بعد تنزيل الملف.",14));
         p.Children.Add(Box(Column(Text("نسخة الآيفون",18,true),Text(store.Active==null?"لم تُفتح نسخة بعد.":"صيغة "+store.Metadata("format")+"　·　"+months.Count+" فترات　·　"+Arabic.Money(new FileInfo(store.Archive).Length)+" بايت"),
             Bar(ButtonFor("فتح نسخة الآيفون",()=>_=Import(),"\uE8E5",true),ButtonFor("حفظ نسخة مطابقة",CopyArchive,"\uE74E")))));
         if(store.Active is {} active){
@@ -439,6 +442,15 @@ public partial class MainWindow : Window
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
                 }
                 ShowPage(name);
+            }
+            if(name=="الإعدادات"){
+                ComboBox Setting(string name)=>Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)==name);
+                Setting("حجم خط المحتوى").SelectedIndex=4;Setting("شكل الأرقام").SelectedIndex=1;
+                var sampleText=Controls<TextBlock>(CanvasArea).FirstOrDefault(t=>t.Text.Contains("١٢,٥٠٠"));
+                if(sampleText==null||Math.Abs(sampleText.FontSize-19.2)>.1||Appearance.Read(store.Root)!=new Appearance(4,true))
+                    throw new InvalidDataException("تعذّر تطبيق وحفظ حجم الخط والأرقام.");
+                Setting("حجم خط المحتوى").SelectedIndex=0;Setting("شكل الأرقام").SelectedIndex=0;
+                if(!Controls<TextBlock>(CanvasArea).Any(t=>t.Text.Contains("12,500")))throw new InvalidDataException("تعذر استرجاع الأرقام العربية.");
             }
             if(name=="كشف البنك"){
                 await bankLoad;

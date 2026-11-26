@@ -111,7 +111,7 @@ public static class AdaptiveLetterPdf
     private sealed record Piece(string Text, bool SpaceBefore);
     private static List<Piece> Pieces(string line)
     {
-        var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var tokens = ReportNumerals.Format(line).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         static bool Latin(string token) { var m = Strong.Match(token); return m.Success && m.Length == token.Length && token.Any(char.IsAsciiLetter); }
         var result = new List<Piece>();
         for (int i = 0; i < tokens.Length;)

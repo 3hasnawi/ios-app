@@ -42,6 +42,21 @@ static class PrintChecks
         var trust=new A.SalaryTrustEntry(Guid.NewGuid().ToString(),"اسم أمانة تجريبي","عقد","مركز تجريبي",2026,11,3500,"حالة تجريبية","ملاحظة طويلة","مصروف",true,false,[],null,"٢٠٢٦/١١/١٠");
         var trustSheet=A.SalaryTrustReports.Sheet(new(2,[trust],true),[trust],"اختبار","الكل","الكل","");
         Pdf("trust",A.SalaryTrustReports.Pdf(trustSheet,assets,DateTime.UtcNow),n=>n==1);
+        var originalCsv=refund.Csv(groups[0]);
+        try{
+            foreach(var digits in new[]{A.NumeralStyle.Arabic,A.NumeralStyle.Hindi}){
+                A.ReportNumerals.Style=digits;
+                string date=digits==A.NumeralStyle.Hindi?"٢٠٢٦/١١/١٠":"2026/11/10";
+                using var workbook=new XLWorkbook(new MemoryStream(A.SalaryTrustReports.Excel(trustSheet,[trust])));
+                check(workbook.Worksheet(1).Cell(4,10).GetString()==date,"Excel text date follows "+digits);
+                var exported=A.TemplateLetterPdf.Custom(t,snapshot,"تشرين الثاني 2026",123456,A.LetterFonts.Resolve(times,assets.Bold,logo));
+                using var print=PdfDocument.Open(exported);
+                var glyphs=string.Concat(print.GetPage(1).Letters.Select(l=>l.Value));
+                check(glyphs.Contains(digits==A.NumeralStyle.Hindi?'٦':'6'),"letter PDF shapes selected digits "+digits);
+                check(refund.Csv(groups[0]).SequenceEqual(originalCsv),"bank CSV is byte-identical for "+digits);
+                check(A.ReportNumerals.Format("IQ74RAFB356100195382001 RAFBIQB1098 356100195382001")=="IQ74RAFB356100195382001 RAFBIQB1098 356100195382001","bank identifiers stay international for "+digits);
+            }
+        }finally{A.ReportNumerals.Style=A.NumeralStyle.Original;}
         using var xl=new XLWorkbook(new MemoryStream(A.SalaryTrustReports.Excel(trustSheet,[trust])));
         check(xl.Worksheet(1).Cell(4,10).GetString()==trust.ImportedPaymentDate,"trust date and notes survive Excel output");
     }

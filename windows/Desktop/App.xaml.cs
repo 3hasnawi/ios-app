@@ -10,6 +10,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
         EventManager.RegisterClassHandler(typeof(Window),FrameworkElement.LoadedEvent,new RoutedEventHandler(WindowPlacement.OnLoaded));
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.TextBox),System.Windows.Controls.TextBox.TextChangedEvent,
+            new System.Windows.Controls.TextChangedEventHandler(Appearance.InputDigits));
         bool capture=e.Args.Length==3&&e.Args[0]=="--capture";
         string root=capture?e.Args[1]:Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AnbarPayroll");
         if(!capture){mutex=new Mutex(true,@"Local\AnbarPayroll.Desktop",out var created);if(!created){MessageBox.Show("برنامج الحسابات مفتوح بالفعل.");Shutdown();return;}}

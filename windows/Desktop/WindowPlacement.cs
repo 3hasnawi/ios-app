@@ -21,6 +21,7 @@ internal static class WindowPlacement
     {
         var window=(Window)sender;
         if(!ReferenceEquals(args.OriginalSource,window))return;
+        if(window.ReadLocalValue(Window.FontSizeProperty)==DependencyProperty.UnsetValue)window.SetResourceReference(Window.FontSizeProperty,"UiFont15");
         var hwnd=new WindowInteropHelper(window).Handle;
         var source=HwndSource.FromHwnd(hwnd);
         if(source==null)return;

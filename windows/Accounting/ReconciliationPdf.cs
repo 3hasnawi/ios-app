@@ -11,6 +11,7 @@ public static class ReconciliationPdf
 {
     private static string[] Runs(string text)
     {
+        text=ReportNumerals.Format(text);
         if (!text.Any(c => c is >= '\u0600' and <= '\u08ff')) return [text];
         return Regex.Split(text, @"([A-Za-z0-9٠-٩۰-۹]+(?:[ .,/:\u066B\u066C-]+[A-Za-z0-9٠-٩۰-۹]+)*)").Where(part => part.Length > 0).ToArray();
     }
