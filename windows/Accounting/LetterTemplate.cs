@@ -21,6 +21,8 @@ public sealed record LetterTemplate
     public string ThirdSigner {get;init;} = "";
     public string Footer {get;init;} = "نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.";
     public string Source {get;init;} = "none";
+    [System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? TreasuryItems {get;init;}
     public string SourceName {get;init;} = "";
     public string Account {get;init;} = "";
     public string? BodyAlignment {get;init;}
@@ -54,6 +56,8 @@ public sealed record LetterTemplate
     static string Default(string? s,string fallback)=>string.IsNullOrWhiteSpace(s)?fallback:s;
     public void Validate(bool issuing=true){
         var texts=new[]{Title,Header,Number,Recipient,Subject,Body,Footer,FirstSigner,SecondSigner,ThirdSigner,Account,SourceName,BodyMonth??"",OutgoingMonth??"",FoodContractReference??"",Attachments??""};
+        if(TreasuryItems is {} items && (items.Length is <1 or >2 || items.Any(i=>string.IsNullOrWhiteSpace(i)||i.Length>1000) || items.Distinct().Count()!=items.Length))
+            throw new InvalidDataException("راجع بنود مبلغ كتاب الخزينة.");
         if(texts.Any(s=>s==null||Encoding.UTF8.GetByteCount(s)>12000||s.Any(c=>char.IsControl(c)&&c!='\n'&&c!='\t'))||Id==Guid.Empty||string.IsNullOrWhiteSpace(Title)
             ||FontSizes?.Any(p=>!Parts.Contains(p.Key)||p.Value is <8 or >24)==true||SignatureVerticalOffset is <-60 or >60||SignatureHorizontalOffset is <-30 or >30
             ||Source is not ("none" or "manual" or "payroll" or "execution")||BodyKashida is not(null or "none" or "low" or "medium" or "high")

@@ -12,7 +12,6 @@ public partial class MainWindow
     record IndividualBook(string Title,string Id,A.TransferEntry? Entry=null)
     {
         public bool NeedsLink => Entry==null && LinkableBooks.Contains(Id);
-        public string Caption => NeedsLink ? Title+" · يحتاج ربط جهة" : Title;
     }
     static readonly string[] LinkableBooks=["ramadi","housing","water","rafidain_anbar"];
 
@@ -20,19 +19,53 @@ public partial class MainWindow
     {
         var books=new List<IndividualBook>();
         var entities=transfer.Entries.Where(e=>e.Group==A.TransferGroup.Anbar).ToArray();
-        if(split!=null)books.AddRange(entities.Select(e=>new IndividualBook(e.Title,"split",e)));
+        if(split!=null)books.AddRange(entities.Select(e=>new IndividualBook(e.Title,e.Id.StartsWith("deduction|")?"split":"entry_only",e)));
         else foreach(var id in LinkableBooks){
             var entry=A.IndividualLetterLinks.Resolve(source,id,entities);
             if(id=="rafidain_anbar"&&entry==null){
-                var matches=entities.Where(e=>A.PayrollAnalysis.Normalize(e.Title).Replace("/","").Split(' ',StringSplitOptions.RemoveEmptyEntries).SequenceEqual(new[]{"مصرف","الرافدين","فرع","الانبار"})).Take(2).ToArray();
+                var matches=entities.Where(e=>A.TransferPreparation.IsDirectAnbar(e.Title)).Take(2).ToArray();
                 if(matches.Length==1)entry=matches[0];
             }
             books.Add(new(BookTitles[id],id,entry));
+        }
+        if(split==null){
+            var linked=books.Select(b=>b.Entry?.Id).ToHashSet();
+            books.AddRange(entities.Where(e=>!linked.Contains(e.Id)).Select(e=>new IndividualBook(e.Title,"entry_only",e)));
         }
         if(!held)foreach(var id in new[]{"food_company","food_tax","tax_social","cash_salary","treasury_guarantee","treasury_schools"})
             books.Add(new(BookTitles[id],id));
         if(split==null||held&&split.Guarantee>0)books.Add(new(BookTitles["contracts"],"contracts"));
         return books;
+    }
+
+    static TransferRow BookRow(IndividualBook book,A.BackupSnapshot source,string month,ContractBatch? split,
+        IReadOnlyDictionary<string,decimal> originals,bool hasPayroll,Lazy<A.BankSummary> bank,Lazy<Dictionary<string,A.TemplateLetterPdf.ItemSummary>> items)
+    {
+        decimal? amount=null;
+        string sourceName="",issue="";
+        var entry=book.Entry;
+        try{
+            if(entry!=null){
+                amount=entry.Amount;
+                sourceName=entry.Title;
+                var notes=A.TransferPreparation.Issues(entry).ToList();
+                if(book.Id=="entry_only")notes.Add("قيد تحويل بلا كتاب منفرد مرتبط");
+                issue=string.Join("، ",notes);
+            }else if(book.NeedsLink)issue="اختر جهة استقطاع الشهر من خيارات الربط";
+            else if(book.Id.StartsWith("treasury_")){
+                var summaries=items.Value;
+                var names=TreasurySources(Builtin(source,book.Id),book.Id,summaries.Where(kv=>kv.Value.Total>0).Select(kv=>kv.Key));
+                sourceName=string.Join(" + ",names.OfType<string>());
+                if(names.All(n=>n!=null) && names.Distinct().Count()==names.Length)
+                    amount=names.Sum(n=>summaries[n!].Total);
+                else issue="اختر بنود الرواتب داخل الكتاب";
+            }else if(book.Id=="contracts" && split!=null)amount=split.Guarantee;
+            else if(hasPayroll){
+                amount=A.IndividualLetterPreparation.PayrollFigures(book.Id,bank.Value).Total;
+                sourceName="رواتب "+month;
+            }else issue="لا توجد رواتب لهذا الشهر";
+        }catch(System.IO.InvalidDataException error){issue=error.Message;}
+        return new(entry,book,book.Title,sourceName,entry==null||!originals.TryGetValue(entry.Id,out var original)?amount:original,amount,issue);
     }
 
     void OpenIndividual(A.BackupSnapshot s,A.TransferSnapshot transfer,ContractBatch? split,bool held,IndividualBook selected){

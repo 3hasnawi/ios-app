@@ -4,14 +4,32 @@ using A=SalaryDesktop.Core;
 namespace AnbarPayroll.Desktop;
 public partial class MainWindow
 {
+    static string?[] TreasurySources(A.LetterTemplate template,string id,IEnumerable<string> names)
+    {
+        var available=names.ToHashSet(StringComparer.Ordinal);
+        string? Resolve(int index,params string[] labels){
+            if(template.TreasuryItems is {} saved && index<saved.Length)
+                return available.Contains(saved[index])?saved[index]:null;
+            var keys=labels.Select(A.PayrollAnalysis.Normalize).ToHashSet();
+            var matches=available.Where(n=>keys.Contains(A.PayrollAnalysis.Normalize(n))).Take(2).ToArray();
+            return matches.Length==1?matches[0]:null;
+        }
+        return id=="treasury_guarantee"?[Resolve(0,"تضمين","التضمين")]:
+            [Resolve(0,"رسم طابع","رسم الطابع","رسم الطابع الضريبي"),Resolve(1,"بناء المدارس","بناء مدارس")];
+    }
+
     void TreasuryBook(A.BackupSnapshot s,string month,string id){
         bool schools=id=="treasury_schools";var names=A.TemplateLetterPdf.Items(s,month);
         if(names.Length==0)throw new InvalidDataException("لا توجد بنود رواتب ذات مبالغ لهذا الشهر.");
         var first=Choices(names);var second=Choices(names);var reason=new TextBox();
+        var template=Builtin(s,id);
+        var sources=TreasurySources(template,id,names);
+        first.SelectedItem=sources[0];if(schools)second.SelectedItem=sources[1];
         var inputs=Column(Labeled(schools?"بند رسم الطابع الضريبي":"بند التضمين",first,360));
         inputs.Children.Add(schools?Labeled("بند بناء المدارس",second,360):Labeled("سبب التضمين",reason,360));
         if(!Form(BookTitles[id],inputs))return;
-        string firstName=(string)first.SelectedItem,secondName=(string)second.SelectedItem;
+        if(first.SelectedItem is not string firstName || schools && second.SelectedItem is not string)throw new InvalidDataException("اختر بنود مبلغ كتاب الخزينة.");
+        string secondName=second.SelectedItem as string??"";
         if(schools&&firstName==secondName)throw new InvalidDataException("اختر بندين مختلفين.");
         if(!schools&&string.IsNullOrWhiteSpace(reason.Text))throw new InvalidDataException("أدخل سبب التضمين.");
         string description=reason.Text.Trim();
@@ -41,7 +59,8 @@ public partial class MainWindow
             rows.Add(["","","المجموع",Money(total),"",""]);
             table=new(["ت","الرتبة","الاسم الكامل","المبلغ","جهة التنفيذ","رقم وتاريخ الإضبارة"],rows,"Times New Roman",20,[30,70,150,80,110,130],BoldLastRow:true);
         }
-        var template=Builtin(s,id);var payer=A.TransferPreparation.Payer(s).Iban;
+        template=template with{TreasuryItems=schools?[firstName,secondName]:[firstName]};
+        var payer=A.TransferPreparation.Payer(s).Iban;
         if(string.IsNullOrEmpty(template.Account)&&s.SettingsPlists.ContainsKey("transferReferenceArchiveData"))
             template=template with{Account=A.LetterReferencePack.IndividualAccount(A.LetterReferencePack.Read(s),"tax_social",payer)??""};
         byte[] Render(A.LetterTemplate t){

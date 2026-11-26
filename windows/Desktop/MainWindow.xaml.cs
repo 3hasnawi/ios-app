@@ -430,10 +430,24 @@ public partial class MainWindow : Window
                     await ChooseMonth(202610);
                     var group=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="المجموعة");
                     group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Anbar;
-                    var books=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="الكتب المنفردة");
-                    var letters=books.Items.Cast<IndividualBook>().ToArray();
-                    if(!new[]{"ramadi","rafidain_anbar","contracts","treasury_schools"}.All(id=>letters.Any(b=>b.Id==id)))
-                        throw new InvalidDataException("قائمة فرع الأنبار تفتقد كتاباً منفرداً.");
+                    var books=Controls<DataGrid>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="كتب فرع الأنبار والكتب المنفردة");
+                    var letters=books.Items.Cast<TransferRow>().ToArray();
+                    if(!BookTitles.Keys.Where(id=>!id.EndsWith("_group")).All(id=>letters.Count(row=>row.Book?.Id==id)==1))
+                        throw new InvalidDataException("جدول فرع الأنبار يفتقد كتاباً منفرداً أو يعرضه مرتين.");
+                    if(letters.Any(row=>row.Entry!=null && row.Value!=row.Entry.Amount || row.Book?.NeedsLink==true && row.Value!=null))
+                        throw new InvalidDataException("مبلغ الجهة في جدول الكتب لا يطابق الربط.");
+                    var selectedMonth=SelectedMonth!.Name;
+                    var snapshot=store.Snapshot(selectedMonth);
+                    var foodCompany=letters.Single(r=>r.Book?.Id=="food_company");
+                    var foodTax=letters.Single(r=>r.Book?.Id=="food_tax");
+                    if(snapshot.Employees.Any(e=>e.Month==selectedMonth)){
+                        var bank=SalaryDesktop.Core.BankStatementCalculator.Calculate(snapshot,selectedMonth);
+                        var food=new SalaryDesktop.Core.FoodContractReport.Split(bank.Breakdown["شركة عراق الجوال"]);
+                        if(foodCompany.Value!=food.Company || foodTax.Value!=food.Tax)
+                            throw new InvalidDataException("مبالغ كتب عقد الإطعام لا تطابق حصص الكشف.");
+                    }else if(foodCompany.Value!=null || foodTax.Value!=null)
+                        throw new InvalidDataException("ظهر مبلغ لكتاب رواتب في شهر بلا بيانات رواتب.");
+                    books.SelectedItem=letters.Single(row=>row.Book?.Id=="ramadi");
                     var options=FindAction(CanvasArea,"خيارات");
                     options.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if(options.ContextMenu?.IsOpen!=true||!options.ContextMenu.Items.Cast<MenuItem>().Any(m=>Equals(m.Header,"ربط جهة بالكتاب")))

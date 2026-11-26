@@ -99,7 +99,7 @@ public static class TransferPreparation
         if (!SafeField(entity.Beneficiary ?? entity.Title)) issues.Add("اسم المستفيد غير صالح في ملف التحويل.");
         return issues;
     }
-    private static bool IsDirectAnbar(string title)
+    public static bool IsDirectAnbar(string title)
     {
         var clean = string.Join(' ', PayrollAnalysis.Normalize(title).Replace('/', ' ').Replace('-', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         return clean == PayrollAnalysis.Normalize("مصرف الرافدين فرع الانبار");

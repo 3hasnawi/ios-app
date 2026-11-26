@@ -87,34 +87,63 @@ public partial class MainWindow
         var info=Text("",14);head.Children.Add(info);
         if(plan.SourceWarnings.Count>0)
             head.Children.Add(new Expander{Header="ملاحظات المراجعة ("+plan.SourceWarnings.Count+")",Content=new ScrollViewer{MaxHeight=95,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Content=Text(string.Join("\n",plan.SourceWarnings),13)}});
-        var table=GridView(("الجهة","Entry.Title",1.8),("المصرف","Entry.Account.Branch",1.4),("قبل الفصل","Original",.9),("مبلغ الدفعة","Amount",.9),("المراجعة","Issues",1.4));
-        if(batch==null)table.Columns.RemoveAt(2);
-        dock.Children.Add(table);
+        DataGrid? table=null;
+        var originals=batch?.Parts.Select(p=>(Entry:p.Portion(held),p.Entity.Group.Total)).Where(p=>p.Entry!=null).ToDictionary(p=>p.Entry!.Id,p=>p.Total)
+            ??new Dictionary<string,decimal>();
+        var bank=new Lazy<A.BankSummary>(()=>A.BankStatementCalculator.Calculate(s,month));
+        var items=new Lazy<Dictionary<string,A.TemplateLetterPdf.ItemSummary>>(()=>A.TemplateLetterPdf.Summary(s,month));
+        var hasPayroll=s.Employees.Any(e=>e.Month==month);
         void Draw(){
             var g=(A.TransferGroup)group.SelectedIndex;
             if(held)deferredGroup=g;else currentGroup=g;
             date.IsEnabled=g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks;
             var rows=plan.Entries.Where(e=>e.Group==g).ToArray();
-            table.ItemsSource=rows.Select(e=>new TransferRow(e,Arabic.Money(batch?.Parts.First(p=>p.Entity.Group.Title==e.Title).Entity.Group.Total??e.Amount),
-                Arabic.Money(e.Amount),string.Join("، ",A.TransferPreparation.Issues(e)))).ToArray();
-            info.Text="عدد الجهات والبنود　"+rows.Length+"　·　مجموع المجموعة　"+Arabic.Money(rows.Sum(e=>e.Amount));
+            bool branch=g==A.TransferGroup.Anbar;
+            if(table!=null)dock.Children.Remove(table);
+            table=GridView((branch?"الكتاب / الجهة":"الجهة","Title",1.8),("مصدر المبلغ","Source",1.6),("المصرف","Entry.Account.Branch",1.35),
+                ("قبل الفصل","Original",.9),("مبلغ الدفعة","Amount",.9),("المراجعة","Issues",1.45));
+            if(batch==null)table.Columns.RemoveAt(3);
+            if(!branch)table.Columns.RemoveAt(1);
+            dock.Children.Add(table);
             actions.Children.Clear();
-            ComboBox? books=null;
-            IndividualBook? SelectedBook()=>books?.SelectedItem as IndividualBook;
-            if(g==A.TransferGroup.Anbar){
-                var list=BranchBooks(s,plan,batch,held);
-                books=new ComboBox{ItemsSource=list,DisplayMemberPath="Caption",SelectedIndex=list.Count>0?0:-1,MinWidth=195,MaxWidth=285,Margin=new Thickness(3)};
-                System.Windows.Automation.AutomationProperties.SetName(books,"الكتب المنفردة");
-                actions.Children.Add(Text("الكتاب"));actions.Children.Add(books);
-                var open=ButtonFor("معاينة وتصدير الكتاب",()=>Guard(()=>{
-                    CheckSource();if(SelectedBook() is {} book)OpenIndividual(s,plan,batch,held,book);
-                }),"\uE8A5",true);
-                void Availability(){
-                    open.IsEnabled=SelectedBook() is {NeedsLink:false};
-                    open.ToolTip=SelectedBook()?.NeedsLink==true?"من خيارات اختر ربط جهة بالكتاب.":null;
+            IndividualBook? SelectedBook()=>(table.SelectedItem as TransferRow)?.Book;
+            if(branch){
+                var list=BranchBooks(s,plan,batch,held).Select(book=>BookRow(book,s,month,batch,originals,hasPayroll,bank,items)).ToArray();
+                table.ItemsSource=list;
+                System.Windows.Automation.AutomationProperties.SetName(table,"كتب فرع الأنبار والكتب المنفردة");
+                info.Text="عدد الجهات والكتب　"+list.Length+"　·　مجموع قيود التحويل　"+Arabic.Money(rows.Sum(e=>e.Amount));
+                void OpenSelected(){
+                    if(SelectedBook() is not {} book)return;
+                    CheckSource();
+                    if(book.NeedsLink)LinkBook(s,book,rows,null);
+                    else if(book.Id!="entry_only")OpenIndividual(s,plan,batch,held,book);
+                    else if(batch==null && book.Entry?.Id.StartsWith("deduction|")==true){
+                        var ids=LinkableBooks.Where(id=>id!="rafidain_anbar"||A.TransferPreparation.IsDirectAnbar(book.Entry.Title)).ToArray();
+                        var choices=Choices(ids.Select(id=>BookTitles[id]));choices.SelectedIndex=-1;
+                        if(Form("ربط الجهة بكتاب",Text(book.Title),Labeled("الكتاب",choices,300)) && choices.SelectedIndex>=0)
+                            LinkBook(s,new IndividualBook((string)choices.SelectedItem,ids[choices.SelectedIndex]),rows,book.Entry);
+                    }
                 }
-                books.SelectionChanged+=(_,_)=>Availability();Availability();actions.Children.Add(open);
-            }else if(g!=A.TransferGroup.Unresolved){
+                var open=ButtonFor("فتح الكتاب",()=>Guard(OpenSelected),"\uE8A5",true);
+                void Availability(){
+                    var book=SelectedBook();
+                    open.IsEnabled=book!=null && (book.Id!="entry_only" || batch==null && book.Entry?.Id.StartsWith("deduction|")==true);
+                    open.ToolTip=book?.NeedsLink==true||book?.Id=="entry_only"?"اختيار ربط الكتاب بالجهة":"معاينة وتصدير الكتاب المحدد";
+                }
+                table.SelectionChanged+=(_,_)=>Availability();
+                table.MouseDoubleClick+=(_,e)=>{
+                    for(var hit=e.OriginalSource as DependencyObject;hit!=null;hit=ElementTree.Parent(hit)){
+                        if(hit is DataGridRow){if(open.IsEnabled)Guard(OpenSelected);break;}
+                        if(hit==table)break;
+                    }
+                };
+                table.SelectedIndex=list.Length>0?0:-1;
+                Availability();actions.Children.Add(open);
+            }else{
+                table.ItemsSource=rows.Select(e=>new TransferRow(e,null,e.Title,"",originals.GetValueOrDefault(e.Id,e.Amount),e.Amount,string.Join("، ",A.TransferPreparation.Issues(e)))).ToArray();
+                info.Text="عدد الجهات والبنود　"+rows.Length+"　·　مجموع المجموعة　"+Arabic.Money(rows.Sum(e=>e.Amount));
+            }
+            if(!branch && g!=A.TransferGroup.Unresolved){
                 var export=ButtonFor("الكتاب وملف CSV",()=>Guard(()=>{
                     CheckSource();ExportGroup(s,month,plan,g,batch,held,date.SelectedDate??throw new InvalidDataException("حدد تاريخ التحويل."));
                 }),"\uE74E",true);
@@ -136,7 +165,7 @@ public partial class MainWindow
                     },caption:"معاينة كشف الصندوق"));
             }
             var options=OptionsButton(menu=>{
-                if(SelectedBook() is {} book && book.Id!="split")
+                if(SelectedBook() is {} book && book.Id is not ("split" or "entry_only"))
                     MenuAction(menu,"تعديل الكتاب",()=>EditTransferTemplate(s,month,book.Id));
                 if(g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks)
                     MenuAction(menu,"تعديل كتاب المجموعة",()=>EditTransferTemplate(s,month,g==A.TransferGroup.Rafidain?"rafidain_group":"other_banks_group"));
@@ -160,11 +189,16 @@ public partial class MainWindow
         Draw();
     }
 
-    sealed record TransferRow(A.TransferEntry Entry,string Original,string Amount,string Issues);
+    sealed record TransferRow(A.TransferEntry? Entry,IndividualBook? Book,string Title,string Source,decimal? Before,decimal? Value,string Issues)
+    {
+        public string Original=>Before.HasValue?Arabic.Money(Before.Value):"—";
+        public string Amount=>Value.HasValue?Arabic.Money(Value.Value):"—";
+    }
 
     void LinkBook(A.BackupSnapshot s,IndividualBook book,A.TransferEntry[] rows,A.TransferEntry? selected){
-        if(rows.Length==0){Status.Text="لا توجد جهات في فرع الأنبار لهذا الشهر.";return;}
-        var list=new ComboBox{ItemsSource=rows,DisplayMemberPath="Title",SelectedItem=selected??book.Entry};
+        var candidates=rows.Where(e=>e.Id.StartsWith("deduction|") && (book.Id!="rafidain_anbar" || A.TransferPreparation.IsDirectAnbar(e.Title))).ToArray();
+        if(candidates.Length==0){Status.Text="لا توجد جهة استقطاع مناسبة لهذا الكتاب في الشهر المختار.";return;}
+        var list=new ComboBox{ItemsSource=candidates,DisplayMemberPath="Title",SelectedItem=selected??book.Entry};
         if(!Form("ربط جهة بالكتاب",Text(book.Title,16,true),Labeled("جهة التنفيذ",list,350)))return;
         if(list.SelectedItem is not A.TransferEntry entity)throw new InvalidDataException("اختر جهة التنفيذ.");
         _=Working(()=>store.LinkIndividual(s,book.Id,entity),"حُفظ ربط الكتاب.",()=>ShowPage(CurrentTransfers));

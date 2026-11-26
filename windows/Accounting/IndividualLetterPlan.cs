@@ -24,14 +24,21 @@ public static class IndividualLetterPreparation
         var reference = LetterReferencePack.IndividualAccount(references, id, payerAccount) ?? throw new InvalidDataException("حساب المستفيد غير موجود في المرجع.");
         var account = customization is null ? reference : IndividualAccountCustomization.Resolve(customization, id, id, reference, reference) ?? reference;
         if (account == TransferPreparation.NormalizeAccount(payerAccount)) throw new InvalidDataException("حساب المستفيد يطابق حساب الدفع.");
+        var (lines,notices,total)=PayrollFigures(id,summary,acceptMissingContractNominal);
+        if (total == 0) throw new InvalidDataException("مبلغ الكتاب صفر؛ راجع بيانات الشهر.");
+        if (string.IsNullOrWhiteSpace(payer)) throw new InvalidDataException("اسم الجهة الدافعة غير موجود.");
+        return new(id, summary.Month, payer, TransferPreparation.NormalizeAccount(payerAccount), account, total,
+            ArabicAmountWords.Dinars(total), lines, null, null, notices);
+    }
+
+    public static (List<IndividualLetterLine> Lines,List<string> Notices,long Total) PayrollFigures(string id,BankSummary summary,bool acceptMissingContractNominal=false)
+    {
         var lines = new List<IndividualLetterLine>(); var notices = new List<string>();
         switch (id)
         {
             case "food_company": case "food_tax":
-                var food = summary.Breakdown["شركة عراق الجوال"];
-                var fund = decimal.Round(food * .03m, 0, MidpointRounding.AwayFromZero);
-                var tax = decimal.Round((food - fund) * .018m, 0, MidpointRounding.AwayFromZero);
-                lines.Add(new(id == "food_company" ? "حصة شركة عراق الجوال" : "ضريبة عقد الإطعام", Amount(id == "food_company" ? food - fund - tax : tax))); break;
+                var food = new FoodContractReport.Split(summary.Breakdown["شركة عراق الجوال"]);
+                lines.Add(new(id == "food_company" ? "حصة شركة عراق الجوال" : "ضريبة عقد الإطعام", Amount(id == "food_company" ? food.Company : food.Tax))); break;
             case "tax_social":
                 lines.Add(new("الحماية الاجتماعية", Amount(summary.Breakdown["الحماية الاجتماعية"])));
                 lines.Add(new("ضريبة الدخل", Amount(summary.Breakdown["الضريبة"]))); break;
@@ -51,12 +58,10 @@ public static class IndividualLetterPreparation
             case "cash_salary":
                 if (summary.MissingNet > 0 || summary.UnclassifiedCount > 0) throw new InvalidDataException("توجد رواتب بلا صافي أو طريقة دفع؛ راجع الرواتب قبل إعداد كتاب الكاش.");
                 lines.Add(new("رواتب الكاش", Amount(summary.Cash))); break;
+            default: throw new InvalidDataException("نوع الكتاب غير مرتبط بمبالغ الرواتب.");
         }
         var total = Amount(lines.Sum(line => (decimal)line.Amount));
-        if (total == 0) throw new InvalidDataException("مبلغ الكتاب صفر؛ راجع بيانات الشهر.");
-        if (string.IsNullOrWhiteSpace(payer)) throw new InvalidDataException("اسم الجهة الدافعة غير موجود.");
-        return new(id, summary.Month, payer, TransferPreparation.NormalizeAccount(payerAccount), account, total,
-            ArabicAmountWords.Dinars(total), lines, null, null, notices);
+        return (lines,notices,total);
     }
 }
 
@@ -82,9 +87,8 @@ public static class IndividualEntityPreparation
         string? account = null;
         if (id == "rafidain_anbar")
         {
-            var title = string.Join(' ', PayrollAnalysis.Normalize(entry.Title).Replace('/', ' ').Replace('-', ' ').Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
             if (IndividualAccountCustomization.Read(source, id) is not null) throw new InvalidDataException("كتاب فرع الأنبار لا يقبل تخصيص حساب المستفيد.");
-            if (title != PayrollAnalysis.Normalize("مصرف الرافدين فرع الانبار") || reference is not null)
+            if (!TransferPreparation.IsDirectAnbar(entry.Title) || reference is not null)
                 throw new InvalidDataException("اختر استقطاع مصرف الرافدين فرع الأنبار للكتاب.");
         }
         else
