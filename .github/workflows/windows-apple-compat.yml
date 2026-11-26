@@ -12,6 +12,12 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Export fictional payroll and edited preferences
         run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --write-preference-archive "$env:RUNNER_TEMP/windows.zip"
+      - name: Verify refund PDFs and individual CSV routing on Windows
+        run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --check-refund-layout "$env:RUNNER_TEMP/refund-pdfs"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refund-letter-examples
+          path: ${{ runner.temp }}/refund-pdfs
       - uses: actions/upload-artifact@v4
         with:
           name: windows-preferences
@@ -28,6 +34,7 @@ jobs:
       - name: Exercise the iPhone archive and letter reference implementations
         run: |
           python3 ci/compact_backup_test/run.py
+          swiftc -frontend -parse SalaryApp/HomeAccounting.swift SalaryApp/HomeDashboard.swift SalaryApp/EmployeeRefundView.swift SalaryApp/RefundHistoryView.swift
           python3 ci/employee_refund_test/run.py
           python3 ci/report_layout_test/run.py
       - uses: actions/download-artifact@v4

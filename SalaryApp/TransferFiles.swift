@@ -397,7 +397,7 @@ struct TransferFilesView: View {
             if let error { Section { Text(error).foregroundStyle(.red) } }
             Section {
                 let payroll = (month?.employeeCount ?? 0) > 0 ? month : months.first(where: { $0.employeeCount > 0 })
-                NavigationLink { EmployeeRefundView(month: payroll?.name ?? "") } label: {
+                NavigationLink { RefundHomeView(month: payroll?.name ?? "") } label: {
                     Label(tr("إعادة المبالغ", "Employee refunds"), systemImage: "arrow.uturn.backward.circle")
                 }.accessibilityIdentifier("transferRefundBatch")
                 NavigationLink { CustomTransferTemplatesView(monthName: month?.name ?? "") } label: {

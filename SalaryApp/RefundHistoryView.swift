@@ -78,11 +78,53 @@ private struct RefundArchivedDetail: View {
     let snapshot: RefundSnapshot
     @State private var exporting = false
     @State private var error: String?
+    @State private var preview: StatementPDF?
+    @State private var previewFolder: URL?
+
+    private func output(_ batch: EmployeeRefund.Batch, _ choice: EmployeeRefundExport.Output? = nil, previewPDF: Bool = false) {
+        exporting = true
+        Task {
+            defer { exporting = false }
+            do {
+                let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: snapshot.date, letters: snapshot.letters, only: choice) }
+                guard let first = urls.first else { return }
+                let folder = first.deletingLastPathComponent()
+                if previewPDF {
+                    previewFolder = folder
+                    preview = StatementPDF(url: first)
+                } else {
+                    ActivityShare.present(urls) { _ in try? FileManager.default.removeItem(at: folder) }
+                }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
     var body: some View {
         List {
             LabeledContent(tr("تاريخ التحويل", "Transfer date")) { Text(snapshot.date, format: .dateTime.year().month().day()) }
             if !snapshot.source.isEmpty { LabeledContent(tr("جهة الإعادة", "Refund source"), value: snapshot.source) }
             LabeledContent(tr("شهر الرواتب", "Payroll month"), value: snapshot.payrollMonths)
+            if let batch = try? snapshot.plan() {
+                LabeledContent(tr("المجموع الكلي", "Grand total"), value: Money.format(Double(batch.total)))
+                Section(tr("كتب الدفعة", "Batch letters")) {
+                    ForEach([true, false], id: \.self) { raf in
+                        if batch.groups.contains(where: { $0.isRafidain == raf }) {
+                            Button(raf ? tr("كتاب الرافدين", "Rafidain letter") : tr("كتاب الرشيد والمصارف الأخرى", "Other banks letter"), systemImage: "doc.text.magnifyingglass") {
+                                output(batch, .letter(rafidain: raf), previewPDF: true)
+                            }
+                        }
+                    }
+                }
+                Section(tr("ملفات المصارف", "Bank files")) {
+                    ForEach(batch.groups, id: \.code) { group in
+                        Button(group.bank.name + " · " + group.code + ".csv", systemImage: "square.and.arrow.up") { output(batch, .csv(group.code)) }
+                    }
+                    Button(tr("قائمة منتسبي إعادة المبالغ", "Refund roster"), systemImage: "doc.text.magnifyingglass") { output(batch, .roster, previewPDF: true) }
+                    Button(tr("تصدير جميع الملفات", "Export all files"), systemImage: "square.and.arrow.up") { output(batch) }
+                }
+            } else {
+                Text(tr("راجع بيانات الدفعة من خيار التعديل لتجهيز ملفاتها.", "Review the saved batch details to generate its files.")).foregroundStyle(.secondary)
+            }
             Section(tr("المنتسبون", "Employees")) {
                 ForEach(snapshot.rows) { row in
                     VStack(alignment: .leading, spacing: 4) {
@@ -92,23 +134,12 @@ private struct RefundArchivedDetail: View {
                     }
                 }
             }
-            if let batch = try? snapshot.plan() {
-                LabeledContent(tr("المجموع الكلي", "Grand total"), value: Money.format(Double(batch.total)))
-                Button(tr("تصدير ملفات الدفعة", "Export batch files"), systemImage: "square.and.arrow.up") {
-                    exporting = true
-                    Task {
-                        defer { exporting = false }
-                        do {
-                            let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: snapshot.date, letters: snapshot.letters) }
-                            ActivityShare.present(urls) { _ in
-                                if let folder = urls.first?.deletingLastPathComponent() { try? FileManager.default.removeItem(at: folder) }
-                            }
-                        } catch { self.error = error.localizedDescription }
-                    }
-                }.disabled(exporting)
-            }
             if let error { Text(error).foregroundStyle(.red) }
         }
+        .disabled(exporting)
+        .sheet(item: $preview, onDismiss: {
+            if let folder = previewFolder { try? FileManager.default.removeItem(at: folder); previewFolder = nil }
+        }) { StatementPreview(file: $0) }
         .navigationTitle(tr("تفاصيل الدفعة", "Batch details"))
     }
 }

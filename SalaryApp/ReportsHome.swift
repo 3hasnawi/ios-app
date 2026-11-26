@@ -97,7 +97,7 @@ struct ReportsView: View {
         case .audit: AuditView(month: month?.name ?? "", months: months.map(\.name))
         case .salaryTrust(let status): SalaryTrustView(initialStatus: status)
         case .transferFiles: TransferFilesView()
-        case .refunds(let month): EmployeeRefundView(month: month)
+        case .refunds(let month): RefundHomeView(month: month)
         case .fundingExpenses: FundingExpensesView(month: month?.name ?? "", revision: loadKey)
         case .entities: EntitiesView(month: month?.name ?? "", groups: deductionGroups, loaded: deductionsReady, loadError: deductionsError, showExport: $showExport, onRename: { await loadDeductions() })
         case .group(let group): ReportDetailView(group: group)

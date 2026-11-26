@@ -68,6 +68,11 @@ for (sample, count) in [(entries, 6), ([entries[0]], 3), ([entries[1],entries[3]
     precondition(urls.count == count && Set(urls.map(\.lastPathComponent)).count == count)
     try FileManager.default.removeItem(at: urls[0].deletingLastPathComponent())
 }
+for (choice, ext) in [(EmployeeRefundExport.Output.letter(rafidain: true), "pdf"), (.letter(rafidain: false), "pdf"), (.roster, "pdf"), (.csv("RSHD"), "csv")] {
+    let files = try EmployeeRefundExport.make(batch, date: Date(), letters: .init(), only: choice)
+    precondition(files.count == 1 && files[0].pathExtension == ext)
+    try FileManager.default.removeItem(at: files[0].deletingLastPathComponent())
+}
 precondition((try? plan(entries + [entries[0]])) == nil && (try? plan([])) == nil)
 var wrong = banks; wrong["RSHD"]?.bic = "OTHRIQ00"
 precondition(batch.groups.first { $0.isRafidain }?.bank.bic == "RAFBIQB1098")

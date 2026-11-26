@@ -190,7 +190,7 @@ enum HomeCard: String, CaseIterable, Identifiable {
 /// صفحات تُفتح من بطاقات الرئيسية (بالضغط أو من قائمة الضغط المطوّل).
 enum HomeRoute: Hashable, Identifiable {
     case audit, salary, deductions, backup, reports, transferFiles, payrollBreakdown
-    case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds(String)
+    case salaryTrust, fundingExpenses, employeeDeductions, payrollItems, refunds(String), refundDraft(String)
     case commandDeductions
     case entityAlert(DeductionEntityAlertKind)
     case salaryChange(SalaryChangeKind), deductionChange(DeductionGroupKind)
@@ -298,7 +298,8 @@ struct HomeDashboard: View {
             case .fundingExpenses: FundingExpensesView(month: current?.name ?? "", revision: statsKey)
             case .employeeDeductions: EmployeeDeductionsView()
             case .payrollItems: PayrollItemsView(groups: current?.payrollReportGroups ?? [], month: current?.name ?? "")
-            case .refunds(let month): EmployeeRefundView(month: month)
+            case .refunds(let month): RefundHomeView(month: month)
+            case .refundDraft(let month): EmployeeRefundView(month: month)
             case .payrollBreakdown:
                 List {
                     if let current, let overview {
@@ -388,7 +389,7 @@ struct HomeDashboard: View {
             }
             .buttonStyle(.plain)
             if let source = refund.month, !refund.rows.isEmpty {
-                Button { open(.refunds(source)) } label: {
+                Button { open(.refundDraft(source)) } label: {
                     VStack(alignment: .leading) {
                         Label(tr("متابعة مسودة إعادة المبالغ", "Resume refund draft"), systemImage: "arrow.uturn.backward.circle")
                         Text(refund.date, format: .dateTime.year().month().day())

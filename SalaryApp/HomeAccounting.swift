@@ -27,8 +27,6 @@ struct HomeAccounting<Shortcuts: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("homeHeadlineDeductions") private var showDeductions = true
-    @ScaledMetric(relativeTo: .body) private var reviewHeight: CGFloat = 112
-    @State private var selectedReviewID: String?
 
     // الأخضر الداكن مناسب لسطح البطاقة العلوية، لكنه لا يُقرأ فوق بطاقات الوضع الليلي.
     private var accent: Color {
@@ -188,60 +186,27 @@ struct HomeAccounting<Shortcuts: View>: View {
                 .font(.subheadline.weight(.medium)).foregroundStyle(accent)
                 .frame(maxWidth: .infinity, minHeight: 108)
                 .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
-        } else if let first = items.first {
-            let currentID = items.first { $0.id == selectedReviewID }?.id ?? first.id
-            let selection = Binding(get: { currentID }, set: { selectedReviewID = $0 })
-            VStack(spacing: 2) {
-                TabView(selection: selection) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        Button {
-                            selectedReviewID = item.id
-                            openRoute(item.route)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: item.symbol).font(.title3).foregroundStyle(accent)
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(tr("حالة للمراجعة · \(Num.format(index + 1)) من \(Num.format(items.count))",
-                                            "Review item · \(index + 1) of \(items.count)"))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                        .lineLimit(2)
-                                    Text(item.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.forward").font(.caption.weight(.semibold)).foregroundStyle(accent)
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 156), spacing: 10)], alignment: .leading, spacing: 10) {
+                ForEach(items, id: \.id) { item in
+                    Button { openRoute(item.route) } label: {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack {
+                                Image(systemName: item.symbol).foregroundStyle(accent)
+                                Spacer()
+                                Image(systemName: "chevron.forward").font(.caption2).foregroundStyle(.secondary)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
-                            .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
-                            .contentShape(RoundedRectangle(cornerRadius: 21))
+                            Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                            Text(item.detail).font(.caption).foregroundStyle(.secondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityActions {
-                            if index > 0 {
-                                Button(tr("الحالة السابقة", "Previous review item")) { selectedReviewID = items[index - 1].id }
-                            }
-                            if index + 1 < items.count {
-                                Button(tr("الحالة التالية", "Next review item")) { selectedReviewID = items[index + 1].id }
-                            }
-                        }
-                        .accessibilityIdentifier("homeReview-" + item.id)
-                        .tag(item.id)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, minHeight: 98, alignment: .topLeading)
+                        .background(cardSurface, in: RoundedRectangle(cornerRadius: 16))
+                        .contentShape(RoundedRectangle(cornerRadius: 16))
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("homeReview-" + item.id)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: reviewHeight)
-                HStack(spacing: 5) {
-                    ForEach(items) { item in
-                        Circle().fill(item.id == currentID ? accent : accent.opacity(0.35))
-                            .frame(width: item.id == currentID ? 6 : 4, height: item.id == currentID ? 6 : 4)
-                    }
-                }
-                .accessibilityHidden(true)
-            }
-            .accessibilityIdentifier("homeReviewCarousel")
-            .onChange(of: currentID, initial: true) { _, id in
-                selectedReviewID = id
             }
         }
     }

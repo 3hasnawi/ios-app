@@ -8,6 +8,11 @@ using A=SalaryDesktop.Core;
 
 static class AccountingTests
 {
+    internal static string Iban(string code,int number){
+            var bban=code+number.ToString("D15");
+            var decimalText=string.Concat((bban+"IQ00").Select(c=>char.IsAsciiLetter(c)?(c-'A'+10).ToString():c.ToString()));
+            return "IQ"+(98-(int)(BigInteger.Parse(decimalText)%97)).ToString("D2")+bban;
+        }
     public static void Volume(string dir,Action<bool,string> check){
         string[] headers=Enumerable.Range(0,72).Select(i=>"بند حسابي تجريبي "+i).ToArray();
         string[] vals=Enumerable.Repeat("0",headers.Length).ToArray();
@@ -27,11 +32,7 @@ static class AccountingTests
     }
     public static void Run(string dir, Action<bool,string> check){
         string[] periods=["أيلول 2026","تشرين الأول 2026","تشرين الثاني 2026"];
-        string Iban(string code,int number){
-            var bban=code+number.ToString("D15");
-            var decimalText=string.Concat((bban+"IQ00").Select(c=>char.IsAsciiLetter(c)?(c-'A'+10).ToString():c.ToString()));
-            return "IQ"+(98-(int)(BigInteger.Parse(decimalText)%97)).ToString("D2")+bban;
-        }
+
         {
             var directory=new Store(Path.Combine(dir,"account-directory"));
             var account=AccountDirectory.Account("جهة تجريبية","الرافدين / فرع الأنبار",Iban("RAFB",31),"","000000000000031");

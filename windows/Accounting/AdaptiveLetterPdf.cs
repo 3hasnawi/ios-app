@@ -228,8 +228,22 @@ public static class AdaptiveLetterPdf
         }
         return result;
     }
-    public static byte[] Write(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required, LetterTemplate? template=null)
+    public static byte[] Write(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required, LetterTemplate? template=null, bool singlePageBankRefund=false)
     {
+        if (!singlePageBankRefund) return Render(blocks,source,group,signatureOffset,required,template,null);
+        // نقيس الكتاب كاملاً مع اللجنة والتذييل قبل اعتماد حجم الجدول، كما في الآيفون.
+        for (int cap=19; cap>=16; cap--) {
+            try { return Render(blocks,source,group,signatureOffset,required,template,cap); }
+            catch (RefundPageFit) { }
+        }
+        throw new InvalidDataException("لا يتسع كتاب المصارف في صفحة واحدة. راجع حجم الخط أو موضع التواقيع في قالب الدفعة.");
+    }
+
+    private sealed class RefundPageFit : Exception { }
+
+    private static byte[] Render(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required, LetterTemplate? template,int? refundCap)
+    {
+        bool compact=refundCap.HasValue;
         if (signatureOffset is < -60 or > 60 || blocks.Count < 7 || blocks[0].Paragraph is not { } header || blocks[1].Paragraph is not { } reference)
             throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
         int Size(string part,int fallback)=>template?.Size(part,fallback)??fallback;
@@ -260,10 +274,10 @@ public static class AdaptiveLetterPdf
             throw new InvalidDataException("الترويسة أو العدد والتاريخ لا تتسع في موضعها؛ اختصر النص.");
 
         var pages = new List<List<Draw>> { new() };
-        float y = 23, limit = 590;
+        float y = 23, limit = compact ? Bottom : 590;
         var expectingFooter = false; float? signatureEnd = null;
         void Add(Draw draw) => pages[^1].Add(draw);
-        void NextPage() { if (pages.Count >= 4000) throw new InvalidDataException("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات."); pages.Add(new()); y = Margin; }
+        void NextPage() { if (compact) throw new RefundPageFit(); if (pages.Count >= 4000) throw new InvalidDataException("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات."); pages.Add(new()); y = Margin; }
         void AddLines(IEnumerable<TextLine> items, float x, float width, float flush)
         {
             foreach (var line in items)
@@ -279,12 +293,12 @@ public static class AdaptiveLetterPdf
         AddLines(headerLines, 28, headingWidth, 0.5f);
         y = MathF.Max(150, y + 8);
         AddLines(refLines, 28, headingWidth, 1);
-        y = MathF.Max(220, y + 12);
+        y = MathF.Max(compact ? 200 : 220, y + (compact ? 5 : 12));
         var afterBreak = false; var needsClosing = false;
         void AddClosing()
         {
             var closing = new LetterParagraph(Closing, "Times New Roman", Size("closing",32), true, true);
-            y += 15;
+            y += compact ? 6 : 15;
             AddLines(Lines(closing.Text, FaceOf(closing), SizeOf(closing.HalfPoints), ContentWidth), Margin, ContentWidth, 0.5f);
             needsClosing = false;
         }
@@ -303,7 +317,7 @@ public static class AdaptiveLetterPdf
                 if (needsClosing && p.Text.StartsWith("المرفقات:", StringComparison.Ordinal)) AddClosing();
                 if (blockIndex == 2)
                 {
-                    y += 18;
+                    y += compact ? 7 : 18;
                     var salutation = new LetterParagraph("تحية طيبة ..", "Times New Roman", Size("salutation",28), true);
                     AddLines(Lines(salutation.Text, FaceOf(salutation), SizeOf(salutation.HalfPoints), ContentWidth), Margin, ContentWidth, 1);
                     y += 7; needsClosing = true;
@@ -319,7 +333,7 @@ public static class AdaptiveLetterPdf
                     var footerHeight = ls.Sum(l => l.Height); const float footerBottom = 832;
                     if (signatureEnd is not { } end || footerHeight > footerBottom - Margin) throw new InvalidDataException("الهامش السفلي لا يتسع؛ اختصر النص.");
                     y = footerBottom - footerHeight; limit = footerBottom;
-                    if (y < end + 8) throw new InvalidDataException("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.");
+                    if (y < end + 8) throw compact ? new RefundPageFit() : new InvalidDataException("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.");
                     expectingFooter = false;
                 }
                 AddLines(ls, Margin, ContentWidth, isBody ? template?.BodyAlignment switch{"left"=>0,"center"=>0.5f,_=>1} : p.Centered ? 0.5f : 1);
@@ -327,7 +341,7 @@ public static class AdaptiveLetterPdf
                 continue;
             }
             if (block.Table is not { } table) throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
-            if (needsClosing && table.ShowBorders && !afterBreak) { AddClosing(); y += 18; }
+            if (needsClosing && table.ShowBorders && !afterBreak) { AddClosing(); y += compact ? 4 : 18; }
             var count = table.Headers.Count == 0 ? (table.Rows.FirstOrDefault()?.Length ?? 0) : table.Headers.Count;
             var weights = table.ColumnWeights ?? Enumerable.Repeat(1, count).ToArray();
             if (count is <= 0 or > 12 || weights.Length != count || weights.Any(w => w <= 0) || table.Rows.Any(r => r.Length != count) || table.Rows.Count >= 50_000 || table.WidthFraction is <= 0 or > 1)
@@ -339,13 +353,14 @@ public static class AdaptiveLetterPdf
             var groupTable = group && afterBreak; var signature = !table.ShowBorders;
             table=table with{HalfPoints=Size(signature?"signatures":"table",table.HalfPoints)};
             if(signature)tableRight+=template?.SignatureHorizontalOffset??0;
-            var chosen = table.HalfPoints;
+            var chosen = !signature && compact ? Math.Min(table.HalfPoints,refundCap!.Value) : table.HalfPoints;
 
             (List<TextLine>[] Cells, float Height) Layout(IReadOnlyList<string> values, bool bold, int halfPoints)
             {
                 if (values.Count != count) throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
                 var face = fonts.For(table.Font, bold); var size = SizeOf(halfPoints);
-                float spacing = groupTable ? 0.5f : (signature ? 1 : 3), padding = groupTable ? 2 : 6, tallest = 0;
+                bool tight = groupTable || (compact && !signature);
+                float spacing = tight ? 0.5f : (signature ? 1 : 3), padding = tight ? 2 : 6, tallest = 0;
                 var cells = new List<TextLine>[count];
                 for (int i = 0; i < count; i++)
                 {
@@ -399,9 +414,9 @@ public static class AdaptiveLetterPdf
                     catch (SignatureFit) { }
                 }
                 if (!found) throw new InvalidDataException("أحد أسماء اللجنة أو صفاتها لا يتسع في سطر التوقيع؛ راجع أسماء اللجنة.");
-                var signatureStart = 610f + signatureOffset;
+                var signatureStart = compact && signatureOffset==0 ? MathF.Max(610,y+8) : 610f+signatureOffset;
                 var signatureHeight = Layout(table.Rows[0], true, chosen).Height;
-                if (y + 8 > signatureStart || signatureStart + signatureHeight > Bottom) throw new InvalidDataException("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.");
+                if (y + 8 > signatureStart || signatureStart + signatureHeight > Bottom) throw compact ? new RefundPageFit() : new InvalidDataException("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.");
                 y = signatureStart; limit = Bottom;
                 DrawRow(table.Rows[0], true);
                 signatureEnd = y; expectingFooter = true;
@@ -435,7 +450,7 @@ public static class AdaptiveLetterPdf
                 }
                 DrawRow(table.Rows[i], bold);
             }
-            y += 8;
+            y += compact ? 3 : 8;
         }
         if (expectingFooter) throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
 

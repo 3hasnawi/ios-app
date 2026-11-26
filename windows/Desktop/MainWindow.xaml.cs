@@ -159,12 +159,8 @@ public partial class MainWindow : Window
         foreach(var t in intro.Children.OfType<TextBlock>().Concat(value.Children.OfType<TextBlock>()))t.Foreground=Brushes.White;
         hero.Children.Add(intro);hero.Children.Add(value);var banner=Box(hero,"#1E5646");banner.Padding=new Thickness(25,24,25,24);panel.Children.Add(banner);
         if(store.Active==null)panel.Children.Add(ButtonFor("اختيار نسخة الرواتب.zip",()=>_=Import(),"\uE8E5",true));
-        var pair=new Grid();pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});pair.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
         var reviewHost=new StackPanel();
         var revision=store.Active;
-        if(reviewMonth!=selectedPeriod?.Name||reviewRevision!=revision){
-            selectedReviewKey=null;reviewMonth=selectedPeriod?.Name;reviewRevision=revision;
-        }
         reviewHost.Children.Add(Text(selectedPeriod is {Key:>0}?"جارٍ تحميل حالات الشهر…":"تظهر حالات المراجعة بعد استيراد البيانات.",15));
         var reviews=Column(Bar(Glyph("\uEA8F","#8E6126"),Text("حالات المراجعة",19,true)),reviewHost);
         var left=Column(Bar(Text("كشوفي المثبتة",19,true),ButtonFor("تخصيص",EditPins,"\uE713")));
@@ -185,7 +181,7 @@ public partial class MainWindow : Window
             }
             button.MouseEnter+=(_,_)=>Lift(-2);button.MouseLeave+=(_,_)=>Lift(0);
             tiles.Children.Add(button);}
-        left.Children.Add(tiles);var leftBox=Box(left);Grid.SetColumn(leftBox,1);pair.Children.Add(Box(reviews));pair.Children.Add(leftBox);panel.Children.Add(pair);
+        left.Children.Add(tiles);panel.Children.Add(Box(reviews));panel.Children.Add(Box(left));
         var library=Bar();foreach(var key in WorkPages.Where(k=>k!=SearchName))library.Children.Add(ButtonFor(key,()=>Activate(key)));
         panel.Children.Add(Box(Column(Text("دليل الكشوف",18,true),library)));
         var recent=Column(Text("الأشهر المحفوظة",18,true));
@@ -489,8 +485,15 @@ public partial class MainWindow : Window
                 }
             }else if(name=="إعادة المبالغ"){
                 ShowPage(TransfersName);Click(CanvasArea,RefundTransfers);await workPageLoad;
-                var history=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="الدفعات المحفوظة");
-                history.SelectedIndex=0;Click(CanvasArea,"فتح الدفعة");
+                Click(CanvasArea,"الدفعات المحفوظة");
+                var saved=store.Refunds().First(b=>b.ArchiveId!="draft");
+                var savedRow=Controls<Button>(CanvasArea).First(b=>AutomationProperties.GetName(b).StartsWith(saved.Date.ToString("yyyy/MM/dd")));
+                savedRow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var banks=saved.Groups();
+                if(Controls<Button>(CanvasArea).Count(b=>AutomationProperties.GetName(b)=="تصدير CSV")!=banks.Count ||
+                    Controls<Button>(CanvasArea).Count(b=>AutomationProperties.GetName(b).StartsWith("معاينة كتاب إعادة مبالغ"))!=banks.GroupBy(g=>g.Code=="RAFB").Count())
+                    throw new InvalidDataException("ملفات الدفعة المحفوظة لا تطابق مصارفها.");
+
             }else{
                 if(name is HealthName or FundName){
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
@@ -499,15 +502,9 @@ public partial class MainWindow : Window
             }
             if(name=="الرئيسية"){
                 await homeLoad;
-                Button ReviewCard()=>Controls<Button>(CanvasArea).SingleOrDefault(b=>AutomationProperties.GetAutomationId(b)=="HomeReviewCard")
-                    ??throw new InvalidDataException($"لم تظهر بطاقة المراجعة في {SelectedMonth?.Name}. {Status.Text} {string.Join(" | ",Controls<TextBlock>(CanvasArea).Select(t=>t.Text))}");
-                string first=AutomationProperties.GetName(ReviewCard());
-                if(Controls<Button>(CanvasArea).Any(b=>AutomationProperties.GetName(b)=="التالي")){
-                    Click(CanvasArea,"التالي");
-                    if(AutomationProperties.GetName(ReviewCard())==first)throw new InvalidDataException("لم ينتقل العرض إلى حالة المراجعة التالية.");
-                    Click(CanvasArea,"السابق");
-                    if(AutomationProperties.GetName(ReviewCard())!=first)throw new InvalidDataException("تعذرت العودة إلى بطاقة المراجعة السابقة.");
-                }
+                var cards=Controls<Button>(CanvasArea).Where(b=>AutomationProperties.GetAutomationId(b).StartsWith("HomeReview-")).ToList();
+                if(cards.Count<2 || cards.Select(AutomationProperties.GetName).Distinct().Count()!=cards.Count)
+                    throw new InvalidDataException("لم تظهر حالات الشهر كبطاقات مستقلة.");
             }
             if(name=="الإعدادات"){
                 FindAction(CanvasArea,"استيراد ملف بيانات");
@@ -565,14 +562,14 @@ public partial class MainWindow : Window
             }
             if(grid!=null&&name!=EmployeePage)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
-            if(name is DeductionsName or EmployeePage or CurrentTransfers or DeferredTransfers or "كشف البنك" or AuditName or SearchName or "إعادة المبالغ" or TrustName or "الكتب المحفوظة" or HealthName or FundName){
+            if(name is DeductionsName or EmployeePage or CurrentTransfers or DeferredTransfers or "كشف البنك" or AuditName or SearchName or TrustName or "الكتب المحفوظة" or HealthName or FundName){
                 static IEnumerable<Grid> FilterRows(DependencyObject root){
                     if(root is Grid row&&AutomationProperties.GetAutomationId(row)=="ReportFilterRow"){yield return row;yield break;}
                     foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
                         foreach(var result in FilterRows(child))yield return result;
                 }
                 var rows=FilterRows(CanvasArea).ToArray();
-                if(rows.Length!=(name=="إعادة المبالغ"?2:1))throw new InvalidDataException("شريط التصفية غير موجود في "+name);
+                if(rows.Length!=1)throw new InvalidDataException("شريط التصفية غير موجود في "+name);
                 var original=CanvasArea.MaxWidth;
                 try{
                     foreach(double available in new[]{628d,original}){

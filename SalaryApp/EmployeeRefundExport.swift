@@ -22,7 +22,11 @@ nonisolated struct RefundLetters: Codable, Sendable {
 }
 
 nonisolated enum EmployeeRefundExport {
-    static func make(_ batch: EmployeeRefund.Batch, date: Date, letters: RefundLetters) throws -> [URL] {
+    enum Output: Equatable, Sendable {
+        case csv(String), letter(rafidain: Bool), roster
+    }
+
+    static func make(_ batch: EmployeeRefund.Batch, date: Date, letters: RefundLetters, only: Output? = nil) throws -> [URL] {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -34,13 +38,13 @@ nonisolated enum EmployeeRefundExport {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
         do {
             var urls: [URL] = []
-            for group in batch.groups {
+            for group in batch.groups where only == nil || only == .csv(group.code) {
                 let data = EmployeeRefund.csv(group, batch: batch, day: day)
                 let url = folder.appendingPathComponent("إعادة مبالغ - " + group.code + ".csv")
                 try data.write(to: url, options: [.atomic, .completeFileProtection])
                 urls.append(url)
             }
-            for rafidain in [true, false] {
+            for rafidain in [true, false] where only == nil || only == .letter(rafidain: rafidain) {
                 let groups = batch.groups.filter { $0.isRafidain == rafidain }
                 guard !groups.isEmpty else { continue }
                 let title = rafidain ? "الرافدين" : "الرشيد والمصارف الأخرى"
@@ -51,6 +55,7 @@ nonisolated enum EmployeeRefundExport {
                     verifyNumericTableCells: !rafidain, signatureHorizontalOffset: settings.template?.signatureHorizontalOffset ?? 0, template: settings.template, singlePageBankRefund: !rafidain)
                 urls.append(url)
             }
+            if let only, only != .roster { return urls }
             let rosterURL = folder.appendingPathComponent("قائمة منتسبي إعادة المبالغ.pdf")
             formatter.dateFormat = "yyyy/MM/dd"
             let sheet = roster(batch, date: ReportSheet.easternDigits(formatter.string(from: date)))

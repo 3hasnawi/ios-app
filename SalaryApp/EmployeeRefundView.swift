@@ -2,6 +2,22 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 
+struct RefundHomeView: View {
+    let month: String
+    var body: some View {
+        List {
+            NavigationLink { EmployeeRefundView(month: month) } label: {
+                Label(tr("دفعة جديدة", "New batch"), systemImage: "plus.circle")
+            }
+            NavigationLink { RefundHistoryView(storage: RefundDraft.shared.storage) } label: {
+                Label(tr("الدفعات المحفوظة", "Saved batches"), systemImage: "archivebox")
+            }
+        }
+        .navigationTitle(tr("إعادة المبالغ", "Employee refunds"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 struct EmployeeRefundView: View {
     private let initialMonth: String
     private let editMonths: [String]

@@ -135,8 +135,8 @@ public sealed partial class Store(string root)
             return result;
         }
         var curr=Set(month.Name);var prev=Set(previous.Name);
-        return curr.Keys.Except(prev.Keys).Select(e=>new Review("جهة ظهرت في الشهر المختار",curr[e],month.Name))
-            .Concat(prev.Keys.Except(curr.Keys).Select(e=>new Review("جهة غابت عن الشهر المختار",prev[e],previous.Name))).ToList();
+        return curr.Keys.Except(prev.Keys).Select(e=>new Review("جهات جديدة",curr[e],month.Name))
+            .Concat(prev.Keys.Except(curr.Keys).Select(e=>new Review("جهات غائبة عن الشهر",prev[e],previous.Name))).ToList();
     }
     public Statement PersonStatement(string person,string agency,string reference,int start,int end,string header)
     {

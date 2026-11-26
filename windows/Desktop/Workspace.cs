@@ -74,10 +74,10 @@ public partial class MainWindow
                 string? initial=auditFilter;auditFilter=null;var result=await Audit(month);
                 if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
                 CanvasArea.Children.Remove(loading);
-                var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>r.Kind).Distinct()));if(initial!=null)filter.SelectedItem=initial;
+                var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>ReviewTitle(r.Kind)).Distinct()));if(initial!=null)filter.SelectedItem=initial;
                 var head=FilterBar(("حالة المراجعة",filter,0),("",ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")),0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
                 var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
-                void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||r.Kind==(string)filter.SelectedItem).ToList();}
+                void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||ReviewTitle(r.Kind)==(string)filter.SelectedItem).ToList();}
                 var preview = ButtonFor("معاينة الكشف",()=>Guard(()=>{
                     var rows = list.ItemsSource.Cast<A.SalaryReviewRow>().Select(r=>new object?[]{r.Kind,r.Name,r.Detail,r.Before,r.After}).ToList();
                     var sheet = new Sheet(AuditName,AuditName+" · "+month+" · "+filter.SelectedItem,["الحالة","المنتسب","التفاصيل","السابق","الحالي"],rows,4,0,ShowTotal:false);
@@ -90,7 +90,7 @@ public partial class MainWindow
             if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             CanvasArea.Children.Remove(loading);
             if(key is CurrentTransfers or DeferredTransfers){TransferDesk(snapshot,month,key==DeferredTransfers);return;}
-            if(key==RefundTransfers){RefundDesk(snapshot,month);return;}
+            if(key==RefundTransfers){RefundHome(snapshot,month);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var funding=key==FundingName&&snapshot.Employees.Count>0?await Task.Run(()=>WorkReports.FundingData(snapshot,month)):null;
