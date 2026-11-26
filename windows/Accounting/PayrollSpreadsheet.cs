@@ -42,6 +42,29 @@ public static class PayrollSpreadsheet
                 for (int i = 0; i < headers.Length; i++) if (!used.Contains(i) && headers[i].Length > 0 && (exact ? headers[i] == name : headers[i].Contains(name, StringComparison.Ordinal))) { used.Add(i); return i; }
         return -1;
     }
+    public static IExcelDataReader OpenWorkbook(FileStream file)
+    {
+        if (file.Length is <= 0 or > 100 * 1024 * 1024) throw new InvalidDataException("حجم ملف Excel غير مدعوم.");
+        file.Position=0;
+        using (var zip = new ZipArchive(file, ZipArchiveMode.Read, true))
+        {
+            long size = 0; var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in zip.Entries)
+                if (!names.Add(entry.FullName) || entry.Length > 512 * 1024 * 1024 || (size += entry.Length) > 1_000_000_000) throw new InvalidDataException("ملف Excel مكرر المحتوى أو يتجاوز الحجم المدعوم.");
+        }
+        file.Position = 0; Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return ExcelReaderFactory.CreateOpenXmlReader(file,new ExcelReaderConfiguration{LeaveOpen=true});
+    }
+
+    public static (int Name,int Net,int Amount) MonthlyColumns(string[] normalized)
+    {
+        var used=new HashSet<int>();
+        int name=Find(normalized,Names,used,true);
+        if(name<0)return (-1,-1,-1);
+        int net=Find(normalized,Nets,used);
+        return (name,net,net>=0?net:Find(normalized,Amounts,used));
+    }
+
     public static PayrollImportPreview Read(string path, string month)
     {
         if (MonthNames.SortKey(month) == 0) throw new InvalidDataException("حدد شهراً وسنة صالحين قبل استيراد الملف.");
@@ -50,14 +73,7 @@ public static class PayrollSpreadsheet
         try
         {
             var digest = SHA256.HashData(file); file.Position = 0;
-            using (var zip = new ZipArchive(file, ZipArchiveMode.Read, true))
-            {
-                long size = 0; var names = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var entry in zip.Entries)
-                    if (!names.Add(entry.FullName) || entry.Length > 512 * 1024 * 1024 || (size += entry.Length) > 1_000_000_000) throw new InvalidDataException("ملف Excel مكرر المحتوى أو يتجاوز الحجم المدعوم.");
-            }
-            file.Position = 0; Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            using var reader = ExcelReaderFactory.CreateOpenXmlReader(file);
+            using var reader = OpenWorkbook(file);
             var employees = new List<Employee>(); var deductions = new List<Deduction>(); var problems = new List<PayrollImportProblem>();
             bool recognized = false; int totalRows = 0;
             var excludedNames = Names.Concat(TotalNames).Select(PayrollAnalysis.Normalize).ToHashSet(StringComparer.Ordinal);
@@ -76,8 +92,8 @@ public static class PayrollSpreadsheet
                         if (row > 20) break;
                         var raw = Enumerable.Range(0, reader.FieldCount).Select(Cell).ToArray(); var normalized = raw.Select(PayrollAnalysis.Normalize).ToArray();
                         nonEmpty |= raw.Any(v => v.Length > 0);
-                        var used = new HashSet<int>(); var n = Find(normalized, Names, used, true); if (n < 0) continue;
-                        var net = Find(normalized, Nets, used); var sum = net >= 0 ? net : Find(normalized, Amounts, used);
+                        var (n,net,sum)=MonthlyColumns(normalized); if(n<0)continue;
+                        var used=new HashSet<int>{n,sum};
                         if (sum < 0) { problems.Add(new(sheet, row, "وجد عمود الاسم دون صافي راتب أو مبلغ استقطاع.")); skip = true; break; }
                         if (net < 0 && Find(normalized, ["شهر", "الشهر", "month"], new HashSet<int>(), true) >= 0)
                         { problems.Add(new(sheet, row, "ملف استقطاعات متعدد الأشهر يحتاج مستورداً سنوياً؛ لم تُقرأ صفوفه.")); skip = true; break; }

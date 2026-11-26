@@ -51,6 +51,32 @@ static class AccountingTests
             }
             w.SaveAs(xlsx);
         }
+        ImportWorkbook Inspect(string path){using var input=File.OpenRead(path);return ImportWorkbook.Inspect(input);}
+        check(Inspect(xlsx).Kind==(ImportData.Salaries|ImportData.Deductions),"identify payroll and deductions together by worksheet columns");
+        using(var single=new XLWorkbook(xlsx)){
+            single.Worksheet("الرواتب").Delete();
+            string path=Path.Combine(dir,"arbitrary.xlsx");single.SaveAs(path);
+            check(Inspect(path).Kind==ImportData.Deductions,"identify deductions without relying on the filename");
+        }
+        using(var salaryBook=new XLWorkbook(xlsx)){
+            salaryBook.Worksheet("الاستقطاعات").Delete();
+            string path=Path.Combine(dir,"salary-only.xlsx");salaryBook.SaveAs(path);
+            check(Inspect(path).Kind==ImportData.Salaries,"salary columns take precedence over embedded deduction columns");
+        }
+        using(var staffBook=new XLWorkbook()){
+            var tab=staffBook.AddWorksheet("ورقة 1");
+            tab.Cell(1,1).Value="عنوان تجريبي";tab.Cell(3,1).Value="الاسم الكامل";tab.Cell(3,2).Value="الرقم الإحصائي";
+            tab.Cell(4,1).Value="منتسب تجريبي";tab.Cell(4,2).Value="00021";
+            string path=Path.Combine(dir,"roster.xlsx");staffBook.SaveAs(path);
+            var staffPreview=Inspect(path);
+            check(staffPreview.Kind==ImportData.Staff&&staffPreview.Members.Single().Stat=="00021","recognize roster and preserve text identifiers");
+            var trust=staffBook.AddWorksheet("ورقة 2");string[] headers=["الاسم","المبلغ","الشهر","السنة","حالة الصرف"];
+            for(int i=0;i<headers.Length;i++)trust.Cell(1,i+1).Value=headers[i];
+            staffBook.SaveAs(path);
+            try{Inspect(path);throw new Exception("unsafe mixed replacement");}catch(InvalidDataException){check(true,"reject mixed independent replacements");}
+            tab.Delete();staffBook.SaveAs(path);
+            check(Inspect(path).Kind==ImportData.Trust,"recognize trusts before requesting a payroll month");
+        }
         var s=new Store(Path.Combine(dir,"work"));foreach(var m in periods){var preview=s.PreviewExcel(xlsx,m);check(preview.Employees.Count==3&&preview.Deductions.Count==4,"mixed Excel with zero-value rows skipped "+m);s.ApplyExcel(preview,s.Active);}
         string month=periods[^1];var snapshot=s.Snapshot(periods);
         check(snapshot.Employees.Count==6&&snapshot.Deductions.Count==12,"third payroll replaces oldest without deleting historical deductions");

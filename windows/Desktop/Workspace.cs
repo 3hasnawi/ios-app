@@ -35,20 +35,6 @@ public partial class MainWindow
         stack.Children.Add(Bar(ButtonFor("متابعة",()=>dialog.DialogResult=true,"\uE73E",true),ButtonFor("إلغاء",()=>dialog.DialogResult=false)));
         dialog.Content=new ScrollViewer{Content=Box(stack),HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return dialog.ShowDialog()==true;
     }
-    async Task ImportExcel()
-    {
-        var dialog=new OpenFileDialog{Filter="ملفات Excel|*.xlsx"};if(dialog.ShowDialog(this)!=true)return;
-        var expected=store.Active;
-        var label=Path.GetFileNameWithoutExtension(dialog.FileName);
-        var field=new TextBox{Text=Arabic.Period(label)>0?label:SelectedMonth?.Name??""};
-        if(!Form("استيراد الرواتب والاستقطاعات",Labeled("الشهر والسنة",field,330)))return;
-        try{
-            string month=field.Text;var path=dialog.FileName;
-            var preview=await Task.Run(()=>store.PreviewExcel(path,month));
-            if(!Form("مراجعة الاستيراد",Text(month+"　·　"+preview.Employees.Count+" راتب　·　"+preview.Deductions.Count+" استقطاع"),Text("تُستبدل بيانات النوع الموجود في الملف لهذا الشهر. عند إدخال رواتب تُحفظ أحدث فترتين للرواتب.")))return;
-            await Working(()=>store.ApplyExcel(preview,expected),"حُفظ الاستيراد وتحقق البرنامج من النسخة الجديدة.",()=>{Reload();ShowPage("الرئيسية");});
-        }catch(Exception e){Error(e);}
-    }
     string? auditFilter;
     void SearchAll()
     {

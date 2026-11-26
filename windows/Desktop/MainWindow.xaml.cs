@@ -236,8 +236,7 @@ public partial class MainWindow : Window
             var heading=Text("المساحة على الحاسبة",18,true);heading.Margin=new Thickness(0,0,0,12);legend.Margin=new Thickness(0,10,0,4);
             p.Children.Add(Box(Column(heading,sizes,legend,Text("عند الحفظ ينتقل أرشيف الآيفون وحده. يُعاد إنشاء فهرس البحث على الحاسبة عند فتح النسخة.",14))));
         }
-        p.Children.Add(ButtonFor("استيراد رواتب أو استقطاعات من Excel",()=>_=ImportExcel(),"\uE8B5"));
-        p.Children.Add(Bar(new[]{"الأمانات","الملاك","مراجع الكتب"}.Select(kind=>(UIElement)ButtonFor("استيراد "+kind,()=>_=ImportLocal(kind))).ToArray()));
+        p.Children.Add(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"));
         p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+InstalledVersion,14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
         CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
     }
@@ -444,6 +443,7 @@ public partial class MainWindow : Window
                 ShowPage(name);
             }
             if(name=="الإعدادات"){
+                FindAction(CanvasArea,"استيراد ملف بيانات");
                 ComboBox Setting(string name)=>Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)==name);
                 string statementMonth=months.Single(m=>m.Key==202610).Name;
                 var statement=WorkReports.Command(store.Snapshot(statementMonth),statementMonth);

@@ -7,25 +7,53 @@ using A=SalaryDesktop.Core;
 namespace AnbarPayroll.Desktop;
 public partial class MainWindow
 {
-    async Task ImportLocal(string kind)
+    async Task ImportDataFile()
     {
-        var revision=store.Active;
-        var dialog=new OpenFileDialog{Filter=kind switch{"الأمانات"=>"ملف الأمانات|*.xlsx","الملاك"=>"قاعدة الملاك|*.accdb;*.mdb",_=>"مراجع كتب التحويل|*.zip"}};
+        var dialog=new OpenFileDialog{Title="استيراد ملف بيانات",Filter="الملفات المدعومة|*.xlsx;*.accdb;*.mdb;*.zip"};
         if(dialog.ShowDialog(this)!=true)return;
-        string file=dialog.FileName;
+        var file=dialog.FileName;
+        var revision=store.Active;
+        var extension=Path.GetExtension(file).ToLowerInvariant();
         try{
-            Action save;string review;
-            if(kind=="الأمانات"){
-                var ledger=await Task.Run(()=>A.SalaryTrustSpreadsheet.Read(file));
-                review=$"{ledger.Entries.Count:N0} قيد　·　المجموع {Arabic.Money(ledger.Entries.Sum(e=>(decimal)e.Amount))} دينار";
-                save=()=>store.ImportTrust(ledger,revision);
-            }else if(kind=="الملاك"){
-                var staff=await Task.Run(()=>StaffAccess.Read(file));
-                review=$"{staff.Count:N0} منتسب";save=()=>store.ImportStaff(staff,file,revision);
-            }else{
+            string kind,review;
+            Action save;
+            // يبقى ملف Excel نفسه مفتوحاً للقراءة من التعرف على أوراقه إلى مراجعة بياناته.
+            using var workbook=extension==".xlsx"?File.Open(file,FileMode.Open,FileAccess.Read,FileShare.Read):null;
+            if(workbook!=null){
+                var inspection=await Task.Run(()=>ImportWorkbook.Inspect(workbook));
+                if(inspection.Kind==ImportData.Staff){
+                    kind="الملاك";review=$"{inspection.Members.Count:N0} منتسب";
+                    save=()=>store.ImportStaff(inspection.Members,file,revision);
+                }else if(inspection.Kind==ImportData.Trust){
+                    kind="الأمانات";
+                    var ledger=await Task.Run(()=>A.SalaryTrustSpreadsheet.Read(file));
+                    review=$"{ledger.Entries.Count:N0} قيد　·　المجموع {Arabic.Money(ledger.Entries.Sum(e=>(decimal)e.Amount))} دينار";
+                    save=()=>store.ImportTrust(ledger,revision);
+                }else{
+                    kind=inspection.Kind switch{ImportData.Salaries=>"الرواتب",ImportData.Deductions=>"الاستقطاعات",_=>"الرواتب والاستقطاعات"};
+                    var key=Arabic.Period(Path.GetFileNameWithoutExtension(file));
+                    var field=new TextBox{Text=key>0?Arabic.Months[key%100-1]+" "+key/100:SelectedMonth?.Name??""};
+                    if(!Form("استيراد "+kind,Text(Path.GetFileName(file)),Labeled("الشهر والسنة",field,330)))return;
+                    int selected=A.MonthNames.SortKey(field.Text);
+                    if(selected==0)throw new InvalidDataException("اختر شهراً وسنة صالحين.");
+                    string month=months.FirstOrDefault(m=>m.Key==selected)?.Name??(Arabic.Months[selected%100-1]+" "+selected/100);
+                    var preview=await Task.Run(()=>store.PreviewExcel(file,month));
+                    var counts=new List<string>();
+                    if(preview.Employees.Count>0)counts.Add(preview.Employees.Count+" راتب");
+                    if(preview.Deductions.Count>0)counts.Add(preview.Deductions.Count+" استقطاع");
+                    if(!Form("مراجعة استيراد "+kind,Text(month+"　·　"+string.Join("　·　",counts)),
+                        Text(preview.Employees.Count==0?"تُستبدل استقطاعات الشهر المحدد.":"تُستبدل بيانات النوع الموجود لهذا الشهر، وتُحفظ أحدث فترتين للرواتب.")))return;
+                    await Working(()=>store.ApplyExcel(preview,revision),"حُفظت بيانات "+kind+".",()=>{Reload();ShowPage("الرئيسية");});
+                    return;
+                }
+            }else if(extension is ".accdb" or ".mdb"){
+                kind="الملاك";var members=await Task.Run(()=>StaffAccess.Read(file));
+                review=$"{members.Count:N0} منتسب";save=()=>store.ImportStaff(members,file,revision);
+            }else if(extension==".zip"){
+                kind="مراجع الكتب";
                 var (bytes,count)=await Task.Run(()=>{if(new FileInfo(file).Length>10_000_000)throw new InvalidDataException("حزمة المراجع كبيرة جداً.");var raw=File.ReadAllBytes(file);return (raw,A.LetterReferencePack.ReadArchive(raw).Count);});
                 review=count+" نموذج كتاب";save=()=>store.ImportReferences(bytes,revision);
-            }
+            }else throw new InvalidDataException("صيغة الملف غير مدعومة.");
             if(!Form("استبدال "+kind,Text(Path.GetFileName(file)),Text(review,17,true),Text("سيحل محتوى هذا الملف محل "+kind+" المحفوظة.")))return;
             await Working(save,"حُفظت "+kind+" في النسخة المحلية.",()=>{Reload();ShowPage("الإعدادات");});
         }catch(Exception e){Error(e);}
