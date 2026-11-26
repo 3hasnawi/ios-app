@@ -71,6 +71,8 @@ static class AccountingTests
         }
         var funding=WorkReports.Funding(snap,month);check(funding.Sheets[1].Rows[^1][2] is decimal diff&&diff==0,"expense details equal bank funding");
         check(WorkReports.Command(snap,month).Sheets[0].Rows.Count==3,"three command deductions from same period");
+        var duplicate=JsonSerializer.SerializeToUtf8Bytes(new{headers=new[]{"صندوق الشهداء","صندوق الشهداء","نشاط رياضي","رعاية صحية"},values=new[]{"10","20","0","0"}});
+        try{WorkReports.Command(snap with{Employees=[snap.Employees[0] with{RawColumns=duplicate}]},month);throw new Exception("conflicting command columns");}catch(InvalidDataException){check(true,"command report rejects conflicting duplicate payroll columns");}
         var refund=new RefundBatch(Guid.NewGuid().ToString().ToUpperInvariant(),"جهة تجريبية",day,"جهة دافعة تجريبية",payer,snap.Employees.Select((e,i)=>RefundBatch.Employee(e) with{Amount=1000+i}).ToList());
         s.SaveRefund(refund,s.Active);snap=s.Snapshot(month);var returned=s.Refunds().Single();var groups=returned.Groups();
         check(groups.Count==2&&groups.Sum(g=>g.Total)==3003&&groups.Single(g=>g.Code=="RAFB").Bic=="RAFBIQB1098","refund archive preserves names, individual amounts and letter BIC");

@@ -83,10 +83,17 @@ public partial class MainWindow
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var report=await Task.Run(()=>key==FundingName?WorkReports.Funding(snapshot,month):WorkReports.Command(snapshot,month));
             if(page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
-            var content=Column(Text(key+"　·　"+month,20,true));
-            foreach(var sheet in report.Sheets){content.Children.Add(Text(sheet.Title,16,true));foreach(var row in sheet.Rows)content.Children.Add(Bar(Text(row[1]?.ToString()??"",14),Text(Arabic.Money((decimal)row[sheet.AmountColumn]!),16,true)));}
-            content.Children.Add(ButtonFor("معاينة وتصدير",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
-            CanvasArea.Children.Add(new ScrollViewer{Content=Box(content),VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+            var panel=new DockPanel();
+            var reportBar=Bar(Text(month,18,true),ButtonFor("معاينة وتصدير",()=>new ReportWindow(report){Owner=this}.ShowDialog(),"\uE890",true));
+            DockPanel.SetDock(reportBar,Dock.Top);panel.Children.Add(reportBar);
+            var tabs=new TabControl();
+            foreach(var sheet in report.Sheets){
+                var columns=sheet.Columns.Select((name,i)=>(name,"["+i+"]",i==1?2.1:1)).ToArray();
+                var table=GridView(columns);
+                table.ItemsSource=sheet.Rows.Select(row=>row.Select(v=>v is decimal amount?Arabic.Money(amount):v?.ToString()??"").ToArray()).ToList();
+                tabs.Items.Add(new TabItem{Header=sheet.Name,Content=table});
+            }
+            panel.Children.Add(tabs);CanvasArea.Children.Add(panel);
         }catch(Exception e){if(page==key){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message,16));}}
     }
     void SpecialDesk(A.BackupSnapshot s,string month,bool health)

@@ -41,21 +41,39 @@ public static class WorkReports
     {
         string[] titles=["صندوق شهداء الشرطة","مديرية التدريب البدني والعاب الشرطة","مديرية شؤون الرعاية الصحية"];
         string[][] aliases=[["صندوق الشهداء","صندوق شهداء الشرطة"],["نشاط رياضي","النشاط الرياضي"],["رعاية صحية","الرعاية الصحية"]];
-        var sums=new decimal[3];var found=new bool[3];
-        foreach(var e in snapshot.Employees.Where(p=>p.Month==month)){
-            var fields=Fields(e);var items=e.Items==null?new():JsonSerializer.Deserialize<Dictionary<string,decimal>>(e.Items)!;
-            for(int i=0;i<3;i++){
-                var values=aliases[i].Select(Arabic.Key).Where(fields.ContainsKey).Select(k=>string.IsNullOrWhiteSpace(fields[k])?0m:A.PayrollSpreadsheet.ParseMoney(fields[k])??throw new InvalidDataException(titles[i])).Distinct().ToList();
-                if(values.Count==0)values=items.Where(k=>aliases[i].Any(a=>Arabic.Key(a)==Arabic.Key(k.Key))).Select(k=>k.Value).Distinct().ToList();
-                if(values.Count>1||values.Any(v=>v<0||v!=decimal.Truncate(v))||e.RawColumns!=null&&values.Count==0)throw new InvalidDataException("راجع عمود "+titles[i]+" في رواتب الشهر.");
-                if(values.Count==1){found[i]=true;sums[i]+=values[0];}
+        var kinds=aliases.SelectMany((names,i)=>names.Select(name=>(name,i))).ToDictionary(x=>Arabic.Key(x.name),x=>x.i);
+        var sums=new long[3];var found=new bool[3];
+        foreach(var employee in snapshot.Employees.Where(p=>p.Month==month)){
+            var row=new long?[3];
+            void Record(int kind,decimal? value){
+                if(value is null or <0 or >long.MaxValue || value!=decimal.Truncate(value.Value) || (row[kind] is {} old&&old!=value))
+                    throw new InvalidDataException("راجع مبلغ "+titles[kind]+" في رواتب الشهر.");
+                row[kind]=(long)value.Value;
+            }
+            void Read(int kind,string? text)=>Record(kind,string.IsNullOrWhiteSpace(text)?0m:A.PayrollSpreadsheet.ParseMoney(text));
+            if(employee.RawColumns!=null){
+                using var doc=JsonDocument.Parse(employee.RawColumns);var headers=doc.RootElement.GetProperty("headers");var values=doc.RootElement.GetProperty("values");
+                if(headers.GetArrayLength()!=values.GetArrayLength())throw new InvalidDataException("أعمدة الراتب غير مكتملة.");
+                foreach(var (h,v) in headers.EnumerateArray().Zip(values.EnumerateArray()))
+                    if(kinds.TryGetValue(Arabic.Key(h.GetString()??""),out int kind))Read(kind,v.GetString());
+            }
+            if(row.Contains(null)){
+                var absent=row.Select(v=>v==null).ToArray();
+                if(employee.Details!=null)foreach(var (title,value) in JsonSerializer.Deserialize<Dictionary<string,string>>(employee.Details)!)
+                    if(kinds.TryGetValue(Arabic.Key(title),out int kind)&&absent[kind])Read(kind,value);
+                if(employee.Items!=null)foreach(var (title,value) in JsonSerializer.Deserialize<Dictionary<string,decimal>>(employee.Items)!)
+                    if(kinds.TryGetValue(Arabic.Key(title),out int kind)&&absent[kind])Record(kind,value);
+            }
+            for(int i=0;i<row.Length;i++){
+                if(row[i] is {} value){found[i]=true;sums[i]=checked(sums[i]+value);}
+                else if(employee.RawColumns!=null)throw new InvalidDataException("راجع عمود "+titles[i]+" في رواتب الشهر.");
             }
         }
         if(found.Contains(false))throw new InvalidDataException("لم تُستكمل أعمدة استقطاعات القيادة.");
         List<object?[]> rows=[
-            [1,titles[0],5000,4000,4000,2000,sums[0]],
-            [2,titles[1],4000,2000,2000,0,sums[1]],
-            [3,titles[2],"لكل فرد بالعائلة ٣٬٥٠٠",null,null,null,sums[2]]];
+            [1,titles[0],5000,4000,4000,2000,(decimal)sums[0]],
+            [2,titles[1],4000,2000,2000,0,(decimal)sums[1]],
+            [3,titles[2],"لكل فرد بالعائلة ٣٬٥٠٠",null,null,null,(decimal)sums[2]]];
         return new(A.ReportSheet.HeaderFor(snapshot),[new("استقطاعات القيادة","جدول استقطاعات قيادة شرطة الانبار لشهر ( "+Arabic.Eastern(month)+" )",
             ["ت","نوع الاستقطاع","ضباط","موظفين","مراتب","عقود","مجموع التسديد الشهري"],rows,6,sums.Sum(),ShowTotal:false,Command:true)]);
     }
