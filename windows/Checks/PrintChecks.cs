@@ -22,6 +22,9 @@ static class PrintChecks
             var path=Path.Combine(dir,"screen-october.xlsx");demo.SaveAs(path);
             s.ApplyExcel(s.PreviewExcel(path,"تشرين الأول 2026"),s.Active);
         }
+        var cycle=new Store(Path.Combine(dir,"monthly-cycle")).Snapshot();
+        s.ImportStaff(A.StaffRecords.Read(cycle),"ملاك تجريبي",s.Active);
+        s.ImportTrust(A.SalaryTrust.ReadFromBackup(cycle),s.Active);
         var snapshot=s.Snapshot("تشرين الثاني 2026");var refund=s.Refunds().Single();var groups=refund.Groups();
         void Pdf(string name,byte[] bytes,Func<int,bool> pages){using var pdf=PdfDocument.Open(bytes);check(pages(pdf.NumberOfPages)&&pdf.GetPages().All(p=>p.Letters.Count>0),"vector PDF page count and selectable text "+name);File.WriteAllBytes(Path.Combine(folder,name+".pdf"),bytes);}
         var t=A.LetterTemplate.From(style,"اختبار القالب","يرجى صرف المبلغ ({{المبلغ}}) لشهر {{الشهر}} من عام {{السنة}}.") with{FirstSigner="رئيس اللجنة\nاسم تجريبي\nمدير الحسابات",SecondSigner="",ThirdSigner="",Attachments="قائمة واحدة",Source="manual",BodyKashida="medium",SignatureHorizontalOffset=5,FontSizes=new(){{"body",13},{"signatures",10},{"attachments",11}}};
