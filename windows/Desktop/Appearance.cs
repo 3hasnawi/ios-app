@@ -75,7 +75,7 @@ public partial class MainWindow
         void Change(){
             var next=new Appearance(sizes.SelectedIndex,numbers.SelectedIndex==1);
             try{
-                next.Save(store.Root);appearance=next;appearance.Apply();
+                SaveAppearance(next);appearance=next;appearance.Apply();
                 sample.CoerceValue(TextBlock.TextProperty);
                 Period.Items.Refresh();
                 if(Period.Template.FindName("MonthText",Period) is TextBlock month)month.GetBindingExpression(TextBlock.TextProperty)?.UpdateTarget();

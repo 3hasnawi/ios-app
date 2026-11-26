@@ -88,10 +88,11 @@ public sealed partial class Store
         foreach(var p in periods)A.BankReconciliation.Calculate(p);
         Rewrite(Path.GetDirectoryName(snapshot.SourcePath),null,new Dictionary<string,byte[]>{{A.BankReconciliation.SettingsKey,A.BankReconciliation.LedgerPlist(periods)}});
     }
-    internal void Rewrite(string? expected,A.PayrollImportPreview? payroll,IReadOnlyDictionary<string,byte[]>? changes, Action<JsonObject>? changeManifest=null, IReadOnlyDictionary<string,byte[]?>? refunds=null,IReadOnlyCollection<A.ExecutionAccount>? accounts=null, IReadOnlyList<A.StaffMember>? staff=null, (A.ArchiveBook Book,byte[] Pdf)? book=null, (string From,string To)? rename=null)
+    internal string Rewrite(string? expected,A.PayrollImportPreview? payroll,IReadOnlyDictionary<string,byte[]>? changes, Action<JsonObject>? changeManifest=null, IReadOnlyDictionary<string,byte[]?>? refunds=null,IReadOnlyCollection<A.ExecutionAccount>? accounts=null, IReadOnlyList<A.StaffMember>? staff=null, (A.ArchiveBook Book,byte[] Pdf)? book=null, (string From,string To)? rename=null)
     {
         if(expected!=Active)throw new IOException("تغيّرت النسخة بعد فتح الشاشة.");
         Directory.CreateDirectory(Root);
+        var pending = PendingSettings(expected);
         string output=Path.Combine(Root,"edit-"+Guid.NewGuid().ToString("N")+".zip");
         try {
             using(var source=expected==null?null:ZipFile.OpenRead(Path.Combine(expected,BackupName)))
@@ -99,6 +100,7 @@ public sealed partial class Store
                 var manifest=ReadJson<JsonObject>(source,"manifest.json")??new JsonObject{["version"]=12,["contentVersion"]=5,["staff"]=0,["accounts"]=0,["books"]=0};
                 int version=(int)manifest["version"]!;
                 var settings=ReadJson<Dictionary<string,byte[]>>(source,"settings.json")??[];
+                foreach(var (key,bytes) in Changes(pending)) settings[key]=bytes;
                 if(changes!=null)foreach(var (key,bytes) in changes){if(bytes.Length==0)settings.Remove(key);else settings[key]=bytes;}
                 var content=(int?)manifest["contentVersion"]??Math.Max(5,version);
                 if(version<12){manifest["contentVersion"]=content;manifest["version"]=12;}
@@ -209,7 +211,7 @@ public sealed partial class Store
                 manifest["supportingDigest"]=Convert.ToBase64String(combined.GetHashAndReset());
                 Json("manifest.json",manifest,false);
             }
-            Install(output,null,default,true,expected);
+            return Install(output,null,default,true,expected,pending);
         }finally{if(File.Exists(output))File.Delete(output);}
     }
 }

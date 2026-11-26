@@ -48,15 +48,13 @@ public partial class MainWindow : Window
     {
         store=source;appearance=Appearance.Read(store.Root);appearance.Apply();InitializeComponent();
         SizeChanged+=(_,_)=>AdaptNavigation();
-        try{var path=Path.Combine(store.Root,"pins.json");if(File.Exists(path))pins=(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path))??pins).Where(n=>Cards.Any(c=>c.Name==n)).Distinct().ToList();}
-        catch(IOException){}catch(JsonException){}
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.K&&Keyboard.Modifiers==ModifierKeys.Control&&!busy){ShowPage(SearchName);e.Handled=true;}};
         Loaded+=(_,_)=>Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
     }
     void Guard(Action work){try{work();}catch(Exception e){Error(e);}}
     void Error(Exception e){Status.Text="تعذّر إكمال العملية. "+e.Message;MessageBox.Show(this,e.Message,"قسم الحسابات",MessageBoxButton.OK,MessageBoxImage.Warning);}
-    void Reload(){initializing=true;months=store.Months();agencies=store.Agencies();Period.ItemsSource=months;Period.SelectedIndex=months.Count>0?0:-1;initializing=false;}
+    void Reload(){LoadWorkPreferences();initializing=true;months=store.Months();agencies=store.Agencies();Period.ItemsSource=months;Period.SelectedIndex=months.Count>0?0:-1;initializing=false;}
     static Brush BrushOf(string c)=>new SolidColorBrush((Color)ColorConverter.ConvertFromString(c));
     static TextBlock Text(string s,double size=15,bool bold=false){
         var text=new DisplayText{Text=s,FontWeight=bold?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
@@ -225,7 +223,7 @@ public partial class MainWindow : Window
             var up=ButtonFor("↑",()=>{var i=pending.IndexOf(name);(pending[i-1],pending[i])=(pending[i],pending[i-1]);Draw();});up.IsEnabled=pending.IndexOf(name)>0;
             var down=ButtonFor("↓",()=>{var i=pending.IndexOf(name);(pending[i+1],pending[i])=(pending[i],pending[i+1]);Draw();});down.IsEnabled=pending.Contains(name)&&pending.IndexOf(name)<pending.Count-1;body.Children.Add(Bar(check,up,down));}
             body.Children.Add(ButtonFor("حفظ التخصيص",()=>dialog.DialogResult=true,"\uE74E",true));}
-        Draw();if(dialog.ShowDialog()==true)Guard(()=>{Directory.CreateDirectory(store.Root);var path=Path.Combine(store.Root,"pins.json");File.WriteAllText(path+".tmp",JsonSerializer.Serialize(pending));File.Move(path+".tmp",path,true);pins=pending;ShowPage(page);});
+        Draw();if(dialog.ShowDialog()==true)Guard(()=>{SavePins(pending);ShowPage(page);});
     }
     void Settings()
     {
@@ -246,7 +244,7 @@ public partial class MainWindow : Window
         p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
         CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
     }
-    void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;var temp=d.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.Copy(store.Archive,temp);File.Move(temp,d.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}Status.Text="حُفظ الأرشيف الأصلي كاملاً.";});
+    void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;_=Working(()=>store.ExportBackup(d.FileName),"حُفظت النسخة المشتركة كاملة.");});
     async Task Import()
     {
         if(busy)return;
@@ -519,7 +517,7 @@ public partial class MainWindow : Window
                 var originalPreview=statement.Html();
                 Setting("حجم خط المحتوى").SelectedIndex=4;Setting("شكل أرقام الواجهة").SelectedIndex=1;
                 var sampleText=Controls<TextBlock>(CanvasArea).FirstOrDefault(t=>t.Text.Contains("١٢,٥٠٠"));
-                if(sampleText==null||Math.Abs(sampleText.FontSize-19.2)>.1||Appearance.Read(store.Root)!=new Appearance(4,true))
+                if(sampleText==null||Math.Abs(sampleText.FontSize-19.2)>.1||store.ReadWorkPreferences().GetValueOrDefault("windowsContentTextLevel")!="4" || store.ReadWorkPreferences().GetValueOrDefault("appNumerals")!="arabicIndic")
                     throw new InvalidDataException("تعذّر تطبيق وحفظ حجم الخط والأرقام.");
                 if(statement.Html()!=originalPreview)throw new InvalidDataException("تغيّرت أرقام كشف القيادة عند تبديل أرقام الواجهة.");
                 Setting("حجم خط المحتوى").SelectedIndex=0;Setting("شكل أرقام الواجهة").SelectedIndex=0;

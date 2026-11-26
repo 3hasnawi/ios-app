@@ -20,5 +20,17 @@ enum WorkReport: String, CaseIterable, Identifiable {
         return statements.filter { !hidden.contains($0) }
     }
 
+    static func saving(_ reports: [Self], previous: String?) -> String {
+        var selected = reports.map(\.rawValue).makeIterator()
+        var saved: [String] = []
+        for token in (previous ?? "").split(separator: "|") {
+            let id = String(token)
+            if Self(rawValue: id) == nil { saved.append(id) }
+            else if let next = selected.next() { saved.append(next) }
+        }
+        while let next = selected.next() { saved.append(next) }
+        return saved.joined(separator: "|")
+    }
+
     var id: Self { self }
 }

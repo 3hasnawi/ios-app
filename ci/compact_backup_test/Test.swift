@@ -41,6 +41,30 @@ import CoreGraphics
         func database() throws -> ModelContainer {
             try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
         }
+        if let input = ProcessInfo.processInfo.environment["PREFERENCES_FROM_WINDOWS"],
+           let output = ProcessInfo.processInfo.environment["PREFERENCES_FOR_WINDOWS"] {
+            let folder = try await Restore.extractForRestore(URL(fileURLWithPath: input))
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let container = try database()
+            let actor = BackupActor(modelContainer: container)
+            var settings = try await actor.restore(from: folder, progress: nil)
+            func value(_ key: String) throws -> Any? {
+                guard let data = settings[key] else { return nil }
+                return try PropertyListSerialization.propertyList(from: data, format: nil)
+            }
+            let pins = try value("homePinnedWorkItems") as? String
+            let digits = try value("appNumerals") as? String
+            let level = try value("windowsContentTextLevel") as? Int
+            let size = try value("appTextSize") as? Int
+            precondition(pins == "salaryTrust|bankStatement" && digits == "arabicIndic" && level == 2 && size == 4)
+            let newPins = WorkReport.saving([.health], previous: pins)
+            settings["homePinnedWorkItems"] = try PropertyListSerialization.data(fromPropertyList: newPins, format: .binary, options: 0)
+            settings["appNumerals"] = try PropertyListSerialization.data(fromPropertyList: "latin", format: .binary, options: 0)
+            let (file, _) = try await actor.export(settings: settings, progress: nil)
+            try FileManager.default.copyItem(at: file, to: URL(fileURLWithPath: output))
+            print("PASS restored Windows preferences and exported iPhone edits")
+            return
+        }
         if let path = ProcessInfo.processInfo.environment["WINDOWS_EXCHANGE"] {
             let folder = try await Restore.extractForRestore(URL(fileURLWithPath: path))
             defer { try? FileManager.default.removeItem(at: folder) }

@@ -56,7 +56,10 @@ struct SettingsView: View {
                     } label: {
                         SettingRow(title: tr("المظهر", "Appearance"), systemImage: "moon.fill", color: Color(.darkGray)) { EmptyView() }
                     }
-                    Picker(selection: $numerals) {
+                    Picker(selection: Binding(get: { numerals }, set: { value in
+                        numerals = value
+                        BackupManager.shared.markSettingChanged(AppSettings.numeralsKey)
+                    })) {
                         Text("123").tag(AppNumerals.latin.rawValue)
                         Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
                     } label: {
@@ -150,13 +153,17 @@ struct SettingsView: View {
             Text("A").font(.system(size: 12, weight: .semibold))
             Slider(value: Binding(
                 get: { Double(textSize < 0 ? AppSettings.defaultTextSizeIndex : textSize) },
-                set: { textSize = Int($0.rounded()) }
+                set: { value in
+                    textSize = Int(value.rounded())
+                    BackupManager.shared.markSettingChanged(AppSettings.textSizeKey)
+                }
             ), in: 0...Double(AppSettings.textSizes.count - 1), step: 1)
             .accessibilityLabel(tr("حجم النص", "Text size"))
             .accessibilityIdentifier("textSizeSlider")
             Text("A").font(.system(size: 20, weight: .semibold))
             Button {
                 textSize = -1
+                BackupManager.shared.markSettingChanged(AppSettings.textSizeKey)
             } label: {
                 Text(textSize < 0 ? tr("الآيفون", "iPhone") : tr("إعادة", "Reset"))
                     .font(.caption.weight(.semibold))

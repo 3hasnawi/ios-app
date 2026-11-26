@@ -405,7 +405,8 @@ struct HomeDashboard: View {
                 var updated = pinnedReports
                 if enabled && !updated.contains(choice) { updated.append(choice) }
                 if !enabled { updated.removeAll { $0 == choice } }
-                savedPins = updated.map(\.rawValue).joined(separator: "|")
+                savedPins = WorkReport.saving(updated, previous: savedPins)
+                BackupManager.shared.markSettingChanged(WorkReport.pinsKey)
             })) { Label(choice.title, systemImage: choice.icon) }
         }
     }

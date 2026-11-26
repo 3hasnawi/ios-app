@@ -9,3 +9,7 @@ precondition(WorkReport.sections == [.reports, .transferFiles, .deductionAudit, 
 let selected = [.fund, .salaryAudit, .commandDeductions] + expanded
 precondition(WorkReport.pins(saved: selected.map(\.rawValue).joined(separator: "|"), legacyHidden: "") == selected)
 precondition(Set(WorkReport.sections + WorkReport.statements) == Set(WorkReport.allCases))
+
+precondition(WorkReport.saving([.health], previous: "salaryTrust|bankStatement") == "health|bankStatement")
+precondition(WorkReport.saving([], previous: "salaryTrust") == "")
+precondition(WorkReport.saving([.salaryAudit, .health], previous: "food|bankStatement|salaryTrust") == "salaryAudit|bankStatement|health")

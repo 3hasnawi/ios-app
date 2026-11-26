@@ -21,11 +21,11 @@ public sealed partial class Store(string root)
     public const string BackupName="نسخة الرواتب.zip";
     public string Archive=>Path.Combine(Active??throw new InvalidOperationException("اختر نسخة أولاً."),BackupName);
     public void Import(string source,IProgress<string>? progress=null,CancellationToken token=default) => Install(source,progress,token, false,null);
-    private void Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected)
+    private string Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected,byte[]? pending=null)
     {
         Directory.CreateDirectory(Root);
         using var lease=new FileStream(Path.Combine(Root,"import.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
-        if(checkRevision && Active!=expected)throw new InvalidOperationException("تغيرت النسخة. أعد فتح البيانات قبل الحفظ.");
+        if(checkRevision && (Active!=expected || !(PendingSettings(expected)??[]).SequenceEqual(pending??[])))throw new InvalidOperationException("تغيرت النسخة. أعد فتح البيانات قبل الحفظ.");
         var id=Guid.NewGuid().ToString("N");
         string stage=Path.Combine(Root,id),next=Path.Combine(Root,"current."+id);
         Directory.CreateDirectory(stage);
@@ -55,6 +55,7 @@ public sealed partial class Store(string root)
         foreach(var dir in Directory.EnumerateDirectories(Root))
             if(dir!=stage && Guid.TryParseExact(Path.GetFileName(dir),"N",out _))
                 try{Directory.Delete(dir,true);}catch(IOException){}catch(UnauthorizedAccessException){}
+        return stage;
     }
     internal static SqliteConnection Connect(string dir,bool read=true)
     {

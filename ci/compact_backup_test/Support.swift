@@ -7,7 +7,7 @@ struct ProgressSink { func callAsFunction(_ value: Double) {} }
 enum Num { static func digits(_ s: String) -> String { s }; static func format(_ n: Int) -> String { String(n) } }
 enum AppSettings {
     static let isEnglish = true
-    static let languageKey = "language", appearanceKey = "appearance", numeralsKey = "numbers", textSizeKey = "size"
+    static let languageKey = "language", appearanceKey = "appearance", numeralsKey = "appNumerals", textSizeKey = "appTextSize"
 }
 struct TransferLetterCustomizationStore: Codable {
     static let settingsKey = "templates"

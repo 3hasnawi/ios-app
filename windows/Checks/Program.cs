@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using AnbarPayroll;
 using ClosedXML.Excel;
 
+if(args is [("--write-preference-archive" or "--read-preference-archive"), var archivePath]) { PreferenceExchange.Run(args[0],archivePath); return; }
 var path=args.Single();var store=new Store(Path.Combine(path,"store"));
 void Check(bool condition,string name){if(!condition)throw new Exception(name);Console.WriteLine("PASS "+name);}
 string source=Path.Combine(path,"valid.zip");

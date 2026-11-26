@@ -3,7 +3,21 @@ on: workflow_dispatch
 permissions:
   contents: read
 jobs:
+  windows-export:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Export fictional payroll and edited preferences
+        run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --write-preference-archive "$env:RUNNER_TEMP/windows.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-preferences
+          path: ${{ runner.temp }}/windows.zip
   apple:
+    needs: windows-export
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -16,3 +30,30 @@ jobs:
           python3 ci/compact_backup_test/run.py
           python3 ci/employee_refund_test/run.py
           python3 ci/report_layout_test/run.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-preferences
+          path: ${{ runner.temp }}
+      - name: Restore on Apple and export edited preferences
+        env:
+          PREFERENCES_FROM_WINDOWS: ${{ runner.temp }}/windows.zip
+          PREFERENCES_FOR_WINDOWS: ${{ runner.temp }}/apple.zip
+        run: python3 ci/compact_backup_test/run.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apple-preferences
+          path: ${{ runner.temp }}/apple.zip
+  windows-restore:
+    needs: apple
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: apple-preferences
+          path: ${{ runner.temp }}
+      - name: Restore Apple edits and verify balances
+        run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --read-preference-archive "$env:RUNNER_TEMP/apple.zip"
