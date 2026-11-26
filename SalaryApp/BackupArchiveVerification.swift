@@ -14,9 +14,9 @@ nonisolated enum BackupArchiveVerification {
         try verify(url, source: source, files: files, manifest: manifest)
     }
 
-    static func supportingPaths(bookIDs: [UUID]) -> [String] {
+    static func supportingPaths(bookIDs: [UUID], refunds: Bool = false) -> [String] {
         ["settings.json", "months.jsonl", "deductions.jsonl", "staff.jsonl", "accounts.jsonl",
-         CompactPayrollBackup.schemaFile, "books/index.json"] + bookIDs.map { "books/\($0.uuidString).pdf" }
+         CompactPayrollBackup.schemaFile, "books/index.json"] + bookIDs.map { "books/\($0.uuidString).pdf" } + (refunds ? [RefundBackup.file] : [])
     }
 
     private static func fileDigest(_ url: URL) throws -> Data {

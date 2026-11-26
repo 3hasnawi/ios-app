@@ -89,6 +89,28 @@ import SwiftData
         draft.remove(two.id)
         draft.clear()
         precondition(draft.month == nil && draft.rows.isEmpty)
+        // Preserve an incomplete live draft independently of an earlier completed payment.
+        try draft.add(one)
+        let interchange = root.appendingPathComponent("test-refunds.jsonl")
+        let exported = try RefundBackup.write(from: root, to: interchange)
+        precondition(exported.count == 1 && exported.draft)
+        let secondRoot = root.appendingPathComponent("device")
+        let staged = try RefundBackup.prepare(from: interchange, beside: secondRoot, count: 1, draft: true)
+        try RefundBackup.install(staged, at: secondRoot)
+        let targetStorage = RefundStorage(root: secondRoot)
+        let importedDraft = try targetStorage.loadDraft()
+        let importedHistory = try targetStorage.archived()
+        precondition(importedDraft?.rows.first?.amount == "" && importedHistory.count == 1)
+        let substitute = try ModelContainer(for: Employee.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let replacement = Employee(name: first.name)
+        replacement.month = first.month
+        replacement.detailsData = first.detailsData
+        substitute.mainContext.insert(replacement)
+        try substitute.mainContext.save()
+        try RefundPayrollSearch.relinkDraft(in: targetStorage, context: substitute.mainContext)
+        let relinked = try targetStorage.loadDraft()
+        precondition(relinked?.rows.first?.id == replacement.persistentModelID)
+        draft.clear()
         let afterClear = try storage.archived()
         precondition(afterClear.count == 1 && afterClear[0].snapshot.rows.count == 2 && RefundDraft(storage: storage).rows.isEmpty)
         // تعديل الأرشيف مع بقاء المسودة الحية مستقلة وحماية التعديل من نسخة متقادمة.

@@ -63,6 +63,7 @@ struct RefundHistoryView: View {
                     defer { deleting = false }
                     do {
                         try await Task.detached { [storage] in try storage.delete(record) }.value
+                        BackupManager.shared.markChanged()
                         records.removeAll { $0.id == record.id }
                     } catch { self.error = error.localizedDescription }
                 }

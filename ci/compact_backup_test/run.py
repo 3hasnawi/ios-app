@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="payroll-backup-test-") as folder:
     (work / "Package.swift").write_text('// swift-tools-version:6.2\nimport PackageDescription\n' +
         'let package = Package(name:"BackupTests", platforms:[.macOS(.v26)], dependencies:[.package(url:"https://github.com/weichsel/ZIPFoundation.git",revision:"' +
         revision + '")], targets:[.executableTarget(name:"BackupTests",dependencies:[.product(name:"ZIPFoundation",package:"ZIPFoundation")])], swiftLanguageModes:[.v5])')
-    for name in ["CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride","ContractBatchPayload","ContractTransferBatch","ContractTransferDestination","ContractTransferEngine","TransferIndividualPlan","TransferGroupCSVCheck","TransferReconciliation"]:
+    for name in ["RefundBackup","CompactPayrollBackup","BackupArchiveVerification","CheckedArchive","BoundedFile","BackupLineReader","SharedPayrollColumns","SalaryTrust","ContractOverride","ContractBatchPayload","ContractTransferBatch","ContractTransferDestination","ContractTransferEngine","TransferIndividualPlan","TransferGroupCSVCheck","TransferReconciliation"]:
         (src / (name + ".swift")).write_text(read(name))
     backup = read("Backup")
     models = read("Models")

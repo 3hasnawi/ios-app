@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory() as tmp:
     ios.write_text("import Foundation\nimport SwiftData\n" + model + (tests / "IOS.support").read_text())
     target = work / "Target.swift"
     target.write_text("import SwiftData\n" + section("RefundSearchEntrySheet.swift", "struct RefundSearchTarget:", "struct RefundSearchEntrySheet:"))
-    shared = [str(app / "RefundStorage.swift"), str(ios), str(app / "RefundPayrollSearch.swift"), str(app / "RefundDraft.swift")]
+    shared = [str(app / "RefundBackup.swift"), str(app / "BackupLineReader.swift"), str(app / "RefundStorage.swift"), str(ios), str(app / "RefundPayrollSearch.swift"), str(app / "RefundDraft.swift")]
     subprocess.run(["swiftc", "-parse-as-library", "-o", str(work / "draft-test"), *mac, *files, *shared,
                     str(target), str(tests / "DraftTest.swift")], check=True)
     subprocess.run([str(work / "draft-test")], check=True)

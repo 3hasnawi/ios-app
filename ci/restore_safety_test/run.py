@@ -11,6 +11,8 @@ import SQLite3
 let testRoot=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
 try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
 defer { try? FileManager.default.removeItem(at: testRoot) }
+enum RefundStorage { static let local = RefundStorageRoot(); struct RefundStorageRoot { var root: URL { testRoot.appendingPathComponent("refunds") } } }
+enum RefundBackup { static let lock = NSLock() }
 enum OfficialBookFiles { static var root: URL { testRoot.appendingPathComponent("books") } }
 let store=testRoot.appendingPathComponent("test.sqlite")
 var db: OpaquePointer?
@@ -24,15 +26,21 @@ let domain="fictional-recovery-"+UUID().uuidString
 let defaults=UserDefaults(suiteName:domain)!
 defer { defaults.removePersistentDomain(forName:domain) }
 defaults.set("original settings",forKey:"fixture")
-try RestoreSafety.prepare(store:store,defaults:defaults,domain:domain)
+try FileManager.default.createDirectory(at: RefundStorage.local.root, withIntermediateDirectories: true)
+let refund = RefundStorage.local.root.appendingPathComponent("draft.json")
+try Data("original refund".utf8).write(to:refund)
+try RestoreSafety.prepare(store:store,includeRefunds:true,defaults:defaults,domain:domain)
 precondition(RestoreSafety.pending)
 precondition(sqlite3_exec(db,"UPDATE sample SET value='partial';",nil,nil,nil) == SQLITE_OK)
 try Data("partial book".utf8).write(to:book)
+try Data("partial refund".utf8).write(to:refund)
 defaults.set("partial settings",forKey:"fixture")
 sqlite3_close(db)
 fputs("recover checkpoint\\n", stderr)
 try RestoreSafety.recoverIfNeeded(defaults:defaults,domain:domain)
 precondition(!RestoreSafety.pending)
+let restoredRefund = try Data(contentsOf:refund)
+precondition(restoredRefund == Data("original refund".utf8))
 precondition(defaults.string(forKey:"fixture") == "original settings")
 precondition(try String(contentsOf:book,encoding:.utf8) == "original book")
 precondition(sqlite3_open(store.path,&db) == SQLITE_OK)

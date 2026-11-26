@@ -4,10 +4,10 @@ import SQLite3
 /// نقطة رجوع محلية قبل الاسترجاع؛ تُعاد قبل فتح SwiftData بعد أي توقف غير مكتمل.
 /// لا تتغير صيغة النسخة المصدّرة ولا يُحذف المصدر القديم عند فشل الاسترجاع.
 nonisolated enum RestoreSafety {
-    private struct Marker: Codable { let folder: String; let store: URL; let hadBooks: Bool }
+    private struct Marker: Codable { let folder: String; let store: URL; let hadBooks: Bool; var hadRefunds: Bool? = nil }
     static var root: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RestoreRecovery", isDirectory: true) }
     static var pending: Bool { FileManager.default.fileExists(atPath: root.appendingPathComponent("active.json").path) }
-    static func prepare(store: URL, defaults: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) throws {
+    static func prepare(store: URL, includeRefunds: Bool = false, defaults: UserDefaults = .standard, domain: String? = Bundle.main.bundleIdentifier) throws {
         guard !pending else { throw failure("يوجد استرجاع غير مكتمل؛ أغلق التطبيق وافتحه لإعادة البيانات السابقة.") }
         let fm = FileManager.default
         let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -18,9 +18,17 @@ nonisolated enum RestoreSafety {
         let books = OfficialBookFiles.root
         let hadBooks = fm.fileExists(atPath: books.path)
         if hadBooks { try fm.copyItem(at: books, to: folder.appendingPathComponent("books")) }
+        var hadRefunds: Bool?
+        if includeRefunds {
+            try RefundBackup.lock.withLock {
+                let refunds = RefundStorage.local.root
+                hadRefunds = fm.fileExists(atPath: refunds.path)
+                if hadRefunds == true { try fm.copyItem(at: refunds, to: folder.appendingPathComponent("refunds")) }
+            }
+        }
         let settings = domain.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
         try PropertyListSerialization.data(fromPropertyList: settings, format: .binary, options: 0).write(to: folder.appendingPathComponent("defaults.plist"), options: .atomic)
-        let marker = Marker(folder: folder.lastPathComponent, store: store, hadBooks: hadBooks)
+        let marker = Marker(folder: folder.lastPathComponent, store: store, hadBooks: hadBooks, hadRefunds: hadRefunds)
         try JSONEncoder().encode(marker).write(to: root.appendingPathComponent("active.json"), options: .atomic)
         activated = true
     }
@@ -65,6 +73,11 @@ nonisolated enum RestoreSafety {
         }
         if fm.fileExists(atPath: OfficialBookFiles.root.path) { try fm.removeItem(at: OfficialBookFiles.root) }
         if marker.hadBooks { try fm.copyItem(at: folder.appendingPathComponent("books"), to: OfficialBookFiles.root) }
+        if let hadRefunds = marker.hadRefunds {
+            let refunds = RefundStorage.local.root
+            if fm.fileExists(atPath: refunds.path) { try fm.removeItem(at: refunds) }
+            if hadRefunds { try fm.copyItem(at: folder.appendingPathComponent("refunds"), to: refunds) }
+        }
         // نستبدل مفاتيح مجال التطبيق فقط؛ لا نمس افتراضيات النظام.
         if let domain { preferences.setPersistentDomain(defaults, forName: domain) }
         preferences.set(false, forKey: "backupServerEnabled")

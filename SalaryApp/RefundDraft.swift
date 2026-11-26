@@ -47,6 +47,17 @@ import SwiftData
         }
     }
 
+    func reloadAfterRestore() {
+        pendingAmountSave?.cancel()
+        pendingAmountSave = nil
+        // A history-only backup can legitimately have no current draft.
+        let restored = RefundDraft(storage: storage)
+        apply(restored.snapshot)
+        initialized = restored.initialized
+        loadFailed = restored.loadFailed
+        storageError = restored.storageError
+    }
+
     var snapshot: RefundSnapshot {
         .init(batchID: batchID, rows: rows, banks: banks, source: source, date: date, payer: payer, account: account, letters: letters)
     }
@@ -63,7 +74,11 @@ import SwiftData
         guard !updating, !loadFailed, archivedRecord == nil else { return }
         pendingAmountSave?.cancel()
         pendingAmountSave = nil
-        do { try storage.saveDraft(snapshot); storageError = nil }
+        do {
+            try storage.saveDraft(snapshot)
+            BackupManager.shared.markChanged()
+            storageError = nil
+        }
         catch { storageError = tr("تعذّر حفظ المسودة على الجهاز.", "Could not save the draft on this device.") }
     }
 
@@ -92,7 +107,7 @@ import SwiftData
         working = true
         defer { working = false }
         let saved = snapshot, storage = storage
-        return try await Task.detached {
+        let updated = try await Task.detached {
             let existing = Set(original.snapshot.rows.map(\.candidate))
             let added = saved.rows.map(\.candidate).filter { !existing.contains($0) }
             let search = RefundPayrollSearch(modelContainer: container)
@@ -101,6 +116,8 @@ import SwiftData
             }
             return try storage.replace(original, with: saved)
         }.value
+        BackupManager.shared.markChanged()
+        return updated
     }
 
     func recover(files: [URL], month: String, container: ModelContainer) async throws {
@@ -127,6 +144,7 @@ import SwiftData
         }
         _ = try saved.plan()
         try storage.saveDraft(saved)
+        BackupManager.shared.markChanged()
         apply(saved)
         storageError = nil
     }

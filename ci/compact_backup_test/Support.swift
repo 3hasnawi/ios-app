@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 func tr(_ ar: String, _ en: String) -> String { en }
 struct ImportedEmployee { var items: [String: Double] }
@@ -22,5 +23,14 @@ enum TransferReferencePack { static let settingsKey = "references"; static func 
 enum TransferLetterEntityLinks { static let settingsKey = "links" }
 enum TransferHeaderFont { static let boldSettingsKey = "bold", regularSettingsKey = "regular" }
 enum ReportSheet { static let headerKey = "report-header" }
-enum RestoreSafety { static func prepare(store: URL) throws { throw CocoaError(.featureUnsupported) } }
+enum RestoreSafety { static func prepare(store: URL, includeRefunds: Bool = false) throws { throw CocoaError(.featureUnsupported) } }
 enum ImportCenter { static func removeCopy(_ url: URL) {} }
+
+struct RefundSnapshot: Codable { let source: String }
+struct RefundStorage {
+    let root: URL
+    static var local: Self { Self(root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("test-refunds")) }
+}
+enum RefundPayrollSearch {
+    static func relinkDraft(in storage: RefundStorage, context: ModelContext) throws {}
+}

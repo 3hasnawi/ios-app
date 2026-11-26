@@ -238,6 +238,34 @@ import CoreGraphics
         let candidateBytes = try Data(contentsOf: url), savedBytes = try Data(contentsOf: target)
         precondition(names == [BackupFormat.fileName()] && savedBytes == candidateBytes)
         print("Coordinated replacement preserves the existing ZIP on two failure paths and writes one verified file on success.")
+        let refunds = RefundStorage.local.root
+        let history = refunds.appendingPathComponent("history")
+        try FileManager.default.createDirectory(at: history, withIntermediateDirectories: true)
+        let draft = refunds.appendingPathComponent("draft.json")
+        let batch = history.appendingPathComponent(UUID().uuidString + ".json")
+        let draftData = try encoder.encode(RefundSnapshot(source: "مسودة تجريبية"))
+        let batchData = try encoder.encode(RefundSnapshot(source: "دفعة تجريبية"))
+        try draftData.write(to: draft)
+        try batchData.write(to: batch)
+        let (refundZip, index) = try await BackupActor(modelContainer: source).export(settings: settings, progress: nil)
+        defer { BackupFormat.removeExport(refundZip) }
+        precondition(index.version == 14 && index.hasRefundDraft == true && index.refundBatchCount == 1)
+        let unpacked = try await Restore.extractForRestore(refundZip)
+        defer { try? FileManager.default.removeItem(at: unpacked) }
+        try FileManager.default.removeItem(at: refunds)
+        _ = try await actor.restore(from: unpacked, progress: nil)
+        _ = try await actor.restore(from: unpacked, progress: nil)
+        let restoredDraft = try Data(contentsOf: draft), restoredBatch = try Data(contentsOf: batch)
+        precondition(restoredDraft == draftData && restoredBatch == batchData)
+        let refundLines = unpacked.appendingPathComponent(RefundBackup.file)
+        try Data("damaged".utf8).write(to: refundLines)
+        await rejected { _ = try await actor.restore(from: unpacked, progress: nil) }
+        let pristine = try await Restore.extractForRestore(url)
+        defer { try? FileManager.default.removeItem(at: pristine) }
+        _ = try await actor.restore(from: pristine, progress: nil)
+        let retained = try Data(contentsOf: batch)
+        precondition(retained == batchData)
+        print("Refund draft and batch ZIP round-trip, repeat restore, legacy preservation and corruption rejection passed.")
         try stressHeaders(root: root)
     }
 

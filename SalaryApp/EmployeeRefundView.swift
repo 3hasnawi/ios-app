@@ -309,6 +309,7 @@ struct EmployeeRefundView: View {
                 do {
                     try await Task.detached { try await RefundPayrollSearch(modelContainer: container).verify(people, month: month) }.value
                     try await Task.detached { try storage.archive(snapshot) }.value
+                    BackupManager.shared.markChanged()
                     guard share else { saved = true; return }
                     let urls = try await PDFWork.run { try EmployeeRefundExport.make(batch, date: snapshot.date, letters: snapshot.letters) }
                     ActivityShare.present(urls) { _ in

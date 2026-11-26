@@ -59,12 +59,12 @@ nonisolated struct RefundStorage: Sendable {
     }
 
     func saveDraft(_ snapshot: RefundSnapshot) throws {
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try JSONEncoder().encode(snapshot).write(to: draft, options: [.atomic, .completeFileProtection])
+        try RefundBackup.lock.withLock {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try JSONEncoder().encode(snapshot).write(to: draft, options: [.atomic, .completeFileProtection])
+        }
     }
 
-    // الملف القديم معرّفه بصمة محتواه الأول. يبقى موقعه ثابتاً بعد التعديل.
-    private static let historyLock = NSLock()
 
     private func encoded(_ snapshot: RefundSnapshot) throws -> Data {
         _ = try snapshot.plan()
@@ -82,7 +82,7 @@ nonisolated struct RefundStorage: Sendable {
 
     func archive(_ snapshot: RefundSnapshot) throws {
         let data = try encoded(snapshot)
-        try Self.historyLock.withLock {
+        try RefundBackup.lock.withLock {
             let id = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             let files = try historyFiles()
             var url = history.appendingPathComponent(id + ".json")
@@ -109,7 +109,7 @@ nonisolated struct RefundStorage: Sendable {
             throw EmployeeRefund.error("تعذّر تحديد الدفعة المطلوب تعديلها.", "The batch identity changed.")
         }
         let data = try encoded(snapshot)
-        return try Self.historyLock.withLock {
+        return try RefundBackup.lock.withLock {
             let url = try checkedURL(original)
             try data.write(to: url, options: [.atomic, .completeFileProtection])
             return Archived(id: original.id, revision: Data(SHA256.hash(data: data)), snapshot: snapshot)
@@ -117,11 +117,11 @@ nonisolated struct RefundStorage: Sendable {
     }
 
     func delete(_ original: Archived) throws {
-        try Self.historyLock.withLock { try FileManager.default.removeItem(at: checkedURL(original)) }
+        try RefundBackup.lock.withLock { try FileManager.default.removeItem(at: checkedURL(original)) }
     }
 
     func archived() throws -> [Archived] {
-        try Self.historyLock.withLock {
+        try RefundBackup.lock.withLock {
             try historyFiles().map { url in
                 let data = try Data(contentsOf: url)
                 return Archived(id: url.deletingPathExtension().lastPathComponent, revision: Data(SHA256.hash(data: data)),

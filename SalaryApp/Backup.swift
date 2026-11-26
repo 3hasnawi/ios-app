@@ -13,7 +13,7 @@ nonisolated enum BackupFormat {
     // تمنع الإصدارات القديمة من استرجاع نسخة تحوي حسابات محلية ثم إسقاطها بصمت.
     static let version = 12
     /// الإصدار ٧ صيغة رواتب تجريبية مختلفة ولم يُفعّل استرجاعها.
-    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 }
+    static func supports(_ version: Int) -> Bool { (1...6).contains(version) || version == 8 || version == 9 || version == 10 || version == 11 || version == 12 || version == 13 || version == 14 }
     static func exportVersion(for settings: [String: Data]) -> Int {
         // تمنع الصيغة الجديدة إسقاط تاريخ الصرف أو تعديل دفتر الملف بتطبيق قديم.
         if let raw = settings[SalaryTrust.settingsKey],
@@ -47,6 +47,8 @@ nonisolated enum BackupFormat {
         var salaryTrustEntries: Int? = nil
         var contractBatchCount: Int? = nil
         var contractExecutionMarkers: [String]? = nil
+        var refundBatchCount: Int? = nil
+        var hasRefundDraft: Bool? = nil
         var contentVersion: Int? = nil
         var payrollDigest: Data? = nil
         var supportingDigest: Data? = nil
@@ -54,6 +56,7 @@ nonisolated enum BackupFormat {
         func entryLimit(_ path: String) -> UInt64 {
             switch path {
             case "manifest.json": return 1_000_000
+            case "refunds.jsonl": return 512 * 1024 * 1024
             case "settings.json": return 64_000_000
             case "books/index.json": return 9_999_999
             case "payroll-headers.json": return 48 * 1024 * 1024
@@ -64,13 +67,17 @@ nonisolated enum BackupFormat {
         var dataVersion: Int { version >= 12 ? contentVersion ?? -1 : version }
         func validateFormat() throws {
             guard BackupFormat.supports(version) else { throw BackupError.newerVersion }
+            if version == 14 {
+                guard let refundBatchCount, (0...10_000).contains(refundBatchCount), hasRefundDraft != nil else { throw BackupError.notBackup }
+            } else if refundBatchCount != nil || hasRefundDraft != nil { throw BackupError.notBackup }
             if version >= 12 {
                 guard [5, 6, 8, 9, 10, 11].contains(dataVersion), payrollDigest?.count == 32, supportingDigest?.count == 32 else { throw BackupError.notBackup }
             }
         }
         var hasData: Bool {
             !months.isEmpty || employees > 0 || deductions > 0 || staff > 0 ||
-            (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0 || (contractBatchCount ?? 0) > 0
+            (accounts ?? 0) > 0 || (books ?? 0) > 0 || (salaryTrustEntries ?? 0) > 0 || (contractBatchCount ?? 0) > 0 ||
+            (refundBatchCount ?? 0) > 0 || hasRefundDraft == true
         }
     }
 
@@ -125,12 +132,14 @@ actor BackupActor {
         let deductions = try modelContext.fetchCount(FetchDescriptor<Deduction>())
         let staff = try modelContext.fetchCount(FetchDescriptor<StaffMember>())
         let batchArchive = try ContractTransferArchive.read(UserDefaults.standard.data(forKey: ContractTransferArchive.key) ?? Data())
-        return BackupFormat.Manifest(version: BackupFormat.version, createdAt: .now, months: months,
+        let refunds = try RefundBackup.inventory(at: RefundStorage.local.root)
+        return BackupFormat.Manifest(version: refunds.count == nil ? BackupFormat.version : 14, createdAt: .now, months: months,
                                      employees: employees, deductions: deductions, staff: staff,
                                      accounts: try ExecutionAccountStore.load().count,
                                      books: try OfficialBookFiles.read().count,
                                      salaryTrustEntries: try SalaryTrust.decode(UserDefaults.standard.data(forKey: SalaryTrust.settingsKey) ?? Data()).entries.count,
-                                     contractBatchCount: batchArchive.records.count, contractExecutionMarkers: batchArchive.executionMarkers)
+                                     contractBatchCount: batchArchive.records.count, contractExecutionMarkers: batchArchive.executionMarkers,
+                                     refundBatchCount: refunds.count, hasRefundDraft: refunds.draft)
     }
 
     /// يكتب ملف النسخة (zip) ويعيد رابطه ووصفه.
@@ -243,12 +252,16 @@ actor BackupActor {
         guard settingsFile.count <= 64_000_000 else { throw CheckedArchive.Failure.tooLarge }
         try settingsFile.write(to: dir.appendingPathComponent("settings.json"))
         guard books.count <= 10_000 else { throw CheckedArchive.Failure.tooLarge }
-        let supporting = BackupArchiveVerification.supportingPaths(bookIDs: books.map(\.id))
-        let manifest = BackupFormat.Manifest(version: settings[ContractTransferArchive.key] == nil ? BackupFormat.version : 13, createdAt: .now,
+        let refunds = try RefundBackup.write(from: RefundStorage.local.root, to: dir.appendingPathComponent(RefundBackup.file))
+        let includesRefunds = refunds.present
+        let baseVersion = settings[ContractTransferArchive.key] == nil ? BackupFormat.version : 13
+        let supporting = BackupArchiveVerification.supportingPaths(bookIDs: books.map(\.id), refunds: includesRefunds)
+        let manifest = BackupFormat.Manifest(version: includesRefunds ? 14 : baseVersion, createdAt: .now,
                                              months: months.sorted { $0.sortKey > $1.sortKey }.map(\.name),
                                              employees: employeeCount, deductions: deductionCount, staff: staffCount,
                                              accounts: accounts.count, books: books.count, salaryTrustEntries: trustCount,
                                              contractBatchCount: batchArchive.records.count, contractExecutionMarkers: batchArchive.executionMarkers,
+                                             refundBatchCount: includesRefunds ? refunds.count : nil, hasRefundDraft: includesRefunds ? refunds.draft : nil,
                                              contentVersion: formatVersion, payrollDigest: payroll.fingerprint.digest,
                                              supportingDigest: try BackupArchiveVerification.supportingDigest(in: dir, paths: supporting, expected: expectedDigests))
         try JSONEncoder().encode(manifest).write(to: dir.appendingPathComponent("manifest.json"))
@@ -302,7 +315,7 @@ actor BackupActor {
         guard manifest.hasData else { throw BackupError.emptyRestore }
         if manifest.version >= 12 {
             let archivedBooks = try OfficialBookFiles.read(in: folder.appendingPathComponent("books"))
-            let paths = BackupArchiveVerification.supportingPaths(bookIDs: archivedBooks.map(\.id))
+            let paths = BackupArchiveVerification.supportingPaths(bookIDs: archivedBooks.map(\.id), refunds: manifest.version == 14)
             guard try BackupArchiveVerification.supportingDigest(in: folder, paths: paths) == manifest.supportingDigest else {
                 throw BackupError.notBackup
             }
@@ -325,7 +338,7 @@ actor BackupActor {
         if manifest.version >= 12, manifest.dataVersion != BackupFormat.exportVersion(for: settings) { throw BackupError.notBackup }
         for data in settings.values { _ = try PropertyListSerialization.propertyList(from: data, format: nil) }
         let batches = try ContractTransferArchive.fromSettings(settings)
-        guard (manifest.version == 13) == !batches.records.isEmpty, manifest.contractBatchCount ?? 0 == batches.records.count,
+        guard (manifest.version == 14 || ((manifest.version == 13) == !batches.records.isEmpty)), manifest.contractBatchCount ?? 0 == batches.records.count,
               manifest.contractExecutionMarkers ?? [] == batches.executionMarkers else { throw BackupError.notBackup }
         let existing = try ContractTransferArchive.read(UserDefaults.standard.data(forKey: ContractTransferArchive.key) ?? Data())
         try batches.checkRestore(over: existing)
@@ -395,9 +408,16 @@ actor BackupActor {
         var previousBooks: URL?
         defer { if !booksInstalled { try? FileManager.default.removeItem(at: preparedBooks) } }
 
+        let preparedRefunds: URL?
+        if let count = manifest.refundBatchCount, let draft = manifest.hasRefundDraft {
+            preparedRefunds = try RefundBackup.prepare(from: folder.appendingPathComponent(RefundBackup.file),
+                                                       beside: RefundStorage.local.root, count: count, draft: draft)
+        } else { preparedRefunds = nil }
+        defer { if let preparedRefunds { try? FileManager.default.removeItem(at: preparedRefunds) } }
+
         if recoverable {
             guard let store = modelContainer.configurations.first?.url else { throw BackupError.folderUnavailable }
-            try RestoreSafety.prepare(store: store)
+            try RestoreSafety.prepare(store: store, includeRefunds: preparedRefunds != nil)
         }
         modelContext.autosaveEnabled = false
         var committed = false
@@ -461,6 +481,10 @@ actor BackupActor {
         previousBooks = try OfficialBookFiles.installPrepared(preparedBooks)
         booksInstalled = true
         try destination.save()
+        if let preparedRefunds {
+            try RefundPayrollSearch.relinkDraft(in: RefundStorage(root: preparedRefunds), context: destination)
+            try RefundBackup.install(preparedRefunds, at: RefundStorage.local.root)
+        }
         ExecutionAccountStore.saveEncoded(accountData)
         if let previousBooks { try? FileManager.default.removeItem(at: previousBooks) }
         progress?(1)
@@ -676,6 +700,8 @@ final class BackupManager {
     // MARK: - إنشاء نسخة
 
     private func makeBackup(title: String) async throws -> (URL, BackupFormat.Manifest) {
+        RefundDraft.shared.flushAmount()
+        if let error = RefundDraft.shared.storageError { throw NSError(domain: "RefundBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: error]) }
         let revision = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
         let staffRevision = StaffImportState.shared.version
         let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
@@ -759,6 +785,7 @@ final class BackupManager {
             (previous.accounts ?? 0) > 0 && (current.accounts ?? 0) == 0 ||
             (previous.books ?? 0) > 0 && (current.books ?? 0) == 0 ||
             (previous.salaryTrustEntries ?? 0) > 0 && (current.salaryTrustEntries ?? 0) == 0
+        guard previous.refundBatchCount == nil || current.refundBatchCount != nil else { throw BackupError.dataLossRisk }
         guard !lostMonth && !lostRows, Set(previous.contractExecutionMarkers ?? []).isSubset(of: Set(current.contractExecutionMarkers ?? [])) else { throw BackupError.dataLossRisk }
     }
 
@@ -1197,6 +1224,8 @@ final class BackupManager {
             guard manifest.hasData else { throw BackupError.emptyRestore }
             try data.write(to: dir.appendingPathComponent("manifest.json"))
             var required = ["settings.json", "months.jsonl", "employees.jsonl", "deductions.jsonl", "staff.jsonl"]
+            if manifest.version == 14 { required.append(RefundBackup.file) }
+            else if entries[RefundBackup.file] != nil { throw BackupError.notBackup }
             if manifest.version >= 12 { required.append(CompactPayrollBackup.schemaFile) }
             if manifest.version >= 2 || entries["accounts.jsonl"] != nil { required.append("accounts.jsonl") }
             for name in required {
@@ -1255,6 +1284,7 @@ final class BackupManager {
             message = tr("انتظر انتهاء العملية الحالية، ثم اختر النسخة مجدداً للاسترجاع.", "Wait for the current operation to finish, then select the backup again to restore.")
             return
         }
+        RefundDraft.shared.flushAmount()
         pendingRestore = nil
         let serverRestore = pendingServerRestore
         pendingServerRestore = nil
@@ -1287,6 +1317,7 @@ final class BackupManager {
                     }
                 }
                 UserDefaults.standard.synchronize()
+                if pending.manifest.version == 14 { RefundDraft.shared.reloadAfterRestore() }
                 try RestoreSafety.finish()
                 for key in ["homeStatsCache", "homeOverviewCache", "homeAuditCache"] { UserDefaults.standard.removeObject(forKey: key) }
                 Self.rememberSafetyManifest(pending.manifest)
