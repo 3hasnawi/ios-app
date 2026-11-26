@@ -23,16 +23,19 @@ public static class Arabic
     public static int Period(string label)
     {
         var parts=Regex.Split(Key(label),@"[\s_./-]+").Where(x=>x.Length>0).ToList();
-        var year=parts.FirstOrDefault(x=>x.Length==4 && int.TryParse(x,out _));
-        if(year is null)return 0;
-        parts.Remove(year);
-        string name=string.Join(" ",parts);
-        var index=Array.FindIndex(Months,x=>Key(x)==name);
-        if(index<0)index=Array.FindIndex(Alternate,x=>Key(x)==name);
-        int m=index+1;
-        if(m==0 && !int.TryParse(name,out m))return 0;
-        return m is >=1 and <=12 ? int.Parse(year)*100+m : 0;
+        int year=parts.Select(word=>int.TryParse(word,out var n)?n:0).LastOrDefault(n=>n is >=1900 and <=2200);
+        if(year==0)return 0;
+        for(int i=0;i<parts.Count;i++){
+            string word=parts[i],pair=i+1<parts.Count?word+" "+parts[i+1]:"";
+            int month=word switch{"كانون2"=>1,"تشرين1"=>10,"تشرين2"=>11,"كانون1"=>12,_=>0};
+            if(month==0)month=Array.FindIndex(Months,m=>Key(m)==word||Key(m)==pair)+1;
+            if(month==0)month=Array.FindIndex(Alternate,m=>Key(m)==word)+1;
+            if(month!=0)return year*100+month;
+        }
+        int numeric=parts.Select(w=>int.TryParse(w,out var n)?n:0).FirstOrDefault(n=>n is >=1 and <=12);
+        return numeric==0?0:year*100+numeric;
     }
+    public static string Eastern(string value)=>string.Concat(value.Select(c=>c is >= '0' and <= '9'?(char)('٠'+c-'0'):c));
     public static string Money(decimal value)=>value.ToString("#,##0.############################",CultureInfo.InvariantCulture);
 }
 public record Deduction(string Month,int Period,string Name,string Rank,string Agency,string Reference,decimal? Amount,string Status)

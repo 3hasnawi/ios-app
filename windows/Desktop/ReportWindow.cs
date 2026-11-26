@@ -14,6 +14,7 @@ internal sealed class ReportWindow : Window
     private readonly Button pdf=new(){Content="حفظ PDF",Margin=new Thickness(4),IsEnabled=false};
     private readonly TextBlock status=new(){Margin=new Thickness(10),VerticalAlignment=VerticalAlignment.Center};
     private readonly string folder=Path.Combine(Path.GetTempPath(),"AnbarPayroll",Guid.NewGuid().ToString("N"));
+    private readonly TaskCompletionSource<bool> ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool closed;
     public ReportWindow(Statement model)
     {
@@ -40,9 +41,17 @@ internal sealed class ReportWindow : Window
             var uri=new Uri(file);
             web.NavigationStarting+=(_,e)=>e.Cancel=!uri.Equals(new Uri(e.Uri));
             web.NewWindowRequested+=(_,e)=>e.Handled=true;
-            web.NavigationCompleted+=(_,e)=>{pdf.IsEnabled=e.IsSuccess;status.Text=e.IsSuccess?"معاينة قبل التصدير":"تعذّر فتح المعاينة.";};
+            web.NavigationCompleted+=(_,e)=>{ready.TrySetResult(e.IsSuccess);pdf.IsEnabled=e.IsSuccess;status.Text=e.IsSuccess?"معاينة قبل التصدير":"تعذّر فتح المعاينة.";};
             web.Navigate(uri.AbsoluteUri);
-        }catch(Exception e){if(!closed)status.Text="تعذّر فتح عارض PDF. "+e.Message;}
+        }catch(Exception e){ready.TrySetException(e);if(!closed)status.Text="تعذّر فتح عارض PDF. "+e.Message;}
+    }
+    internal async Task PrintPdf(string path)
+    {
+        if(!await ready.Task.WaitAsync(TimeSpan.FromSeconds(30)))throw new IOException("تعذّرت معاينة الكشف.");
+        var settings=viewer.CoreWebView2.Environment.CreatePrintSettings();
+                settings.Orientation=report.Person==""?CoreWebView2PrintOrientation.Portrait:CoreWebView2PrintOrientation.Landscape;
+                settings.PageWidth=8.2677;settings.PageHeight=11.6929;settings.ShouldPrintBackgrounds=true;settings.ShouldPrintHeaderAndFooter=false;
+                if(!await viewer.CoreWebView2.PrintToPdfAsync(path,settings))throw new IOException("تعذّر إنشاء PDF.");
     }
     async Task Save(bool isPdf)
     {
@@ -52,10 +61,7 @@ internal sealed class ReportWindow : Window
         string temp=Path.Combine(Path.GetDirectoryName(d.FileName)!,"."+Guid.NewGuid().ToString("N")+"."+ext);
         IsEnabled=false;
         try{
-            if(isPdf){var settings=viewer.CoreWebView2.Environment.CreatePrintSettings();
-                settings.Orientation=report.Person==""?CoreWebView2PrintOrientation.Portrait:CoreWebView2PrintOrientation.Landscape;
-                settings.PageWidth=8.2677;settings.PageHeight=11.6929;settings.ShouldPrintBackgrounds=true;settings.ShouldPrintHeaderAndFooter=false;
-                if(!await viewer.CoreWebView2.PrintToPdfAsync(temp,settings))throw new IOException("تعذّر إنشاء PDF.");}
+            if(isPdf)await PrintPdf(temp);
             else await Task.Run(()=>report.Excel(temp));
             File.Move(temp,d.FileName,true);status.Text="تم حفظ الكشف.";
         }catch(Exception e){MessageBox.Show(this,e.Message,"تعذّر تصدير الكشف");}

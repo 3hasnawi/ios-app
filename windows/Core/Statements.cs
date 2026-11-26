@@ -14,7 +14,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
         var sheets=new List<Sheet>();
         foreach(var group in input.Where(r=>r.Amount.HasValue).GroupBy(r=>(r.Period,r.Month,r.Agency)).OrderBy(g=>g.Key.Period).ThenBy(g=>g.Key.Agency,ArabicOrder)){
             var rows=group.OrderBy(r=>r.Name,ArabicOrder).Select((r,i)=>new object?[]{i+1,r.Rank,r.Name,r.Amount,r.Reference}).ToList();
-            sheets.Add(new(group.Key.Agency,"قائمة الاستقطاعات لـ شهر "+group.Key.Month+" - "+group.Key.Agency,["ت","الرتبة","الاسم الكامل","المبلغ","رقم وتاريخ الاضبارة"],rows,3,group.Sum(r=>r.Amount!.Value)));
+            sheets.Add(new(group.Key.Agency,"قائمة الاستقطاعات لـ شهر "+Arabic.Eastern(group.Key.Month)+" - "+group.Key.Agency,["ت","الرتبة","الاسم الكامل","المبلغ","رقم وتاريخ الاضبارة"],rows,3,group.Sum(r=>r.Amount!.Value)));
         }
         if(sheets.Count==0)throw new InvalidOperationException("لا توجد مبالغ ضمن الاختيار.");
         if(summary&&sheets.Count>1){
@@ -55,8 +55,11 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
     public string Html()
     {
         var b=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>");
-        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}@page{size:A4 ");
-        b.Append(Person==""?"portrait;margin:28pt":"landscape;margin:18pt 22pt");
+        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}@page{size:A4 ");
+        b.Append(Person==""?"portrait;margin:28pt 28pt 32pt":"landscape;margin:18pt 22pt 32pt");
+        string footer=Person==""?"( قيادة شرطة محافظة الانبار - قسم الحسابات )":"كشف الاستقطاعات";
+        var stamp=Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture));
+        b.Append("; @bottom-right{content:'"+footer+"';font:bold 8.5pt Arial;color:#444}@bottom-center{content:'صفحة ' counter(page,arabic-indic) ' من ' counter(pages,arabic-indic);font:8.5pt Arial;color:#444}@bottom-left{content:'"+stamp+"';font:8.5pt Arial;color:#444}");
         b.Append("}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body,section{background:white;margin:0;padding:0;max-width:none}}</style>");
         void Table(Sheet s,bool entity){
             b.Append("<table><thead>");
@@ -69,7 +72,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
         if(Person==""){foreach(var s in Sheets){b.Append("<section>");Table(s,true);b.Append("</section>");}}
         else for(int i=0;i<Sheets.Count;i+=4){
             b.Append("<section><div class='banner'><b>قيادة شرطة محافظة الأنبار / قسم الحسابات</b><b>كشف استقطاعات</b></div>");
-            b.Append($"<div class='info'>الاسم الكامل　{Display(Person)}</div><div class='info'>الرتبة　{Display(Rank)}　　 جهة الاستقطاع　{Display(Agency)}</div><div class='info'>عدد الأشهر　{PaidMonths}　　 رقم وتاريخ الإضبارة　{Display(Reference)}</div><div class='bands'>");
+            b.Append($"<table class='identity'><tr><th>الاسم الكامل</th><td colspan='3'>{Display(Person)}</td></tr><tr><th>الرتبة</th><td>{Display(Rank)}</td><th>جهة الاستقطاع</th><td>{Display(Agency)}</td></tr><tr><th>عدد الأشهر</th><td>{PaidMonths}</td><th>رقم وتاريخ الإضبارة</th><td>{Display(Reference)}</td></tr></table><div class='bands'>");
             foreach(var s in Sheets.Skip(i).Take(4))Table(s,false);b.Append("</div>");
             if(i+4>=Sheets.Count){b.Append($"<div class='banner'>{(Partial?"مجموع القيود المتوفرة":"المجموع الكلي للاستقطاعات")}　{Display(Sheets.Sum(s=>s.Total))}</div>");if(Partial)b.Append("<p class='warn'>توجد أشهر غير متحققة؛ المجموع للقيود المتوفرة فقط.</p>");b.Append("<p>التدقيق</p>");}b.Append("</section>");
         }
@@ -77,6 +80,9 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
     }
     public void Excel(string file)
     {
+        const decimal maxExcel=999_999_999_999_999m;
+        if(Sheets.Any(s=>s.Rows.Count>1_048_570||s.Total>maxExcel||s.Rows.SelectMany(r=>r).Any(v=>v is string text&&text.Length>32_767||v is decimal amount&&(Math.Abs(amount)>maxExcel||(decimal)(double)amount!=amount))))
+            throw new InvalidDataException("تعذّر تمثيل جميع بيانات الكشف بدقة في Excel.");
         using var book=new XLWorkbook();
         foreach(var s in Sheets){
             var stem=string.Concat(s.Name.Select(c=>"[]:*?/\\".Contains(c)?' ':c)).Trim(' ','\'');

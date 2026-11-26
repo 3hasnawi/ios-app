@@ -263,5 +263,14 @@ public partial class MainWindow : Window
             var target=(FrameworkElement)Content;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var stream=File.Create(Path.Combine(directory,file+".png"));png.Save(stream);
         }
+        var sample=store.Find(new()).First();
+        var f=new Filters(Agency:sample.Agency,Year:sample.Period/100,Month:sample.Period%100);
+        var agencyStatement=Statement.Entities(store.Find(f),ReportHeader(),true);
+        var employeeStatement=Statement.Employee(store.Find(new(Person:sample.Name)),months,sample.Name,sample.Agency,sample.Reference,months[^1].Key,months[0].Key,ReportHeader());
+        foreach(var (model,file) in new[]{(agencyStatement,"agency"),(employeeStatement,"employee")}){
+            var preview=new ReportWindow(model){Owner=this};preview.Show();
+            try{await preview.PrintPdf(Path.Combine(directory,file+".pdf"));model.Excel(Path.Combine(directory,file+".xlsx"));}
+            finally{preview.Close();}
+        }
     }
 }
