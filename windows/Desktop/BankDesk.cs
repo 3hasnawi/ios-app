@@ -35,7 +35,7 @@ public partial class MainWindow
             var revision = store.Active;
             var month = SelectedMonth?.Name ?? "";
             bool Current() => CanvasArea.Children.Contains(dock) && content.Children.Contains(host) && store.Active == revision;
-            if (revision == null) { host.Children.Add(Text("افتح نسخة الآيفون أو استورد البيانات أولاً.")); return; }
+            if (revision == null) { host.Children.Add(Text("استورد نسخة احتياطية أو البيانات أولاً.")); return; }
             bankLoad = Load();
             async Task Load()
             {

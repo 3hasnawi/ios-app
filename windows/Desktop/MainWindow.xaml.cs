@@ -124,7 +124,7 @@ public partial class MainWindow : Window
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
-        Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
+        Status.Text=store.Active==null?"استورد نسخة احتياطية أو ملف بيانات من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
         if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name==DirectoryName)workPageLoad=ShowAccountDirectory();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
@@ -160,7 +160,7 @@ public partial class MainWindow : Window
         var value=Column(balance,totalCaption);value.HorizontalAlignment=HorizontalAlignment.Left;Grid.SetColumn(value,1);
         foreach(var t in intro.Children.OfType<TextBlock>().Concat(value.Children.OfType<TextBlock>()))t.Foreground=Brushes.White;
         hero.Children.Add(intro);hero.Children.Add(value);var banner=Box(hero,"#1E5646");banner.Padding=new Thickness(25,24,25,24);panel.Children.Add(banner);
-        if(store.Active==null)panel.Children.Add(ButtonFor("اختيار نسخة الرواتب.zip",()=>_=Import(),"\uE8E5",true));
+        if(store.Active==null)panel.Children.Add(ButtonFor("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5",true));
         var reviewHost=new StackPanel();
         var revision=store.Active;
         reviewHost.Children.Add(Text(selectedPeriod is {Key:>0}?"جارٍ تحميل حالات الشهر…":"تظهر حالات المراجعة بعد استيراد البيانات.",15));
@@ -232,14 +232,13 @@ public partial class MainWindow : Window
         }
         var active=store.Active;
         long archive=active==null?0:new FileInfo(store.Archive).Length;
-        var save=ButtonFor("حفظ نسخة مطابقة",CopyArchive,"\uE74E");
+        var save=ButtonFor("تصدير نسخة",ExportBackup,"\uE74E");
         save.IsEnabled=active!=null;
-        var backup=Box(Column(Text("البيانات والنسخ الاحتياطي",18,true),
+        var backup=Box(Column(Text("النسخ الاحتياطي",18,true),
             Text(active==null?"لم تُفتح نسخة بعد.":"حجم النسخة "+Size(archive)+"　·　عدد الفترات "+months.Count+"　·　صيغة "+store.Metadata("format"),14),
-            Text("تُفتح النسخة من الحاسبة أو من مجلد iCloud Drive بعد تنزيلها.",14),
-            Bar(ButtonFor("فتح نسخة الآيفون",()=>_=Import(),"\uE8E5",true),save),
-            Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"))));
-        var storage=Column(Text("المساحة على الحاسبة",18,true));
+            Text("صدّر آخر عملك بما فيه الدفعات المحفوظة، ثم استورد الملف على الجهاز الآخر.",14),
+            Bar(ButtonFor("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5",true),save)));
+        var storage=Column(Text("البيانات على الحاسبة",18,true));
         if(active!=null){
             long lookup=new FileInfo(Path.Combine(active,"lookup.db")).Length;
             var sizes=new Grid();
@@ -253,6 +252,7 @@ public partial class MainWindow : Window
         }else{
             storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
         }
+        storage.Children.Add(Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5")));
         var updates=Box(Column(Text("تحديث التطبيق",18,true),
             Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),
             Bar(ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
@@ -277,13 +277,23 @@ public partial class MainWindow : Window
         CanvasArea.Children.Add(new ScrollViewer{Content=layout,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalContentAlignment=HorizontalAlignment.Stretch});
     }
-    void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;_=Working(()=>store.ExportBackup(d.FileName),"حُفظت النسخة المشتركة كاملة.");});
-    async Task Import()
+    void ExportBackup()
+    {
+        if(busy || store.Active==null)return;
+        var dialog=new SaveFileDialog{Title="تصدير نسخة",FileName=Store.BackupName,
+            Filter="نسخة احتياطية مشتركة (*.zip)|*.zip",DefaultExt=".zip"};
+        if(dialog.ShowDialog(this)!=true)return;
+        _=Working(()=>store.ExportBackup(dialog.FileName),"صُدّرت النسخة. يمكنك استرجاع هذا الملف على الآيفون أو استيراده على حاسبة أخرى.",()=>ShowPage("الإعدادات"));
+    }
+    async Task ImportBackup()
     {
         if(busy)return;
-        var d=new OpenFileDialog{Filter="نسخة الآيفون (*.zip)|*.zip",Title="فتح نسخة الرواتب"};if(d.ShowDialog(this)!=true)return;
-        if(store.Active!=null&&MessageBox.Show(this,"عرض بيانات النسخة المختارة مكان النسخة المحلية الحالية؟","فتح نسخة الآيفون",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-        busy=true;IsEnabled=false;try{var progress=new Progress<string>(s=>Status.Text=s);await Task.Run(()=>store.Import(d.FileName,progress));Reload();busy=false;ShowPage("الرئيسية");Status.Text="اكتمل التحقق وفتح النسخة.";}catch(Exception e){Error(e);}finally{busy=false;IsEnabled=true;}
+        var d=new OpenFileDialog{Filter="نسخة احتياطية مشتركة (*.zip)|*.zip",Title="استيراد نسخة"};
+        if(d.ShowDialog(this)!=true)return;
+        if(store.Active!=null && MessageBox.Show(this,
+            "سيستبدل استيراد «"+Path.GetFileName(d.FileName)+"» بيانات هذه الحاسبة، بما فيها الدفعات المحفوظة. هل تريد المتابعة؟",
+            "استيراد نسخة",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
+        busy=true;IsEnabled=false;try{var progress=new Progress<string>(s=>Status.Text=s);await Task.Run(()=>store.Import(d.FileName,progress));Reload();busy=false;ShowPage("الرئيسية");Status.Text="تم التحقق من النسخة واستيراد بياناتها.";}catch(Exception e){Error(e);}finally{busy=false;IsEnabled=true;}
     }
     CancellationTokenSource? query;
     Button? export,employee;
@@ -544,7 +554,7 @@ public partial class MainWindow : Window
                 if(cards.Children.Count!=4 || (CanvasArea.ActualWidth>=820 && CanvasArea.ActualHeight>=500 &&
                     (cards.ColumnDefinitions.Count!=2 || settingsView.ScrollableHeight>1 || settingsView.ScrollableWidth>1)))
                     throw new InvalidDataException("لم تظهر أقسام الإعدادات معاً ضمن مساحة الشاشة الكبيرة.");
-                foreach(var action in new[]{"فتح نسخة الآيفون","حفظ نسخة مطابقة","استيراد ملف بيانات","التحقق من تحديث"})
+                foreach(var action in new[]{"استيراد نسخة","تصدير نسخة","استيراد ملف بيانات","التحقق من تحديث"})
                     FindAction(cards,action);
             }
             if(name=="الرئيسية"){

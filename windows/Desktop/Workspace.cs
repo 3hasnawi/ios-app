@@ -67,7 +67,7 @@ public partial class MainWindow
     {
         if(key==TransfersName){TransferHome();return;}
         if(key==SearchName){SearchAll();return;}
-        if(store.Active==null){CanvasArea.Children.Add(Text("افتح نسخة الآيفون أو استورد ملف Excel من الإعدادات."));return;}
+        if(store.Active==null){CanvasArea.Children.Add(Text("استورد نسخة احتياطية أو ملف Excel من الإعدادات."));return;}
         var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
         try{
             if(key==AuditName){

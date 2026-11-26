@@ -57,6 +57,17 @@ import CoreGraphics
             let level = try value("windowsContentTextLevel") as? Int
             let size = try value("appTextSize") as? Int
             precondition(pins == "salaryTrust|bankStatement" && digits == "arabicIndic" && level == 2 && size == 4)
+            // افتح دفعة الحاسبة من سجل الإعادات المستعاد، وأضف دفعة ثانية قبل إعادة التصدير.
+            let history = RefundStorage.local.root.appendingPathComponent("history")
+            let first = history.appendingPathComponent("ABC00000-0000-4000-8000-000000000001.json")
+            var batch = try JSONSerialization.jsonObject(with: Data(contentsOf: first)) as! [String: Any]
+            var rows = batch["rows"] as! [[String: Any]]
+            precondition(rows.count == 1 && rows[0]["amount"] as? String == "1500")
+            let secondID = "ABC00000-0000-4000-8000-000000000002"
+            rows[0]["amount"] = "2450"
+            batch["rows"] = rows
+            batch["batchID"] = secondID
+            try JSONSerialization.data(withJSONObject: batch).write(to: history.appendingPathComponent(secondID + ".json"), options: .atomic)
             let newPins = WorkReport.saving([.health], previous: pins)
             settings["homePinnedWorkItems"] = try PropertyListSerialization.data(fromPropertyList: newPins, format: .binary, options: 0)
             settings["appNumerals"] = try PropertyListSerialization.data(fromPropertyList: "latin", format: .binary, options: 0)
