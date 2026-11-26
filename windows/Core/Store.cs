@@ -7,7 +7,7 @@ namespace AnbarPayroll;
 
 public sealed partial class Store(string root)
 {
-    public string Root {get;}=root;
+    public string Root {get;}=Path.GetFullPath(root);
     private string Pointer=>Path.Combine(Root,"current");
     public string? Active
     {
