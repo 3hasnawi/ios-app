@@ -92,3 +92,27 @@ for label in ("valid","damaged"):
             if label=="damaged" and name=="deductions.jsonl":
                 data=data.replace(b'10000',b'90000',1)
             archive.writestr(name,data)
+
+def write_variant(label, contents, manifest):
+    digest = hashlib.sha256()
+    for name, data in sorted(contents.items()):
+        if name not in ("manifest.json", "employees.jsonl"):
+            digest.update(name.encode()+b"\0"+hashlib.sha256(data).digest())
+    manifest["supportingDigest"] = b64(digest.digest())
+    with zipfile.ZipFile(dest/(label+".zip"), "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in {**contents, "manifest.json": pack(manifest)}.items():
+            archive.writestr(name, data)
+
+
+letter = dict(header="اختبار", number="١/٢٢/ح/", recipient="مصرف وهمي", first="", second="", third="", signatureOffset=0, footer="")
+batch_id = str(uuid.UUID(int=54)).upper()
+snapshot = dict(batchID=batch_id, rows=[], banks={}, source="اختبار", date=0, payer="", account="",
+                letters=dict(rafidain=letter, otherBanks=letter))
+v14 = dict(entries)
+v14["refunds.jsonl"] = lines([dict(id=i, contents=b64(pack(snapshot))) for i in ("draft", batch_id)])
+manifest = json.loads(entries["manifest.json"])
+write_variant("refunds", v14, dict(manifest, version=14, refundBatchCount=1, hasRefundDraft=True))
+duplicated = dict(entries)
+duplicated["employees.jsonl"] = lines([employee, employee])
+full_row = b"".join(field(employee[k].encode()) for k in ("month","name","rank","workplace")) + u64(1) + struct.pack(">d",employee["net"]) + field(None) + field(None) + field(raw[:offset]+header+raw[offset:])
+write_variant("duplicate", duplicated, dict(manifest, employees=2, payrollDigest=b64(hashlib.sha256(full_row*2).digest())))

@@ -32,3 +32,11 @@ try{
     Statement.Employee([one],[months[0],months[0]],one.Name,one.Agency,one.Reference,202611,202611,"");
     throw new Exception("ambiguous period allowed");
 }catch(InvalidDataException){Console.WriteLine("PASS duplicate periods cannot produce a statement");}
+var alternative=new Store(Path.Combine(path,"variants"));
+alternative.Import(Path.Combine(path,"duplicate.zip"));
+try{
+    alternative.PersonStatement(one.Name,one.Agency,one.Reference,202611,202611,"");
+    throw new Exception("ambiguous employee allowed");
+}catch(InvalidDataException){Console.WriteLine("PASS duplicate payroll identity cannot issue a statement");}
+alternative.Import(Path.Combine(path,"refunds.zip"));
+Check(alternative.Metadata("refunds")=="1"&&File.ReadAllBytes(alternative.Archive).SequenceEqual(File.ReadAllBytes(Path.Combine(path,"refunds.zip"))),"v14 draft, batch and binary supporting data survive intact");
