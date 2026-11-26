@@ -1,0 +1,18 @@
+name: Desktop and Apple accounting compatibility
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  apple:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify stored identity used by the refund archive
+        run: |
+          swiftc -parse-as-library windows/Checks/apple_identity.swift -o "$RUNNER_TEMP/identity"
+          "$RUNNER_TEMP/identity"
+      - name: Exercise the iPhone archive and letter reference implementations
+        run: |
+          python3 ci/compact_backup_test/run.py
+          python3 ci/employee_refund_test/run.py
+          python3 ci/report_layout_test/run.py
