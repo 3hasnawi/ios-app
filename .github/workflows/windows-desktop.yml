@@ -1,0 +1,40 @@
+name: Windows accounting desktop
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test archive compatibility, totals, reports and restore
+        run: |
+          python windows/Checks/fixture.py "$env:RUNNER_TEMP/fixture"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project windows/Checks/Payroll.Checks.csproj -c Release -- "$env:RUNNER_TEMP/fixture"
+      - name: Publish desktop
+        run: dotnet publish windows/Desktop/Payroll.Desktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/app"
+      - name: Build and install single setup
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DPublishDir=$env:RUNNER_TEMP\app" "/DInstallerDir=$env:RUNNER_TEMP\installer" windows/Packaging/desktop.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $p = Start-Process "$env:RUNNER_TEMP\installer\AnbarPayroll-Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$env:RUNNER_TEMP\installed" -Wait -PassThru
+          exit $p.ExitCode
+      - name: Exercise installed application and capture screens
+        run: |
+          $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\store $env:RUNNER_TEMP\screens" -PassThru
+          if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
+          if ($p.ExitCode -ne 0) { throw "Desktop exited with $($p.ExitCode)" }
+          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 4) { throw "Incomplete captures" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: ${{ runner.temp }}/installer/AnbarPayroll-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-screens
+          path: ${{ runner.temp }}/screens
