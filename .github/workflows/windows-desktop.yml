@@ -1,11 +1,19 @@
 name: Windows accounting desktop
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      publish_installer:
+        description: Publish the tested EXE as a Windows release
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   desktop:
     runs-on: windows-latest
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.installer.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -32,16 +40,28 @@ jobs:
       - name: Publish desktop
         run: dotnet publish windows/Desktop/Payroll.Desktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/app"
       - name: Build and install single setup
+        id: installer
         run: |
-          $runtime = "$env:RUNNER_TEMP\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
-          curl.exe -fsSL --retry 3 'https://go.microsoft.com/fwlink/p/?LinkId=2124701' -o $runtime
+          $bootstrapper = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+          curl.exe -fsSL --retry 3 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -o $bootstrapper
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $sig = Get-AuthenticodeSignature $runtime
-          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*CN=Microsoft Corporation,*') { throw "Invalid Microsoft runtime signature" }
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DWebRuntime=$runtime" "/DPublishDir=$env:RUNNER_TEMP\app" "/DInstallerDir=$env:RUNNER_TEMP\installer" windows/Packaging/desktop.iss
+          $sig = Get-AuthenticodeSignature $bootstrapper
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike '*CN=Microsoft Corporation,*') { throw "Invalid Microsoft bootstrapper signature" }
+          $version = ([xml](Get-Content windows/Desktop/Payroll.Desktop.csproj -Raw)).Project.PropertyGroup.Version
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DDesktopVersion=$version" "/DWebBootstrapper=$bootstrapper" "/DPublishDir=$env:RUNNER_TEMP\app" "/DInstallerDir=$env:RUNNER_TEMP\installer" windows/Packaging/desktop.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $p = Start-Process "$env:RUNNER_TEMP\installer\AnbarPayroll-Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=$env:RUNNER_TEMP\installed" -Wait -PassThru
-          exit $p.ExitCode
+          $setup = "$env:RUNNER_TEMP\installer\AnbarPayroll-Setup.exe"
+          $bytes = (Get-Item $setup).Length
+          if ($bytes -gt 80MB) { throw "Unexpected installer size: $bytes bytes" }
+          Write-Host "Installer: $bytes bytes"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          foreach ($pass in 1,2) {
+            $log = "$env:RUNNER_TEMP\setup-$pass.log"
+            $p = Start-Process $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$log`" /DIR=`"$env:RUNNER_TEMP\installed`"" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { Get-Content $log -Tail 30; throw "Setup exited with $($p.ExitCode)" }
+            Select-String -LiteralPath $log -Pattern 'WebView2 already present|WebView2 missing'
+            if ($pass -eq 2 -and !(Select-String -Quiet -LiteralPath $log -SimpleMatch 'WebView2 already present; skipping bootstrapper.')) { throw "Repeat installation did not skip the download" }
+          }
       - name: Exercise installed application and capture screens
         run: |
           $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
@@ -100,3 +120,24 @@ jobs:
         with:
           name: apple-print-reference
           path: ${{ runner.temp }}/apple-pages
+
+  release-windows:
+    if: inputs.publish_installer && github.ref == 'refs/heads/main'
+    needs: [desktop, apple-readback]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-setup
+          path: installer
+      - name: Publish standalone Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.desktop.outputs.version }}
+        run: |
+          gh release create "windows-v$RELEASE_VERSION" installer/AnbarPayroll-Setup.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "برنامج الحسابات لويندوز $RELEASE_VERSION" \
+            --notes "ملف تثبيت مباشر لويندوز 64 بت. يحتاج التثبيت إلى الإنترنت عند غياب مكوّن عرض الكشوف WebView2."
