@@ -99,6 +99,19 @@ private struct RefundArchivedDetail: View {
         }
     }
 
+    private func bankFiles(_ batch: EmployeeRefund.Batch) -> some View {
+        Section(tr("ملفات المصارف", "Bank files")) {
+            ForEach(batch.groups, id: \.code) { group in
+                let title = "\(group.bank.name) · \(group.code).csv"
+                Button { output(batch, .csv(group.code)) } label: {
+                    Label(title, systemImage: "square.and.arrow.up")
+                }
+            }
+            Button(tr("قائمة منتسبي إعادة المبالغ", "Refund roster"), systemImage: "doc.text.magnifyingglass") { output(batch, .roster, previewPDF: true) }
+            Button(tr("تصدير جميع الملفات", "Export all files"), systemImage: "square.and.arrow.up") { output(batch) }
+        }
+    }
+
     var body: some View {
         List {
             LabeledContent(tr("تاريخ التحويل", "Transfer date")) { Text(snapshot.date, format: .dateTime.year().month().day()) }
@@ -115,13 +128,7 @@ private struct RefundArchivedDetail: View {
                         }
                     }
                 }
-                Section(tr("ملفات المصارف", "Bank files")) {
-                    ForEach(batch.groups, id: \.code) { group in
-                        Button(group.bank.name + " · " + group.code + ".csv", systemImage: "square.and.arrow.up") { output(batch, .csv(group.code)) }
-                    }
-                    Button(tr("قائمة منتسبي إعادة المبالغ", "Refund roster"), systemImage: "doc.text.magnifyingglass") { output(batch, .roster, previewPDF: true) }
-                    Button(tr("تصدير جميع الملفات", "Export all files"), systemImage: "square.and.arrow.up") { output(batch) }
-                }
+                bankFiles(batch)
             } else {
                 Text(tr("راجع بيانات الدفعة من خيار التعديل لتجهيز ملفاتها.", "Review the saved batch details to generate its files.")).foregroundStyle(.secondary)
             }

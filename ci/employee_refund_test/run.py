@@ -65,6 +65,12 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["swiftc", "-parse-as-library", "-o", str(work / "draft-test"), *mac, *files, *shared,
                     str(target), str(tests / "DraftTest.swift")], check=True)
     subprocess.run([str(work / "draft-test")], check=True)
+    preview = work / "StatementPreview.swift"
+    preview.write_text("import SwiftUI\nimport PDFKit\n"
+                       + section("EmployeeDeductions.swift", "struct StatementPDF:", "/// كشف أفقي")
+                       + section("ReportPreview.swift", "struct PDFPreview:", "/// يحمّل صفوف الكشف")
+                       + "enum AppSettings { static var isEnglish: Bool { false } }\n"
+                       + "enum PerfLog { static func record(_ name: String, since: Date) {} }\n")
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-sdk", sdk, "-target", "arm64-apple-ios26.0",
-                    *files, str(app / "TransferAdaptivePDF.swift"), str(app / "DocumentPicker.swift"), *shared, str(app / "RefundAmountField.swift"), str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)
+                    *files, str(preview), str(app / "TransferAdaptivePDF.swift"), str(app / "DocumentPicker.swift"), *shared, str(app / "RefundAmountField.swift"), str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)
