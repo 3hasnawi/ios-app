@@ -1,7 +1,7 @@
 [Setup]
 AppId=AnbarPayroll.Desktop
 AppName=Anbar Payroll
-AppVersion=0.2.0
+AppVersion=0.2.1
 DefaultDirName={localappdata}\Programs\AnbarPayroll
 DefaultGroupName=Anbar Payroll
 PrivilegesRequired=lowest

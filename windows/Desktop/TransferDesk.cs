@@ -29,6 +29,7 @@ public partial class MainWindow
         var dock=new DockPanel();var actions=Bar();var controls=Bar();var note=Text("",14);
         var top=Column(Text("تحويل استقطاعات "+month,21,true),actions,controls,note);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var grid=GridView(("الجهة","Title",1.7),("المصرف","Bank",1.3),("قبل الفصل","Original",.8),("مبلغ الدفعة","Amount",.8),("المراجعة","Issues",1.4));dock.Children.Add(grid);CanvasArea.Children.Add(dock);
+        actions.Children.Add(ButtonFor("الكتب المحفوظة",()=>{backPage=TransfersName;ShowPage("الكتب المحفوظة");},"\uE8B7"));
         actions.Children.Add(ButtonFor("إعادة مبالغ المنتسبين",()=>Guard(()=>RefundDesk(s,month)),"\uE8AB"));
         var batch=Store.ActiveBatch(s,month);
         var all=batch==null?A.TransferPreparation.Prepare(s,month):null;

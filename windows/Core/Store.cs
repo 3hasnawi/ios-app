@@ -109,7 +109,12 @@ public sealed partial class Store(string root)
         if(f.Person.Length>0)Where("person_key(person)=$p","$p",Arabic.Match(f.Person));
         if(f.Reference.Length>0)Where(f.ExactReference?"casekey=$c":"instr(casekey,$c)>0","$c",Arabic.CaseKey(f.Reference));
         int i=0;
-        foreach(var word in Arabic.Key(f.Search).Split(' ',StringSplitOptions.RemoveEmptyEntries)){var key="$q"+i++;Where("instr(search,"+key+")>0",key,word);}
+        string column=f.SearchField switch{
+            DeductionSearchField.Agency=>"person_key(agency)",
+            DeductionSearchField.Employee=>"person_key(person)",
+            _=>"search"
+        };
+        foreach(var word in Arabic.Key(f.Search).Split(' ',StringSplitOptions.RemoveEmptyEntries)){var key="$q"+i++;Where("instr("+column+","+key+")>0",key,word);}
         return clauses.Count==0?"":"WHERE "+string.Join(" AND ",clauses);
     }
     public List<string> Agencies()
