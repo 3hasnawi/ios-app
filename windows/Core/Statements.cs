@@ -67,15 +67,31 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             return result.Append("</tbody></table></html>").ToString();
         }
         var b=new StringBuilder("<!doctype html><html dir='rtl' lang='ar'><meta charset='utf-8'><style>");
-        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands td{height:22.1pt;font-size:12pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}td.num{white-space:nowrap;direction:ltr;overflow-wrap:normal;font-variant-numeric:tabular-nums}@page{size:A4 ");
+        b.Append("body{background:#e9eeec;margin:0;color:#172b26;font:12pt Arial}section{box-sizing:border-box;background:white;max-width:900px;margin:18px auto;padding:25px;break-after:page}section:last-child{break-after:auto}table{border-collapse:collapse;width:100%}th,td{box-sizing:border-box;border:1pt solid #9cb8d4;text-align:center;padding:2pt 4pt;font:bold 11.5pt Arial;height:20pt}th,.sum{background:#deebf7}tbody tr:nth-child(even){background:#f3f7fb}.agency{color:#000;table-layout:fixed}.agency th{height:24pt;font-size:11pt}.agency th.org{height:24pt;font-size:14pt}.agency th.title{height:30pt;font-size:14pt}.agency tr:not(.sum) td:nth-child(2),.agency tr:not(.sum) td:nth-child(3),.agency tr:not(.sum) td:nth-child(5){text-align:right}.agency td{line-height:14pt}.agency tbody tr.sum{height:24pt;background:#deebf7}.org{background:white;border:0;font-size:14pt}.title{background:#1f4f78;color:white;font-size:14pt}.bands{display:grid;grid-template-columns:repeat(4,25%);margin:12pt 0 7pt}.bands{align-items:start;break-inside:avoid}.bands th,.bands td{height:22.1pt;font-size:12pt;line-height:15pt;padding:1pt 3pt}.identity td,.identity th{line-height:15pt}.bands th,.banner{background:#1c3b4f;color:white}.banner,.info{display:flex;justify-content:space-around;padding:6pt;border:1pt solid #a6b8c4}.info{background:#e6eff5}.warn{color:#aa5200}p{margin:5pt}thead{display:table-header-group}tr{break-inside:avoid}td{overflow-wrap:anywhere}td.num{white-space:nowrap;direction:ltr;overflow-wrap:normal;font-variant-numeric:tabular-nums}@page{size:A4 ");
         b.Append(Person==""?"portrait;margin:28pt 28pt 32pt":"landscape;margin:18pt 22pt 32pt");
         string footer=Person==""?"( قيادة شرطة محافظة الانبار - قسم الحسابات )":"كشف الاستقطاعات";
         var stamp=Arabic.Eastern(DateTime.Now.ToString("yyyy/MM/dd HH:mm",CultureInfo.InvariantCulture));
         b.Append("; @bottom-right{content:'"+footer+"';font:bold 8.5pt Arial;color:#444}@bottom-center{content:'صفحة ' counter(page,arabic-indic) ' من ' counter(pages,arabic-indic);font:8.5pt Arial;color:#444}@bottom-left{content:'"+stamp+"';font:8.5pt Arial;color:#444}");
         b.Append("}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body,section{background:white;margin:0;padding:0;max-width:none}}</style>");
         void Table(Sheet s,bool entity){
-            b.Append("<table>");
-            if(s.Columns.Length==5 && s.AmountColumn==3)b.Append("<colgroup><col style='width:6%'><col style='width:13%'><col style='width:31%'><col style='width:18%'><col style='width:32%'></colgroup>");
+            bool agency=entity && s.Columns.Length==5 && s.AmountColumn==3;
+            b.Append(agency?"<table class='agency'>":"<table>");
+            if(agency){
+                const double available=539;
+                var widths=new double[5];int digits=Arabic.Money(s.Total).Length;
+                for(int c=0;c<widths.Length;c++){
+                    bool numeric=c==0||c==3;
+                    int longest=c==0?s.Rows.Count.ToString().Length:c==3?digits:s.Rows.Max(row=>new StringInfo(row[c]?.ToString()??"").LengthInTextElements);
+                    widths[c]=Math.Ceiling(Math.Clamp(Math.Max(s.Columns[c].Length+2,longest*(numeric?1.3:1.15)+(numeric?3:5)),c==0?5:8,48));
+                }
+                double sum=widths.Sum();
+                for(int c=0;c<widths.Length;c++)widths[c]*=available/sum;
+                double need=Math.Max(0,digits*6.4+16-widths[3]);
+                if(need>0){double texts=widths[1]+widths[2]+widths[4];foreach(int c in new[]{1,2,4})widths[c]-=need*widths[c]/texts;widths[3]+=need;}
+                b.Append("<colgroup>");
+                foreach(double width in widths)b.Append(FormattableString.Invariant($"<col style='width:{width/available*100:0.###}%'>"));
+                b.Append("</colgroup>");
+            }
             b.Append("<thead>");
             if(entity)b.Append($"<tr><th class='org' colspan='{s.Columns.Length}'>{Display(Header)}</th></tr><tr><th class='title' colspan='{s.Columns.Length}'>{Display(s.Title)}</th></tr>");
             b.Append("<tr>");foreach(var c in s.Columns)b.Append("<th>"+Display(c)+"</th>");b.Append("</tr></thead><tbody>");
