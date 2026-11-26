@@ -5,7 +5,7 @@ using ClosedXML.Excel;
 
 namespace AnbarPayroll;
 
-public record Sheet(string Name,string Title,string[] Columns,List<object?[]> Rows,int AmountColumn,decimal Total,bool Annual=false);
+public record Sheet(string Name,string Title,string[] Columns,List<object?[]> Rows,int AmountColumn,decimal Total,bool Annual=false,bool ShowTotal=true);
 public record Statement(string Header,List<Sheet> Sheets,string Person="",string Rank="",string Agency="",string Reference="",int PaidMonths=0,bool Partial=false)
 {
     private static readonly StringComparer ArabicOrder=StringComparer.Create(CultureInfo.GetCultureInfo("ar-IQ"),false);
@@ -69,6 +69,7 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             if(entity)b.Append($"<tr><th class='org' colspan='{s.Columns.Length}'>{Display(Header)}</th></tr><tr><th class='title' colspan='{s.Columns.Length}'>{Display(s.Title)}</th></tr>");
             b.Append("<tr>");foreach(var c in s.Columns)b.Append("<th>"+Display(c)+"</th>");b.Append("</tr></thead><tbody>");
             foreach(var row in s.Rows){b.Append("<tr>");foreach(var value in row)b.Append("<td>"+Display(value)+"</td>");b.Append("</tr>");}
+            if(!s.ShowTotal){b.Append("</tbody></table>");return;}
             b.Append($"<tr class='sum'><td colspan='{s.AmountColumn}'>المجموع</td><td>{Display(s.Total)}</td>");
             for(int i=s.AmountColumn+1;i<s.Columns.Length;i++)b.Append("<td></td>");b.Append("</tr></tbody></table>");
         }
@@ -98,12 +99,14 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
             for(int j=0;j<width;j++)w.Cell(head,j+1).SetValue(s.Columns[j]);int row=head+1;
             foreach(var values in s.Rows){
                 for(int j=0;j<values.Length;j++){var c=w.Cell(row,j+1);switch(values[j]){case decimal d:c.SetValue((double)d);break;case int n:c.SetValue(n);break;default:c.SetValue(values[j]?.ToString()??"");break;}}
-                w.Row(row).Height=s.Annual?22.1:20;row++;
+                w.Row(row).Height=s.Annual?22.1:Math.Max(20,20*values.Select((v,index)=>v is string t?(int)Math.Ceiling(t.Length/(double)(index==3||index==1?14:32)):1).Max());row++;
             }
+            if(s.ShowTotal){
             if(s.AmountColumn>1)w.Range(row,1,row,s.AmountColumn).Merge();w.Cell(row,1).SetValue("المجموع");
             var amount=w.Cell(row,s.AmountColumn+1);if(s.Annual)amount.SetValue((double)s.Total);else amount.FormulaA1=$"SUM({amount.Address.ColumnLetter}{head+1}:{amount.Address.ColumnLetter}{row-1})";
+            } else row--;
             if(s.Annual){Heading(row+1,(Partial?"مجموع القيود المتوفرة":"المجموع الكلي للاستقطاعات")+"　"+Arabic.Money(Sheets.Sum(a=>a.Total)));}
-            var used=w.RangeUsed()!;used.Style.Font.FontName="Arial";used.Style.Font.FontSize=s.Annual?12:11.5;used.Style.Font.Bold=true;used.Style.Alignment.Vertical=XLAlignmentVerticalValues.Center;
+            var used=w.RangeUsed()!;used.Style.Font.FontName="Arial";used.Style.Font.FontSize=s.Annual?12:11.5;used.Style.Font.Bold=true;used.Style.Alignment.WrapText=true;used.Style.Alignment.Vertical=XLAlignmentVerticalValues.Center;
             w.Range(head,1,row,width).Style.Border.InsideBorder=XLBorderStyleValues.Thin;w.Range(head,1,row,width).Style.Border.OutsideBorder=XLBorderStyleValues.Thin;
             w.Range(2,1,2,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#1F4F78");w.Range(2,1,2,width).Style.Font.FontColor=XLColor.White;
             w.Range(head,1,head,width).Style.Fill.BackgroundColor=XLColor.FromHtml("#DEEBF7");w.Column(s.AmountColumn+1).Style.NumberFormat.Format="#,##0.###############";

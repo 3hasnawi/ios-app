@@ -4,6 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>AnbarPayroll</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png" Link="IraqEmblem.png" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Core/Payroll.Core.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
   </ItemGroup>

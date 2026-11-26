@@ -7,7 +7,7 @@
 <TextBlock DockPanel.Dock="Bottom" Text="بيانات محلية على هذه الحاسبة" Foreground="#CEE0D5" FontSize="12"/><StackPanel x:Name="Nav"/></DockPanel></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-<Button Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث في الاستقطاعات (Ctrl+K)">بحث الاستقطاعات　 Ctrl+K</Button>
+<Button Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="19" TextAlignment="Center" VerticalAlignment="Center"/>
 <ComboBox Grid.Column="2" x:Name="Period" HorizontalAlignment="Left" MinWidth="159" VerticalAlignment="Center" ToolTip="شهر العمل" SelectionChanged="PeriodChanged"/></Grid></Border>
 <Grid Grid.Row="1" x:Name="CanvasArea" Margin="26,22,26,10"/>

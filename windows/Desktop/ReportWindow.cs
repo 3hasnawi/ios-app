@@ -56,7 +56,7 @@ internal sealed class ReportWindow : Window
     async Task Save(bool isPdf)
     {
         string ext=isPdf?"pdf":"xlsx";
-        var d=new SaveFileDialog{FileName=report.Person==""?"كشف جهات التنفيذ":"كشف استقطاعات "+report.Person,Filter=ext.ToUpperInvariant()+"|*."+ext,DefaultExt=ext};
+        var d=new SaveFileDialog{FileName=report.Person==""?report.Sheets[0].Name:"كشف استقطاعات "+report.Person,Filter=ext.ToUpperInvariant()+"|*."+ext,DefaultExt=ext};
         if(d.ShowDialog(this)!=true)return;
         string temp=Path.Combine(Path.GetDirectoryName(d.FileName)!,"."+Guid.NewGuid().ToString("N")+"."+ext);
         IsEnabled=false;

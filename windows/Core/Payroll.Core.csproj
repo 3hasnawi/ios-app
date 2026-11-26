@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.5" />
     <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.11" />
+    <ProjectReference Include="../Accounting/Accounting.csproj" />
     <PackageReference Include="ClosedXML" Version="0.105.0" />
   </ItemGroup>
 </Project>

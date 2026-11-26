@@ -24,7 +24,10 @@ public partial class MainWindow : Window
     private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),("التحويلات","\uE8AB"),("كشف البنك","\uE825"),("الإعدادات","\uE713")];
     private static readonly (string Name,string Desc,string Icon)[] Cards=[
         ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uEC06"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
-        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7")];
+        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7"),
+        (TransfersName,"كتب المصارف ودفعات الشهر","\uE8AB"),(AuditName,"حالات المراجعة والتغييرات","\uEA8F"),
+        (TrustName,"المنتسبون وحالات الصرف","\uE77B"),(FundingName,"تفصيل المبالغ ومطابقتها","\uE825"),
+        (CommandName,"استقطاعات القيادة للشهر","\uE8A5"),(HealthName,"المشتركون والمبالغ غير المنتظمة","\uE95E"),(FundName,"الاستقطاعات حسب الفئة","\uE8A5")];
     private List<string> pins=Cards.Take(4).Select(x=>x.Name).ToList();
     private readonly DispatcherTimer debounce=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private int generation,offset;private const int PageSize=150;
@@ -37,7 +40,7 @@ public partial class MainWindow : Window
         try{var path=Path.Combine(store.Root,"pins.json");if(File.Exists(path))pins=(JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path))??pins).Where(n=>Cards.Any(c=>c.Name==n)).Distinct().ToList();}
         catch(IOException){}catch(JsonException){}
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
-        PreviewKeyDown+=(_,e)=>{if(e.Key==Key.K&&Keyboard.Modifiers==ModifierKeys.Control&&!busy){ShowPage("بحث الاستقطاعات");e.Handled=true;}};
+        PreviewKeyDown+=(_,e)=>{if(e.Key==Key.K&&Keyboard.Modifiers==ModifierKeys.Control&&!busy){ShowPage(SearchName);e.Handled=true;}};
         Loaded+=(_,_)=>Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
     }
     void Guard(Action work){try{work();}catch(Exception e){Error(e);}}
@@ -62,7 +65,7 @@ public partial class MainWindow : Window
         var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field),Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
     }
     void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy)ShowPage(page);}
-    void SearchClick(object s,RoutedEventArgs e){if(!busy)ShowPage("بحث الاستقطاعات");}
+    void SearchClick(object s,RoutedEventArgs e){if(!busy)ShowPage(SearchName);}
     void ShowPage(string name,Review? review=null)
     {
         if(busy)return;query?.Cancel();generation++;debounce.Stop();page=name;PageTitle.Text=name;Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
@@ -70,7 +73,7 @@ public partial class MainWindow : Window
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(name=="الكتب المحفوظة")Books();else DeductionGrid(name=="بحث الاستقطاعات",review);
+        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name))WorkPage(name);else if(name=="الكتب المحفوظة")Books();else DeductionGrid(name=="بحث الاستقطاعات",review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void Activate(string name)
@@ -97,6 +100,7 @@ public partial class MainWindow : Window
             var hint=Text(r.Title,12);hint.Foreground=BrushOf("#775125");hint.Margin=new Thickness(0,0,0,3);
             button.Content=Bar(Glyph("\uE7BA","#94692D"),Column(hint,Text(r.Agency,15,true)));button.Background=BrushOf("#FCF8EF");
             button.HorizontalContentAlignment=HorizontalAlignment.Right;button.Margin=new Thickness(0,8,0,0);reviews.Children.Add(button);}
+        reviews.Children.Add(ButtonFor("مراجعة تغيّرات الرواتب",()=>Activate(AuditName),"\uEA8F"));
         var left=Column(Bar(Text("كشوفي المثبتة",19,true),ButtonFor("تخصيص",EditPins,"\uE713")));
         var tiles=new System.Windows.Controls.Primitives.UniformGrid{Columns=2};foreach(var pin in pins){var c=Cards.First(x=>x.Name==pin);
             var button=ButtonFor(c.Name,()=>Activate(c.Name));button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
@@ -116,6 +120,8 @@ public partial class MainWindow : Window
             button.MouseEnter+=(_,_)=>Lift(-2);button.MouseLeave+=(_,_)=>Lift(0);
             tiles.Children.Add(button);}
         left.Children.Add(tiles);var leftBox=Box(left);Grid.SetColumn(leftBox,1);pair.Children.Add(Box(reviews));pair.Children.Add(leftBox);panel.Children.Add(pair);
+        var library=Bar();foreach(var key in WorkPages.Where(k=>k!=SearchName))library.Children.Add(ButtonFor(key,()=>Activate(key)));
+        panel.Children.Add(Box(Column(Text("دليل الكشوف",18,true),library)));
         var recent=Column(Text("الأشهر المحفوظة",18,true));
         foreach(var m in months.Take(4)){var line=Bar(ButtonFor(m.Name,()=>{initializing=true;Period.SelectedItem=m;initializing=false;Activate("جهات التنفيذ");},"\uE787"),
             Text(Arabic.Money(m.Actual)+" قيد استقطاع",14));recent.Children.Add(line);}
@@ -153,6 +159,7 @@ public partial class MainWindow : Window
             var heading=Text("المساحة على الحاسبة",18,true);heading.Margin=new Thickness(0,0,0,12);legend.Margin=new Thickness(0,10,0,4);
             p.Children.Add(Box(Column(heading,sizes,legend,Text("عند الحفظ ينتقل أرشيف الآيفون وحده. يُعاد إنشاء فهرس البحث على الحاسبة عند فتح النسخة.",14))));
         }
+        p.Children.Add(ButtonFor("استيراد رواتب أو استقطاعات من Excel",()=>_=ImportExcel(),"\uE8B5"));
         CanvasArea.Children.Add(p);
     }
     void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;var temp=d.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.Copy(store.Archive,temp);File.Move(temp,d.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}Status.Text="حُفظ الأرشيف الأصلي كاملاً.";});
@@ -179,6 +186,7 @@ public partial class MainWindow : Window
         if(!history&&key is >0){year.SelectedItem=(key.Value/100).ToString();monthFilter.SelectedIndex=key.Value%100;}
         if(review!=null)agency.SelectedItem=review.Agency;
         var title=Bar(Text(history?"البحث في القيود":"قيود جهات التنفيذ",23,true));
+        if(!history)title.Children.Add(ButtonFor(TransfersName,()=>Activate(TransfersName),"\uE8AB"));
         if(!history)title.Children.Add(ButtonFor("الكتب المحفوظة",()=>ShowPage("الكتب المحفوظة"),"\uE8B7"));
         if(backPage!=null)title.Children.Add(ButtonFor("العودة للرئيسية",()=>{backPage=null;ShowPage("الرئيسية");},"\uE72A"));
         category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
@@ -269,30 +277,6 @@ public partial class MainWindow : Window
         picker.SelectionChanged+=(_,_)=>Draw();Draw();
     }
     static string BankDate(JsonElement e,string key)=>new DateTimeOffset(2001,1,1,0,0,0,TimeSpan.Zero).AddSeconds(e.GetProperty(key).GetDouble()).ToOffset(TimeSpan.FromHours(3)).ToString("yyyy/MM/dd");
-    void Bank()
-    {
-        var dock=new DockPanel();CanvasArea.Children.Add(dock);
-        var raw=store.Metadata("bank");
-        List<JsonElement> entries=[];
-        if(raw!=""){using var doc=JsonDocument.Parse(raw);entries=doc.RootElement.GetProperty("periods").EnumerateArray().Select(e=>e.Clone()).OrderByDescending(e=>e.GetProperty("start").GetDouble()).ToList();}
-        if(entries.Count==0){dock.Children.Add(Box(Column(Text("فترات مطابقة الحساب",23,true),Text("لا توجد فترة مطابقة محفوظة في النسخة المفتوحة."))));return;}
-        var picker=Choices(entries.Select(e=>e.GetProperty("month").GetString()+"　·　"+BankDate(e,"start")+" – "+BankDate(e,"end")));
-        int match=entries.FindIndex(e=>e.GetProperty("month").GetString()==SelectedMonth?.Name);picker.SelectedIndex=Math.Max(0,match);
-        var head=Column(Text("فترات مطابقة الحساب",23,true),Labeled("الفترة المحفوظة",picker,390));
-        var metrics=new System.Windows.Controls.Primitives.UniformGrid{Columns=4};head.Children.Add(metrics);DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
-        var g=GridView(("تاريخ المصرف","Date",1),("البيان","Description",2),("نوع الحركة","Direction",1),("المبلغ","Value",1));dock.Children.Add(g);
-        void Draw(){
-            var e=entries[picker.SelectedIndex];long opening=e.GetProperty("openingBalance").GetInt64(),credit=0,debit=0;
-            var rows=e.GetProperty("movements").EnumerateArray().OrderBy(m=>m.GetProperty("date").GetDouble()).Select(m=>{
-                long amount=m.GetProperty("amount").GetInt64();string direction=m.GetProperty("direction").GetString()!;
-                checked{if(direction=="credit")credit+=amount;else if(direction=="debit")debit+=amount;else throw new InvalidDataException("نوع حركة غير معروف.");}
-                return new {Date=BankDate(m,"date"),Description=m.GetProperty("description").GetString(),Direction=direction=="credit"?"دائن · وارد":"مدين · مصروف",Value=Arabic.Money(amount)};
-            }).ToList();g.ItemsSource=rows;metrics.Children.Clear();
-            foreach(var (label,n) in new[]{("الرصيد الافتتاحي",opening),("مجموع الدائن",credit),("مجموع المدين",debit),("الرصيد الختامي",checked(opening+credit-debit))})
-                metrics.Children.Add(Box(Column(Text(label,13),Text(Arabic.Money(n),20,true))));
-        }
-        picker.SelectionChanged+=(_,_)=>Guard(Draw);Guard(Draw);
-    }
     public async Task Capture(string directory)
     {
         Directory.CreateDirectory(directory);

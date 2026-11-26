@@ -20,7 +20,7 @@ internal static class BackupReader
         using var stream=entry.Open();return JsonDocument.Parse(stream);
     }
     // A damaged row cannot cause the whole expanded JSONL entry to be allocated.
-    private static int Lines(ZipArchiveEntry entry,Action<JsonElement> consume,CancellationToken token)
+    internal static int Lines(ZipArchiveEntry entry,Action<JsonElement> consume,CancellationToken token)
     {
         using var stream=entry.Open();using var line=new MemoryStream();
         var buffer=new byte[65536];int n,count=0;
@@ -64,7 +64,7 @@ internal static class BackupReader
             if(!combined.GetHashAndReset().SequenceEqual(Data(m,"supportingDigest")??[]))throw Invalid();
         }
         progress?.Report("التحقق من الرواتب وفهرسة الاستقطاعات…");
-        Store.Exec(db,"PRAGMA journal_mode=DELETE; CREATE TABLE months(name TEXT PRIMARY KEY,key INTEGER,expected INTEGER,actual INTEGER DEFAULT 0); CREATE TABLE payidentity(period INTEGER,personkey TEXT,rank TEXT); CREATE TABLE deductions(id INTEGER PRIMARY KEY,month TEXT,period INTEGER,person TEXT,rank TEXT,agency TEXT,reference TEXT,casekey TEXT,amount TEXT,status TEXT,search TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)");
+        Store.Exec(db,"PRAGMA journal_mode=DELETE; CREATE TABLE months(name TEXT PRIMARY KEY,key INTEGER,expected INTEGER,actual INTEGER DEFAULT 0); CREATE TABLE people(kind TEXT,person TEXT,month TEXT,info TEXT,search TEXT); CREATE TABLE payidentity(period INTEGER,personkey TEXT,rank TEXT); CREATE TABLE deductions(id INTEGER PRIMARY KEY,month TEXT,period INTEGER,person TEXT,rank TEXT,agency TEXT,reference TEXT,casekey TEXT,amount TEXT,status TEXT,search TEXT); CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT)");
         using var tx=db.BeginTransaction();
         SqliteCommand Command(string sql,params string[] keys){var c=db.CreateCommand();c.Transaction=tx;c.CommandText=sql;foreach(var k in keys)c.Parameters.Add(new SqliteParameter(k,DBNull.Value));return c;}
         static void Insert(SqliteCommand c,params object?[] values){for(int i=0;i<values.Length;i++)c.Parameters[i].Value=values[i]??DBNull.Value;c.ExecuteNonQuery();}
@@ -75,9 +75,15 @@ internal static class BackupReader
         using var payHash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         void Int(ulong n){Span<byte> bytes=stackalloc byte[8];BinaryPrimitives.WriteUInt64BigEndian(bytes,n);payHash.AppendData(bytes);}
         void Field(byte[]? b){Int(b==null?ulong.MaxValue:(ulong)b.Length);if(b!=null)payHash.AppendData(b);}
+        using var personIndex=Command("INSERT INTO people VALUES($k,$p,$m,$i,$s)","$k","$p","$m","$i","$s");
+        void Person(string kind,string person,string month,string info,string extra="")=>Insert(personIndex,kind,person,month,info,Arabic.Key(person+" "+month+" "+info+" "+extra));
         using var identity=Command("INSERT INTO payidentity VALUES($k,$p,$r)","$k","$p","$r");
         var paid=Lines(Entry("employees.jsonl"),r=>{
             if(!names.Contains(Text(r,"month")))throw Invalid();
+            var info=Text(r,"rank")+" · "+Text(r,"workplace");
+            var fields=Data(r,"details");
+            string extra=fields==null?"":string.Join(" ",JsonSerializer.Deserialize<Dictionary<string,string>>(fields)!.Values);
+            Person("راتب",Text(r,"name"),Text(r,"month"),info,extra);
             Insert(identity,Arabic.Period(Text(r,"month")),Arabic.Match(Text(r,"name")),Text(r,"rank"));
             if(version<12)return;
             foreach(var key in new[]{"month","name","rank","workplace"})Field(Encoding.UTF8.GetBytes(Text(r,key)));
@@ -103,7 +109,7 @@ internal static class BackupReader
             if(amount==null&&note.StartsWith(prefix)&&end>=prefix.Length){var label=Arabic.Key(note[prefix.Length..end]);if(label is "موقوف" or "هارب" or "محكوم"){status=label;note=note[(end+1)..].Trim();}}
             Insert(deduct,mo,Arabic.Period(mo),person,rank,agency,note,Arabic.CaseKey(note),amount?.ToString(CultureInfo.InvariantCulture),status,Arabic.Key(person+" "+agency+" "+note));
         },token);
-        if(cuts!=Count(m,"deductions")||Lines(Entry("staff.jsonl"),_=>{},token)!=Count(m,"staff"))throw Invalid();
+        if(cuts!=Count(m,"deductions")||Lines(Entry("staff.jsonl"),r=>Person("ملاك",Text(r,"name"),"",Text(r,"rank")+" · "+Text(r,"workplace"),Text(r,"mother")+" "+Text(r,"stat")+" "+Text(r,"unified")),token)!=Count(m,"staff"))throw Invalid();
         if(version>=2&&Lines(Entry("accounts.jsonl"),_=>{},token)!=Count(m,"accounts"))throw Invalid();
         if(version==14){
             bool draft=false;var ids=new HashSet<string>();
@@ -118,8 +124,13 @@ internal static class BackupReader
             byte[] bank=PlistData.Unwrap(wrapped.GetBytesFromBase64());
             if(bank.Length>0){using var ledger=JsonDocument.Parse(bank);if(Count(ledger.RootElement,"version")!=1)throw Invalid();Insert(meta,"bank",Encoding.UTF8.GetString(bank));}
         }
+        if(settings.RootElement.TryGetProperty("salaryTrustLedgerV1",out var trust)){
+            var data=PlistData.Unwrap(trust.GetBytesFromBase64());
+            if(data.Length>0)foreach(var item in SalaryDesktop.Core.SalaryTrust.Decode(data).Entries)
+                Person("أمانات",item.Name,SalaryDesktop.Core.SalaryTrust.MonthLabel(item.Year,item.Month),Arabic.Money(item.Amount)+" · "+item.ImportedStatus+" · "+item.ImportedPaymentDate);
+        }
         if(settings.RootElement.TryGetProperty("reportHeader",out var head))Insert(meta,"header",PlistData.String(head.GetBytesFromBase64()));
-        using var finish=Command("PRAGMA user_version=1; CREATE INDEX pay_name ON payidentity(personkey,period); CREATE INDEX d_name ON deductions(person_key(person)); CREATE INDEX d_month ON deductions(month); CREATE INDEX d_person ON deductions(person,agency,casekey); CREATE INDEX d_agency ON deductions(agency,period); UPDATE months SET actual=(SELECT count(*) FROM deductions WHERE month=months.name)");
+        using var finish=Command("PRAGMA user_version=2; CREATE INDEX pay_name ON payidentity(personkey,period); CREATE INDEX d_name ON deductions(person_key(person)); CREATE INDEX d_month ON deductions(month); CREATE INDEX d_person ON deductions(person,agency,casekey); CREATE INDEX d_agency ON deductions(agency,period); UPDATE months SET actual=(SELECT count(*) FROM deductions WHERE month=months.name)");
         finish.ExecuteNonQuery();token.ThrowIfCancellationRequested();tx.Commit();
     }
 }

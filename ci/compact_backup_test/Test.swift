@@ -41,6 +41,19 @@ import CoreGraphics
         func database() throws -> ModelContainer {
             try ModelContainer(for: schema, configurations: [ModelConfiguration(isStoredInMemoryOnly: true)])
         }
+        if let path = ProcessInfo.processInfo.environment["WINDOWS_EXCHANGE"] {
+            let folder = try await Restore.extractForRestore(URL(fileURLWithPath: path))
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let container = try database()
+            let settings = try await BackupActor(modelContainer: container).restore(from: folder, progress: nil)
+            let state = try Snapshot(container)
+            let archive = try ContractTransferArchive.fromSettings(settings)
+            let batch = try archive.records.first!.batch()
+            precondition(state.payroll.count == 6 && state.deductions.values.reduce(0, +) == 1500)
+            precondition(batch.held == 21_447_110 && batch.parts.flatMap(\.deferred).map(\.amount).reduce(0,+) == 300)
+            print("PASS Windows archive restored by the production SwiftData BackupActor, including LZFSE deferred batch")
+            return
+        }
         try await testContractBatches(database(), destination: database())
         let source = try database(), destination = try database()
         let context = ModelContext(source), encoder = JSONEncoder()

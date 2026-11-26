@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace AnbarPayroll;
 
-public sealed class Store(string root)
+public sealed partial class Store(string root)
 {
     public string Root {get;}=root;
     private string Pointer=>Path.Combine(Root,"current");
@@ -20,11 +20,12 @@ public sealed class Store(string root)
     }
     public const string BackupName="نسخة الرواتب.zip";
     public string Archive=>Path.Combine(Active??throw new InvalidOperationException("اختر نسخة أولاً."),BackupName);
-    public void Import(string source,IProgress<string>? progress=null,CancellationToken token=default)
+    public void Import(string source,IProgress<string>? progress=null,CancellationToken token=default) => Install(source,progress,token, false,null);
+    private void Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected)
     {
         Directory.CreateDirectory(Root);
         using var lease=new FileStream(Path.Combine(Root,"import.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
-        _=Active;
+        if(checkRevision && Active!=expected)throw new InvalidOperationException("تغيرت النسخة. أعد فتح البيانات قبل الحفظ.");
         var id=Guid.NewGuid().ToString("N");
         string stage=Path.Combine(Root,id),next=Path.Combine(Root,"current."+id);
         Directory.CreateDirectory(stage);
@@ -145,8 +146,21 @@ public sealed class Store(string root)
     public void UpgradeIndex()
     {
         if(Active==null)return;
-        using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=1)return;}
+        using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=2)return;}
         Import(Archive);
+    }
+    public record SearchResult(string Kind,string Name,string Month,string Info);
+    public List<SearchResult> SearchPeople(string query)
+    {
+        var words=Arabic.Key(query).Split(' ',StringSplitOptions.RemoveEmptyEntries);
+        if(words.Length==0||Active==null)return [];
+        using var db=Open();using var cmd=db.CreateCommand();
+        string where=string.Join(" AND ",words.Select((w,i)=>"instr(search,$w"+i+")>0"));
+        for(int i=0;i<words.Length;i++)cmd.Parameters.AddWithValue("$w"+i,words[i]);
+        cmd.CommandText="SELECT kind,person,month,info FROM people WHERE "+where+" UNION ALL SELECT 'استقطاع',person,month,agency || ' · ' || reference FROM deductions WHERE "+where+" ORDER BY 2 COLLATE ARABIC LIMIT 301";
+        using var rows=cmd.ExecuteReader();var hits=new List<SearchResult>();
+        while(rows.Read())hits.Add(new(rows.GetString(0),rows.GetString(1),rows.GetString(2),rows.GetString(3)));
+        return hits;
     }
     public List<ArchivedBook> Books()
     {

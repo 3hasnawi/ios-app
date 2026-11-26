@@ -3,6 +3,18 @@ import SwiftData
 
 @main enum DraftTest {
     @MainActor static func main() async throws {
+        if let path = ProcessInfo.processInfo.environment["WINDOWS_REFUND"] {
+            let data = try Data(contentsOf: URL(fileURLWithPath: path))
+            let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: data)
+            let batch = try snapshot.plan()
+            precondition(snapshot.rows.count == 3 && batch.total == 3003 && Set(snapshot.rows.map(\.id)).count == 3)
+            for group in batch.groups {
+                let expected = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent(group.code + ".csv")
+                let csv = try Data(contentsOf: expected)
+                precondition(EmployeeRefund.csv(group, batch: batch, day: "20261120") == csv)
+            }
+            print("PASS Windows refund IDs, per-bank BIC and full CSV bytes match iPhone")
+        }
         let container = try ModelContainer(for: Employee.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
         func employee(_ month: String, _ name: String, _ iban: String) throws -> Employee {

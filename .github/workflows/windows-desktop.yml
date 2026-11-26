@@ -16,6 +16,10 @@ jobs:
           python windows/Checks/fixture.py "$env:RUNNER_TEMP/fixture"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project windows/Checks/Payroll.Checks.csproj -c Release -- "$env:RUNNER_TEMP/fixture"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-windows-exchange
+          path: ${{ runner.temp }}/fixture/exchange
       - name: Publish desktop
         run: dotnet publish windows/Desktop/Payroll.Desktop.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/app"
       - name: Build and install single setup
@@ -38,3 +42,21 @@ jobs:
         with:
           name: windows-screens
           path: ${{ runner.temp }}/screens
+
+  apple-readback:
+    needs: desktop
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: synthetic-windows-exchange
+          path: ${{ runner.temp }}/exchange
+      - name: Restore Windows output with actual iPhone archive, contract and refund code
+        env:
+          WINDOWS_EXCHANGE: ${{ runner.temp }}/exchange/windows-exchange.zip
+          WINDOWS_REFUND: ${{ runner.temp }}/exchange/refund.json
+        run: |
+          python3 ci/compact_backup_test/run.py
+          python3 ci/employee_refund_test/run.py
