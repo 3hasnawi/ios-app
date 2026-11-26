@@ -77,6 +77,13 @@ nonisolated enum Num {
         }))
     }
 
+    static func megabytes(_ bytes: Int64) -> String {
+        let value = Double(bytes) / 1_048_576
+        let tiny = bytes > 0 && value < 0.01
+        let number = (tiny ? 0.01 : value).formatted(.number.precision(.fractionLength(2)).locale(AppSettings.locale))
+        return (tiny ? tr("أقل من ", "Less than ") : "") + number + tr(" ميغابايت", " MB")
+    }
+
     /// حجم بالبايت ← كيلوبايت أو ميغابايت أو غيغابايت حسب الحجم.
     static func bytes(_ count: Int64) -> String {
         let units = AppSettings.isEnglish

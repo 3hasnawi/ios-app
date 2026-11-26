@@ -1711,11 +1711,11 @@ struct BackupView: View {
     private func sizeRow(_ title: String, _ bytes: Int64, _ previous: Int64?) -> some View {
         LabeledContent(title) {
             VStack(alignment: .trailing) {
-                Text(Num.bytes(bytes))
+                Text(Num.megabytes(bytes))
                 if let previous {
                     let delta = bytes - previous
                     Text(delta == 0 ? tr("دون تغيير", "Unchanged")
-                         : (delta > 0 ? tr("زيادة ", "Up ") : tr("انخفاض ", "Down ")) + Num.bytes(abs(delta)))
+                         : (delta > 0 ? tr("زيادة ", "Up ") : tr("انخفاض ", "Down ")) + Num.megabytes(abs(delta)))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1743,7 +1743,7 @@ struct BackupView: View {
                 } else {
                     if let last = manager.lastBackup {
                         Text(tr("آخر نسخة: \(Self.stamp(last))", "Last backup: \(Self.stamp(last))")).font(.headline)
-                        Text("\(BackupFormat.fileName()) · \(manager.lastSize > 0 ? Num.bytes(manager.lastSize) : tr("الحجم غير متاح", "Size unavailable"))\n\(manager.lastPlace)")
+                        Text("\(BackupFormat.fileName()) · \(manager.lastSize > 0 ? Num.megabytes(manager.lastSize) : tr("الحجم غير متاح", "Size unavailable"))\n\(manager.lastPlace)")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
                         Text(tr("لم تُؤخذ نسخة بعد", "No backup yet")).font(.headline)

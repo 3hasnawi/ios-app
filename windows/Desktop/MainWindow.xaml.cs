@@ -118,6 +118,8 @@ public partial class MainWindow : Window
         if(name==DeductionsName)name=AgencyPage;
         query?.Cancel();generation++;debounce.Stop();page=name;
         PageTitle.Text=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
+        CanvasArea.MinWidth=name=="الإعدادات"?0:628;
+        CanvasArea.MinHeight=name=="الإعدادات"?0:400;
         string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers or "الكتب المحفوظة"=>"التحويلات",_=>name};
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
@@ -223,22 +225,57 @@ public partial class MainWindow : Window
     }
     void Settings()
     {
-        var p=Column(AppearanceSettings(),Text("البيانات والنسخ الاحتياطي",23,true),Text("تُفتح النسخة من الحاسبة أو من مجلد iCloud Drive بعد تنزيل الملف.",14));
-        p.Children.Add(Box(Column(Text("نسخة الآيفون",18,true),Text(store.Active==null?"لم تُفتح نسخة بعد.":"صيغة "+store.Metadata("format")+"　·　"+months.Count+" فترات　·　"+Arabic.Money(new FileInfo(store.Archive).Length)+" بايت"),
-            Bar(ButtonFor("فتح نسخة الآيفون",()=>_=Import(),"\uE8E5",true),ButtonFor("حفظ نسخة مطابقة",CopyArchive,"\uE74E")))));
-        if(store.Active is {} active){
-            long archive=new FileInfo(store.Archive).Length,lookup=new FileInfo(Path.Combine(active,"lookup.db")).Length;
-            static string Size(long size)=>size>=1048576?(size/1048576d).ToString("N1")+" م.ب":Math.Ceiling(size/1024d).ToString("N0")+" ك.ب";
+        static string Size(long bytes)
+        {
+            double value=bytes/1048576d;
+            return bytes>0 && value<0.01 ? "أقل من 0.01 ميغابايت" : value.ToString("N2")+" ميغابايت";
+        }
+        var active=store.Active;
+        long archive=active==null?0:new FileInfo(store.Archive).Length;
+        var save=ButtonFor("حفظ نسخة مطابقة",CopyArchive,"\uE74E");
+        save.IsEnabled=active!=null;
+        var backup=Box(Column(Text("البيانات والنسخ الاحتياطي",18,true),
+            Text(active==null?"لم تُفتح نسخة بعد.":"حجم النسخة "+Size(archive)+"　·　عدد الفترات "+months.Count+"　·　صيغة "+store.Metadata("format"),14),
+            Text("تُفتح النسخة من الحاسبة أو من مجلد iCloud Drive بعد تنزيلها.",14),
+            Bar(ButtonFor("فتح نسخة الآيفون",()=>_=Import(),"\uE8E5",true),save),
+            Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"))));
+        var storage=Column(Text("المساحة على الحاسبة",18,true));
+        if(active!=null){
+            long lookup=new FileInfo(Path.Combine(active,"lookup.db")).Length;
             var sizes=new Grid();
             sizes.ColumnDefinitions.Add(new(){Width=new(archive,GridUnitType.Star)});sizes.ColumnDefinitions.Add(new(){Width=new(lookup,GridUnitType.Star)});
             var original=new Border{Height=7,Background=BrushOf("#33785C")};var index=new Border{Height=7,Background=BrushOf("#7494AD")};Grid.SetColumn(index,1);sizes.Children.Add(original);sizes.Children.Add(index);
-            var legend=Bar(Glyph("\uE8B7","#33785C"),Text("أرشيف الآيفون　"+Size(archive)),Glyph("\uE721","#486D8A"),Text("فهرس البحث المحلي　"+Size(lookup)));
-            var heading=Text("المساحة على الحاسبة",18,true);heading.Margin=new Thickness(0,0,0,12);legend.Margin=new Thickness(0,10,0,4);
-            p.Children.Add(Box(Column(heading,sizes,legend,Text("عند الحفظ ينتقل أرشيف الآيفون وحده. يُعاد إنشاء فهرس البحث على الحاسبة عند فتح النسخة.",14))));
+            sizes.Margin=new Thickness(0,10,0,8);
+            storage.Children.Add(sizes);
+            storage.Children.Add(Bar(Glyph("\uE8B7","#33785C"),Text("أرشيف الآيفون　"+Size(archive),14)));
+            storage.Children.Add(Bar(Glyph("\uE721","#486D8A"),Text("فهرس البحث المحلي　"+Size(lookup),14)));
+            storage.Children.Add(Text("يُنقل الأرشيف عند الحفظ. يُنشأ فهرس البحث محلياً عند فتح النسخة.",14));
+        }else{
+            storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
         }
-        p.Children.Add(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"));
-        p.Children.Add(Box(Column(Text("تحديث التطبيق",18,true),Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
-        CanvasArea.Children.Add(new ScrollViewer{Content=p,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+        var updates=Box(Column(Text("تحديث التطبيق",18,true),
+            Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),
+            Bar(ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
+        var cards=new[]{backup,AppearanceSettings(),Box(storage),updates};
+        var layout=new Grid{VerticalAlignment=VerticalAlignment.Top};
+        foreach(var card in cards)layout.Children.Add(card);
+        void ArrangeCards(double width)
+        {
+            int columns=width>=650*(1+appearance.Level*.05)?2:1;
+            if(layout.ColumnDefinitions.Count==columns)return;
+            layout.ColumnDefinitions.Clear();
+            layout.RowDefinitions.Clear();
+            for(int col=0;col<columns;col++)layout.ColumnDefinitions.Add(new ColumnDefinition());
+            for(int i=0;i<cards.Length;i++){
+                if(i%columns==0)layout.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+                Grid.SetRow(cards[i],i/columns);
+                Grid.SetColumn(cards[i],i%columns);
+            }
+        }
+        ArrangeCards(CanvasArea.ActualWidth);
+        layout.SizeChanged+=(_,args)=>ArrangeCards(args.NewSize.Width);
+        CanvasArea.Children.Add(new ScrollViewer{Content=layout,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalContentAlignment=HorizontalAlignment.Stretch});
     }
     void CopyArchive()=>Guard(()=>{if(store.Active==null)return;var d=new SaveFileDialog{FileName=Store.BackupName,Filter="نسخة الآيفون|*.zip"};if(d.ShowDialog(this)!=true)return;_=Working(()=>store.ExportBackup(d.FileName),"حُفظت النسخة المشتركة كاملة.");});
     async Task Import()
@@ -499,6 +536,16 @@ public partial class MainWindow : Window
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
                 }
                 ShowPage(name);
+            }
+            if(name=="الإعدادات"){
+                UpdateLayout();
+                var settingsView=CanvasArea.Children.OfType<ScrollViewer>().Single();
+                var cards=(Grid)settingsView.Content;
+                if(cards.Children.Count!=4 || (CanvasArea.ActualWidth>=820 && CanvasArea.ActualHeight>=500 &&
+                    (cards.ColumnDefinitions.Count!=2 || settingsView.ScrollableHeight>1 || settingsView.ScrollableWidth>1)))
+                    throw new InvalidDataException("لم تظهر أقسام الإعدادات معاً ضمن مساحة الشاشة الكبيرة.");
+                foreach(var action in new[]{"فتح نسخة الآيفون","حفظ نسخة مطابقة","استيراد ملف بيانات","التحقق من تحديث"})
+                    FindAction(cards,action);
             }
             if(name=="الرئيسية"){
                 await homeLoad;
