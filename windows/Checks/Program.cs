@@ -27,6 +27,9 @@ Check(store.Find(new(Reference:"١٧٠/٢٠٢٤")).Count()==4,"combined case and
 Check(store.Metadata("bank").Contains("movements"),"binary plist bank settings");
 var entity=Statement.Entities(store.Find(new(Year:2026,Month:11)),store.Metadata("header"),true);
 Check(entity.Sheets[0].Total==580000,"total equals all grouped details");
+var review=store.ReviewDeductionEntries(months[0],months[1]);
+Check(!review.Blocked && review.Rows["الاستقطاعات الجديدة"].Count==4 && review.Rows["الاستقطاعات المتوقفة"].Count==4
+    && review.Rows["تغيّر مبلغ الاستقطاع (نفس الجهة والإضبارة)"].Count==6,"review cards count started, stopped and changed case files independently");
 string xlsx=Path.Combine(path,"agency.xlsx");entity.Excel(xlsx);
 using(var wb=new XLWorkbook(xlsx)){var w=wb.Worksheet(1);Check(w.RightToLeft&&w.Cell(6,4).GetDouble()==580000,"reopen workbook and total formula");}
 var employee=Statement.Employee(store.Find(new(Person:one.Name)),months,one.Name,one.Agency,one.Reference,202502,202611,"بيانات وهمية");

@@ -29,7 +29,7 @@ public partial class MainWindow
             foreach(var raf in original.Groups().Select(g=>g.Code=="RAFB").Distinct())
                 batch=batch.WithLetter(raf,styles.GetValueOrDefault(raf)??RefundStyle(original,raf,source));
             _=Working(()=>store.SaveRefund(batch,revision),"حُفظت الدفعة بتاريخها.",()=>{
-                var latest=store.Snapshot(month);
+                var latest=store.Snapshot();
                 RefundFiles(latest,month,store.Refunds().Single(b=>b.ArchiveId!="draft" && b.Id==id));
             });
         }

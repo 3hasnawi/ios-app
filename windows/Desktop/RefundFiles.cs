@@ -7,9 +7,17 @@ namespace AnbarPayroll.Desktop;
 
 public partial class MainWindow
 {
-    void RefundHome(A.BackupSnapshot source,string month)
+    async Task OpenRefundEditor(A.BackupSnapshot source,string month,RefundBatch? editing)
     {
-        var history=store.Refunds();
+        A.BackupSnapshot? payroll=null;
+        await Working(()=>{
+            if(store.Active!=Path.GetDirectoryName(source.SourcePath))throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
+            payroll=store.Snapshot(month);
+        },"",()=>RefundDesk(payroll!,month,editing));
+    }
+
+    void RefundHome(A.BackupSnapshot source,string month,List<RefundBatch> history)
+    {
         var draft=history.FirstOrDefault(b=>b.ArchiveId=="draft");
         var saved=history.Where(b=>b.ArchiveId!="draft").ToList();
         CanvasArea.Children.Clear();
@@ -22,7 +30,7 @@ public partial class MainWindow
             button.Padding=new Thickness(16);button.Margin=new Thickness(4);
             choices.Children.Add(button);
         }
-        Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>RefundDesk(source,month,draft));
+        Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>_=OpenRefundEditor(source,month,draft));
         Section("الدفعات المحفوظة",saved.Count+" دفعة　·　الكتب وملفات المصارف","\uE8B7",()=>RefundHistory(source,month,saved));
         CanvasArea.Children.Add(Column(Bar(ButtonFor("التحويلات",()=>ShowPage(TransfersName),"\uE72A")),choices));
     }
@@ -41,16 +49,19 @@ public partial class MainWindow
 
     static A.GroupLetterSettings RefundStyle(RefundBatch batch,bool raf,A.BackupSnapshot source)
     {
+        const string header="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات";
+        var baseline=new A.GroupLetterSettings(header,"١‏/٢٢/ح/","","","",RefundBatch.Copies,null,null,0,null);
+        if(batch.Original?["letters"]?[raf?"rafidain":"otherBanks"]!=null)return batch.LetterStyle(raf,baseline);
         var fallback=A.GroupLetterSettingsReader.Read(source,raf?A.TransferGroup.Rafidain:A.TransferGroup.OtherBanks);
-        if(string.IsNullOrWhiteSpace(fallback.Header))fallback=fallback with{Header="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات"};
-        return batch.LetterStyle(raf,fallback);
+        return fallback with{Header=string.IsNullOrWhiteSpace(fallback.Header)?header:fallback.Header,Footer=RefundBatch.Copies,
+            Template=fallback.Template is {} t?t with{Recipient="مصرف الرافدين / فرع الأنبار"}:null,BodyTemplate=null};
     }
 
     void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch)
     {
         CanvasArea.Children.Clear();PageTitle.Text="ملفات الدفعة";
         void Back()=>RefundHistory(source,month,store.Refunds().Where(b=>b.ArchiveId!="draft").ToList());
-        var panel=Column(Bar(ButtonFor("الدفعات المحفوظة",Back,"\uE72A"),ButtonFor("تعديل الدفعة",()=>RefundDesk(source,month,batch),"\uE70F"),
+        var panel=Column(Bar(ButtonFor("الدفعات المحفوظة",Back,"\uE72A"),ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
             ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
                 _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D")),
             Text(batch.Source+"　·　"+batch.Date.ToString("yyyy/MM/dd")+"　·　"+batch.People.Count+" منتسب　·　"+Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount)),18,true));

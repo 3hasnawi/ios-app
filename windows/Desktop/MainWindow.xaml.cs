@@ -196,15 +196,15 @@ public partial class MainWindow : Window
             var summary=await Task.Run(()=>store.Summary(new(Year:selectedPeriod.Key/100,Month:selectedPeriod.Key%100)));
             if(!Current())return;
             balance.Text=Arabic.Money(summary.Total);
-            var data=await Task.Run(()=>(Alerts:store.Reviews(selectedPeriod),Salary:store.HasPayroll(selectedPeriod.Name)));
-            if(!Current())return;
             var prior=months.FirstOrDefault(m=>m.Key>0&&m.Key<selectedPeriod.Key);
+            var data=await HomeReviewData(revision,selectedPeriod,prior);
+            if(!Current())return;
             SalaryDesktop.Core.SalaryReviewResult? audit=null;
             if(data.Salary){
                 try{audit=await Audit(selectedPeriod.Name);}
                 catch(Exception ex){if(Current())Status.Text=ex.Message;}
             }
-            if(Current())ShowReviewCards(reviewHost,selectedPeriod,data.Alerts,data.Salary,audit,prior);
+            if(Current())ShowReviewCards(reviewHost,selectedPeriod,data.Alerts,data.Salary,audit,prior,data.Deductions);
         }catch(Exception e){
             if(Current()){reviewHost.Children.Clear();reviewHost.Children.Add(Text("تعذّر تحميل حالات المراجعة.",16));Status.Text=e.Message;}
         }

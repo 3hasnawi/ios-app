@@ -28,7 +28,7 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
         if(e.Details!=null)foreach(var (k,v) in JsonSerializer.Deserialize<Dictionary<string,string>>(e.Details)!)Add(k,v);
         return new(e.Name,e.Rank,e.Workplace,e.Month,Format(Get("IBAN")),Get("توطين المصرف"),codes.Count==1?codes.Single():"",0);
     }
-    internal const string Copies="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.";
+    public const string Copies="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.";
     static JsonObject DefaultLetter()=>new(){["header"]="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات",["number"]="١‏/٢٢/ح/",["recipient"]="مصرف الرافدين / فرع الأنبار",["first"]="",["second"]="",["third"]="",["signatureOffset"]=0,["footer"]=Copies};
     internal static JsonObject DefaultLetters()=>new(){["rafidain"]=DefaultLetter(),["otherBanks"]=DefaultLetter()};
     public A.GroupLetterSettings LetterStyle(bool rafidain,A.GroupLetterSettings fallback){

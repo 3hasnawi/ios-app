@@ -14,12 +14,22 @@ public partial class MainWindow
         "تغيّر الصافي"=>"تغيّر صافي الراتب", "تغيّرت الرتبة"=>"تغيّر الرتبة", "تغيّر الحساب"=>"تغيّر الحساب المصرفي",
         "عدد الاطفال"=>"تغيّر عدد الأطفال", "الحالة الزوجية"=>"تغيّر الزوجية", "اسم الشهادة"=>"تغيّر الشهادة",
         "IBAN فارغ" or "IBAN مكرر" or "IBAN يحتاج مراجعة"=>"IBAN",
+        "استقطاع بلا راتب"=>"استقطاعات بلا راتب", "مجموع الاستقطاعات"=>"مطابقة المجاميع",
         "حساب الصافي"=>"خطأ في الحساب", "رقم مكرر"=>"الرقم الوظيفي / الموحد",
         "راتب بلا ملاك"=>"لهم راتب وليسوا في الملاك", "ملاك بلا راتب"=>"في الملاك بلا راتب",
         "رتبة مختلفة عن الملاك"=>"الرتبة مختلفة عن الملاك", _=>kind
     };
 
     Task homeLoad=Task.CompletedTask;
+    sealed record ReviewData(List<Review> Alerts,bool Salary,DeductionCardData Deductions);
+    (string? Revision,string Month,Task<ReviewData> Result)? homeReviewCache;
+    Task<ReviewData> HomeReviewData(string? revision,MonthInfo month,MonthInfo? previous)
+    {
+        if(homeReviewCache is {} cached && cached.Revision==revision && cached.Month==month.Name && !cached.Result.IsFaulted)return cached.Result;
+        var task=Task.Run(()=>new ReviewData(store.Reviews(month),store.HasPayroll(month.Name),store.ReviewDeductionEntries(month,previous)));
+        homeReviewCache=(revision,month.Name,task);
+        return task;
+    }
 
     void AgencyReview(Review[] entities)
     {
@@ -33,7 +43,17 @@ public partial class MainWindow
         ShowPage(AgencyPage,selected);
     }
 
-    void ShowReviewCards(Panel host,MonthInfo month,IReadOnlyList<Review> alerts,bool hasSalary,A.SalaryReviewResult? audit,MonthInfo? previous)
+    void DeductionReviewDetails(string title,List<DeductionReviewLine> rows)
+    {
+        var table=GridView(("المنتسب","Name",1.4),("الجهة","Agency",1.4),("رقم وتاريخ الإضبارة","Reference",1.3),("السابق","Before",1),("الحالي","After",1));
+        if(rows.Any(r=>r.Copies>1))table.Columns.Add(new DataGridTextColumn{Header="عدد القيود",Binding=new System.Windows.Data.Binding("Copies")});
+        table.ItemsSource=rows.OrderByDescending(r=>Math.Abs(r.After-(r.Before??0))).ThenBy(r=>r.Name).ToList();
+        new Window{Owner=this,Title=title,Width=Math.Min(930,SystemParameters.WorkArea.Width*.9),
+            Height=Math.Min(550,SystemParameters.WorkArea.Height*.85),WindowStartupLocation=WindowStartupLocation.CenterOwner,
+            FlowDirection=FlowDirection.RightToLeft,Content=table}.ShowDialog();
+    }
+
+    void ShowReviewCards(Panel host,MonthInfo month,IReadOnlyList<Review> alerts,bool hasSalary,A.SalaryReviewResult? audit,MonthInfo? previous,DeductionCardData deductions)
     {
         var items=new List<HomeReview>();
         foreach(var group in alerts.GroupBy(r=>r.Title)){
@@ -41,8 +61,10 @@ public partial class MainWindow
             var detail=entities.Length==1?entities[0].Agency:Arabic.Money(entities.Length)+" جهة";
             items.Add(new("agency|"+group.Key,group.Key,detail+"　·　"+month.Name,"\uEC06",()=>AgencyReview(entities)));
         }
-        if(!month.Verified||previous==null||!previous.Verified)
+        if(deductions.Blocked)
             items.Add(new("deduction-check","مقارنة الاستقطاعات تحتاج مراجعة","تحتاج المقارنة إلى شهرين متحققين من الاستقطاعات.","\uE7BA",()=>Activate(AgencyPage)));
+        foreach(var (title,rows) in deductions.Rows)
+            items.Add(new("deduction|"+title,title,Arabic.Money(rows.Count)+" حالة　·　"+month.Name,"\uE8FD",()=>DeductionReviewDetails(title,rows)));
         if(!hasSalary)
             items.Add(new("salary-missing","تدقيق الرواتب غير مكتمل",month.Name+"　·　فتح إعدادات الاستيراد","\uE7BA",()=>Activate("الإعدادات")));
         else if(audit==null||audit.EmployeeCount==0||audit.PreviousMonth==null)

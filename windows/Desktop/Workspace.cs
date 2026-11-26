@@ -86,11 +86,16 @@ public partial class MainWindow
                 var buttons=Bar(preview);DockPanel.SetDock(buttons,Dock.Top);dock.Children.Add(buttons);
                 filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
             }
+            if(key==RefundTransfers){
+                var saved=await Task.Run(()=>(Source:store.Snapshot(),Batches:store.Refunds()));
+                if(page!=key || revision!=store.Active || !CanvasArea.Children.Contains(loading))return;
+                RefundHome(saved.Source,month,saved.Batches);
+                return;
+            }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
             if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             CanvasArea.Children.Remove(loading);
             if(key is CurrentTransfers or DeferredTransfers){TransferDesk(snapshot,month,key==DeferredTransfers);return;}
-            if(key==RefundTransfers){RefundHome(snapshot,month);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var funding=key==FundingName&&snapshot.Employees.Count>0?await Task.Run(()=>WorkReports.FundingData(snapshot,month)):null;
