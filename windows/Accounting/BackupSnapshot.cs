@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 namespace SalaryDesktop.Core;
 
 // Snapshot is read only. The original backup is never extracted or overwritten.
-public sealed record PayrollMonth(string Name, int EmployeeCount, int DeductionCount,double ImportedAt=0);
+public sealed record PayrollMonth(string Name, int EmployeeCount, int DeductionCount,double ImportedAt=0, byte[]? Summary=null);
 public sealed record Employee(string Month, string Name, string Rank, string Workplace, decimal? Net, byte[]? Items, byte[]? Details, byte[]? RawColumns);
 public sealed record Deduction(string Month, string Name, string Title, decimal? Amount, string Note, string Rank);
 public sealed record ExecutionAccount(string Entity, string Iban, string Branch, string Swift, string? LocalAccount);

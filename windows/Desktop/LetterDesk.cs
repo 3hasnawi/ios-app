@@ -20,11 +20,18 @@ public partial class MainWindow
         return A.LetterTemplate.From(saved,BookTitles[id],DefaultBody(id));
     }
     static byte[] LayoutSample(A.LetterTemplate t,string month){
-        t.Validate();int period=A.MonthNames.SortKey(month);
-        var vals=new Dictionary<string,string>{{"الشهر",A.AdaptiveLetterPdf.MonthName(period%100)},{"السنة",A.AdaptiveLetterPdf.Eastern((period/100).ToString())},
-            {"المبلغ","١٠٠,٠٠٠"},{"المبلغ كتابة","مائة ألف دينار"},{"حسابنا","حساب الجهة الدافعة"},{"حساب المستفيد","حساب المستفيد"},{"الحساب",string.IsNullOrWhiteSpace(t.Account)?"الحساب المرتبط":t.Account},
-            {"المستفيد","اسم المستفيد"},{"المصرف","اسم المصرف"},{"عقد الإطعام",t.FoodContractReference??"رقم العقد"},{"الرتبة","الرتبة"},{"الاسم","اسم المنتسب"},{"سبب التضمين","سبب التضمين"}};
-        return A.TemplateLetterPdf.Document(t,month,A.LetterTemplate.Fill(A.LetterTemplate.FormatNumbers(t.Body),vals),DocumentFonts(),null,[]);
+        string Or(string? s,string hint)=>string.IsNullOrWhiteSpace(s)?hint:A.LetterTemplate.FormatNumbers(s);
+        string Signer(string s){
+            var parts=s.Trim().Split('\n');
+            if(parts.Length==1)return s;
+            if(parts.Length>3)return "توقيع غير مكتمل";
+            return string.Join('\n',Enumerable.Range(0,3).Select(i=>i<parts.Length&&!string.IsNullOrWhiteSpace(parts[i])?parts[i]:"…"));
+        }
+        bool noSigners=new[]{t.FirstSigner,t.SecondSigner,t.ThirdSigner}.All(string.IsNullOrWhiteSpace);
+        var preview=t with{Header=Or(t.Header,"الترويسة"),Number=Or(t.Number,"العدد"),Recipient=Or(t.Recipient,"الجهة المرسل إليها"),Subject=Or(t.Subject,"الموضوع"),
+            FirstSigner=noSigners?"التوقيع":Signer(t.FirstSigner),SecondSigner=Signer(t.SecondSigner),ThirdSigner=Signer(t.ThirdSigner),Footer=A.GroupLetterPdf.FooterWritingSpace(Or(t.Footer,"نسخة منه إلى"))};
+        string body=System.Text.RegularExpressions.Regex.Replace(Or(t.Body,"متن الكتاب"),@"\{\{([^{}]+)\}\}",m=>"«"+m.Groups[1].Value+"»");
+        return A.TemplateLetterPdf.Document(preview,month,body,DocumentFonts(),null,[]);
     }
     A.LetterTemplate? EditLetter(A.LetterTemplate t,string kind,A.BackupSnapshot s,string month,bool account=false,Func<A.LetterTemplate,byte[]>? render=null,Action<A.LetterTemplate>? extra=null){
         void Validate(A.LetterTemplate result){
@@ -34,7 +41,7 @@ public partial class MainWindow
             extra?.Invoke(result);
         }
         var dialog=new LetterWindow(t,kind,s,month,account,Validate,render??(draft=>LayoutSample(draft,month))){Owner=this};
-        if(render==null)dialog.PreviewCaption="معاينة التنسيق ببيانات توضيحية";
+        if(render==null)dialog.PreviewCaption="معاينة تنسيق القالب";
         return dialog.ShowDialog()==true?dialog.Result:null;
     }
     void TemplatesDesk(A.BackupSnapshot s,string month){

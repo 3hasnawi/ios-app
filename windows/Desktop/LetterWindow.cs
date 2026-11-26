@@ -30,7 +30,15 @@ internal sealed class LetterWindow:Window
         DockPanel.SetDock(actions,Dock.Top);root.Children.Add(actions);
         void Action(string name,Action run){var b=new Button{Content=name,Margin=new Thickness(4),Padding=new Thickness(14,5,14,5)};b.Click+=(_,_)=>{try{error.Text="";run();}catch(Exception e){error.Text=e.Message;}};actions.Children.Add(b);}
         Action("حفظ",()=>{var t=Read();validate(t);Result=t;DialogResult=true;});
-        Action("معاينة الكتاب",()=>{var t=Read();new LetterPreview(preview(t)){Owner=this,Title=PreviewCaption}.ShowDialog();});
+        var showPreview=new Button{Content="معاينة الكتاب",Margin=new Thickness(4),Padding=new Thickness(14,5,14,5)};
+        actions.Children.Add(showPreview);
+        showPreview.Click+=async (_,_)=>{
+            try{
+                var t=Read();IsEnabled=false;error.Text="جارٍ إعداد المعاينة…";
+                var pdf=await Task.Run(()=>preview(t));
+                if(IsLoaded){error.Text="";IsEnabled=true;new LetterPreview(pdf){Owner=this,Title=PreviewCaption}.ShowDialog();}
+            }catch(Exception e){error.Text=e.Message;}finally{IsEnabled=true;}
+        };
         Action("إلغاء",()=>DialogResult=false);
         error.Margin=new Thickness(16,4,16,6);DockPanel.SetDock(error,Dock.Bottom);root.Children.Add(error);
         root.Children.Add(tabs);Tab("بيانات الكتاب");
@@ -105,13 +113,15 @@ internal sealed class LetterWindow:Window
 
 internal sealed class LetterPreview:Window
 {
+    readonly TaskCompletionSource<bool> loaded=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal Task<bool> Ready=>loaded.Task;
     public LetterPreview(byte[] pdf){
         Title="معاينة الكتاب";Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel=new DockPanel();Content=panel;
         var edit=new Button{Content="✎  العودة إلى التحرير",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};
         edit.Click+=(_,_)=>Close();DockPanel.SetDock(edit,Dock.Top);panel.Children.Add(edit);
         var viewer=new WebView2();panel.Children.Add(viewer);bool closed=false;
-        Closed+=(_,_)=>{closed=true;viewer.Dispose();};
+        Closed+=(_,_)=>{closed=true;loaded.TrySetResult(false);viewer.Dispose();};
         Loaded+=async (_,_)=>{
             try{
                 var profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AnbarPayroll","WebView");
@@ -122,8 +132,10 @@ internal sealed class LetterPreview:Window
                 web.AddWebResourceRequestedFilter(url,CoreWebView2WebResourceContext.All);
                 web.WebResourceRequested+=(_,e)=>e.Response=env.CreateWebResourceResponse(new MemoryStream(pdf,false),200,"OK","Content-Type: application/pdf\r\nCache-Control: no-store");
                 web.NavigationStarting+=(_,e)=>e.Cancel=e.Uri!=url;
-                web.NewWindowRequested+=(_,e)=>e.Handled=true;web.Navigate(url);
-            }catch(Exception e){if(!closed)MessageBox.Show(this,e.Message,Title);}
+                web.NewWindowRequested+=(_,e)=>e.Handled=true;
+                web.NavigationCompleted+=(_,e)=>loaded.TrySetResult(e.IsSuccess);
+                web.Navigate(url);
+            }catch(Exception e){loaded.TrySetResult(false);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
         };
     }
 }

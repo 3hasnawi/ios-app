@@ -18,10 +18,16 @@ public partial class MainWindow
         var report=A.StandardReports.ItemList(s,month,firstName);
         string Money(long value)=>A.AdaptiveLetterPdf.Eastern(A.AdaptiveLetterPdf.Grouped(value));
         long Total(A.ReportSheet sheet)=>A.TemplateLetterPdf.Whole(sheet.Amounts!.Sum(v=>(decimal)A.TemplateLetterPdf.Whole(v)));
+        var summaries=A.TemplateLetterPdf.Summary(s,month);
+        void Verify(string item,A.ReportSheet sheet){
+            if(!summaries.TryGetValue(item,out var summary)||summary.Count!=sheet.Rows.Count||summary.Total!=sheet.Total)
+                throw new InvalidDataException("تفاصيل الرواتب لا تطابق ملخص بند "+item);
+        }
+        Verify(firstName,report);
         long total=Total(report);
         A.LetterTable table;
         if(schools){
-            long other=Total(A.StandardReports.ItemList(s,month,secondName));var stamp=total;total=A.TemplateLetterPdf.Whole((decimal)total+other);
+            var secondReport=A.StandardReports.ItemList(s,month,secondName);Verify(secondName,secondReport);long other=Total(secondReport);var stamp=total;total=A.TemplateLetterPdf.Whole((decimal)total+other);
             table=new([], [new[]{"رسم طابع ضريبي",Money(stamp)},new[]{"بناء المدارس",Money(other)},new[]{"المجموع",Money(total)}],"Times New Roman",22,[2,1],BoldLastRow:true,WidthFraction:.5,AlignRight:true);
         }else{
             var ordered=report.Rows.Select((r,i)=>(r,amount:report.Amounts![i])).OrderBy(x=>A.PayrollAnalysis.Normalize(x.r[2])).ToList();
@@ -44,7 +50,10 @@ public partial class MainWindow
             if(!A.TransferPreparation.ValidIban(payer)||!A.TransferPreparation.ValidIban(beneficiary)||beneficiary==payer)throw new InvalidDataException("راجع آيبان الجهة الدافعة والخزينة.");
             int key=A.MonthNames.SortKey(month);
             var values=new Dictionary<string,string>{{"المبلغ",Money(total)},{"المبلغ كتابة",A.ArabicAmountWords.Dinars(total)},{"الشهر",A.AdaptiveLetterPdf.MonthName(key%100)},{"السنة",A.AdaptiveLetterPdf.Eastern((key/100).ToString())},{"حسابنا",payer},{"حساب المستفيد",beneficiary},{"سبب التضمين",description}};
-            return A.TemplateLetterPdf.Document(t,month,A.LetterTemplate.Fill(A.LetterTemplate.FormatNumbers(t.Body),values),DocumentFonts(),table,[payer,beneficiary,total.ToString()]);
+            var result=A.TemplateLetterPdf.Document(t,month,A.LetterTemplate.Fill(A.LetterTemplate.FormatNumbers(t.Body),values),DocumentFonts(),table,[payer,beneficiary,total.ToString()]);
+            using var document=UglyToad.PdfPig.PdfDocument.Open(result);
+            if(document.NumberOfPages!=1)throw new InvalidDataException("لا يتسع كتاب الخزينة في صفحة واحدة. راجع حجم الخط وطول المتن والجدول.");
+            return result;
         }
         var draft=EditLetter(template,id,s,month,true,Render);if(draft==null)return;
         var pdf=Render(draft);store.SaveLetterTemplate(s,id,draft);ShowPage(TransfersName);

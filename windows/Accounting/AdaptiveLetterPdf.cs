@@ -210,19 +210,23 @@ public static class AdaptiveLetterPdf
 
     static string Stretch(string line,float width,Face face,SKPaint paint,string? level)
     {
-        int passes=level switch{"low"=>1,"medium"=>2,"high"=>4,_=>0};
-        if(passes==0)return line;
+        float fraction=level switch{"low"=>.6f,"medium"=>.8f,"high"=>.95f,_=>0};
+        if(fraction==0||line.Length is <2 or >4096)return line;
         const string joining="بتثجحخسشصضطظعغفقكلمنهيئ";
-        const string following=joining+"اأإآدذرزوةىؤ";
-        var words=line.Split(' ');
-        var positions=words.Select(w=>Enumerable.Range(1,Math.Max(0,w.Length-1))
-            .FirstOrDefault(i=>joining.Contains(w[i-1])&&following.Contains(w[i])&&!(w[i-1]=='ل'&&"اأإآ".Contains(w[i])))).ToArray();
-        for(int pass=0;pass<passes;pass++)for(int i=0;i<words.Length;i++){
-            if(positions[i]==0)continue;
-            string old=words[i];words[i]=old.Insert(positions[i],"ـ");
-            if(Width(string.Join(' ',words),face,paint)>width){words[i]=old;return string.Join(' ',words);}
+        const string following="ابتثجحخدذرزسشصضطظعغفقكلمنهويأإآؤئىة";
+        var positions=Enumerable.Range(1,line.Length-1).Where(i=>joining.Contains(line[i-1])&&following.Contains(line[i])).ToArray();
+        if(positions.Length==0)return line;
+        float original=Width(line,face,paint),limit=Math.Min(width-.5f,original+Math.Max(0,width-original)*fraction);
+        if(limit<=original)return line;
+        var result=line;var added=new int[positions.Length];
+        for(int attempt=0;attempt<Math.Min(48,positions.Length*2);attempt++){
+            int slot=attempt%positions.Length;
+            int index=positions[slot];
+            for(int prior=0;prior<=slot;prior++)index+=added[prior];
+            string candidate=result.Insert(index,"ـ");
+            if(Width(candidate,face,paint)<=limit){result=candidate;added[slot]++;}
         }
-        return string.Join(' ',words);
+        return result;
     }
     public static byte[] Write(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required, LetterTemplate? template=null)
     {
@@ -236,7 +240,11 @@ public static class AdaptiveLetterPdf
             string value=LetterTemplate.FormatNumbers(template.Attachments.Trim());
             var attachment=LetterBlock.Of(new LetterParagraph(value.StartsWith("المرفقات:")?value:"المرفقات: "+value,HalfPoints:22));
             var index=copy.FindIndex(b=>b.Paragraph?.Text.StartsWith("المرفقات:")==true);
-            if(index>=0)copy[index]=attachment;else copy.Insert(copy.FindIndex(b=>b.Table!=null),attachment);
+            if(index>=0){
+                var previous=copy[index].Paragraph!;
+                var extra=value.StartsWith("المرفقات:")?value["المرفقات:".Length..].Trim():value;
+                if(!previous.Text.EndsWith(extra,StringComparison.Ordinal))copy[index]=LetterBlock.Of(previous with{Text=previous.Text+"\n"+extra});
+            }else copy.Insert(copy.FindIndex(b=>b.Table!=null),attachment);
             blocks=copy;
         }
         using var fonts = new Fonts(source);
@@ -303,7 +311,7 @@ public static class AdaptiveLetterPdf
                 string? part=expectingFooter?"footer":afterBreak?null:blockIndex switch{0=>"recipient",1=>"subject",2=>"body",_=>p.Text.StartsWith("المرفقات:")?"attachments":null};
                 bool isBody=part=="body";
                 if(part!=null)p=p with{HalfPoints=Size(part,p.HalfPoints),Bold=isBody?(template?.BodyBold??p.Bold):p.Bold};
-                float spacing=isBody?template?.BodySpacing switch{"compact"=>1,"wide"=>6,_=>3}:expectingFooter?0:3;
+                float spacing=isBody?template?.BodySpacing switch{"compact"=>0,"wide"=>8,_=>3}:expectingFooter?0:3;
                 bool justify=isBody&&(template?.BodyAlignment is null or "justified");
                 var ls = Lines(p.Text, FaceOf(p), SizeOf(p.HalfPoints), ContentWidth, p.Centered && p.Text.StartsWith("م /", StringComparison.Ordinal), justify, spacing, template?.BodyKashida);
                 if (expectingFooter)

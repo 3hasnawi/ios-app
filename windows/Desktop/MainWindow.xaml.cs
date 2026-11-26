@@ -409,7 +409,10 @@ public partial class MainWindow : Window
         var editorSource=store.Snapshot(editorMonth);
         var demoTemplate=new SalaryDesktop.Core.LetterTemplate{Title="كتاب تجريبي",Body="يرجى تحويل مبلغ ({{المبلغ}}) إلى الحساب ({{الحساب}}).",FirstSigner="عضو اللجنة"};
         var editor=new LetterWindow(demoTemplate,"custom",editorSource,editorMonth,true,t=>t.Validate(),t=>LayoutSample(t,editorMonth)){Owner=this};
-        editor.Show();editor.UpdateLayout();CaptureWindow((FrameworkElement)editor.Content,"letter-editor");editor.Close();
+        editor.Show();editor.UpdateLayout();CaptureWindow((FrameworkElement)editor.Content,"letter-editor");
+        var preview=new LetterPreview(LayoutSample(demoTemplate,editorMonth)){Owner=editor};preview.Show();
+        if(!await preview.Ready.WaitAsync(TimeSpan.FromSeconds(20)))throw new InvalidDataException("تعذّرت معاينة القالب في العارض المحلي.");
+        preview.Close();editor.Close();
         void CaptureWindow(FrameworkElement target,string file){
             var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             // RenderTargetBitmap omits the RTL transform normally supplied by the Window.

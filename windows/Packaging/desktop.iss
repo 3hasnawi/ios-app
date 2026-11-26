@@ -40,5 +40,9 @@ begin
       RaiseException('Microsoft Edge WebView2 Runtime installation failed.');
 end;
 
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
+
 [Icons]
+Name: "{userdesktop}\Anbar Payroll"; Filename: "{app}\AnbarPayroll.exe"; Tasks: desktopicon
 Name: "{userprograms}\Anbar Payroll"; Filename: "{app}\AnbarPayroll.exe"

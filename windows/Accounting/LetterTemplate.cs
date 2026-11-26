@@ -39,7 +39,7 @@ public sealed record LetterTemplate
     public GroupLetterSettings Style(){
         int? month=null;
         if(!string.IsNullOrWhiteSpace(OutgoingMonth)){
-            if(!int.TryParse(TransferPreparation.NormalizeAccount(OutgoingMonth),out int n)||n is <1 or >12)throw new InvalidDataException("شهر الصادر من ١ إلى ١٢.");
+            if(OutgoingMonth.Length>2||OutgoingMonth.Any(c=>!char.IsDigit(c))||!int.TryParse(TransferPreparation.NormalizeAccount(OutgoingMonth),out int n)||n is <1 or >12)throw new InvalidDataException("شهر الصادر من ١ إلى ١٢.");
             month=n;
         }
         if(!string.IsNullOrWhiteSpace(BodyMonth)&&MonthNames.SortKey(BodyMonth)==0)throw new InvalidDataException("أدخل اسم الشهر والسنة في شهر المتن.");

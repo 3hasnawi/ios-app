@@ -2,7 +2,21 @@ using System.Globalization;
 namespace SalaryDesktop.Core;
 public static class TemplateLetterPdf
 {
-    public static string[] Items(BackupSnapshot s,string month)=>s.Employees.Where(e=>e.Month==month).SelectMany(e=>StandardReports.Items(e)).Where(p=>p.Value!=0).Select(p=>p.Key).Distinct().Order().ToArray();
+    public sealed record ItemSummary(int Count, decimal Total);
+    public static Dictionary<string,ItemSummary> Summarize(IEnumerable<Employee> employees){
+        var result=new Dictionary<string,ItemSummary>(StringComparer.Ordinal);
+        foreach(var employee in employees)foreach(var item in StandardReports.Items(employee)){
+            result.TryGetValue(item.Key,out var old);
+            result[item.Key]=new((old?.Count??0)+1,(old?.Total??0)+item.Value);
+        }
+        return result;
+    }
+    public static Dictionary<string,ItemSummary> Summary(BackupSnapshot s,string month){
+        if(s.Months.SingleOrDefault(m=>m.Name==month)?.Summary is {Length:>0} data)
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string,ItemSummary>>(data,LetterTemplate.Json)??throw new InvalidDataException("تعذرت قراءة ملخص بنود الشهر.");
+        return Summarize(s.Employees.Where(e=>e.Month==month));
+    }
+    public static string[] Items(BackupSnapshot s,string month)=>Summary(s,month).Where(p=>p.Value.Total!=0).Select(p=>p.Key).Order().ToArray();
     public static long Whole(decimal value)=>value>0&&value<=9_007_199_254_740_991m&&value==decimal.Truncate(value)?checked((long)value):throw new InvalidDataException("المبلغ يجب أن يكون عدداً صحيحاً موجباً.");
     public static byte[] Custom(LetterTemplate t,BackupSnapshot s,string month,decimal? manual,LetterFonts fonts){
         t.Validate();
@@ -11,7 +25,7 @@ public static class TemplateLetterPdf
         var checks=new List<string>();
         decimal? amount=t.Source switch{
             "none"=>null,"manual"=>manual??throw new InvalidDataException("أدخل مبلغ الكتاب."),
-            "payroll"=>StandardReports.ItemPeople(s,month,t.SourceName).Sum(e=>e.Amount),
+            "payroll"=>Summary(s,month).GetValueOrDefault(t.SourceName)?.Total??throw new InvalidDataException("بند الرواتب غير موجود في الشهر المختار."),
             "execution"=>PayrollAnalysis.Groups(s,month).SingleOrDefault(g=>g.Title==t.SourceName&&g.MissingAmounts==0)?.Total??throw new InvalidDataException("راجع مبالغ الجهة في الشهر المختار."),
             _=>throw new InvalidDataException("مصدر المبلغ غير معروف.")};
         if(amount!=null){

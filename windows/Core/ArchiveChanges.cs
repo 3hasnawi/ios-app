@@ -160,7 +160,9 @@ public sealed partial class Store
                 });
                 Entry("months.jsonl",s=>{foreach(var (name,record) in months){
                     int count=payCounts.GetValueOrDefault(name);
-                    if(payroll?.Employees.Count>0 && (name==replacing||!retained.Contains(name))){record["employeeCount"]=count;record.Remove("summary");}
+                    if(payroll?.Employees.Count>0 && (name==replacing||!retained.Contains(name))){record["employeeCount"]=count;
+                        if(name==replacing)record["summary"]=Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(A.TemplateLetterPdf.Summarize(payroll.Employees),IosJson));
+                        else record.Remove("summary");}
                     if(name==replacing&&payroll?.Deductions.Count>0)record["deductionCount"]=cutCounts.GetValueOrDefault(name);
                     Line(s,JsonSerializer.SerializeToElement(record));}});
                 if(refunds!=null){
