@@ -4,7 +4,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Media3D;
 
 namespace AnbarPayroll.Desktop;
 
@@ -35,18 +34,11 @@ internal static class PrecisionScroll
         return Move(target,delta/120d,true,chars);
     }
 
-    static DependencyObject? Parent(DependencyObject item)=>item switch{
-        Visual or Visual3D=>VisualTreeHelper.GetParent(item),
-        FrameworkContentElement text=>text.Parent??ContentOperations.GetParent(text),
-        ContentElement content=>ContentOperations.GetParent(content),
-        _=>LogicalTreeHelper.GetParent(item)
-    };
-
     internal static bool Move(DependencyObject target,double notches,bool horizontal,int units)
     {
         if(units==0 || notches==0)return false;
         bool moved=false;
-        for(DependencyObject? element=target;element!=null;element=Parent(element)){
+        for(DependencyObject? element=target;element!=null;element=ElementTree.Parent(element)){
             // العارض المضمّن والقائمة المفتوحة يستقبلان الإيماءة بطريقتهما الأصلية.
             if(element is HwndHost or ComboBox {IsDropDownOpen:true} or ComboBox {IsKeyboardFocusWithin:true})return moved;
             if(element is not ScrollViewer viewer)continue;

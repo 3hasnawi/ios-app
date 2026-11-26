@@ -399,6 +399,20 @@ public partial class MainWindow : Window
                 Click(Nav,DeductionsName);
                 agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
                 if(search!=null||grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Agency!=sample.Agency))throw new InvalidDataException("تصفية القائمة لا تطابق الجهة المختارة.");
+                UpdateLayout();
+                var firstRow=grid.Items[0];
+                foreach(var column in grid.Columns.Take(3)){
+                    grid.ScrollIntoView(firstRow,column);
+                    grid.UpdateLayout();
+                    if(column.GetCellContent(firstRow) is not TextBlock displayed ||
+                       FieldCopy.ValueAt(displayed)!=displayed.Text ||
+                       displayed.Parent is DataGridCell cell && FieldCopy.ValueAt(cell)!=displayed.Text)
+                        throw new InvalidDataException("تعذّر نسخ قيمة خلية الاستقطاع المعروضة.");
+                }
+                const string account="IQ00TEST00000000000001";
+                if(FieldCopy.ValueAt(new TextBox{Text=account})!=account ||
+                   FieldCopy.ValueAt(new DisplayText{Text="٠٠١٢٣"} )!=DisplayNumerals.Format("٠٠١٢٣"))
+                    throw new InvalidDataException("لم يحافظ النسخ على نص الحقل وأصفاره.");
                 if(page!=AgencyPage||Current().Month!=SelectedMonth!.Key%100)throw new InvalidDataException("تعذّر فتح استقطاعات الشهر.");
             }else if(name==EmployeePage){
                 Click(CanvasArea,"استقطاعات المنتسبين");search!.Text=sample.Name;

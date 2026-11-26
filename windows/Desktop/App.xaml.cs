@@ -23,6 +23,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        FieldCopy.Register();
         EventManager.RegisterClassHandler(typeof(Window),FrameworkElement.LoadedEvent,new RoutedEventHandler(WindowPlacement.OnLoaded));
         EventManager.RegisterClassHandler(typeof(System.Windows.Controls.TextBox),System.Windows.Controls.TextBox.TextChangedEvent,
             new System.Windows.Controls.TextChangedEventHandler(Appearance.InputDigits));

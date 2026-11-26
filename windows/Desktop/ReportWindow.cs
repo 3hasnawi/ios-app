@@ -37,7 +37,26 @@ internal sealed class ReportWindow : Window
             var env=await CoreWebView2Environment.CreateAsync(userDataFolder:profile);if(closed)return;
             await viewer.EnsureCoreWebView2Async(env);if(closed)return;
             var web=viewer.CoreWebView2;web.Settings.IsScriptEnabled=false;web.Settings.AreDevToolsEnabled=false;web.Settings.IsWebMessageEnabled=false;
-            web.Settings.AreDefaultContextMenusEnabled=false;web.Settings.AreBrowserAcceleratorKeysEnabled=false;
+            web.Settings.AreBrowserAcceleratorKeysEnabled=false;
+            // نفتح من قائمة العارض أمر النسخ وحده، ويأتي النص من خلية الكشف المعروضة.
+            web.ContextMenuRequested+=(_,args)=>{
+                var items=args.MenuItems;
+                for(int i=items.Count-1;i>=0;i--)
+                    if(items[i].Name!="copy")items.RemoveAt(i);
+                if(items.Count==0)args.Handled=true;
+            };
+            await web.AddScriptToExecuteOnDocumentCreatedAsync("""
+                document.addEventListener('contextmenu', event => {
+                    const cell = event.target.closest?.('td, th');
+                    const selection = window.getSelection();
+                    if (!cell || !selection || (!selection.isCollapsed && selection.containsNode(cell, true))) return;
+                    const range = document.createRange();
+                    range.selectNodeContents(cell);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                });
+                """);
+            if(closed)return;
             var uri=new Uri(file);
             web.NavigationStarting+=(_,e)=>e.Cancel=!uri.Equals(new Uri(e.Uri));
             web.NewWindowRequested+=(_,e)=>e.Handled=true;
