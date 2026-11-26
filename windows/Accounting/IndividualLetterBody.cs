@@ -11,6 +11,8 @@ public static class IndividualLetterBody
         const string start = "نرجو تحويل مبلغ قدره ({{المبلغ}}) ({{المبلغ كتابة}}) لا غيرها من حسابنا المرقم ({{حسابنا}}) المفتوح لديكم ";
         const string end = " لشهر ({{الشهر}} / {{السنة}}) وتزويدنا بالإشعار اللازم بذلك.";
         return id switch {
+            "treasury_guarantee" => start + "إلى حساب (مديرية خزينة الأنبار) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) وذلك عن {{سبب التضمين}}" + end,
+            "treasury_schools" => start + "إلى حساب (مديرية خزينة الأنبار) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) وذلك عن مبالغ الإيراد النهائي لرسم الطابع الضريبي وبناء المدارس المحسومة من منتسبي قيادتنا وحسب الجدول أدناه" + end,
             "food_company" => start + "إلى حساب ({{المستفيد}}) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) عن مستحقات الشركة عقد تجهيز الأرزاق الجافة والطرية المرقم ({{عقد الإطعام}})" + end,
             "food_tax" => start + "إلى حساب ({{المستفيد}}) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) وذلك عن أمانات ضريبة عقد تجهيز الأرزاق الجافة والطرية المرقم ({{عقد الإطعام}})" + end,
             "tax_social" => start + "إلى حساب ({{المستفيد}}) المرقم ({{حساب المستفيد}}) (مصرف الرافدين / فرع الأنبار) وذلك عن مبالغ رسوم الضريبة والحماية الاجتماعية لرواتب قيادة شرطة الأنبار المبينة تفاصيلها أدناه" + end,
@@ -35,7 +37,7 @@ public static class IndividualLetterBody
     public static string Render(string id, string? custom, IReadOnlyDictionary<string, string> values)
     {
         var template = string.IsNullOrWhiteSpace(custom) ? Default(id) : custom; Validate(id, template);
-        return Tokens.Replace(template, match => {
+        return Tokens.Replace(LetterTemplate.FormatNumbers(template), match => {
             var name = match.Value[2..^2];
             if (!values.TryGetValue(name, out var value) || string.IsNullOrWhiteSpace(value)) throw new InvalidDataException("قيمة أحد حقول الكتاب ناقصة.");
             return value;

@@ -32,14 +32,16 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
     static JsonObject DefaultLetter()=>new(){["header"]="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات",["number"]="١‏/٢٢/ح/",["recipient"]="مصرف الرافدين / فرع الأنبار",["first"]="",["second"]="",["third"]="",["signatureOffset"]=0,["footer"]=Copies};
     internal static JsonObject DefaultLetters()=>new(){["rafidain"]=DefaultLetter(),["otherBanks"]=DefaultLetter()};
     public A.GroupLetterSettings LetterStyle(bool rafidain,A.GroupLetterSettings fallback){
-        if(Original?["letters"]?[rafidain?"rafidain":"otherBanks"] is not JsonObject saved)return fallback with{Footer=Copies};
-        return fallback with{Header=(string?)saved["header"]??fallback.Header,First=(string?)saved["first"]??fallback.First,Second=(string?)saved["second"]??fallback.Second,
+        if(Original?["letters"]?[rafidain?"rafidain":"otherBanks"] is not JsonObject saved)return fallback with{Footer=Copies,Template=null,BodyTemplate=null};
+        var template=saved["template"]?.Deserialize<A.LetterTemplate>(A.LetterTemplate.Json)??new A.LetterTemplate{Title="إعادة المبالغ",Recipient=(string?)saved["recipient"]??"مصرف الرافدين / فرع الأنبار"};
+        return fallback with{Template=template,BodyTemplate=null,Header=(string?)saved["header"]??fallback.Header,First=(string?)saved["first"]??fallback.First,Second=(string?)saved["second"]??fallback.Second,
             Third=(string?)saved["third"]??fallback.Third,SignatureOffset=(int?)saved["signatureOffset"]??fallback.SignatureOffset,Footer=Copies};
     }
     public RefundBatch WithLetter(bool rafidain,A.GroupLetterSettings style){
         var data=Original?.DeepClone().AsObject()??new();data["letters"]??=DefaultLetters();var letters=data["letters"]!.AsObject();
         var letter=letters[rafidain?"rafidain":"otherBanks"]!.AsObject();
         letter["header"]=style.Header;letter["first"]=style.First;letter["second"]=style.Second;letter["third"]=style.Third;letter["signatureOffset"]=style.SignatureOffset;letter["footer"]=Copies;
+        if(style.Template!=null){letter["template"]=JsonSerializer.SerializeToNode(style.Template,A.LetterTemplate.Json);letter["recipient"]=style.Template.Recipient;}
         return this with{Original=data};
     }
     public List<RefundBank> Groups(){
@@ -86,7 +88,7 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
             blocks.Add(A.LetterBlock.Of(new A.LetterTable(["ت","اسم المصرف","المبلغ","عدد المنتسبين","Receiver BIC"],rows,"Arial",19,[1,8,5,4,5],BoldLastRow:groups.Count>1)));}
         blocks.Add(A.LetterBlock.Of(new A.LetterParagraph("المرفقات:\n١. قرص CD",HalfPoints:22)));
         blocks.Add(A.AdaptiveLetterPdf.Signatures(style,date));blocks.Add(A.AdaptiveLetterPdf.Footer(style with{Footer="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة."}));
-        return A.AdaptiveLetterPdf.Write(blocks,fonts,false,style.SignatureOffset,[Account,sum.ToString(CultureInfo.InvariantCulture)]);
+        return A.AdaptiveLetterPdf.Write(blocks,fonts,false,style.SignatureOffset,[Account,sum.ToString(CultureInfo.InvariantCulture)],style.Template);
     }
 }
 public sealed partial class Store

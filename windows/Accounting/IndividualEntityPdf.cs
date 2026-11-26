@@ -36,7 +36,7 @@ public static class IndividualEntityPdf
         var checks = new List<string> { plan.PayerAccount, plan.Total.ToString(CultureInfo.InvariantCulture) };
         if (plan.BeneficiaryAccount is not null) checks.Add(plan.BeneficiaryAccount);
         // خط الجدول غير مستعمل هنا؛ Arial من ويندوز للعنوان، وخط الكتاب بديله عند غيابه.
-        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, fontBytes, logoBytes), false, settings.SignatureOffset, checks);
+        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, fontBytes, logoBytes), false, settings.SignatureOffset, checks, settings.Template);
     }
     public static void Save(IndividualEntityPlan plan, GroupLetterSettings settings, byte[] font, byte[] logo, string destination)
     {

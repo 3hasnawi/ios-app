@@ -93,7 +93,7 @@ public static class IndividualEntityPreparation
             account = id == "ramadi" ? TransferPreparation.NormalizeAccount(entry.Account.Iban) : TransferPreparation.LocalAccount(entry.Account);
             if (account is null || reference is null || (id == "ramadi" && (!TransferPreparation.ValidIban(account) || account == TransferPreparation.NormalizeAccount(transfer.PayerAccount))))
                 throw new InvalidDataException("حساب الجهة غير صالح؛ راجع الحساب والربط قبل الإصدار.");
-            var chosen = IndividualAccountCustomization.Resolve(source, id, entry.Title, account, reference);
+            var chosen = IndividualAccountCustomization.Resolve(source, id, entry.Title, account, reference, requireAccountListMatch: false);
             if (chosen is null && account != reference) throw new InvalidDataException("حساب الجهة لا يطابق مرجع الكتاب؛ راجع الحساب والربط قبل الإصدار.");
             account = chosen ?? account;
         }

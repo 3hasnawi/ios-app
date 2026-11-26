@@ -162,7 +162,7 @@ public static class AdaptiveLetterPdf
     }
 
     /// تقسيم السطور مثل CTTypesetter: عند المسافات، والكلمة الأطول من السطر تُقسم على الحروف، وفاصل السطر يُنهي السطر.
-    private static List<TextLine> Lines(string text, Face face, float size, float width, bool underline = false, bool justify = false, float spacing = 3)
+    private static List<TextLine> Lines(string text, Face face, float size, float width, bool underline = false, bool justify = false, float spacing = 3, string? kashida = null)
     {
         if (text.Length > 100_000 || width <= 8) throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
         var result = new List<TextLine>();
@@ -200,17 +200,45 @@ public static class AdaptiveLetterPdf
             {
                 if (Width(lines[i], face, paint) > width + 0.5f) throw new InvalidDataException("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.");
                 var isLast = i == lines.Count - 1;
-                result.Add(new TextLine(lines[i], face, size, underline, justify && !isLast, height, ascent));
+                var rendered = justify && !isLast ? Stretch(lines[i], width, face, paint, kashida) : lines[i];
+                result.Add(new TextLine(rendered, face, size, underline, justify && !isLast, height, ascent));
                 if (result.Count > 20_000) throw new InvalidDataException("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.");
             }
         }
         return result;
     }
 
-    public static byte[] Write(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required)
+    static string Stretch(string line,float width,Face face,SKPaint paint,string? level)
+    {
+        int passes=level switch{"low"=>1,"medium"=>2,"high"=>4,_=>0};
+        if(passes==0)return line;
+        const string joining="بتثجحخسشصضطظعغفقكلمنهيئ";
+        const string following=joining+"اأإآدذرزوةىؤ";
+        var words=line.Split(' ');
+        var positions=words.Select(w=>Enumerable.Range(1,Math.Max(0,w.Length-1))
+            .FirstOrDefault(i=>joining.Contains(w[i-1])&&following.Contains(w[i])&&!(w[i-1]=='ل'&&"اأإآ".Contains(w[i])))).ToArray();
+        for(int pass=0;pass<passes;pass++)for(int i=0;i<words.Length;i++){
+            if(positions[i]==0)continue;
+            string old=words[i];words[i]=old.Insert(positions[i],"ـ");
+            if(Width(string.Join(' ',words),face,paint)>width){words[i]=old;return string.Join(' ',words);}
+        }
+        return string.Join(' ',words);
+    }
+    public static byte[] Write(IReadOnlyList<LetterBlock> blocks, LetterFonts source, bool group, int signatureOffset, IReadOnlyList<string> required, LetterTemplate? template=null)
     {
         if (signatureOffset is < -60 or > 60 || blocks.Count < 7 || blocks[0].Paragraph is not { } header || blocks[1].Paragraph is not { } reference)
             throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
+        int Size(string part,int fallback)=>template?.Size(part,fallback)??fallback;
+        header=header with{HalfPoints=Size("header",header.HalfPoints)};
+        reference=reference with{HalfPoints=Size("reference",reference.HalfPoints)};
+        if(!string.IsNullOrWhiteSpace(template?.Attachments)){
+            var copy=blocks.ToList();
+            string value=LetterTemplate.FormatNumbers(template.Attachments.Trim());
+            var attachment=LetterBlock.Of(new LetterParagraph(value.StartsWith("المرفقات:")?value:"المرفقات: "+value,HalfPoints:22));
+            var index=copy.FindIndex(b=>b.Paragraph?.Text.StartsWith("المرفقات:")==true);
+            if(index>=0)copy[index]=attachment;else copy.Insert(copy.FindIndex(b=>b.Table!=null),attachment);
+            blocks=copy;
+        }
         using var fonts = new Fonts(source);
         Face FaceOf(LetterParagraph p) => fonts.For(p.Font, p.Bold || p.Font == "Sakkal Majalla");
         float SizeOf(int halfPoints) => halfPoints is >= 12 and <= 96 ? halfPoints / 2f : throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
@@ -247,7 +275,7 @@ public static class AdaptiveLetterPdf
         var afterBreak = false; var needsClosing = false;
         void AddClosing()
         {
-            var closing = new LetterParagraph(Closing, "Times New Roman", 32, true, true);
+            var closing = new LetterParagraph(Closing, "Times New Roman", Size("closing",32), true, true);
             y += 15;
             AddLines(Lines(closing.Text, FaceOf(closing), SizeOf(closing.HalfPoints), ContentWidth), Margin, ContentWidth, 0.5f);
             needsClosing = false;
@@ -268,11 +296,16 @@ public static class AdaptiveLetterPdf
                 if (blockIndex == 2)
                 {
                     y += 18;
-                    var salutation = new LetterParagraph("تحية طيبة ..", "Times New Roman", 28, true);
+                    var salutation = new LetterParagraph("تحية طيبة ..", "Times New Roman", Size("salutation",28), true);
                     AddLines(Lines(salutation.Text, FaceOf(salutation), SizeOf(salutation.HalfPoints), ContentWidth), Margin, ContentWidth, 1);
                     y += 7; needsClosing = true;
                 }
-                var ls = Lines(p.Text, FaceOf(p), SizeOf(p.HalfPoints), ContentWidth, p.Centered && p.Text.StartsWith("م /", StringComparison.Ordinal), blockIndex == 2, expectingFooter ? 0 : 3);
+                string? part=expectingFooter?"footer":afterBreak?null:blockIndex switch{0=>"recipient",1=>"subject",2=>"body",_=>p.Text.StartsWith("المرفقات:")?"attachments":null};
+                bool isBody=part=="body";
+                if(part!=null)p=p with{HalfPoints=Size(part,p.HalfPoints),Bold=isBody?(template?.BodyBold??p.Bold):p.Bold};
+                float spacing=isBody?template?.BodySpacing switch{"compact"=>1,"wide"=>6,_=>3}:expectingFooter?0:3;
+                bool justify=isBody&&(template?.BodyAlignment is null or "justified");
+                var ls = Lines(p.Text, FaceOf(p), SizeOf(p.HalfPoints), ContentWidth, p.Centered && p.Text.StartsWith("م /", StringComparison.Ordinal), justify, spacing, template?.BodyKashida);
                 if (expectingFooter)
                 {
                     var footerHeight = ls.Sum(l => l.Height); const float footerBottom = 832;
@@ -281,7 +314,7 @@ public static class AdaptiveLetterPdf
                     if (y < end + 8) throw new InvalidDataException("موضع اللجنة يتداخل مع المتن أو الهامش السفلي؛ عدّل موضع اللجنة أو اختصر النص.");
                     expectingFooter = false;
                 }
-                AddLines(ls, Margin, ContentWidth, p.Centered ? 0.5f : 1);
+                AddLines(ls, Margin, ContentWidth, isBody ? template?.BodyAlignment switch{"left"=>0,"center"=>0.5f,_=>1} : p.Centered ? 0.5f : 1);
                 if (ls.Count > 0) y += 6;
                 continue;
             }
@@ -296,6 +329,8 @@ public static class AdaptiveLetterPdf
             if (widths.Any(w => w <= 10)) throw new InvalidDataException("لا يتسع أحد الحقول أو جدول المجموعة بوضوح؛ راجع البيانات.");
             var tableRight = table.AlignRight ? PageWidth - Margin : Margin + (ContentWidth + tableWidth) / 2;
             var groupTable = group && afterBreak; var signature = !table.ShowBorders;
+            table=table with{HalfPoints=Size(signature?"signatures":"table",table.HalfPoints)};
+            if(signature)tableRight+=template?.SignatureHorizontalOffset??0;
             var chosen = table.HalfPoints;
 
             (List<TextLine>[] Cells, float Height) Layout(IReadOnlyList<string> values, bool bold, int halfPoints)
@@ -308,6 +343,7 @@ public static class AdaptiveLetterPdf
                 {
                     if (signature)
                     {
+                        if(values[i].Length==0){cells[i]=[];continue;}
                         var parts = values[i].Split('\n');
                         if (parts.Length != 4) throw new SignatureFit();
                         var single = new List<TextLine>();
@@ -349,7 +385,7 @@ public static class AdaptiveLetterPdf
                 if (table.Rows.Count != 1) throw new InvalidDataException("بيانات الكتاب غير مكتملة.");
                 if (needsClosing) AddClosing();
                 var found = false;
-                for (int size = table.HalfPoints; size >= 24; size--)
+                for (int size = table.HalfPoints; size >= Math.Min(24,table.HalfPoints); size--)
                 {
                     try { if (Layout(table.Rows[0], true, size).Height <= 125) { chosen = size; found = true; break; } }
                     catch (SignatureFit) { }
@@ -366,7 +402,7 @@ public static class AdaptiveLetterPdf
             if (groupTable)
             {
                 var found = false;
-                for (int size = Math.Min(table.HalfPoints, 22); size >= 14; size--)
+                for (int size = table.HalfPoints; size >= 14; size--)
                 {
                     float needed = 0;
                     if (table.Headers.Count > 0) needed += Layout(table.Headers, true, size).Height;
@@ -482,20 +518,31 @@ public static class AdaptiveLetterPdf
     public static string ReferenceText(string number, string date) => $"العدد: {Eastern(number)}\nالتاريخ:{new string('\u00A0', 14)}{date}";
     public static string[] SignatureCells(GroupLetterSettings settings, string date)
     {
-        string Name(string value) => string.Join(' ', value.Replace("ـ", "", StringComparison.Ordinal).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        if(new[]{settings.First,settings.Second,settings.Third}.Any(v=>v.Contains('\n')||string.IsNullOrWhiteSpace(v))){
-            var signers=new[]{settings.First,settings.Second,settings.Third}.Where(v=>!string.IsNullOrWhiteSpace(v)).Select(v=>v.Trim()+"\n"+date).ToArray();
-            return signers.Length switch{0=>["","",""],1=>["","",signers[0]],2=>[signers[0],"",signers[1]],_=>signers};
+        string[] roles=["معاون مدير تدقيق","العميد","لواء الشرطة الحقوقي"], jobs=["المصروفات","مدير الحسابات","قائد شرطة محافظة الأنبار"];
+        var rows=new List<string>();
+        var fields=new[]{settings.First,settings.Second,settings.Third};
+        for(int i=0;i<fields.Length;i++){
+            if(string.IsNullOrWhiteSpace(fields[i]))continue;
+            var parts=fields[i].ReplaceLineEndings("\n").Trim().Split('\n',StringSplitOptions.TrimEntries);
+            if(parts.Length==1)parts=[roles[i],parts[0],jobs[i]];
+            if(parts.Length!=3||parts.Any(string.IsNullOrWhiteSpace))throw new InvalidDataException("أدخل العنوان الوظيفي والاسم والمنصب في ثلاثة أسطر لكل توقيع.");
+            var signatureDate=date;
+            if(i==2){
+                var pieces=date.Split('/',StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries);
+                if(pieces.Length==2&&int.TryParse(TransferPreparation.NormalizeAccount(pieces[0]),out var month)&&month is >=1 and <=12)
+                    signatureDate=" / "+MonthName(month)+" / "+pieces[1];
+            }
+            rows.Add(string.Join('\n',parts)+"\n"+signatureDate);
         }
-        return [$"معاون مدير تدقيق\n{Name(settings.First)}\nالمصروفات\n{date}", $"العميد\n{Name(settings.Second)}\nمدير الحسابات\n{date}", $"لواء الشرطة الحقوقي\n{Name(settings.Third)}\nقائد شرطة محافظة الأنبار\n{date}"];
+        return rows.Count switch{1=>["","",rows[0]],2=>[rows[0],"",rows[1]],3=>rows.ToArray(),_=>throw new InvalidDataException("أدخل توقيعاً واحداً على الأقل.")};
     }
     /// الكتل الأولى في كل الكتب: الترويسة، العدد والتاريخ، الجهة، الموضوع، المتن.
     public static List<LetterBlock> Opening(GroupLetterSettings settings, string date, string body,string recipient="مصرف الرافدين / فرع الأنبار") =>
     [
         LetterBlock.Of(new LetterParagraph(settings.Header, "Times New Roman", 32, true)),
         LetterBlock.Of(new LetterParagraph(ReferenceText(settings.Number, date), "Times New Roman", 36, true)),
-        LetterBlock.Of(new LetterParagraph("إلى / "+recipient, "Arial", 32, true, true)),
-        LetterBlock.Of(new LetterParagraph("م / تحويل مبلغ", "Arial", 32, true, true)),
+        LetterBlock.Of(new LetterParagraph("إلى / "+(settings.Template?.Recipient??recipient), "Arial", 32, true, true)),
+        LetterBlock.Of(new LetterParagraph("م / "+(settings.Template?.Subject??"تحويل مبلغ"), "Arial", 32, true, true)),
         LetterBlock.Of(new LetterParagraph(body, "Times New Roman", 28)),
     ];
     public static LetterBlock Signatures(GroupLetterSettings settings, string date) =>

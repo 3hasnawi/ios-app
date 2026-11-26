@@ -3,6 +3,20 @@ import SwiftData
 
 @main enum DraftTest {
     @MainActor static func main() async throws {
+        if let path = ProcessInfo.processInfo.environment["WINDOWS_TEMPLATE_SETTINGS"] {
+            let settings = try JSONDecoder().decode([String: Data].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            func payload(_ key: String) throws -> Data {
+                try PropertyListSerialization.propertyList(from: settings[key]!, format: nil) as! Data
+            }
+            let templates = try CustomTransferTemplate.decode(payload(CustomTransferTemplate.settingsKey))
+            precondition(templates.count == 1 && templates[0].source == .payroll && templates[0].fontSizes?["body"] == 13)
+            struct Builtin: Decodable { struct Item: Decodable { var letterTemplate: CustomTransferTemplate }; var individual: [String: Item] }
+            let t = try JSONDecoder().decode(Builtin.self, from: payload("transferLetterCustomizations")).individual["rafidain_group"]!.letterTemplate
+            try t.validate()
+            let cells = try CustomTransferTemplate.signatureCells([t.firstSigner,t.secondSigner,t.thirdSigner], date: " / ١ / ٢٠٢٦")
+            precondition(t.bodyKashida == .high && t.signatureHorizontalOffset == -10 && cells[0].isEmpty && !cells[2].isEmpty)
+            print("PASS Windows custom and built-in templates decoded by the iPhone model")
+        }
         if let path = ProcessInfo.processInfo.environment["WINDOWS_REFUND"] {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))
             let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: data)

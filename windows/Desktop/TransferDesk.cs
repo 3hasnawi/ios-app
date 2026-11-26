@@ -14,14 +14,6 @@ public partial class MainWindow
         }
         return memory.ToArray();
     }
-    A.GroupLetterSettings? LetterForm(A.GroupLetterSettings saved,bool fixedRefund=false){
-        TextBox Field(string value)=>new(){Text=value,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap};
-        var head=Field(saved.Header.Length>0?saved.Header:"جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات");
-        var num=Field(saved.Number.Length>0?saved.Number:"١‏/٢٢/ح/");var first=Field(saved.First);var second=Field(saved.Second);var third=Field(saved.Third);var footer=Field(saved.Footer);
-        if(fixedRefund){num.Text="١‏/٢٢/ح/";num.IsReadOnly=true;footer.IsReadOnly=true;}
-        if(!Form("مراجعة الكتاب",Bar(Labeled("الترويسة",head,300),Labeled("العدد",num,145)),Bar(Labeled("التوقيع الأول",first),Labeled("التوقيع الثاني",second),Labeled("التوقيع الثالث",third)),Labeled("نسخة منه إلى",footer,480)))return null;
-        return saved with{Header=head.Text,Number=num.Text,First=first.Text,Second=second.Text,Third=third.Text,Footer=footer.Text};
-    }
     static byte[] Logo()=>File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"IraqEmblem.png"));
     static byte[] LetterFont()=>File.ReadAllBytes(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"timesbd.ttf"));
     void TransferDesk(A.BackupSnapshot s,string month)
@@ -31,6 +23,7 @@ public partial class MainWindow
         var grid=GridView(("الجهة","Title",1.7),("المصرف","Bank",1.3),("قبل الفصل","Original",.8),("مبلغ الدفعة","Amount",.8),("المراجعة","Issues",1.4));dock.Children.Add(grid);CanvasArea.Children.Add(dock);
         actions.Children.Add(ButtonFor("الكتب المحفوظة",()=>{backPage=TransfersName;ShowPage("الكتب المحفوظة");},"\uE8B7"));
         actions.Children.Add(ButtonFor("إعادة مبالغ المنتسبين",()=>Guard(()=>RefundDesk(s,month)),"\uE8AB"));
+        actions.Children.Add(ButtonFor("قوالب الكتب",()=>Guard(()=>TemplatesDesk(s,month)),"\uE70F"));
         var batch=Store.ActiveBatch(s,month);
         var all=batch==null?A.TransferPreparation.Prepare(s,month):null;
         actions.Children.Add(ButtonFor("الحسابات والربط",()=>Guard(()=>{
@@ -73,7 +66,10 @@ public partial class MainWindow
             string marker=(phase.SelectedIndex==1?"deferred":"current")+"|group|"+System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
             if(batch!=null)day=Store.PreparedDate(s,month,marker)??day;
             bool held=phase.SelectedIndex==1;var letter=A.GroupLetterPreparation.Prepare(plan,g,DateOnly.FromDateTime(day));
-            var style=LetterForm(A.GroupLetterSettingsReader.Read(s,g));if(style==null)return;
+            var bookId=g==A.TransferGroup.Rafidain?"rafidain_group":"other_banks_group";
+            var edited=EditLetter(Builtin(s,bookId),bookId,s,month,render:t=>A.GroupLetterPdf.Generate(letter,t.Style(),LetterFont(),Fonts().Bold,Logo()));
+            if(edited==null)return;
+            store.SaveLetterTemplate(s,bookId,edited);s=store.Snapshot(month);var style=edited.Style();
             var filename=(string)group.SelectedItem+" - "+(string)phase.SelectedItem;
             _=SaveFile(filename,"zip",()=>{
                 var pdf=A.GroupLetterPdf.Generate(letter,style,LetterFont(),Fonts().Bold,Logo());

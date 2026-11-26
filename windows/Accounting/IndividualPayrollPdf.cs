@@ -60,7 +60,7 @@ public static class IndividualPayrollPdf
         }
         blocks.Add(AdaptiveLetterPdf.Signatures(settings, date));
         blocks.Add(AdaptiveLetterPdf.Footer(settings));
-        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, tableFontBytes, logoBytes), false, settings.SignatureOffset, checks);
+        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, tableFontBytes, logoBytes), false, settings.SignatureOffset, checks, settings.Template);
     }
     public static void Save(IndividualLetterPlan plan, GroupLetterSettings settings, byte[] font, byte[] tableFont, byte[] logo, string? foodContract, CashSalaryList? cash, string destination)
     {

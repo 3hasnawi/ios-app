@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory() as tmp:
         output.write(section("ReportExport.swift", "nonisolated struct ReportSheet:", "    /// عرض كل عمود") + "}\n")
         output.write("extension ReportSheet {\n" + section("ReportExport.swift", "    static func easternDigits(", "    static var defaultHeader") + "}\n")
         output.write("extension TransferWordValues {\n" + section("TransferWordValues.swift", "    static func groupedAmount(", "    /// تُطلب") + "}\n")
-        output.write("extension CustomTransferTemplate {\n" + section("CustomTransferTemplate.swift", "    static func invalid(", "    func halfPoints(") + "}\n")
+        output.write((app / "CustomTransferTemplate.swift").read_text() + "\n")
         output.write("extension TransferWordGroupDraft {\n" + section("TransferWordGroupDraft.swift", "    static func signatureCells(", "    static func bodyValues(")
                      + section("TransferWordGroupDraft.swift", "    static func referenceText(", "    /// تبقى مساحة") + "}\n")
     renderer = work / "Renderer.swift"

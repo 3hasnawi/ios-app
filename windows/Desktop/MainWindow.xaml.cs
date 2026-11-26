@@ -403,7 +403,15 @@ public partial class MainWindow : Window
                     }
                 }finally{CanvasArea.MaxWidth=original;UpdateLayout();}
             }
-            var target=(FrameworkElement)Content;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
+            CaptureWindow((FrameworkElement)Content,file);
+        }
+        var editorMonth="تشرين الثاني 2026";
+        var editorSource=store.Snapshot(editorMonth);
+        var demoTemplate=new SalaryDesktop.Core.LetterTemplate{Title="كتاب تجريبي",Body="يرجى تحويل مبلغ ({{المبلغ}}) إلى الحساب ({{الحساب}}).",FirstSigner="عضو اللجنة"};
+        var editor=new LetterWindow(demoTemplate,"custom",editorSource,editorMonth,true,t=>t.Validate(),t=>LayoutSample(t,editorMonth)){Owner=this};
+        editor.Show();editor.UpdateLayout();CaptureWindow((FrameworkElement)editor.Content,"letter-editor");editor.Close();
+        void CaptureWindow(FrameworkElement target,string file){
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(target.ActualWidth),(int)Math.Ceiling(target.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             // RenderTargetBitmap omits the RTL transform normally supplied by the Window.
             var visual=new DrawingVisual();using(var draw=visual.RenderOpen()){
                 if(target.FlowDirection==FlowDirection.RightToLeft)draw.PushTransform(new MatrixTransform(-1,0,0,1,bitmap.PixelWidth,0));

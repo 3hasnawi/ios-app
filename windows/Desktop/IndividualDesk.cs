@@ -13,6 +13,7 @@ public partial class MainWindow
         var choices=new List<(string Title,string Id,A.TransferEntry? Entry)>();
         if(split==null||!held)choices.AddRange(new[]{("شركة عراق الجوال","food_company"),("ضريبة عقد الإطعام","food_tax"),("الضريبة والحماية الاجتماعية","tax_social"),("رواتب الكاش","cash_salary")}.Select(x=>(x.Item1,x.Item2,(A.TransferEntry?)null)));
         if(split==null||held&&split.Guarantee>0)choices.Add(("الضمان الاجتماعي للعقود","contracts",null));
+        if(split==null||!held)foreach(var treasury in new[]{"treasury_guarantee","treasury_schools"})choices.Add((BookTitles[treasury],treasury,null));
         var entities=transfer.Entries.Where(e=>e.Group==A.TransferGroup.Anbar).ToArray();
         if(split!=null)choices.AddRange(entities.Select(e=>(e.Title,"split",(A.TransferEntry?)e)));
         else foreach(var bookId in new[]{"ramadi","housing","water","rafidain_anbar"}){
@@ -24,11 +25,12 @@ public partial class MainWindow
         var picker=Choices(choices.Select(x=>x.Title));
         if(!Form("الكتب المنفردة",FilterBar(("الكتاب",picker,0))))return;
         var (title,id,entity)=choices[picker.SelectedIndex];
-        var style=LetterForm(A.GroupLetterSettingsReader.Read(s,id=="split"?"ramadi":id));if(style==null)return;
+
+        if(id.StartsWith("treasury_")){TreasuryBook(s,transfer.Month,id);return;}
         string marker=(held?"deferred":"current")+"|"+(entity==null?"guarantee":("entity|deductions|"+transfer.Month+"|false|"+entity.Title+"|execution"));
         // Payroll letters unrelated to the suspended amounts are issued from the current month.
         bool mark=split!=null&&(id=="contracts"||entity!=null);
-        _=SaveFile(title,"zip",()=>{
+        Dictionary<string,byte[]> Generate(A.GroupLetterSettings style){
             var files=new Dictionary<string,byte[]>();var refs=id=="split"?new Dictionary<string,byte[]>():A.LetterReferencePack.Read(s);
             if(entity!=null){
                 A.IndividualEntityPlan plan;
@@ -41,7 +43,7 @@ public partial class MainWindow
                     plan=new(local==null?"rafidain_anbar":"ramadi",transfer.Month,entity.Title,transfer.Payer,transfer.PayerAccount,local,entity.Account?.Entity??entity.Title,entity.Account?.Branch,amount,A.ArabicAmountWords.Dinars(amount),persons,entity.People);
                     files["قائمة الجهة.pdf"]=A.ReportPdf.Generate([SplitSheet(s,part,held)],Fonts(),DateTime.Now);
                 }
-                files["الكتاب.pdf"]=A.IndividualEntityPdf.Generate(plan,id=="split"?style with{BodyTemplate=null}:style,LetterFont(),Logo(),id=="split");
+                files["الكتاب.pdf"]=A.IndividualEntityPdf.Generate(plan,style,LetterFont(),Logo(),id=="split");
             }else{
                 A.IndividualLetterPlan plan;
                 if(split!=null&&id=="contracts"){
@@ -54,9 +56,16 @@ public partial class MainWindow
                     plan=new(id,transfer.Month,split.Payer,split.Iban,acc,total,A.ArabicAmountWords.Dinars(total),lines,null,null,[]);
                 }else plan=A.IndividualLetterPreparation.Payroll(id,A.BankStatementCalculator.Calculate(s,transfer.Month),transfer.Payer,transfer.PayerAccount,refs,customization:s);
                 var cash=id=="cash_salary"?A.CashSalaryListPreparation.Prepare(s,transfer.Month):null;
-                files["الكتاب.pdf"]=A.IndividualPayrollPdf.Generate(plan,style,LetterFont(),Fonts().Bold,Logo(),A.GroupLetterSettingsReader.FoodContract(s),cash);
+                files["الكتاب.pdf"]=A.IndividualPayrollPdf.Generate(plan,style,LetterFont(),Fonts().Bold,Logo(),style.FoodContractReference,cash);
             }
-            return Package(files);
-        },mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,mark?()=>ShowPage(TransfersName):null);
+            return files;
+        }
+        var book=id=="split"?(entity?.Account==null?"rafidain_anbar":"ramadi"):id;
+        var initial=Builtin(s,book);
+        if(id=="split")initial=initial with{Body=DefaultBody(book)};
+        var draft=EditLetter(initial,book,s,transfer.Month,render:t=>Generate(t.Style())["الكتاب.pdf"]);
+        if(draft==null)return;
+        if(id!="split"){store.SaveLetterTemplate(s,id,draft);s=store.Snapshot(transfer.Month);ShowPage(TransfersName);}
+        _=SaveFile(title,"zip",()=>Package(Generate(draft.Style())),mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,mark?()=>ShowPage(TransfersName):null);
     }
 }

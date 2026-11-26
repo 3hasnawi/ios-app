@@ -38,7 +38,7 @@ jobs:
           $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
           if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
           if ($p.ExitCode -ne 0) { throw "Desktop exited with $($p.ExitCode)" }
-          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 15) { throw "Incomplete captures" }
+          if ((Get-ChildItem "$env:RUNNER_TEMP\screens\*.png").Count -ne 16) { throw "Incomplete captures" }
       - name: Inspect printed tables and page bounds
         run: |
           python -m pip install pymupdf==1.26.6
@@ -70,9 +70,11 @@ jobs:
       - name: Restore Windows output with actual iPhone archive, contract and refund code
         env:
           WINDOWS_EXCHANGE: ${{ runner.temp }}/exchange/windows-exchange.zip
+          WINDOWS_TEMPLATE_SETTINGS: ${{ runner.temp }}/exchange/letter-settings.json
           WINDOWS_REFUND: ${{ runner.temp }}/exchange/refund.json
         run: |
           python3 ci/compact_backup_test/run.py
+          unzip -p "$RUNNER_TEMP/exchange/windows-templates.zip" settings.json > "$WINDOWS_TEMPLATE_SETTINGS"
           python3 ci/employee_refund_test/run.py
       - uses: actions/download-artifact@v4
         with:

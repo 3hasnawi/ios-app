@@ -18,7 +18,7 @@ public static class GroupLetterPdf
     {
         var template = string.IsNullOrWhiteSpace(settings.BodyTemplate) ? DefaultBodyTemplate : settings.BodyTemplate;
         ValidateBodyTemplate(template);
-        return template.Replace("{{المبلغ}}", Eastern(Group(plan.Total)), StringComparison.Ordinal).Replace("{{المبلغ كتابة}}", plan.Words, StringComparison.Ordinal)
+        return LetterTemplate.FormatNumbers(template).Replace("{{المبلغ}}", Eastern(Group(plan.Total)), StringComparison.Ordinal).Replace("{{المبلغ كتابة}}", plan.Words, StringComparison.Ordinal)
             .Replace("{{حسابنا}}", plan.PayerAccount, StringComparison.Ordinal).Replace("{{الشهر}}", Months[month - 1], StringComparison.Ordinal).Replace("{{السنة}}", Eastern(year.ToString(CultureInfo.InvariantCulture)), StringComparison.Ordinal);
     }
     public static void ValidateBodyTemplate(string template)
@@ -54,7 +54,7 @@ public static class GroupLetterPdf
         blocks.Add(LetterBlock.Of(new LetterTable(["ت", "المديرية", "رقم الايبان", "الفرع", "المبلغ"], rows, "Arial", 22, [40, 252, 322, 220, 166], BoldLastRow: true)));
         var checks = new List<string> { plan.PayerAccount, plan.Total.ToString(CultureInfo.InvariantCulture) };
         foreach (var line in plan.Lines) { checks.Add(line.Iban); checks.Add(AdaptiveLetterPdf.Grouped(line.Amount)); }
-        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, tableFontBytes, logoBytes), true, settings.SignatureOffset, checks);
+        return AdaptiveLetterPdf.Write(blocks, LetterFonts.Resolve(fontBytes, tableFontBytes, logoBytes), true, settings.SignatureOffset, checks, settings.Template);
     }
     public static void SaveDraft(GroupLetterPlan plan, GroupLetterSettings settings, byte[] fontBytes, byte[] tableFontBytes, byte[] logoBytes, string destination)
     {

@@ -24,6 +24,8 @@ static class PrintChecks
         }
         var snapshot=s.Snapshot("تشرين الثاني 2026");var refund=s.Refunds().Single();var groups=refund.Groups();
         void Pdf(string name,byte[] bytes,Func<int,bool> pages){using var pdf=PdfDocument.Open(bytes);check(pages(pdf.NumberOfPages)&&pdf.GetPages().All(p=>p.Letters.Count>0),"vector PDF page count and selectable text "+name);File.WriteAllBytes(Path.Combine(folder,name+".pdf"),bytes);}
+        var t=A.LetterTemplate.From(style,"اختبار القالب","يرجى صرف المبلغ ({{المبلغ}}) لشهر {{الشهر}} من عام {{السنة}}.") with{FirstSigner="رئيس اللجنة\nاسم تجريبي\nمدير الحسابات",SecondSigner="",ThirdSigner="",Attachments="قائمة واحدة",Source="manual",BodyKashida="medium",SignatureHorizontalOffset=5,FontSizes=new(){{"body",13},{"signatures",10},{"attachments",11}}};
+        Pdf("custom-template",A.TemplateLetterPdf.Custom(t,snapshot,"تشرين الثاني 2026",123456,A.LetterFonts.Resolve(times,assets.Bold,logo)),n=>n==1);
         foreach(var group in groups)Pdf("refund-"+group.Code,refund.Letter([group],style,A.LetterFonts.Resolve(times,assets.Bold,logo)),n=>n==1);
         var sheet=refund.ListSheet("اختبار");Pdf("refund-list",A.ReportPdf.Generate([sheet],assets,DateTime.UtcNow),n=>n==1);
         var split=Store.ActiveBatch(snapshot,"تشرين الثاني 2026")!;

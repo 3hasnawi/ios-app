@@ -3,7 +3,7 @@ using Claunia.PropertyList;
 
 namespace SalaryDesktop.Core;
 
-public sealed record GroupLetterSettings(string Header, string Number, string First, string Second, string Third, string Footer, string? BodyMonth, int? OutgoingMonth, int SignatureOffset, string? BodyTemplate, string? FoodContractReference = null);
+public sealed record GroupLetterSettings(string Header, string Number, string First, string Second, string Third, string Footer, string? BodyMonth, int? OutgoingMonth, int SignatureOffset, string? BodyTemplate, string? FoodContractReference = null, LetterTemplate? Template = null);
 public static class GroupLetterSettingsReader
 {
     public static GroupLetterSettings Read(BackupSnapshot snapshot, TransferGroup group)
@@ -13,7 +13,7 @@ public static class GroupLetterSettingsReader
     }
     public static GroupLetterSettings Read(BackupSnapshot snapshot, string id)
     {
-        if (id is not ("rafidain_group" or "other_banks_group" or "food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary" or "ramadi" or "housing" or "water" or "rafidain_anbar")) throw new InvalidDataException("نوع الكتاب غير صالح.");
+        if (id is not ("rafidain_group" or "other_banks_group" or "food_company" or "food_tax" or "tax_social" or "contracts" or "cash_salary" or "ramadi" or "housing" or "water" or "rafidain_anbar" or "treasury_schools" or "treasury_guarantee")) throw new InvalidDataException("نوع الكتاب غير صالح.");
         if (!snapshot.SettingsPlists.TryGetValue("transferLetterCustomizations", out var plist)) return new("", "", "", "", "", "", null, null, 0, null);
         try
         {
@@ -36,7 +36,7 @@ public static class GroupLetterSettingsReader
             if(item is {} specific&&specific.TryGetProperty("letterTemplate",out template)&&template.ValueKind==JsonValueKind.Object||
                 common.TryGetProperty("letterTemplate",out template)&&template.ValueKind==JsonValueKind.Object){
                 var formatted=new GroupLetterSettings(Value(template,"header")??"",Value(template,"number")??"",Value(template,"firstSigner")??"",Value(template,"secondSigner")??"",Value(template,"thirdSigner")??"",Value(template,"footer")??"",Effective("bodyMonth"),parsed,template.TryGetProperty("signatureVerticalOffset",out var pos)&&pos.ValueKind==JsonValueKind.Number?pos.GetInt32():0,Value(template,"body"),Value(common,"foodContractReference"));
-                return formatted;
+                return formatted with { Template = template.Deserialize<LetterTemplate>(LetterTemplate.Json) };
             }
             return new(Effective("header") ?? "", Value(common, "fixedNumber") ?? "", Effective("committeeFirst") ?? "", Effective("committeeSecond") ?? "", Effective("committeeThird") ?? "", Effective("footer") ?? "", Effective("bodyMonth"), parsed, offset ?? 0, Effective("bodyTemplate"), Value(common, "foodContractReference"));
         }

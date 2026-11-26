@@ -109,6 +109,16 @@ static class AccountingTests
         var partial=new A.ContractOverride(770,0,20,2,2);
         var encoded=A.ContractOverrides.Set(null,month,partial);
         check(A.ContractOverrides.Read(snap with{SettingsPlists=new Dictionary<string,byte[]>{{A.ContractOverrides.SettingsKey,encoded}}},month)==partial,"iPhone approval with two missing nominal salaries is readable");
+        var custom=new A.LetterTemplate{Title="كتاب اختبار",Source="payroll",SourceName="تضمين",Body="مبلغ ({{المبلغ}})",FirstSigner="صفة\nاسم\nمنصب",BodyBold=true,BodyKashida="high",FontSizes=new(){{"body",13}},SignatureHorizontalOffset=-10};
+        snap=s.Snapshot(month);s.SaveLetterTemplate(snap,null,custom);
+        try{s.SaveLetterTemplate(snap,null,custom);throw new Exception("stale template write");}catch(IOException){check(true,"concurrent template edits preserve archive");}
+        snap=s.Snapshot(month);var savedTemplate=Store.LetterLibrary(snap).Single();
+        check(savedTemplate.Id==custom.Id&&savedTemplate.FontSizes!["body"]==13&&A.AdaptiveLetterPdf.SignatureCells(savedTemplate.Style()," / ١ / ٢٠٢٦")[2].StartsWith("صفة"),"saved custom layout and left single signature");
+        var built=custom with{Title="كتاب المجموعة",Source="none",SourceName="",Body=A.GroupLetterPdf.DefaultBodyTemplate};
+        s.SaveLetterTemplate(snap,"rafidain_group",built);snap=s.Snapshot(month);
+        check(A.GroupLetterSettingsReader.Read(snap,"rafidain_group").Template?.BodyKashida=="high"&&Store.LetterLibrary(snap).Single().Id==custom.Id,"group edit preserves custom library");
+        File.Copy(s.Archive,Path.Combine(exchange,"windows-templates.zip"),true);
+        s.SaveLetterTemplate(snap,null,custom,true);check(Store.LetterLibrary(s.Snapshot(month)).Count==0,"delete only the selected custom book");
         s.SaveRefund(s.Refunds().Single(),s.Active,true);check(s.Refunds().Count==0,"delete selected refund only");
     }
 }
