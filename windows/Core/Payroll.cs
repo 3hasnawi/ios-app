@@ -35,6 +35,13 @@ public static class Arabic
         int numeric=parts.Select(w=>int.TryParse(w,out var n)?n:0).FirstOrDefault(n=>n is >=1 and <=12);
         return numeric==0?0:year*100+numeric;
     }
+    public static string Category(string title)
+    {
+        var key=Key(title);
+        if(key.StartsWith("مديريه تنفيذ")||key.StartsWith("مديريه التنفيذ"))return "مديريات التنفيذ";
+        if(key.Contains("مصرف")||key.StartsWith("م "))return "المصارف";
+        return "الجهات الأخرى";
+    }
     public static string Eastern(string value)=>string.Concat(value.Select(c=>c is >= '0' and <= '9'?(char)('٠'+c-'0'):c));
     public static string Money(decimal value)=>value.ToString("#,##0.############################",CultureInfo.InvariantCulture);
 }
@@ -47,6 +54,6 @@ public record MonthInfo(string Name,int Key,int Expected,int Actual)
     public bool Verified=>Expected>0&&Expected==Actual;
     public override string ToString()=>Name;
 }
-public record Filters(string Search="",string Agency="",string Reference="",int Year=0,int Month=0,string Person="",bool ExactReference=false);
+public record Filters(string Search="",string Agency="",string Reference="",int Year=0,int Month=0,string Person="",bool ExactReference=false,string Category="");
 public record Review(string Title,string Agency,string Month);
 public record BankRow(string Month,string Date,string Description,string Direction,long Amount);

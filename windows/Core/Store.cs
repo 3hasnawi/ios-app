@@ -57,6 +57,7 @@ public sealed class Store(string root)
             Mode=read?SqliteOpenMode.ReadOnly:SqliteOpenMode.ReadWriteCreate}.ToString());
         db.Open();
         db.CreateCollation("ARABIC",(a,b)=>CultureInfo.GetCultureInfo("ar-IQ").CompareInfo.Compare(a,b,CompareOptions.None));
+        db.CreateFunction<string,string>("agency_category",Arabic.Category,isDeterministic:true);
         return db;
     }
     private SqliteConnection Open()=>Connect(Active??throw new InvalidOperationException("اختر نسخة الآيفون أولاً."));
@@ -95,6 +96,7 @@ public sealed class Store(string root)
         if(f.Year!=0)Where("period / 100 = $y","$y",f.Year);
         if(f.Month!=0)Where("period % 100 = $m","$m",f.Month);
         if(f.Agency.Length>0)Where("agency=$e","$e",f.Agency);
+        if(f.Category.Length>0)Where("agency_category(agency)=$g","$g",f.Category);
         if(f.Person.Length>0)Where("person=$p","$p",f.Person);
         if(f.Reference.Length>0)Where(f.ExactReference?"casekey=$c":"instr(casekey,$c)>0","$c",Arabic.CaseKey(f.Reference));
         int i=0;

@@ -23,3 +23,5 @@ using(var wb=new XLWorkbook(xlsx)){var w=wb.Worksheet(1);Check(w.RightToLeft&&w.
 var employee=Statement.Employee(store.Find(new(Person:one.Name)),months,one.Name,one.Agency,one.Reference,202502,202611,"بيانات وهمية");
 Check(employee.Partial&&employee.PaidMonths==1&&employee.Sheets.Sum(y=>y.Total)==13000,"multi-year statement, exact case, incomplete months marked");
 Check(entity.Html().Contains("580,000")&&employee.Html().Contains("13,000"),"preview values");
+Check(Arabic.Period("رواتب تشرين٢_٢٠٢٦ تجريبي")==202611,"iPhone short month labels");
+Check(store.Summary(new(Year:2026,Month:11,Category:"مديريات التنفيذ")).Total==232000,"exact group scope shared by grid and export");
