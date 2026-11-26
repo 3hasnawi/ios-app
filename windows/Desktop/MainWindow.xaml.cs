@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),(DeductionsName,"\uE8FD"),("التحويلات","\uE8AB"),("كشف البنك","\uE825"),("الإعدادات","\uE713")];
     private static readonly (string Name,string Desc,string Icon)[] Cards=[
         ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uEC06"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
-        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),("الكتب المحفوظة","ملفات PDF الأصلية من الآيفون","\uE8B7"),
+        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),
         (TransfersName,"كتب المصارف ودفعات الشهر","\uE8AB"),(AuditName,"حالات المراجعة والتغييرات","\uEA8F"),
         (TrustName,"المنتسبون وحالات الصرف","\uE77B"),(FundingName,"تفصيل المبالغ ومطابقتها","\uE825"),
         (CommandName,"استقطاعات القيادة للشهر","\uE8A5"),(HealthName,"المشتركون والمبالغ غير المنتظمة","\uE95E"),(FundName,"الاستقطاعات حسب الفئة","\uE8A5")];
@@ -107,6 +107,7 @@ public partial class MainWindow : Window
     {
         var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field),Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
     }
+    void OpenMonthList(object sender,RoutedEventArgs e){Period.Focus();Period.IsDropDownOpen=!Period.IsDropDownOpen;}
     void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy)ShowPage(page);}
     void SearchClick(object s,RoutedEventArgs e){if(!busy)ShowPage(SearchName);}
     void ShowPage(string name,Review? review=null)
@@ -116,12 +117,12 @@ public partial class MainWindow : Window
         if(name==DeductionsName)name=AgencyPage;
         query?.Cancel();generation++;debounce.Stop();page=name;
         PageTitle.Text=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
-        string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or "الكتب المحفوظة"=>"التحويلات",_=>name};
+        string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers or "الكتب المحفوظة"=>"التحويلات",_=>name};
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
         Status.Text=store.Active==null?"اختر نسخة الآيفون من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name))WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
+        if(name=="الرئيسية")Home();else if(name=="الإعدادات")Settings();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name=="الكتب المحفوظة")Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void AdaptNavigation()
@@ -364,17 +365,27 @@ public partial class MainWindow : Window
     {
         Directory.CreateDirectory(directory);
         var sample=store.Find(new()).First();
-        void Click(DependencyObject root,string label){
-            Button? FindButton(DependencyObject item){
-                if(item is Button button && AutomationProperties.GetName(button)==label)return button;
-                foreach(var child in LogicalTreeHelper.GetChildren(item).OfType<DependencyObject>())
-                    if(FindButton(child) is {} match)return match;
-                return null;
-            }
-            var button=FindButton(root)??throw new InvalidDataException("زر غير موجود في مسار الاختبار: "+label);
-            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        static IEnumerable<T> Controls<T>(DependencyObject root) where T:DependencyObject{
+            if(root is T match)yield return match;
+            foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+                foreach(var found in Controls<T>(child))yield return found;
         }
-        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(TransfersName,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds"),(TrustName,"trusts"),("الكتب المحفوظة","books"),(HealthName,"health"),(FundName,"fund")}){
+        Button FindAction(DependencyObject root,string label)=>Controls<Button>(root).FirstOrDefault(b=>AutomationProperties.GetName(b)==label)
+            ??throw new InvalidDataException("زر غير موجود في مسار الاختبار: "+label);
+        void Click(DependencyObject root,string label)=>FindAction(root,label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        async Task ChooseMonth(int key){
+            Period.ApplyTemplate();
+            var opener=(Button)Period.Template.FindName("MonthButton",Period);
+            if(Math.Abs(opener.ActualHeight-SearchButton.ActualHeight)>1)throw new InvalidDataException("ارتفاع زر الشهر لا يطابق البحث.");
+            opener.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+            if(!Period.IsDropDownOpen)throw new InvalidDataException("تعذر فتح قائمة الأشهر.");
+            var month=months.Single(m=>m.Key==key);
+            Period.SelectedItem=month;Period.IsDropDownOpen=false;
+            if(SelectedMonth!=month)throw new InvalidDataException("تعذر تغيير شهر العمل.");
+            await workPageLoad;
+        }
+        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(CurrentTransfers,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds"),(TrustName,"trusts"),(DeferredTransfers,"deferred-transfers"),(HealthName,"health"),(FundName,"fund")}){
             if(name==DeductionsName){
                 var order=Nav.Children.OfType<Button>().Select(AutomationProperties.GetName).ToList();
                 if(order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
@@ -390,9 +401,39 @@ public partial class MainWindow : Window
                 if(!employee!.IsEnabled)throw new InvalidDataException("تعذّر اختيار كشف المنتسب.");
             }else if(name=="التحويلات"){
                 Click(Nav,name);
-                if(page!=TransfersName||grid!=null)throw new InvalidDataException("مسار التحويلات يفتح قيود الاستقطاعات.");
+                var names=Controls<Button>(CanvasArea).Select(AutomationProperties.GetName).ToArray();
+                if(page!=TransfersName||!names.SequenceEqual(new[]{CurrentTransfers,DeferredTransfers,RefundTransfers}))throw new InvalidDataException("واجهة التحويلات يجب أن تحتوي أقسام العمل الثلاثة فقط.");
+            }else if(name is CurrentTransfers or DeferredTransfers){
+                ShowPage(TransfersName);Click(CanvasArea,name);await workPageLoad;
+                if(name==CurrentTransfers){
+                    await ChooseMonth(202610);
+                    var group=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="المجموعة");
+                    group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Anbar;
+                    var books=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="الكتب المنفردة");
+                    var letters=books.Items.Cast<IndividualBook>().ToArray();
+                    if(!new[]{"ramadi","rafidain_anbar","contracts","treasury_schools"}.All(id=>letters.Any(b=>b.Id==id)))
+                        throw new InvalidDataException("قائمة فرع الأنبار تفتقد كتاباً منفرداً.");
+                    var options=FindAction(CanvasArea,"خيارات");
+                    options.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    if(options.ContextMenu?.IsOpen!=true||!options.ContextMenu.Items.Cast<MenuItem>().Any(m=>Equals(m.Header,"ربط جهة بالكتاب")))
+                        throw new InvalidDataException("تعذّر فتح خيارات الربط بالزر الأيسر.");
+                    options.ContextMenu.IsOpen=false;
+                    UpdateLayout();
+                    await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+                    CaptureWindow((FrameworkElement)Content,"anbar-letters");
+                    group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Rafidain;
+                    await ChooseMonth(202611);
+                }else{
+                    FindAction(CanvasArea,"إلغاء التأجيل");
+                    await ChooseMonth(202610);
+                    FindAction(CanvasArea,"تأجيل استقطاعات العقود");
+                    if(Controls<DataGrid>(CanvasArea).Any())throw new InvalidDataException("ظهرت جهات مؤجلة لشهر بلا فصل.");
+                    await ChooseMonth(202611);
+                }
             }else if(name=="إعادة المبالغ"){
-                ShowPage(TransfersName);await Task.Delay(500);RefundDesk(store.Snapshot(SelectedMonth!.Name),SelectedMonth.Name,store.Refunds().FirstOrDefault());
+                ShowPage(TransfersName);Click(CanvasArea,RefundTransfers);await workPageLoad;
+                var history=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="الدفعات المحفوظة");
+                history.SelectedIndex=0;Click(CanvasArea,"فتح الدفعة");
             }else{
                 if(name is HealthName or FundName){
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
@@ -432,7 +473,7 @@ public partial class MainWindow : Window
             }
             if(grid!=null&&name!=EmployeePage)await LoadGrid();
             await Task.Delay(280);await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
-            if(name is DeductionsName or EmployeePage or "التحويلات" or TransfersName or "كشف البنك" or AuditName or SearchName or "إعادة المبالغ" or TrustName or "الكتب المحفوظة" or HealthName or FundName){
+            if(name is DeductionsName or EmployeePage or CurrentTransfers or DeferredTransfers or "كشف البنك" or AuditName or SearchName or "إعادة المبالغ" or TrustName or "الكتب المحفوظة" or HealthName or FundName){
                 static IEnumerable<Grid> FilterRows(DependencyObject root){
                     if(root is Grid row&&AutomationProperties.GetAutomationId(row)=="ReportFilterRow"){yield return row;yield break;}
                     foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())

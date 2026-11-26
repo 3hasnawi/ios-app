@@ -76,7 +76,7 @@ public partial class MainWindow
         if(dialog.ShowDialog(this)!=true)return;
         try{
             var files=dialog.FileNames;var batch=await Task.Run(()=>RefundRecovery.Read(files,month,source.Employees));
-            if(store.Active!=Path.GetDirectoryName(source.SourcePath)||page!=TransfersName)return;
+            if(store.Active!=Path.GetDirectoryName(source.SourcePath)||page!=RefundTransfers||month!=SelectedMonth?.Name)return;
             if(!Form("استرجاع دفعة للمراجعة",Text(batch.Date.ToString("yyyy/MM/dd")+"　·　"+batch.People.Count+" منتسب　·　"+Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount))),
                 Text(hasRows?"سيُستبدل محتوى المحرر الحالي. تُحفظ الدفعة المسترجعة عند اختيار حفظ الدفعة.":"راجع الجهة والمستفيدين ثم اختر حفظ الدفعة.")))return;
             foreach(var code in batch.People.Where(p=>p.Bank==p.Iban.Substring(4,4)).Select(p=>p.Bank).Distinct().ToArray()){

@@ -46,16 +46,14 @@ public partial class MainWindow
     }
     void TemplatesDesk(A.BackupSnapshot s,string month){
         var custom=Store.LetterLibrary(s);
-        var books=BookTitles.Select(b=>(b.Key,b.Value,(A.LetterTemplate?)null)).Concat(custom.Select(t=>("custom",t.Title,(A.LetterTemplate?)t))).ToList();
-        var picker=Choices(books.Select(b=>b.Item2));
-        var command=Choices(["تعديل القالب","إنشاء كتاب مخصص","نسخ قالب مخصص","حذف قالب مخصص","تصدير كتاب مخصص"]);
-        if(!Form("قوالب الكتب",FilterBar(("القالب",picker,1),("الإجراء",command,0))))return;
-        var (kind,title,template)=books[picker.SelectedIndex];
-        bool fresh=command.SelectedIndex==1;
-        if(fresh){kind="custom";template=new A.LetterTemplate{Title="كتاب مخصص"};}
-        if(command.SelectedIndex>=2&&template==null)throw new InvalidDataException("اختر أحد كتبك المخصصة.");
+        var picker=Choices(custom.Select(t=>t.Title));
+        var command=Choices(custom.Count==0?["إنشاء كتاب مخصص"]:["تعديل الكتاب","إنشاء كتاب مخصص","نسخ الكتاب","حذف الكتاب","تصدير الكتاب"]);
+        if(!Form("الكتب المخصصة",FilterBar(("الكتاب",picker,1),("الإجراء",command,0))))return;
+        bool fresh=custom.Count==0||command.SelectedIndex==1;
+        var template=fresh?new A.LetterTemplate{Title="كتاب مخصص"}:custom[picker.SelectedIndex];
+        var title=template.Title;
         if(command.SelectedIndex==3){
-            if(Form("حذف القالب",Text(title)))_=Working(()=>store.SaveLetterTemplate(s,null,template!,true),"حُذف القالب.",()=>ShowPage(TransfersName));return;
+            if(Form("حذف القالب",Text(title)))_=Working(()=>store.SaveLetterTemplate(s,null,template!,true),"حُذف القالب.",()=>ShowPage(page));return;
         }
         if(command.SelectedIndex==4){
             decimal? amount=null;
@@ -66,7 +64,10 @@ public partial class MainWindow
             var bytes=A.TemplateLetterPdf.Custom(template,s,month,amount,DocumentFonts());new LetterPreview(bytes){Owner=this}.ShowDialog();_=SaveFile(title,"pdf",()=>bytes);return;
         }
         if(command.SelectedIndex==2)template=template! with{Id=Guid.NewGuid(),Title=title+" (نسخة)"};
-        var t=template??Builtin(s,kind);
+        EditTransferTemplate(s,month,"custom",template);
+    }
+    void EditTransferTemplate(A.BackupSnapshot s,string month,string kind,A.LetterTemplate? initial=null){
+        var t=initial??Builtin(s,kind);
         var binding=BookAccount(s,kind,month);
         if(binding!=null)t=t with{Account=A.IndividualAccountCustomization.Read(s,kind)?.Value??binding.Original};
         bool treasury=kind.StartsWith("treasury_");
@@ -86,7 +87,7 @@ public partial class MainWindow
                 update=binding with{Value=value};
             }
         });
-        if(edited!=null)_=Working(()=>store.SaveLetterTemplate(s,kind=="custom"?null:kind,edited,account:update),"حُفظ القالب ضمن النسخة الاحتياطية.",()=>ShowPage(TransfersName));
+        if(edited!=null)_=Working(()=>store.SaveLetterTemplate(s,kind=="custom"?null:kind,edited,account:update),"حُفظ القالب ضمن النسخة الاحتياطية.",()=>ShowPage(page));
     }
     static A.IndividualAccountOverride? BookAccount(A.BackupSnapshot s,string id,string month){
         bool entity=id is "ramadi" or "water" or "housing";

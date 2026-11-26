@@ -7,9 +7,35 @@
 <TextBlock x:Name="NavFoot" DockPanel.Dock="Bottom" Text="بيانات محلية على هذه الحاسبة" Foreground="#CEE0D5" FontSize="12"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Nav"/></ScrollViewer></DockPanel></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-<Button x:Name="SearchButton" Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
+<Button x:Name="SearchButton" Height="40" Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="19" TextAlignment="Center" VerticalAlignment="Center"/>
-<ComboBox Grid.Column="2" x:Name="Period" HorizontalAlignment="Left" MinHeight="30" Padding="5,2" VerticalAlignment="Center" ToolTip="شهر العمل" SelectionChanged="PeriodChanged"/></Grid></Border>
+<ComboBox Grid.Column="2" x:Name="Period" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
+          ToolTip="شهر العمل" AutomationProperties.Name="شهر العمل" SelectionChanged="PeriodChanged">
+  <ComboBox.Template>
+    <ControlTemplate TargetType="ComboBox">
+      <Grid>
+        <Button x:Name="MonthButton" Focusable="False" Click="OpenMonthList" AutomationProperties.Name="اختيار الشهر">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE787;" Margin="0,0,7,0" VerticalAlignment="Center"/>
+            <TextBlock x:Name="MonthText" Text="{Binding SelectedItem, RelativeSource={RelativeSource TemplatedParent}}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE70D;" Margin="7,0,0,0" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+          <Border Background="White" BorderBrush="#CCDAD2" BorderThickness="1" CornerRadius="7" Padding="3" Margin="0,2,0,0"
+                  MaxHeight="{TemplateBinding MaxDropDownHeight}" MinWidth="{Binding ActualWidth, ElementName=MonthButton}">
+            <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"><ItemsPresenter/></ScrollViewer>
+          </Border>
+        </Popup>
+      </Grid>
+      <ControlTemplate.Triggers>
+        <Trigger Property="SelectedIndex" Value="-1"><Setter TargetName="MonthText" Property="Text" Value="شهر العمل"/></Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="MonthButton" Property="BorderBrush" Value="#BB852D"/></Trigger>
+        <Trigger Property="HasItems" Value="False"><Setter TargetName="MonthButton" Property="IsEnabled" Value="False"/></Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate>
+  </ComboBox.Template>
+</ComboBox></Grid></Border>
 <DockPanel Grid.Row="1">
   <Button x:Name="UpdateNotice" DockPanel.Dock="Top" Visibility="Collapsed" Click="OpenUpdate" HorizontalContentAlignment="Center" Margin="8,4" Background="#D8EEE0"/>
   <ScrollViewer x:Name="BodyViewport" Margin="26,22,26,10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">

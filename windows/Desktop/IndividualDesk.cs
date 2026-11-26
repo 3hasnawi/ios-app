@@ -9,23 +9,35 @@ public partial class MainWindow
             [new("ت",5,A.ReportColumnKind.Serial),new("الرتبة",15,A.ReportColumnKind.Text),new("الاسم الكامل",35,A.ReportColumnKind.Text),new("المبلغ",15,A.ReportColumnKind.Amount),new("رقم وتاريخ الاضبارة",28,A.ReportColumnKind.Text)],
             rows.Select((r,i)=>new[]{(i+1).ToString(),r.Rank,r.Name,Arabic.Money(r.Amount),r.Note}).ToArray(),rows.Select(r=>r.Amount).ToArray());
     }
-    void IndividualBooks(A.BackupSnapshot s,A.TransferSnapshot transfer,ContractBatch? split,bool held){
-        var choices=new List<(string Title,string Id,A.TransferEntry? Entry)>();
-        if(split==null||!held)choices.AddRange(new[]{("شركة عراق الجوال","food_company"),("ضريبة عقد الإطعام","food_tax"),("الضريبة والحماية الاجتماعية","tax_social"),("رواتب الكاش","cash_salary")}.Select(x=>(x.Item1,x.Item2,(A.TransferEntry?)null)));
-        if(split==null||held&&split.Guarantee>0)choices.Add(("الضمان الاجتماعي للعقود","contracts",null));
-        if(split==null||!held)foreach(var treasury in new[]{"treasury_guarantee","treasury_schools"})choices.Add((BookTitles[treasury],treasury,null));
-        var entities=transfer.Entries.Where(e=>e.Group==A.TransferGroup.Anbar).ToArray();
-        if(split!=null)choices.AddRange(entities.Select(e=>(e.Title,"split",(A.TransferEntry?)e)));
-        else foreach(var bookId in new[]{"ramadi","housing","water","rafidain_anbar"}){
-            var entry=A.IndividualLetterLinks.Resolve(s,bookId,entities);
-            if(bookId=="rafidain_anbar"&&entry==null)entry=entities.SingleOrDefault(e=>A.PayrollAnalysis.Normalize(e.Title).Replace("/","").Split(' ',StringSplitOptions.RemoveEmptyEntries).SequenceEqual(new[]{"مصرف","الرافدين","فرع","الانبار"}));
-            if(entry!=null)choices.Add((entry.Title,bookId,entry));
-        }
-        if(choices.Count==0)throw new System.IO.InvalidDataException("لا توجد كتب منفردة لهذه الدفعة.");
-        var picker=Choices(choices.Select(x=>x.Title));
-        if(!Form("الكتب المنفردة",FilterBar(("الكتاب",picker,0))))return;
-        var (title,id,entity)=choices[picker.SelectedIndex];
+    record IndividualBook(string Title,string Id,A.TransferEntry? Entry=null)
+    {
+        public bool NeedsLink => Entry==null && LinkableBooks.Contains(Id);
+        public string Caption => NeedsLink ? Title+" · يحتاج ربط جهة" : Title;
+    }
+    static readonly string[] LinkableBooks=["ramadi","housing","water","rafidain_anbar"];
 
+    static List<IndividualBook> BranchBooks(A.BackupSnapshot source,A.TransferSnapshot transfer,ContractBatch? split,bool held)
+    {
+        var books=new List<IndividualBook>();
+        var entities=transfer.Entries.Where(e=>e.Group==A.TransferGroup.Anbar).ToArray();
+        if(split!=null)books.AddRange(entities.Select(e=>new IndividualBook(e.Title,"split",e)));
+        else foreach(var id in LinkableBooks){
+            var entry=A.IndividualLetterLinks.Resolve(source,id,entities);
+            if(id=="rafidain_anbar"&&entry==null){
+                var matches=entities.Where(e=>A.PayrollAnalysis.Normalize(e.Title).Replace("/","").Split(' ',StringSplitOptions.RemoveEmptyEntries).SequenceEqual(new[]{"مصرف","الرافدين","فرع","الانبار"})).Take(2).ToArray();
+                if(matches.Length==1)entry=matches[0];
+            }
+            books.Add(new(BookTitles[id],id,entry));
+        }
+        if(!held)foreach(var id in new[]{"food_company","food_tax","tax_social","cash_salary","treasury_guarantee","treasury_schools"})
+            books.Add(new(BookTitles[id],id));
+        if(split==null||held&&split.Guarantee>0)books.Add(new(BookTitles["contracts"],"contracts"));
+        return books;
+    }
+
+    void OpenIndividual(A.BackupSnapshot s,A.TransferSnapshot transfer,ContractBatch? split,bool held,IndividualBook selected){
+        var (title,id,entity)=selected;
+        if(selected.NeedsLink)throw new System.IO.InvalidDataException("اربط جهة التنفيذ بهذا الكتاب أولاً.");
         if(id.StartsWith("treasury_")){TreasuryBook(s,transfer.Month,id);return;}
         string marker=(held?"deferred":"current")+"|"+(entity==null?"guarantee":("entity|deductions|"+transfer.Month+"|false|"+entity.Title+"|execution"));
         // Payroll letters unrelated to the suspended amounts are issued from the current month.
@@ -65,7 +77,7 @@ public partial class MainWindow
         if(id=="split")initial=initial with{Body=DefaultBody(book)};
         var draft=EditLetter(initial,book,s,transfer.Month,render:t=>Generate(t.Style())["الكتاب.pdf"]);
         if(draft==null)return;
-        if(id!="split"){store.SaveLetterTemplate(s,id,draft);s=store.Snapshot(transfer.Month);ShowPage(TransfersName);}
-        _=SaveFile(title,"zip",()=>Package(Generate(draft.Style())),mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,mark?()=>ShowPage(TransfersName):null);
+        if(id!="split"){store.SaveLetterTemplate(s,id,draft);s=store.Snapshot(transfer.Month);ShowPage(held?DeferredTransfers:CurrentTransfers);}
+        _=SaveFile(title,"zip",()=>Package(Generate(draft.Style())),mark?()=>store.UpdateBatch(s,transfer.Month,prepared:marker,date:DateTime.Today):null,mark?()=>ShowPage(held?DeferredTransfers:CurrentTransfers):null);
     }
 }

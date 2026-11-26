@@ -59,8 +59,10 @@ public partial class MainWindow
             try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||page!=SearchName)return;list.ItemsSource=hits.Take(300);Status.Text=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";}catch(Exception e){Error(e);}};
         list.MouseDoubleClick+=async (_,_)=>{if(list.SelectedItem is Store.SearchResult hit)await OpenPerson(hit);};input.Focus();
     }
-    async void WorkPage(string key)
+    Task workPageLoad=Task.CompletedTask;
+    async Task WorkPage(string key)
     {
+        if(key==TransfersName){TransferHome();return;}
         if(key==SearchName){SearchAll();return;}
         if(store.Active==null){CanvasArea.Children.Add(Text("افتح نسخة الآيفون أو استورد ملف Excel من الإعدادات."));return;}
         var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
@@ -76,9 +78,10 @@ public partial class MainWindow
                 filter.SelectionChanged+=(_,_)=>Draw();Draw();dock.Children.Add(list);CanvasArea.Children.Add(dock);Status.Text=string.Join("　·　",result.Notes.Prepend(result.Rows.Count+" حالة"));return;
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
-            if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
+            if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             CanvasArea.Children.Remove(loading);
-            if(key==TransfersName){TransferDesk(snapshot,month);return;}
+            if(key is CurrentTransfers or DeferredTransfers){TransferDesk(snapshot,month,key==DeferredTransfers);return;}
+            if(key==RefundTransfers){RefundDesk(snapshot,month);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var funding=key==FundingName&&snapshot.Employees.Count>0?await Task.Run(()=>WorkReports.FundingData(snapshot,month)):null;

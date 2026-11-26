@@ -22,7 +22,7 @@ public partial class MainWindow
         long Value(){var parsed=A.PayrollSpreadsheet.ParseMoney(amounts.Text);if(parsed is null or <=0 or >999_999_999_999_999m||parsed!=decimal.Truncate(parsed.Value))throw new InvalidDataException("أدخل مبلغاً صحيحاً بالدينار.");return (long)parsed.Value;}
         selected.SelectionChanged+=(_,_)=>{if(selected.SelectedItem is RefundPayee row)amounts.Text=row.Amount.ToString();};
         RefundBatch Model()=>new(editing?.Id??Guid.NewGuid().ToString().ToUpperInvariant(),agency.Text.Trim(),DateOnly.FromDateTime(date.SelectedDate??throw new InvalidDataException("اختر التاريخ.")),payer.Text.Trim(),A.TransferPreparation.NormalizeAccount(account.Text),rows.ToList(),editing?.Original,editing?.ArchiveId);
-        void Return()=>ShowPage(TransfersName);
+        void Return()=>ShowPage(RefundTransfers);
         var add=ButtonFor("إضافة",()=>Guard(()=>{
                 if(results.SelectedItem is not RefundPayee p)throw new InvalidDataException("اختر المنتسب من النتائج.");
                 if(rows.Any(x=>x.Iban==p.Iban))throw new InvalidDataException("الحساب موجود في الدفعة.");
@@ -30,7 +30,7 @@ public partial class MainWindow
                 rows.Add(p with{Amount=Value()});Redraw();searchBox.Clear();amounts.Clear();searchBox.Focus();
             }),"\uE710");
         var open=ButtonFor("فتح الدفعة",()=>Guard(()=>{if(options.SelectedIndex>=0)RefundDesk(source,month,history[options.SelectedIndex]);}));
-        var head=Column(Bar(ButtonFor("ملفات التحويل",Return,"\uE72A"),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month)),ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
+        var head=Column(Bar(ButtonFor("التحويلات",()=>ShowPage(TransfersName),"\uE72A"),ButtonFor("دفعة جديدة",()=>RefundDesk(source,month)),ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
             FilterBar(("الدفعات المحفوظة",options,1.45),("",open,0),("ابحث في رواتب "+month,searchBox,1),("المنتسب",results,1.2),("المبلغ",amounts,.75),("",add,0)),
             FilterBar(("جهة الإعادة",agency,1),("تاريخ الدفعة",date,0),("الجهة الدافعة",payer,1),("آيبان الجهة الدافعة",account,1.5)),note);
         var actions=Bar(ButtonFor("تعديل مبلغ المنتسب",()=>Guard(()=>{if(selected.SelectedItem is RefundPayee p){rows[rows.IndexOf(p)]=p with{Amount=Value()};Redraw();}})),ButtonFor("إزالة المنتسب",()=>{if(selected.SelectedItem is RefundPayee p){rows.Remove(p);Redraw();}}),

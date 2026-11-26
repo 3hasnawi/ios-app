@@ -56,7 +56,7 @@ public partial class MainWindow
             return result;
         }
         var draft=EditLetter(template,id,s,month,true,Render);if(draft==null)return;
-        var pdf=Render(draft);store.SaveLetterTemplate(s,id,draft);ShowPage(TransfersName);
+        var pdf=Render(draft);store.SaveLetterTemplate(s,id,draft);ShowPage(CurrentTransfers);
         _=SaveFile(BookTitles[id],"pdf",()=>pdf);
     }
 }
