@@ -80,3 +80,80 @@ test("malformed history, reused IDs and cycles are rejected",()=>{
     assert.throws(()=>validateHistory([{...e,parents:[f.id]},{...f,member:0,parents:[e.id]}]));
     assert.throws(()=>decodeState(JSON.stringify({...s,edits:[e],pending:["invalid"]})));
 });
+
+test("visible trial screens exchange edits automatically and recover after a failed poll", async () => {
+    const {readFileSync} = require("node:fs");
+    const vm = require("node:vm");
+    const {api} = cloud();
+    const page = readFileSync(require.resolve("../SalaryApp/OneDriveTrial.html"), "utf8");
+    const engine = readFileSync(require.resolve("../SalaryApp/OneDriveTrial.js"), "utf8");
+    const script = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(match => match[1]).join("\n")
+        .replace("/* TRIAL_ENGINE */", () => engine);
+
+    async function device() {
+        const events = {}, timers = new Map(), fields = new Map();
+        let local = "", fail = false, requests = 0, timerID = 0;
+        const field = id => {
+            if (!fields.has(id)) fields.set(id, {options:[{value:"0"},{value:"1"}],value:"0",append(){},replaceChildren(){}});
+            return fields.get(id);
+        };
+        const listen = (name,callback) => { events[name]=callback; };
+        const document = {documentElement:{lang:"ar",dataset:{numbers:"latn"}},hidden:false,
+            getElementById:field, createElement:()=>({}), addEventListener:listen};
+        const navigator = {onLine:true};
+        const window = {addEventListener:listen,webkit:{messageHandlers:{trial:{async postMessage({action,id,value}) {
+            if (action==="store") { local=value; return ""; }
+            if (action==="load") return local;
+            if (action==="device" || action==="login") return "";
+            requests++;
+            if (fail) throw Error("offline");
+            return api(action,id,value);
+        }}}}};
+        const context = {window,document,navigator,crypto:require("node:crypto").webcrypto,
+            setTimeout(fn,delay){timers.set(++timerID,{fn,delay});return timerID;},
+            clearTimeout(id){timers.delete(id);}};
+        vm.runInNewContext(script,context);
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.equal(timers.size,0);
+        await field("login").onclick();
+        return {field,document,navigator,events,timers,state:()=>decodeState(local),
+            fail(value){fail=value;}, count:()=>requests,
+            async tick(delay) {
+                assert.equal(timers.size,1);
+                const [id,timer]=[...timers][0];
+                assert.equal(timer.delay,delay);
+                timers.delete(id);
+                await timer.fn();
+            }};
+    }
+
+    const phone=await device(), desktop=await device();
+    phone.field("amount").value="30000";
+    await phone.field("save").onclick();
+    assert.equal(totals(desktop.state()),0);
+    await desktop.tick(15000);
+    assert.equal(totals(desktop.state()),30000);
+    const requests=desktop.count();
+    await desktop.tick(15000);
+    assert.equal(desktop.count()-requests,2); // مجلد الحساب وقائمة الملفات فقط.
+    desktop.fail(true);
+    await desktop.tick(15000);
+    assert.equal(desktop.field("status").textContent,"offline");
+    desktop.fail(false);
+    await desktop.tick(30000);
+    assert.equal(desktop.timers.size,1);
+    desktop.document.hidden=true;
+    desktop.events.visibilitychange();
+    assert.equal(desktop.timers.size,0);
+    desktop.navigator.onLine=false;
+    desktop.document.hidden=false;
+    desktop.events.visibilitychange();
+    assert.equal(desktop.timers.size,0);
+    phone.field("amount").value="20000";
+    await phone.field("save").onclick();
+    desktop.navigator.onLine=true;
+    desktop.events.online();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(totals(desktop.state()),20000);
+    assert.equal(desktop.timers.size,1);
+});

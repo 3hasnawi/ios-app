@@ -61,6 +61,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check automatic OneDrive trial sync with fictional devices
+        run: node --test ci/onedrive_trial_test.cjs
+
       - name: Select newest Xcode
         run: |
           ls -d /Applications/Xcode*.app

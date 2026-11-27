@@ -68,7 +68,7 @@ function addEdit(state, member, amount, id, time) {
     const edit = parseEdit({id,member,amount,time,parents:heads(state.edits,member).map(e => e.id)});
     return {...state, edits:combine(state.edits,[edit]),pending:[...state.pending,id]};
 }
-async function synchronize(state, api) {
+async function synchronize(state, api, {checkForChanges = false} = {}) {
     const folder = await api("folder");
     check(folder && (!state.folder || state.folder === folder), message("هذا حساب OneDrive مختلف عن الحساب المرتبط بالتجربة على هذا الجهاز.","The selected OneDrive differs from the account linked to this test."));
     const getIds = async () => {
@@ -87,6 +87,9 @@ async function synchronize(state, api) {
     const known = new Map(state.edits.map(e => [e.id,e]));
     const pending = new Set(state.pending);
     const remote = await getIds();
+    // كل تعديل له ملف مستقل. عند فحص التغييرات تكفي الأسماء إذا لم يتغير السجل.
+    if (checkForChanges && state.folder === folder && !pending.size &&
+        remote.size === known.size && [...remote].every(id => known.has(id))) return state;
     const read = async id => {
         const edit = parseEdit(JSON.parse(await api("read",id)));
         check(edit.id === id);

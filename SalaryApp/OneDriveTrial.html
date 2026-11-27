@@ -20,6 +20,8 @@ button,select{color:inherit;font:inherit;padding:8px 12px;border-radius:8px;bord
 </main><script>/* TRIAL_ENGINE */</script><script>
 const $ = id => document.getElementById(id);
 let state, busy=false, signedIn=false;
+const pollInterval = 15000;
+let pollDelay = pollInterval, pollTimer, verifyNextPoll = false;
 let sequence=0;
 const requests=new Map();
 if (window.chrome?.webview) window.chrome.webview.addEventListener("message",({data})=>{
@@ -74,14 +76,25 @@ async function commit(next) {
 }
 async function run(work) {
     if(busy)return;
+    clearTimeout(pollTimer);
     busy=true;draw();
-    try { await work(); }
-    catch(e){$("status").textContent=String(e.message || e);}
-    finally{busy=false;draw();}
+    try { await work(); pollDelay=pollInterval; }
+    catch(e){
+        $("status").textContent=String(e.message || e);
+        verifyNextPoll=true;
+        pollDelay=Math.min(pollDelay*2,120000);
+    }
+    finally{
+        busy=false;draw();
+        if (canPoll()) pollTimer=setTimeout(poll,pollDelay);
+    }
 }
-async function syncTrial() {
-    $("status").textContent=text("جارٍ قراءة ملفات التجربة والتحقق من التعديلات…","Reading and verifying test edits…");
-    await commit(await synchronize(state,api));
+async function syncTrial(checkForChanges=false) {
+    if (!checkForChanges) $("status").textContent=text("جارٍ قراءة ملفات التجربة والتحقق من التعديلات…","Reading and verifying test edits…");
+    const next=await synchronize(state,api,{checkForChanges});
+    if (next===state) return;
+    await commit(next);
+    verifyNextPoll=false;
     $("status").textContent=text("اكتملت المزامنة · ","Test batch synced · ")+new Date().toLocaleTimeString(locale);
 }
 $("login").onclick=()=>run(async()=>{
@@ -98,10 +111,19 @@ $("save").onclick=()=>run(async()=>{
     $("status").textContent=text("حُفظ محلياً بانتظار الاتصال.","Saved locally; waiting for a connection.");
     if (signedIn && navigator.onLine) await syncTrial();
 });
+function canPoll() {
+    return signedIn && !document.hidden && navigator.onLine;
+}
+function poll() {
+    if (!canPoll()) return;
+    return run(()=>syncTrial(!verifyNextPoll));
+}
 function resume() {
-    if (signedIn && !busy && !document.hidden && navigator.onLine) run(syncTrial);
+    clearTimeout(pollTimer);
+    if (canPoll()) run(syncTrial);
 }
 window.addEventListener("online",resume);
+window.addEventListener("offline",resume);
 document.addEventListener("visibilitychange",resume);
 run(async()=>{
     state=decodeState(await api("load"));
