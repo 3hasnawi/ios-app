@@ -170,7 +170,18 @@ func archiveIndex(i *index, path string) {
 					m["syncHeader"] = id
 					delete(m, "headerIndex")
 				}
-				w.group(recKey(section, str(m, "month"), str(m, "name")), m)
+				var detail map[string]any
+				if raw := str(m, "details"); raw != "" {
+					_ = decode(un64(raw), &detail)
+				}
+				identity := str(m, "name")
+				for _, key := range []string{"الرقم الموحد", "الرقم الوظيفي"} {
+					if id := strings.TrimSpace(str(detail, key)); id != "" && id != "0" {
+						identity = key + " " + id
+						break
+					}
+				}
+				w.group(recKey(section, str(m, "month"), identity), m)
 			case "deductions":
 				note := str(m, "note")
 				if strings.HasPrefix(note, "⟦حالة الاستقطاع:") {
@@ -184,7 +195,11 @@ func archiveIndex(i *index, path string) {
 				if id == "" {
 					id = str(m, "stat")
 				}
-				w.group(recKey(section, id, str(m, "name"), str(m, "mother")), m)
+				if strings.TrimSpace(id) != "" && id != "0" {
+					w.group(recKey(section, id), m)
+				} else {
+					w.group(recKey(section, "", str(m, "name"), str(m, "mother")), m)
+				}
 			case "accounts":
 				w.group(recKey(section, str(m, "entity")), m)
 			}

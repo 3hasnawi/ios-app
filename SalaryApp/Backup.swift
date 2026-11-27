@@ -1283,7 +1283,7 @@ final class BackupManager {
     var workSyncStamp: String {
         let defaults = UserDefaults.standard
         var hash = SHA256()
-        for key in BackupFormat.settingsKeys.sorted() {
+        for key in (BackupFormat.settingsKeys + [ExecutionAccountStore.storageKey, "oneDriveRestoredRevision"]).sorted() {
             guard let value = defaults.object(forKey: key),
                   let bytes = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) else { continue }
             hash.update(data: Data(key.utf8))
@@ -1395,7 +1395,7 @@ final class BackupManager {
                 OfficialBookStore.shared.reload()
                 StaffImportState.shared.version += 1
                 progress.end()
-                markChanged()
+                UserDefaults.standard.set(UUID().uuidString, forKey:"oneDriveRestoredRevision")
                 if let continuation = syncCompletion {
                     syncCompletion = nil
                     continuation.resume()

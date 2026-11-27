@@ -96,7 +96,7 @@ final class WorkspaceSync {
                 guard reply.status == "committed", store.workSyncStamp == stamp else { throw BackupError.sourceChanged }
                 if reply.apply == true, let validated { try await store.workSyncApply(validated,expected:stamp) }
                 args["action"] = "ack"
-                args["stamp"] = store.workSyncStamp
+                args["stamp"] = reply.apply == true ? store.workSyncStamp : stamp
                 reply = try await call(args)
             }
             guard reply.status == "synced" else { throw AccountError("تعذّر إكمال المزامنة.") }

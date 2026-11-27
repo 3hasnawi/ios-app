@@ -81,13 +81,13 @@ func connect(token string) *drive {
 }
 func (g *drive) marker(create bool) head {
 	path := g.root + markerName
-	code, b := g.request("GET", path, nil, nil, 1<<20)
+	code, b := g.request("GET", path+"?$select=id,eTag,description", nil, nil, 1<<20)
 	if code == 404 && create {
 		c, _ := g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", []byte("{\"format\":1}"), nil, 1<<20)
 		if c != 409 {
 			ok(c)
 		}
-		code, b = g.request("GET", path, nil, nil, 1<<20)
+		code, b = g.request("GET", path+"?$select=id,eTag,description", nil, nil, 1<<20)
 	}
 	ok(code)
 	var i item

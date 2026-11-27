@@ -127,6 +127,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Restore the merged portable workspace with the production SwiftData reader
+        run: |
+          python3 windows/Checks/fixture.py "$RUNNER_TEMP/workspace-fixtures"
+          (cd sync/workspace && PAYROLL_TEST_FIXTURES="$RUNNER_TEMP/workspace-fixtures" go test -run TestPortableRoundTrip)
+          MERGED_WORKSPACE_ARCHIVE="$RUNNER_TEMP/workspace-fixtures/merged-refunds.zip" python3 ci/compact_backup_test/run.py
       - name: SwiftData payroll archive migration and accounting round trip
         run: python3 ci/compact_backup_test/run.py
   interface-types:

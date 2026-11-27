@@ -2,6 +2,15 @@ using System.Security.Cryptography;
 using AnbarPayroll;
 using ClosedXML.Excel;
 
+if(args is ["--read-workspace",var workspaceArchive]){
+    var root=Directory.CreateTempSubdirectory();
+    try{
+        var target=new Store(root.FullName);target.ValidateWorkspace(workspaceArchive);
+        var stamp=target.ApplyWorkspace(workspaceArchive,target.WorkspaceStamp);
+        if(stamp!=target.WorkspaceStamp || target.Months().Count!=4 || target.Refunds().Count!=2)throw new InvalidDataException("Merged portable archive mismatch");
+    }finally{root.Delete(true);}
+    return;
+}
 if(args is ["--check-accounting-exchange",var exchangeFolder]){
     Directory.CreateDirectory(exchangeFolder);AccountingTests.Run(exchangeFolder,Check);return;
 }

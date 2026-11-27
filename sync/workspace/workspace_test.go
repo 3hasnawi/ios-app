@@ -225,3 +225,46 @@ func TestConditionalPublishAndCorruptDownload(t *testing.T) {
 	}
 	mustFail(func() { runWith(Request{Dir: t.TempDir(), Action: "prepare", Token: "test", Empty: true}, g.open) })
 }
+
+// Shared by Apple restore and Windows Store validation jobs. Inputs are generated
+// by the independent Python fixture encoder, including Swift's compact headers.
+func TestPortableRoundTrip(t *testing.T) {
+	dir := os.Getenv("PAYROLL_TEST_FIXTURES")
+	if dir == "" {
+		t.Skip("set PAYROLL_TEST_FIXTURES to the generated accounting fixtures")
+	}
+	for _, name := range []string{"refunds", "duplicate"} {
+		t.Run(name, func(t *testing.T) {
+			dirDB := t.TempDir()
+			a, e := openIndex(filepath.Join(dirDB, "a"))
+			must(e)
+			defer a.close()
+			source := filepath.Join(dir, name+".zip")
+			archiveIndex(a, source)
+			output := filepath.Join(dir, "merged-"+name+".zip")
+			os.Remove(output)
+			render(a, output)
+			b, e := openIndex(filepath.Join(dirDB, "b"))
+			must(e)
+			defer b.close()
+			archiveIndex(b, output)
+			if !sameIndex(a, b) {
+				t.Fatal("round trip changed the portable records")
+			}
+			input, e := zip.OpenReader(source)
+			must(e)
+			defer input.Close()
+			result, e := zip.OpenReader(output)
+			must(e)
+			defer result.Close()
+			var before, after Object
+			must(decode(readEntry(&input.Reader, "manifest.json", 1<<20), &before))
+			must(decode(readEntry(&result.Reader, "manifest.json", 1<<20), &after))
+			for _, key := range []string{"payrollDigest", "deductions", "employees", "books"} {
+				if fmt.Sprint(before[key]) != fmt.Sprint(after[key]) {
+					t.Fatalf("%s changed", key)
+				}
+			}
+		})
+	}
+}

@@ -13,7 +13,7 @@ targets:
     platform: iOS
     sources:
       - path: SalaryApp
-        excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrial.html", "OneDriveTrial.js", "SavedRefundSync.html", "SavedRefundSync.js"]
+        excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrialView.swift", "OneDriveTrial.html", "OneDriveTrial.js", "SavedRefundSync.html", "SavedRefundSync.js"]
     preBuildScripts:
       - name: Compile shared OneDrive sync engine
         script: '"$SRCROOT/sync/workspace/apple-build.sh"'

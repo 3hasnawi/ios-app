@@ -10,6 +10,16 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Validate and reopen a merged OneDrive workspace
+        shell: bash
+        run: |
+          python windows/Checks/fixture.py "$RUNNER_TEMP/workspace-fixtures"
+          (cd sync/workspace && PAYROLL_TEST_FIXTURES="$RUNNER_TEMP/workspace-fixtures" go test -run TestPortableRoundTrip)
+          dotnet run --project windows/Checks -- --read-workspace "$RUNNER_TEMP/workspace-fixtures/merged-refunds.zip"
       - name: Open the OneDrive trial sign-in window in WebView2
         timeout-minutes: 4
         run: dotnet run --project windows/OneDriveTrialChecks -- "$env:RUNNER_TEMP/onedrive-trial-windows.png"

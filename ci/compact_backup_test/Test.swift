@@ -85,6 +85,17 @@ import CoreGraphics
             print("PASS restored Windows preferences and exported iPhone edits")
             return
         }
+        if let fixture = ProcessInfo.processInfo.environment["MERGED_WORKSPACE_ARCHIVE"] {
+            let folder = try await Restore.extractForRestore(URL(fileURLWithPath: fixture))
+            let target = try database()
+            let settings = try await BackupActor(modelContainer: target).restore(from: folder, progress: nil)
+            precondition(settings["bankReconciliations"] != nil)
+            let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
+            precondition(manifest.employees == 1 && manifest.deductions == 40 && manifest.refundBatchCount == 1 && manifest.books == 1)
+            print("PASS native Apple restore of merged payroll, deductions, books, refunds and reconciliation")
+            // The isolated restore above installs settings/files. Run the remaining reference cases in a fresh invocation.
+            return
+        }
         if let path = ProcessInfo.processInfo.environment["WINDOWS_EXCHANGE"] {
             let folder = try await Restore.extractForRestore(URL(fileURLWithPath: path))
             defer { try? FileManager.default.removeItem(at: folder) }

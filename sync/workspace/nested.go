@@ -83,7 +83,20 @@ func (r *reconciliation) pick(path []string, b, l, c []byte, structured bool) []
 				if valid {
 					live := map[string][]byte{}
 					for _, id := range keys(all) {
-						if x := r.pick(append(path, id), maps[0][id], maps[1][id], maps[2][id], false); x != nil {
+						// Containers such as a reconciliation period own several independent movements.
+						nested := false
+						for _, source := range maps {
+							if data := source[id]; data != nil {
+								var entity Object
+								must(decode(data, &entity))
+								for _, value := range entity {
+									if _, ok := value.([]any); ok {
+										nested = true
+									}
+								}
+							}
+						}
+						if x := r.pick(append(path, id), maps[0][id], maps[1][id], maps[2][id], nested); x != nil {
 							live[id] = x
 						}
 					}
@@ -149,7 +162,8 @@ func groupedDescription(b []byte) string {
 	}
 	var names []string
 	for _, v := range group {
-		if objValue := func() Object { var m Object; _ = decode(v, &m); return m }(); objValue == nil {
+		var m Object
+		if decode(v, &m) != nil || m == nil {
 			return ""
 		}
 		names = append(names, describe(v))

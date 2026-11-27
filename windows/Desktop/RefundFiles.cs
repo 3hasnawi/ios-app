@@ -31,20 +31,6 @@ public partial class MainWindow
             Template=fallback.Template is {} t?t with{Recipient="مصرف الرافدين / فرع الأنبار"}:null,BodyTemplate=null};
     }
 
-    void OpenTrialRefund(Window owner,string json)
-    {
-        var snapshot=System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
-        var batch=Store.DecodeRefund(snapshot);
-        _=batch.Groups();
-        var dialog=new Window { Title="ملفات دفعة الإعادة التجريبية",Owner=owner,
-            WindowStartupLocation=WindowStartupLocation.CenterOwner,Width=Math.Min(1000,SystemParameters.WorkArea.Width),
-            Height=Math.Min(720,SystemParameters.WorkArea.Height),FlowDirection=FlowDirection.RightToLeft };
-        var baseline=new A.GroupLetterSettings("قسم الحسابات التجريبي","١‏/٢٢/ح/","","","",RefundBatch.Copies,null,null,0,null);
-        dialog.Content=RefundDocumentPanel(batch,raf=>batch.LetterStyle(raf,baseline),Bar(),dialog);
-        dialog.PreviewKeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape)dialog.Close();};
-        dialog.ShowDialog();
-    }
-
     void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch,IReadOnlyList<RefundBatch>? saved=null)
     {
         CanvasArea.Children.Clear();PageTitle.Text=RefundTransfers;
