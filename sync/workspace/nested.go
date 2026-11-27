@@ -14,6 +14,28 @@ type reconciliation struct {
 }
 
 func (r *reconciliation) pick(path []string, b, l, c []byte, structured bool) []byte {
+	if len(path) >= 4 && path[0] == "refund" && path[len(path)-2] == "rows" {
+		// Core Data regenerates a candidate's handle on import. Compare the
+		// portable person and amount, but retain a full, decodable native row.
+		portable := func(raw []byte) []byte {
+			if raw == nil {
+				return nil
+			}
+			var row Object
+			must(decode(raw, &row))
+			if candidate := obj(row["candidate"]); candidate != nil {
+				delete(candidate, "id")
+			}
+			return encode(row)
+		}
+		left, right, ancestor := portable(l), portable(c), portable(b)
+		switch {
+		case bytes.Equal(left, right) || bytes.Equal(ancestor, right):
+			return l
+		case bytes.Equal(ancestor, left):
+			return c
+		}
+	}
 	switch {
 	case bytes.Equal(l, c) || bytes.Equal(b, c):
 		return l

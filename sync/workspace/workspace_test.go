@@ -322,3 +322,14 @@ func TestCrossPlatformAccountingExchange(t *testing.T) {
 		t.Fatal("the portable ledger changed after rendering")
 	}
 }
+
+func TestRestoredPhoneHandleDoesNotConflictWithPaymentEdit(t *testing.T) {
+	makeRow := func(handle, amount string) []byte {
+		return encode(Object{"candidate": Object{"id": handle, "person": Object{"iban": "test"}}, "amount": amount})
+	}
+	resolver := reconciliation{}
+	got := resolver.pick([]string{"refund", "batch", "rows", "test"}, makeRow("old", "10"), makeRow("new", "10"), makeRow("old", "12"), false)
+	if len(resolver.conflicts) != 0 || !bytes.Equal(got, makeRow("old", "12")) {
+		t.Fatal("a device-local employee handle masked a payment edit")
+	}
+}
