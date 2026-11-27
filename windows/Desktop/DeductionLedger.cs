@@ -149,13 +149,13 @@ public partial class MainWindow
         catch(Exception ex){Error(ex);}
     }
 
-    void OpenEmployee(Deduction row)
+    void OpenEmployee(Deduction row,Window? owner=null,IReadOnlyList<Deduction>? loaded=null)
     {
-        var records=store.Find(new(Person:row.Name)).ToList();
+        var records=loaded??store.Find(new(Person:row.Name)).ToList();
         var entities=Choices(records.Select(r=>r.Agency).Distinct());
         entities.SelectedItem=row.Agency;
         var refs=Choices([]);var start=Choices([]);var end=Choices([]);
-        var dialog=new Window{Owner=this,Title="كشف استقطاع منتسب",FlowDirection=FlowDirection.RightToLeft,Width=Math.Min(800,SystemParameters.WorkArea.Width*.94),
+        var dialog=new Window{Owner=owner??this,Title="كشف استقطاع منتسب",FlowDirection=FlowDirection.RightToLeft,Width=Math.Min(800,SystemParameters.WorkArea.Width*.94),
             SizeToContent=SizeToContent.Height,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         var preview=ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true);
         string Reference()=>refs.SelectedIndex>0?(string)refs.SelectedItem:"";
@@ -183,6 +183,6 @@ public partial class MainWindow
             ("من شهر",start,1),("إلى شهر",end,1)),preview));
         if(dialog.ShowDialog()!=true || start.SelectedItem is not MonthInfo first || end.SelectedItem is not MonthInfo last)return;
         var report=store.PersonStatement(row.Name,(string)entities.SelectedItem,Reference(),first.Key,last.Key,ReportHeader());
-        new ReportWindow(report){Owner=this}.ShowDialog();
+        new ReportWindow(report){Owner=owner??this}.ShowDialog();
     }
 }

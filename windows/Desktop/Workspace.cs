@@ -31,9 +31,9 @@ public partial class MainWindow
         };
         return button;
     }
-    async Task SaveFile(string name,string ext,Func<byte[]> generate,Action? record=null,Action? finish=null)
+    async Task SaveFile(string name,string ext,Func<byte[]> generate,Action? record=null,Action? finish=null,Window? owner=null)
     {
-        var dialog=new SaveFileDialog{Filter=ext+"|*."+ext,FileName=name,DefaultExt=ext};if(dialog.ShowDialog(this)!=true)return;
+        var dialog=new SaveFileDialog{Filter=ext+"|*."+ext,FileName=name,DefaultExt=ext};if(dialog.ShowDialog(owner??this)!=true)return;
         await Working(()=>{var bytes=generate();if(bytes.Length==0)throw new InvalidDataException("الملف فارغ.");
             string temp=dialog.FileName+"."+Guid.NewGuid().ToString("N")+".tmp";
             try{File.WriteAllBytes(temp,bytes);record?.Invoke();File.Move(temp,dialog.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}
@@ -57,12 +57,40 @@ public partial class MainWindow
     {
         var dock=new DockPanel();var input=new TextBox();var title=Text("ابحث بالاسم أو اسم الأم أو الرقم الإحصائي أو الجهة أو الإضبارة",15);
         var top=Column(title,FilterBar(("بحث في الرواتب والملاك والاستقطاعات والأمانات",input,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
-        var list=GridView(("المصدر","Kind",.65),("الاسم","Name",1.5),("الشهر","Month",.9),("التفاصيل","Info",1.9));dock.Children.Add(list);
+        var list=GridView(("اسم المنتسب","Name",1.4),("مصادر المطابقة","Sources",1.6));dock.Children.Add(list);
         var host=overlay??CanvasArea;
         host.Children.Add(dock);
-        int serial=0;input.TextChanged+=async (_,_)=>{var q=input.Text;int current=++serial;await Task.Delay(180);if(serial!=current||!host.Children.Contains(dock))return;
-            try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||!host.Children.Contains(dock))return;list.ItemsSource=hits.Take(300);var note=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";if(overlay==null)Status.Text=note;else title.Text=note;}catch(Exception e){if(host.Children.Contains(dock))Error(e);}};
-        list.MouseDoubleClick+=async (_,_)=>{if(list.SelectedItem is Store.SearchResult hit)await OpenPerson(hit);};input.Focus();
+        int serial=0;
+        input.TextChanged+=async (_,_)=>{
+            var q=input.Text;int current=++serial;
+            list.ItemsSource=null;
+            await Task.Delay(180);
+            if(serial!=current||!dock.IsLoaded)return;
+            try{
+                var hits=await Task.Run(()=>store.SearchPeople(q));
+                if(current!=serial||!dock.IsLoaded)return;
+                list.ItemsSource=hits.Take(300);
+                var note=string.IsNullOrWhiteSpace(q)?"ابحث بالاسم أو اسم الأم أو الرقم الإحصائي أو الجهة أو الإضبارة":
+                    hits.Count>300?"تظهر أسماء أول 300 منتسب. ضيّق البحث.":$"عدد المنتسبين　{hits.Count}";
+                title.Text=note;
+            }catch(Exception e){if(current==serial&&dock.IsLoaded)Error(e);}
+        };
+        bool opening=false;
+        async Task Open(Store.SearchResult hit){
+            if(opening)return;
+            opening=true;
+            int version=serial;
+            try{await OpenPerson(hit,current:()=>dock.IsLoaded && serial==version);}
+            finally{opening=false;}
+        }
+        list.PreviewMouseLeftButtonUp+=async (_,e)=>{
+            if(e.OriginalSource is DependencyObject element && ItemsControl.ContainerFromElement(list,element) is DataGridRow {Item:Store.SearchResult hit})
+                await Open(hit);
+        };
+        list.PreviewKeyDown+=async (_,e)=>{
+            if(e.Key==System.Windows.Input.Key.Enter && list.SelectedItem is Store.SearchResult hit){e.Handled=true;await Open(hit);}
+        };
+        input.Focus();
     }
     Task workPageLoad=Task.CompletedTask;
     async Task WorkPage(string key)

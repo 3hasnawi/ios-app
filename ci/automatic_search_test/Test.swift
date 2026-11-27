@@ -25,7 +25,7 @@ import SwiftData
         let context = ModelContext(container)
         let newer = "تشرين الثاني 2026", older = "تشرين الأول 2026"
         let monthA = PayrollMonth(name: newer, employeeCount: 2, deductionCount: 1)
-        let monthB = PayrollMonth(name: older, employeeCount: 1, deductionCount: 0)
+        let monthB = PayrollMonth(name: older, employeeCount: 1, deductionCount: 2)
         context.insert(monthA); context.insert(monthB)
         context.insert(StaffMember(name: first, mother: "مريم اختبارية", statNumber: "001234", unifiedNumber: "987654",
             rank: "موظف", status: "مستمر", workplace: "قسم وهمي", sections: [.init(title: "اختبار", fields: [.init(label: "بيان إضافي", value: "كلمة مشتركة")])]))
@@ -37,6 +37,10 @@ import SwiftData
         context.insert(Employee(month: newer, name: second, rank: "موظف", workplace: "قسم وهمي", netSalary: 800,
             details: ["ملاحظة خاصة": "كلمة مشتركة", "بيان إضافي": "مريم اختبارية"], rawColumnsData: raw))
         context.insert(Deduction(month: newer, employeeName: first, title: "جهة وهمية مستقلة", amount: 71, note: "إضبارة ١٢٣/٢٠٢٦"))
+        let pastName = "منتسب قديم اختباري"
+        for title in ["جهة ألف قديمة","جهة باء قديمة"] {
+            context.insert(Deduction(month: older, employeeName: pastName, title: title, amount: 50, note: ""))
+        }
         // مطابقة لاحقة تتجاوز حجم الدفعات ولا تسقط عند وجود نتائج سريعة للشخص الأول.
         for i in 0..<270 {
             context.insert(StaffMember(name: "موظف تجربة \(i)", mother: "أم وهمية", statNumber: "5\(i)", unifiedNumber: "6\(i)",
@@ -58,6 +62,8 @@ import SwiftData
         precondition(name.people[0].hit.month == newer && name.people[0].hit.netSalary == 700)
         let summary = name.people[0].hit.trust!
         precondition(summary.months == 3 && summary.total == 600 && summary.paid == 200 && summary.remaining == 300 && summary.review == 100 && !summary.allPaid)
+        let past = try await find(pastName)
+        precondition(past.people.count == 1 && past.people[0].hit.hasDeduction && !past.people[0].hasPayroll && past.groups.isEmpty)
         let mother = try await find("مريم اختبارية")
         precondition(Set(mother.people.map(\.name)) == Set([first, second]))
         precondition(mother.people.contains { $0.name == first && $0.hasTrust && $0.hasPayroll && $0.hit.matchLabel?.contains("الأم") == true })

@@ -14,6 +14,7 @@ nonisolated enum UnifiedHitMerge {
             var combined = UnifiedHit(key: old.key, name: old.name, subtitle: old.subtitle.isEmpty ? hit.subtitle : old.subtitle,
                 employeeID: payroll.employeeID, staffID: old.staffID ?? hit.staffID,
                 month: payroll.month, netSalary: payroll.netSalary, staffStatus: old.staffStatus ?? hit.staffStatus)
+            combined.hasDeduction = old.hasDeduction || hit.hasDeduction
             combined.matchLabel = old.matchLabel ?? hit.matchLabel
             combined.trust = hit.trust ?? old.trust
             byKey[hit.key] = combined

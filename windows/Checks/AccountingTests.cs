@@ -28,6 +28,12 @@ static class AccountingTests
         using var schemas=JsonDocument.Parse(zip.GetEntry("payroll-headers.json")!.Open());
         long size=new FileInfo(store.Archive).Length;
         check(schemas.RootElement.GetArrayLength()==1&&size<(long)raw.Length*count/10&&store.Summary(new(Year:2026)).Total==(decimal)count*(count+1),"40,000 payroll + 40,000 deductions, one schema, all amounts verified");
+        var found=store.SearchPeople("اختباري");
+        check(found.Count==301&&found.DistinctBy(p=>p.Name).Count()==301&&found.All(p=>p.Payroll&&p.Deductions),"limit applies to people rather than monthly records");
+        var elapsed=Stopwatch.StartNew();
+        var profile=store.EmployeeDetails("اسم اختباري 10");
+        check(profile.Months.Length==2&&profile.Deductions.Count==2&&profile.Deductions.All(d=>d.Name=="اسم اختباري 10"),"indexed detail reads only the selected employee across 80,000 rows");
+        Console.WriteLine($"Indexed person lookup: {elapsed.Elapsed.TotalMilliseconds:F1} ms");
         Console.WriteLine($"Fictional stress archive {size:N0} bytes; {clock.Elapsed.TotalSeconds:F1} seconds");
     }
     public static void Run(string dir, Action<bool,string> check){
@@ -150,7 +156,7 @@ static class AccountingTests
         try{s.Import(Path.Combine(exchange,"windows-exchange.zip"));throw new Exception("rolled back a prepared batch");}catch(InvalidDataException){check(s.Active==cancelled,"restore cannot erase a prepared or cancelled payment");}
         var firstSize=new FileInfo(s.Archive).Length;for(int i=0;i<2;i++)s.ApplyExcel(s.PreviewExcel(xlsx,month),s.Active);
         check(Math.Abs(new FileInfo(s.Archive).Length-firstSize)<400&&s.Refunds().Count==1,"reimport does not inflate archive or discard saved refund");
-        check(s.SearchPeople("ثاني").Count>=2,"global lookup includes both payroll and deductions");
+        check(s.SearchPeople("ثاني").Where(h=>h.Name==names[1]).ToArray() is [{Payroll:true,Deductions:true}],"one name across payroll and deductions");
         s.SaveRefund(returned with{People=returned.People.Select(p=>p with{Amount=p.Amount+10}).ToList()},s.Active);
         check(s.Refunds().Single().People.Sum(p=>p.Amount)==3033,"saved refund can be edited without duplication");
         var style=new A.GroupLetterSettings("ترويسة","", "توقيع تجريبي","","","",null,null,10,null);

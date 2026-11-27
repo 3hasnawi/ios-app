@@ -44,6 +44,24 @@ static class MonthlyCycleTests
         store.ImportTrust(A.SalaryTrustSpreadsheet.Read(file),store.Active);
         var entries=A.SalaryTrust.ReadFromBackup(store.Snapshot()).Entries;
         check(entries.Count==2&&entries.Sum(e=>e.Amount)==201&&entries[0].ImportedPaymentDate=="2026/11/01"&&ids.SequenceEqual(entries.Select(e=>e.Id)),"Excel trust replaces ledger and preserves person/month links and payment date");
+        var hits=store.SearchPeople(name);
+        check(hits[0].Name==name&&hits.Where(h=>h.Name==name).ToArray() is [{Payroll:true,Staff:true,Deductions:true,Trust:true}],"single result across four sources and multiple periods");
+        check(store.SearchPeople("والدة تجريبية") is [{Staff:true} mother]&&mother.Name==name,"mother search leads to the same person");
+        var details=store.EmployeeDetails(name);
+        check(details.Staff.Single().Stat=="900123"&&details.Months.Length==2&&details.Trust.Entries.Sum(e=>e.Amount)==201&&details.Deductions.All(e=>e.Name==name),
+            "profile links the salary, roster, deductions and imported trusts of one employee");
+        var beforeMigration=SHA256.HashData(File.ReadAllBytes(store.Archive));
+        var originalDir=store.Active;
+        using(var db=new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder{
+            DataSource=Path.Combine(originalDir!,"lookup.db"),Pooling=false}.ToString())){
+            db.Open();using var downgrade=db.CreateCommand();
+            downgrade.CommandText="DROP TABLE profile_rows; DELETE FROM meta WHERE key LIKE 'profileTrust%'; PRAGMA user_version=2";
+            downgrade.ExecuteNonQuery();
+        }
+        var upgraded=store.EmployeeDetails(name);
+        check(store.Active==originalDir&&beforeMigration.SequenceEqual(SHA256.HashData(File.ReadAllBytes(store.Archive)))&&
+            upgraded.Months.Length==2&&upgraded.Staff.Single().Stat==staff.Stat&&upgraded.Trust.Entries.Select(e=>e.Id).SequenceEqual(details.Trust.Entries.Select(e=>e.Id)),
+            "older index upgrades in place with original archive and person data intact");
         var person=store.PersonSnapshot(name);check(person.Employees.Count==2&&person.Employees.All(e=>e.Name==name)&&person.Deductions.All(d=>d.Name==name),"unified profile only expands matching employee rows");
         var slip=A.PersonProfiles.Payslip(A.PersonProfiles.Build(person,name,[staff]).Months[0]);check(slip.Net==5000&&slip.Info.Any(i=>i.Title=="طريقة الدفع"&&i.Value=="بطاقة"),"profile payslip shows payment method from payroll");
         var signed=File.ReadAllBytes(Path.Combine(dir,"original-book.pdf"));store.ArchivePdf(store.Snapshot(),"كتاب تجريبي",month,null,signed);

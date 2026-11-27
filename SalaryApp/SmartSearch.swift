@@ -98,11 +98,36 @@ actor SmartFieldSearch {
         })
         let wantedAmount = ArabicText.number(from: query) ?? -Double.greatestFiniteMagnitude
         let matcher = AutomaticSearchQuery(query)
+        if matcher.digits == nil {
+            // ابحث في مفتاح الاسم المفهرس حتى لو لم يبقَ لهذا المنتسب راتب في الشهرين المحفوظين.
+            let firstKey = ArabicText.matchKey(first)
+            var names = FetchDescriptor<Deduction>(predicate: #Predicate { $0.matchKey.contains(firstKey) })
+            names.propertiesToFetch = [\.matchKey, \.employeeName, \.rank]
+            names.fetchLimit = 128
+            var seen = Set<String>()
+            while seen.count < 150 {
+                try Task.checkCancellation()
+                let count = try autoreleasepool {
+                    let batch = try modelContext.fetch(names)
+                    for row in batch where !seen.contains(row.matchKey) && matcher.matches(row.employeeName) {
+                        seen.insert(row.matchKey)
+                        var hit = UnifiedHit(key: row.matchKey, name: row.employeeName, subtitle: row.rank,
+                            employeeID: nil, staffID: nil, month: nil, netSalary: nil, staffStatus: nil)
+                        hit.hasDeduction = true
+                        result.people.append(hit)
+                        if seen.count == 150 { break }
+                    }
+                    return batch.count
+                }
+                if count < 128 { break }
+                names.fetchOffset = (names.fetchOffset ?? 0) + count
+            }
+        }
         let notePredicate = #Predicate<Deduction> {
             $0.note.contains(first) || $0.note.contains(digitQuery) || $0.note.contains(easternQuery)
         }
         let identityPredicate = #Predicate<Deduction> {
-            $0.title.contains(first) || $0.employeeName.contains(first) || $0.amount == wantedAmount
+            $0.title.contains(first) || $0.amount == wantedAmount
         }
         for predicate in [notePredicate, identityPredicate] {
             var notes = FetchDescriptor<Deduction>(predicate: predicate)

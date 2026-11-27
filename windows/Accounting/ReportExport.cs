@@ -287,6 +287,8 @@ public sealed class ReportCanvas : IDisposable
         document.EndPage();
     }
 
+    public void EndPage()=>document.EndPage();
+
     public enum Align { Right, Center, Left }
 
     public float Width(SKPaint paint, string text) => ReconciliationPdf.Width(Clean(text), Shaper(paint), paint);

@@ -89,7 +89,13 @@ public partial class MainWindow : Window
             if(e.Key==Key.K && Keyboard.Modifiers==ModifierKeys.Control && !busy){OpenKeyboardSearch();e.Handled=true;}
             else if(e.Key==Key.Escape && SearchIsOpen){CloseKeyboardSearch();e.Handled=true;}
         };
-        Loaded+=(_,_)=>Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
+        Loaded+=async (_,_)=>{
+            Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
+            if(store.Active is {} revision){
+                try{await Task.Run(()=>store.PreparePersonIndex(revision));}
+                catch(Exception ex){if(store.Active==revision)Status.Text="تعذّر تجهيز فهرس المنتسبين. "+ex.Message;}
+            }
+        };
     }
     void Guard(Action work){try{work();}catch(Exception e){Error(e);}}
     void Error(Exception e){Status.Text="تعذّر إكمال العملية. "+e.Message;MessageBox.Show(this,e.Message,"قسم الحسابات",MessageBoxButton.OK,MessageBoxImage.Warning);}
@@ -770,7 +776,7 @@ public partial class MainWindow : Window
         }finally{Width=savedWidth;Height=savedHeight;UpdateLayout();}
         ShowPage(SearchName);
         var hit=store.SearchPeople(sample.Name).First(r=>r.Name==sample.Name);
-        await OpenPerson(hit with{Kind="راتب"},target=>CaptureWindow(target,"employee-profile"));
+        await OpenPerson(hit,target=>CaptureWindow(target,"employee-profile"));
         var editorMonth="تشرين الثاني 2026";
         var editorSource=store.Snapshot(editorMonth);
         var demoTemplate=new SalaryDesktop.Core.LetterTemplate{Title="كتاب تجريبي",Body="يرجى تحويل مبلغ ({{المبلغ}}) إلى الحساب ({{الحساب}}).",FirstSigner="عضو اللجنة"};

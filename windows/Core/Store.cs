@@ -64,6 +64,7 @@ public sealed partial class Store(string root)
         db.Open();
         db.CreateCollation("ARABIC",(a,b)=>CultureInfo.GetCultureInfo("ar-IQ").CompareInfo.Compare(a,b,CompareOptions.None));
         db.CreateFunction<string,string>("person_key",Arabic.Match,isDeterministic:true);
+        db.CreateFunction<string,string>("profile_key",SalaryDesktop.Core.PersonProfiles.Key,isDeterministic:true);
         db.CreateFunction<string,string>("agency_category",Arabic.Category,isDeterministic:true);
         // الرتب والأشهر والحالات تتكرر آلاف المرات في الاستعلام نفسه.
         var labels=new Dictionary<(string,string,string),string>();
@@ -90,7 +91,12 @@ public sealed partial class Store(string root)
     public IEnumerable<Deduction> Find(Filters f,int limit=-1,int offset=0)
     {
         if(Active==null)yield break;
-        using var db=Open();using var cmd=db.CreateCommand();
+        using var db=Open();
+        foreach(var row in Find(db,f,limit,offset))yield return row;
+    }
+    static IEnumerable<Deduction> Find(SqliteConnection db,Filters f,int limit=-1,int offset=0)
+    {
+        using var cmd=db.CreateCommand();
         var filter=Predicate(cmd,f);
         cmd.CommandText="SELECT month,period,person,rank,agency,reference,amount,status FROM deductions "+filter+
             " ORDER BY person COLLATE ARABIC,period,agency,reference,id LIMIT $limit OFFSET $offset";
@@ -187,7 +193,10 @@ public sealed partial class Store(string root)
         using(var db=Open()){using var cmd=db.CreateCommand();cmd.CommandText="PRAGMA user_version";if(Convert.ToInt32(cmd.ExecuteScalar())>=2&&File.Exists(Path.Combine(Active!,"archive.sha256")))return;}
         Import(Archive);
     }
-    public record SearchResult(string Kind,string Name,string Month,string Info);
+    public record SearchResult(string Name,bool Payroll,bool Deductions,bool Staff,bool Trust)
+    {
+        public string Sources=>string.Join(" · ",new[]{Payroll?"الرواتب":null,Deductions?"الاستقطاعات":null,Staff?"الملاك":null,Trust?"أمانات الرواتب":null}.Where(s=>s!=null));
+    }
     public List<SearchResult> SearchPeople(string query)
     {
         var words=Arabic.Key(query).Split(' ',StringSplitOptions.RemoveEmptyEntries);
@@ -195,9 +204,22 @@ public sealed partial class Store(string root)
         using var db=Open();using var cmd=db.CreateCommand();
         string where=string.Join(" AND ",words.Select((w,i)=>"instr(search,$w"+i+")>0"));
         for(int i=0;i<words.Length;i++)cmd.Parameters.AddWithValue("$w"+i,words[i]);
-        cmd.CommandText="SELECT kind,person,month,info FROM people WHERE "+where+" UNION ALL SELECT 'استقطاع',person,month,agency || ' · ' || reference FROM deductions WHERE "+where+" ORDER BY 2 COLLATE ARABIC LIMIT 301";
+        cmd.Parameters.AddWithValue("$name",SalaryDesktop.Core.PersonProfiles.Key(query));
+        cmd.CommandText=$"""
+            WITH matches(person,kind) AS (
+                SELECT DISTINCT person,kind FROM people WHERE {where}
+                UNION ALL
+                SELECT DISTINCT person,'استقطاع' FROM deductions WHERE {where}
+            )
+            SELECT min(person),max(kind='راتب'),max(kind='استقطاع'),max(kind='ملاك'),max(kind='أمانات')
+            FROM matches
+            GROUP BY profile_key(person)
+            HAVING profile_key(person)<>''
+            ORDER BY (profile_key(person)=$name) DESC,(instr(profile_key(person),$name)>0) DESC,
+                     min(person) COLLATE ARABIC,min(person) LIMIT 301
+            """;
         using var rows=cmd.ExecuteReader();var hits=new List<SearchResult>();
-        while(rows.Read())hits.Add(new(rows.GetString(0),rows.GetString(1),rows.GetString(2),rows.GetString(3)));
+        while(rows.Read())hits.Add(new(rows.GetString(0),rows.GetBoolean(1),rows.GetBoolean(2),rows.GetBoolean(3),rows.GetBoolean(4)));
         return hits;
     }
     public List<ArchivedBook> Books()

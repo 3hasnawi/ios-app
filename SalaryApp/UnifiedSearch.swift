@@ -400,7 +400,7 @@ struct UnifiedSearchView: View {
             } message: { Text(staffReportError ?? "") }
             .navigationDestination(for: UnifiedPerson.self) { person in
                 Group {
-                    if !person.hasPayroll && !person.hasStaff && person.hasTrust {
+                    if !person.hasPayroll && !person.hasStaff && person.hasTrust && !person.hit.hasDeduction {
                         SalaryTrustPersonView(personID: person.hit.key, stored: $trustData)
                     } else {
                         UnifiedPersonView(person: person)
@@ -528,6 +528,7 @@ nonisolated struct UnifiedHit: Sendable, Hashable {
     let staffStatus: String?
     var matchLabel: String? = nil
     var trust: SalaryTrustSearchSummary? = nil
+    var hasDeduction = false
 }
 
 /// البحث الموحّد يعمل على سياق خاص في الخلفية حتى تبقى الكتابة والتمرير سلسة.
@@ -766,7 +767,7 @@ struct UnifiedPersonView: View {
                         .listRowBackground(Color.clear)
                 }
             }
-            if person.hasPayroll {
+            if person.hasPayroll || person.hasStaff || person.hit.hasDeduction {
                 Section {
                     NavigationLink {
                         EmployeeDeductionsView(initialPerson: DeductionPerson(key: person.hit.key, name: person.name, detail: person.subtitle))
@@ -783,11 +784,13 @@ struct UnifiedPersonView: View {
         }
         .listSectionSpacing(.compact)
         .contentMargins(.top, 4, for: .scrollContent)
-        .navigationTitle(selection == Self.staffTag ? tr("الملاك", "Staff") : tr("قسيمة الراتب", "Payslip"))
+        .navigationTitle(!person.hasStaff && !person.hasPayroll ? person.name : (selection == Self.staffTag ? tr("الملاك", "Staff") : tr("قسيمة الراتب", "Payslip")))
         .navigationBarTitleDisplayMode(.inline)
         // الأشهر والملاك قائمة منسدلة بجانب العنوان، فتبدأ القسيمة من أعلى الصفحة.
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { partMenu(staff: staff) }
+            ToolbarItem(placement: .topBarTrailing) {
+                if staff != nil || !sortedRecords.isEmpty { partMenu(staff: staff) }
+            }
         }
         // الضغط المطوّل على القسيمة يفتح خيارات المشاركة؛ بلا تبويب مشاركة إضافي.
         .onAppear {
