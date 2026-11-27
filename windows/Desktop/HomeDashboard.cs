@@ -2,14 +2,17 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using A=SalaryDesktop.Core;
 
 namespace AnbarPayroll.Desktop;
 
 public partial class MainWindow
 {
     string? homeMonth;
-    int homePinPage, homeReviewPage;
-    ReviewSection homeSection;
+    int homePinPage;
 
     static Button HomeAction(string title,Action action,string icon="",bool selected=false)
     {
@@ -55,156 +58,246 @@ public partial class MainWindow
         menu.IsOpen=true;
     }
 
+    static Button HomeIcon(string label,string icon,Action action)
+    {
+        var button=HomeAction(label,action);
+        var glyph=Glyph(icon);
+        glyph.FlowDirection=FlowDirection.LeftToRight;
+        glyph.FontSize=15;
+        glyph.Margin=new Thickness(0);
+        button.Content=glyph;
+        button.MinWidth=28;
+        button.MinHeight=28;
+        button.ToolTip=label;
+        return button;
+    }
+
+    Border ReviewCard(string section,IReadOnlyList<HomeReview> cases,string? empty)
+    {
+        int index=0;
+        var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(5)};
+        var frame=new Grid();
+        frame.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
+        frame.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});
+        frame.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
+        var title=Text("",16,true);
+        var detail=Text("",13);
+        var position=Text("",12);
+        var header=new DockPanel();
+        DockPanel.SetDock(position,Dock.Right);
+        header.Children.Add(position);
+        header.Children.Add(Bar(Glyph(section=="الرواتب"?"\uE8C7":"\uE8FD"),Text(section,14,true)));
+        var content=Column(title,detail);
+        var subject=HomeAction(section,()=>{if(cases.Count>0)Guard(cases[index].Open);});
+        subject.HorizontalContentAlignment=HorizontalAlignment.Stretch;
+        subject.Background=Brushes.Transparent;
+        subject.BorderThickness=new Thickness(0);
+        subject.Content=content;
+        var viewport=new Border{Child=subject,ClipToBounds=true};
+        Grid.SetColumn(viewport,1);
+        frame.Children.Add(viewport);
+        var body=Column(header,frame);body.VerticalAlignment=VerticalAlignment.Center;
+        var card=Box(body,"SolidBackgroundFillColorTertiaryBrush");
+        card.Padding=new Thickness(9,6,9,6);
+        var previous=HomeIcon("السابق · "+section,"\uE76C",()=>Move(-1));
+        var next=HomeIcon("التالي · "+section,"\uE76B",()=>Move(1));
+        Grid.SetColumn(next,2);
+        frame.Children.Add(previous);frame.Children.Add(next);
+        previous.VerticalAlignment=next.VerticalAlignment=VerticalAlignment.Center;
+        previous.Visibility=next.Visibility=cases.Count>1?Visibility.Visible:Visibility.Collapsed;
+
+        void Restart(){
+            timer.Stop();
+            if(cases.Count>1 && card.IsLoaded && !card.IsMouseOver && !card.IsKeyboardFocusWithin)
+                timer.Start();
+        }
+        void Display(){
+            if(cases.Count==0){
+                subject.IsEnabled=false;title.Text=empty??"لا توجد حالات تستدعي المراجعة.";
+                return;
+            }
+            var item=cases[index];
+            title.Text=item.Title;detail.Text=item.Detail;
+            position.Text=$"{index+1} / {cases.Count}";
+            AutomationProperties.SetName(subject,item.Title);
+            AutomationProperties.SetAutomationId(subject,"HomeReview-"+item.Key);
+            AutomationProperties.SetHelpText(subject,item.Detail);
+            subject.ToolTip=item.Title+" · "+item.Detail;
+        }
+        void Move(int step){
+            if(cases.Count<2)return;
+            index=(index+step+cases.Count)%cases.Count;
+            Display();
+            if(SystemParameters.ClientAreaAnimation && !SystemParameters.HighContrast){
+                var offset=new TranslateTransform();
+                content.RenderTransform=offset;
+                var duration=TimeSpan.FromMilliseconds(220);
+                var ease=new CubicEase{EasingMode=EasingMode.EaseOut};
+                offset.BeginAnimation(TranslateTransform.XProperty,new DoubleAnimation(step*16,0,duration){EasingFunction=ease,FillBehavior=FillBehavior.Stop});
+                content.BeginAnimation(OpacityProperty,new DoubleAnimation(.35,1,duration){EasingFunction=ease,FillBehavior=FillBehavior.Stop});
+            }
+            Restart();
+        }
+        timer.Tick+=(_,_)=>{if(IsActive && card.IsVisible && SystemParameters.ClientAreaAnimation && !SystemParameters.HighContrast)Move(1);};
+        card.Loaded+=(_,_)=>Restart();
+        card.Unloaded+=(_,_)=>timer.Stop();
+        card.MouseEnter+=(_,_)=>timer.Stop();
+        card.MouseLeave+=(_,_)=>Restart();
+        card.IsKeyboardFocusWithinChanged+=(_,_)=>Restart();
+        Display();
+        return card;
+    }
+
     async Task Home()
     {
         var month=SelectedMonth;
         var revision=store.Active;
-        if(homeMonth!=month?.Name){
-            homeMonth=month?.Name;homePinPage=homeReviewPage=0;homeSection=ReviewSection.Payroll;
-        }
-        double scale=1+appearance.Level*.05;
+        if(homeMonth!=month?.Name){homeMonth=month?.Name;homePinPage=0;}
         var board=new Grid();
         board.RowDefinitions.Add(new(){Height=GridLength.Auto});
         board.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
-        board.RowDefinitions.Add(new(){Height=GridLength.Auto});
-        var balance=Text("إجمالي الاستقطاعات　—",15,true);
-        var count=Text("عدد القيود　—",14);
-        var summary=Bar(balance,count);
+        var metrics=new UniformGrid{Columns=3};
+        TextBlock Metric(string label,string icon){
+            var value=Text("—",20,true);
+            var cell=Column(Bar(Glyph(icon),Text(label,14)),value);
+            cell.Margin=new Thickness(8,3,8,5);
+            metrics.Children.Add(cell);
+            return value;
+        }
+        var deduction=Metric("إجمالي الاستقطاعات","\uE8FD");
+        var bank=Metric("مجموع كشف البنك","\uE825");
+        var employees=Metric("عدد الموظفين","\uE716");
+        var ranks=new UniformGrid{Columns=4};
+        string[] labels=["ضباط","موظفون","مراتب","عقود"];
+        string[] icons=["\uEA18","\uE821","\uE70D","\uE8A5"];
+        var rankMenus=new ContextMenu[labels.Length];
+        var counts=labels.Select((label,i)=>{
+            var count=Text("—",14,true);
+            var menu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft,Placement=PlacementMode.Bottom};
+            rankMenus[i]=menu;
+            var chip=HomeAction("الرتب · "+label,()=>{if(menu.HasItems)menu.IsOpen=true;});
+            chip.Content=Bar(Glyph(icons[i]),Text(label,13),count);
+            chip.ToolTip="تفاصيل الرتب · "+label;
+            menu.PlacementTarget=chip;
+            ranks.Children.Add(chip);
+            return count;
+        }).ToArray();
+        var summary=Column(metrics,ranks);
         if(revision==null)summary.Children.Add(HomeAction("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5"));
-        var banner=Box(summary,"SystemFillColorSuccessBackgroundBrush");banner.Padding=new Thickness(9,3,9,3);
+        var banner=Box(summary);banner.Padding=new Thickness(10,6,10,6);
         board.Children.Add(banner);
 
-        var pinArea=new Grid();
-        pinArea.RowDefinitions.Add(new(){Height=GridLength.Auto});
-        pinArea.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
+        var panes=new Grid();Grid.SetRow(panes,1);board.Children.Add(panes);
+        panes.ColumnDefinitions.Add(new(){Width=new GridLength(1.1,GridUnitType.Star)});
+        panes.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});
+        var pinArea=new DockPanel();
         var pinActions=new StackPanel{Orientation=Orientation.Horizontal};
-        var directory=HomeAction("دليل الكشوف وتخصيصها",()=>{});
+        var directory=HomeIcon("دليل الكشوف وتخصيصها","\uE713",()=>{});
         directory.Click+=(_,_)=>OpenHomeDirectory(directory);
         pinActions.Children.Add(directory);
-        pinArea.Children.Add(HomeHeading("كشوفي المثبتة",pinActions));
-        var tileArea=new Grid();
-        Grid.SetRow(tileArea,1);pinArea.Children.Add(tileArea);
-        Grid.SetRow(pinArea,1);board.Children.Add(pinArea);
-        var reviews=new StackPanel();
-        var footer=Box(reviews);footer.Padding=new Thickness(6,3,6,3);
-        Grid.SetRow(footer,2);board.Children.Add(footer);
+        var heading=HomeHeading("كشوفي المثبتة",pinActions);
+        DockPanel.SetDock(heading,Dock.Top);pinArea.Children.Add(heading);
+        var tileArea=new Grid();pinArea.Children.Add(tileArea);
+        var pinPane=Box(pinArea);pinPane.Padding=new Thickness(9);
+        panes.Children.Add(pinPane);
+        var reviews=new UniformGrid{Rows=2,Columns=1};
+        var reviewLayout=new DockPanel();
+        var reviewHeading=Bar(Glyph("\uEA8F"),Text("حالات المراجعة",16,true));
+        DockPanel.SetDock(reviewHeading,Dock.Top);reviewLayout.Children.Add(reviewHeading);
+        reviewLayout.Children.Add(reviews);
+        var reviewPane=Box(reviewLayout);reviewPane.Padding=new Thickness(9);
+        Grid.SetColumn(reviewPane,1);panes.Children.Add(reviewPane);
 
-        IReadOnlyList<HomeReview> all=[];
-        string? message=month is {Key:>0}?"جارٍ تحميل حالات الشهر…":"تظهر حالات المراجعة بعد استيراد البيانات.";
-        int pinCapacity=0,reviewCapacity=0;bool compact=false;
+        int pinCapacity=0,columns=0;
+        double scale=1+appearance.Level*.05;
+        double tileHeight=40*scale;
+        panes.VerticalAlignment=VerticalAlignment.Top;
+        panes.MaxHeight=356*scale;
         void DrawPins(){
-            const int columns=2;
             int pages=Math.Max(1,(pins.Count+pinCapacity-1)/pinCapacity);
             homePinPage=Math.Clamp(homePinPage,0,pages-1);
             if(pinActions.Children.Count>1)pinActions.Children.RemoveAt(1);
             pinActions.Children.Add(HomePager(homePinPage,pages,"الكشوف",p=>{homePinPage=p;DrawPins();}));
             tileArea.Children.Clear();
-            if(pins.Count==0){tileArea.Children.Add(Text("اختر كشوفك من دليل الكشوف وتخصيصها.",14));return;}
+            if(pins.Count==0){tileArea.Children.Add(Text("اختر كشوفك من زر التخصيص.",14));return;}
             var tiles=new UniformGrid{Columns=columns,VerticalAlignment=VerticalAlignment.Top};
             foreach(var name in pins.Skip(homePinPage*pinCapacity).Take(pinCapacity)){
                 var card=Cards.First(c=>c.Name==name);
                 var button=HomeAction(name,()=>Activate(name));
                 button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-                var label=Text(name,14,true);
-                label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;
-                var glyph=Glyph(card.Icon,"#29644E");glyph.Margin=new Thickness(4,0,4,0);glyph.FontSize=16;
-                var mark=new Border{Child=glyph,Background=BrushOf("#E5F0E9"),CornerRadius=new CornerRadius(4),Margin=new Thickness(0,0,6,0)};
-                var content=new DockPanel();content.Children.Add(mark);content.Children.Add(label);
-                button.Content=content;
-                button.Height=Math.Min(42*scale,Math.Max(20,tileArea.ActualHeight/Math.Ceiling(pinCapacity/2d)-4));
-                button.ToolTip=card.Desc;
+                var label=Text(name,14,true);label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;
+                var mark=Box(Glyph(card.Icon),"SystemFillColorSuccessBackgroundBrush");
+                mark.Padding=new Thickness(2);mark.Margin=new Thickness(0,0,6,0);mark.BorderThickness=new Thickness(0);
+                var row=new DockPanel();row.Children.Add(mark);row.Children.Add(label);
+                button.Content=row;button.Height=tileHeight;button.ToolTip=card.Desc;
                 AutomationProperties.SetAutomationId(button,"HomePin-"+PinIds[name]);
                 tiles.Children.Add(button);
             }
             tileArea.Children.Add(tiles);
         }
-        void DrawReviews(){
-            reviews.Children.Clear();
-            if(all.Count==0){
-                reviews.Children.Add(Text("حالات المراجعة",16,true));
-                reviews.Children.Add(Text(message??"لا توجد حالات تستدعي المراجعة لهذا الشهر.",14));
-                return;
-            }
-            var sections=Enum.GetValues<ReviewSection>();
-            var active=all.Where(i=>i.Section==homeSection).ToList();
-            int pages=Math.Max(1,(active.Count+reviewCapacity-1)/reviewCapacity);
-            homeReviewPage=Math.Clamp(homeReviewPage,0,pages-1);
-            var pager=HomePager(homeReviewPage,pages,"حالات المراجعة",p=>{homeReviewPage=p;DrawReviews();});
-            void Select(ReviewSection section){homeSection=section;homeReviewPage=0;DrawReviews();}
-            string Caption(ReviewSection section){
-                string name=section switch{ReviewSection.Payroll=>"الرواتب",ReviewSection.Deductions=>"الاستقطاعات",_=>"الجهات"};
-                return name+" · "+all.Count(i=>i.Section==section);
-            }
-            UIElement tabs;
-            if(compact){
-                var selector=Choices(sections.Select(Caption));
-                selector.SelectedIndex=(int)homeSection;
-                AutomationProperties.SetName(selector,"قسم حالات المراجعة");
-                selector.SelectionChanged+=(_,_)=>{if(selector.SelectedIndex>=0)Select(sections[selector.SelectedIndex]);};
-                tabs=selector;
-            }else{
-                var buttons=new StackPanel{Orientation=Orientation.Horizontal};
-                foreach(var section in sections){
-                    var tab=HomeAction(Caption(section),()=>Select(section),"",section==homeSection);
-                    AutomationProperties.SetAutomationId(tab,"HomeSection-"+section);buttons.Children.Add(tab);
-                }
-                tabs=buttons;
-            }
-            var actions=new StackPanel{Orientation=Orientation.Horizontal};
-            actions.Children.Add(tabs);actions.Children.Add(pager);
-            reviews.Children.Add(HomeHeading("حالات المراجعة",actions));
-            if(active.Count==0){reviews.Children.Add(Text("لا توجد حالات في هذا القسم.",14));return;}
-            foreach(var item in active.Skip(homeReviewPage*reviewCapacity).Take(reviewCapacity)){
-                var strip=HomeAction(item.Title,()=>Guard(item.Open));
-                strip.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-                strip.BorderThickness=new Thickness(1,1,3,1);
-                strip.BorderBrush=BrushOf("#B79A65");
-                var row=new DockPanel();
-                var detail=Text(item.Detail,12);
-                detail.MaxWidth=compact?118:250;
-                detail.TextWrapping=TextWrapping.NoWrap;detail.TextTrimming=TextTrimming.CharacterEllipsis;
-                DockPanel.SetDock(detail,Dock.Right);row.Children.Add(detail);
-                var title=Text(item.Title,14,true);
-                title.TextWrapping=TextWrapping.NoWrap;title.TextTrimming=TextTrimming.CharacterEllipsis;
-                row.Children.Add(title);strip.Content=row;strip.ToolTip=item.Title+" · "+item.Detail;
-                AutomationProperties.SetAutomationId(strip,"HomeReview-"+item.Key);
-                AutomationProperties.SetHelpText(strip,item.Detail);
-                reviews.Children.Add(strip);
-            }
-        }
-        void FitReviews(){
-            int next=board.ActualHeight>=400*scale?3:board.ActualHeight>=300*scale?2:1;
-            bool narrow=board.ActualWidth<660*scale;
-            if(reviewCapacity==next && compact==narrow)return;
-            reviewCapacity=next;compact=narrow;DrawReviews();
-        }
         tileArea.SizeChanged+=(_,_)=>{
-            int capacity=2*Math.Clamp((int)(tileArea.ActualHeight/(46*scale)),1,4);
-            pinCapacity=capacity;DrawPins();
+            int nextColumns=tileArea.ActualWidth>=315*scale?2:1;
+            int rows=Math.Clamp((int)(tileArea.ActualHeight/(40*scale+4)),1,4);
+            int nextCapacity=nextColumns*rows;
+            double height=Math.Clamp(Math.Floor(tileArea.ActualHeight/rows)-4,30*scale,66*scale);
+            if(nextCapacity==pinCapacity && nextColumns==columns && height==tileHeight)return;
+            pinCapacity=nextCapacity;columns=nextColumns;tileHeight=height;DrawPins();
         };
-        board.SizeChanged+=(_,_)=>FitReviews();
-        FitReviews();CanvasArea.Children.Add(board);
-        bool Current()=>CanvasArea.Children.Contains(board) && SelectedMonth?.Name==month?.Name && store.Active==revision;
-        if(month is not {Key:>0})return;
+        void DrawReviews(IReadOnlyList<HomeReview> items,string? empty=null){
+            reviews.Children.Clear();
+            foreach(var section in new[]{ReviewSection.Deductions,ReviewSection.Payroll})
+                reviews.Children.Add(ReviewCard(section==ReviewSection.Payroll?"الرواتب":"الاستقطاعات",
+                    items.Where(i=>i.Section==section).ToArray(),empty));
+        }
+        DrawReviews([],month is {Key:>0}?"جارٍ تحميل الحالات…":"اختر شهراً لعرض الحالات.");
+        // تظل اللوحتان قابلتين للوصول حتى عند تصغير نافذة ويندوز وتكبير خط النظام.
+        var viewport=new Grid();
+        viewport.Children.Add(new Viewbox{Stretch=Stretch.Uniform,StretchDirection=StretchDirection.DownOnly,Child=board});
+        void Fit(){
+            board.Width=Math.Max(680*scale,CanvasArea.ActualWidth);
+            board.Height=Math.Max(375*scale,CanvasArea.ActualHeight);
+            panes.Height=Math.Min(panes.MaxHeight,board.Height*.66);
+        }
+        viewport.SizeChanged+=(_,_)=>Fit();Fit();CanvasArea.Children.Add(viewport);
+        bool Current()=>CanvasArea.Children.Contains(viewport) && SelectedMonth?.Name==month?.Name && store.Active==revision;
+        if(month is not {Key:>0} || revision==null)return;
         try{
-            var summaryData=await Task.Run(()=>store.Summary(new(Year:month.Key/100,Month:month.Key%100)));
+            var totals=await Task.Run(()=>store.Summary(new(Year:month.Key/100,Month:month.Key%100)));
             if(!Current())return;
-            balance.Text="إجمالي الاستقطاعات　"+Arabic.Money(summaryData.Total)+" د.ع　";
-            count.Text="عدد القيود　"+Arabic.Money(summaryData.Count);
+            deduction.Text=Arabic.Money(totals.Total)+" د.ع";
+            var figures=await MonthFigures(revision,month.Name);
+            if(!Current())return;
+            if(figures.summary!=null){
+                bank.Text=Arabic.Money(figures.summary.BankTotal)+" د.ع";
+                var buckets=await Task.Run(()=>{
+                    return figures.snapshot.Employees.Where(e=>e.Month==month.Name)
+                        .GroupBy(e=>e.Rank.Trim()).Select(g=>new {Rank=g.Key,Count=g.Count(),Category=A.FundReport.CategoryOf(g.Key)})
+                        .OrderBy(g=>A.RankOrder.Rank(g.Rank)).ThenBy(g=>g.Rank,StringComparer.Ordinal).ToLookup(g=>g.Category);
+                });
+                if(!Current())return;
+                employees.Text=Arabic.Money(buckets.SelectMany(g=>g).Sum(r=>r.Count));
+                for(int i=0;i<counts.Length;i++){
+                    counts[i].Text=Arabic.Money(buckets[i].Sum(r=>r.Count));
+                    foreach(var row in buckets[i]){
+                        var name=row.Rank.Length==0?"رتبة غير مسجلة":row.Rank;
+                        rankMenus[i].Items.Add(new MenuItem{Header=Text(name+"　"+Arabic.Money(row.Count)),Focusable=false});
+                    }
+                }
+            }
+        }catch(Exception ex){if(Current())Status.Text=ex.Message;}
+        if(!Current())return;
+        try{
             var previous=months.FirstOrDefault(m=>m.Key>0&&m.Key<month.Key);
             var data=await HomeReviewData(revision,month,previous);
             if(!Current())return;
-            SalaryDesktop.Core.SalaryReviewResult? audit=null;
+            A.SalaryReviewResult? audit=null;
             if(data.Salary){
                 try{audit=await Audit(month.Name);}
                 catch(Exception ex){if(Current())Status.Text=ex.Message;}
             }
-            if(!Current())return;
-            all=HomeReviewItems(month,data.Alerts,data.Salary,audit,data.Deductions);
-            if(all.Count>0 && all.All(i=>i.Section!=homeSection)){homeSection=all[0].Section;homeReviewPage=0;}
-            message=null;DrawReviews();
+            if(Current())DrawReviews(HomeReviewItems(month,data.Alerts,data.Salary,audit,data.Deductions));
         }catch(Exception ex){
-            if(Current()){message="تعذّر تحميل حالات المراجعة.";DrawReviews();Status.Text=ex.Message;}
+            if(Current()){DrawReviews([],"تعذّر تحميل حالات المراجعة.");Status.Text=ex.Message;}
         }
     }
 }

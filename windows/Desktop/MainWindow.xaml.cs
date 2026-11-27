@@ -653,23 +653,30 @@ public partial class MainWindow : Window
                     }
                 }
                 CheckHomeFit();
-                var originalSection=homeSection;
-                foreach(var section in Enum.GetValues<ReviewSection>()){
-                    var tab=HomeButtons("HomeSection-"+section).Single();
-                    int expected=int.Parse(AutomationProperties.GetName(tab).Split('·')[1].Trim());
-                    tab.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    var seen=new HashSet<string>();
-                    while(true){
-                        var strips=HomeButtons("HomeReview-");
-                        if(strips.Count>3 || strips.Any(strip=>!seen.Add(AutomationProperties.GetAutomationId(strip))))
-                            throw new InvalidDataException("تكررت حالة مراجعة أو تجاوزت الأشرطة المساحة المحددة.");
-                        var next=Controls<Button>(CanvasArea).SingleOrDefault(button=>AutomationProperties.GetName(button)=="التالي · حالات المراجعة");
-                        if(next?.IsEnabled!=true)break;
+                void CheckReviewCards(){
+                    foreach(var section in new[]{"الاستقطاعات","الرواتب"}){
+                        var next=FindAction(CanvasArea,"التالي · "+section);
+                        var previous=FindAction(CanvasArea,"السابق · "+section);
+                        if(next.Visibility!=previous.Visibility)throw new InvalidDataException("سهم مفقود في بطاقة "+section);
+                        if(next.Visibility!=Visibility.Visible)continue;
+                        var card=(Grid)next.Parent;
+                        var subject=Controls<Button>(card).Single(b=>AutomationProperties.GetAutomationId(b).StartsWith("HomeReview-"));
+                        string Current()=>AutomationProperties.GetAutomationId(subject);
+                        string first=Current();
+                        var seen=new HashSet<string>{first};
+                        do{
+                            next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            if(Current()==first)break;
+                            if(!seen.Add(Current()))throw new InvalidDataException("تكررت حالة قبل إكمال دورة المراجعة.");
+                        }while(true);
+                        if(seen.Count<2)throw new InvalidDataException("لم يبدّل سهم المراجعة الحالة.");
+                        previous.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        if(Current()==first)throw new InvalidDataException("تعذر الرجوع إلى الحالة السابقة.");
                         next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        if(Current()!=first)throw new InvalidDataException("تعذر الرجوع إلى بداية الدورة.");
                     }
-                    if(seen.Count!=expected)throw new InvalidDataException("عدد أنواع المراجعة لا يطابق الأشرطة المتاحة.");
                 }
-                HomeButtons("HomeSection-"+originalSection).Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                CheckReviewCards();
                 var originalWidth=Width;var originalHeight=Height;
                 var originalAppearance=appearance;
                 try{
@@ -677,14 +684,12 @@ public partial class MainWindow : Window
                     Width=560;Height=390;ShowPage("الرئيسية");await homeLoad;
                     await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
                     CheckHomeFit();
-                    var selector=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="قسم حالات المراجعة");
-                    selector.SelectedIndex=(int)ReviewSection.Agencies;
-                    if(homeSection!=ReviewSection.Agencies)throw new InvalidDataException("تعذر تبديل قسم المراجعة في النافذة الصغيرة.");
+                    CheckReviewCards();
                 }finally{
                     appearance=originalAppearance;appearance.Apply();
                     Width=originalWidth;Height=originalHeight;ShowPage("الرئيسية");await homeLoad;
                     await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
-                    HomeButtons("HomeSection-"+originalSection).Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    CheckReviewCards();
                 }
             }
             if(name=="الإعدادات"){

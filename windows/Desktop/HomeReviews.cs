@@ -6,7 +6,7 @@ namespace AnbarPayroll.Desktop;
 
 public partial class MainWindow
 {
-    enum ReviewSection { Payroll, Deductions, Agencies }
+    enum ReviewSection { Payroll, Deductions }
     sealed record HomeReview(ReviewSection Section,string Key,string Title,string Detail,Action Open);
     static string ReviewTitle(string kind) => kind switch {
         "جديد في الرواتب"=>"الموظفون الجدد", "خارج من الرواتب"=>"الخارجون من الرواتب",
@@ -57,7 +57,7 @@ public partial class MainWindow
         foreach(var group in alerts.GroupBy(r=>r.Title)){
             var entities=group.ToArray();
             var detail="عدد الجهات "+Arabic.Money(entities.Length);
-            items.Add(new(ReviewSection.Agencies,"agency|"+group.Key,group.Key,detail,()=>AgencyReview(entities)));
+            items.Add(new(ReviewSection.Deductions,"agency|"+group.Key,group.Key,detail,()=>AgencyReview(entities)));
         }
         if(deductions.Blocked)
             items.Add(new(ReviewSection.Deductions,"deduction-check","مقارنة الاستقطاعات تحتاج مراجعة","تحتاج المقارنة إلى شهرين متحققين من الاستقطاعات.",()=>Activate(AgencyPage)));
@@ -74,6 +74,15 @@ public partial class MainWindow
             }
         }
 
-        return items;
+        return items.OrderBy(item=>item.Key switch {
+            "salary-missing" or "salary-check" or "deduction-check"=>0,
+            "salary|IBAN" or "salary|خطأ في الحساب" or "salary|مطابقة المجاميع"
+                or "deduction|تكرار محتمل في الاستقطاعات"=>1,
+            "salary|تغيّر الحساب المصرفي" or "salary|الخارجون من الرواتب"
+                or "deduction|الاستقطاعات المتوقفة"=>2,
+            _ when item.Key.StartsWith("agency|",StringComparison.Ordinal)=>3,
+            "salary|تغيّر صافي الراتب" or "deduction|تغيّر مبلغ الاستقطاع (نفس الجهة والإضبارة)"=>4,
+            _=>5
+        }).ToList();
     }
 }
