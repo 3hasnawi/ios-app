@@ -9,6 +9,7 @@
 *{box-sizing:border-box}body{background:var(--bg);color:var(--ink);margin:0;padding:16px}main{max-width:800px;margin:auto}section{background:var(--paper);border:1px solid var(--line);border-radius:12px;margin:0 0 12px;padding:14px}
 p{line-height:1.55;margin:0 0 8px}h2{font-size:1.05rem;margin:0 0 10px}.row{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 button,select{color:inherit;font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--paper)}button.primary{background:var(--green);color:white}button:disabled,select:disabled{opacity:.55}#status{margin:12px 0 0}#history p{border-bottom:1px solid var(--line);padding:6px 0}#device{font-size:.8rem;overflow-wrap:anywhere}output{font-weight:650}details{margin-top:12px}
+#refundHistory{display:grid;gap:6px}#refundHistory button{text-align:start}#refundStatus{margin:8px 0;color:var(--ink)}
 </style><main>
 <section><h2 data-en="OneDrive connection test">اختبار الربط بـ OneDrive</h2><p data-en="A fictional batch shared across your test devices. Use the same Microsoft account on all three devices.">دفعة وهمية مشتركة بين أجهزة التجربة. استخدم نفس حساب Microsoft على الأجهزة الثلاثة.</p>
 <div class="row"><button id="login" class="primary" data-en="Sign in">تسجيل الدخول</button><button id="sync" data-en="Sync test batch">مزامنة التجربة</button></div>
@@ -17,9 +18,13 @@ button,select{color:inherit;font:inherit;padding:8px 12px;border-radius:8px;bord
 <select id="amount" aria-label="المبلغ"><option value="10000">١٠٬٠٠٠ دينار</option><option value="20000">٢٠٬٠٠٠ دينار</option><option value="30000">٣٠٬٠٠٠ دينار</option></select>
 <button id="save" data-en="Save change">حفظ التعديل</button></div></section>
 <section><h2 data-en="Batch totals">حصيلة الدفعة</h2><div id="rows"></div><output id="total"></output><p id="pending"></p><details><summary data-en="Edit history">سجل التعديلات</summary><div id="history"></div></details></section>
+<section><h2 data-en="Saved trial refunds">دفعات إعادة المبالغ التجريبية المحفوظة</h2>
+<p data-en="Save the two test amounts as a batch with fictional bank accounts, then open its letters and CSV files on either device.">احفظ مبلغَي المنتسبين كدفعة بآيبانات وهمية، ثم افتح كتبها وملفات CSV على أي جهاز.</p>
+<button id="saveRefund" data-en="Save trial refund batch">حفظ دفعة إعادة تجريبية</button>
+<p id="refundStatus"></p><div id="refundHistory"></div></section>
 </main><script>/* TRIAL_ENGINE */</script><script>
 const $ = id => document.getElementById(id);
-let state, busy=false, signedIn=false;
+let state, refunds, lastSync=0, busy=false, signedIn=false;
 const pollInterval = 15000;
 let pollDelay = pollInterval, pollTimer, verifyNextPoll = false;
 let sequence=0;
@@ -55,6 +60,22 @@ function draw() {
     $("login").disabled=busy || !state;
     $("sync").disabled=busy || !signedIn;
     $("save").disabled=busy || !state?.folder;
+    const choices=state ? members.map((_,index)=>heads(state.edits,index)) : [];
+    $("saveRefund").disabled=busy || !refunds?.folder || choices.length!==2 || choices.some(group=>group.length!==1);
+    if (refunds) {
+        $("refundStatus").textContent=text("دفعات بانتظار الإرسال: ","Pending batches: ")+num(refunds.pending.length)
+            +(lastSync ? text(" · آخر مزامنة: "," · Last sync: ")+new Date(lastSync).toLocaleString(locale) : "");
+        $("refundHistory").replaceChildren();
+        for (const batch of [...refunds.edits].reverse()) {
+            const button=document.createElement("button");
+            const total=batch.snapshot.rows.reduce((sum,row)=>sum+Number(row.amount),0);
+            button.textContent=batch.day+" · "+batch.id.slice(0,8)+" · "+num(total)+text(" دينار · الكتب وملفات CSV"," IQD · Letters and CSV");
+            if (refunds.pending.includes(batch.id)) button.textContent+=text(" · بانتظار الإرسال"," · Pending");
+            button.disabled=busy;
+            button.onclick=()=>run(()=>api("openRefund","",JSON.stringify(batch.snapshot)));
+            $("refundHistory").append(button);
+        }
+    }
     if (!state) return;
     $("rows").replaceChildren(); $("history").replaceChildren();
     let total=0;
@@ -74,6 +95,11 @@ async function commit(next) {
     await api("store","",JSON.stringify(next));
     state=next;
 }
+async function storeRefunds(next, timestamp) {
+    await api("refundStore","",JSON.stringify({...next,lastSync:timestamp}));
+    refunds=next;
+    lastSync=timestamp;
+}
 async function run(work) {
     if(busy)return;
     clearTimeout(pollTimer);
@@ -91,9 +117,24 @@ async function run(work) {
 }
 async function syncTrial(checkForChanges=false) {
     if (!checkForChanges) $("status").textContent=text("جارٍ قراءة ملفات التجربة والتحقق من التعديلات…","Reading and verifying test edits…");
-    const next=await synchronize(state,api,{checkForChanges});
-    if (next===state) return;
-    await commit(next);
+    const folder=await api("folder");
+    check(folder && (!state.folder || state.folder===folder) && (!refunds.folder || refunds.folder===folder),
+        text("اختر حساب OneDrive المرتبط بالتجربة.","Use the OneDrive account linked to this trial."));
+    // يمكن للفحصين استعمال القائمة الأولى نفسها. قراءة التأكيد بعد الكتابة تطلب قائمة جديدة.
+    const listing=await api("list");
+    function requestsForGroup() {
+        let first=true;
+        return (op,...args)=>{
+            if (op==="folder") return folder;
+            if (op==="list" && first) { first=false; return listing; }
+            return api(op,...args);
+        };
+    }
+    const next=await synchronize(state,requestsForGroup(),{checkForChanges});
+    if (next!==state) await commit(next);
+    const saved=await synchronize(refunds,requestsForGroup(),{checkForChanges,records:refundRecords});
+    if (saved!==refunds || !lastSync) await storeRefunds(saved,Date.now());
+    else lastSync=Date.now();
     verifyNextPoll=false;
     $("status").textContent=text("اكتملت المزامنة · ","Test batch synced · ")+new Date().toLocaleTimeString(locale);
 }
@@ -103,11 +144,27 @@ $("login").onclick=()=>run(async()=>{
     await api("login"); signedIn=true; await syncTrial();
 });
 $("sync").onclick=()=>run(syncTrial);
-$("save").onclick=()=>run(async()=>{
+function newID() {
     const b=crypto.getRandomValues(new Uint8Array(16)); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
     const hex=Array.from(b,n=>n.toString(16).padStart(2,"0")).join("");
-    const id=[hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
-    await commit(addEdit(state,Number($("member").value),Number($("amount").value),id,Date.now()));
+    return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
+}
+$("saveRefund").onclick=()=>run(async()=>{
+    const amounts=members.map((_,index)=>{
+        const choices=heads(state.edits,index);
+        check(choices.length===1,text("احفظ مبلغاً واحداً لكل منتسب واحسم التعارض أولاً.","Save one amount per employee and resolve conflicts first."));
+        return choices[0].amount;
+    });
+    const now=new Date();
+    const day=[now.getFullYear(),String(now.getMonth()+1).padStart(2,"0"),String(now.getDate()).padStart(2,"0")].join("-");
+    const batch=makeRefund(newID(),day,amounts);
+    await storeRefunds({...refunds,edits:combineRecords(refundRecords.parse,[refunds.edits,[batch]]),
+        pending:[...refunds.pending,batch.id]},lastSync);
+    $("status").textContent=text("حُفظت الدفعة على الجهاز.","Batch saved on this device.");
+    if (signedIn && navigator.onLine) await syncTrial();
+});
+$("save").onclick=()=>run(async()=>{
+    await commit(addEdit(state,Number($("member").value),Number($("amount").value),newID(),Date.now()));
     $("status").textContent=text("حُفظ محلياً بانتظار الاتصال.","Saved locally; waiting for a connection.");
     if (signedIn && navigator.onLine) await syncTrial();
 });
@@ -126,6 +183,9 @@ window.addEventListener("online",resume);
 window.addEventListener("offline",resume);
 document.addEventListener("visibilitychange",resume);
 run(async()=>{
+    const stored=await api("refundLoad");
+    refunds=decodeState(stored,refundRecords);
+    lastSync=stored ? Number(JSON.parse(stored).lastSync)||0 : 0;
     state=decodeState(await api("load"));
     $("device").textContent=await api("device");
     $("status").textContent=state.folder?text("التجربة محفوظة على هذا الجهاز. سجّل الدخول لتبادل التعديلات.","Local test loaded. Sign in to exchange edits."):text("سجّل الدخول لربط الجهاز بمجلد التجربة.","Sign in to link this device to the test folder.");

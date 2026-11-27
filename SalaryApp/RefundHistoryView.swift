@@ -74,7 +74,7 @@ struct RefundHistoryView: View {
     }
 }
 
-private struct RefundArchivedDetail: View {
+struct RefundArchivedDetail: View {
     let snapshot: RefundSnapshot
     @State private var exporting = false
     @State private var error: String?

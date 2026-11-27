@@ -128,16 +128,19 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
 }
 public sealed partial class Store
 {
+    public static RefundBatch DecodeRefund(JsonObject data,string? archiveId=null){
+        var entries=new List<RefundPayee>();foreach(var row in data["rows"]!.AsArray()){
+            var c=row!["candidate"]!;var p=c["person"]!;var parsed=A.PayrollSpreadsheet.ParseMoney((string?)row["amount"]??"");long value=parsed is >0 and <=999_999_999_999_999m && parsed==decimal.Truncate(parsed.Value)?(long)parsed.Value:0;
+            entries.Add(new((string)p["name"]!,(string)p["rank"]!,(string)p["workplace"]!,(string)c["month"]!,(string)p["iban"]!,(string)p["bank"]!,(string?)p["payrollBIC"]?["value"]?["_0"]??"",value,row.AsObject()){BicState=p["payrollBIC"]?.AsObject().FirstOrDefault().Key??"missingColumn"});
+        }
+        var date=AppleEpoch.AddSeconds((double)data["date"]!).ToLocalTime();
+        return new((string)data["batchID"]!,(string)data["source"]!,DateOnly.FromDateTime(date),(string)data["payer"]!,(string)data["account"]!,entries,data,archiveId);
+    }
     public List<RefundBatch> Refunds(){
         var result=new List<RefundBatch>();using var zip=System.IO.Compression.ZipFile.OpenRead(Archive);
         Records(zip,"refunds.jsonl",line=>{
             var data=JsonNode.Parse(line.GetProperty("contents").GetBytesFromBase64())!.AsObject();
-            var entries=new List<RefundPayee>();foreach(var row in data["rows"]!.AsArray()){
-                var c=row!["candidate"]!;var p=c["person"]!;var parsed=A.PayrollSpreadsheet.ParseMoney((string?)row["amount"]??"");long value=parsed is >0 and <=999_999_999_999_999m && parsed==decimal.Truncate(parsed.Value)?(long)parsed.Value:0;
-                entries.Add(new((string)p["name"]!,(string)p["rank"]!,(string)p["workplace"]!,(string)c["month"]!,(string)p["iban"]!,(string)p["bank"]!,(string?)p["payrollBIC"]?["value"]?["_0"]??"",value,row.AsObject()){BicState=p["payrollBIC"]?.AsObject().FirstOrDefault().Key??"missingColumn"});
-            }
-            var date=AppleEpoch.AddSeconds((double)data["date"]!).ToLocalTime();
-            result.Add(new((string)data["batchID"]!,(string)data["source"]!,DateOnly.FromDateTime(date),(string)data["payer"]!,(string)data["account"]!,entries,data,line.GetProperty("id").GetString()));
+            result.Add(DecodeRefund(data,line.GetProperty("id").GetString()));
         });return result.OrderByDescending(b=>b.Date).ToList();
     }
     public string SaveRefund(RefundBatch batch,string? revision,bool remove=false,bool asDraft=false){

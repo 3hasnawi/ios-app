@@ -257,7 +257,7 @@ public partial class MainWindow : Window
             storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
         }
         storage.Children.Add(Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"),
-            ButtonFor("تجربة OneDrive",()=>new OneDriveTrialWindow(appearance.Hindi){Owner=this}.ShowDialog(),"\uE895")));
+            ButtonFor("تجربة OneDrive",()=>new OneDriveTrialWindow(appearance.Hindi,openRefund:OpenTrialRefund){Owner=this}.ShowDialog(),"\uE895")));
         var deviceLock=((App)Application.Current).DeviceLock;
         var lockTime=Choices(["متوقف","فوراً","بعد دقيقة","بعد 5 دقائق","بعد 15 دقيقة"]);
         AutomationProperties.SetName(lockTime,"قفل التطبيق");

@@ -26,7 +26,12 @@ private final class TrialRedirects: NSObject, URLSessionTaskDelegate {
 
 @MainActor
 struct OneDriveTrialView: UIViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    var openRefund: (Data) throws -> Void
+    func makeCoordinator() -> Coordinator {
+        let handler = Coordinator()
+        handler.openRefund = openRefund
+        return handler
+    }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
@@ -58,6 +63,7 @@ struct OneDriveTrialView: UIViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply, ASWebAuthenticationPresentationContextProviding {
+        var openRefund: ((Data) throws -> Void)?
         weak var view: WKWebView?
         var browser: ASWebAuthenticationSession?
         let network: URLSession = {
@@ -159,25 +165,28 @@ struct OneDriveTrialView: UIViewRepresentable {
             }
             return body
         }
-        private func localFile() throws -> URL {
+        private func localFile(refunds: Bool) throws -> URL {
             let fm = FileManager.default
             var dir = try fm.url(for:.applicationSupportDirectory,in:.userDomainMask,appropriateFor:nil,create:true)
                 .appendingPathComponent("OneDriveTrialV1", isDirectory:true)
             try fm.createDirectory(at:dir,withIntermediateDirectories:true)
             var policy = URLResourceValues(); policy.isExcludedFromBackup = true
             try dir.setResourceValues(policy)
-            return dir.appendingPathComponent("state.json")
+            return dir.appendingPathComponent(refunds ? "refunds.json" : "state.json")
         }
         private func perform(_ action:String, id:String, value:String) async throws -> String {
             switch action {
             case "device": return tr("معرّف النسخة المثبّتة: ", "Installed bundle ID: ") + (Bundle.main.bundleIdentifier ?? "؟")
-            case "load":
-                let file = try localFile()
+            case "load", "refundLoad":
+                let file = try localFile(refunds: action == "refundLoad")
                 if !FileManager.default.fileExists(atPath:file.path) { return "" }
                 return try String(contentsOf:file,encoding:.utf8)
-            case "store":
+            case "store", "refundStore":
                 guard value.utf8.count <= 1_000_000 else { throw TrialFailure(tr("سجل التجربة كبير.", "Test history is too large.")) }
-                try Data(value.utf8).write(to:localFile(),options:[.atomic,.completeFileProtection]); return ""
+                try Data(value.utf8).write(to:localFile(refunds: action == "refundStore"),options:[.atomic,.completeFileProtection]); return ""
+            case "openRefund":
+                guard value.utf8.count <= 16384, let openRefund else { throw TrialFailure(tr("تعذّر فتح الدفعة.", "Could not open the batch.")) }
+                try openRefund(Data(value.utf8)); return ""
             case "login": try await login(); return ""
             case "folder":
                 let data = try await graph(URL(string:base+"special/approot")!)
@@ -197,7 +206,7 @@ struct OneDriveTrialView: UIViewRepresentable {
                     guard pages.insert(url).inserted, pages.count <= 100 else { throw TrialFailure(tr("تعذرت قراءة فهرس التجربة.", "Could not read the file list.")) }
                     let data = try await graph(url)
                     guard let obj = try JSONSerialization.jsonObject(with:data) as? [String:Any], let rows = obj["value"] as? [[String:Any]] else { throw TrialFailure(tr("فهرس غير صالح.", "Invalid file list.")) }
-                    names += rows.compactMap { $0["name"] as? String }.filter { $0.hasPrefix("payroll-trial-v1-") }
+                    names += rows.compactMap { $0["name"] as? String }.filter { $0.hasPrefix("payroll-trial-v1-") || $0.hasPrefix("payroll-refund-trial-v1-") }
                     if let link = obj["@odata.nextLink"] as? String {
                         guard let page = URL(string:link) else { throw TrialFailure(tr("تعذرت قراءة الصفحة التالية.", "Could not load the next page.")) }
                         next = page
@@ -205,11 +214,13 @@ struct OneDriveTrialView: UIViewRepresentable {
                 }
                 return String(decoding:try JSONEncoder().encode(names),as:UTF8.self)
             }
-            guard UUID(uuidString:id)?.uuidString.lowercased() == id, ["read","write"].contains(action), value.utf8.count <= 16384 else { throw TrialFailure(tr("ملف تجربة غير صالح.", "Invalid test file.")) }
-            let path = root + ":/payroll-trial-v1-" + id + ".json:/content"
-            let url = URL(string:path + (action == "write" ? "?@microsoft.graph.conflictBehavior=fail" : ""))!
-            let data = try await graph(url,data:action == "write" ? Data(value.utf8) : nil)
-            return action == "read" ? String(decoding:data,as:UTF8.self) : ""
+            guard UUID(uuidString:id)?.uuidString.lowercased() == id, ["read","write","refundRead","refundWrite"].contains(action), value.utf8.count <= 16384 else { throw TrialFailure(tr("ملف تجربة غير صالح.", "Invalid test file.")) }
+            let prefix = action.hasPrefix("refund") ? "payroll-refund-trial-v1-" : "payroll-trial-v1-"
+            let writing = action == "write" || action == "refundWrite"
+            let path = root + ":/" + prefix + id + ".json:/content"
+            let url = URL(string:path + (writing ? "?@microsoft.graph.conflictBehavior=fail" : ""))!
+            let data = try await graph(url,data:writing ? Data(value.utf8) : nil)
+            return writing ? "" : String(decoding:data,as:UTF8.self)
         }
     }
 }

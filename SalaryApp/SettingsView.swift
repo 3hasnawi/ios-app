@@ -17,6 +17,11 @@ struct SettingsView: View {
     @AppStorage(AppSettings.textSizeKey) private var textSize = -1
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
+    private struct OpenRefund: Identifiable {
+        let snapshot: RefundSnapshot
+        var id: UUID { snapshot.batchID }
+    }
+    @State private var trialRefund: OpenRefund?
     @State private var changingLock = false
     @State private var lockMessage: String?
     @State private var storeSize: Int64?
@@ -120,7 +125,19 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("backupRow")
                     NavigationLink {
-                        OneDriveTrialView()
+                        OneDriveTrialView { data in
+                            let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: data)
+                            _ = try snapshot.plan()
+                            trialRefund = OpenRefund(snapshot: snapshot)
+                        }
+                            .sheet(item: $trialRefund) { record in
+                                NavigationStack {
+                                    RefundArchivedDetail(snapshot: record.snapshot)
+                                        .toolbar {
+                                            Button(tr("إغلاق", "Close")) { trialRefund = nil }
+                                        }
+                                }
+                            }
                             .navigationTitle(tr("تجربة OneDrive", "OneDrive trial"))
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {

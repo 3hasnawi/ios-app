@@ -35,6 +35,16 @@ internal static class RefundLayoutChecks
             var text=System.Text.Encoding.UTF8.GetString(batch.Csv(bank));
             if(!bank.People.All(p=>text.Contains(p.Bic+"|"+p.Name+"|"+p.Iban)))throw new InvalidDataException(bank.Code);
         }
+        if (Environment.GetEnvironmentVariable("TRIAL_REFUND_SNAPSHOT") is {} path) {
+            batch=Store.DecodeRefund(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllBytes(path))!.AsObject());
+            groups=batch.Groups();
+            if(batch.People.Count!=2 || groups.Count!=2 || groups.Sum(g=>g.Total)!=40000)
+                throw new InvalidDataException("Trial refund totals");
+            foreach(var group in groups){
+                Verify("trial-"+group.Code,[group],batch.LetterStyle(group.Code=="RAFB",style));
+                File.WriteAllBytes(Path.Combine(Path.GetDirectoryName(path)!,group.Code+".csv"),batch.Csv(group));
+            }
+        }
         Console.WriteLine("PASS individual CSV files, both refund letters, one or multiple other banks, archived blank committee and single-page rendering");
     }
 }

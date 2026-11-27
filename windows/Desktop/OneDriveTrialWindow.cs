@@ -26,16 +26,19 @@ internal sealed class OneDriveTrialWindow : Window
     readonly CancellationTokenSource lifetime = new();
     readonly HttpClient network = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
         { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 1_000_000 };
+    const string RefundPrefix = "payroll-refund-trial-v1-";
+    readonly Action<Window,string>? openRefund;
     readonly string local;
     string token = "", root = "";
     FileStream? exclusive;
     bool closed;
     readonly bool hindiNumbers;
 
-    public OneDriveTrialWindow(bool hindiNumbers, string? trialDirectory = null)
+    public OneDriveTrialWindow(bool hindiNumbers, string? trialDirectory = null, Action<Window,string>? openRefund = null)
     {
         local = trialDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnbarPayroll", "OneDriveTrialV1");
         this.hindiNumbers = hindiNumbers;
+        this.openRefund = openRefund;
         Title = "اختبار الربط بـ OneDrive";
         Width = 780; Height = 610;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -144,11 +147,13 @@ internal sealed class OneDriveTrialWindow : Window
 
     async Task<string> Perform(string action, string id, string value)
     {
-        var file = Path.Combine(local, "state.json");
+        var file = Path.Combine(local, action is "refundLoad" or "refundStore" ? "refunds.json" : "state.json");
         switch (action)
         {
             case "device": return "ويندوز · تجربة محلية على هذه الحاسبة";
+            case "refundLoad":
             case "load": return File.Exists(file) ? File.ReadAllText(file) : "";
+            case "refundStore":
             case "store":
                 if (Encoding.UTF8.GetByteCount(value) > 1_000_000) throw new InvalidDataException("سجل التجربة كبير.");
                 var staging = file + ".new";
@@ -158,6 +163,10 @@ internal sealed class OneDriveTrialWindow : Window
                     stream.Flush(true);
                 }
                 File.Move(staging,file,true);
+                return "";
+            case "openRefund":
+                if (openRefund == null || Encoding.UTF8.GetByteCount(value)>16384) throw new InvalidDataException("تعذّر فتح الدفعة.");
+                await Dispatcher.InvokeAsync(()=>openRefund(this,value));
                 return "";
             case "login":
                 root = token = "";
@@ -191,15 +200,16 @@ internal sealed class OneDriveTrialWindow : Window
                 using var page = JsonDocument.Parse(await Graph(next));
                 var obj = page.RootElement;
                 foreach (var item in obj.GetProperty("value").EnumerateArray())
-                    if (item.GetProperty("name").GetString() is string name && name.StartsWith(Prefix,StringComparison.Ordinal)) names.Add(name);
+                    if (item.GetProperty("name").GetString() is string name && (name.StartsWith(Prefix,StringComparison.Ordinal) || name.StartsWith(RefundPrefix,StringComparison.Ordinal))) names.Add(name);
                 next = obj.TryGetProperty("@odata.nextLink", out var link) ? link.GetString() : null;
             }
             return JsonSerializer.Serialize(names);
         }
-        if (!Guid.TryParseExact(id,"D",out var key) || key.ToString("D") != id || action is not ("read" or "write") || Encoding.UTF8.GetByteCount(value)>16384)
+        if (!Guid.TryParseExact(id,"D",out var key) || key.ToString("D") != id || action is not ("read" or "write" or "refundRead" or "refundWrite") || Encoding.UTF8.GetByteCount(value)>16384)
             throw new InvalidDataException("ملف تجربة غير صالح.");
-        var url = root + ":/" + Prefix + id + ".json:/content";
-        if (action == "read") return await Graph(url, download:true);
+        var prefix = action is "refundRead" or "refundWrite" ? RefundPrefix : Prefix;
+        var url = root + ":/" + prefix + id + ".json:/content";
+        if (action is "read" or "refundRead") return await Graph(url, download:true);
         await Graph(url + "?@microsoft.graph.conflictBehavior=fail", body:value);
         return "";
     }

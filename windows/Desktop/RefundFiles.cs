@@ -31,6 +31,20 @@ public partial class MainWindow
             Template=fallback.Template is {} t?t with{Recipient="مصرف الرافدين / فرع الأنبار"}:null,BodyTemplate=null};
     }
 
+    void OpenTrialRefund(Window owner,string json)
+    {
+        var snapshot=System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        var batch=Store.DecodeRefund(snapshot);
+        _=batch.Groups();
+        var dialog=new Window { Title="ملفات دفعة الإعادة التجريبية",Owner=owner,
+            WindowStartupLocation=WindowStartupLocation.CenterOwner,Width=Math.Min(1000,SystemParameters.WorkArea.Width),
+            Height=Math.Min(720,SystemParameters.WorkArea.Height),FlowDirection=FlowDirection.RightToLeft };
+        var baseline=new A.GroupLetterSettings("قسم الحسابات التجريبي","١‏/٢٢/ح/","","","",RefundBatch.Copies,null,null,0,null);
+        dialog.Content=RefundDocumentPanel(batch,raf=>batch.LetterStyle(raf,baseline),Bar(),dialog);
+        dialog.PreviewKeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape)dialog.Close();};
+        dialog.ShowDialog();
+    }
+
     void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch,IReadOnlyList<RefundBatch>? saved=null)
     {
         CanvasArea.Children.Clear();PageTitle.Text=RefundTransfers;
@@ -40,19 +54,24 @@ public partial class MainWindow
         picker.SelectedIndex=Array.FindIndex(saved.ToArray(),b=>b.Id==batch.Id);
         picker.SelectionChanged+=(_,_)=>{if(picker.SelectedIndex>=0)RefundFiles(source,month,saved[picker.SelectedIndex],saved);};
         var start=ButtonFor("دفعة جديدة",()=>_=OpenRefundEditor(source,month,null,latestDraft:true),"\uE710");
+        var actions=Bar(Labeled("الدفعات المحفوظة",picker,270),start,ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
+            ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
+                _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D"));
+        CanvasArea.Children.Add(RefundDocumentPanel(batch,raf=>RefundStyle(batch,raf,source),actions,this));
+    }
+
+    Grid RefundDocumentPanel(RefundBatch batch,Func<bool,A.GroupLetterSettings> style,Panel actions,Window owner)
+    {
         var layout=new Grid();
         layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
-        CanvasArea.Children.Add(layout);
 
         var files=new Dictionary<string,Func<byte[]>>();
         var exportAll=ButtonFor("تصدير جميع الملفات",()=>_=SaveFile("إعادة مبالغ "+batch.Date.ToString("yyyy-MM-dd"),"zip",
-            ()=>Package(files.ToDictionary(x=>x.Key,x=>x.Value()))),"\uE74E");
-        var actions=Bar(Labeled("الدفعات المحفوظة",picker,270),start,ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
-            ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
-                _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D"),exportAll);
+            ()=>Package(files.ToDictionary(x=>x.Key,x=>x.Value())),owner:owner),"\uE74E");
+        actions.Children.Add(exportAll);
         var summary=TransferSummary(("مبلغ الدفعة",Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount))+" د.ع"),
             ("عدد المنتسبين",Arabic.Money(batch.People.Count)),
             ("المصارف",Arabic.Money(batch.People.Select(p=>A.TransferPreparation.NormalizeAccount(p.Iban)).Where(A.TransferPreparation.ValidIban).Select(iban=>iban.Substring(4,4)).Distinct().Count())));
@@ -112,20 +131,20 @@ public partial class MainWindow
             letters.Children.Add(Text(ex.Message,14));
             banks.Children.Add(Text("راجع بيانات الدفعة من خيار التعديل.",14));
             table.ItemsSource=batch.People.Select(p=>new {p.Name,p.Bank,p.Amount,Value=Arabic.Money(p.Amount)}).ToList();
-            return;
+            return layout;
         }
         table.ItemsSource=groups.SelectMany(g=>g.People.Select(p=>new {p.Name,Bank=g.Name,p.Amount,Value=Arabic.Money(p.Amount)})).ToList();
         foreach(var set in groups.GroupBy(g=>g.Code=="RAFB").OrderByDescending(g=>g.Key)){
             var recipients=set.ToList();bool raf=set.Key;
             var fileName="كتاب إعادة مبالغ - "+(raf?"الرافدين":"الرشيد والمصارف الأخرى");
             var title=raf?"كتاب الرافدين":recipients.Count==1?"كتاب "+recipients[0].Name:"كتاب الرشيد والمصارف الأخرى";
-            AddRow(letters,title,null,Preview(fileName,()=>batch.Letter(recipients,RefundStyle(batch,raf,source),DocumentFonts())));
+            AddRow(letters,title,null,Preview(fileName,()=>batch.Letter(recipients,style(raf),DocumentFonts())));
         }
         foreach(var bank in groups){
             var fileName="إعادة مبالغ - "+bank.Code;
             byte[] Create()=>batch.Csv(bank);
             files.Add(fileName+".csv",Create);
-            var export=ButtonFor("تصدير CSV",()=>_=SaveFile(fileName,"csv",Create));
+            var export=ButtonFor("تصدير CSV",()=>_=SaveFile(fileName,"csv",Create,owner:owner));
             AddRow(banks,bank.Name,Arabic.Money(bank.Total)+" د.ع　·　"+Arabic.Money(bank.People.Count)+" منتسب",
                 Icon(export,"\uE74E","تصدير CSV · "+bank.Name+" ("+bank.Code+")"));
         }
@@ -134,6 +153,7 @@ public partial class MainWindow
         rosterActions.Children.Add(Preview(rosterName,()=>A.ReportPdf.Generate([sheet],Fonts(),DateTime.Now)));
         byte[] Excel()=>A.XlsxReport.Generate(sheet);
         files.Add(rosterName+".xlsx",Excel);
-        rosterActions.Children.Add(Icon(ButtonFor("تصدير Excel",()=>_=SaveFile(rosterName,"xlsx",Excel)),"\uE8A5","تصدير قائمة المنتسبين إلى Excel"));
+        rosterActions.Children.Add(Icon(ButtonFor("تصدير Excel",()=>_=SaveFile(rosterName,"xlsx",Excel,owner:owner)),"\uE8A5","تصدير قائمة المنتسبين إلى Excel"));
+        return layout;
     }
 }

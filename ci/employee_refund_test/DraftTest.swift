@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import PDFKit
 
 @main enum DraftTest {
     @MainActor static func main() async throws {
@@ -16,6 +17,25 @@ import SwiftData
             let cells = try CustomTransferTemplate.signatureCells([t.firstSigner,t.secondSigner,t.thirdSigner], date: " / ١ / ٢٠٢٦")
             precondition(t.bodyKashida == .high && t.signatureHorizontalOffset == -10 && cells[0].isEmpty && !cells[2].isEmpty)
             print("PASS Windows custom and built-in templates decoded by the iPhone model")
+        }
+        if let path = ProcessInfo.processInfo.environment["TRIAL_REFUND_SNAPSHOT"] {
+            let url = URL(fileURLWithPath: path)
+            let saved = try JSONDecoder().decode(RefundSnapshot.self, from: Data(contentsOf: url))
+            let batch = try saved.plan()
+            precondition(batch.total == 40000 && Set(saved.rows.map(\.id)).count == 2)
+            let files = try EmployeeRefundExport.make(batch, date: saved.date, letters: saved.letters)
+            defer { if let file = files.first { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) } }
+            precondition(files.count == 5)
+            for group in batch.groups {
+                let code = group.code
+                let csv = try Data(contentsOf: files.first { $0.lastPathComponent.hasSuffix(code + ".csv") }!)
+                let windowsCSV = try Data(contentsOf: url.deletingLastPathComponent().appendingPathComponent(code + ".csv"))
+                precondition(csv == windowsCSV)
+                let title = group.isRafidain ? "الرافدين" : "الرشيد والمصارف الأخرى"
+                let pdf = PDFDocument(url: files.first { $0.lastPathComponent == "كتاب إعادة مبالغ - " + title + ".pdf" }!)!
+                precondition(pdf.pageCount == 1 && pdf.string?.contains(group.bank.bic) == true)
+            }
+            print("PASS saved OneDrive refund with both bank letters, roster and byte-identical Windows/iPhone CSVs")
         }
         if let path = ProcessInfo.processInfo.environment["WINDOWS_REFUND"] {
             let data = try Data(contentsOf: URL(fileURLWithPath: path))

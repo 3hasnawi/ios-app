@@ -27,14 +27,20 @@ jobs:
           python windows/Checks/fixture.py "$env:RUNNER_TEMP/accounting"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet run --project windows/Checks -- --check-accounting-exchange "$env:RUNNER_TEMP/accounting"
+      - name: Render the saved OneDrive trial refund and compare its files on Apple
+        shell: bash
+        run: |
+          folder="$RUNNER_TEMP/accounting/exchange/trial"
+          mkdir -p "$folder"
+          export TRIAL_REFUND_SNAPSHOT="$folder/batch.json"
+          node -e 'const fs=require("node:fs"),{makeRefund}=require("./SalaryApp/OneDriveTrial.js"); fs.writeFileSync(process.env.TRIAL_REFUND_SNAPSHOT,JSON.stringify(makeRefund("00000000-0000-4000-8000-000000000001","2026-11-27",[10000,30000]).snapshot))'
+          dotnet run --project windows/Checks -- --check-refund-layout "$RUNNER_TEMP/refund-pdfs"
       - uses: actions/upload-artifact@v4
         with:
           name: accounting-exchange
           path: ${{ runner.temp }}/accounting/exchange
       - name: Export fictional payroll and edited preferences
         run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --write-preference-archive "$env:RUNNER_TEMP/windows.zip"
-      - name: Verify refund PDFs and individual CSV routing on Windows
-        run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --check-refund-layout "$env:RUNNER_TEMP/refund-pdfs"
       - uses: actions/upload-artifact@v4
         with:
           name: refund-letter-examples
@@ -59,6 +65,7 @@ jobs:
       - name: Exercise the iPhone archive and letter reference implementations
         env:
           WINDOWS_EXCHANGE: ${{ runner.temp }}/exchange/windows-month.zip
+          TRIAL_REFUND_SNAPSHOT: ${{ runner.temp }}/exchange/trial/batch.json
           WINDOWS_REFUND: ${{ runner.temp }}/exchange/refund.json
         run: |
           python3 ci/compact_backup_test/run.py

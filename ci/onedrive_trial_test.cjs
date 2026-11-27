@@ -1,20 +1,22 @@
 const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {randomUUID}=require("node:crypto");
-const {addEdit,decodeState,synchronize,heads,trialPrefix,combine,validateHistory}=require("../SalaryApp/OneDriveTrial.js");
+const {addEdit,decodeState,synchronize,heads,trialPrefix,combine,validateHistory,makeRefund,refundRecords}=require("../SalaryApp/OneDriveTrial.js");
 
 function cloud() {
-    const files=new Map();
+    const files=new Map(), refunds=new Map();
     async function api(action,id,value) {
         if (action==="folder") return "drive-A/folder-A";
-        if (action==="list") return JSON.stringify(["unrelated.txt",...Array.from(files.keys(),k=>trialPrefix+k+".json")]);
+        if (action==="list") return JSON.stringify(["unrelated.txt",...Array.from(files.keys(),k=>trialPrefix+k+".json"),...Array.from(refunds.keys(),k=>refundRecords.prefix+k+".json")]);
+        if (action==="refundWrite") { if (!refunds.has(id)) refunds.set(id,value); return ""; }
+        if (action==="refundRead") { assert.ok(refunds.has(id)); return refunds.get(id); }
         if (action==="read") { assert.ok(files.has(id)); return files.get(id); }
         assert.equal(action,"write");
         // Matches Graph's conflictBehavior=fail + a subsequent content verification.
         if (!files.has(id)) files.set(id,value);
         return "";
     }
-    return {files,api};
+    return {files,refunds,api};
 }
 const edit=(s,member,amount,time=Date.now())=>addEdit(s,member,amount,randomUUID(),time);
 const initial=()=>decodeState("");
@@ -92,9 +94,9 @@ test("visible trial screens exchange edits automatically and recover after a fai
 
     async function device() {
         const events = {}, timers = new Map(), fields = new Map();
-        let local = "", fail = false, requests = 0, timerID = 0;
+        let saved="", opened, local = "", fail = false, requests = 0, timerID = 0;
         const field = id => {
-            if (!fields.has(id)) fields.set(id, {options:[{value:"0"},{value:"1"}],value:"0",append(){},replaceChildren(){}});
+            if (!fields.has(id)) fields.set(id, {options:[{value:"0"},{value:"1"}],value:"0",children:[],append(child){this.children.push(child);},replaceChildren(){this.children=[];}});
             return fields.get(id);
         };
         const listen = (name,callback) => { events[name]=callback; };
@@ -102,6 +104,9 @@ test("visible trial screens exchange edits automatically and recover after a fai
             getElementById:field, createElement:()=>({}), addEventListener:listen};
         const navigator = {onLine:true};
         const window = {addEventListener:listen,webkit:{messageHandlers:{trial:{async postMessage({action,id,value}) {
+            if (action==="openRefund") { opened=JSON.parse(value); return ""; }
+            if (action==="refundLoad") return saved;
+            if (action==="refundStore") { saved=value; return ""; }
             if (action==="store") { local=value; return ""; }
             if (action==="load") return local;
             if (action==="device" || action==="login") return "";
@@ -116,7 +121,7 @@ test("visible trial screens exchange edits automatically and recover after a fai
         await new Promise(resolve=>setImmediate(resolve));
         assert.equal(timers.size,0);
         await field("login").onclick();
-        return {field,document,navigator,events,timers,state:()=>decodeState(local),
+        return {field,document,navigator,events,timers,opened:()=>opened,refunds:()=>decodeState(saved,refundRecords),state:()=>decodeState(local),
             fail(value){fail=value;}, count:()=>requests,
             async tick(delay) {
                 assert.equal(timers.size,1);
@@ -156,4 +161,49 @@ test("visible trial screens exchange edits automatically and recover after a fai
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(totals(desktop.state()),20000);
     assert.equal(desktop.timers.size,1);
+    assert.equal(phone.field("saveRefund").disabled,true);
+    phone.field("member").value="1";
+    phone.field("amount").value="30000";
+    await phone.field("save").onclick();
+    await phone.field("saveRefund").onclick();
+    assert.equal(phone.refunds().pending.length,0);
+    await desktop.tick(15000);
+    await desktop.field("refundHistory").children[0].onclick();
+    assert.deepEqual(desktop.opened(),phone.refunds().edits[0].snapshot);
+    desktop.navigator.onLine=false;
+    desktop.events.offline();
+    await desktop.field("saveRefund").onclick();
+    assert.equal(desktop.refunds().pending.length,1);
+    desktop.navigator.onLine=true;
+    desktop.events.online();
+    await new Promise(resolve=>setImmediate(resolve));
+    await phone.tick(15000);
+    assert.deepEqual(phone.refunds().edits,desktop.refunds().edits);
+    assert.equal(phone.refunds().edits.length,2);
+    assert.ok(desktop.field("refundStatus").textContent.includes("آخر مزامنة"));
+});
+
+test("saved refunds verify content before acknowledgement, survive restart and reject another drive",async()=>{
+    const {api,refunds}=cloud();
+    const options={records:refundRecords};
+    const base=await synchronize(initial(),api,options);
+    const batch=makeRefund(randomUUID(),"2026-11-27",[10000,30000]);
+    const queued={...base,edits:[batch],pending:[batch.id]};
+    await assert.rejects(synchronize(queued,(op,...args)=>op==="folder"?"other":api(op,...args),options));
+    assert.equal(refunds.size,0);
+    await assert.rejects(synchronize(queued,async(op,...args)=>{
+        const result=await api(op,...args);
+        if(op==="refundWrite")throw Error("lost response");
+        return result;
+    },options));
+    const restarted=decodeState(JSON.stringify(queued),refundRecords);
+    const received=await synchronize(restarted,api,options);
+    assert.deepEqual(received.pending,[]);
+    assert.equal(refunds.size,1);
+    const damaged=structuredClone(batch);
+    damaged.snapshot.rows[0].candidate.person.iban=batch.snapshot.account;
+    refunds.set(batch.id,JSON.stringify(damaged));
+    await assert.rejects(synchronize(received,api,options));
+    refunds.clear();
+    await assert.rejects(synchronize(received,api,options));
 });
