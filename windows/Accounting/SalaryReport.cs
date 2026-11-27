@@ -160,7 +160,7 @@ public static class SalaryReportPdf
             using var paint = canvas.Paint(size, bold, color);
             canvas.Text(paint, value, rect.Left - 4, rect.Right + 4, rect.MidY + size * 0.36f, align, number);
         }
-        void Box(SKRect rect, SKColor? fill = null, float stroke = 0.5f, SKColor? color = null)
+        void Box(SKRect rect, SKColor? fill = null, float stroke = ReportTableStyle.BorderWidth, SKColor? color = null)
         {
             if (fill is { } f) canvas.Fill(rect, f);
             canvas.Stroke(rect, color ?? LineColor, stroke);

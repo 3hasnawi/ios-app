@@ -54,7 +54,16 @@ jobs:
           python3 ci/compact_backup_test/run.py
           swiftc -frontend -parse SalaryApp/AppLock.swift SalaryApp/SettingsView.swift SalaryApp/HomeAccounting.swift SalaryApp/HomeDashboard.swift SalaryApp/EmployeeRefundView.swift SalaryApp/RefundHistoryView.swift
           python3 ci/employee_refund_test/run.py
-          python3 ci/report_layout_test/run.py
+          python3 ci/report_layout_test/run.py --preview-dir "$RUNNER_TEMP/apple-pages"
+      - uses: actions/download-artifact@v4
+        with:
+          name: refund-letter-examples
+          path: ${{ runner.temp }}/print-samples
+      - name: Compare payroll PDF contents, row heights and table borders against Apple output
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pdf-tools"
+          "$RUNNER_TEMP/pdf-tools/bin/pip" install pymupdf==1.26.6
+          "$RUNNER_TEMP/pdf-tools/bin/python" windows/Checks/general_reference.py "$RUNNER_TEMP/print-samples/general-report.pdf" "$RUNNER_TEMP/apple-pages/general-report-preview.pdf"
       - uses: actions/download-artifact@v4
         with:
           name: windows-preferences

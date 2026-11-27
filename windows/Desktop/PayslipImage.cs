@@ -27,7 +27,7 @@ internal static class PayslipImage
                 stack.Children.Add(Text(i==0?title:value,14,bold||narrow&&title=="الاسم"&&i==1,i==1 && title=="المجموع"?Brushes.DarkRed:ink));
                 if(i==0 && note.Length>0)stack.Children.Add(Text(note,11,false,Brushes.DimGray));
                 var cell=new Border{Child=stack,Padding=new Thickness(10,8,10,8),BorderBrush=rule,
-                    BorderThickness=framed?new Thickness(.5):new Thickness(0)};
+                    BorderThickness=framed?new Thickness(A.ReportTableStyle.BorderWidth):new Thickness(0)};
                 Grid.SetColumn(cell,i);row.Children.Add(cell);
             }
             return row;
@@ -54,8 +54,10 @@ internal static class PayslipImage
         card.Children.Add(body);card.Measure(new Size(390,double.PositiveInfinity));
         int height=checked((int)Math.Ceiling(card.DesiredSize.Height));
         if(height*3L>32767)throw new InvalidDataException("القسيمة أطول من حدود الصورة. استخدم تقرير الراتب PDF.");
-        card.Arrange(new Rect(0,0,390,height));card.UpdateLayout();
-        var image=new RenderTargetBitmap(1170,height*3,288,288,PixelFormats.Pbgra32);image.Render(card);image.Freeze();return image;
+        // أصل الصورة باتجاه ثابت حتى يبقى تحويل الاتجاه العربي داخل مساحة الرسم.
+        var surface=new Border{Width=390,Height=height,Child=card,Background=paper,FlowDirection=FlowDirection.LeftToRight};
+        surface.Measure(new Size(390,height));surface.Arrange(new Rect(0,0,390,height));surface.UpdateLayout();
+        var image=new RenderTargetBitmap(1170,height*3,288,288,PixelFormats.Pbgra32);image.Render(surface);image.Freeze();return image;
     }
     public static void Save(A.ProfileMonth month,Window owner){
         var dialog=new SaveFileDialog{Filter="صورة PNG|*.png",FileName=A.ReportSheet.FileName("قسيمة راتب - "+month.Employee?.Name+" - "+month.Month)};

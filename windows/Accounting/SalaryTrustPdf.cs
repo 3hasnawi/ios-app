@@ -65,7 +65,7 @@ public static class SalaryTrustPdf
             for (int c = 0; c < Widths.Length; c++)
             {
                 var cell = SKRect.Create(x[c], tableTop, Widths[c], headHeight);
-                canvas.Fill(cell, HeadFill); canvas.Stroke(cell, Line, 0.5f);
+                canvas.Fill(cell, HeadFill); canvas.Stroke(cell, Line, ReportTableStyle.BorderWidth);
                 Lines(columnPaint, columnLines[c], x[c], Widths[c], tableTop, headHeight, ReportCanvas.Align.Center);
             }
             foreach (var place in placements.Where(pl => pl.Page == p))
@@ -73,7 +73,7 @@ public static class SalaryTrustPdf
                 if (place.Row % 2 == 1) canvas.Fill(SKRect.Create(Margin, place.Y, Content, place.Height), Zebra);
                 for (int c = 0; c < Widths.Length; c++)
                 {
-                    canvas.Stroke(SKRect.Create(x[c], place.Y, Widths[c], place.Height), Line, 0.5f);
+                    canvas.Stroke(SKRect.Create(x[c], place.Y, Widths[c], place.Height), Line, ReportTableStyle.BorderWidth);
                     Lines(PaintFor(c), cells[place.Row][c], x[c], Widths[c], place.Y, place.Height, NumberColumns.Contains(c) ? ReportCanvas.Align.Center : ReportCanvas.Align.Right);
                 }
             }

@@ -458,7 +458,7 @@ public static class AdaptiveLetterPdf
         using var memory = new MemoryStream();
         using (var pdf = PdfOutput.Create(memory))
         {
-            using var stroke = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Stroke, StrokeWidth = 0.6f, IsAntialias = true };
+            using var stroke = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Stroke, StrokeWidth = ReportTableStyle.BorderWidth, IsAntialias = true };
             using var shade = new SKPaint { Color = new SKColor(240, 240, 240), Style = SKPaintStyle.Fill };
             using var underline = new SKPaint { Color = SKColors.Black, Style = SKPaintStyle.Stroke, StrokeWidth = 0.7f, IsAntialias = true };
             using var image = new SKPaint { FilterQuality = SKFilterQuality.High, IsAntialias = true };

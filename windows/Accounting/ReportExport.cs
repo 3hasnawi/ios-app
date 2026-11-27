@@ -8,6 +8,11 @@ using SkiaSharp.HarfBuzz;
 
 namespace SalaryDesktop.Core;
 
+public static class ReportTableStyle
+{
+    public const float BorderWidth = 1;
+}
+
 public enum ReportColumnKind { Serial, Text, Amount }
 public sealed record ReportColumn(string Title, double Width, ReportColumnKind Kind);
 
@@ -427,7 +432,7 @@ public static class ReportPdf
         var columnsY = titleRect.Bottom;
         for (int c = 0; c < sheet.Columns.Count; c++)
         {
-            var r = Cell(c, columnsY, ColumnsHeight); canvas.Fill(r, Light); canvas.Stroke(r, Line, .5f);
+            var r = Cell(c, columnsY, ColumnsHeight); canvas.Fill(r, Light); canvas.Stroke(r, Line, ReportTableStyle.BorderWidth);
             canvas.Text(head, sheet.Columns[c].Title, r.Left, r.Right, r.Top + 16, ReportCanvas.Align.Center);
         }
         // أسطر الخلية في وسطها عمودياً.
@@ -443,7 +448,7 @@ public static class ReportPdf
             if (i % 2 == 1) canvas.Fill(SKRect.Create(xs[^1], y, tableWidth, h), Zebra);
             for (int c = 0; c < sheet.Columns.Count; c++)
             {
-                var r = Cell(c, y, h); canvas.Stroke(r, Line, .5f);
+                var r = Cell(c, y, h); canvas.Stroke(r, Line, ReportTableStyle.BorderWidth);
                 var lines = layout.Cells[i][c];
                 switch (sheet.Columns[c].Kind)
                 {
@@ -462,8 +467,8 @@ public static class ReportPdf
             var amountColumn = sheet.AmountColumn;
             for (int c = 0; c < sheet.Columns.Count; c++) canvas.Fill(Cell(c, y, ColumnsHeight), Light);
             var label = Cell(0, y, ColumnsHeight); for (int c = 1; c < amountColumn; c++) label = SKRect.Union(label, Cell(c, y, ColumnsHeight));
-            canvas.Stroke(label, Line, .5f);
-            for (int c = amountColumn; c < sheet.Columns.Count; c++) canvas.Stroke(Cell(c, y, ColumnsHeight), Line, .5f);
+            canvas.Stroke(label, Line, ReportTableStyle.BorderWidth);
+            for (int c = amountColumn; c < sheet.Columns.Count; c++) canvas.Stroke(Cell(c, y, ColumnsHeight), Line, ReportTableStyle.BorderWidth);
             canvas.Text(totalPaint, "المجموع", label.Left, label.Right, y + 16, ReportCanvas.Align.Center);
             var cell = Cell(amountColumn, y, ColumnsHeight);
             canvas.Text(totalPaint, ReportSheet.Money(sheet.Total), cell.Left, cell.Right, y + 16, ReportCanvas.Align.Center, true);

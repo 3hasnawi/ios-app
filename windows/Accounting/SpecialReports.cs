@@ -136,7 +136,7 @@ public static class FundReport
         var lines = canvas.Lines(titlePaint, title, width - 8);
         for (int i = 0; i < Math.Min(2, lines.Count); i++) canvas.Text(titlePaint, lines[i], margin, 595 - margin, margin + 18 + i * 20, ReportCanvas.Align.Right);
         var y = margin + 58f;
-        SKRect Cell(int c, SKColor? fill = null) { var r = SKRect.Create(xs[c], y, widths[c], h); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, .8f); return r; }
+        SKRect Cell(int c, SKColor? fill = null) { var r = SKRect.Create(xs[c], y, widths[c], h); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth); return r; }
         void Draw(SKPaint paint, string text, SKRect r) => canvas.Text(paint, text, r.Left, r.Right, r.Top + h / 2 + paint.TextSize / 2.8f, ReportCanvas.Align.Center, true);
         string[] headers = ["ت", "الرتبة", "العدد", "دعم النشاط الاجتماعي", "المجموع", "الملاحظات"];
         for (int c = 0; c < 6; c++) Draw(head, headers[c], Cell(c, gray));
@@ -147,7 +147,7 @@ public static class FundReport
             Draw(bold, SpecialXlsx.EasternNumber(rows[i].Category.Rate), Cell(3)); Draw(bold, SpecialXlsx.EasternNumber(rows[i].Total), Cell(4)); Cell(5);
         }
         y += h;
-        var label = SKRect.Union(Cell(0, gray), Cell(1, gray)); canvas.Fill(label, gray); canvas.Stroke(label, SKColors.Black, .8f); Draw(bold, "المجموع", label);
+        var label = SKRect.Union(Cell(0, gray), Cell(1, gray)); canvas.Fill(label, gray); canvas.Stroke(label, SKColors.Black, ReportTableStyle.BorderWidth); Draw(bold, "المجموع", label);
         Draw(bold, SpecialXlsx.EasternNumber(rows.Sum(r => r.Count)), Cell(2, gray)); Cell(3, gray); Draw(big, SpecialXlsx.EasternNumber(rows.Sum(r => r.Total)), Cell(4, green)); Cell(5);
         canvas.EndPage(1, 1);
         return canvas.Finish();
@@ -238,7 +238,7 @@ public static class FoodContractReport
         var totalPages = CountPages();
         var y = margin; var pageNumber = 0;
         void Draw(SKPaint paint, string text, SKRect r, ReportCanvas.Align align = ReportCanvas.Align.Center) => canvas.Text(paint, text, r.Left, r.Right, r.Top + rowH / 2 + paint.TextSize / 2.8f, align, align == ReportCanvas.Align.Center);
-        SKRect Cell(int c, SKColor? fill = null) { var r = SKRect.Create(xs[c], y, widths[c], rowH); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, .7f); return r; }
+        SKRect Cell(int c, SKColor? fill = null) { var r = SKRect.Create(xs[c], y, widths[c], rowH); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth); return r; }
         void NewPage()
         {
             if (pageNumber > 0) canvas.EndPage(pageNumber, totalPages);
@@ -262,10 +262,10 @@ public static class FoodContractReport
         y += rowH * 2;
         if (y + rowH * 7 > limit) { canvas.EndPage(pageNumber, totalPages); canvas.BeginPage(false); pageNumber++; y = margin; }
         var labelWidth = widths[1] + widths[2];
-        var headerRect = SKRect.Create(xs[2], y, labelWidth, rowH); canvas.Fill(headerRect, gray); canvas.Stroke(headerRect, SKColors.Black, .7f); Draw(bold, "تفاصيل النسبة", headerRect);
+        var headerRect = SKRect.Create(xs[2], y, labelWidth, rowH); canvas.Fill(headerRect, gray); canvas.Stroke(headerRect, SKColors.Black, ReportTableStyle.BorderWidth); Draw(bold, "تفاصيل النسبة", headerRect);
         y += rowH;
-        SKRect LabelCell(SKColor fill) { var r = SKRect.Create(xs[1], y, widths[1], rowH); canvas.Fill(r, fill); canvas.Stroke(r, SKColors.Black, .7f); return r; }
-        SKRect AmountCell(SKColor? fill) { var r = SKRect.Create(xs[2], y, widths[2], rowH); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, .7f); return r; }
+        SKRect LabelCell(SKColor fill) { var r = SKRect.Create(xs[1], y, widths[1], rowH); canvas.Fill(r, fill); canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth); return r; }
+        SKRect AmountCell(SKColor? fill) { var r = SKRect.Create(xs[2], y, widths[2], rowH); if (fill is { } f) canvas.Fill(r, f); canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth); return r; }
         Draw(bold, "البيان", LabelCell(gray)); Draw(bold, "المبلغ", AmountCell(gray));
         decimal[] values = [split.Total, split.Fund, split.AfterFund, split.Tax, split.Company];
         for (int i = 0; i < values.Length; i++)
@@ -375,12 +375,12 @@ public static class HealthCareReport
             foreach (var (first, end) in layout.Pages)
             {
                 canvas.BeginPage(false);
-                var titleRect = SKRect.Create(margin, margin, width, 30); canvas.Fill(titleRect, yellow); canvas.Stroke(titleRect, SKColors.Black, .6f);
+                var titleRect = SKRect.Create(margin, margin, width, 30); canvas.Fill(titleRect, yellow); canvas.Stroke(titleRect, SKColors.Black, ReportTableStyle.BorderWidth);
                 canvas.Text(titlePaint, others ? othersTitle : subscribersTitle, titleRect.Left, titleRect.Right, titleRect.Top + 20, ReportCanvas.Align.Center);
                 var y = titleRect.Bottom + 4;
                 for (int c = 0; c < headers.Length; c++)
                 {
-                    var r = SKRect.Create(xs[c], y, widths[c], headH); canvas.Fill(r, gray); canvas.Stroke(r, SKColors.Black, .6f);
+                    var r = SKRect.Create(xs[c], y, widths[c], headH); canvas.Fill(r, gray); canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth);
                     canvas.Text(bold, headers[c], r.Left, r.Right, r.Top + 15, ReportCanvas.Align.Center);
                 }
                 y += headH;
@@ -394,7 +394,7 @@ public static class HealthCareReport
                     {
                         var r = SKRect.Create(xs[c], y, widths[c], h);
                         if (c == 4 && !IsExact(row.Amount)) canvas.Fill(r, red);
-                        canvas.Stroke(r, SKColors.Black, .6f);
+                        canvas.Stroke(r, SKColors.Black, ReportTableStyle.BorderWidth);
                         if (c == 2)
                         {
                             var lines = layout.Names[i]; var start = r.Top + (h - lines.Count * name.FontSpacing) / 2 - name.FontMetrics.Ascent;

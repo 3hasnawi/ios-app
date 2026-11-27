@@ -191,7 +191,7 @@ public static class EmployeeDeductionPdf
                 using var paint = canvas.Paint(size, bold, color);
                 canvas.Text(paint, value, rect.Left, rect.Right, rect.MidY + size * 0.36f, align, number);
             }
-            void Cell(SKRect rect, SKColor? fill = null) { if (fill is { } f) canvas.Fill(rect, f); canvas.Stroke(rect, Border, 0.6f); }
+            void Cell(SKRect rect, SKColor? fill = null) { if (fill is { } f) canvas.Fill(rect, f); canvas.Stroke(rect, Border, ReportTableStyle.BorderWidth); }
             const ReportCanvas.Align C = ReportCanvas.Align.Center, L = ReportCanvas.Align.Left;
 
             if (image is not null)
