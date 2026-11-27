@@ -8,12 +8,16 @@ namespace AnbarPayroll.Desktop;
 
 public partial class MainWindow
 {
-    async Task OpenRefundEditor(A.BackupSnapshot source,string month,RefundBatch? editing)
+    async Task OpenRefundEditor(A.BackupSnapshot source,string month,RefundBatch? editing,bool latestDraft=false)
     {
         A.BackupSnapshot? payroll=null;
         await Working(()=>{
-            if(store.Active!=Path.GetDirectoryName(source.SourcePath))throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
+            var revision=store.Active;
+            if(latestDraft)editing=store.Refunds().SingleOrDefault(b=>b.ArchiveId=="draft");
+            else if(revision!=Path.GetDirectoryName(source.SourcePath))throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
+            if(editing?.ArchiveId=="draft" && editing.People.FirstOrDefault() is {} first)month=first.Month;
             payroll=store.Snapshot(month);
+            if(Path.GetDirectoryName(payroll.SourcePath)!=revision)throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
         },"",()=>RefundDesk(payroll!,month,editing));
     }
 
@@ -31,7 +35,7 @@ public partial class MainWindow
             button.Padding=new Thickness(16);button.Margin=new Thickness(4);
             choices.Children.Add(button);
         }
-        Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>_=OpenRefundEditor(source,month,draft));
+        Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>_=OpenRefundEditor(source,month,null,latestDraft:true));
         Section("الدفعات المحفوظة",saved.Count+" دفعة　·　الكتب وملفات المصارف","\uE8B7",()=>RefundHistory(source,month,saved));
         CanvasArea.Children.Add(Column(choices));
     }

@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using AnbarPayroll;
 using ClosedXML.Excel;
 
+if(args is ["--check-accounting-exchange",var exchangeFolder]){
+    Directory.CreateDirectory(exchangeFolder);AccountingTests.Run(exchangeFolder,Check);return;
+}
 if(args is ["--check-refund-layout",var pdfFolder]){RefundLayoutChecks.Run(pdfFolder);return;}
 if(args is [("--write-preference-archive" or "--read-preference-archive"), var archivePath]) { PreferenceExchange.Run(args[0],archivePath); return; }
 var path=args.Single();var store=new Store(Path.Combine(path,"store"));

@@ -37,11 +37,19 @@ public partial class MainWindow
                     var month=salaries[months.SelectedIndex];
                     return Task.Run(()=>A.SalaryReportPdf.Generate([A.SalaryReports.Make(month,true,false)],Fonts(),Logo(),DateTime.Now));
                 },caption:"معاينة تقرير الراتب",printAndSave:true);
-                var actions=Bar(months,preview);DockPanel.SetDock(actions,Dock.Top);pane.Children.Add(actions);
+                var image=ButtonFor("صورة القسيمة",()=>{},"\uEB9F");
+                var menu=new ContextMenu{PlacementTarget=image,Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom,FlowDirection=FlowDirection.RightToLeft};
+                var saveImage=new MenuItem{Header="حفظ الصورة PNG"};var copyImage=new MenuItem{Header="نسخ الصورة"};
+                saveImage.Click+=(_,_)=>Guard(()=>PayslipImage.Save(salaries[months.SelectedIndex],window));
+                copyImage.Click+=(_,_)=>Guard(()=>Clipboard.SetImage(PayslipImage.Render(salaries[months.SelectedIndex])));
+                menu.Items.Add(saveImage);menu.Items.Add(copyImage);image.Click+=(_,_)=>menu.IsOpen=true;
+                var refund=ButtonFor("مبلغ الإعادة",()=>{},"\uE710");
+                refund.Click+=async (_,_)=>{refund.IsEnabled=false;try{await SearchRefund(profile.Name,salaries[months.SelectedIndex].Month,window);}finally{refund.IsEnabled=true;}};
+                var actions=Bar(months,preview,image,refund);DockPanel.SetDock(actions,Dock.Top);pane.Children.Add(actions);
                 var table=ProfileGrid(("البيان","Title",1),("القيمة","Value",1.4));pane.Children.Add(table);
                 void Draw(){
                     var m=salaries[months.SelectedIndex];
-                    preview.IsEnabled=m.Employee!=null;
+                    preview.IsEnabled=image.IsEnabled=refund.IsEnabled=m.Employee!=null;
                     if(m.Employee is not {} employee){table.ItemsSource=new[]{new A.ProfileLine("تشابه أسماء","أكثر من راتب بالاسم نفسه في هذا الشهر")};return;}
                     var slip=A.PersonProfiles.Payslip(m);var lines=new List<A.ProfileLine>{new("الرتبة",employee.Rank),new("محل العمل",employee.Workplace)};
                     lines.AddRange(slip.Info);lines.AddRange(slip.Allowances);if(slip.Gross!=null)lines.Add(slip.Gross);

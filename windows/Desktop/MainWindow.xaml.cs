@@ -316,7 +316,10 @@ public partial class MainWindow : Window
         var searchBook=new TextBox();
         var add=ButtonFor("إضافة كتاب موقّع",()=>Guard(ImportSigned),"\uE710");
         add.IsEnabled=store.Active!=null && months.Count>0;
-        var top=FilterBar(("ابحث عن كتاب أو جهة أو شهر",searchBook,1),("شهر الكتاب",picker,0),("",add,0));
+        var scan=ButtonFor("مسح كتاب بالسكنر",()=>Guard(()=>{
+            if(ArchiveScanner.Scan(this) is {} pdf)ArchiveSigned("كتاب موقّع",()=>pdf);
+        }),"\uE8FE");scan.IsEnabled=add.IsEnabled;
+        var top=FilterBar(("ابحث عن كتاب أو جهة أو شهر",searchBook,1),("شهر الكتاب",picker,0),("",add,0),("",scan,0));
         DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var list=GridView(("اسم الكتاب","Title",2.3),("الجهة","Agency",1.5),("الشهر","Month",1),("الصفحات","Pages",.6));
         var save=ButtonFor("حفظ PDF الأصلي",()=>Guard(()=>{

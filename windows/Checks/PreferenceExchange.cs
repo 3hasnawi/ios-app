@@ -13,15 +13,27 @@ internal static class PreferenceExchange
             const string appleId="ABC00000-0000-4000-8000-000000000002";
             var payee=new RefundPayee("اسم تجريبي","موظف","قسم تجريبي",month,AccountingTests.Iban("RSHD",1),"مصرف الرشيد","RSHDIQBA123",1500);
             if(mode=="--write-preference-archive"){
-                A.Employee row=new(month,"اسم تجريبي","موظف","قسم تجريبي",15000,null,null,null);
+                var details=System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string,string>{
+                    ["IBAN"]=payee.Iban,["توطين المصرف"]=payee.Bank,["الرفرنس"]=payee.Bic});
+                A.Employee row=new(month,"اسم تجريبي","موظف","قسم تجريبي",15000,null,details,null);
                 A.Deduction deduction=new(month,row.Name,"جهة تجريبية",250,"١ / ٢٠٢٦",row.Rank);
                 store.ApplyExcel(new(month,[row],[deduction],[]),null);
                 store.SaveRefund(new RefundBatch(refundId,"جهة تجريبية",new(2026,11,1),"قسم الحسابات",AccountingTests.Iban("RAFB",9),[payee]),store.Active);
+                var draft=new RefundBatch(Guid.NewGuid().ToString(),"جهة تجريبية",new(2026,11,1),"","",[]);
+                var candidate=RefundBatch.Employee(row);
+                draft=draft.SetSearchAmount(candidate,1200);
+                store.SaveRefund(draft,store.Active,asDraft:true);
+                var restored=store.Refunds().Single(b=>b.ArchiveId=="draft");
+                store.SaveRefund(restored.SetSearchAmount(candidate,RefundBatch.ParseAmount("١٬٧٥٠")),store.Active,asDraft:true);
                 store.SaveWorkPreferences(store.Active!,new(){["homePinnedWorkItems"]="salaryTrust|bankStatement",["appAppearance"]="dark",["appNumerals"]="arabicIndic",["appTextSize"]="4",["windowsContentTextLevel"]="2"});
                 store.ExportBackup(file);
             }else{
                 store.Import(file);
-                var batches=store.Refunds().ToDictionary(b=>b.Id);
+                var history=store.Refunds();
+                var draft=history.Single(b=>b.ArchiveId=="draft");
+                if(draft.People.Single().Amount!=2100||draft.People[0].Bic!=payee.Bic||draft.Account!="")
+                    throw new InvalidDataException("لم تصل تعديلات مسودة البحث من الآيفون.");
+                var batches=history.Where(b=>b.ArchiveId!="draft").ToDictionary(b=>b.Id);
                 if(batches.Count!=2 || batches[refundId].People.Single().Amount!=1500 ||
                     batches[appleId].People.Single().Amount!=2450 || batches.Values.Any(b=>
                         b.People.Single().Iban!=payee.Iban || b.Groups().Single().Code!="RSHD" || b.People.Single().Bic!=payee.Bic))

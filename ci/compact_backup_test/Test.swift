@@ -59,6 +59,13 @@ import CoreGraphics
             let size = try value("appTextSize") as? Int
             precondition(theme == "dark" && pins == "salaryTrust|bankStatement" && digits == "arabicIndic" && level == 2 && size == 4)
             // افتح دفعة الحاسبة من سجل الإعادات المستعاد، وأضف دفعة ثانية قبل إعادة التصدير.
+            let draftURL = RefundStorage.local.root.appendingPathComponent("draft.json")
+            var draft = try JSONSerialization.jsonObject(with: Data(contentsOf: draftURL)) as! [String: Any]
+            var draftRows = draft["rows"] as! [[String: Any]]
+            precondition(draftRows.count == 1 && draftRows[0]["amount"] as? String == "1750")
+            draftRows[0]["amount"] = "2100"
+            draft["rows"] = draftRows
+            try JSONSerialization.data(withJSONObject: draft).write(to: draftURL, options: .atomic)
             let history = RefundStorage.local.root.appendingPathComponent("history")
             let first = history.appendingPathComponent("ABC00000-0000-4000-8000-000000000001.json")
             var batch = try JSONSerialization.jsonObject(with: Data(contentsOf: first)) as! [String: Any]

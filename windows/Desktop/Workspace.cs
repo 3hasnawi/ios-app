@@ -83,6 +83,21 @@ public partial class MainWindow
             try{await OpenPerson(hit,current:()=>dock.IsLoaded && serial==version);}
             finally{opening=false;}
         }
+        var refundMenu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft};
+        var refundAction=new MenuItem{Header="إضافة أو تعديل مبلغ في دفعة الإعادة"};
+        refundMenu.Items.Add(refundAction);
+        string? copyValue=null;
+        var copy=new MenuItem{Header="نسخ قيمة الحقل"};refundMenu.Items.Add(copy);
+        copy.Click+=(_,_)=>{if(copyValue!=null)Guard(()=>Clipboard.SetText(copyValue));};
+        list.ContextMenuOpening+=(_,e)=>{
+            copyValue=FieldCopy.ValueAt(e.OriginalSource as DependencyObject);copy.IsEnabled=!string.IsNullOrEmpty(copyValue);
+            if(e.OriginalSource is DependencyObject el && ItemsControl.ContainerFromElement(list,el) is DataGridRow row)
+                list.SelectedItem=row.Item;
+            else if(e.CursorLeft>=0){e.Handled=true;return;}
+            if(list.SelectedItem is not Store.SearchResult)e.Handled=true;
+        };
+        refundAction.Click+=async (_,_)=>{if(list.SelectedItem is Store.SearchResult hit)await SearchRefund(hit.Name,null,this);};
+        list.ContextMenu=refundMenu;
         list.PreviewMouseLeftButtonUp+=async (_,e)=>{
             if(e.OriginalSource is DependencyObject element && ItemsControl.ContainerFromElement(list,element) is DataGridRow {Item:Store.SearchResult hit})
                 await Open(hit);

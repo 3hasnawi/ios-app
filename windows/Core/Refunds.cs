@@ -7,7 +7,9 @@ using System.Text.Json.Nodes;
 using A=SalaryDesktop.Core;
 
 namespace AnbarPayroll;
-public sealed record RefundPayee(string Name,string Rank,string Workplace,string Month,string Iban,string Bank,string Bic,long Amount,JsonObject? Original=null);
+public sealed record RefundPayee(string Name,string Rank,string Workplace,string Month,string Iban,string Bank,string Bic,long Amount,JsonObject? Original=null){
+    public string BicState {get;init;}="value";
+}
 public sealed record RefundBank(string Code,string Name,string Bic,List<RefundPayee> People){public long Total=>People.Sum(p=>p.Amount);}
 public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Payer,string Account,List<RefundPayee> People,JsonObject? Original=null,string? ArchiveId=null)
 {
@@ -22,11 +24,34 @@ public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Pa
         "رمز سويفت", "رمز سوفت", "كود السويفت", "كود السوفت", "السويفت كود", "السوفت كود",
         "السويفت", "السوفت", "سويفت المصرف", "سوفت المصرف", "سويفت الفرع", "سوفت الفرع",
         "رمز السويفت للمصرف", "رمز السويفت للفرع", "رمز SWIFT", "رمز BIC"}.Select(HeaderKey).ToHashSet();
-        var codes=new HashSet<string>();
-        void Add(string key,string value){if(bicKeys.Contains(HeaderKey(key))&&Format(value) is {Length:>0} code&&code!="0")codes.Add(code);}
+        bool found=false;var codes=new HashSet<string>();
+        void Add(string key,string value){if(!bicKeys.Contains(HeaderKey(key)))return;found=true;var code=Arabic.Digits(string.Concat(value.Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.Format)).Trim()).ToUpperInvariant();if(code.Length>0&&code!="0")codes.Add(code);}
         if(e.RawColumns!=null){using var doc=JsonDocument.Parse(e.RawColumns);foreach(var (k,v) in doc.RootElement.GetProperty("headers").EnumerateArray().Zip(doc.RootElement.GetProperty("values").EnumerateArray()))Add(k.GetString()!,v.GetString()!);}
         if(e.Details!=null)foreach(var (k,v) in JsonSerializer.Deserialize<Dictionary<string,string>>(e.Details)!)Add(k,v);
-        return new(e.Name,e.Rank,e.Workplace,e.Month,Format(Get("IBAN")),Get("توطين المصرف"),codes.Count==1?codes.Single():"",0);
+        return new(e.Name,e.Rank,e.Workplace,e.Month,Format(Get("IBAN")),Get("توطين المصرف"),codes.Count==1?codes.Single():"",0){BicState=codes.Count==1?"value":codes.Count>1?"conflicting":found?"empty":"missingColumn"};
+    }
+    public static long ParseAmount(string text){
+        var clean=Arabic.Digits(text.Trim()).Replace('٬',',');
+        if(!System.Text.RegularExpressions.Regex.IsMatch(clean,@"^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$")||
+            !long.TryParse(clean.Replace(",",""),NumberStyles.None,CultureInfo.InvariantCulture,out var amount)||amount is <=0 or >999_999_999_999_999)
+            throw new InvalidDataException("أدخل مبلغاً صحيحاً بالدينار.");
+        return amount;
+    }
+    public RefundBatch SetSearchAmount(RefundPayee candidate,long amount){
+        if(ArchiveId is not (null or "draft") || !A.TransferPreparation.ValidIban(candidate.Iban) ||
+            People.Any(p=>p.Month!=candidate.Month) || amount is <=0 or >999_999_999_999_999)
+            throw new InvalidDataException("راجع المسودة وشهر الراتب والمبلغ وآيبان المنتسب.");
+        var next=People.ToList();
+        var position=next.FindIndex(p=>p.Iban==candidate.Iban);
+        if(position<0)next.Add(candidate with{Amount=amount});
+        else{
+            var prior=next[position];
+            if(prior.Name!=candidate.Name || prior.Rank!=candidate.Rank || prior.Workplace!=candidate.Workplace ||
+                prior.Bank!=candidate.Bank || prior.Bic!=candidate.Bic || prior.BicState!=candidate.BicState)
+                throw new InvalidDataException("الحساب موجود ببيانات مختلفة. راجع المنتسب في مسودة الإعادة.");
+            next[position]=prior with{Amount=amount};
+        }
+        return this with{People=next,ArchiveId="draft"};
     }
     public const string Copies="نسخة منه إلى\nشعبة المصروفات / شعبة الموازنة / شعبة الرواتب / إجراء اللازم والمتابعة.";
     static JsonObject DefaultLetter()=>new(){["header"]="جمهورية العراق\nوزارة الداخلية\nقيادة شرطة محافظة الأنبار\nقسم الحسابات",["number"]="١‏/٢٢/ح/",["recipient"]="مصرف الرافدين / فرع الأنبار",["first"]="",["second"]="",["third"]="",["signatureOffset"]=0,["footer"]=Copies};
@@ -109,16 +134,17 @@ public sealed partial class Store
             var data=JsonNode.Parse(line.GetProperty("contents").GetBytesFromBase64())!.AsObject();
             var entries=new List<RefundPayee>();foreach(var row in data["rows"]!.AsArray()){
                 var c=row!["candidate"]!;var p=c["person"]!;var parsed=A.PayrollSpreadsheet.ParseMoney((string?)row["amount"]??"");long value=parsed is >0 and <=999_999_999_999_999m && parsed==decimal.Truncate(parsed.Value)?(long)parsed.Value:0;
-                entries.Add(new((string)p["name"]!,(string)p["rank"]!,(string)p["workplace"]!,(string)c["month"]!,(string)p["iban"]!,(string)p["bank"]!,(string?)p["payrollBIC"]?["value"]?["_0"]??"",value,row.AsObject()));
+                entries.Add(new((string)p["name"]!,(string)p["rank"]!,(string)p["workplace"]!,(string)c["month"]!,(string)p["iban"]!,(string)p["bank"]!,(string?)p["payrollBIC"]?["value"]?["_0"]??"",value,row.AsObject()){BicState=p["payrollBIC"]?.AsObject().FirstOrDefault().Key??"missingColumn"});
             }
             var date=AppleEpoch.AddSeconds((double)data["date"]!).ToLocalTime();
             result.Add(new((string)data["batchID"]!,(string)data["source"]!,DateOnly.FromDateTime(date),(string)data["payer"]!,(string)data["account"]!,entries,data,line.GetProperty("id").GetString()));
         });return result.OrderByDescending(b=>b.Date).ToList();
     }
-    public void SaveRefund(RefundBatch batch,string? revision,bool remove=false){
+    public string SaveRefund(RefundBatch batch,string? revision,bool remove=false,bool asDraft=false){
+        if(asDraft && batch.ArchiveId!="draft")throw new InvalidDataException("اختر مسودة إعادة المبالغ.");
         var key=batch.ArchiveId??batch.Id;
-        if(remove){Rewrite(revision,null,null,refunds:new Dictionary<string,byte[]?>{{key,null}});return;}
-        var groups=batch.Groups();var data=batch.Original?.DeepClone().AsObject()??new();
+        if(remove)return Rewrite(revision,null,null,refunds:new Dictionary<string,byte[]?>{{key,null}});
+        var groups=asDraft?null:batch.Groups();var data=batch.Original?.DeepClone().AsObject()??new();
         data["batchID"]=batch.Id;data["payer"]=batch.Payer;data["account"]=batch.Account;data["source"]=batch.Source;
         data["date"]=(batch.Date.ToDateTime(new TimeOnly(12,0)).ToUniversalTime()-AppleEpoch).TotalSeconds;
         var rows=new JsonArray();int serial=0;string storage=Guid.NewGuid().ToString().ToUpperInvariant();
@@ -126,16 +152,22 @@ public sealed partial class Store
             var row=p.Original?.DeepClone().AsObject()??new();
             if(row["candidate"]==null){
                 string pk="p"+(++serial);var identity=SwiftIdentity(storage,pk);
-                row["candidate"]=JsonSerializer.SerializeToNode(new{id=identity,month=p.Month,person=new{name=p.Name,rank=p.Rank,workplace=p.Workplace,iban=p.Iban,bank=p.Bank,payrollBIC=new{value=new{_0=p.Bic}}}});
+                row["candidate"]=JsonSerializer.SerializeToNode(new{id=identity,month=p.Month,person=new{name=p.Name,rank=p.Rank,workplace=p.Workplace,iban=p.Iban,bank=p.Bank,payrollBIC=new JsonObject{[p.BicState]=p.BicState=="value"?new JsonObject{["_0"]=p.Bic}:new JsonObject()}}});
             }
-            row["amount"]=p.Amount.ToString(CultureInfo.InvariantCulture);rows.Add(row);
+            if(!asDraft || p.Amount!=0 || row["amount"]==null)row["amount"]=p.Amount.ToString(CultureInfo.InvariantCulture);rows.Add(row);
         }
         data["rows"]=rows;
-        data["banks"]=JsonSerializer.SerializeToNode(groups.ToDictionary(g=>g.Code,g=>new{name=g.Name,bic=g.Bic}));
+        if(asDraft){
+            data["banks"]??=new JsonObject();
+            foreach(var p in batch.People.Where(p=>A.TransferPreparation.ValidIban(p.Iban))){
+                var code=p.Iban.Substring(4,4);
+                if(code!="RAFB")data["banks"]![code]??=new JsonObject{["name"]=p.Bank,["bic"]=""};
+            }
+        }else data["banks"]=JsonSerializer.SerializeToNode(groups!.ToDictionary(g=>g.Code,g=>new{name=g.Name,bic=g.Bic}));
         data["letters"]??=RefundBatch.DefaultLetters();
-        var changes=new Dictionary<string,byte[]?>{[key=="draft"?batch.Id:key]=JsonSerializer.SerializeToUtf8Bytes(data,IosJson)};
-        if(key=="draft")changes[key]=null;
-        Rewrite(revision,null,null,refunds:changes);
+        var changes=new Dictionary<string,byte[]?>{[key=="draft"&&!asDraft?batch.Id:key]=JsonSerializer.SerializeToUtf8Bytes(data,IosJson)};
+        if(key=="draft"&&!asDraft)changes[key]=null;
+        return Rewrite(revision,null,null,refunds:changes);
     }
     static object SwiftIdentity(string storage,string pk)=>new{implementation=new{storeIdentifier=storage,entityName="Employee",primaryKey=pk,isTemporary=false,uriRepresentation="x-coredata://"+storage+"/Employee/"+pk}};
 }

@@ -20,9 +20,31 @@ public partial class MainWindow
         void Redraw(){selected.ItemsSource=rows.ToArray();note.Text=rows.Count+" منتسب　·　المجموع　"+Arabic.Money(rows.Sum(p=>(decimal)p.Amount));}
         var available=source.Employees.Where(e=>e.Month==month).Select(e=>(Key:Arabic.Match(e.Name),Person:e)).ToArray();
         searchBox.TextChanged+=(_,_)=>{string q=Arabic.Match(searchBox.Text);results.ItemsSource=q.Length<2?[]:available.Where(x=>x.Key.Contains(q)).Take(60).Select(x=>RefundBatch.Employee(x.Person)).ToArray();results.SelectedIndex=results.Items.Count==1?0:-1;};
-        long Value(){var parsed=A.PayrollSpreadsheet.ParseMoney(amounts.Text);if(parsed is null or <=0 or >999_999_999_999_999m||parsed!=decimal.Truncate(parsed.Value))throw new InvalidDataException("أدخل مبلغاً صحيحاً بالدينار.");return (long)parsed.Value;}
+        long Value()=>RefundBatch.ParseAmount(amounts.Text);
         selected.SelectionChanged+=(_,_)=>{if(selected.SelectedItem is RefundPayee row)amounts.Text=row.Amount.ToString();};
         RefundBatch Model()=>new(id,agency.Text.Trim(),DateOnly.FromDateTime(date.SelectedDate??throw new InvalidDataException("اختر التاريخ.")),payer.Text.Trim(),A.TransferPreparation.NormalizeAccount(account.Text),rows.ToList(),editing?.Original,editing?.ArchiveId);
+        Func<RefundBatch>? reader=null;
+        if(editing?.ArchiveId is null or "draft"){
+            reader=()=>{
+                if(revision!=store.Active)throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
+                var draft=Model();
+                foreach(var (raf,style) in styles)draft=draft.WithLetter(raf,style);
+                return draft;
+            };
+            readOpenDraft=reader;openDraftMonth=month;
+        }
+        Action<RefundBatch,string> apply=(draft,nextRevision)=>{
+            if(reader!=null){
+                revision=nextRevision;
+                editing=draft;
+                rows.Clear();rows.AddRange(draft.People);Redraw();
+            }
+        };
+        applySearchDraft=apply;
+        dock.Unloaded+=(_,_)=>{
+            if(applySearchDraft!=apply)return;
+            readOpenDraft=null;openDraftMonth=null;applySearchDraft=null;
+        };
         void Save(){
             var original=Model();
             var batch=original;
@@ -45,7 +67,8 @@ public partial class MainWindow
         var add=ButtonFor("إضافة",()=>Guard(()=>{
                 if(results.SelectedItem is not RefundPayee p)throw new InvalidDataException("اختر المنتسب من النتائج.");
                 if(rows.Any(x=>x.Iban==p.Iban))throw new InvalidDataException("الحساب موجود في الدفعة.");
-                if(!A.TransferPreparation.ValidIban(p.Iban)||!A.TransferPreparation.ValidSwift(p.Bic)||!p.Bic.StartsWith(p.Iban.Substring(4,4)+"IQ"))throw new InvalidDataException("راجع آيبان المنتسب وعمود الرفرنس في الرواتب.");
+                if(!A.TransferPreparation.ValidIban(p.Iban))throw new InvalidDataException("راجع آيبان المنتسب في الرواتب.");
+                if(editing?.ArchiveId is null or "draft" && rows.Any(row=>row.Month!=p.Month))throw new InvalidDataException("اختر منتسباً من شهر المسودة.");
                 rows.Add(p with{Amount=Value()});Redraw();searchBox.Clear();amounts.Clear();searchBox.Focus();
             }),"\uE710");
         PageTitle.Text=editing?.ArchiveId is null or "draft"?"دفعة جديدة":"تعديل الدفعة";
@@ -57,6 +80,11 @@ public partial class MainWindow
             ButtonFor("قالب الرافدين",()=>Guard(()=>EditTemplate(true))),
             ButtonFor("قالب الرشيد والمصارف الأخرى",()=>Guard(()=>EditTemplate(false))),
             ButtonFor("حفظ وفتح ملفات الدفعة",()=>Guard(Save),"\uE74E",true));
+        if(reader!=null)actions.Children.Insert(0,ButtonFor("حفظ المسودة",()=>Guard(()=>{
+            var draft=reader() with{ArchiveId="draft"};
+            var expected=revision;string? updated=null;
+            _=Working(()=>{updated=store.SaveRefund(draft,expected,asDraft:true);},"حُفظت مسودة الإعادة.",()=>apply(draft,updated!));
+        }),"\uE74E"));
         head.Children.Add(actions);DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);dock.Children.Add(selected);CanvasArea.Children.Add(dock);Redraw();
     }
 }

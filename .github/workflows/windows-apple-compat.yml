@@ -13,6 +13,14 @@ jobs:
       - name: Check device lock startup, rejection and background privacy
         timeout-minutes: 2
         run: dotnet run --project windows/DeviceLockChecks/DeviceLockChecks.csproj
+      - name: Render a fictional payslip and verify scanned PDF pages
+        run: dotnet run --project windows/DocumentChecks -- "$env:RUNNER_TEMP/refund-pdfs"
+      - name: Verify accounting cycles and export the same inputs for Apple
+        run: dotnet run --project windows/Checks -- --check-accounting-exchange "$env:RUNNER_TEMP/accounting"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: accounting-exchange
+          path: ${{ runner.temp }}/accounting/exchange
       - name: Export fictional payroll and edited preferences
         run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --write-preference-archive "$env:RUNNER_TEMP/windows.zip"
       - name: Verify refund PDFs and individual CSV routing on Windows
@@ -34,7 +42,14 @@ jobs:
         run: |
           swiftc -parse-as-library windows/Checks/apple_identity.swift -o "$RUNNER_TEMP/identity"
           "$RUNNER_TEMP/identity"
+      - uses: actions/download-artifact@v4
+        with:
+          name: accounting-exchange
+          path: ${{ runner.temp }}/exchange
       - name: Exercise the iPhone archive and letter reference implementations
+        env:
+          WINDOWS_EXCHANGE: ${{ runner.temp }}/exchange/windows-month.zip
+          WINDOWS_REFUND: ${{ runner.temp }}/exchange/refund.json
         run: |
           python3 ci/compact_backup_test/run.py
           swiftc -frontend -parse SalaryApp/AppLock.swift SalaryApp/SettingsView.swift SalaryApp/HomeAccounting.swift SalaryApp/HomeDashboard.swift SalaryApp/EmployeeRefundView.swift SalaryApp/RefundHistoryView.swift

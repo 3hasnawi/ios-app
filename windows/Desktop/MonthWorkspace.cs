@@ -61,11 +61,18 @@ public partial class MainWindow
     void ImportSigned()
     {
         var file=new OpenFileDialog{Filter="كتاب موقّع|*.pdf"};if(file.ShowDialog(this)!=true)return;
+        string path=file.FileName;
+        ArchiveSigned(Path.GetFileNameWithoutExtension(path),()=>{
+            if(new FileInfo(path).Length>60000000)throw new InvalidDataException("حجم الكتاب كبير جداً.");
+            return File.ReadAllBytes(path);
+        });
+    }
+    void ArchiveSigned(string initialTitle,Func<byte[]> read){
         var snapshot=store.Snapshot();var period=Choices(months.Select(m=>m.Name));period.SelectedItem=SelectedMonth?.Name;
-        var title=new TextBox{Text=Path.GetFileNameWithoutExtension(file.FileName)};var entity=Choices(agencies);entity.IsEditable=true;entity.SelectedIndex=-1;
+        var title=new TextBox{Text=initialTitle};var entity=Choices(agencies);entity.IsEditable=true;entity.SelectedIndex=-1;
         if(!Form("أرشفة كتاب موقّع",Labeled("العنوان",title,370),Labeled("شهر الكتاب",period,370),Labeled("الجهة (اختياري)",entity,370)))return;
-        string name=title.Text,agencyName=entity.Text,month=period.Text,path=file.FileName;
-        _=Working(()=>{if(new FileInfo(path).Length>60000000)throw new InvalidDataException("حجم الكتاب كبير جداً.");store.ArchivePdf(snapshot,name,month,agencyName.Length==0?null:agencyName,File.ReadAllBytes(path));},"أُضيف الكتاب إلى الأرشيف.",()=>ShowPage(ArchiveName));
+        string name=title.Text,agencyName=entity.Text,month=(string?)period.SelectedItem??"";
+        _=Working(()=>store.ArchivePdf(snapshot,name,month,agencyName.Length==0?null:agencyName,read()),"أُضيف الكتاب إلى الأرشيف.",()=>ShowPage(ArchiveName));
     }
     void RenameAgency(string? selected=null)
     {
