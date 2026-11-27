@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using A=SalaryDesktop.Core;
@@ -16,7 +15,7 @@ internal sealed class LetterWindow:Window
     readonly Dictionary<string,int> sizes;
     bool kashidaChanged;
     readonly CheckBox bold=new(){Content="متن عريض"};
-    readonly TextBlock error=new(){Foreground=Brushes.Firebrick,TextWrapping=TextWrapping.Wrap};
+    readonly TextBlock error=new(){TextWrapping=TextWrapping.Wrap};
     StackPanel page=null!;
     readonly TabControl tabs=new(){Margin=new Thickness(12)};
     void Tab(string title){page=new StackPanel{Margin=new Thickness(18,4,18,16)};tabs.Items.Add(new TabItem{Header=title,Content=new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}});}
@@ -24,6 +23,8 @@ internal sealed class LetterWindow:Window
     public A.LetterTemplate? Result {get;private set;}
 
     public LetterWindow(A.LetterTemplate template,string kind,A.BackupSnapshot snapshot,string month,bool accountEnabled,Action<A.LetterTemplate> validate,Func<A.LetterTemplate,byte[]> preview){
+        SetResourceReference(StyleProperty,typeof(Window));
+        error.SetResourceReference(TextBlock.ForegroundProperty,"SystemFillColorCriticalBrush");
         initial=template;sizes=new(template.FontSizes??[]);Title="قالب الكتاب";Width=810;Height=740;MinHeight=460;MinWidth=560;WindowStartupLocation=WindowStartupLocation.CenterOwner;FlowDirection=FlowDirection.RightToLeft;
         var root=new DockPanel();Content=root;
         var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(12,6,12,6)};
@@ -116,6 +117,7 @@ internal sealed class LetterPreview:Window
     readonly TaskCompletionSource<bool> loaded=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal Task<bool> Ready=>loaded.Task;
     public LetterPreview(byte[] pdf,string? statementTitle=null,bool exportLetter=false,bool printAndSave=false){
+        SetResourceReference(StyleProperty,typeof(Window));
         Title=statementTitle==null?"معاينة الكتاب":"معاينة "+statementTitle;Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel=new DockPanel();Content=panel;
         var edit=new Button{Content=statementTitle==null?"✎  العودة إلى التحرير":"إغلاق المعاينة",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};

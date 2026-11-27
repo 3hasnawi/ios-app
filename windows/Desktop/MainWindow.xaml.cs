@@ -112,6 +112,7 @@ public partial class MainWindow : Window
     }
     static Border Box(UIElement content,string background="ControlSolidFillColorDefaultBrush"){
         var card=new Border{Child=content,Padding=new Thickness(17),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Margin=new Thickness(4)};
+        card.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"TextFillColorPrimaryBrush");
         card.SetResourceReference(Border.BackgroundProperty,background);
         card.SetResourceReference(Border.BorderBrushProperty,"CardStrokeColorDefaultBrush");
         return card;
@@ -156,7 +157,6 @@ public partial class MainWindow : Window
     {
         var g=new DataGrid();foreach(var c in cols)g.Columns.Add(new DataGridTextColumn{Header=c.Title,Binding=new Binding(c.Field){Mode=BindingMode.OneWay,Converter=(DisplayNumberConverter)Application.Current.FindResource("NumeralConverter")},Width=new DataGridLength(c.Width,DataGridLengthUnitType.Star),MinWidth=65});return g;
     }
-    void OpenMonthList(object sender,RoutedEventArgs e){Period.Focus();Period.IsDropDownOpen=!Period.IsDropDownOpen;}
     void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy&&page!=DirectoryName)ShowPage(page);}
     void ShowPage(string name,Review? review=null,bool goingBack=false)
     {
@@ -236,8 +236,8 @@ public partial class MainWindow : Window
             var original=new Border{Height=7,Background=BrushOf("#33785C")};var index=new Border{Height=7,Background=BrushOf("#7494AD")};Grid.SetColumn(index,1);sizes.Children.Add(original);sizes.Children.Add(index);
             sizes.Margin=new Thickness(0,10,0,8);
             storage.Children.Add(sizes);
-            storage.Children.Add(Bar(Glyph("\uE8B7","#33785C"),Text("ملف النسخة الاحتياطية　"+Size(archive),14)));
-            storage.Children.Add(Bar(Glyph("\uE721","#486D8A"),Text("فهرس البحث المحلي　"+Size(lookup),14)));
+            storage.Children.Add(Bar(Glyph("\uE8B7"),Text("ملف النسخة الاحتياطية　"+Size(archive),14)));
+            storage.Children.Add(Bar(Glyph("\uE721"),Text("فهرس البحث المحلي　"+Size(lookup),14)));
             storage.Children.Add(Text("يُنقل الأرشيف عند الحفظ. يُنشأ فهرس البحث محلياً عند فتح النسخة.",14));
         }else{
             storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
@@ -403,9 +403,9 @@ public partial class MainWindow : Window
         }
         async Task ChooseMonth(int key){
             Period.ApplyTemplate();
-            var opener=(Button)Period.Template.FindName("MonthButton",Period);
+            var opener=(System.Windows.Controls.Primitives.ToggleButton)Period.Template.FindName("FieldToggle",Period);
             if(Math.Abs(opener.ActualHeight-BackButton.Height)>1)throw new InvalidDataException("ارتفاع زر الشهر لا يطابق زر الرجوع.");
-            opener.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            opener.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,true);
             await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             if(!Period.IsDropDownOpen)throw new InvalidDataException("تعذر فتح قائمة الأشهر.");
             var month=months.Single(m=>m.Key==key);
@@ -643,6 +643,33 @@ public partial class MainWindow : Window
                 Setting("ثيم الواجهة").SelectedIndex=2;
                 if(store.ReadWorkPreferences().GetValueOrDefault("appAppearance")!="dark")
                     throw new InvalidDataException("تعذّر حفظ الثيم في النسخة.");
+                async Task CheckFieldTheme(){
+                    var picker=Setting("ثيم الواجهة");
+                    picker.ApplyTemplate();Period.ApplyTemplate();
+                    if(!ReferenceEquals(picker.Template,Period.Template))
+                        throw new InvalidDataException("قائمة الإعدادات لا تستخدم قالب حقل الشهر.");
+                    static double Light(Brush brush){
+                        var c=((SolidColorBrush)brush).Color;
+                        static double Linear(byte b){double s=b/255d;return s<=.04045?s/12.92:Math.Pow((s+.055)/1.055,2.4);}
+                        return .2126*Linear(c.R)+.7152*Linear(c.G)+.0722*Linear(c.B);
+                    }
+                    static void Readable(Brush text,Brush surface){
+                        var a=Light(text);var b=Light(surface);
+                        if((Math.Max(a,b)+.05)/(Math.Min(a,b)+.05)<4.5)
+                            throw new InvalidDataException("تباين النص والخلفية في حقل الاختيار ضعيف.");
+                    }
+                    var field=(Border)picker.Template.FindName("Surface",picker);
+                    Readable(picker.Foreground,field.Background);
+                    picker.IsDropDownOpen=true;
+                    try{
+                        await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+                        var selected=(ComboBoxItem)picker.ItemContainerGenerator.ContainerFromIndex(picker.SelectedIndex);
+                        selected.ApplyTemplate();
+                        var surface=(Border)selected.Template.FindName("ItemSurface",selected);
+                        Readable(selected.Foreground,surface.Background);
+                    }finally{picker.IsDropDownOpen=false;}
+                }
+                await CheckFieldTheme();
                 Setting("حجم خط المحتوى").SelectedIndex=4;Setting("شكل أرقام الواجهة").SelectedIndex=1;
                 var sampleText=Controls<TextBlock>(CanvasArea).FirstOrDefault(t=>t.Text.Contains("١٢,٥٠٠"));
                 if(sampleText==null||Math.Abs(sampleText.FontSize-19.2)>.1||store.ReadWorkPreferences().GetValueOrDefault("windowsContentTextLevel")!="4" || store.ReadWorkPreferences().GetValueOrDefault("appNumerals")!="arabicIndic")
@@ -651,6 +678,8 @@ public partial class MainWindow : Window
                 if(!options.Items.Cast<string>().SequenceEqual(new[]{"إنجليزية (123)","هندية (١٢٣)"}))
                     throw new InvalidDataException("تطابق مثالا الأرقام في القائمة.");
                 if(statement.Html()!=originalPreview)throw new InvalidDataException("تغيّرت أرقام كشف القيادة عند تبديل أرقام الواجهة.");
+                Setting("ثيم الواجهة").SelectedIndex=1;
+                await CheckFieldTheme();
                 Setting("ثيم الواجهة").SelectedIndex=themeAtStart;Setting("حجم خط المحتوى").SelectedIndex=0;Setting("شكل أرقام الواجهة").SelectedIndex=0;
                 if(!Controls<TextBlock>(CanvasArea).Any(t=>t.Text.Contains("12,500")))throw new InvalidDataException("تعذر استرجاع الأرقام العربية.");
             }

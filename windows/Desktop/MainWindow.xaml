@@ -14,35 +14,10 @@
     <TextBlock FlowDirection="LeftToRight" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE72B;" FontSize="17"/>
   </Button>
 </Grid>
-<TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
+<TextBlock Foreground="{DynamicResource TextFillColorPrimaryBrush}" x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
 <TextBlock Grid.Column="1" Text="البحث الشامل" Visibility="{Binding Visibility, ElementName=SearchLayer}" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-<ComboBox Grid.Column="2" x:Name="Period" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
-          ToolTip="شهر العمل" AutomationProperties.Name="شهر العمل" SelectionChanged="PeriodChanged">
-  <ComboBox.Template>
-    <ControlTemplate TargetType="ComboBox">
-      <Grid>
-        <Button x:Name="MonthButton" Focusable="False" Click="OpenMonthList" AutomationProperties.Name="اختيار الشهر">
-          <StackPanel Orientation="Horizontal">
-            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE787;" Margin="0,0,7,0" VerticalAlignment="Center"/>
-            <TextBlock x:Name="MonthText" Text="{Binding SelectedItem, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource NumeralConverter}}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE70D;" Margin="7,0,0,0" FontSize="11" VerticalAlignment="Center"/>
-          </StackPanel>
-        </Button>
-        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
-          <Border Background="{DynamicResource ControlSolidFillColorDefaultBrush}" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="7" Padding="3" Margin="0,2,0,0"
-                  MaxHeight="{TemplateBinding MaxDropDownHeight}" MinWidth="{Binding ActualWidth, ElementName=MonthButton}">
-            <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"><ItemsPresenter/></ScrollViewer>
-          </Border>
-        </Popup>
-      </Grid>
-      <ControlTemplate.Triggers>
-        <Trigger Property="SelectedIndex" Value="-1"><Setter TargetName="MonthText" Property="Text" Value="شهر العمل"/></Trigger>
-        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="MonthButton" Property="BorderBrush" Value="#BB852D"/></Trigger>
-        <Trigger Property="HasItems" Value="False"><Setter TargetName="MonthButton" Property="IsEnabled" Value="False"/></Trigger>
-      </ControlTemplate.Triggers>
-    </ControlTemplate>
-  </ComboBox.Template>
-</ComboBox>
+<ComboBox Grid.Column="2" x:Name="Period" Tag="WorkingMonth" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
+          ToolTip="شهر العمل" AutomationProperties.Name="شهر العمل" SelectionChanged="PeriodChanged"/>
 <Button x:Name="AccountDirectoryButton" Grid.Column="3" Height="40" Margin="6,0,0,0" Click="OpenAccountDirectory" ToolTip="دليل الحسابات المصرفية (IBAN)" AutomationProperties.Name="دليل الحسابات المصرفية" Content="حسابات IBAN"/>
 </Grid></Border>
 <DockPanel Grid.Row="1">

@@ -113,7 +113,8 @@ public partial class MainWindow
             var labels=Column(Text(title,15,true));labels.VerticalAlignment=VerticalAlignment.Center;
             if(detail!=null)labels.Children.Add(Text(detail,13));
             line.Children.Add(labels);
-            list.Children.Add(new Border{Child=line,BorderBrush=BrushOf("#DFE7E1"),BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(1,3,1,3)});
+            var row=new Border{Child=line,BorderThickness=new Thickness(0,0,0,1),Padding=new Thickness(1,3,1,3)};
+            row.SetResourceReference(Border.BorderBrushProperty,"CardStrokeColorDefaultBrush");list.Children.Add(row);
         }
         Button Preview(string name,Func<byte[]> create){
             files.Add(name+".pdf",create);

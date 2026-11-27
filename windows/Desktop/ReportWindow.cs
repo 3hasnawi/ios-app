@@ -18,6 +18,7 @@ internal sealed class ReportWindow : Window
     private bool closed;
     public ReportWindow(Statement model)
     {
+        SetResourceReference(StyleProperty,typeof(Window));
         report=model;Title="معاينة الكشف";Width=1000;Height=760;MinWidth=620;MinHeight=450;
         WindowStartupLocation=WindowStartupLocation.CenterOwner;FlowDirection=FlowDirection.RightToLeft;
         var root=new DockPanel();var toolbar=new WrapPanel{Margin=new Thickness(8)};

@@ -4,9 +4,9 @@
   <DockPanel Margin="22">
     <Grid DockPanel.Dock="Top" Margin="0,0,0,14">
       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <Border Width="44" Height="44" CornerRadius="11" Background="#DCEEE3"><TextBlock x:Name="HeadIcon" FontFamily="Segoe MDL2 Assets" Text="&#xE787;" FontSize="19" Foreground="#245E48" HorizontalAlignment="Center"/></Border>
+      <Border Width="44" Height="44" CornerRadius="11" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}"><TextBlock x:Name="HeadIcon" FontFamily="Segoe MDL2 Assets" Text="&#xE787;" FontSize="19" Foreground="{DynamicResource TextFillColorPrimaryBrush}" HorizontalAlignment="Center"/></Border>
       <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-        <TextBlock x:Name="TitleText" FontSize="{DynamicResource UiFont20}" FontWeight="SemiBold"/>
+        <TextBlock Foreground="{DynamicResource TextFillColorPrimaryBrush}" x:Name="TitleText" FontSize="{DynamicResource UiFont20}" FontWeight="SemiBold"/>
         <TextBlock x:Name="HintText" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="{DynamicResource UiFont12.5}" TextWrapping="Wrap"/>
       </StackPanel>
     </Grid>

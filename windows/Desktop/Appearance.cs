@@ -86,7 +86,10 @@ public partial class MainWindow
                 SaveAppearance(next);appearance=next;appearance.Apply();
                 sample.CoerceValue(TextBlock.TextProperty);
                 Period.Items.Refresh();
-                if(Period.Template.FindName("MonthText",Period) is TextBlock month)month.GetBindingExpression(TextBlock.TextProperty)?.UpdateTarget();
+                if(Period.Template?.FindName("SelectedContent",Period) is ContentPresenter selected &&
+                    System.Windows.Media.VisualTreeHelper.GetChildrenCount(selected)>0 &&
+                    System.Windows.Media.VisualTreeHelper.GetChild(selected,0) is TextBlock month)
+                    month.GetBindingExpression(TextBlock.TextProperty)?.UpdateTarget();
                 // يعاد إنشاء النصوص المقروءة فوراً مع إبقاء شهر العمل.
                 ShowPage("الإعدادات");
             }catch(Exception ex){Error(ex);}

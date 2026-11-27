@@ -83,8 +83,6 @@ public partial class MainWindow
         var group=Choices(["الرافدين","الرشيد والمصارف الأخرى","فرع الأنبار والكتب المنفردة","جهات تحتاج مراجعة"]);
         group.SelectedIndex=(int)(held?deferredGroup:currentGroup);
         var date=new DatePicker{SelectedDate=DateTime.Today};
-        group.SetResourceReference(Control.TemplateProperty,"TransferGroupTemplate");
-        date.SetResourceReference(Control.TemplateProperty,"TransferDateTemplate");
         group.MinWidth=210*(1+appearance.Level*.05);
         date.MinWidth=132*(1+appearance.Level*.05);
         var filter=FilterBar(("المجموعة",group,0),("تاريخ التحويل",date,0));
