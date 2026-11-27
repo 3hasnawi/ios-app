@@ -16,6 +16,12 @@ var months=store.Months();Check(months.Count==4&&months[0].Key==202611,"canonica
 Check(store.Reviews(months[0]).Count==2,"new and absent agency alerts");
 var f=new Filters(Search:"ادم",Month:11,Year:2026);var one=store.Find(f).Single();
 Check(one.Amount==13000&&store.Summary(f)==(1,13000m),"combined filters / precise amount");
+Check(store.Find(f with{Search="موظف ١٣٬٠٠٠ تشرين الربيع"}).Single()==one,"one ledger search spans rank, amount, period and agency on old indexes");
+Check(store.DeductionTotals(new())==(40,store.Summary(new()).Total,10),"filtered ledger counts unique employees independently from rows");
+Deduction[] scattered=[one,one with{Period=202502,Reference=Arabic.CaseKey(one.Reference)},one with{Period=202509,Reference="إضبارة ثانية"},
+    one with{Period=202510,Agency="جهة ثانية"},one with{Period=202601,Name="منتسب آخر"}];
+Check(Statement.EmployeeRows(scattered,one.Name,one.Agency,one.Reference).Select(d=>d.Period).Order().SequenceEqual(new[]{202502,202611}),
+    "employee case month choices exclude intervening months, other agencies, other cases and other people");
 var employeeSearch=f with{SearchField=DeductionSearchField.Employee};
 Check(store.Find(employeeSearch).Single()==one&&store.Summary(employeeSearch)==(1,13000m),"employee search returns only that employee's deductions for the selected month");
 Check(!store.Find(employeeSearch with{Search="مديرية"}).Any(),"employee search excludes matches in unrelated fields");

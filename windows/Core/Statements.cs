@@ -23,10 +23,16 @@ public record Statement(string Header,List<Sheet> Sheets,string Person="",string
         }
         return new(header,sheets);
     }
+    public static IEnumerable<Deduction> EmployeeRows(IEnumerable<Deduction> input,string person,string agency,string reference)
+    {
+        var name=Arabic.Match(person);
+        var file=Arabic.CaseKey(reference);
+        return input.Where(r=>r.Agency==agency && Arabic.Match(r.Name)==name && (file==""||Arabic.CaseKey(r.Reference)==file));
+    }
     public static Statement Employee(IEnumerable<Deduction> input,IReadOnlyList<MonthInfo> months,string person,string agency,string reference,int start,int end,string header)
     {
         if(start<=0||end<start||end/100-start/100>=100)throw new InvalidOperationException("راجع بداية الفترة ونهايتها.");
-        var matching=input.Where(r=>Arabic.Match(r.Name)==Arabic.Match(person)&&r.Agency==agency&&(reference==""||Arabic.CaseKey(r.Reference)==Arabic.CaseKey(reference))).ToList();
+        var matching=EmployeeRows(input,person,agency,reference).ToList();
         var rows=matching.Where(r=>r.Period>=start&&r.Period<=end).ToList();
         var periods=months.Where(m=>m.Key>=start&&m.Key<=end).GroupBy(m=>m.Key).ToList();
         if(periods.Any(g=>g.Count()>1))throw new InvalidDataException("يوجد أكثر من ملف محفوظ للشهر نفسه. راجع الأشهر قبل إصدار الكشف.");

@@ -65,6 +65,15 @@ public sealed partial class Store(string root)
         db.CreateCollation("ARABIC",(a,b)=>CultureInfo.GetCultureInfo("ar-IQ").CompareInfo.Compare(a,b,CompareOptions.None));
         db.CreateFunction<string,string>("person_key",Arabic.Match,isDeterministic:true);
         db.CreateFunction<string,string>("agency_category",Arabic.Category,isDeterministic:true);
+        // الرتب والأشهر والحالات تتكرر آلاف المرات في الاستعلام نفسه.
+        var labels=new Dictionary<(string,string,string),string>();
+        db.CreateFunction<string,string,string,string>("ledger_labels",(rank,month,status)=>{
+            var key=(rank,month,status);
+            if(labels.TryGetValue(key,out var label))return label;
+            label=Arabic.Key(rank+" "+month+" "+status);
+            if(labels.Count<2048)labels[key]=label;
+            return label;
+        },isDeterministic:true);
         return db;
     }
     private SqliteConnection Open()=>Connect(Active??throw new InvalidOperationException("استورد نسخة احتياطية أو ملف بيانات أولاً."));
@@ -92,12 +101,23 @@ public sealed partial class Store(string root)
     }
     public (int Count,decimal Total) Summary(Filters f,CancellationToken token=default)
     {
-        if(Active==null)return (0,0);
+        var result=DeductionTotals(f,false,token);
+        return (result.Count,result.Total);
+    }
+    public (int Count,decimal Total,int People) DeductionTotals(Filters f,bool countPeople=true,CancellationToken token=default)
+    {
+        if(Active==null)return (0,0,0);
         using var db=Open();using var cmd=db.CreateCommand();
-        cmd.CommandText="SELECT amount FROM deductions "+Predicate(cmd,f);
+        cmd.CommandText=(countPeople?"SELECT amount,person FROM deductions ":"SELECT amount FROM deductions ")+Predicate(cmd,f);
         using var rows=cmd.ExecuteReader();int count=0;decimal total=0;
-        while(rows.Read()){token.ThrowIfCancellationRequested();count++;if(!rows.IsDBNull(0))total+=decimal.Parse(rows.GetString(0),CultureInfo.InvariantCulture);}
-        return (count,total);
+        var names=new HashSet<string>(StringComparer.Ordinal);
+        while(rows.Read()){
+            token.ThrowIfCancellationRequested();count++;
+            if(!rows.IsDBNull(0))total+=decimal.Parse(rows.GetString(0),CultureInfo.InvariantCulture);
+            if(countPeople)names.Add(rows.GetString(1));
+        }
+        int people=names.Select(Arabic.Match).Where(k=>k.Length>0).Distinct(StringComparer.Ordinal).Count();
+        return (count,total,people);
     }
     private static string Predicate(SqliteCommand cmd,Filters f)
     {
@@ -110,8 +130,18 @@ public sealed partial class Store(string root)
         if(f.Person.Length>0)Where("person_key(person)=$p","$p",Arabic.Match(f.Person));
         if(f.Reference.Length>0)Where(f.ExactReference?"casekey=$c":"instr(casekey,$c)>0","$c",Arabic.CaseKey(f.Reference));
         int i=0;
-        string column=f.SearchField==DeductionSearchField.Employee?"person_key(person)":"search";
-        foreach(var word in Arabic.Key(f.Search).Split(' ',StringSplitOptions.RemoveEmptyEntries)){var key="$q"+i++;Where("instr("+column+","+key+")>0",key,word);}
+        foreach(var word in Arabic.Key(f.Search).Split(' ',StringSplitOptions.RemoveEmptyEntries)){
+            var key="$q"+i++;
+            if(f.SearchField==DeductionSearchField.Employee){Where($"instr(person_key(person),{key})>0",key,word);continue;}
+            var expression=$"instr(search,{key})>0 OR instr(ledger_labels(rank,month,status),{key})>0 OR instr(casekey,{key})>0";
+            var numeric=word.Replace(",","").Replace("٬","").Replace('٫','.');
+            if(numeric.Length>0 && char.IsDigit(numeric[0])){
+                var numberKey=key+"n";
+                expression+=$" OR instr(amount,{numberKey})>0 OR instr(CAST(period AS TEXT),{numberKey})>0";
+                cmd.Parameters.AddWithValue(numberKey,numeric);
+            }
+            Where("("+expression+")",key,word);
+        }
         return clauses.Count==0?"":"WHERE "+string.Join(" AND ",clauses);
     }
     public List<string> Agencies()

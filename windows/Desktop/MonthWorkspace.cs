@@ -67,9 +67,9 @@ public partial class MainWindow
         string name=title.Text,agencyName=entity.Text,month=period.Text,path=file.FileName;
         _=Working(()=>{if(new FileInfo(path).Length>60000000)throw new InvalidDataException("حجم الكتاب كبير جداً.");store.ArchivePdf(snapshot,name,month,agencyName.Length==0?null:agencyName,File.ReadAllBytes(path));},"أُضيف الكتاب إلى الأرشيف.",()=>ShowPage(ArchiveName));
     }
-    void RenameAgency()
+    void RenameAgency(string? selected=null)
     {
-        var snapshot=store.Snapshot();var source=Choices(agencies);if(agency?.SelectedIndex>0)source.SelectedItem=agency.SelectedItem;
+        var snapshot=store.Snapshot();var source=Choices(agencies);if(selected!=null)source.SelectedItem=selected;else if(agency?.SelectedIndex>0)source.SelectedItem=agency.SelectedItem;
         var target=Choices(agencies);target.IsEditable=true;target.SelectedIndex=-1;
         if(!Form("توحيد تسمية جهة التنفيذ",Labeled("التسمية الحالية",source,390),Labeled("التسمية المعتمدة",target,390),Text("يشمل التغيير قيود الجهة في جميع الأشهر المحفوظة.")))return;
         string old=source.Text,name=target.Text;

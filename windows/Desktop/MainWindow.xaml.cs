@@ -35,14 +35,14 @@ public partial class MainWindow : Window
     private static readonly (string Name,string Icon)[] Sections=[("الرئيسية","\uE80F"),(DeductionsName,"\uE8FD"),("التحويلات","\uE8AB"),("كشف البنك","\uE825"),(ArchiveName,"\uE8B7"),("الإعدادات","\uE713")];
     private static readonly (string Name,string Desc,string Icon)[] Cards=[
         ("جهات التنفيذ","القيود والمبالغ حسب الجهة","\uEC06"),("كشف استقطاعات منتسب","الجهة والإضبارة والفترة","\uE77B"),
-        ("بحث الاستقطاعات","البحث في جميع الأشهر","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),
+        ("بحث الاستقطاعات","البحث والتصفية في سجل القيود","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),
         (TransfersName,"كتب المصارف ودفعات الشهر","\uE8AB"),(AuditName,"حالات المراجعة والتغييرات","\uEA8F"),
         (TrustName,"المنتسبون وحالات الصرف","\uE77B"),(FundingName,"تفصيل المبالغ ومطابقتها","\uE825"),
         (CommandName,"استقطاعات القيادة للشهر","\uE8A5"),(HealthName,"المشتركون والمبالغ غير المنتظمة","\uE95E"),(FundName,"الاستقطاعات حسب الفئة","\uE8A5")];
     private List<string> pins=Cards.Take(4).Select(x=>x.Name).ToList();
     private readonly DispatcherTimer debounce=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private int generation,offset;private const int PageSize=150;
-    private TextBox? search,reference;private ComboBox? agency,year,monthFilter,category;
+    private TextBox? search;private ComboBox? agency,year,monthFilter;
     private DataGrid? grid;private TextBlock? footer;private Button? next,previous;
     readonly Stack<string> pageHistory=new();
     Action? subpageBack;
@@ -162,22 +162,23 @@ public partial class MainWindow : Window
     {
         if(busy)return;
         if(name=="التحويلات")name=TransfersName;
-        if(name==DeductionsName)name=AgencyPage;
+        if(name is DeductionsName or EmployeePage or HistoryPage)name=AgencyPage;
+        Period.Visibility=name==AgencyPage?Visibility.Hidden:Visibility.Visible;
         CloseKeyboardSearch();
         if(name=="الرئيسية")pageHistory.Clear();
         else if(page!=name && !goingBack)pageHistory.Push(page);
         subpageBack=null;UpdateBackButton();
         query?.Cancel();generation++;debounce.Stop();page=name;
-        PageTitle.Text=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
+        PageTitle.Text=name switch{AgencyPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
         bool fitViewport=name is "الرئيسية" or "الإعدادات";
         CanvasArea.MinWidth=fitViewport?0:628;
         CanvasArea.MinHeight=fitViewport?0:400;
-        string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers=>"التحويلات",_=>name};
+        string active=name switch{AgencyPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers=>"التحويلات",_=>name};
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>ShowPage(n.Name),n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
         Status.Text=store.Active==null?"استورد نسخة احتياطية أو ملف بيانات من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
-        if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name==DirectoryName)workPageLoad=ShowAccountDirectory();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name==ArchiveName)Books();else if(name is AgencyPage or EmployeePage or HistoryPage)DeductionGrid(review);
+        if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name==DirectoryName)workPageLoad=ShowAccountDirectory();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name==ArchiveName)Books();else if(name==AgencyPage)DeductionGrid(review);
         if(SystemParameters.ClientAreaAnimation&&!SystemParameters.HighContrast){CanvasArea.BeginAnimation(OpacityProperty,new DoubleAnimation(.84,1,TimeSpan.FromMilliseconds(140)){FillBehavior=FillBehavior.Stop,EasingFunction=new QuadraticEase{EasingMode=EasingMode.EaseOut}});}
     }
     void AdaptNavigation()
@@ -302,99 +303,6 @@ public partial class MainWindow : Window
             "استيراد نسخة",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
         busy=true;IsEnabled=false;try{var progress=new Progress<string>(s=>Status.Text=s);await Task.Run(()=>store.Import(d.FileName,progress));Reload();busy=false;ShowPage("الرئيسية");Status.Text="تم التحقق من النسخة واستيراد بياناتها.";}catch(Exception e){Error(e);}finally{busy=false;IsEnabled=true;}
     }
-    CancellationTokenSource? query;
-    Button? export,employee;
-    Filters Current()=>new(search?.Text??"",agency?.SelectedIndex>0?agency.SelectedItem.ToString()!:"",
-        reference?.Text??"",int.TryParse(year?.SelectedItem?.ToString(),out int y)?y:0,Math.Max(0,monthFilter?.SelectedIndex??0),Category:category?.SelectedIndex>0?(string)category.SelectedItem:"",
-        SearchField:page==EmployeePage?DeductionSearchField.Employee:DeductionSearchField.Any);
-    void DeductionGrid(Review? review)
-    {
-        offset=0;
-        var dock=new DockPanel();
-        search=page==AgencyPage?null:new TextBox();reference=new TextBox();
-        agency=Choices(new[]{"كل الجهات"}.Concat(agencies));
-        year=Choices(new[]{"كل السنوات"}.Concat(months.Where(m=>m.Key>0).Select(m=>(m.Key/100).ToString()).Distinct()));
-        monthFilter=Choices(new[]{"كل الأشهر"}.Concat(Arabic.Months));
-        var key=review==null?SelectedMonth?.Key:Arabic.Period(review.Month);
-        if(page==AgencyPage&&key is >0){year.SelectedItem=(key.Value/100).ToString();monthFilter.SelectedIndex=key.Value%100;}
-        if(review!=null)agency.SelectedItem=review.Agency;
-        var title=Bar();
-        foreach(var (route,label,icon) in new[]{(AgencyPage,"جهات التنفيذ","\uEC06"),(EmployeePage,"استقطاعات المنتسبين","\uE77B"),(HistoryPage,"بحث في جميع القيود","\uE721")})
-            title.Children.Add(ButtonFor(label,()=>{if(page!=route)ShowPage(route);},icon,page==route));
-        category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
-        var fields=new List<(string,Control,double)>{("مجموعة الجهات",category,0)};
-        if(search!=null)fields.Add((page==EmployeePage?"بحث باسم المنتسب":"كلمة البحث",search,1));
-        fields.AddRange([("جهة التنفيذ",agency,1.4),("رقم وتاريخ الإضبارة",reference,1),("السنة",year,0),("الشهر",monthFilter,0)]);
-        var filterBar=FilterBar(fields.ToArray());
-        var top=Column(title,filterBar);DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
-        var gridView=GridView(("الرتبة","Rank",0.7),("الاسم الكامل","Name",1.4),("المبلغ","Value",0.8),("جهة التنفيذ","Agency",1.6),("رقم وتاريخ الإضبارة","Reference",1.6),("الشهر","Month",1.0));
-        grid=gridView;grid.CanUserSortColumns=false;
-        var cellText=new Style(typeof(TextBlock));
-        cellText.Setters.Add(new Setter(TextBlock.TextWrappingProperty,TextWrapping.Wrap));
-        cellText.Setters.Add(new Setter(FrameworkElement.MarginProperty,new Thickness(5,5,5,5)));
-        foreach(DataGridTextColumn col in grid.Columns)col.ElementStyle=cellText;
-        grid.RowHeight=double.NaN;grid.MinRowHeight=35;
-        grid.MouseDoubleClick+=(_,_)=>OpenEmployee();
-        grid.SelectionChanged+=(_,_)=>{if(employee!=null)employee.IsEnabled=gridView.SelectedItem is Deduction;};
-        export=ButtonFor("معاينة كشف جهات التنفيذ",()=>_=EntityReport(),"\uE890",true);export.IsEnabled=false;
-        employee=ButtonFor("معاينة كشف المنتسب",OpenEmployee,"\uE77B");employee.IsEnabled=false;
-        previous=ButtonFor("السابق",()=>{offset=Math.Max(0,offset-PageSize);_=LoadGrid();});previous.IsEnabled=false;
-        next=ButtonFor("التالي",()=>{offset+=PageSize;_=LoadGrid();});next.IsEnabled=false;
-        footer=Text("",14,true);
-        var reportActions=page==EmployeePage?Bar(footer,previous,next,employee):Bar(footer,previous,next,export,employee);
-        if(page==AgencyPage&&agencies.Count>0)reportActions.Children.Add(ButtonFor("توحيد تسمية الجهة",()=>Guard(RenameAgency)));
-        var bottom=Box(reportActions);DockPanel.SetDock(bottom,Dock.Bottom);dock.Children.Add(bottom);
-        dock.Children.Add(grid);CanvasArea.Children.Add(dock);
-        void Changed(){query?.Cancel();generation++;offset=0;export.IsEnabled=false;employee.IsEnabled=false;gridView.ItemsSource=null;debounce.Stop();debounce.Start();}
-        if(search!=null)search.TextChanged+=(_,_)=>Changed();
-        reference.TextChanged+=(_,_)=>Changed();
-        foreach(var c in new[]{agency,year,monthFilter,category})c.SelectionChanged+=(_,_)=>Changed();
-        _=LoadGrid();if(page==EmployeePage)search?.Focus();
-    }
-    async Task LoadGrid()
-    {
-        if(grid==null)return;
-        query?.Cancel();using var current=new CancellationTokenSource();query=current;
-        int version=++generation,skip=offset;var f=Current();
-        try{
-            var result=await Task.Run(()=>{
-                var total=store.Summary(f,current.Token);
-                current.Token.ThrowIfCancellationRequested();
-                return (total.Count,total.Total,Rows:store.Find(f,PageSize,skip).ToList());
-            });
-            if(version!=generation||current.IsCancellationRequested)return;
-            grid.ItemsSource=result.Rows;
-            footer!.Text=result.Count==0?"لا توجد قيود ضمن هذا الاختيار":
-                $"{skip+1}–{skip+result.Rows.Count} من {Arabic.Money(result.Count)}　·　المجموع {Arabic.Money(result.Total)} د.ع";
-            previous!.IsEnabled=skip>0;next!.IsEnabled=skip+PageSize<result.Count;export!.IsEnabled=result.Count>0;
-        }catch(OperationCanceledException){}catch(Exception ex){if(version==generation)Error(ex);}
-        finally{if(query==current)query=null;}
-    }
-    string ReportHeader()=>store.Metadata("header") is {Length:>0} h?h:"قيادة شرطة محافظة الانبار";
-    async Task EntityReport()
-    {
-        var f=Current();
-        try{var report=await Task.Run(()=>Statement.Entities(store.Find(f),ReportHeader(),true));new ReportWindow(report){Owner=this}.ShowDialog();}
-        catch(Exception ex){Error(ex);}
-    }
-    void OpenEmployee()
-    {
-        if(grid?.SelectedItem is not Deduction row)return;
-        var choices=store.Find(new(Person:row.Name)).ToList();
-        var periods=months.Where(m=>m.Key>0).OrderBy(m=>m.Key).ToList();
-        if(periods.Count==0)return;
-        var agenciesBox=Choices(choices.Select(r=>r.Agency).Distinct());agenciesBox.SelectedItem=row.Agency;
-        var refs=new ComboBox();void SetRefs(){refs.ItemsSource=new[]{"كل الأضابير"}.Concat(choices.Where(r=>r.Agency==(string?)agenciesBox.SelectedItem&&r.Reference.Length>0).Select(r=>r.Reference).Distinct()).ToList();refs.SelectedIndex=0;}
-        SetRefs();if(row.Reference!="")refs.SelectedItem=row.Reference;agenciesBox.SelectionChanged+=(_,_)=>SetRefs();
-        var f=Current();
-        var scope=periods.Where(m=>(f.Year==0||m.Key/100==f.Year)&&(f.Month==0||m.Key%100==f.Month)).ToList();
-        var start=new ComboBox{ItemsSource=periods,SelectedItem=scope.FirstOrDefault()??periods[0]};var end=new ComboBox{ItemsSource=periods,SelectedItem=scope.LastOrDefault()??periods[^1]};
-        var dialog=new Window{Owner=this,Title="كشف استقطاعات منتسب",Width=Math.Min(800,SystemParameters.WorkArea.Width*.94),SizeToContent=SizeToContent.Height,WindowStartupLocation=WindowStartupLocation.CenterOwner};
-        dialog.Content=Box(Column(Text(row.Name,20,true),FilterBar(("جهة الاستقطاع",agenciesBox,1.25),("رقم وتاريخ الإضبارة",refs,1.4),("من شهر",start,0),("إلى شهر",end,0)),ButtonFor("معاينة الكشف",()=>dialog.DialogResult=true,"\uE890",true)));
-        if(dialog.ShowDialog()!=true)return;
-        Guard(()=>{var report=store.PersonStatement(row.Name,(string)agenciesBox.SelectedItem,refs.SelectedIndex>0?(string)refs.SelectedItem:"",
-            ((MonthInfo)start.SelectedItem).Key,((MonthInfo)end.SelectedItem).Key,ReportHeader());new ReportWindow(report){Owner=this}.ShowDialog();});
-    }
     void Books()
     {
         var entries=store.Books();var dock=new DockPanel();CanvasArea.Children.Add(dock);
@@ -511,8 +419,12 @@ public partial class MainWindow : Window
                 if(order.IndexOf(ArchiveName)!=order.IndexOf("الإعدادات")-1 || order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
                 Click(Nav,DeductionsName);
                 CheckBackPosition(true);
+                var today=DateTime.Today;
+                if(Current().Year!=today.Year || Current().Month!=today.Month || Current().Agency!="")
+                    throw new InvalidDataException("لم يفتح السجل على شهر الحاسبة وكل الجهات.");
+                year!.SelectedItem=(sample.Period/100).ToString();monthFilter!.SelectedIndex=sample.Period%100;
                 agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
-                if(search!=null||grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Agency!=sample.Agency))throw new InvalidDataException("تصفية القائمة لا تطابق الجهة المختارة.");
+                if(search==null||grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Agency!=sample.Agency))throw new InvalidDataException("تصفية القائمة لا تطابق الجهة المختارة.");
                 UpdateLayout();
                 var firstRow=grid.Items[0];
                 foreach(var column in grid.Columns.Take(3)){
@@ -527,13 +439,30 @@ public partial class MainWindow : Window
                 if(FieldCopy.ValueAt(new TextBox{Text=account})!=account ||
                    FieldCopy.ValueAt(new DisplayText{Text="٠٠١٢٣"} )!=DisplayNumerals.Format("٠٠١٢٣"))
                     throw new InvalidDataException("لم يحافظ النسخ على نص الحقل وأصفاره.");
-                if(page!=AgencyPage||Current().Month!=SelectedMonth!.Key%100)throw new InvalidDataException("تعذّر فتح استقطاعات الشهر.");
+                if(page!=AgencyPage||Current().Month!=sample.Period%100)throw new InvalidDataException("تعذّر فتح استقطاعات الشهر.");
             }else if(name==EmployeePage){
-                Click(CanvasArea,"استقطاعات المنتسبين");search!.Text=sample.Name;
+                search!.Text=sample.Name;
                 debounce.Stop();await LoadGrid();
                 if(grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Name!=sample.Name))throw new InvalidDataException("نتائج بحث المنتسب غير مطابقة.");
                 grid.SelectedIndex=0;
-                if(!employee!.IsEnabled)throw new InvalidDataException("تعذّر اختيار كشف المنتسب.");
+                if(grid.SelectedItem is not Deduction picked)throw new InvalidDataException("تعذّر اختيار قيد المنتسب.");
+                Exception? dialogError=null;
+                Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,new Action(()=>{
+                    var dialog=OwnedWindows.OfType<Window>().Single(w=>w.Title=="كشف استقطاع منتسب");
+                    try{
+                        ComboBox Picker(string label)=>Controls<ComboBox>(dialog).Single(c=>AutomationProperties.GetName(c)==label);
+                        var from=Picker("من شهر");var to=Picker("إلى شهر");
+                        var expected=store.Find(new(Person:picked.Name,Agency:picked.Agency,Reference:picked.Reference,ExactReference:true))
+                            .Select(r=>r.Period).Where(k=>k>0).Distinct().Order().ToArray();
+                        if(!from.Items.Cast<MonthInfo>().Select(m=>m.Key).SequenceEqual(expected) ||
+                            !to.Items.Cast<MonthInfo>().Select(m=>m.Key).SequenceEqual(expected) ||
+                            (from.SelectedItem as MonthInfo)?.Key!=expected.First() || (to.SelectedItem as MonthInfo)?.Key!=expected.Last())
+                            throw new InvalidDataException("أشهر كشف المنتسب لا تطابق قيود الجهة والإضبارة.");
+                    }catch(Exception ex){dialogError=ex;}
+                    finally{dialog.Close();}
+                }));
+                OpenEmployee(picked);
+                if(dialogError!=null)throw dialogError;
             }else if(name=="التحويلات"){
                 Click(Nav,name);
                 var names=Controls<Button>(CanvasArea).Select(AutomationProperties.GetName).ToArray();
