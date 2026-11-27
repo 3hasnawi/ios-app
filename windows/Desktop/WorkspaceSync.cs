@@ -32,6 +32,22 @@ public partial class MainWindow
         async Task Automatic(){
             if(!initializing && IsActive && !busy && syncDialog==null && syncConflicts.Length==0 && SyncEnabled)await WorkspaceRun();
         }
+        // Watch the committed archive pointer and the portable preference journal.
+        // SQLite search-index writes and OneDrive session files do not trigger uploads.
+        Directory.CreateDirectory(store.Root);
+        var saves=new FileSystemWatcher(store.Root){IncludeSubdirectories=true,
+            NotifyFilter=NotifyFilters.FileName|NotifyFilters.LastWrite};
+        saves.Filters.Add("current");
+        saves.Filters.Add("portable-settings.json");
+        var afterSave=new DispatcherTimer{Interval=TimeSpan.FromSeconds(2)};
+        afterSave.Tick+=async (_,_)=>{afterSave.Stop();await Automatic();};
+        void Saved(object sender,FileSystemEventArgs args){
+            if(Dispatcher.HasShutdownStarted)return;
+            Dispatcher.BeginInvoke(()=>{afterSave.Stop();afterSave.Start();});
+        }
+        saves.Changed+=Saved;saves.Created+=Saved;saves.Renamed+=Saved;
+        saves.EnableRaisingEvents=true;
+        Closed+=(_,_)=>{afterSave.Stop();saves.Dispose();};
         timer.Tick+=async (_,_)=>await Automatic();
         Activated+=async (_,_)=>await Automatic();
         ContentRendered+=async (_,_)=>await Automatic();

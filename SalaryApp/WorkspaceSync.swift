@@ -22,6 +22,7 @@ private struct SyncReply: Decodable {
 final class WorkspaceSync {
     static let shared = WorkspaceSync()
     private let account = OneDriveAccount()
+    private var afterSave: Task<Void, Never>?
     private let defaults = UserDefaults.standard
     var enabled = UserDefaults.standard.bool(forKey: "oneDriveSyncEnabled")
     var linked = false
@@ -48,6 +49,15 @@ final class WorkspaceSync {
     }
     private func show(_ error: Error) { status = (error as? OneDriveAuthorizationReplyError)?.message ?? error.localizedDescription }
     func choose(_ conflict: SyncConflict, _ side: String) { choices[conflict.key] = ["ticket":conflict.ticket,"side":side] }
+    func localDataSaved() {
+        guard enabled else { return }
+        afterSave?.cancel()
+        afterSave = Task {
+            do { try await Task.sleep(for:.seconds(2)) } catch { return }
+            await automatic()
+        }
+    }
+
     func automatic() async {
         guard enabled, conflicts.isEmpty, UIApplication.shared.applicationState == .active else { return }
         await synchronize(automatic:true)

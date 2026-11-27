@@ -869,6 +869,7 @@ final class BackupManager {
 
     func markChanged() {
         UserDefaults.standard.set(Date(), forKey: Self.changedKey)
+        WorkspaceSync.shared.localDataSaved()
         version += 1
     }
 
