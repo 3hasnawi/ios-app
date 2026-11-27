@@ -538,10 +538,8 @@ private struct SavedMonthsView: View {
     }
 }
 
-/// رقم الإصدار من ملف التطبيق: "الإصدار 1.34 (بناء 34)".
-/// البناء على GitHub يضع رقم البناء في الإصدار تلقائياً (build.yml).
+/// يُقرأ الإصدار المختصر من الملف المثبّت. يُحفظ رقم البناء المستقل داخل الحزمة ومصدر AltStore.
 enum AppVersion {
     static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0" }
-    static var build: String { Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1" }
-    static var label: String { tr("الإصدار \(version) (بناء \(build))", "Version \(version) (build \(build))") }
+    static var label: String { tr("الإصدار \(version)", "Version \(version)") }
 }

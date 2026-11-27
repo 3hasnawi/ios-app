@@ -11,6 +11,9 @@ jobs:
   safety:
     uses: ./.github/workflows/ios-logic-check.yml
   build:
+    concurrency:
+      group: publish-ios-release
+      cancel-in-progress: false
     needs: safety
     runs-on: macos-26
     steps:
@@ -30,14 +33,15 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # رقم الإصدار: البناء 36 هو النسخة الرسمية الأولى 1.0، وكل بناء بعده يرفع الرقم (1.1، 1.2، ...).
-      # رقم البناء (CFBundleVersion) يبقى رقم التشغيل. يظهر الاثنان في الإعدادات.
       - name: Version
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          MINOR=$(( ${{ github.run_number }} - 36 ))
-          if [ "$MINOR" -lt 0 ]; then MINOR=0; fi
-          echo "APP_VERSION=1.$MINOR" >> "$GITHUB_ENV"
-          echo "::notice::Version 1.$MINOR (build ${{ github.run_number }})"
+          git fetch origin main
+          git show origin/main:source.json > "$RUNNER_TEMP/published-source.json"
+          app_version=$(python3 ci/next_ios_version.py "$RUNNER_TEMP/published-source.json" "$BUILD_NUMBER")
+          echo "APP_VERSION=$app_version" >> "$GITHUB_ENV"
+          echo "::notice::Version $app_version (build $BUILD_NUMBER)"
 
       - name: Build (unsigned)
         run: |
@@ -72,7 +76,6 @@ jobs:
           cp SalaryApp-unsigned.ipa SalaryApp.ipa
           TAG="build-${{ github.run_number }}"
           TITLE="تطبيق الرواتب — الإصدار $APP_VERSION"
-          [ "$APP_VERSION" = "1.0" ] && TITLE="$TITLE (النسخة الرسمية الأولى)"
           gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
             --title "$TITLE" \
             --notes "من الفرع ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" --latest
@@ -84,7 +87,7 @@ jobs:
           git pull --ff-only origin main
           python3 ci/update_altstore_source.py --ipa SalaryApp.ipa \
             --tag "build-${{ github.run_number }}" \
-            --title "$APP_VERSION (بناء ${{ github.run_number }})"
+            --title "$APP_VERSION"
           git add source.json
           if ! git diff --cached --quiet; then
             git -c user.name='github-actions[bot]' \

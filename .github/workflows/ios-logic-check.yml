@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: iPhone release numbering and AltStore metadata
+        run: python3 ci/test_ios_release_version.py
       - name: Persistent schema compatibility guard
         run: python3 ci/check_data_schema.py
       - name: Swift version

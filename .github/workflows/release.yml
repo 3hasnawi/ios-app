@@ -28,6 +28,7 @@ jobs:
         run: |
           cp SalaryApp-unsigned.ipa SalaryApp.ipa
           TAG="run-${{ inputs.run_id }}"
+          APP_VERSION=$(unzip -p SalaryApp.ipa Payload/SalaryApp.app/Info.plist | python3 -c 'import plistlib, sys; print(plistlib.loads(sys.stdin.buffer.read())["CFBundleShortVersionString"])')
           gh release create "$TAG" SalaryApp.ipa --repo "$GITHUB_REPOSITORY" \
-            --title "تطبيق الرواتب — بناء ${{ inputs.run_id }}" \
+            --title "تطبيق الرواتب — الإصدار $APP_VERSION" \
             --notes "من تشغيل البناء ${{ inputs.run_id }}" --latest
