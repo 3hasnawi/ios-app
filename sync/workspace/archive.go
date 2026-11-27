@@ -210,12 +210,21 @@ func archiveIndex(i *index, path string) {
 		})
 	}
 	if ver >= 3 {
+		names := map[string]bool{}
+		for _, file := range z.File {
+			names[file.Name] = true
+		}
 		var books []Object
 		must(decode(readEntry(&z.Reader, "books/index.json", 10000000), &books))
 		for _, book := range books {
 			id := str(book, "id")
 			check(validID(id), "Invalid PDF id")
-			pdf := readEntry(&z.Reader, "books/"+id+".pdf", 60_000_000)
+			book["id"] = strings.ToUpper(id)
+			filename := "books/" + strings.ToUpper(id) + ".pdf"
+			if !names[filename] {
+				filename = "books/" + id + ".pdf"
+			}
+			pdf := readEntry(&z.Reader, filename, 60_000_000)
 			book["syncPDF"] = sum(pdf)
 			w.put(recKey("books", strings.ToUpper(id)), encode(book))
 			// Content address the bytes. The chosen book metadata selects its matching PDF.
