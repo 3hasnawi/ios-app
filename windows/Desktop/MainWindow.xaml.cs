@@ -83,6 +83,12 @@ public partial class MainWindow : Window
     public MainWindow(Store source)
     {
         store=source;appearance=Appearance.Read(store.Root);appearance.Apply();InitializeComponent();
+        foreach(var section in Sections){
+            var button=new Button{Content=section.Name,DataContext=section.Icon};
+            AutomationProperties.SetName(button,section.Name);
+            button.Click+=(_,_)=>ShowPage(section.Name);
+            Nav.Children.Add(button);
+        }
         SizeChanged+=(_,_)=>AdaptNavigation();
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
         PreviewKeyDown+=(_,e)=>{
@@ -175,14 +181,17 @@ public partial class MainWindow : Window
         else if(page!=name && !goingBack)pageHistory.Push(page);
         subpageBack=null;UpdateBackButton();
         query?.Cancel();generation++;debounce.Stop();page=name;
-        PageTitle.Text=name switch{AgencyPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
+        PageTitle.Text=name switch{AgencyPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};CanvasArea.Children.Clear();grid=null;
         bool fitViewport=name is "الرئيسية" or "الإعدادات";
         CanvasArea.MinWidth=fitViewport?0:628;
         CanvasArea.MinHeight=fitViewport?0:400;
         UpdateTransferTabs(name);
         string active=name switch{AgencyPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers=>"التحويلات",_=>name};
-        foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>ShowPage(n.Name),n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
-            ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
+        foreach(var button in Nav.Children.OfType<Button>()){
+            bool current=Equals(button.Content,active);
+            button.Style=(Style)FindResource(current?"CurrentNavigationRow":"NavigationRow");
+            AutomationProperties.SetItemStatus(button,current?"القسم الحالي":"");
+        }
         AdaptNavigation();
         Status.Text=store.Active==null?"استورد نسخة احتياطية أو ملف بيانات من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
         if(name=="الرئيسية")homeLoad=Home();else if(name=="الإعدادات")Settings();else if(name==DirectoryName)workPageLoad=ShowAccountDirectory();else if(name=="كشف البنك")Bank();else if(WorkPages.Contains(name)||name is CurrentTransfers or DeferredTransfers or RefundTransfers)workPageLoad=WorkPage(name);else if(name==ArchiveName)Books();else if(name==AgencyPage)DeductionGrid(review);
@@ -191,17 +200,14 @@ public partial class MainWindow : Window
     void AdaptNavigation()
     {
         bool compact=ActualWidth<1050;
-        NavColumn.Width=new GridLength(compact?62:194);
+        NavColumn.Width=new GridLength(compact?62:224);
         Brand.Visibility=NavFoot.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
-        SidePanel.Padding=compact?new Thickness(3,12,3,8):new Thickness(17,30,17,18);
+        SidePanel.Padding=compact?new Thickness(3,12,3,8):new Thickness(13,22,13,14);
         BodyViewport.Margin=compact?new Thickness(6):new Thickness(26,22,26,10);
         AccountDirectoryButton.Content=compact?"IBAN":"حسابات IBAN";
         foreach(var button in Nav.Children.OfType<Button>()){
-            var parts=(StackPanel)button.Content;
-            parts.Children[1].Visibility=compact?Visibility.Collapsed:Visibility.Visible;
+            button.Tag=compact?"Compact":null;
             button.ToolTip=compact?AutomationProperties.GetName(button):null;
-            button.HorizontalContentAlignment=compact?HorizontalAlignment.Center:HorizontalAlignment.Right;
-            button.Padding=compact?new Thickness(4,9,4,9):new Thickness(12,11,12,11);
         }
     }
     void Activate(string name)
@@ -411,6 +417,24 @@ public partial class MainWindow : Window
             if(!BackButton.IsVisible || BackButton.IsEnabled!=enabled || Math.Abs(BackButton.ActualWidth-40)>1 || Math.Abs(gap-8)>1)
                 throw new InvalidDataException("تغيّر موضع زر الرجوع أو حالته في شريط العنوان.");
         }
+        void CheckNavigationRows(bool compact){
+            UpdateLayout();
+            var buttons=Nav.Children.OfType<Button>().ToArray();
+            if(buttons.Count(b=>AutomationProperties.GetItemStatus(b)=="القسم الحالي")!=1)
+                throw new InvalidDataException("تعذّر تمييز القسم الحالي في القائمة.");
+            double? alignedIcon=null;
+            foreach(var button in buttons){
+                var label=(TextBlock)button.Template.FindName("Label",button);
+                var icon=(Border)button.Template.FindName("IconSlot",button);
+                static double Center(FrameworkElement e)=>e.PointToScreen(new Point(e.ActualWidth/2,e.ActualHeight/2)).X;
+                double mid=Center(button),iconX=Center(icon),tolerance=VisualTreeHelper.GetDpi(button).DpiScaleX;
+                if(label.IsVisible==compact || (compact?Math.Abs(iconX-mid)>tolerance:
+                    Math.Abs(Center(label)-mid)>tolerance || iconX<=mid) ||
+                    alignedIcon.HasValue && Math.Abs(iconX-alignedIcon.Value)>tolerance)
+                    throw new InvalidDataException("اختل توسيط عناوين القائمة أو محاذاة أيقوناتها.");
+                alignedIcon=iconX;
+            }
+        }
         async Task ChooseMonth(int key){
             Period.ApplyTemplate();
             UpdateLayout();
@@ -430,6 +454,7 @@ public partial class MainWindow : Window
                 if(order.IndexOf(ArchiveName)!=order.IndexOf("الإعدادات")-1 || order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
                 Click(Nav,DeductionsName);
                 CheckBackPosition(true);
+                CheckNavigationRows(ActualWidth<1050);
                 var today=DateTime.Today;
                 if(Current().Year!=today.Year || Current().Month!=today.Month || Current().Agency!="")
                     throw new InvalidDataException("لم يفتح السجل على شهر الحاسبة وكل الجهات.");
@@ -749,6 +774,7 @@ public partial class MainWindow : Window
             await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             if(NavColumn.Width.Value>70||agency.SelectedItem?.ToString()!=sample.Agency||grid!.ActualHeight<80)
                 throw new InvalidDataException("تعذّر تصغير نافذة الاستقطاعات مع الاحتفاظ بالجهة والجدول.");
+            CheckNavigationRows(true);
             CaptureWindow((FrameworkElement)Content,"deductions-compact");
             Width=560;Height=390;UpdateLayout();
             if(BodyViewport.ScrollableWidth<=0||BodyViewport.ScrollableHeight<=0)throw new InvalidDataException("تعذّر الوصول إلى كامل المحتوى في النافذة الصغيرة.");
