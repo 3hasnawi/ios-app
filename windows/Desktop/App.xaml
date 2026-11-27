@@ -40,7 +40,9 @@
   <ControlTemplate x:Key="ChoiceField" TargetType="ComboBox">
     <Grid>
       <Border x:Name="Surface" Style="{StaticResource FieldSurface}" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"/>
-      <ToggleButton x:Name="FieldToggle" Background="Transparent" Focusable="False" ClickMode="Press" IsTabStop="False"
+      <ToggleButton x:Name="FieldToggle" Style="{x:Null}" OverridesDefaultStyle="True"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="0" Padding="0" BorderThickness="0"
+                    Height="{TemplateBinding Height}" Background="Transparent" Focusable="False" ClickMode="Press" IsTabStop="False"
                     IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
         <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
       </ToggleButton>

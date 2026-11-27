@@ -409,8 +409,9 @@ public partial class MainWindow : Window
         }
         async Task ChooseMonth(int key){
             Period.ApplyTemplate();
+            UpdateLayout();
             var opener=(System.Windows.Controls.Primitives.ToggleButton)Period.Template.FindName("FieldToggle",Period);
-            if(Math.Abs(opener.ActualHeight-BackButton.Height)>1)throw new InvalidDataException("ارتفاع زر الشهر لا يطابق زر الرجوع.");
+            if(Math.Abs(opener.ActualHeight-BackButton.ActualHeight)>1)throw new InvalidDataException($"ارتفاع زر الشهر ({opener.ActualHeight}) لا يطابق زر الرجوع ({BackButton.ActualHeight}).");
             opener.SetCurrentValue(System.Windows.Controls.Primitives.ToggleButton.IsCheckedProperty,true);
             await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             if(!Period.IsDropDownOpen)throw new InvalidDataException("تعذر فتح قائمة الأشهر.");
