@@ -1,11 +1,32 @@
 import SwiftUI
 
+enum HomeReviewPriority: Int {
+    case high, attention, information
+
+    var label: String {
+        switch self {
+        case .high: tr("أولوية عالية", "High priority")
+        case .attention: tr("تحتاج مراجعة", "Needs review")
+        case .information: tr("للاطلاع", "For information")
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .high: .red
+        case .attention: .orange
+        case .information: .blue
+        }
+    }
+}
+
 /// حالة واحدة من نتائج التدقيق، وتفتح موضعها داخل التدقيق مباشرة.
 struct HomeReviewItem: Identifiable {
     let id: String
     let title: String
     let detail: String
     let symbol: String
+    let priority: HomeReviewPriority
     let route: HomeRoute
 }
 
@@ -112,30 +133,31 @@ struct HomeAccounting<Shortcuts: View>: View {
             if count > 0 {
                 items.append(HomeReviewItem(id: "entity-" + kind.rawValue, title: kind.title,
                                             detail: tr("\(Num.format(count)) جهة · \(month.name)", "\(count) entities · \(month.name)"),
-                                            symbol: "building.columns", route: .entityAlert(kind)))
+                                            symbol: "building.columns", priority: .attention, route: .entityAlert(kind)))
             }
         }
         if !audit.salaryAvailable {
             items.append(HomeReviewItem(id: "salary-unavailable",
                                         title: tr("تدقيق الرواتب غير مكتمل", "Payroll audit incomplete"),
                                         detail: tr("افتح التدقيق لمراجعة بيانات هذا الشهر", "Open the audit to review this month"),
-                                        symbol: "exclamationmark.triangle", route: .salary))
+                                        symbol: "exclamationmark.triangle", priority: .attention, route: .salary))
         }
         if audit.deductionComparisonBlocked {
             items.append(HomeReviewItem(id: "deduction-comparison-blocked",
                                         title: tr("مقارنة الاستقطاعات تحتاج مراجعة", "Deduction comparison needs review"),
                                         detail: tr("أحد الشهرين بلا قيود استقطاع", "One of the months has no deduction entries"),
-                                        symbol: "exclamationmark.triangle", route: .deductions))
+                                        symbol: "exclamationmark.triangle", priority: .attention, route: .deductions))
         }
         for issue in audit.issues where issue.id != "bank" {
             let title = issue.count > 0 ? tr("\(issue.title) · \(Num.format(issue.count))", "\(issue.title) · \(issue.count)") : issue.title
             let destination: HomeRoute = issue.route == "salary"
                 ? (issue.count > 0 ? .salaryCheck(issue.id) : .salary)
                 : (issue.count > 0 ? .deductionCheck(issue.id) : .deductions)
+            let priority: HomeReviewPriority = ["totals", "duplicateDeductions", "iban", "calc", "duplicates", "ids"].contains(issue.id) ? .high : .attention
             items.append(HomeReviewItem(id: "check-\(issue.route)-\(issue.id)",
                                         title: title,
                                         detail: issue.detail, symbol: "exclamationmark.triangle",
-                                        route: destination))
+                                        priority: priority, route: destination))
         }
         func addSalary(_ kind: SalaryChangeKind, _ count: Int) {
             guard count > 0 else { return }
@@ -144,7 +166,7 @@ struct HomeAccounting<Shortcuts: View>: View {
                                         detail: previous.map { tr("مقارنة بـ\($0.name)", "Compared with \($0.name)") }
                                             ?? tr("متغيرات الرواتب", "Payroll changes"),
                                         symbol: kind == .bank ? "creditcard" : "arrow.left.arrow.right",
-                                        route: .salaryChange(kind)))
+                                        priority: [.bank, .removed, .net].contains(kind) ? .attention : .information, route: .salaryChange(kind)))
         }
         func addDeduction(_ kind: DeductionGroupKind, _ count: Int) {
             guard count > 0 else { return }
@@ -152,7 +174,7 @@ struct HomeAccounting<Shortcuts: View>: View {
                                         title: tr("\(kind.reportTitle) · \(Num.format(count))", "\(kind.reportTitle) · \(count)"),
                                         detail: previous.map { tr("مقارنة بـ\($0.name)", "Compared with \($0.name)") }
                                             ?? tr("متغيرات الاستقطاعات", "Deduction changes"),
-                                        symbol: "minus.circle", route: .deductionChange(kind)))
+                                        symbol: "minus.circle", priority: kind == .started ? .information : .attention, route: .deductionChange(kind)))
         }
         addSalary(.bank, audit.bank)
         addSalary(.removed, audit.removed)
@@ -164,7 +186,7 @@ struct HomeAccounting<Shortcuts: View>: View {
         for kind in SalaryChangeKind.profileKinds { addSalary(kind, audit.profileCounts[kind.rawValue] ?? 0) }
         addSalary(.added, audit.added)
         addDeduction(.started, audit.started)
-        return items
+        return items.sorted { $0.priority.rawValue < $1.priority.rawValue }
     }
 
     @ViewBuilder
@@ -192,7 +214,11 @@ struct HomeAccounting<Shortcuts: View>: View {
                     Button { openRoute(item.route) } label: {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
-                                Image(systemName: item.symbol).foregroundStyle(accent)
+                                Label(item.priority.label, systemImage: item.symbol)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 7).padding(.vertical, 3)
+                                    .background(item.priority.color.opacity(0.20), in: Capsule())
                                 Spacer()
                                 Image(systemName: "chevron.forward").font(.caption2).foregroundStyle(.secondary)
                             }

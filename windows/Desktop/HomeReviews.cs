@@ -7,7 +7,15 @@ namespace AnbarPayroll.Desktop;
 public partial class MainWindow
 {
     enum ReviewSection { Payroll, Deductions }
-    sealed record HomeReview(ReviewSection Section,string Key,string Title,string Detail,Action Open);
+    enum ReviewPriority { High, Attention, Information }
+    sealed record HomeReview(ReviewSection Section,string Key,string Title,string Detail,ReviewPriority Priority,Action Open);
+    static ReviewPriority PayrollPriority(string kind)
+    {
+        if(A.SalaryReviewDiagnosis.Severe.Contains(kind))return ReviewPriority.High;
+        if(A.SalaryReviewDiagnosis.Staff.Contains(kind) || A.SalaryReviewDiagnosis.Review.Contains(kind) ||
+           kind is "تغيّر الحساب" or "خارج من الرواتب" or "تغيّر الصافي")return ReviewPriority.Attention;
+        return ReviewPriority.Information;
+    }
     static string ReviewTitle(string kind) => kind switch {
         "جديد في الرواتب"=>"الموظفون الجدد", "خارج من الرواتب"=>"الخارجون من الرواتب",
         "تغيّر الصافي"=>"تغيّر صافي الراتب", "تغيّرت الرتبة"=>"تغيّر الرتبة", "تغيّر الحساب"=>"تغيّر الحساب المصرفي",
@@ -57,24 +65,26 @@ public partial class MainWindow
         foreach(var group in alerts.GroupBy(r=>r.Title)){
             var entities=group.ToArray();
             var detail="عدد الجهات "+Arabic.Money(entities.Length);
-            items.Add(new(ReviewSection.Deductions,"agency|"+group.Key,group.Key,detail,()=>AgencyReview(entities)));
+            items.Add(new(ReviewSection.Deductions,"agency|"+group.Key,group.Key,detail,ReviewPriority.Attention,()=>AgencyReview(entities)));
         }
         if(deductions.Blocked)
-            items.Add(new(ReviewSection.Deductions,"deduction-check","مقارنة الاستقطاعات تحتاج مراجعة","تحتاج المقارنة إلى شهرين متحققين من الاستقطاعات.",()=>Activate(AgencyPage)));
+            items.Add(new(ReviewSection.Deductions,"deduction-check","مقارنة الاستقطاعات تحتاج مراجعة","تحتاج المقارنة إلى شهرين متحققين من الاستقطاعات.",ReviewPriority.Attention,()=>Activate(AgencyPage)));
         foreach(var (title,rows) in deductions.Rows)
-            items.Add(new(ReviewSection.Deductions,"deduction|"+title,title,"عدد الحالات "+Arabic.Money(rows.Count),()=>DeductionReviewDetails(title,rows)));
+            items.Add(new(ReviewSection.Deductions,"deduction|"+title,title,"عدد الحالات "+Arabic.Money(rows.Count),
+                title=="تكرار محتمل في الاستقطاعات"?ReviewPriority.High:title=="الاستقطاعات الجديدة"?ReviewPriority.Information:ReviewPriority.Attention,
+                ()=>DeductionReviewDetails(title,rows)));
         if(!hasSalary)
-            items.Add(new(ReviewSection.Payroll,"salary-missing","تدقيق الرواتب غير مكتمل",month.Name+"　·　فتح إعدادات الاستيراد",()=>Activate("الإعدادات")));
+            items.Add(new(ReviewSection.Payroll,"salary-missing","تدقيق الرواتب غير مكتمل",month.Name+"　·　فتح إعدادات الاستيراد",ReviewPriority.Attention,()=>Activate("الإعدادات")));
         else if(audit==null||audit.EmployeeCount==0||audit.PreviousMonth==null)
-            items.Add(new(ReviewSection.Payroll,"salary-check","تدقيق الرواتب غير مكتمل",month.Name+"　·　فتح تدقيق الرواتب",()=>Activate(AuditName)));
+            items.Add(new(ReviewSection.Payroll,"salary-check","تدقيق الرواتب غير مكتمل",month.Name+"　·　فتح تدقيق الرواتب",ReviewPriority.Attention,()=>Activate(AuditName)));
         if(audit!=null){
             foreach(var group in audit.Rows.GroupBy(r=>ReviewTitle(r.Kind)).OrderByDescending(g=>g.Count()).ThenBy(g=>g.Key,StringComparer.Ordinal)){
                 var kind=group.Key;
-                items.Add(new(ReviewSection.Payroll,"salary|"+kind,kind,"عدد الحالات "+Arabic.Money(group.Count()),()=>{auditFilter=kind;Activate(AuditName);}));
+                items.Add(new(ReviewSection.Payroll,"salary|"+kind,kind,"عدد الحالات "+Arabic.Money(group.Count()),PayrollPriority(group.First().Kind),()=>{auditFilter=kind;Activate(AuditName);}));
             }
         }
 
-        return items.OrderBy(item=>item.Key switch {
+        return items.OrderBy(item=>item.Priority).ThenBy(item=>item.Key switch {
             "salary-missing" or "salary-check" or "deduction-check"=>0,
             "salary|IBAN" or "salary|خطأ في الحساب" or "salary|مطابقة المجاميع"
                 or "deduction|تكرار محتمل في الاستقطاعات"=>1,

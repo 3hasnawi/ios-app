@@ -637,7 +637,12 @@ public partial class MainWindow : Window
                         if(next.Visibility!=Visibility.Visible)continue;
                         var card=(Grid)next.Parent;
                         var subject=Controls<Button>(card).Single(b=>AutomationProperties.GetAutomationId(b).StartsWith("HomeReview-"));
-                        string Current()=>AutomationProperties.GetAutomationId(subject);
+                        string Current(){
+                            if(!new[]{"أولوية عالية","تحتاج مراجعة","للاطلاع"}.Any(level=>
+                                AutomationProperties.GetHelpText(subject).StartsWith(level+" · ",StringComparison.Ordinal)))
+                                throw new InvalidDataException("مستوى أهمية الحالة غير متاح عند تبديل بطاقة المراجعة.");
+                            return AutomationProperties.GetAutomationId(subject);
+                        }
                         string first=Current();
                         var seen=new HashSet<string>{first};
                         do{

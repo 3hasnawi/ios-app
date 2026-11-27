@@ -86,7 +86,10 @@ public partial class MainWindow
         var header=new DockPanel();
         DockPanel.SetDock(position,Dock.Right);
         header.Children.Add(position);
-        header.Children.Add(Bar(Glyph(section=="الرواتب"?"\uE8C7":"\uE8FD"),Text(section,14,true)));
+        var priorityLabel=Text("",12,true);
+        var badge=new Border{Child=priorityLabel,CornerRadius=new CornerRadius(5),Padding=new Thickness(6,1,6,1),
+            Margin=new Thickness(5,0,0,0),VerticalAlignment=VerticalAlignment.Center,Visibility=Visibility.Collapsed};
+        header.Children.Add(Bar(Glyph(section=="الرواتب"?"\uE8C7":"\uE8FD"),Text(section,14,true),badge));
         var content=Column(title,detail);
         var subject=HomeAction(section,()=>{if(cases.Count>0)Guard(cases[index].Open);});
         subject.HorizontalContentAlignment=HorizontalAlignment.Stretch;
@@ -117,11 +120,20 @@ public partial class MainWindow
                 return;
             }
             var item=cases[index];
+            var (caption,tint,ink)=item.Priority switch{
+                ReviewPriority.High=>("أولوية عالية","#FCE1DF","#842D29"),
+                ReviewPriority.Attention=>("تحتاج مراجعة","#F9E9C8","#714708"),
+                _=>("للاطلاع","#DBEAF8","#224F78")
+            };
+            badge.Visibility=Visibility.Visible;
+            badge.Background=SystemParameters.HighContrast?SystemColors.WindowBrush:BrushOf(tint);
+            priorityLabel.Foreground=SystemParameters.HighContrast?SystemColors.WindowTextBrush:BrushOf(ink);
+            priorityLabel.Text=caption;
             title.Text=item.Title;detail.Text=item.Detail;
             position.Text=$"{index+1} / {cases.Count}";
             AutomationProperties.SetName(subject,item.Title);
             AutomationProperties.SetAutomationId(subject,"HomeReview-"+item.Key);
-            AutomationProperties.SetHelpText(subject,item.Detail);
+            AutomationProperties.SetHelpText(subject,caption+" · "+item.Detail);
             subject.ToolTip=item.Title+" · "+item.Detail;
         }
         void Move(int step){
@@ -156,33 +168,55 @@ public partial class MainWindow
         var board=new Grid();
         board.RowDefinitions.Add(new(){Height=GridLength.Auto});
         board.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
-        var metrics=new UniformGrid{Columns=3};
+        var metrics=new UniformGrid{Columns=2};
+        var band=new Border{Background=SystemParameters.HighContrast?SystemColors.WindowBrush:BrushOf("#203E61"),
+            CornerRadius=new CornerRadius(8),Padding=new Thickness(4,5,4,5),Child=metrics};
+        var onBand=SystemParameters.HighContrast?SystemColors.WindowTextBrush:Brushes.White;
         TextBlock Metric(string label,string icon){
-            var value=Text("—",20,true);
-            var cell=Column(Bar(Glyph(icon),Text(label,14)),value);
-            cell.Margin=new Thickness(8,3,8,5);
-            metrics.Children.Add(cell);
+            var caption=Text(label,14);caption.Foreground=onBand;
+            var glyph=Glyph(icon);glyph.Foreground=onBand;glyph.FontSize=16;
+            var value=Text("—",22,true);value.Foreground=onBand;
+            var cell=Column(Bar(glyph,caption),value);
+            metrics.Children.Add(new Border{Child=cell,Padding=new Thickness(12,0,12,0),
+                BorderBrush=SystemParameters.HighContrast?onBand:BrushOf("#5A728B"),
+                BorderThickness=new Thickness(metrics.Children.Count==0?0:1,0,0,0)});
             return value;
         }
         var deduction=Metric("إجمالي الاستقطاعات","\uE8FD");
         var bank=Metric("مجموع كشف البنك","\uE825");
-        var employees=Metric("عدد الموظفين","\uE716");
+        var employees=Text("—",16,true);
         var ranks=new UniformGrid{Columns=4};
         string[] labels=["ضباط","موظفون","مراتب","عقود"];
-        string[] icons=["\uEA18","\uE821","\uE70D","\uE8A5"];
+        string[] icons=["\uEA18","\uE821","","\uE8A5"];
         var rankMenus=new ContextMenu[labels.Length];
         var counts=labels.Select((label,i)=>{
             var count=Text("—",14,true);
             var menu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft,Placement=PlacementMode.Bottom};
             rankMenus[i]=menu;
             var chip=HomeAction("الرتب · "+label,()=>{if(menu.HasItems)menu.IsOpen=true;});
-            chip.Content=Bar(Glyph(icons[i]),Text(label,13),count);
+            var ink=SystemParameters.HighContrast?SystemColors.WindowTextBrush:BrushOf("#245946");
+            FrameworkElement symbol;
+            if(i==2){
+                symbol=new System.Windows.Shapes.Path{Data=Geometry.Parse("M 2,3 L 9,8 L 16,3 M 2,9 L 9,14 L 16,9"),
+                    Stroke=ink,StrokeThickness=2,StrokeLineJoin=PenLineJoin.Round,Width=18,Height=17};
+            }else{
+                var glyph=Glyph(icons[i]);glyph.Margin=new Thickness(0);glyph.FontSize=17;glyph.Foreground=ink;
+                glyph.HorizontalAlignment=HorizontalAlignment.Center;symbol=glyph;
+            }
+            var emblem=new Border{Width=28,Height=28,CornerRadius=new CornerRadius(8),Child=symbol,VerticalAlignment=VerticalAlignment.Center,
+                Background=SystemParameters.HighContrast?SystemColors.WindowBrush:BrushOf("#E0EEE7")};
+            var text=Column(Text(label,12),count);text.Margin=new Thickness(5,0,5,0);
+            chip.Content=Bar(emblem,text);
             chip.ToolTip="تفاصيل الرتب · "+label;
             menu.PlacementTarget=chip;
             ranks.Children.Add(chip);
             return count;
         }).ToArray();
-        var summary=Column(metrics,ranks);
+        var people=new DockPanel{Margin=new Thickness(0,4,0,0)};
+        var staff=Column(Text("عدد الموظفين",12),employees);
+        staff.VerticalAlignment=VerticalAlignment.Center;staff.Margin=new Thickness(6,0,10,0);
+        DockPanel.SetDock(staff,Dock.Left);people.Children.Add(staff);people.Children.Add(ranks);
+        var summary=Column(band,people);
         if(revision==null)summary.Children.Add(HomeAction("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5"));
         var banner=Box(summary);banner.Padding=new Thickness(10,6,10,6);
         board.Children.Add(banner);
