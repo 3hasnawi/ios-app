@@ -8,7 +8,7 @@ using A=SalaryDesktop.Core;
 
 namespace AnbarPayroll.Desktop;
 
-internal sealed record Appearance(int Level=0,bool Hindi=false)
+internal sealed record Appearance(int Level=0,bool Hindi=false,string Theme="system")
 {
     const string FileName="appearance.json";
 
@@ -27,6 +27,10 @@ internal sealed record Appearance(int Level=0,bool Hindi=false)
     public void Apply()
     {
         DisplayNumerals.Hindi=Hindi;
+#pragma warning disable WPF0001 // WPF exposes the native Fluent theme selection through this API.
+        var mode=Theme switch{"dark"=>ThemeMode.Dark,"light"=>ThemeMode.Light,_=>ThemeMode.System};
+        if(Application.Current.ThemeMode!=mode)Application.Current.ThemeMode=mode;
+#pragma warning restore WPF0001
         double scale=1+Level*.05;
         var resources=Application.Current.Resources;
         for(int half=20;half<=64;half++){
@@ -70,10 +74,14 @@ public partial class MainWindow
     {
         var sizes=Choices(["عادي (100٪)","105٪","110٪","115٪","120٪"]);
         sizes.SelectedIndex=appearance.Level;
-        var numbers=new ComboBox{ItemsSource=new[]{"عربية (123)","هندية (١٢٣)"},SelectedIndex=appearance.Hindi?1:0};
+        string[] themes=["system","light","dark"];
+        var theme=Choices(["حسب النظام","فاتح","داكن"]);
+        theme.SelectedIndex=Math.Max(0,Array.IndexOf(themes,appearance.Theme));
+        var numbers=new ComboBox{ItemsSource=new[]{"إنجليزية (123)","هندية (١٢٣)"},SelectedIndex=appearance.Hindi?1:0,
+            ItemTemplate=(DataTemplate)FindResource("NumeralExamples")};
         var sample=Text("مثال　12,500 دينار",16,true);
         void Change(){
-            var next=new Appearance(sizes.SelectedIndex,numbers.SelectedIndex==1);
+            var next=new Appearance(sizes.SelectedIndex,numbers.SelectedIndex==1,themes[theme.SelectedIndex]);
             try{
                 SaveAppearance(next);appearance=next;appearance.Apply();
                 sample.CoerceValue(TextBlock.TextProperty);
@@ -83,7 +91,7 @@ public partial class MainWindow
                 ShowPage("الإعدادات");
             }catch(Exception ex){Error(ex);}
         }
-        sizes.SelectionChanged+=(_,_)=>Change();numbers.SelectionChanged+=(_,_)=>Change();
-        return Box(Column(Text("المظهر والأرقام",18,true),FilterBar(("حجم خط المحتوى",sizes,1),("شكل أرقام الواجهة",numbers,1)),sample));
+        theme.SelectionChanged+=(_,_)=>Change();sizes.SelectionChanged+=(_,_)=>Change();numbers.SelectionChanged+=(_,_)=>Change();
+        return Box(Column(Text("المظهر والأرقام",18,true),FilterBar(("ثيم الواجهة",theme,1),("حجم خط المحتوى",sizes,1),("شكل أرقام الواجهة",numbers,1)),sample));
     }
 }

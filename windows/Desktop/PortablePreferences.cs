@@ -55,8 +55,11 @@ public partial class MainWindow
             migration["windowsContentTextLevel"] = level.ToString();
             migration["appTextSize"] = PhoneSizes[level].ToString();
         }
+        var theme=workPreferences.GetValueOrDefault("appAppearance")??legacyAppearance.Theme;
+        if(theme is not ("system" or "dark" or "light"))theme="system";
+        if(hasLegacy && !workPreferences.ContainsKey("appAppearance"))migration["appAppearance"]=theme;
         if(revision!=null && migration.Count>0) SavePreferences(revision,migration);
-        appearance = new(level,hindi);
+        appearance = new(level,hindi,theme);
         appearance.Apply();
     }
 
@@ -97,6 +100,7 @@ public partial class MainWindow
     {
         if(store.Active is not {} revision){next.Save(store.Root);return;}
         var changes=new Dictionary<string,string>();
+        if(next.Theme!=appearance.Theme)changes["appAppearance"]=next.Theme;
         if(next.Hindi!=appearance.Hindi)changes["appNumerals"]=next.Hindi?"arabicIndic":"latin";
         if(next.Level!=appearance.Level){
             changes["windowsContentTextLevel"]=next.Level.ToString();

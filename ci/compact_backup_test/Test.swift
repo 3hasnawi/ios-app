@@ -52,11 +52,12 @@ import CoreGraphics
                 guard let data = settings[key] else { return nil }
                 return try PropertyListSerialization.propertyList(from: data, format: nil)
             }
+            let theme = try value("appAppearance") as? String
             let pins = try value("homePinnedWorkItems") as? String
             let digits = try value("appNumerals") as? String
             let level = try value("windowsContentTextLevel") as? Int
             let size = try value("appTextSize") as? Int
-            precondition(pins == "salaryTrust|bankStatement" && digits == "arabicIndic" && level == 2 && size == 4)
+            precondition(theme == "dark" && pins == "salaryTrust|bankStatement" && digits == "arabicIndic" && level == 2 && size == 4)
             // افتح دفعة الحاسبة من سجل الإعادات المستعاد، وأضف دفعة ثانية قبل إعادة التصدير.
             let history = RefundStorage.local.root.appendingPathComponent("history")
             let first = history.appendingPathComponent("ABC00000-0000-4000-8000-000000000001.json")
@@ -70,6 +71,7 @@ import CoreGraphics
             try JSONSerialization.data(withJSONObject: batch).write(to: history.appendingPathComponent(secondID + ".json"), options: .atomic)
             let newPins = WorkReport.saving([.health], previous: pins)
             settings["homePinnedWorkItems"] = try PropertyListSerialization.data(fromPropertyList: newPins, format: .binary, options: 0)
+            settings["appAppearance"] = try PropertyListSerialization.data(fromPropertyList: "light", format: .binary, options: 0)
             settings["appNumerals"] = try PropertyListSerialization.data(fromPropertyList: "latin", format: .binary, options: 0)
             let (file, _) = try await actor.export(settings: settings, progress: nil)
             try FileManager.default.copyItem(at: file, to: URL(fileURLWithPath: output))

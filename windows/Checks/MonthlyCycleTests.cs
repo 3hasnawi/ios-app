@@ -68,14 +68,19 @@ static class MonthlyCycleTests
         var renamed=store.Snapshot(month);
         check(renamed.Deductions.All(d=>d.Title!=agency)&&renamed.Deductions.Where(d=>d.Title==label).Sum(d=>d.Amount)==before&&A.TransferPreparation.Prepare(renamed,month).Entries.Single(e=>e.Title==label).Account?.Iban==src.Accounts.First().Iban,"renaming keeps historical amounts and links the original account");
         var exchange=Path.Combine(dir,"exchange");Directory.CreateDirectory(exchange);var exchangeFile=Path.Combine(exchange,"windows-month.zip");
-        store.SaveWorkPreferences(store.Active!,new(){["appNumerals"]="arabicIndic"});
+        var beforeAppearance=Statement.Entities(store.Find(new()),"اختبار",true).Html();
+        store.SaveWorkPreferences(store.Active!,new(){["appNumerals"]="arabicIndic",["appAppearance"]="dark"});
         store.ExportBackup(exchangeFile);
         var firstExport=File.ReadAllBytes(exchangeFile);
         store.ExportBackup(exchangeFile);
         check(firstExport.SequenceEqual(File.ReadAllBytes(exchangeFile)),"repeat export does not duplicate settings or attachments");
         var archived=new Store(Path.Combine(dir,"restored-month"));archived.Import(exchangeFile);
         var prefs=archived.ReadWorkPreferences();
-        check(prefs["homePinnedWorkItems"]=="salaryTrust|bankStatement" && prefs["appNumerals"]=="arabicIndic" && prefs["appTextSize"]=="4" && prefs["windowsContentTextLevel"]=="2","restored pins, numeral style and both text size settings survive a data edit and export");
+        check(prefs["appAppearance"]=="dark" && prefs["homePinnedWorkItems"]=="salaryTrust|bankStatement" && prefs["appNumerals"]=="arabicIndic" && prefs["appTextSize"]=="4" && prefs["windowsContentTextLevel"]=="2","restored pins, numeral style and both text size settings survive a data edit and export");
+        var savedRefund=archived.Refunds().Single(b=>b.Id==refund.Id);
+        check(Statement.Entities(archived.Find(new()),"اختبار",true).Html()==beforeAppearance &&
+            savedRefund.Groups().All(g=>savedRefund.Csv(g).SequenceEqual(File.ReadAllBytes(Path.Combine(dir,g.Code+".csv")))),
+            "display theme and numeral preferences preserve statement layout and bank CSV bytes");
         var restored=archived.Snapshot(month);
         string outPdf=Path.Combine(dir,"restored-book.pdf");archived.SaveBook(archived.Books().Single(b=>b.Title=="كتاب تجريبي"),outPdf);
         check(File.ReadAllBytes(outPdf).SequenceEqual(signed)&&archived.Refunds().Count==store.Refunds().Count&&A.SalaryTrust.ReadFromBackup(restored).Entries.Count==2&&WorkReports.FundingData(restored,month).BankTotal==claim.BankTotal&&Store.ActiveBatch(restored,month)!.Held==Store.ActiveBatch(src,month)!.Held,"backup round trip preserves PDF, trusts, transfers, refunds and totals");

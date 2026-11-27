@@ -182,11 +182,25 @@ public sealed partial class Store(string root)
             e.TryGetProperty("entity",out var agency)?agency.GetString()??"":"",e.GetProperty("pages").GetInt32()))
             .OrderByDescending(b=>Arabic.Period(b.Month)).ThenBy(b=>b.Title).ToList();
     }
+    static ZipArchiveEntry BookEntry(ZipArchive zip,ArchivedBook book)
+    {
+        var entry=zip.GetEntry("books/"+book.Id.ToString().ToUpperInvariant()+".pdf")??throw new InvalidDataException("ملف الكتاب غير موجود.");
+        if(entry.Length is <=0 or >60_000_000)throw new InvalidDataException("حجم ملف الكتاب غير صالح.");
+        return entry;
+    }
+    public byte[] ReadBook(ArchivedBook book)
+    {
+        using var zip=ZipFile.OpenRead(Archive);
+        var entry=BookEntry(zip,book);
+        using var input=entry.Open();
+        var bytes=new byte[checked((int)entry.Length)];
+        input.ReadExactly(bytes);
+        return bytes;
+    }
     public void SaveBook(ArchivedBook book,string output)
     {
         using var zip=ZipFile.OpenRead(Archive);
-        var entry=zip.GetEntry("books/"+book.Id.ToString().ToUpperInvariant()+".pdf")??throw new InvalidDataException("ملف الكتاب غير موجود.");
-        if(entry.Length is <=0 or >60_000_000)throw new InvalidDataException("حجم ملف الكتاب غير صالح.");
+        var entry=BookEntry(zip,book);
         var temp=output+"."+Guid.NewGuid().ToString("N")+".tmp";
         try{using(var file=File.Create(temp)){using var input=entry.Open();input.CopyTo(file);if(file.Length!=entry.Length)throw new InvalidDataException();file.Flush(true);}File.Move(temp,output,true);}
         finally{if(File.Exists(temp))File.Delete(temp);}

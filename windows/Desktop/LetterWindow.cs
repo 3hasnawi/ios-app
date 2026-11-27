@@ -115,17 +115,26 @@ internal sealed class LetterPreview:Window
 {
     readonly TaskCompletionSource<bool> loaded=new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal Task<bool> Ready=>loaded.Task;
-    public LetterPreview(byte[] pdf,string? statementTitle=null,bool exportLetter=false){
+    public LetterPreview(byte[] pdf,string? statementTitle=null,bool exportLetter=false,bool printAndSave=false){
         Title=statementTitle==null?"معاينة الكتاب":"معاينة "+statementTitle;Width=850;Height=740;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var panel=new DockPanel();Content=panel;
         var edit=new Button{Content=statementTitle==null?"✎  العودة إلى التحرير":"إغلاق المعاينة",HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(4)};
         edit.Click+=(_,_)=>Close();
         var toolbar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,FlowDirection=FlowDirection.RightToLeft};
         toolbar.Children.Add(edit);DockPanel.SetDock(toolbar,Dock.Top);panel.Children.Add(toolbar);
-        Button? save=null;
+        var viewer=new WebView2();
+        Button? save=null,print=null;
         if(statementTitle!=null){
-            save=new Button{Content=exportLetter?"تصدير الكتاب":"تصدير PDF",IsEnabled=false,Margin=new Thickness(4)};
+            save=new Button{Content=exportLetter?"تصدير الكتاب":printAndSave?"حفظ PDF":"تصدير PDF",IsEnabled=false,Margin=new Thickness(4)};
             toolbar.Children.Add(save);
+            if(printAndSave){
+                print=new Button{Content="طباعة",IsEnabled=false,Margin=new Thickness(4)};
+                toolbar.Children.Add(print);
+                print.Click+=(_,_)=>{
+                    try{viewer.CoreWebView2.ShowPrintUI(CoreWebView2PrintDialogKind.System);}
+                    catch(Exception ex){MessageBox.Show(this,ex.Message,Title,MessageBoxButton.OK,MessageBoxImage.Warning);}
+                };
+            }
             save.Click+=async (_,_)=>{
                 if(exportLetter){DialogResult=true;return;}
                 var dialog=new Microsoft.Win32.SaveFileDialog{FileName=A.ReportSheet.FileName(statementTitle),Filter="PDF|*.pdf",DefaultExt=".pdf"};
@@ -136,7 +145,7 @@ internal sealed class LetterPreview:Window
                 finally{IsEnabled=true;}
             };
         }
-        var viewer=new WebView2();panel.Children.Add(viewer);bool closed=false;
+        panel.Children.Add(viewer);bool closed=false;
         Closed+=(_,_)=>{closed=true;loaded.TrySetResult(false);viewer.Dispose();};
         Loaded+=async (_,_)=>{
             try{
@@ -151,6 +160,7 @@ internal sealed class LetterPreview:Window
                 web.NewWindowRequested+=(_,e)=>e.Handled=true;
                 web.NavigationCompleted+=(_,e)=>{
                     if(save!=null)save.IsEnabled=e.IsSuccess;
+                    if(print!=null)print.IsEnabled=e.IsSuccess;
                     if(e.IsSuccess)loaded.TrySetResult(true);
                     else loaded.TrySetException(new IOException("تعذّرت معاينة المستند: "+e.WebErrorStatus));
                 };

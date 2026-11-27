@@ -17,7 +17,7 @@ internal static class PreferenceExchange
                 A.Deduction deduction=new(month,row.Name,"جهة تجريبية",250,"١ / ٢٠٢٦",row.Rank);
                 store.ApplyExcel(new(month,[row],[deduction],[]),null);
                 store.SaveRefund(new RefundBatch(refundId,"جهة تجريبية",new(2026,11,1),"قسم الحسابات",AccountingTests.Iban("RAFB",9),[payee]),store.Active);
-                store.SaveWorkPreferences(store.Active!,new(){["homePinnedWorkItems"]="salaryTrust|bankStatement",["appNumerals"]="arabicIndic",["appTextSize"]="4",["windowsContentTextLevel"]="2"});
+                store.SaveWorkPreferences(store.Active!,new(){["homePinnedWorkItems"]="salaryTrust|bankStatement",["appAppearance"]="dark",["appNumerals"]="arabicIndic",["appTextSize"]="4",["windowsContentTextLevel"]="2"});
                 store.ExportBackup(file);
             }else{
                 store.Import(file);
@@ -27,7 +27,7 @@ internal static class PreferenceExchange
                         b.People.Single().Iban!=payee.Iban || b.Groups().Single().Code!="RSHD" || b.People.Single().Bic!=payee.Bic))
                     throw new InvalidDataException("لم تنتقل الدفعتان بمبالغهما وحساباتهما.");
                 var prefs=store.ReadWorkPreferences();
-                if(prefs["homePinnedWorkItems"]!="health|bankStatement" || prefs["appNumerals"]!="latin"
+                if(prefs["appAppearance"]!="light" || prefs["homePinnedWorkItems"]!="health|bankStatement" || prefs["appNumerals"]!="latin"
                     || prefs["windowsContentTextLevel"]!="2" || prefs["appTextSize"]!="4"
                     || store.Summary(new()).Total!=250 || store.Snapshot(month).Employees.Single().Net!=15000)
                     throw new InvalidDataException("تعذّر استرجاع تعديلات الآيفون أو تغيرت المبالغ.");

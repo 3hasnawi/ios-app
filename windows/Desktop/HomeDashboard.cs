@@ -71,7 +71,7 @@ public partial class MainWindow
         var count=Text("عدد القيود　—",14);
         var summary=Bar(balance,count);
         if(revision==null)summary.Children.Add(HomeAction("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5"));
-        var banner=Box(summary,"#E5F0E9");banner.Padding=new Thickness(9,3,9,3);
+        var banner=Box(summary,"SystemFillColorSuccessBackgroundBrush");banner.Padding=new Thickness(9,3,9,3);
         board.Children.Add(banner);
 
         var pinArea=new Grid();
@@ -107,7 +107,7 @@ public partial class MainWindow
                 button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
                 var label=Text(name,14,true);
                 label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;
-                var glyph=Glyph(card.Icon);glyph.Margin=new Thickness(4,0,4,0);glyph.FontSize=16;
+                var glyph=Glyph(card.Icon,"#29644E");glyph.Margin=new Thickness(4,0,4,0);glyph.FontSize=16;
                 var mark=new Border{Child=glyph,Background=BrushOf("#E5F0E9"),CornerRadius=new CornerRadius(4),Margin=new Thickness(0,0,6,0)};
                 var content=new DockPanel();content.Children.Add(mark);content.Children.Add(label);
                 button.Content=content;

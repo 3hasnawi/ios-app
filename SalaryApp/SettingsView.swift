@@ -49,7 +49,10 @@ struct SettingsView: View {
                     } label: {
                         SettingRow(title: tr("اللغة", "Language"), systemImage: "globe", color: .indigo) { EmptyView() }
                     }
-                    Picker(selection: $appearance) {
+                    Picker(selection: Binding(get: { appearance }, set: { value in
+                        appearance = value
+                        BackupManager.shared.markSettingChanged(AppSettings.appearanceKey)
+                    })) {
                         Text(tr("نهاري", "Light")).tag(AppAppearance.light.rawValue)
                         Text(tr("ليلي", "Dark")).tag(AppAppearance.dark.rawValue)
                         Text(tr("النظام", "System")).tag(AppAppearance.system.rawValue)
@@ -60,8 +63,8 @@ struct SettingsView: View {
                         numerals = value
                         BackupManager.shared.markSettingChanged(AppSettings.numeralsKey)
                     })) {
-                        Text("123").tag(AppNumerals.latin.rawValue)
-                        Text("١٢٣").tag(AppNumerals.arabicIndic.rawValue)
+                        Text(verbatim: "123").tag(AppNumerals.latin.rawValue)
+                        Text(verbatim: "١٢٣").tag(AppNumerals.arabicIndic.rawValue)
                     } label: {
                         SettingRow(title: tr("الأرقام", "Numerals"), systemImage: "number", color: .orange) { EmptyView() }
                     }

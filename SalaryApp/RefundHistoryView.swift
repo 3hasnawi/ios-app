@@ -104,7 +104,11 @@ private struct RefundArchivedDetail: View {
             ForEach(batch.groups, id: \.code) { group in
                 let title = "\(group.bank.name) · \(group.code).csv"
                 Button { output(batch, .csv(group.code)) } label: {
-                    Label(title, systemImage: "square.and.arrow.up")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(title, systemImage: "square.and.arrow.up")
+                        Text(Money.format(Double(group.total)) + " " + tr("د.ع", "IQD") + " · " + tr("عدد المنتسبين", "Employees") + " " + Money.format(Double(group.payments.count)))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Button(tr("قائمة منتسبي إعادة المبالغ", "Refund roster"), systemImage: "doc.text.magnifyingglass") { output(batch, .roster, previewPDF: true) }

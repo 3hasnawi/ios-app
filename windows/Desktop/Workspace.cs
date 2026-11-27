@@ -14,7 +14,7 @@ public partial class MainWindow
         string dir=Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
         return new(File.ReadAllBytes(Path.Combine(dir,"arial.ttf")),File.ReadAllBytes(Path.Combine(dir,"arialbd.ttf")),null);
     }
-    Button PreviewButton(string title,Func<Task<byte[]>> prepare,Func<bool>? current=null,string caption="معاينة الكشف")
+    Button PreviewButton(string title,Func<Task<byte[]>> prepare,Func<bool>? current=null,string caption="معاينة الكشف",bool printAndSave=false)
     {
         Button button = ButtonFor(caption,()=>{}, "\uE890");
         button.Click += async (_,_) => {
@@ -22,7 +22,7 @@ public partial class MainWindow
             try {
                 var bytes = await prepare();
                 if (button.IsLoaded && (current?.Invoke() ?? true))
-                    new LetterPreview(bytes,title){Owner=Window.GetWindow(button)}.ShowDialog();
+                    new LetterPreview(bytes,title,printAndSave:printAndSave){Owner=Window.GetWindow(button)}.ShowDialog();
             } catch (Exception ex) {
                 if (button.IsLoaded) Error(ex);
             } finally {

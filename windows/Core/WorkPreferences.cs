@@ -7,7 +7,7 @@ namespace AnbarPayroll;
 public sealed partial class Store
 {
     const string PendingFile = "portable-settings.json";
-    static readonly string[] PreferenceKeys = ["homePinnedWorkItems", "homeHiddenWorkReports", "appNumerals", "appTextSize", "windowsContentTextLevel"];
+    static readonly string[] PreferenceKeys = ["homePinnedWorkItems", "homeHiddenWorkReports", "appAppearance", "appNumerals", "appTextSize", "windowsContentTextLevel"];
 
     static byte[]? PendingSettings(string? revision)
     {
