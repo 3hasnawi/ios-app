@@ -29,9 +29,9 @@ public partial class MainWindow
         }
         bool noSigners=new[]{t.FirstSigner,t.SecondSigner,t.ThirdSigner}.All(string.IsNullOrWhiteSpace);
         var preview=t with{Header=Or(t.Header,"الترويسة"),Number=Or(t.Number,"العدد"),Recipient=Or(t.Recipient,"الجهة المرسل إليها"),Subject=Or(t.Subject,"الموضوع"),
-            FirstSigner=noSigners?"التوقيع":Signer(t.FirstSigner),SecondSigner=Signer(t.SecondSigner),ThirdSigner=Signer(t.ThirdSigner),Footer=A.GroupLetterPdf.FooterWritingSpace(Or(t.Footer,"نسخة منه إلى"))};
+            FirstSigner=noSigners?"التوقيع":Signer(t.FirstSigner),SecondSigner=Signer(t.SecondSigner),ThirdSigner=Signer(t.ThirdSigner),Footer=Or(t.Footer,"نسخة منه إلى")};
         string body=System.Text.RegularExpressions.Regex.Replace(Or(t.Body,"متن الكتاب"),@"\{\{([^{}]+)\}\}",m=>"«"+m.Groups[1].Value+"»");
-        return A.TemplateLetterPdf.Document(preview,month,body,DocumentFonts(),null,[]);
+        return A.TemplateLetterPdf.Document(preview,month,body,DocumentFonts(),null,[],fitFooterWritingSpace:true);
     }
     A.LetterTemplate? EditLetter(A.LetterTemplate t,string kind,A.BackupSnapshot s,string month,bool account=false,Func<A.LetterTemplate,byte[]>? render=null,Action<A.LetterTemplate>? extra=null){
         void Validate(A.LetterTemplate result){

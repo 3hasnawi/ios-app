@@ -7,9 +7,31 @@ namespace SalaryDesktop.Core;
 /// كتاب المجموعة بنفس تخطيط «مسودة PDF» في الآيفون؛ يُطابق مصادر جدول CSV ويُظهر الجدول في صفحة واحدة.
 public static class GroupLetterPdf
 {
-    /// القوس الفارغ في نسخة التبليغ مساحة للكتابة اليدوية، لا مسافات عادية تُطوى عند الرسم.
-    public static string FooterWritingSpace(string footer) => Regex.Replace(footer, @"\([ \t\u00A0]*\)",
-        _ => "(" + new string('\u00A0', 50) + ")", RegexOptions.CultureInvariant);
+    private static readonly Regex EmptyParentheses = new(@"\([ \t\u00A0]*\)", RegexOptions.CultureInvariant);
+
+    internal static string FitFooter(string footer, float width, Func<string, float> measure)
+    {
+        string FitLine(string line)
+        {
+            var match = EmptyParentheses.Match(line);
+            if (!match.Success) return line;
+            string Gap(int count) => "(" + new string('\u00A0', count) + ")";
+            if (!line.Contains("التقدير", StringComparison.Ordinal))
+                return EmptyParentheses.Replace(line, Gap(50));
+
+            // نترك ثماني نقاط قبل الهامش كما في كتاب الآيفون، ونقيس العبارة مع القوسين.
+            string Candidate(int count) => line[..match.Index] + Gap(count) + line[(match.Index + match.Length)..];
+            int low = 0, high = 256;
+            while (low < high)
+            {
+                int middle = (low + high + 1) / 2;
+                if (measure(Candidate(middle)) <= width - 8) low = middle;
+                else high = middle - 1;
+            }
+            return Candidate(low);
+        }
+        return string.Join("\n", footer.ReplaceLineEndings("\n").Split('\n').Select(FitLine));
+    }
     private static readonly string[] Months = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"];
     public const string DefaultBodyTemplate = "نرجو تحويل مبلغ قدره ({{المبلغ}}) ({{المبلغ كتابة}}) لا غيرها من حسابنا المرقم ({{حسابنا}}) المفتوح لديكم إلى الحسابات المدرجة تفاصيلها في القائمة المرفقة مع قرص بصيغة (CSV) عن استقطاعات شهر ({{الشهر}} / {{السنة}}) وتزويدنا بالإشعار اللازم بذلك.";
     private static string Eastern(string value) => AdaptiveLetterPdf.Eastern(value);
@@ -46,7 +68,7 @@ public static class GroupLetterPdf
         var blocks = AdaptiveLetterPdf.Opening(settings, date, Body(plan, settings, displayKey / 100, displayKey % 100));
         blocks.Add(LetterBlock.Of(new LetterParagraph($"المرفقات:\nقائمة أسماء الحسابات من تسلسل (1) لغاية تسلسل ({plan.Lines.Count.ToString(CultureInfo.InvariantCulture)})\nقرص (CSV).", HalfPoints: 24, Bold: true)));
         blocks.Add(AdaptiveLetterPdf.Signatures(settings, date));
-        blocks.Add(AdaptiveLetterPdf.Footer(settings with { Footer = FooterWritingSpace(settings.Footer) }));
+        blocks.Add(AdaptiveLetterPdf.Footer(settings, fitWritingSpace: true));
         blocks.Add(LetterBlock.Break);
         blocks.Add(LetterBlock.Of(new LetterParagraph($"استقطاعات قيادة شرطة الأنبار لشهر ({AdaptiveLetterPdf.MonthName(key % 100)} / {AdaptiveLetterPdf.Eastern((key / 100).ToString(CultureInfo.InvariantCulture))})", HalfPoints: 28, Bold: true, Centered: true)));
         var rows = plan.Lines.Select((line, index) => new[] { (index + 1).ToString(CultureInfo.InvariantCulture), line.Title, line.Iban, line.Branch, AdaptiveLetterPdf.Grouped(line.Amount) }).ToList();

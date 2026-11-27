@@ -37,7 +37,18 @@ static class PrintChecks
         var sheet=refund.ListSheet("اختبار");Pdf("refund-list",A.ReportPdf.Generate([sheet],assets,DateTime.UtcNow),n=>n==1);
         var split=Store.ActiveBatch(snapshot,"تشرين الثاني 2026")!;
         var groupPlan=A.GroupLetterPreparation.Prepare(split.Plan(true),A.TransferGroup.OtherBanks,refund.Date);
-        Pdf("deferred-group",A.GroupLetterPdf.Generate(groupPlan,style,times,assets.Bold,logo),n=>n==2);
+        var groupStyle = style with { Footer = "نسخة منه إلى\n. (" + new string(' ', 106) + ") للتفضل بالاطلاع وإعلامنا الاستلام ... مع التقدير .\n. جهة (مذكورة)" };
+        var groupPdf = A.GroupLetterPdf.Generate(groupPlan,groupStyle,times,assets.Bold,logo);
+        Pdf("deferred-group",groupPdf,n=>n==2);
+        using (var document = PdfDocument.Open(groupPdf))
+        {
+            var footer = document.GetPage(1).Letters.Where(l => l.StartBaseLine.Y < 90);
+            var receipt = footer.GroupBy(l => Math.Round(l.StartBaseLine.Y, 1))
+                .Single(line => line.Any(l => l.Value == "(") && line.Any(l => l.Value == ")") &&
+                                line.Max(l => l.StartBaseLine.X) - line.Min(l => l.StartBaseLine.X) > 350);
+            var left = receipt.Min(l => l.StartBaseLine.X);
+            check(left is >= 45 and <= 54, "group receipt and closing fit one line near the printable left edge");
+        }
         var monthly=A.MonthlyBankReport.Sheet(snapshot,A.BankStatementCalculator.Calculate(snapshot,"تشرين الثاني 2026"));
         Pdf("bank-month",A.ReportPdf.Generate([monthly],assets,DateTime.UtcNow),n=>n==1);
         var period=A.BankReconciliation.ReadFromBackup(snapshot).Single();

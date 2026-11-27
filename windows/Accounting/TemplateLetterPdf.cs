@@ -40,14 +40,14 @@ public static class TemplateLetterPdf
             if(!t.Body.Contains("{{الحساب}}"))throw new InvalidDataException("أضف حقل الحساب إلى المتن.");
             values["الحساب"]=account;checks.Add(account);
         }
-        var formatted=t with{Header=LetterTemplate.FormatNumbers(t.Header),Recipient=LetterTemplate.FormatNumbers(t.Recipient),Subject=LetterTemplate.FormatNumbers(t.Subject),Footer=GroupLetterPdf.FooterWritingSpace(LetterTemplate.FormatNumbers(t.Footer))};
-        return Document(formatted,month,LetterTemplate.Fill(LetterTemplate.FormatNumbers(t.Body),values),fonts,null,checks);
+        var formatted=t with{Header=LetterTemplate.FormatNumbers(t.Header),Recipient=LetterTemplate.FormatNumbers(t.Recipient),Subject=LetterTemplate.FormatNumbers(t.Subject),Footer=LetterTemplate.FormatNumbers(t.Footer)};
+        return Document(formatted,month,LetterTemplate.Fill(LetterTemplate.FormatNumbers(t.Body),values),fonts,null,checks,fitFooterWritingSpace:true);
     }
-    public static byte[] Document(LetterTemplate t,string month,string body,LetterFonts fonts,LetterTable? table,IReadOnlyList<string> checks){
+    public static byte[] Document(LetterTemplate t,string month,string body,LetterFonts fonts,LetterTable? table,IReadOnlyList<string> checks,bool fitFooterWritingSpace=false){
         var style=t.Style();var date=AdaptiveLetterPdf.OutgoingDate(month,style.OutgoingMonth);
         var blocks=AdaptiveLetterPdf.Opening(style,date,body);
         if(table!=null)blocks.Add(LetterBlock.Of(table));
-        blocks.Add(AdaptiveLetterPdf.Signatures(style,date));blocks.Add(AdaptiveLetterPdf.Footer(style));
+        blocks.Add(AdaptiveLetterPdf.Signatures(style,date));blocks.Add(AdaptiveLetterPdf.Footer(style, fitFooterWritingSpace));
         return AdaptiveLetterPdf.Write(blocks,fonts,false,style.SignatureOffset,checks,t);
     }
 }

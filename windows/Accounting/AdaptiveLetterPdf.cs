@@ -23,7 +23,7 @@ public sealed record LetterFonts(byte[] TimesRegular, byte[] TimesBold, byte[] A
     }
 }
 
-public sealed record LetterParagraph(string Text, string Font = "Times New Roman", int HalfPoints = 28, bool Bold = false, bool Centered = false);
+public sealed record LetterParagraph(string Text, string Font = "Times New Roman", int HalfPoints = 28, bool Bold = false, bool Centered = false, bool FitWritingSpace = false);
 public sealed record LetterTable(IReadOnlyList<string> Headers, IReadOnlyList<string[]> Rows, string Font = "Arial", int HalfPoints = 22,
     int[]? ColumnWeights = null, bool ShowBorders = true, bool BoldLastRow = false, double WidthFraction = 1, bool AlignRight = false);
 public sealed record LetterBlock(LetterParagraph? Paragraph = null, LetterTable? Table = null, bool PageBreak = false)
@@ -327,7 +327,14 @@ public static class AdaptiveLetterPdf
                 if(part!=null)p=p with{HalfPoints=Size(part,p.HalfPoints),Bold=isBody?(template?.BodyBold??p.Bold):p.Bold};
                 float spacing=isBody?template?.BodySpacing switch{"compact"=>0,"wide"=>8,_=>3}:expectingFooter?0:3;
                 bool justify=isBody&&(template?.BodyAlignment is null or "justified");
-                var ls = Lines(p.Text, FaceOf(p), SizeOf(p.HalfPoints), ContentWidth, p.Centered && p.Text.StartsWith("م /", StringComparison.Ordinal), justify, spacing, template?.BodyKashida);
+                var face = FaceOf(p);
+                var size = SizeOf(p.HalfPoints);
+                if (p.FitWritingSpace)
+                {
+                    using var paint = Paint(face, size);
+                    p = p with { Text = GroupLetterPdf.FitFooter(p.Text, ContentWidth, line => Width(line, face, paint)) };
+                }
+                var ls = Lines(p.Text, face, size, ContentWidth, p.Centered && p.Text.StartsWith("م /", StringComparison.Ordinal), justify, spacing, template?.BodyKashida);
                 if (expectingFooter)
                 {
                     var footerHeight = ls.Sum(l => l.Height); const float footerBottom = 832;
@@ -570,6 +577,6 @@ public static class AdaptiveLetterPdf
     ];
     public static LetterBlock Signatures(GroupLetterSettings settings, string date) =>
         LetterBlock.Of(new LetterTable([], [SignatureCells(settings, date)], "Times New Roman", 32, [1, 1, 1], ShowBorders: false));
-    public static LetterBlock Footer(GroupLetterSettings settings) => LetterBlock.Of(new LetterParagraph(settings.Footer, "Times New Roman", 24, true));
+    public static LetterBlock Footer(GroupLetterSettings settings, bool fitWritingSpace = false) => LetterBlock.Of(new LetterParagraph(settings.Footer, "Times New Roman", 24, true, FitWritingSpace: fitWritingSpace));
     public static LetterBlock Attachment(int count) => LetterBlock.Of(new LetterParagraph($"المرفقات:\nقائمة أسماء عدد ({Eastern(count.ToString(CultureInfo.InvariantCulture))})", "Times New Roman", 24, true));
 }
