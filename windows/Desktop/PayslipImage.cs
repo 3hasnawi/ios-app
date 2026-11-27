@@ -57,7 +57,14 @@ internal static class PayslipImage
         // أصل الصورة باتجاه ثابت حتى يبقى تحويل الاتجاه العربي داخل مساحة الرسم.
         var surface=new Border{Width=390,Height=height,Child=card,Background=paper,FlowDirection=FlowDirection.LeftToRight};
         surface.Measure(new Size(390,height));surface.Arrange(new Rect(0,0,390,height));surface.UpdateLayout();
-        var image=new RenderTargetBitmap(1170,height*3,288,288,PixelFormats.Pbgra32);image.Render(surface);image.Freeze();return image;
+        var drawing=new DrawingVisual();
+        using(var dc=drawing.RenderOpen()){
+            // تمتد الورقة قليلاً خارج الصورة كي لا تظهر حواف شفافة عند تحويل الدقة.
+            dc.DrawRectangle(paper,null,new Rect(-1,-1,392,height+2));
+            dc.DrawRectangle(new VisualBrush(surface){Stretch=Stretch.Fill},null,new Rect(0,0,390,height));
+        }
+        var image=new RenderTargetBitmap(1170,height*3,288,288,PixelFormats.Pbgra32);
+        image.Render(drawing);image.Freeze();return image;
     }
     public static void Save(A.ProfileMonth month,Window owner){
         var dialog=new SaveFileDialog{Filter="صورة PNG|*.png",FileName=A.ReportSheet.FileName("قسيمة راتب - "+month.Employee?.Name+" - "+month.Month)};

@@ -16,7 +16,10 @@ jobs:
       - name: Render a fictional payslip and verify scanned PDF pages
         run: dotnet run --project windows/DocumentChecks -- "$env:RUNNER_TEMP/refund-pdfs"
       - name: Verify accounting cycles and export the same inputs for Apple
-        run: dotnet run --project windows/Checks -- --check-accounting-exchange "$env:RUNNER_TEMP/accounting"
+        run: |
+          python windows/Checks/fixture.py "$env:RUNNER_TEMP/accounting"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project windows/Checks -- --check-accounting-exchange "$env:RUNNER_TEMP/accounting"
       - uses: actions/upload-artifact@v4
         with:
           name: accounting-exchange

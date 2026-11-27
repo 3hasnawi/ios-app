@@ -14,8 +14,10 @@ for path in sys.argv[1:]:
         assert len(pdf) == 1, path
         page = pdf[0]
         dimensions.append((page.rect.width, page.rect.height))
-        words = page.get_text("words")
-        amounts = [(w[4], w[1]) for w in words if re.fullmatch(r"[0-9]{1,3}(?:,[0-9]{3})+", w[4])]
+        spans = [span for block in page.get_text("dict")["blocks"] if "lines" in block
+                 for line in block["lines"] for span in line["spans"]]
+        amounts = [(m.group(), span["origin"][1]) for span in spans
+                   for m in re.finditer(r"(?<![0-9,])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9,])", span["text"])]
         assert [v for v, y in sorted(amounts, key=lambda p: p[1])] == expected, (path, amounts)
         positions = sorted(y for value, y in amounts if value != expected[-1])
         pitches.append(statistics.median(b-a for a,b in zip(positions,positions[1:])))

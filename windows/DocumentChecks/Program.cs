@@ -23,8 +23,11 @@ internal static class Program
         }
         var slip=Render(line);var pixels=Bytes(slip);
         Check(slip.PixelWidth==1170 && slip.PixelHeight>Render().PixelHeight,"full-size payslip with a deduction and total");
-        Check(pixels.Where((_,i)=>i%4==3).All(a=>a==255),"opaque payslip including edges");
-        Check(pixels[0]<100 && pixels[2]<80,"green payslip title band");
+        var translucent=pixels.Where((_,i)=>i%4==3).Count(a=>a!=255);
+        Check(translucent==0,$"opaque payslip including edges ({translucent} translucent pixels)");
+
+        int headerPixel=4*(10*slip.PixelWidth+10);
+        Check(pixels[headerPixel]<100 && pixels[headerPixel+2]<80,"green payslip title band");
         Check(pixels.SequenceEqual(Bytes(Render(line,stopped))),"inactive deduction excluded from the actual image");
         Check(!pixels.SequenceEqual(Bytes(Render(line with{Amount=1250}))),"amount changes the exported image");
         var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(slip));
