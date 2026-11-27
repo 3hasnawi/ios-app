@@ -39,7 +39,12 @@ static class MonthlyCycleTests
             for(int i=0;i<2;i++){int r=i+2;ws.Cell(r,1).Value=name;ws.Cell(r,2).Value=100+i;ws.Cell(r,3).Value=10+i;ws.Cell(r,4).Value=2026;ws.Cell(r,5).Value=i==0?"مصروف":"لم يصرف";ws.Cell(r,7).Value="ملاحظة تجريبية";}
             ws.Cell(2,6).Value=new DateTime(2026,11,1).ToOADate();wb.SaveAs(file);
         }
-        var trust=A.SalaryTrustSpreadsheet.Read(file);store.ImportTrust(trust,store.Active);
+        var trust=A.SalaryTrustSpreadsheet.Read(file);
+        var revisionBeforeTrust=store.Active;
+        var foreignLedger=trust with{Entries=trust.Entries.Select(e=>e with{BookIds=[Guid.NewGuid().ToString()]}).ToArray()};
+        try{store.ImportTrust(foreignLedger,revisionBeforeTrust);throw new Exception("accepted a missing archive book");}
+        catch(InvalidDataException){check(store.Active==revisionBeforeTrust,"missing trust book rejected before archive replacement");}
+        store.ImportTrust(trust,store.Active);
         var ids=A.SalaryTrust.ReadFromBackup(store.Snapshot()).Entries.Select(e=>e.Id).ToArray();
         store.ImportTrust(A.SalaryTrustSpreadsheet.Read(file),store.Active);
         var entries=A.SalaryTrust.ReadFromBackup(store.Snapshot()).Entries;

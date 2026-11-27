@@ -10,10 +10,12 @@ public sealed partial class Store
         A.SalaryTrust.Validate(incoming);
         if(incoming.Version!=2||incoming.Entries.Count==0)throw new InvalidDataException("لا توجد أمانات للاستبدال.");
         // Preserve document links for the same employee and month when replacing Excel input.
-        var old=revision==null?A.SalaryTrust.Empty:A.SalaryTrust.ReadFromBackup(Snapshot());
+        var snapshot=revision==null?null:Snapshot();
+        var old=snapshot==null?A.SalaryTrust.Empty:A.SalaryTrust.ReadFromBackup(snapshot);
         string Key(A.SalaryTrustEntry e)=>e.Year+"|"+e.Month+"|"+A.PersonProfiles.Key(e.Name);
         var previous=old.Entries.ToDictionary(Key);
         var ledger=incoming with{Entries=incoming.Entries.Select(e=>previous.TryGetValue(Key(e),out var prior)?e with{Id=prior.Id,BookIds=prior.BookIds}:e).ToArray()};
+        A.SalaryTrust.ValidateBooks(ledger,snapshot?.Books??[]);
         Rewrite(revision,null,new Dictionary<string,byte[]>{{A.SalaryTrust.SettingsKey,A.SalaryTrust.Plist(ledger)}},m=>{m["contentVersion"]=11;m["salaryTrustEntries"]=ledger.Entries.Count;});
     }
     public void ImportStaff(IReadOnlyList<A.StaffMember> members,string file,string? revision){

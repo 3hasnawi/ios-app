@@ -603,6 +603,7 @@ public partial class MainWindow : Window
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
                 }
                 ShowPage(name);
+                if(WorkPages.Contains(name))await workPageLoad;
             }
             if(name=="الإعدادات"){
                 UpdateLayout();
