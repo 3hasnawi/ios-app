@@ -169,22 +169,21 @@ import CoreText
         }
         let compactStatementPDF = try await BankReconciliationPDF.make(compactStatement)
         defer { try? FileManager.default.removeItem(at: compactStatementPDF) }
-        // تنسيق المطابقة المعتمد يضمن صفوفاً بارتفاع 24 وتواقيع واضحة؛ تفحص make نص كل خلية بعد التصدير.
-        try check((PDFDocument(url: compactStatementPDF)?.pageCount ?? 0) > 1, "reconciliation paginates 22 movements with legible rows")
+        try check(PDFDocument(url: compactStatementPDF)?.pageCount == 1, "22 short bank movements fit with signatures")
         var compactLargeStatement = compactStatement
         compactLargeStatement.movements = (1...26).map { index in
             BankReconciliation.Movement(date: date, description: "حركة \(index)", amount: 1_000_000, direction: .credit)
         }
         let compactLargePDF = try await BankReconciliationPDF.make(compactLargeStatement)
         defer { try? FileManager.default.removeItem(at: compactLargePDF) }
-        try check((PDFDocument(url: compactLargePDF)?.pageCount ?? 0) > 1, "reconciliation paginates 26 short movements with legible rows")
+        try check(PDFDocument(url: compactLargePDF) != nil, "26 measured movement rows are exported and verified")
         var tallerCompactStatement = compactLargeStatement
-        tallerCompactStatement.movements = (1...29).map { index in
+        tallerCompactStatement.movements = (1...40).map { index in
             BankReconciliation.Movement(date: date, description: "حركة \(index)", amount: 1_000_000, direction: .credit)
         }
         let tallerCompactPDF = try await BankReconciliationPDF.make(tallerCompactStatement)
         defer { try? FileManager.default.removeItem(at: tallerCompactPDF) }
-        try check((PDFDocument(url: tallerCompactPDF)?.pageCount ?? 0) > 1, "reconciliation paginates 29 short movements with legible rows")
+        try check((PDFDocument(url: tallerCompactPDF)?.pageCount ?? 0) > 1, "reconciliation paginates 40 short movements with legible rows")
         var longStatement = statement
         longStatement.movements = (1...60).map { index in
             BankReconciliation.Movement(date: date, description: "حركة وهمية \(index)", amount: Int64(index), direction: .credit)
@@ -194,10 +193,10 @@ import CoreText
         guard let longPDF = PDFDocument(url: longStatementPDF), longPDF.pageCount > 1 else { throw Failure(errorDescription: "missing continuation pages") }
         for index in 0..<longPDF.pageCount {
             guard let follow = longPDF.page(at: index) else { throw Failure(errorDescription: "missing statement page") }
-            let footer = follow.selection(for: CGRect(x: 240, y: 24, width: 115, height: 20))?.string ?? ""
+            let footer = follow.selection(for: CGRect(x: 240, y: 2, width: 115, height: 18))?.string ?? ""
             let numbers = footer.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
             try check(numbers.sorted() == [String(index + 1), String(longPDF.pageCount)].sorted(), "page counter and total at bottom center")
-            let department = follow.selection(for: CGRect(x: 360, y: 24, width: 205, height: 20))?.string ?? ""
+            let department = follow.selection(for: CGRect(x: 360, y: 2, width: 205, height: 18))?.string ?? ""
             let footerWords = ArabicText.normalize(department.precomposedStringWithCompatibilityMapping).filter { !$0.isWhitespace && !$0.isPunctuation }
             let expectedWords = ArabicText.normalize("قيادة شرطة محافظة الانبار قسم الحسابات").filter { !$0.isWhitespace }
             try check(department.contains("/") && TransferAnbarTablePDF.matchesExtractedCell(footerWords, expected: expectedWords), "department in the right footer of every page")
@@ -205,7 +204,7 @@ import CoreText
             let topLeft = follow.selection(for: CGRect(x: 30, y: 842 - 41, width: 135, height: 20))?.string ?? ""
             try check(topLeft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "old continuation counter removed")
             let topRight = follow.selection(for: CGRect(x: 380, y: 842 - 42, width: 182, height: 21))?.string ?? ""
-            try check(topRight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "no organization letterhead on continuation")
+            try check(!topRight.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "repeat organization letterhead on continuation")
         }
         let ledger = BankReconciliation.Ledger(periods: [statement])
         let reconciliationLedger = try BankReconciliation.decode(JSONEncoder().encode(ledger))

@@ -59,6 +59,8 @@ jobs:
         run: python3 ci/health_summary_test/run.py
       - name: Payroll item parser
         run: bash ci/payroll_item_parser_test/run.sh
+      - name: Bank reconciliation PDF pagination and cell readback
+        run: python3 ci/reconciliation_pdf_test/run.py
       - name: Report layout calculations
         run: |
           if [ "${{ inputs.report_preview }}" = "true" ]; then

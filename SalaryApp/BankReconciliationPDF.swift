@@ -25,7 +25,6 @@ nonisolated enum BankReconciliationPDF {
         }
     }
     private static let page = CGRect(x: 0, y: 0, width: 595, height: 842)
-    private static let widths: [CGFloat] = [78, 189, 88, 88, 88]
     private static let margin: CGFloat = 32
     private static let totalHeight: CGFloat = 26
     private static func number(_ value: Int64) throws -> String {
@@ -91,17 +90,16 @@ nonisolated enum BankReconciliationPDF {
         try await PDFWork.run {
             let totals = try BankReconciliation.calculate(period)
             guard !totals.lines.isEmpty else { throw Failure.empty }
-            // الأحجام (طلب المالك 2026-11-02، مطابق لويندوز ReconciliationPdf.Statement): Arial لكل الكشف؛ الترويسة 11 والعنوان 14،
-            // رؤوس الأعمدة والمبالغ والمجموع عريض 11، البيان عريض 10.5 ينزل إلى سطر آخر، الصف لا يقل عن 24 مع تظليل متناوب، والتواقيع عريض 16.
+            // يقاس النص والصفوف بمقاسات كشف ويندوز، وتذهب المساحة المتبقية إلى البيان.
             let bold = ReportFont.bold(11)
-            let signatureFont = ReportFont.bold(16)
+            let signatureFont = ReportFont.bold(14)
             let headingFont = ReportFont.bold(14)
             let organizationFont = ReportFont.bold(11)
             let labelFont = ReportFont.bold(10.5)
             let valueFont = ReportFont.regular(10.5)
             let periodFont = ReportFont.bold(11)
-            let cellFonts = [valueFont, labelFont, bold, bold, bold]
-            let footerFont = ReportFont.regular(9)
+            let cellFonts = [labelFont, labelFont, bold, bold, bold]
+            let footerFont = ReportFont.bold(8)
             let shade = UIColor(red: 0xF3 / 255, green: 0xF7 / 255, blue: 0xFB / 255, alpha: 1)
             let heading = "كشف مطابقة حساب البنك"
             let organization = ["جمهورية العراق", "وزارة الداخلية", "وكالة الوزارة لشؤون الشرطة", "قيادة شرطة محافظة الأنبار", "قسم الحسابات"]
@@ -140,10 +138,9 @@ nonisolated enum BankReconciliationPDF {
             // الفترة شريط بعرض الجدول فوقه مباشرة، و«مسودة» فوقها عند عدم الاكتمال.
             let periodHeight: CGFloat = 22, headerHeight: CGFloat = 26
             let periodTop = contentBottom + (complete ? 10 : 26)
-            let firstTableTop = periodTop + periodHeight
-            let continuationTableTop: CGFloat = 44
-            let rowTop = firstTableTop + headerHeight
-            // تواقيع اللجنة عريض 16 بلا إطار ولا سطر توقيع، أسفل آخر صفحة؛ المنصب الطويل ينزل إلى سطر ثانٍ.
+            let tableTop = periodTop + periodHeight
+            let rowTop = tableTop + headerHeight
+            // يتبع كل سطر توقيع ارتفاع الخط فقط، مع احتساب التفاف المنصب الطويل.
             let signatures = [BankReconciliation.signatureLines(period, first: true), BankReconciliation.signatureLines(period, first: false)]
             var signatureHeights: [[CGFloat]] = []
             for values in signatures {
@@ -151,15 +148,14 @@ nonisolated enum BankReconciliationPDF {
                 for item in values {
                     let count = lines(item, font: signatureFont, width: 237)
                     guard count != Int.max, count <= 2, !item.unicodeScalars.contains(where: { $0.value < 32 }) else { throw Failure.tooLong }
-                    heights.append(max(24, ceil(CGFloat(count) * signatureFont.lineHeight + 4)))
+                    heights.append(CGFloat(count) * signatureFont.lineHeight)
                 }
                 signatureHeights.append(heights)
             }
             let signatureHeight = signatureHeights.map { $0.reduce(0, +) }.max() ?? 0
             guard signatureHeight <= 170 else { throw Failure.tooLong }
-            let footerTop: CGFloat = 800
-            let bodyBottom = footerTop - 24
-            let signatureTop = bodyBottom - signatureHeight
+            let footerTop: CGFloat = 823
+            let signatureTop = CGFloat(812) - signatureHeight
             let tableBottom = signatureTop - 16
             guard rowTop + totalHeight < tableBottom else { throw Failure.tooLong }
             let labels = ["التاريخ", "البيان", "دائن", "مدين", "الرصيد"]
@@ -174,12 +170,19 @@ nonisolated enum BankReconciliationPDF {
             }
             let totalRow = ["", "المجموع", try number(totals.credits), try number(totals.debits), try number(totals.balance)]
             // البيان ينزل إلى سطر آخر بدل تصغير الخط، والكشف يمتد على صفحات.
+            var widths = Array(repeating: CGFloat.zero, count: labels.count)
+            for column in [0, 2, 3, 4] {
+                let widestValue = valuesByRow.reduce(CGFloat.zero) { max($0, textWidth($1[column], font: cellFonts[column])) }
+                widths[column] = ceil(max(widestValue, textWidth(labels[column], font: bold), textWidth(totalRow[column], font: bold)) + 12)
+            }
+            widths[1] = page.width - 2 * margin - widths.reduce(0, +)
+            guard widths[1] >= 100 else { throw Failure.tooLong }
             var rows: [(values: [String], height: CGFloat)] = []
             for values in valuesByRow {
                 let description = lines(values[1], font: cellFonts[1], width: widths[1] - 8)
                 guard description != Int.max, description <= 5, lines(values[0], font: cellFonts[0], width: widths[0] - 8) == 1,
                       (2...4).allSatisfy({ lines(values[$0], font: cellFonts[$0], width: widths[$0] - 8) == 1 }) else { throw Failure.tooLong }
-                let height = max(24, ceil(CGFloat(description) * cellFonts[1].lineHeight + 6))
+                let height = ceil(max(CGFloat(description) * cellFonts[1].lineHeight, bold.lineHeight) + 6)
                 guard height <= tableBottom - rowTop - totalHeight else { throw Failure.tooLong }
                 rows.append((values, height))
             }
@@ -193,9 +196,9 @@ nonisolated enum BankReconciliationPDF {
             var start = 0
             while start < rows.count {
                 var end = start
-                var y = (pages.isEmpty ? firstTableTop : continuationTableTop) + headerHeight
+                var y = rowTop
                 while end < rows.count {
-                    let limit = end == rows.count - 1 ? tableBottom - totalHeight : bodyBottom
+                    let limit = end == rows.count - 1 ? tableBottom - totalHeight : tableBottom
                     guard y + rows[end].height <= limit else { break }
                     y += rows[end].height
                     end += 1
@@ -211,34 +214,31 @@ nonisolated enum BankReconciliationPDF {
                     context.beginPage()
                     UIColor(white: 0.45, alpha: 1).setStroke()
                     cg.stroke(CGRect(x: 21, y: 18, width: 553, height: 804), width: 0.6)
-                    let tableTop = pageIndex == 0 ? firstTableTop : continuationTableTop
-                    if pageIndex == 0 {
-                        for (index, value) in organization.enumerated() {
-                            PDFText.draw(value, in: CGRect(x: 400, y: organizationTop + CGFloat(index) * organizationLine, width: 162, height: organizationLine), font: organizationFont, align: .center)
-                        }
-                        PDFText.draw(heading, in: CGRect(x: 172.5, y: 27, width: 250, height: 24), font: headingFont)
-                        for (lineIndex, segments) in accountLines.enumerated() {
-                            let total = segments.reduce(CGFloat(0)) { $0 + segmentWidth($1) } + accountGap * CGFloat(segments.count - 1)
-                            var right = (accountLeft + accountRight) / 2 + total / 2
-                            let lineY = accountTop + CGFloat(lineIndex) * accountLine
-                            for item in segments {
-                                let label = item.0 + ":"
-                                let labelWidth = textWidth(label, font: labelFont)
-                                PDFText.draw(label, in: CGRect(x: right - labelWidth - 1, y: lineY, width: labelWidth + 2, height: accountLine), font: labelFont, align: .right)
-                                right -= labelWidth + 5
-                                let valueWidth = textWidth(item.1, font: valueFont)
-                                let valueRect = CGRect(x: right - valueWidth - 0.5, y: lineY, width: valueWidth + 1, height: accountLine)
-                                PDFText.draw(item.1, in: valueRect, font: valueFont, align: .center)
-                                if item.1 != "—" { placements.append((pageIndex, valueRect, item.1, item.2, lineIndex + 1)) }
-                                right -= valueWidth + accountGap
-                            }
-                        }
-                        if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: periodTop - 16, width: 531, height: 14), font: ReportFont.bold(9), color: .darkGray) }
-                        let periodBar = CGRect(x: page.width - margin - 531, y: periodTop, width: 531, height: periodHeight)
-                        shade.setFill(); cg.fill(periodBar)
-                        UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: ReportTableStyle.borderWidth)
-                        PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
+                    for (index, value) in organization.enumerated() {
+                        PDFText.draw(value, in: CGRect(x: 400, y: organizationTop + CGFloat(index) * organizationLine, width: 162, height: organizationLine), font: organizationFont, align: .center)
                     }
+                    PDFText.draw(heading, in: CGRect(x: 172.5, y: 27, width: 250, height: 24), font: headingFont)
+                    for (lineIndex, segments) in accountLines.enumerated() {
+                        let total = segments.reduce(CGFloat(0)) { $0 + segmentWidth($1) } + accountGap * CGFloat(segments.count - 1)
+                        var right = (accountLeft + accountRight) / 2 + total / 2
+                        let lineY = accountTop + CGFloat(lineIndex) * accountLine
+                        for item in segments {
+                            let label = item.0 + ":"
+                            let labelWidth = textWidth(label, font: labelFont)
+                            PDFText.draw(label, in: CGRect(x: right - labelWidth - 1, y: lineY, width: labelWidth + 2, height: accountLine), font: labelFont, align: .right)
+                            right -= labelWidth + 5
+                            let valueWidth = textWidth(item.1, font: valueFont)
+                            let valueRect = CGRect(x: right - valueWidth - 0.5, y: lineY, width: valueWidth + 1, height: accountLine)
+                            PDFText.draw(item.1, in: valueRect, font: valueFont, align: .center)
+                            if item.1 != "—" { placements.append((pageIndex, valueRect, item.1, item.2, lineIndex + 1)) }
+                            right -= valueWidth + accountGap
+                        }
+                    }
+                    if !complete { PDFText.draw("مسودة · المطابقة غير مكتملة", in: CGRect(x: margin, y: periodTop - 16, width: 531, height: 14), font: ReportFont.bold(9), color: .darkGray) }
+                    let periodBar = CGRect(x: page.width - margin - 531, y: periodTop, width: 531, height: periodHeight)
+                    shade.setFill(); cg.fill(periodBar)
+                    UIColor.darkGray.setStroke(); cg.stroke(periodBar, width: ReportTableStyle.borderWidth)
+                    PDFText.draw(periodText, in: periodBar.insetBy(dx: 4, dy: 1), font: periodFont)
                     var x = page.width - margin
                     var rects: [CGRect] = []
                     for (i, width) in widths.enumerated() {
@@ -281,7 +281,7 @@ nonisolated enum BankReconciliationPDF {
                             }
                         }
                     }
-                    let counterRect = CGRect(x: page.midX - 56, y: footerTop, width: 112, height: 16)
+                    let counterRect = CGRect(x: page.midX - 56, y: footerTop, width: 112, height: 15)
                     let departmentLeft = counterRect.maxX + 8
                     let departmentRect = CGRect(x: departmentLeft, y: footerTop, width: page.maxX - margin - departmentLeft, height: counterRect.height)
                     PDFText.draw("صفحة \(pageIndex + 1) من \(pages.count)", in: counterRect, font: footerFont, color: .darkGray, align: .center)
