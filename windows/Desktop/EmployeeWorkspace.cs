@@ -16,7 +16,7 @@ public partial class MainWindow
                 var ledger=A.SalaryTrust.ReadFromBackup(source).Entries.Where(e=>A.PersonProfiles.Key(e.Name)==key).OrderByDescending(e=>e.Year*100+e.Month).ToArray();
                 return (A.PersonProfiles.Build(source,hit.Name,matches),ledger,matches);
             });
-            if(revision!=store.Active||page!=SearchName)return;
+            if(revision!=store.Active||(!SearchIsOpen&&page!=SearchName))return;
             var tabs=new TabControl();
             DataGrid ProfileGrid(params (string Title,string Field,double Width)[] columns){
                 var grid=GridView(columns);

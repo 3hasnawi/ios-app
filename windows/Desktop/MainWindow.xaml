@@ -7,8 +7,11 @@
 <TextBlock x:Name="NavFoot" DockPanel.Dock="Bottom" Text="بيانات محلية على هذه الحاسبة" Foreground="#CEE0D5" FontSize="{DynamicResource UiFont12}"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Nav"/></ScrollViewer></DockPanel></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 <Border Background="White" BorderBrush="#D6E1D9" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-<Button x:Name="SearchButton" Height="40" Click="SearchClick" HorizontalAlignment="Right" VerticalAlignment="Center" ToolTip="البحث الشامل (Ctrl+K)">البحث الشامل　 Ctrl+K</Button>
+<Button x:Name="BackButton" Height="40" Click="BackClick" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Hidden" ToolTip="الرجوع" AutomationProperties.Name="الرجوع">
+  <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE72A;" VerticalAlignment="Center" Margin="0,0,6,0"/><TextBlock Text="رجوع" VerticalAlignment="Center"/></StackPanel>
+</Button>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
+<TextBlock Grid.Column="1" Text="البحث الشامل" Visibility="{Binding Visibility, ElementName=SearchLayer}" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 <ComboBox Grid.Column="2" x:Name="Period" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
           ToolTip="شهر العمل" AutomationProperties.Name="شهر العمل" SelectionChanged="PeriodChanged">
   <ComboBox.Template>
@@ -40,9 +43,12 @@
 </Grid></Border>
 <DockPanel Grid.Row="1">
   <Button x:Name="UpdateNotice" DockPanel.Dock="Top" Visibility="Collapsed" Click="OpenUpdate" HorizontalContentAlignment="Center" Margin="8,4" Background="#D8EEE0"/>
+  <Grid>
   <ScrollViewer x:Name="BodyViewport" Margin="26,22,26,10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
     <Grid x:Name="CanvasArea" Width="{Binding ViewportWidth, ElementName=BodyViewport}" Height="{Binding ViewportHeight, ElementName=BodyViewport}" MinWidth="628" MinHeight="400"/>
   </ScrollViewer>
+  <Grid x:Name="SearchLayer" Visibility="Collapsed" Margin="{Binding Margin, ElementName=BodyViewport}"/>
+  </Grid>
 </DockPanel>
 <Border Grid.Row="2" Background="White" Padding="25,6"><local:DisplayText x:Name="Status" Foreground="#50645A" FontSize="{DynamicResource UiFont12}" TextWrapping="Wrap"/></Border></Grid>
 </Grid></Window>

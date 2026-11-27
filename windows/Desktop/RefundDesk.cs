@@ -49,7 +49,8 @@ public partial class MainWindow
                 rows.Add(p with{Amount=Value()});Redraw();searchBox.Clear();amounts.Clear();searchBox.Focus();
             }),"\uE710");
         PageTitle.Text=editing?.ArchiveId is null or "draft"?"دفعة جديدة":"تعديل الدفعة";
-        var head=Column(Bar(ButtonFor("إعادة المبالغ",()=>ShowPage(RefundTransfers),"\uE72A"),ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
+        SetSubpageBack(()=>{if(editing?.ArchiveId is null or "draft")ShowPage(RefundTransfers);else RefundFiles(source,month,editing);});
+        var head=Column(Bar(ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
             FilterBar(("ابحث في رواتب "+month,searchBox,1),("المنتسب",results,1.2),("المبلغ",amounts,.75),("",add,0)),
             FilterBar(("جهة الإعادة",agency,1),("تاريخ الدفعة",date,0),("الجهة الدافعة",payer,1),("آيبان الجهة الدافعة",account,1.5)),note);
         var actions=Bar(ButtonFor("تعديل مبلغ المنتسب",()=>Guard(()=>{if(selected.SelectedItem is RefundPayee p){rows[rows.IndexOf(p)]=p with{Amount=Value()};Redraw();}})),ButtonFor("إزالة المنتسب",()=>{if(selected.SelectedItem is RefundPayee p){rows.Remove(p);Redraw();}}),

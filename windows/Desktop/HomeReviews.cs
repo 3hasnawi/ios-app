@@ -38,7 +38,6 @@ public partial class MainWindow
             if(!Form(selected.Title,Labeled("جهة التنفيذ",list,360)))return;
             selected=entities[list.SelectedIndex];
         }
-        backPage="الرئيسية";
         ShowPage(AgencyPage,selected);
     }
 

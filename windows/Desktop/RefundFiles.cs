@@ -32,13 +32,14 @@ public partial class MainWindow
         }
         Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>_=OpenRefundEditor(source,month,draft));
         Section("الدفعات المحفوظة",saved.Count+" دفعة　·　الكتب وملفات المصارف","\uE8B7",()=>RefundHistory(source,month,saved));
-        CanvasArea.Children.Add(Column(Bar(ButtonFor("التحويلات",()=>ShowPage(TransfersName),"\uE72A")),choices));
+        CanvasArea.Children.Add(Column(choices));
     }
 
     void RefundHistory(A.BackupSnapshot source,string month,IReadOnlyList<RefundBatch> batches)
     {
         CanvasArea.Children.Clear();PageTitle.Text="الدفعات المحفوظة";
-        var panel=Column(Bar(ButtonFor("إعادة المبالغ",()=>ShowPage(RefundTransfers),"\uE72A")));
+        SetSubpageBack(()=>ShowPage(RefundTransfers));
+        var panel=Column();
         if(batches.Count==0)panel.Children.Add(Text("لا توجد دفعات محفوظة."));
         foreach(var batch in batches){
             string label=batch.Date.ToString("yyyy/MM/dd")+"　·　"+batch.Source+"　·　"+batch.People.Count+" منتسب　·　"+Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount));
@@ -61,7 +62,8 @@ public partial class MainWindow
     {
         CanvasArea.Children.Clear();PageTitle.Text="ملفات الدفعة";
         void Back()=>RefundHistory(source,month,store.Refunds().Where(b=>b.ArchiveId!="draft").ToList());
-        var panel=Column(Bar(ButtonFor("الدفعات المحفوظة",Back,"\uE72A"),ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
+        SetSubpageBack(Back);
+        var panel=Column(Bar(ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
             ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
                 _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D")),
             Text(batch.Source+"　·　"+batch.Date.ToString("yyyy/MM/dd")+"　·　"+batch.People.Count+" منتسب　·　"+Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount)),18,true));

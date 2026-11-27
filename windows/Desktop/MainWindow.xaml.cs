@@ -43,13 +43,52 @@ public partial class MainWindow : Window
     private int generation,offset;private const int PageSize=150;
     private TextBox? search,reference;private ComboBox? agency,year,monthFilter,category;
     private DataGrid? grid;private TextBlock? footer;private Button? next,previous;
-    private string? backPage;
+    readonly Stack<string> pageHistory=new();
+    Action? subpageBack;
+    IInputElement? focusBeforeSearch;
+    bool SearchIsOpen=>SearchLayer.Visibility==Visibility.Visible;
+
+    void UpdateBackButton()=>BackButton.Visibility=SearchIsOpen || subpageBack!=null || pageHistory.Count>0
+        ?Visibility.Visible:Visibility.Hidden;
+
+    void SetSubpageBack(Action back){subpageBack=back;UpdateBackButton();}
+
+    void BackClick(object sender,RoutedEventArgs e)
+    {
+        if(busy)return;
+        if(SearchIsOpen){CloseKeyboardSearch();return;}
+        if(subpageBack!=null){Guard(subpageBack);return;}
+        if(pageHistory.TryPop(out var previous))ShowPage(previous,goingBack:true);
+    }
+
+    void OpenKeyboardSearch()
+    {
+        if(SearchIsOpen || busy)return;
+        focusBeforeSearch=Keyboard.FocusedElement;
+        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Hidden;
+        SearchLayer.Visibility=Visibility.Visible;
+        UpdateBackButton();
+        SearchAll(SearchLayer);
+    }
+
+    void CloseKeyboardSearch()
+    {
+        if(!SearchIsOpen)return;
+        SearchLayer.Children.Clear();SearchLayer.Visibility=Visibility.Collapsed;
+        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Visible;
+        UpdateBackButton();
+        if(focusBeforeSearch is UIElement {IsVisible:true,IsEnabled:true} target)target.Focus();
+        focusBeforeSearch=null;
+    }
     public MainWindow(Store source)
     {
         store=source;appearance=Appearance.Read(store.Root);appearance.Apply();InitializeComponent();
         SizeChanged+=(_,_)=>AdaptNavigation();
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
-        PreviewKeyDown+=(_,e)=>{if(e.Key==Key.K&&Keyboard.Modifiers==ModifierKeys.Control&&!busy){ShowPage(SearchName);e.Handled=true;}};
+        PreviewKeyDown+=(_,e)=>{
+            if(e.Key==Key.K && Keyboard.Modifiers==ModifierKeys.Control && !busy){OpenKeyboardSearch();e.Handled=true;}
+            else if(e.Key==Key.Escape && SearchIsOpen){CloseKeyboardSearch();e.Handled=true;}
+        };
         Loaded+=(_,_)=>Guard(()=>{store.UpgradeIndex();Reload();initializing=false;ShowPage("الرئيسية");});
     }
     void Guard(Action work){try{work();}catch(Exception e){Error(e);}}
@@ -110,19 +149,22 @@ public partial class MainWindow : Window
     }
     void OpenMonthList(object sender,RoutedEventArgs e){Period.Focus();Period.IsDropDownOpen=!Period.IsDropDownOpen;}
     void PeriodChanged(object s,SelectionChangedEventArgs e){if(!initializing&&!busy&&page!=DirectoryName)ShowPage(page);}
-    void SearchClick(object s,RoutedEventArgs e){if(!busy)ShowPage(SearchName);}
-    void ShowPage(string name,Review? review=null)
+    void ShowPage(string name,Review? review=null,bool goingBack=false)
     {
         if(busy)return;
         if(name=="التحويلات")name=TransfersName;
         if(name==DeductionsName)name=AgencyPage;
+        CloseKeyboardSearch();
+        if(name=="الرئيسية")pageHistory.Clear();
+        else if(page!=name && !goingBack)pageHistory.Push(page);
+        subpageBack=null;UpdateBackButton();
         query?.Cancel();generation++;debounce.Stop();page=name;
         PageTitle.Text=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName=>"التحويلات",_=>name};Nav.Children.Clear();CanvasArea.Children.Clear();grid=null;
         bool fitViewport=name is "الرئيسية" or "الإعدادات";
         CanvasArea.MinWidth=fitViewport?0:628;
         CanvasArea.MinHeight=fitViewport?0:400;
         string active=name switch{AgencyPage or EmployeePage or HistoryPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers or "الكتب المحفوظة"=>"التحويلات",_=>name};
-        foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>{backPage=null;ShowPage(n.Name);},n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
+        foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>ShowPage(n.Name),n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
         AdaptNavigation();
         Status.Text=store.Active==null?"استورد نسخة احتياطية أو ملف بيانات من الإعدادات لبدء العمل.":"تُعرض البيانات من النسخة المحفوظة محلياً";
@@ -137,7 +179,6 @@ public partial class MainWindow : Window
         SidePanel.Padding=compact?new Thickness(3,12,3,8):new Thickness(17,30,17,18);
         BodyViewport.Margin=compact?new Thickness(6):new Thickness(26,22,26,10);
         AccountDirectoryButton.Content=compact?"IBAN":"حسابات IBAN";
-        SearchButton.Content=ActualWidth<760?"بحث":"البحث الشامل　 Ctrl+K";
         foreach(var button in Nav.Children.OfType<Button>()){
             var parts=(StackPanel)button.Content;
             parts.Children[1].Visibility=compact?Visibility.Collapsed:Visibility.Visible;
@@ -148,7 +189,6 @@ public partial class MainWindow : Window
     }
     void Activate(string name)
     {
-        backPage="الرئيسية";
         ShowPage(name);
     }
     void EditPins()
@@ -272,7 +312,6 @@ public partial class MainWindow : Window
         var title=Bar();
         foreach(var (route,label,icon) in new[]{(AgencyPage,"جهات التنفيذ","\uEC06"),(EmployeePage,"استقطاعات المنتسبين","\uE77B"),(HistoryPage,"بحث في جميع القيود","\uE721")})
             title.Children.Add(ButtonFor(label,()=>{if(page!=route)ShowPage(route);},icon,page==route));
-        if(backPage=="الرئيسية")title.Children.Add(ButtonFor("العودة للرئيسية",()=>{backPage=null;ShowPage("الرئيسية");},"\uE72A"));
         category=Choices(["كل المجموعات","مديريات التنفيذ","المصارف","الجهات الأخرى"]);
         var fields=new List<(string,Control,double)>{("مجموعة الجهات",category,0)};
         if(search!=null)fields.Add((page==EmployeePage?"بحث باسم المنتسب":"كلمة البحث",search,1));
@@ -352,7 +391,7 @@ public partial class MainWindow : Window
         var entries=store.Books();var dock=new DockPanel();CanvasArea.Children.Add(dock);
         var picker=Choices(new[]{"كل الأشهر"}.Concat(entries.Select(b=>b.Month).Distinct()));
         if(entries.Any(b=>b.Month==SelectedMonth?.Name))picker.SelectedItem=SelectedMonth!.Name;
-        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("إضافة كتاب موقّع",()=>Guard(ImportSigned)),ButtonFor("العودة",()=>ShowPage(backPage??TransfersName),"\uE72A")),FilterBar(("شهر الكتاب",picker,0)));
+        var top=Column(Bar(Text("الكتب المحفوظة",23,true),ButtonFor("إضافة كتاب موقّع",()=>Guard(ImportSigned))),FilterBar(("شهر الكتاب",picker,0)));
         DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
         var list=GridView(("اسم الكتاب","Title",2.3),("الجهة","Agency",1.5),("الشهر","Month",1),("الصفحات","Pages",.6));
         var save=ButtonFor("حفظ PDF الأصلي",()=>Guard(()=>{
@@ -383,7 +422,7 @@ public partial class MainWindow : Window
         async Task ChooseMonth(int key){
             Period.ApplyTemplate();
             var opener=(Button)Period.Template.FindName("MonthButton",Period);
-            if(Math.Abs(opener.ActualHeight-SearchButton.ActualHeight)>1)throw new InvalidDataException("ارتفاع زر الشهر لا يطابق البحث.");
+            if(Math.Abs(opener.ActualHeight-BackButton.Height)>1)throw new InvalidDataException("ارتفاع زر الشهر لا يطابق زر الرجوع.");
             opener.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
             if(!Period.IsDropDownOpen)throw new InvalidDataException("تعذر فتح قائمة الأشهر.");
@@ -429,6 +468,22 @@ public partial class MainWindow : Window
                 if(name==CurrentTransfers){
                     await ChooseMonth(202610);
                     var group=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="المجموعة");
+                    group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Rafidain;
+                    UpdateLayout();
+                    var date=Controls<DatePicker>(CanvasArea).Single();
+                    var exportButton=FindAction(CanvasArea,"الكتاب وملف CSV");
+                    var options=FindAction(CanvasArea,"خيارات");
+                    var y=group.TranslatePoint(new Point(),CanvasArea).Y;
+                    if(new Control[]{date,exportButton,options}.Any(c=>Math.Abs(c.TranslatePoint(new Point(),CanvasArea).Y-y)>1 || Math.Abs(c.ActualHeight-group.ActualHeight)>1))
+                        throw new InvalidDataException("حقول التحويل وأوامره ليست في صف واحد.");
+                    date.IsDropDownOpen=true;UpdateLayout();
+                    if(date.Template.FindName("PART_Popup",date) is not System.Windows.Controls.Primitives.Popup {IsOpen:true})
+                        throw new InvalidDataException("تعذّر فتح تقويم التحويل.");
+                    date.IsDropDownOpen=false;
+                    OpenKeyboardSearch();
+                    if(!SearchIsOpen || !BackButton.IsVisible)throw new InvalidDataException("تعذّر فتح البحث من الدفعة.");
+                    BackButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    if(SearchIsOpen || !group.IsVisible || page!=CurrentTransfers)throw new InvalidDataException("تعذّر الرجوع إلى الدفعة من البحث.");
                     group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Anbar;
                     var books=Controls<DataGrid>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="كتب فرع الأنبار والكتب المنفردة");
                     var letters=books.Items.Cast<TransferRow>().ToArray();
@@ -636,7 +691,7 @@ public partial class MainWindow : Window
                     foreach(double available in new[]{628d,original}){
                         CanvasArea.MaxWidth=available;UpdateLayout();
                         foreach(var row in rows){
-                            var inputs=row.Children.OfType<StackPanel>().Select(field=>(Control)field.Children[1]);
+                            var inputs=row.Children.OfType<StackPanel>().Where(field=>field.Children.Count==2 && field.Children[0] is TextBlock).Select(field=>(Control)field.Children[1]);
                             var bounds=inputs.Select(c=>c.TransformToAncestor(CanvasArea).TransformBounds(new Rect(c.RenderSize))).OrderBy(r=>r.Left).ToArray();
                             if(bounds.Any(r=>Math.Abs(r.Top-bounds[0].Top)>1||r.Left<0||r.Right>CanvasArea.ActualWidth+1||r.Width<42)||
                                 bounds.Zip(bounds.Skip(1),(a,b)=>a.Right>b.Left+1).Any(overlap=>overlap))

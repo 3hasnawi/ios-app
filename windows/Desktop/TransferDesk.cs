@@ -59,7 +59,7 @@ public partial class MainWindow
     {
         var batch=Store.ActiveBatch(s,month);
         var route=held?DeferredTransfers:CurrentTransfers;
-        var head=Column(Bar(ButtonFor("التحويلات",()=>ShowPage(TransfersName),"\uE72A"),Text(month,16,true)));
+        var head=Column();
         var dock=new DockPanel();
         DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);CanvasArea.Children.Add(dock);
         if(held){
@@ -83,9 +83,23 @@ public partial class MainWindow
         var group=Choices(["الرافدين","الرشيد والمصارف الأخرى","فرع الأنبار والكتب المنفردة","جهات تحتاج مراجعة"]);
         group.SelectedIndex=(int)(held?deferredGroup:currentGroup);
         var date=new DatePicker{SelectedDate=DateTime.Today};
-        var filter=FilterBar(("المجموعة",group,1),("تاريخ التحويل",date,0));
-        head.Children.Add(filter);
-        var actions=Bar();head.Children.Add(actions);
+        group.SetResourceReference(Control.TemplateProperty,"TransferGroupTemplate");
+        date.SetResourceReference(Control.TemplateProperty,"TransferDateTemplate");
+        group.MinWidth=210*(1+appearance.Level*.05);
+        date.MinWidth=132*(1+appearance.Level*.05);
+        var filter=FilterBar(("المجموعة",group,0),("تاريخ التحويل",date,0));
+        group.Height=date.Height=36;
+        var row=(Grid)filter.Child;
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Bottom};
+        void AddCommand(Button button){
+            button.Height=group.Height;button.Margin=new Thickness(3,0,3,0);button.Padding=new Thickness(8,2,8,2);
+            actions.Children.Add(button);
+        }
+        Grid.SetColumn(actions,row.ColumnDefinitions.Count);
+        row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+        row.Children.Add(actions);
+        head.Children.Insert(0,new ScrollViewer{Content=filter,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
         var info=Text("",14);head.Children.Add(info);
         if(plan.SourceWarnings.Count>0)
             head.Children.Add(new Expander{Header="ملاحظات المراجعة ("+plan.SourceWarnings.Count+")",Content=new ScrollViewer{MaxHeight=95,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Content=Text(string.Join("\n",plan.SourceWarnings),13)}});
@@ -177,19 +191,19 @@ public partial class MainWindow
                 var export=ButtonFor("الكتاب وملف CSV",()=>Guard(()=>{
                     CheckSource();ExportGroup(s,month,plan,g,batch,held,date.SelectedDate??throw new InvalidDataException("حدد تاريخ التحويل."));
                 }),"\uE74E",true);
-                export.IsEnabled=rows.Length>0;actions.Children.Add(export);
+                export.IsEnabled=rows.Length>0;AddCommand(export);
             }
             if(batch!=null && g!=A.TransferGroup.Unresolved){
                 var parts=batch.Parts.Where(p=>p.Portion(held)?.Group==g).ToList();
                 var entities=parts.Where(p=>p.Entity.PayrollRecipient==null).ToList();
                 if(entities.Count>0){
-                    actions.Children.Add(PreviewButton("كشوف جهات التنفيذ - "+month,()=>{
+                    AddCommand(PreviewButton("كشوف جهات التنفيذ - "+month,()=>{
                         CheckSource();
                         return Task.Run(()=>ExecutionSheetsPdf(s,entities,held));
                     },caption:"معاينة كشوف جهات التنفيذ"));
                 }
                 if(parts.FirstOrDefault(p=>p.Entity.PayrollRecipient=="fundDonations") is {} fund)
-                    actions.Children.Add(PreviewButton("كشف صندوق الشهداء - "+month,()=>{
+                    AddCommand(PreviewButton("كشف صندوق الشهداء - "+month,()=>{
                         CheckSource();
                         return Task.Run(()=>SplitFundPdf(s,month,fund,held));
                     },caption:"معاينة كشف الصندوق"));
@@ -205,7 +219,7 @@ public partial class MainWindow
                 });
                 if(!held)MenuAction(menu,"الكتب المخصصة",()=>TemplatesDesk(s,month));
             });
-            if(!held||g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks)actions.Children.Add(options);
+            if(!held||g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks)AddCommand(options);
         }
         group.SelectionChanged+=(_,_)=>Guard(Draw);
         Draw();

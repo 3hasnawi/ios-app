@@ -53,13 +53,15 @@ public partial class MainWindow
         dialog.Content=new ScrollViewer{Content=Box(stack),HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};return dialog.ShowDialog()==true;
     }
     string? auditFilter;
-    void SearchAll()
+    void SearchAll(Grid? overlay=null)
     {
         var dock=new DockPanel();var input=new TextBox();var title=Text("ابحث بالاسم أو اسم الأم أو الرقم الإحصائي أو الجهة أو الإضبارة",15);
         var top=Column(title,FilterBar(("بحث في الرواتب والملاك والاستقطاعات والأمانات",input,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);
-        var list=GridView(("المصدر","Kind",.65),("الاسم","Name",1.5),("الشهر","Month",.9),("التفاصيل","Info",1.9));dock.Children.Add(list);CanvasArea.Children.Add(dock);
-        int serial=0;input.TextChanged+=async (_,_)=>{var q=input.Text;int current=++serial;await Task.Delay(180);if(serial!=current||page!=SearchName)return;
-            try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||page!=SearchName)return;list.ItemsSource=hits.Take(300);Status.Text=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";}catch(Exception e){Error(e);}};
+        var list=GridView(("المصدر","Kind",.65),("الاسم","Name",1.5),("الشهر","Month",.9),("التفاصيل","Info",1.9));dock.Children.Add(list);
+        var host=overlay??CanvasArea;
+        host.Children.Add(dock);
+        int serial=0;input.TextChanged+=async (_,_)=>{var q=input.Text;int current=++serial;await Task.Delay(180);if(serial!=current||!host.Children.Contains(dock))return;
+            try{var hits=await Task.Run(()=>store.SearchPeople(q));if(current!=serial||!host.Children.Contains(dock))return;list.ItemsSource=hits.Take(300);var note=hits.Count>300?"تظهر أول 300 نتيجة. ضيّق البحث.":hits.Count+" نتيجة";if(overlay==null)Status.Text=note;else title.Text=note;}catch(Exception e){if(host.Children.Contains(dock))Error(e);}};
         list.MouseDoubleClick+=async (_,_)=>{if(list.SelectedItem is Store.SearchResult hit)await OpenPerson(hit);};input.Focus();
     }
     Task workPageLoad=Task.CompletedTask;
@@ -75,7 +77,7 @@ public partial class MainWindow
                 if(page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
                 CanvasArea.Children.Remove(loading);
                 var dock=new DockPanel();var filter=Choices(new[]{"كل الحالات"}.Concat(result.Rows.Select(r=>ReviewTitle(r.Kind)).Distinct()));if(initial!=null)filter.SelectedItem=initial;
-                var head=FilterBar(("حالة المراجعة",filter,0),("",ButtonFor("الرئيسية",()=>ShowPage("الرئيسية")),0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
+                var head=FilterBar(("حالة المراجعة",filter,0));DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);
                 var list=GridView(("الحالة","Kind",1),("المنتسب","Name",1.4),("التفاصيل","Detail",3),("السابق","Before",.8),("الحالي","After",.8));
                 void Draw(){list.ItemsSource=result.Rows.Where(r=>filter.SelectedIndex<=0||ReviewTitle(r.Kind)==(string)filter.SelectedItem).ToList();}
                 var preview = ButtonFor("معاينة الكشف",()=>Guard(()=>{
