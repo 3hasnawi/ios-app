@@ -194,3 +194,58 @@ func atomicFile(path string, b []byte) error {
 	}
 	return os.Rename(f.Name(), path)
 }
+
+// A peer may add a row while another removes its month, or retain a row using
+// a schema or PDF which the other peer stopped using. Restore just its parent;
+// deleted rows and unrelated metadata stay deleted.
+func keepReferencedRecords(out *index, sources ...*index) {
+	refs := map[string]bool{}
+	must(out.db.View(func(tx *bolt.Tx) error {
+		for _, kind := range []string{"deductions", "employees"} {
+			iterate(tx, kind, func(p []string, b []byte) {
+				refs[recKey("months", p[1])] = true
+				if kind == "employees" {
+					var group [][]byte
+					must(decode(b, &group))
+					for _, raw := range group {
+						var row Object
+						must(decode(raw, &row))
+						if key := str(row, "syncHeader"); key != "" {
+							refs[recKey("schema", key)] = true
+						}
+					}
+				}
+			})
+		}
+		iterate(tx, "books", func(_ []string, b []byte) {
+			var book Object
+			must(decode(b, &book))
+			refs[recKey("pdf", str(book, "syncPDF"))] = true
+		})
+		iterate(tx, "contract", func(_ []string, _ []byte) { refs[recKey("contractFormat", contractKey)] = true })
+		for k := range refs {
+			if rows(tx).Get([]byte(k)) != nil {
+				delete(refs, k)
+			}
+		}
+		return nil
+	}))
+	if len(refs) == 0 {
+		return
+	}
+	must(out.db.Update(func(tx *bolt.Tx) error {
+		for _, source := range sources {
+			must(source.db.View(func(read *bolt.Tx) error {
+				for k := range refs {
+					if b := rows(read).Get([]byte(k)); b != nil {
+						must(rows(tx).Put([]byte(k), b))
+						delete(refs, k)
+					}
+				}
+				return nil
+			}))
+		}
+		check(len(refs) == 0, "Missing record dependency")
+		return nil
+	}))
+}

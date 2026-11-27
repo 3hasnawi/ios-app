@@ -72,9 +72,18 @@ jobs:
         with:
           name: accounting-exchange
           path: ${{ runner.temp }}/exchange
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Reconstruct the Windows exchange with the OneDrive merger
+        run: |
+          mkdir "$RUNNER_TEMP/merged"
+          cd sync/workspace
+          PAYROLL_SOURCE_ARCHIVE="$RUNNER_TEMP/exchange/windows-month.zip" PAYROLL_RENDERED_ARCHIVE="$RUNNER_TEMP/merged/windows-month.zip" go test -run TestCrossPlatformAccountingExchange
       - name: Exercise the iPhone archive and letter reference implementations
         env:
-          WINDOWS_EXCHANGE: ${{ runner.temp }}/exchange/windows-month.zip
+          WINDOWS_EXCHANGE: ${{ runner.temp }}/merged/windows-month.zip
           TRIAL_REFUND_SNAPSHOT: ${{ runner.temp }}/exchange/trial/batch.json
           WINDOWS_REFUND: ${{ runner.temp }}/exchange/refund.json
         run: |

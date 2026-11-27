@@ -203,12 +203,13 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 			archiveIndex(db, src)
 			idx = append(idx, db)
 		}
-		conflicts, changed, e := merge(idx[0], idx[1], idx[2], idx[3], r.Choices)
+		conflicts, _, e := merge(idx[0], idx[1], idx[2], idx[3], r.Choices)
 		must(e)
 		if len(conflicts) > 0 {
 			return Result{Status: "conflict", Conflicts: conflicts}
 		}
-		p.Apply = changed
+		keepReferencedRecords(idx[3], idx[1], idx[2], idx[0])
+		p.Apply = !sameIndex(idx[3], idx[1])
 		p.Publish = !sameIndex(idx[3], idx[2])
 		if !p.Publish {
 			copyFile(remote, candidate)

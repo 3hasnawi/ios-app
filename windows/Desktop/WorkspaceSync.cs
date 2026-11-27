@@ -30,8 +30,7 @@ public partial class MainWindow
     {
         var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(90)};
         async Task Automatic(){
-            if(!initializing && IsActive && !busy && syncDialog==null && syncConflicts.Length==0 &&
-               (page=="الرئيسية" || page=="الإعدادات") && SyncEnabled)await WorkspaceRun();
+            if(!initializing && IsActive && !busy && syncDialog==null && syncConflicts.Length==0 && SyncEnabled)await WorkspaceRun();
         }
         timer.Tick+=async (_,_)=>await Automatic();
         Activated+=async (_,_)=>await Automatic();
@@ -139,6 +138,9 @@ public partial class MainWindow
             if(reply.status=="conflict"){syncConflicts=reply.conflicts??[];syncStatus="راجع القيود المتعارضة في إعدادات OneDrive.";return;}
             if(reply.status=="waiting"){syncStatus="بانتظار بيانات للمزامنة";return;}
             if(reply.status=="ready" && reply.file is {} file){
+                if(reply.apply && syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات")){
+                    syncStatus="توجد تعديلات ستصل عند العودة إلى الرئيسية.";return;
+                }
                 await Task.Run(()=>store.ValidateWorkspace(file));
                 void Check(){if(store.WorkspaceStamp!=stamp || busy || ((App)Application.Current).DeviceLock.SyncLocked)throw new IOException("تغيّرت البيانات أو أُغلق التطبيق. ستُعاد المحاولة.");}
                 Check();args["action"]="publish";args["transaction"]=reply.transaction!;reply=await CallWorkspace(args);

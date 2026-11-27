@@ -301,3 +301,24 @@ func TestContractBinaryLedger(t *testing.T) {
 		t.Fatal("sealed contract data changed")
 	}
 }
+
+func TestCrossPlatformAccountingExchange(t *testing.T) {
+	source := os.Getenv("PAYROLL_SOURCE_ARCHIVE")
+	destination := os.Getenv("PAYROLL_RENDERED_ARCHIVE")
+	if source == "" || destination == "" {
+		t.Skip("requires the fictional Windows accounting exchange")
+	}
+	dir := t.TempDir()
+	a, e := openIndex(filepath.Join(dir, "source"))
+	must(e)
+	defer a.close()
+	b, e := openIndex(filepath.Join(dir, "result"))
+	must(e)
+	defer b.close()
+	archiveIndex(a, source)
+	render(a, destination)
+	archiveIndex(b, destination)
+	if !sameIndex(a, b) {
+		t.Fatal("the portable ledger changed after rendering")
+	}
+}
