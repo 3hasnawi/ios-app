@@ -38,7 +38,8 @@ public partial class MainWindow : Window
         ("بحث الاستقطاعات","البحث والتصفية في سجل القيود","\uE721"),("كشف البنك","فترات المطابقة المحفوظة","\uE825"),
         (TransfersName,"كتب المصارف ودفعات الشهر","\uE8AB"),(AuditName,"حالات المراجعة والتغييرات","\uEA8F"),
         (TrustName,"المنتسبون وحالات الصرف","\uE77B"),(FundingName,"تفصيل المبالغ ومطابقتها","\uE825"),
-        (CommandName,"استقطاعات القيادة للشهر","\uE8A5"),(HealthName,"المشتركون والمبالغ غير المنتظمة","\uE95E"),(FundName,"الاستقطاعات حسب الفئة","\uE8A5")];
+        (CommandName,"استقطاعات القيادة للشهر","\uE8A5"),(HealthName,"المشتركون والمبالغ غير المنتظمة","\uE95E"),(FundName,"الاستقطاعات حسب الفئة","\uE8A5"),
+        (FoodName,"عقد الإطعام وتفاصيل النسبة","\uE8EA")];
     private List<string> pins=Cards.Take(4).Select(x=>x.Name).ToList();
     private readonly DispatcherTimer debounce=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private int generation,offset;private const int PageSize=150;
@@ -447,7 +448,7 @@ public partial class MainWindow : Window
             if(SelectedMonth!=month)throw new InvalidDataException("تعذر تغيير شهر العمل.");
             await workPageLoad;
         }
-        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(ArchiveName,"archive"),(CurrentTransfers,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds"),(TrustName,"trusts"),(DeferredTransfers,"deferred-transfers"),(HealthName,"health"),(FundName,"fund")}){
+        foreach(var (name,file) in new[]{("الرئيسية","home"),(DeductionsName,"deductions"),(EmployeePage,"employee-search"),("التحويلات","transfers"),("كشف البنك","bank"),("الإعدادات","settings"),(ArchiveName,"archive"),(CurrentTransfers,"transfer-files"),(FundingName,"funding"),(AuditName,"audit"),(SearchName,"search"),("إعادة المبالغ","refunds"),(TrustName,"trusts"),(DeferredTransfers,"deferred-transfers"),(HealthName,"health"),(FundName,"fund"),(FoodName,"food")}){
             if(name==DeductionsName){
                 var order=Nav.Children.OfType<Button>().Select(AutomationProperties.GetName).ToList();
                 if(order.IndexOf(ArchiveName)!=order.IndexOf("الإعدادات")-1 || order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
@@ -598,11 +599,18 @@ public partial class MainWindow : Window
                 foreach(var letter in letters)await CheckPreview(letter,refund:true);
 
             }else{
-                if(name is HealthName or FundName){
+                if(name is HealthName or FundName or FoodName){
                     initializing=true;Period.SelectedItem=months.Single(m=>m.Key==202610);initializing=false;
                 }
                 ShowPage(name);
                 if(WorkPages.Contains(name))await workPageLoad;
+            }
+            if(name==FoodName){
+                var reportGrid=Controls<DataGrid>(CanvasArea).Single();
+                if(reportGrid.Items.Count!=1 || !Names("food").SequenceEqual(new[]{FoodName}))
+                    throw new InvalidDataException("لم يظهر كشف عراق الجوال المثبت للشهر المختار.");
+                FindAction(CanvasArea,"تصدير Excel");
+                await CheckPreview(refund:true);
             }
             if(name=="الإعدادات"){
                 UpdateLayout();

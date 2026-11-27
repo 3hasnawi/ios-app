@@ -8,7 +8,8 @@ namespace AnbarPayroll.Desktop;
 public partial class MainWindow
 {
     const string FundingName="المصروفات والتمويل", CommandName="استقطاعات القيادة", TrustName="أمانات الرواتب", HealthName="الرعاية الصحية", FundName="صندوق الشهداء", AuditName="تدقيق الرواتب", SearchName="البحث الشامل", TransfersName="ملفات التحويل";
-    static readonly string[] WorkPages=[FundingName,CommandName,TrustName,HealthName,FundName,AuditName,SearchName,TransfersName];
+    const string FoodName="شركة عراق الجوال";
+    static readonly string[] WorkPages=[FundingName,CommandName,TrustName,HealthName,FundName,FoodName,AuditName,SearchName,TransfersName];
     static A.ReportAssets Fonts()
     {
         string dir=Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
@@ -153,6 +154,13 @@ public partial class MainWindow
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
             if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
+            if(key==FoodName){
+                var rows=await Task.Run(()=>A.FoodContractReport.RowsForMonth(snapshot,month));
+                if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||SelectedMonth?.Name!=month)return;
+                CanvasArea.Children.Remove(loading);
+                FoodDesk(snapshot,month,rows);
+                return;
+            }
             CanvasArea.Children.Remove(loading);
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
@@ -176,6 +184,27 @@ public partial class MainWindow
             }
             panel.Children.Add(tabs);CanvasArea.Children.Add(panel);
         }catch(Exception e){if(generation==requestGeneration && page==key && revision==store.Active){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message,16));}}
+    }
+    void FoodDesk(A.BackupSnapshot snapshot,string month,IReadOnlyList<A.FoodContractReport.Row> rows)
+    {
+        if(rows.Count==0){
+            CanvasArea.Children.Add(Text("لا توجد استقطاعات لشركة عراق الجوال في رواتب "+month+"."));
+            return;
+        }
+        var title=A.FoodContractReport.Title(snapshot,month);
+        var name=A.FoodContractReport.FileName(month);
+        var split=new A.FoodContractReport.Split(rows.Sum(r=>r.Total));
+        var dock=new DockPanel();
+        var actions=Bar(Text(month,18,true),
+            PreviewButton(name,()=>Task.Run(()=>A.FoodContractReport.Pdf(rows,title,Fonts(),DateTime.Now)),printAndSave:true),
+            ButtonFor("تصدير Excel",()=>_=SaveFile(name,"xlsx",()=>A.FoodContractReport.Excel(rows,title))));
+        DockPanel.SetDock(actions,Dock.Top);dock.Children.Add(actions);
+        var totals=Text($"عدد المشتركين {rows.Sum(r=>r.Count)}　·　مجموع الاستقطاع {Arabic.Money(split.Total)}　·　صندوق الشهداء {Arabic.Money(split.Fund)}　·　الضريبة {Arabic.Money(split.Tax)}　·　حصة الشركة {Arabic.Money(split.Company)}",14);
+        totals.TextWrapping=TextWrapping.Wrap;
+        DockPanel.SetDock(totals,Dock.Bottom);dock.Children.Add(totals);
+        var grid=GridView(("ت","Serial",0.5),("عدد المشتركين","Count",1),("مبلغ الاستقطاع","Amount",1),("المجموع","Total",1));
+        grid.ItemsSource=rows.Select((r,index)=>new{Serial=index+1,r.Count,Amount=Arabic.Money(r.Amount),Total=Arabic.Money(r.Total)}).ToList();
+        dock.Children.Add(grid);CanvasArea.Children.Add(dock);
     }
     void SpecialDesk(A.BackupSnapshot s,string month,bool health)
     {

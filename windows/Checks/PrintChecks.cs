@@ -21,6 +21,7 @@ static class PrintChecks
             // فروق معروفة بين شهري المقارنة لاختبار التنقل بين بطاقات المراجعة.
             pay.Cell(2,3).Value="قسم سابق تجريبي";
             pay.Cell(2,4).Value="4500";
+            pay.Cell(2,17).Value=3000;pay.Cell(3,17).Value=3000;
             pay.Cell(2,12).Value=2000;pay.Cell(2,13).Value=3500;
             var path=Path.Combine(dir,"screen-october.xlsx");demo.SaveAs(path);
             s.ApplyExcel(s.PreviewExcel(path,"تشرين الأول 2026"),s.Active);

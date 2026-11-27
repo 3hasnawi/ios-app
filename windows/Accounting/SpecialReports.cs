@@ -170,6 +170,14 @@ public static class FoodContractReport
     public static bool Applies(string title) => PayrollAnalysis.Normalize(title).Contains(PayrollAnalysis.Normalize("الجوال"), StringComparison.Ordinal);
     public static IReadOnlyList<Row> Rows(BackupSnapshot source, string month, string item) =>
         StandardReports.ItemPeople(source, month, item).GroupBy(p => p.Amount).Select(g => new Row(g.Key, g.Count())).OrderBy(r => r.Amount).ToArray();
+    public static IReadOnlyList<Row> RowsForMonth(BackupSnapshot source, string month)
+    {
+        // عند تعدد البنود المطابقة يُفتح الأعلى مجموعاً كما في «كشوفي» على الآيفون.
+        var item = TemplateLetterPdf.Summary(source, month).Where(pair => Applies(pair.Key))
+            .OrderByDescending(pair => pair.Value.Total).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => pair.Key).FirstOrDefault();
+        return item == null ? [] : Rows(source, month, item);
+    }
     public static string Title(BackupSnapshot source, string month) => $"تفاصيل نسبة عدد المشتركين في عقد الاطعام ( {ReportSheet.HeaderFor(source)} ) لشهر {ReportSheet.Eastern(month)}";
     public static string FileName(string month) => ReportSheet.FileName($"كشف عقد الاطعام - {month}");
 

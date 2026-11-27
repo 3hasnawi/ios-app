@@ -9,7 +9,7 @@ public partial class MainWindow
         [AgencyPage]="entities", [EmployeePage]="employeeDeductions", [HistoryPage]="deductionSearch",
         ["كشف البنك"]="bankStatement", [TransfersName]="transferFiles", [AuditName]="salaryAudit",
         [TrustName]="salaryTrust", [FundingName]="fundingExpenses", [CommandName]="commandDeductions",
-        [HealthName]="health", [FundName]="fund"
+        [HealthName]="health", [FundName]="fund", [FoodName]="food"
     };
 
     // الأحجام من «عادي» فما فوق. نحتفظ بدرجة ويندوز الدقيقة عندما تتقابل درجتان مع حجم واحد على الآيفون.
