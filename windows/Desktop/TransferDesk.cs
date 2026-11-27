@@ -156,16 +156,22 @@ public partial class MainWindow
                             TransferAccounts(s,live,live.Entries.SingleOrDefault(e=>e.Id==accountEntry.Id),batch!=null);
                         });
                     if(menu.Items.Count==0)return;
+                    row.ContextMenu=menu;
+                    menu.Closed+=(_,_)=>{if(ReferenceEquals(row.ContextMenu,menu))row.ClearValue(ContextMenuProperty);};
                     menu.IsOpen=true;
                 }
                 TransferRow? pressed=null;
                 Point pressPoint=default;
-                table.PreviewMouseDown+=(_,e)=>{
+                DataGridRow? HitRow(DependencyObject? hit){
+                    for(var element=hit;element!=null && element!=table;element=ElementTree.Parent(element))
+                        if(element is DataGridRow row && ItemsControl.ItemsControlFromItemContainer(row)==table)return row;
+                    return null;
+                }
+                table.AddHandler(Mouse.PreviewMouseDownEvent,new MouseButtonEventHandler((_,e)=>{
                     if(e.ChangedButton!=MouseButton.Left)return;
                     pressPoint=e.GetPosition(table);
-                    pressed=e.OriginalSource is DependencyObject hit && ItemsControl.ContainerFromElement(table,hit) is DataGridRow row
-                        ?row.Item as TransferRow:null;
-                };
+                    pressed=HitRow(e.OriginalSource as DependencyObject)?.Item as TransferRow;
+                }),true);
                 // يعالج الجدول رفع الزر أولاً كي ينهي تحديد الخلية ويفك التقاط الفأرة.
                 table.AddHandler(Mouse.MouseUpEvent,new MouseButtonEventHandler((_,e)=>{
                     if(e.ChangedButton!=MouseButton.Left)return;
@@ -175,8 +181,11 @@ public partial class MainWindow
                         Math.Abs(point.Y-pressPoint.Y)>SystemParameters.MinimumVerticalDragDistance)return;
                     var hit=e.OriginalSource as DependencyObject;
                     if(hit==table)hit=table.InputHitTest(point) as DependencyObject;
-                    if(hit!=null && ItemsControl.ContainerFromElement(table,hit) is DataGridRow row && ReferenceEquals(clicked,row.Item))
-                        OpenActions(row,PlacementMode.MousePoint);
+                    if(HitRow(hit) is DataGridRow row && ReferenceEquals(clicked,row.Item)){
+                        Dispatcher.InvokeAsync(()=>{
+                            if(row.IsLoaded && ReferenceEquals(row.Item,clicked))OpenActions(row,PlacementMode.MousePoint);
+                        },System.Windows.Threading.DispatcherPriority.Input);
+                    }
                 }),true);
                 table.PreviewKeyDown+=(_,e)=>{
                     if(e.Key==Key.Enter && table.SelectedItem!=null && table.ItemContainerGenerator.ContainerFromItem(table.SelectedItem) is DataGridRow row){

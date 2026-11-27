@@ -545,6 +545,7 @@ public partial class MainWindow : Window
                     if(date.Template.FindName("PART_Popup",date) is not System.Windows.Controls.Primitives.Popup {IsOpen:true})
                         throw new InvalidDataException("تعذّر فتح تقويم التحويل.");
                     date.IsDropDownOpen=false;
+                    await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
                     OpenKeyboardSearch();
                     if(!SearchIsOpen || !BackButton.IsVisible)throw new InvalidDataException("تعذّر فتح البحث من الدفعة.");
                     BackButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -576,15 +577,9 @@ public partial class MainWindow : Window
                         MouseButtonEventArgs Left(RoutedEvent route)=>new(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=route};
                         cell.RaiseEvent(Left(Mouse.PreviewMouseDownEvent));cell.RaiseEvent(Left(Mouse.MouseUpEvent));
                         await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
-                        static ContextMenu? FindMenu(DependencyObject visual){
-                            if(visual is ContextMenu menu)return menu;
-                            for(int i=0;i<VisualTreeHelper.GetChildrenCount(visual);i++)
-                                if(FindMenu(VisualTreeHelper.GetChild(visual,i)) is {} found)return found;
-                            return null;
-                        }
-                        var menu=PresentationSource.CurrentSources.OfType<PresentationSource>().Select(p=>p.RootVisual)
-                            .OfType<Visual>().Select(FindMenu).FirstOrDefault(m=>m?.IsOpen==true && m.PlacementTarget==row)
-                            ??throw new InvalidDataException("تعذّر فتح أوامر الصف بنقرة يسرى.");
+                        var menu=row.ContextMenu;
+                        if(menu?.IsOpen!=true || menu.PlacementTarget!=row)
+                            throw new InvalidDataException("تعذّر فتح أوامر كتاب "+item.Book!.Id+" من صفه بنقرة يسرى.");
                         try{
                             var commands=menu.Items.OfType<MenuItem>().ToDictionary(i=>i.Header.ToString()!);
                             if(!ReferenceEquals(books.SelectedItem,item) || !commands.ContainsKey("تعديل الكتاب") ||
