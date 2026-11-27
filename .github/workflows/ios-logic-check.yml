@@ -24,7 +24,9 @@ jobs:
       - name: OneDrive fictional three-device trial
         run: |
           node --test ci/onedrive_trial_test.cjs
-          xcrun --sdk iphoneos swiftc -typecheck -swift-version 5 -target arm64-apple-ios26.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" SalaryApp/Localization.swift SalaryApp/OneDriveTrialView.swift
+          swiftc SalaryApp/OneDriveAuthorizationReply.swift ci/onedrive_authorization_test/main.swift -o "$RUNNER_TEMP/onedrive-auth-check"
+          "$RUNNER_TEMP/onedrive-auth-check"
+          xcrun --sdk iphoneos swiftc -typecheck -swift-version 5 -target arm64-apple-ios26.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" SalaryApp/Localization.swift SalaryApp/OneDriveAuthorizationReply.swift SalaryApp/OneDriveTrialView.swift
       - name: Persistent schema compatibility guard
         run: python3 ci/check_data_schema.py
       - name: Swift version

@@ -87,6 +87,7 @@ struct OneDriveTrialView: UIViewRepresentable {
             }
             Task {
                 do { replyHandler(try await perform(action, id: input["id"] as? String ?? "", value: input["value"] as? String ?? ""), nil) }
+                catch let error as OneDriveAuthorizationReplyError { replyHandler(nil, error.message) }
                 catch { replyHandler(nil, error.localizedDescription) }
             }
         }
@@ -106,7 +107,7 @@ struct OneDriveTrialView: UIViewRepresentable {
             let challenge = base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
             var url = URLComponents(string: authority + "authorize")!
             url.queryItems = ["client_id":client, "scope":"https://graph.microsoft.com/Files.ReadWrite.AppFolder",
-                              "response_type":"code", "redirect_uri":redirect, "state":state, "prompt":"select_account",
+                              "response_type":"code", "response_mode":"query", "redirect_uri":redirect, "state":state, "prompt":"select_account",
                               "code_challenge":challenge,"code_challenge_method":"S256"].map { URLQueryItem(name:$0.key,value:$0.value) }
             guard view?.window != nil, let start = url.url else { throw TrialFailure(tr("تعذّر فتح شاشة Microsoft.", "Could not open Microsoft sign-in.")) }
             let callback: URL = try await withCheckedThrowingContinuation { continuation in
@@ -119,10 +120,7 @@ struct OneDriveTrialView: UIViewRepresentable {
                 if !session.start() { continuation.resume(throwing: TrialFailure(tr("تعذّر فتح شاشة Microsoft.", "Could not open Microsoft sign-in."))) }
             }
             defer { browser = nil }
-            let params = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            guard callback.scheme?.lowercased() == scheme.lowercased(), callback.host == "auth", callback.path.isEmpty,
-                  params.first(where: {$0.name == "state"})?.value == state,
-                  let code = params.first(where: {$0.name == "code"})?.value else { throw TrialFailure(tr("تعذّر التحقق من نتيجة الدخول أو الموافقة.", "Could not verify sign-in or consent.")) }
+            let code = try OneDriveAuthorizationReply.code(from: callback, scheme: scheme, state: state)
             let fields = ["client_id":client,"grant_type":"authorization_code","redirect_uri":redirect,"code":code,"code_verifier":verifier]
             let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
             var request = URLRequest(url: URL(string: authority+"token")!)
@@ -130,9 +128,13 @@ struct OneDriveTrialView: UIViewRepresentable {
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
             request.httpBody = Data(fields.map { $0.key+"="+($0.value.addingPercentEncoding(withAllowedCharacters:unreserved) ?? "") }.joined(separator:"&").utf8)
             let (data,response) = try await network.data(for: request)
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if let reason = json?["error"] as? String {
+                throw OneDriveAuthorizationReply.serviceError(reason, description: json?["error_description"] as? String)
+            }
             guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let json = try JSONSerialization.jsonObject(with:data) as? [String:Any], let access = json["access_token"] as? String else {
-                throw TrialFailure(tr("رفضت Microsoft إكمال تسجيل الدخول.", "Microsoft could not complete sign-in."))
+                  let access = json?["access_token"] as? String, !access.isEmpty else {
+                throw TrialFailure(tr("تعذّر استلام رمز الوصول من Microsoft.", "Could not obtain the access token from Microsoft."))
             }
             token = access
         }
