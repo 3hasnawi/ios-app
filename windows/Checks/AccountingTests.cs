@@ -118,6 +118,23 @@ static class AccountingTests
             "contract classification matches the iPhone rank abbreviations and flags unknown ranks");
         var batch=Store.PrepareBatch(snap,month);
         check(batch.Parts.SelectMany(p=>p.Current).Any(r=>r.Rank=="ر.ع") && !batch.Parts.SelectMany(p=>p.Deferred).Any(r=>r.Rank=="ر.ع"),"abbreviated rank stays in current deductions");
+        var impacts=ContractLetterImpact.For(batch);
+        check(impacts.Sum(i=>i.Deferred)==batch.Held && impacts.All(i=>i.Current+i.Deferred==i.Before),
+            "all affected letters reconcile deferred shares including the guarantee");
+        var seed=batch.Parts.First(p=>p.Entity.PayrollRecipient==null && p.Deferred.Length!=0);
+        SplitPart LetterPart(string title,string category,decimal current,decimal deferred){
+            var entity=seed.Entity with{Category=category,Group=seed.Entity.Group with{Title=title,Total=current+deferred}};
+            var row=seed.Deferred[0];
+            return new(entity,current==0?[]:[row with{Amount=current}],deferred==0?[]:[row with{Amount=deferred}]);
+        }
+        var mixedLetters=ContractLetterImpact.For(batch with{Parts=[
+            LetterPart("جهة أولى","rafidain",70,30),LetterPart("جهة ثانية","rafidain",50,0),
+            LetterPart("جهة ثالثة","anbar",25,5),LetterPart("جهة رابعة","anbar",80,0)]});
+        var combined=mixedLetters.Single(i=>i.Recipients.Any(e=>e.Group==A.TransferGroup.Rafidain));
+        var individual=mixedLetters.Single(i=>i.Recipients.Any(e=>e.Group==A.TransferGroup.Anbar));
+        check(combined.Before==150 && combined.Current==120 && combined.Deferred==30 && combined.Recipients.Count==1 &&
+            individual.Before==30 && individual.Current==25 && individual.Deferred==5 && mixedLetters.Count==3,
+            "grouped bank letter includes unaffected recipients while individual Anbar letters stay separate");
         check(batch.Guarantee==21446760m+50&&batch.Held==batch.Guarantee+300,"nearest ten, guarantee plus two deferred agencies");
         check(batch.Plan(false).Entries.Sum(x=>x.Amount)==200&&batch.Plan(true).Entries.Sum(x=>x.Amount)==300,"rank عقد remains current, عقود deferred");
         s.UpdateBatch(snap,month,batch);snap=s.Snapshot(month);

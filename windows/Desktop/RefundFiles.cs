@@ -8,7 +8,7 @@ namespace AnbarPayroll.Desktop;
 
 public partial class MainWindow
 {
-    async Task OpenRefundEditor(A.BackupSnapshot source,string month,RefundBatch? editing,bool latestDraft=false)
+    async Task OpenRefundEditor(A.BackupSnapshot source,string month,RefundBatch? editing,bool latestDraft=false,bool hasHistory=true)
     {
         A.BackupSnapshot? payroll=null;
         await Working(()=>{
@@ -18,39 +18,7 @@ public partial class MainWindow
             if(editing?.ArchiveId=="draft" && editing.People.FirstOrDefault() is {} first)month=first.Month;
             payroll=store.Snapshot(month);
             if(Path.GetDirectoryName(payroll.SourcePath)!=revision)throw new IOException("تغيّرت النسخة. أعد فتح الدفعة.");
-        },"",()=>RefundDesk(payroll!,month,editing));
-    }
-
-    void RefundHome(A.BackupSnapshot source,string month,List<RefundBatch> history)
-    {
-        var draft=history.FirstOrDefault(b=>b.ArchiveId=="draft");
-        var saved=history.Where(b=>b.ArchiveId!="draft").ToList();
-        CanvasArea.Children.Clear();
-        PageTitle.Text=RefundTransfers;
-        var choices=new System.Windows.Controls.Primitives.UniformGrid{Columns=2};
-        void Section(string name,string detail,string icon,Action open){
-            var button=ButtonFor(name,open);
-            button.Content=Column(Bar(Glyph(icon),Text(name,19,true)),Text(detail,14));
-            button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-            button.Padding=new Thickness(16);button.Margin=new Thickness(4);
-            choices.Children.Add(button);
-        }
-        Section("دفعة جديدة",draft==null?"اختيار المنتسبين وإدخال المبالغ":"متابعة المسودة الحالية","\uE710",()=>_=OpenRefundEditor(source,month,null,latestDraft:true));
-        Section("الدفعات المحفوظة",saved.Count+" دفعة　·　الكتب وملفات المصارف","\uE8B7",()=>RefundHistory(source,month,saved));
-        CanvasArea.Children.Add(Column(choices));
-    }
-
-    void RefundHistory(A.BackupSnapshot source,string month,IReadOnlyList<RefundBatch> batches)
-    {
-        CanvasArea.Children.Clear();PageTitle.Text="الدفعات المحفوظة";
-        SetSubpageBack(()=>ShowPage(RefundTransfers));
-        var panel=Column();
-        if(batches.Count==0)panel.Children.Add(Text("لا توجد دفعات محفوظة."));
-        foreach(var batch in batches){
-            string label=batch.Date.ToString("yyyy/MM/dd")+"　·　"+batch.Source+"　·　"+batch.People.Count+" منتسب　·　"+Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount));
-            panel.Children.Add(ButtonFor(label,()=>Guard(()=>RefundFiles(source,month,batch)),"\uE8B7"));
-        }
-        CanvasArea.Children.Add(new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+        },"",()=>RefundDesk(payroll!,month,editing,hasHistory));
     }
 
     static A.GroupLetterSettings RefundStyle(RefundBatch batch,bool raf,A.BackupSnapshot source)
@@ -63,11 +31,15 @@ public partial class MainWindow
             Template=fallback.Template is {} t?t with{Recipient="مصرف الرافدين / فرع الأنبار"}:null,BodyTemplate=null};
     }
 
-    void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch)
+    void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch,IReadOnlyList<RefundBatch>? saved=null)
     {
-        CanvasArea.Children.Clear();PageTitle.Text="ملفات الدفعة";
-        void Back()=>RefundHistory(source,month,store.Refunds().Where(b=>b.ArchiveId!="draft").ToList());
-        SetSubpageBack(Back);
+        CanvasArea.Children.Clear();PageTitle.Text=RefundTransfers;
+        subpageBack=null;UpdateBackButton();
+        saved??=store.Refunds().Where(b=>b.ArchiveId!="draft").ToArray();
+        var picker=Choices(saved.Select(b=>b.Date.ToString("yyyy/MM/dd")+"　·　"+b.Source+"　·　"+Arabic.Money(b.People.Sum(p=>(decimal)p.Amount))));
+        picker.SelectedIndex=Array.FindIndex(saved.ToArray(),b=>b.Id==batch.Id);
+        picker.SelectionChanged+=(_,_)=>{if(picker.SelectedIndex>=0)RefundFiles(source,month,saved[picker.SelectedIndex],saved);};
+        var start=ButtonFor("دفعة جديدة",()=>_=OpenRefundEditor(source,month,null,latestDraft:true),"\uE710");
         var layout=new Grid();
         layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
         layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
@@ -78,11 +50,12 @@ public partial class MainWindow
         var files=new Dictionary<string,Func<byte[]>>();
         var exportAll=ButtonFor("تصدير جميع الملفات",()=>_=SaveFile("إعادة مبالغ "+batch.Date.ToString("yyyy-MM-dd"),"zip",
             ()=>Package(files.ToDictionary(x=>x.Key,x=>x.Value()))),"\uE74E");
-        var actions=Bar(ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
+        var actions=Bar(Labeled("الدفعات المحفوظة",picker,270),start,ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
             ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
                 _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D"),exportAll);
-        var summary=Text(string.Join("　·　",new[]{batch.Source,batch.Date.ToString("yyyy/MM/dd"),
-            Arabic.Money(batch.People.Count)+" منتسب",Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount))+" د.ع"}.Where(x=>x.Length>0)),16,true);
+        var summary=TransferSummary(("مبلغ الدفعة",Arabic.Money(batch.People.Sum(p=>(decimal)p.Amount))+" د.ع"),
+            ("عدد المنتسبين",Arabic.Money(batch.People.Count)),
+            ("المصارف",Arabic.Money(batch.People.Select(p=>A.TransferPreparation.NormalizeAccount(p.Iban)).Where(A.TransferPreparation.ValidIban).Select(iban=>iban.Substring(4,4)).Distinct().Count())));
         layout.Children.Add(Column(summary,actions));
 
         var sections=new Grid();

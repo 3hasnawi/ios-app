@@ -22,6 +22,7 @@
 </Grid></Border>
 <DockPanel Grid.Row="1">
   <Button x:Name="UpdateNotice" DockPanel.Dock="Top" Visibility="Collapsed" Click="OpenUpdate" HorizontalContentAlignment="Center" Margin="8,4" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
+  <WrapPanel x:Name="TransferTabs" DockPanel.Dock="Top" Margin="10,6,10,0" Visibility="Collapsed" AutomationProperties.Name="أقسام التحويلات"/>
   <Grid>
   <ScrollViewer x:Name="BodyViewport" Margin="26,22,26,10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
     <Grid x:Name="CanvasArea" Width="{Binding ViewportWidth, ElementName=BodyViewport}" Height="{Binding ViewportHeight, ElementName=BodyViewport}" MinWidth="628" MinHeight="400"/>

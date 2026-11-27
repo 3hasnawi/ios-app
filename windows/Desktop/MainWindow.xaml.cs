@@ -65,7 +65,7 @@ public partial class MainWindow : Window
     {
         if(SearchIsOpen || busy)return;
         focusBeforeSearch=Keyboard.FocusedElement;
-        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Hidden;
+        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Hidden;TransferTabs.Visibility=Visibility.Collapsed;
         SearchLayer.Visibility=Visibility.Visible;
         UpdateBackButton();
         SearchAll(SearchLayer);
@@ -75,7 +75,7 @@ public partial class MainWindow : Window
     {
         if(!SearchIsOpen)return;
         SearchLayer.Children.Clear();SearchLayer.Visibility=Visibility.Collapsed;
-        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Visible;
+        BodyViewport.Visibility=PageTitle.Visibility=Visibility.Visible;UpdateTransferTabs(page);
         UpdateBackButton();
         if(focusBeforeSearch is UIElement {IsVisible:true,IsEnabled:true} target)target.Focus();
         focusBeforeSearch=null;
@@ -167,7 +167,7 @@ public partial class MainWindow : Window
     void ShowPage(string name,Review? review=null,bool goingBack=false)
     {
         if(busy)return;
-        if(name=="التحويلات")name=TransfersName;
+        if(name is "التحويلات" or TransfersName)name=CurrentTransfers;
         if(name is DeductionsName or EmployeePage or HistoryPage)name=AgencyPage;
         Period.Visibility=name==AgencyPage?Visibility.Hidden:Visibility.Visible;
         CloseKeyboardSearch();
@@ -179,6 +179,7 @@ public partial class MainWindow : Window
         bool fitViewport=name is "الرئيسية" or "الإعدادات";
         CanvasArea.MinWidth=fitViewport?0:628;
         CanvasArea.MinHeight=fitViewport?0:400;
+        UpdateTransferTabs(name);
         string active=name switch{AgencyPage=>DeductionsName,TransfersName or CurrentTransfers or DeferredTransfers or RefundTransfers=>"التحويلات",_=>name};
         foreach(var n in Sections){var btn=ButtonFor(n.Name,()=>ShowPage(n.Name),n.Icon);btn.Background=BrushOf(active==n.Name?"#D8EEE0":"#19483D");btn.Foreground=active==n.Name?BrushOf("#163E31"):Brushes.White;
             ((TextBlock)((StackPanel)btn.Content).Children[0]).Foreground=active==n.Name?BrushOf("#215740"):BrushOf("#CADFD2");btn.BorderThickness=new Thickness(0);btn.HorizontalContentAlignment=HorizontalAlignment.Right;btn.Margin=new Thickness(0,4,0,2);btn.Padding=new Thickness(12,11,12,11);Nav.Children.Add(btn);}
@@ -474,11 +475,11 @@ public partial class MainWindow : Window
                 OpenEmployee(picked);
                 if(dialogError!=null)throw dialogError;
             }else if(name=="التحويلات"){
-                Click(Nav,name);
-                var names=Controls<Button>(CanvasArea).Select(AutomationProperties.GetName).ToArray();
-                if(page!=TransfersName||!names.SequenceEqual(new[]{CurrentTransfers,DeferredTransfers,RefundTransfers}))throw new InvalidDataException("واجهة التحويلات يجب أن تحتوي أقسام العمل الثلاثة فقط.");
+                Click(Nav,name);await workPageLoad;
+                var names=Controls<Button>(TransferTabs).Select(AutomationProperties.GetName).ToArray();
+                if(page!=CurrentTransfers||!names.SequenceEqual(new[]{CurrentTransfers,DeferredTransfers,RefundTransfers})||!Controls<DataGrid>(CanvasArea).Any())throw new InvalidDataException("لم تفتح الدفعة الشاملة مع جدول الشهر وتبويبات التحويلات.");
             }else if(name is CurrentTransfers or DeferredTransfers){
-                ShowPage(TransfersName);Click(CanvasArea,name);await workPageLoad;
+                ShowPage(TransfersName);Click(TransferTabs,name);await workPageLoad;
                 if(name==CurrentTransfers){
                     await ChooseMonth(202610);
                     var group=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="المجموعة");
@@ -550,15 +551,14 @@ public partial class MainWindow : Window
                     FindAction(CanvasArea,"إلغاء التأجيل");
                     await ChooseMonth(202610);
                     FindAction(CanvasArea,"تأجيل استقطاعات العقود");
-                    if(Controls<DataGrid>(CanvasArea).Any())throw new InvalidDataException("ظهرت جهات مؤجلة لشهر بلا فصل.");
+                    if(FindAction(CanvasArea,"تأجيل استقطاعات العقود").IsEnabled && !Controls<DataGrid>(CanvasArea).Any(c=>AutomationProperties.GetName(c)=="الكتب المتأثرة بفصل العقود"))throw new InvalidDataException("تعذرت مراجعة الكتب قبل اعتماد الفصل.");
                     await ChooseMonth(202611);
                 }
             }else if(name=="إعادة المبالغ"){
-                ShowPage(TransfersName);Click(CanvasArea,RefundTransfers);await workPageLoad;
-                Click(CanvasArea,"الدفعات المحفوظة");
+                ShowPage(TransfersName);Click(TransferTabs,RefundTransfers);await workPageLoad;
                 var saved=store.Refunds().First(b=>b.ArchiveId!="draft");
-                var savedRow=Controls<Button>(CanvasArea).First(b=>AutomationProperties.GetName(b).StartsWith(saved.Date.ToString("yyyy/MM/dd")));
-                savedRow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var picker=Controls<ComboBox>(CanvasArea).Single(c=>AutomationProperties.GetName(c)=="الدفعات المحفوظة");
+                if(picker.SelectedIndex!=0)throw new InvalidDataException("لم تفتح أحدث دفعة محفوظة.");
                 var banks=saved.Groups();
                 var commands=Controls<Button>(CanvasArea).Select(AutomationProperties.GetName).ToArray();
                 var letters=commands.Where(n=>n.StartsWith("معاينة كتاب إعادة مبالغ")).ToArray();

@@ -19,22 +19,43 @@ public partial class MainWindow
     static byte[] Logo()=>File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,"IraqEmblem.png"));
     static byte[] LetterFont()=>File.ReadAllBytes(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts),"timesbd.ttf"));
     const string CurrentTransfers="الدفعة الشاملة",DeferredTransfers="الدفعات المؤجلة",RefundTransfers="إعادة المبالغ";
+    readonly Dictionary<string,DateTime> transferDates=new();
     A.TransferGroup currentGroup=A.TransferGroup.Rafidain,deferredGroup=A.TransferGroup.Rafidain;
 
-    void TransferHome()
-    {
-        var cards=new System.Windows.Controls.Primitives.UniformGrid{Columns=3,VerticalAlignment=VerticalAlignment.Top};
-        foreach(var (name,description,icon) in new[]{
-            (CurrentTransfers,"كتب المصارف وفرع الأنبار والكتب المنفردة","\uE8A5"),
-            (DeferredTransfers,"فصل حصة العقود وتحويلها لاحقاً","\uE823"),
-            (RefundTransfers,"دفعات المنتسبين وملفات المصارف","\uE8AB")
-        }){
-            var card=ButtonFor(name,()=>ShowPage(name));
-            card.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-            card.Content=Column(Glyph(icon),Text(name,18,true),Text(description,14));
-            cards.Children.Add(card);
+    sealed record TransferMonth(A.BackupSnapshot Source,ContractBatch? Batch,A.TransferSnapshot Plan,Lazy<Task<ContractBatch>> Proposal);
+    Task<TransferMonth>? transferMonth;
+    (string Revision,string Month) transferMonthKey;
+
+    Task<TransferMonth> LoadTransferMonth(string revision,string month){
+        if(transferMonthKey!=(revision,month)||transferMonth==null||transferMonth.IsFaulted){
+            transferMonthKey=(revision,month);
+            transferMonth=Task.Run(()=>{
+                var source=store.Snapshot(month);
+                if(Path.GetDirectoryName(source.SourcePath)!=revision)throw new IOException("تغيّرت نسخة الشهر أثناء الفتح.");
+                var frozen=Store.ActiveBatch(source,month);
+                return new TransferMonth(source,frozen,frozen?.Plan(false)??A.TransferPreparation.Prepare(source,month),
+                    new Lazy<Task<ContractBatch>>(()=>Task.Run(()=>Store.PrepareBatch(source,month))));
+            });
         }
-        CanvasArea.Children.Add(cards);
+        return transferMonth;
+    }
+
+    void UpdateTransferTabs(string route)
+    {
+        TransferTabs.Children.Clear();
+        bool visible=route is CurrentTransfers or DeferredTransfers or RefundTransfers;
+        TransferTabs.Visibility=visible?Visibility.Visible:Visibility.Collapsed;
+        if(!visible)return;
+        foreach(var (name,icon) in new[]{(CurrentTransfers,"\uE8A5"),(DeferredTransfers,"\uE823"),(RefundTransfers,"\uE8AB")}){
+            var tab=ButtonFor(name,()=>{if(page!=name || subpageBack!=null)ShowPage(name);},icon,route==name);
+            TransferTabs.Children.Add(tab);
+        }
+    }
+
+    static Border TransferSummary(params (string Label,string Value)[] values){
+        var metrics=new UniformGrid{Columns=values.Length};
+        foreach(var (label,value) in values)metrics.Children.Add(Column(Text(label,13),Text(value,18,true)));
+        var card=Box(metrics);card.Padding=new Thickness(12,6,12,6);return card;
     }
 
     static Button OptionsButton(Action<ContextMenu> populate)
@@ -55,34 +76,46 @@ public partial class MainWindow
         var item=new MenuItem{Header=title,IsEnabled=enabled};item.Click+=(_,_)=>Guard(action);menu.Items.Add(item);
     }
 
-    void TransferDesk(A.BackupSnapshot s,string month,bool held)
+    void TransferDesk(A.BackupSnapshot s,string month,bool held,ContractBatch? batch,A.TransferSnapshot plan,ContractBatch? proposal,string? issue)
     {
-        var batch=Store.ActiveBatch(s,month);
+        PageTitle.Text="التحويلات";
         var route=held?DeferredTransfers:CurrentTransfers;
         var head=Column();
         var dock=new DockPanel();
         DockPanel.SetDock(head,Dock.Top);dock.Children.Add(head);CanvasArea.Children.Add(dock);
+        var split=batch??proposal;
+        if(split!=null){
+            var before=split.Parts.Sum(p=>p.Entity.Group.Total)+split.Guarantee;
+            head.Children.Add(TransferSummary(("قيود التحويل وضمان العقود قبل الفصل",Arabic.Money(before)),
+                (batch==null?"الحالية بعد الاعتماد":"الحصة الحالية",Arabic.Money(before-split.Held)),
+                (batch==null?"المقترح تأجيله":"حصة العقود المؤجلة",Arabic.Money(split.Held))));
+        }else head.Children.Add(TransferSummary(("مجموع قيود التحويل",Arabic.Money(plan.Entries.Sum(e=>e.Amount))),
+            ("المجموعات ذات المبالغ",Arabic.Money(plan.Entries.Where(e=>e.Amount>0).Select(e=>e.Group).Distinct().Count())),
+            ("الجهات والبنود ذات المبالغ",Arabic.Money(plan.Entries.Count(e=>e.Amount>0)))));
         if(held){
             void ChangeDeferral(){
-                var proposed=batch==null?Store.PrepareBatch(s,month):null;
-                var reviewed=proposed??batch!;
-                if(!Form(proposed==null?"إلغاء التأجيل والعودة إلى التحويل الشامل":"اعتماد فصل استقطاعات العقود",Text(month),
-                    Text("استقطاعات الجهات والصندوق　"+Arabic.Money(reviewed.Held-reviewed.Guarantee)),Text("ضمان العقود　"+Arabic.Money(reviewed.Guarantee))))return;
-                _=Working(()=>store.UpdateBatch(s,month,proposed),"حُفظت حالة الشهر.",()=>ShowPage(route));
+                if(split==null)return;
+                if(!Form(batch!=null?"إلغاء التأجيل والعودة إلى التحويل الشامل":"اعتماد فصل استقطاعات العقود",Text(month),
+                    Text("استقطاعات الجهات والصندوق　"+Arabic.Money(split.Held-split.Guarantee)),Text("ضمان العقود　"+Arabic.Money(split.Guarantee))))return;
+                _=Working(()=>store.UpdateBatch(s,month,proposal),"حُفظت حالة الشهر.",()=>ShowPage(batch==null?DeferredTransfers:CurrentTransfers));
             }
-            head.Children.Add(Bar(Text(batch==null?"لا توجد دفعة مؤجلة لهذا الشهر.":"مجموع الدفعة المؤجلة　"+Arabic.Money(batch.Held),16,true),
-                ButtonFor(batch==null?"تأجيل استقطاعات العقود":"إلغاء التأجيل",()=>Guard(ChangeDeferral))));
-            if(batch==null)return;
-        }else if(batch!=null)head.Children.Add(Text("الدفعة الحالية بعد فصل حصة العقود",16,true));
-
-        var plan=batch?.Plan(held)??A.TransferPreparation.Prepare(s,month);
+            var change=ButtonFor(batch==null?"تأجيل استقطاعات العقود":"إلغاء التأجيل",()=>Guard(ChangeDeferral));
+            change.IsEnabled=split!=null;
+            head.Children.Add(Bar(Text(batch==null?"الفصل غير معتمد":"الفصل معتمد",14,true),change));
+            if(batch==null){
+                if(proposal!=null)ShowSplitReview(dock,head,proposal);
+                else head.Children.Add(Text(issue??"لا توجد حصة عقود قابلة للفصل."));
+                return;
+            }
+        }
         void CheckSource(){
             if(batch!=null&&s.Months.Single(m=>m.Name==month).ImportedAt!=batch.ImportedAt)
                 throw new InvalidDataException("تغير استيراد الشهر بعد اعتماد الفصل. راجع المبالغ في الدفعات المؤجلة.");
         }
         var group=Choices(["الرافدين","الرشيد والمصارف الأخرى","فرع الأنبار والكتب المنفردة","جهات تحتاج مراجعة"]);
         group.SelectedIndex=(int)(held?deferredGroup:currentGroup);
-        var date=new DatePicker{SelectedDate=DateTime.Today};
+        var date=new DatePicker{SelectedDate=transferDates.GetValueOrDefault(month,DateTime.Today)};
+        date.SelectedDateChanged+=(_,_)=>{if(date.IsEnabled && date.SelectedDate is {} selected)transferDates[month]=selected;};
         group.MinWidth=210*(1+appearance.Level*.05);
         date.MinWidth=132*(1+appearance.Level*.05);
         var filter=FilterBar(("المجموعة",group,0),("تاريخ التحويل",date,0));
@@ -96,12 +129,30 @@ public partial class MainWindow
         Grid.SetColumn(actions,row.ColumnDefinitions.Count);
         row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
         row.Children.Add(actions);
-        head.Children.Insert(0,new ScrollViewer{Content=filter,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,
+        head.Children.Add(new ScrollViewer{Content=filter,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
-        var info=Text("",14);head.Children.Add(info);
+        var info=Text("",13,true);var footer=Box(info);footer.Padding=new Thickness(10,5,10,5);
+        DockPanel.SetDock(footer,Dock.Bottom);dock.Children.Add(footer);
+        var body=new Grid();dock.Children.Add(body);
+        var mainColumn=new ColumnDefinition{Width=new GridLength(2,GridUnitType.Star)};
+        var sideColumn=new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)};
+        body.ColumnDefinitions.Add(mainColumn);body.ColumnDefinitions.Add(sideColumn);
+        body.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});
+        body.RowDefinitions.Add(new(){Height=GridLength.Auto});
+        var detail=new StackPanel();
+        var side=Box(new ScrollViewer{Content=detail,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+        side.Padding=new Thickness(10);body.Children.Add(side);
+        void Fit(){
+            bool compact=body.ActualWidth<790;
+            sideColumn.Width=compact?new GridLength(0):new GridLength(1,GridUnitType.Star);
+            Grid.SetColumn(side,compact?0:1);Grid.SetRow(side,compact?1:0);
+            side.MaxHeight=compact?Math.Min(145,Math.Max(80,body.ActualHeight*.34)):double.PositiveInfinity;
+        }
+        body.SizeChanged+=(_,_)=>Fit();Fit();
         if(plan.SourceWarnings.Count>0)
             head.Children.Add(new Expander{Header="ملاحظات المراجعة ("+plan.SourceWarnings.Count+")",Content=new ScrollViewer{MaxHeight=95,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Content=Text(string.Join("\n",plan.SourceWarnings),13)}});
-        DataGrid? table=null;
+        DataGrid? previousTable=null;
+        var categoryBefore=batch?.Parts.GroupBy(p=>p.Entity.Category).ToDictionary(g=>g.Key,g=>g.Sum(p=>p.Entity.Group.Total));
         var originals=batch?.Parts.Select(p=>(Entry:p.Portion(held),p.Entity.Group.Total)).Where(p=>p.Entry!=null).ToDictionary(p=>p.Entry!.Id,p=>p.Total)
             ??new Dictionary<string,decimal>();
         var bank=new Lazy<A.BankSummary>(()=>A.BankStatementCalculator.Calculate(s,month));
@@ -110,17 +161,23 @@ public partial class MainWindow
         void Draw(){
             var g=(A.TransferGroup)group.SelectedIndex;
             if(held)deferredGroup=g;else currentGroup=g;
-            date.IsEnabled=g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks;
+            var bankGroup=g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks;
+            var marker=(held?"deferred":"current")+"|group|"+System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
+            var prepared=batch!=null&&bankGroup?Store.PreparedDate(s,month,marker):null;
+            date.IsEnabled=false;
+            date.SelectedDate=prepared??transferDates.GetValueOrDefault(month,DateTime.Today);
+            date.IsEnabled=bankGroup&&prepared==null;
             var rows=plan.Entries.Where(e=>e.Group==g).ToArray();
             bool branch=g==A.TransferGroup.Anbar;
-            if(table!=null)dock.Children.Remove(table);
-            table=GridView((branch?"الكتاب / الجهة":"الجهة","Title",1.8),("مصدر المبلغ","Source",1.6),("المصرف","Entry.Account.Branch",1.35),
+            if(previousTable!=null)body.Children.Remove(previousTable);
+            var table=GridView((branch?"الكتاب / الجهة":"الجهة","Title",1.8),("مصدر المبلغ","Source",1.6),("المصرف","Entry.Account.Branch",1.35),
                 ("قبل الفصل","Original",.9),("مبلغ الدفعة","Amount",.9),("المراجعة","Issues",1.45));
             if(batch==null)table.Columns.RemoveAt(3);
             if(!branch)table.Columns.RemoveAt(1);
-            dock.Children.Add(table);
+            previousTable=table;body.Children.Add(table);
             actions.Children.Clear();
 
+            Action<DataGridRow,PlacementMode>? openBookActions=null;
             if(branch){
                 var list=BranchBooks(s,plan,batch,held).Select(book=>BookRow(book,s,month,batch,originals,hasPayroll,bank,items)).ToArray();
                 table.ItemsSource=list;
@@ -158,6 +215,7 @@ public partial class MainWindow
                     menu.Closed+=(_,_)=>{if(ReferenceEquals(row.ContextMenu,menu))row.ClearValue(ContextMenuProperty);};
                     menu.IsOpen=true;
                 }
+                openBookActions=OpenActions;
                 TransferRow? pressed=null;
                 Point pressPoint=default;
                 DataGridRow? HitRow(DependencyObject? hit){
@@ -194,6 +252,52 @@ public partial class MainWindow
                 table.ItemsSource=rows.Select(e=>new TransferRow(e,null,e.Title,"",originals.GetValueOrDefault(e.Id,e.Amount),e.Amount,string.Join("، ",A.TransferPreparation.Issues(e)))).ToArray();
                 info.Text="عدد الجهات والبنود　"+rows.Length+"　·　مجموع المجموعة　"+Arabic.Money(rows.Sum(e=>e.Amount));
             }
+            if(batch!=null){
+                var category=System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
+                var before=(categoryBefore?.GetValueOrDefault(category)??0)+(branch?batch.Guarantee:0);
+                var portion=rows.Sum(e=>e.Amount)+(branch&&held?batch.Guarantee:0);
+                info.Text="قبل الفصل　"+Arabic.Money(before)+"　·　"+(held?"المؤجل":"الحالي")+"　"+Arabic.Money(portion)+
+                    (branch?"　·　قيود التحويل وضمان العقود":"")+"　د.ع";
+            }
+            void ShowDetail(){
+                detail.Children.Clear();
+                if(table.SelectedItem is not TransferRow item){
+                    detail.Children.Add(Text(g==A.TransferGroup.Unresolved?"لا توجد جهات تحتاج مراجعة.":"لا توجد قيود لهذه المجموعة."));return;
+                }
+                detail.Children.Add(Text(branch?"تفاصيل الكتاب":"تفاصيل الجهة",14));
+                detail.Children.Add(Text(item.Title,17,true));
+                if(openBookActions!=null){
+                    var commands=ButtonFor("خيارات القيد",()=>{
+                        table.ScrollIntoView(item);table.UpdateLayout();
+                        if(table.ItemContainerGenerator.ContainerFromItem(item) is DataGridRow view)openBookActions(view,PlacementMode.Bottom);
+                    },"\uE712");
+                    detail.Children.Add(commands);
+                }
+                if(item.Entry?.Account?.Branch is {Length:>0} location)detail.Children.Add(Text(location));
+                if(item.Source.Length>0 && item.Source!=item.Title)detail.Children.Add(Text(item.Source));
+                detail.Children.Add(Text("مبلغ الدفعة　"+item.Amount,15,true));
+                if(batch!=null)detail.Children.Add(Text("قبل الفصل　"+item.Original));
+                if(item.Issues.Length>0)detail.Children.Add(Text(item.Issues,13));
+                if(item.Book is {} book && book.Id!="entry_only"){
+                    var preview=ButtonFor("معاينة الكتاب المحدد",()=>Guard(()=>{CheckSource();OpenIndividual(s,plan,batch,held,book,BookCommand.Preview);}),"\uE890");
+                    preview.IsEnabled=!book.NeedsLink;detail.Children.Add(preview);
+                }else if(g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks){
+                    var id=g==A.TransferGroup.Rafidain?"rafidain_group":"other_banks_group";
+                    detail.Children.Add(Text(BookTitles[id]));
+                    detail.Children.Add(PreviewButton(BookTitles[id],()=>{
+                        CheckSource();var day=date.SelectedDate??throw new InvalidDataException("حدد تاريخ التحويل.");
+                        day=prepared??day;
+                        var style=Builtin(s,id).Style();return Task.Run(()=>A.GroupLetterPdf.Generate(
+                            A.GroupLetterPreparation.Prepare(plan,g,DateOnly.FromDateTime(day)),style,LetterFont(),Fonts().Bold,Logo()));
+                    },caption:"معاينة كتاب المجموعة",printAndSave:batch==null));
+                }
+                if(!branch&&!held && item.Entry is {} selected)
+                    detail.Children.Add(ButtonFor(batch==null?"تعديل الحساب وربط الجهة":"حساب الجهة للتحويلات اللاحقة",()=>Guard(()=>{
+                        var live=batch==null?plan:A.TransferPreparation.Prepare(s,month);
+                        TransferAccounts(s,live,live.Entries.SingleOrDefault(e=>e.Id==selected.Id),batch!=null);
+                    }),"\uE71B"));
+            }
+            table.SelectionChanged+=(_,_)=>ShowDetail();table.SelectedIndex=0;ShowDetail();
             if(!branch && g!=A.TransferGroup.Unresolved){
                 var export=ButtonFor("الكتاب وملف CSV",()=>Guard(()=>{
                     CheckSource();ExportGroup(s,month,plan,g,batch,held,date.SelectedDate??throw new InvalidDataException("حدد تاريخ التحويل."));
@@ -230,6 +334,25 @@ public partial class MainWindow
         }
         group.SelectionChanged+=(_,_)=>Guard(Draw);
         Draw();
+    }
+
+    void ShowSplitReview(DockPanel dock,StackPanel head,ContractBatch proposal){
+        head.Children.Add(Text("الكتب المتأثرة بفصل العقود",16,true));
+        var impacts=ContractLetterImpact.For(proposal);
+        var letters=GridView(("الكتاب","Title",1.7),("قبل الفصل","Original",1),("المؤجل","Held",1),("بعد الفصل","Current",1));
+        var impactRows=impacts.Select(i=>new{Impact=i,i.Title,Original=Arabic.Money(i.Before),Held=Arabic.Money(i.Deferred),Current=Arabic.Money(i.Current)}).ToArray();
+        letters.ItemsSource=impactRows;
+        System.Windows.Automation.AutomationProperties.SetName(letters,"الكتب المتأثرة بفصل العقود");
+        var recipients=GridView(("الجهة أو البند","Title",2),("حصتها المؤجلة","Value",1));
+        var detail=new Expander{Header="جهات الكتاب المحدد",Content=recipients};
+        recipients.MaxHeight=140;
+        letters.SelectionChanged+=(_,_)=>{
+            if(letters.SelectedItem==null)return;
+            var selected=impactRows.First(r=>ReferenceEquals(r,letters.SelectedItem)).Impact;
+            recipients.ItemsSource=selected.Recipients.Select(e=>new{e.Title,Value=Arabic.Money(e.Amount)}).ToList();
+            detail.Visibility=selected.Recipients.Count==0?Visibility.Collapsed:Visibility.Visible;
+        };
+        letters.SelectedIndex=0;DockPanel.SetDock(detail,Dock.Bottom);dock.Children.Add(detail);dock.Children.Add(letters);
     }
 
     sealed record TransferRow(A.TransferEntry? Entry,IndividualBook? Book,string Title,string Source,decimal? Before,decimal? Value,string Issues)

@@ -110,10 +110,9 @@ public partial class MainWindow
     Task workPageLoad=Task.CompletedTask;
     async Task WorkPage(string key)
     {
-        if(key==TransfersName){TransferHome();return;}
         if(key==SearchName){SearchAll();return;}
         if(store.Active==null){CanvasArea.Children.Add(Text("استورد نسخة احتياطية أو ملف Excel من الإعدادات."));return;}
-        var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
+        var requestGeneration=generation;var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
         try{
             if(key==AuditName){
                 string? initial=auditFilter;auditFilter=null;var result=await Audit(month);
@@ -134,13 +133,27 @@ public partial class MainWindow
             if(key==RefundTransfers){
                 var saved=await Task.Run(()=>(Source:store.Snapshot(),Batches:store.Refunds()));
                 if(page!=key || revision!=store.Active || !CanvasArea.Children.Contains(loading))return;
-                RefundHome(saved.Source,month,saved.Batches);
+                var history=saved.Batches.Where(b=>b.ArchiveId!="draft").ToArray();
+                if(history.Length>0)RefundFiles(saved.Source,month,history[0],history);
+                else await OpenRefundEditor(saved.Source,month,saved.Batches.FirstOrDefault(b=>b.ArchiveId=="draft"),hasHistory:false);
+                return;
+            }
+            if(key is CurrentTransfers or DeferredTransfers){
+                var data=await LoadTransferMonth(revision!,month);
+                bool held=key==DeferredTransfers;
+                ContractBatch? proposal=null;string? issue=null;
+                if(held && data.Batch==null){
+                    try{proposal=await data.Proposal.Value;}
+                    catch(System.IO.InvalidDataException error){issue=error.Message;}
+                }
+                if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
+                CanvasArea.Children.Remove(loading);
+                TransferDesk(data.Source,month,held,data.Batch,held&&data.Batch!=null?data.Batch.Plan(true):data.Plan,proposal,issue);
                 return;
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));
             if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
             CanvasArea.Children.Remove(loading);
-            if(key is CurrentTransfers or DeferredTransfers){TransferDesk(snapshot,month,key==DeferredTransfers);return;}
             if(key==TrustName){TrustDesk(snapshot);return;}
             if(key==HealthName||key==FundName){SpecialDesk(snapshot,month,key==HealthName);return;}
             var funding=key==FundingName&&snapshot.Employees.Count>0?await Task.Run(()=>WorkReports.FundingData(snapshot,month)):null;
@@ -162,7 +175,7 @@ public partial class MainWindow
                 tabs.Items.Add(new TabItem{Header=sheet.Name,Content=table});
             }
             panel.Children.Add(tabs);CanvasArea.Children.Add(panel);
-        }catch(Exception e){if(page==key){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message,16));}}
+        }catch(Exception e){if(generation==requestGeneration && page==key && revision==store.Active){CanvasArea.Children.Clear();CanvasArea.Children.Add(Text(e.Message,16));}}
     }
     void SpecialDesk(A.BackupSnapshot s,string month,bool health)
     {

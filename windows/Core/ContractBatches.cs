@@ -29,6 +29,25 @@ public sealed record ContractBatch(string Id,string Month,double ImportedAt,doub
     [System.Text.Json.Serialization.JsonIgnore] public decimal Held=>Guarantee+Parts.Sum(p=>p.Deferred.Sum(r=>r.Amount));
     public A.TransferSnapshot Plan(bool deferred)=>new(Month,Payer,Iban,Parts.Select(p=>p.Portion(deferred)).OfType<A.TransferEntry>().ToArray(),[],"0"+Arabic.Period(Month)+(deferred?"2":"1"));
 }
+public sealed record ContractLetterImpact(string Title,decimal Before,decimal Deferred,IReadOnlyList<A.TransferEntry> Recipients)
+{
+    public decimal Current=>Before-Deferred;
+    public static List<ContractLetterImpact> For(ContractBatch batch){
+        var result=new List<ContractLetterImpact>();
+        // يشمل أصل الكتاب كل مستلميه حتى إن لم يكن لبعضهم مبلغ مؤجل.
+        var groups=batch.Parts.GroupBy(p=>(p.Entity.Category,Individual:p.Entity.Category=="anbar"?p.Entity.Group.Title:""));
+        foreach(var group in groups.OrderBy(g=>g.Key.Category switch{"rafidain"=>0,"otherBanks"=>1,_=>2})){
+            var held=group.Select(p=>p.Portion(true)).OfType<A.TransferEntry>().ToList();
+            if(held.Count==0)continue;
+            var title=group.Key.Category switch{
+                "rafidain"=>"كتاب الرافدين","otherBanks"=>"كتاب الرشيد والمصارف الأخرى",
+                "anbar"=>"كتاب منفرد · "+group.Key.Individual,_=>throw new InvalidDataException("مجموعة غير معروفة في الدفعة المؤجلة.")};
+            result.Add(new(title,group.Sum(p=>p.Entity.Group.Total),held.Sum(e=>e.Amount),held));
+        }
+        if(batch.Guarantee>0)result.Add(new("كتاب ضمان العقود",batch.Guarantee,batch.Guarantee,[]));
+        return result;
+    }
+}
 public sealed partial class Store
 {
     const string ContractKey="contractTransferBatchesV1";
