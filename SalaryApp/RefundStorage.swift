@@ -130,3 +130,37 @@ nonisolated struct RefundStorage: Sendable {
         }
     }
 }
+
+extension RefundStorage {
+    // نطابق المعرف المنطقي، فقد يختلف اسم ملف الأرشيف بين جهازين.
+    private func sharedRecord(_ id: UUID) throws -> (URL, Data)? {
+        var found: (URL, Data)?
+        for file in try historyFiles() {
+            let data = try BoundedFile.read(file, limit: RefundBackup.rowLimit)
+            struct Identity: Decodable { let batchID: UUID }
+            guard try JSONDecoder().decode(Identity.self, from: data).batchID == id else { continue }
+            guard found == nil else { throw EmployeeRefund.error("توجد دفعتان بهذا المعرف. راجع السجل.", "Multiple saved batches have this ID.") }
+            found = (file, data)
+        }
+        return found
+    }
+    func sharedData(_ id: UUID) throws -> Data? {
+        try RefundBackup.lock.withLock { try sharedRecord(id)?.1 }
+    }
+    static func checkShared(_ bytes: Data, id: UUID) throws {
+        let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: bytes)
+        guard snapshot.batchID == id, bytes.count <= RefundBackup.rowLimit else { throw CocoaError(.fileReadCorruptFile) }
+        _ = try snapshot.plan()
+    }
+    func applyShared(_ bytes: Data, id: UUID, expected: String) throws {
+        try Self.checkShared(bytes,id:id)
+        try RefundBackup.lock.withLock {
+            let record = try sharedRecord(id)
+            let digest = record.map { SHA256.hash(data:$0.1).map { String(format:"%02x",$0) }.joined() } ?? ""
+            guard digest == expected else { throw EmployeeRefund.error("تغيرت الدفعة محلياً. أعد المزامنة.", "The local batch changed. Retry sync.") }
+            let url = record?.0 ?? history.appendingPathComponent(UUID().uuidString + ".json")
+            try FileManager.default.createDirectory(at:history,withIntermediateDirectories:true)
+            try bytes.write(to:url,options:[.atomic,.completeFileProtection])
+        }
+    }
+}

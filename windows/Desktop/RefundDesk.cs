@@ -75,7 +75,7 @@ public partial class MainWindow
         if(hasHistory)SetSubpageBack(()=>{if(editing?.ArchiveId is null or "draft")ShowPage(RefundTransfers);else RefundFiles(source,month,editing);});
         var savedButton=ButtonFor("الدفعات المحفوظة",()=>ShowPage(RefundTransfers),"\uE8B7");
         savedButton.IsEnabled=hasHistory;
-        var head=Column(Bar(savedButton,ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
+        var head=Column(Bar(savedButton,ButtonFor("استلام الدفعة من OneDrive",()=>SyncSavedRefund(),"\uE896"),ButtonFor("استرجاع دفعة من CSV",()=>_=RecoverRefund(source,month,rows.Count>0))),
             FilterBar(("ابحث في رواتب "+month,searchBox,1),("المنتسب",results,1.2),("المبلغ",amounts,.75),("",add,0)),
             FilterBar(("جهة الإعادة",agency,1),("تاريخ الدفعة",date,0),("الجهة الدافعة",payer,1),("آيبان الجهة الدافعة",account,1.5)),note);
         var actions=Bar(ButtonFor("تعديل مبلغ المنتسب",()=>Guard(()=>{if(selected.SelectedItem is RefundPayee p){rows[rows.IndexOf(p)]=p with{Amount=Value()};Redraw();}})),ButtonFor("إزالة المنتسب",()=>{if(selected.SelectedItem is RefundPayee p){rows.Remove(p);Redraw();}}),

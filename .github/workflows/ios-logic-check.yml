@@ -23,7 +23,7 @@ jobs:
         run: python3 ci/test_ios_release_version.py
       - name: OneDrive fictional three-device trial
         run: |
-          node --test ci/onedrive_trial_test.cjs
+          node --test ci/onedrive_trial_test.cjs ci/saved_refund_sync_test.cjs
           swiftc SalaryApp/OneDriveAuthorizationReply.swift ci/onedrive_authorization_test/main.swift -o "$RUNNER_TEMP/onedrive-auth-check"
           "$RUNNER_TEMP/onedrive-auth-check"
           xcrun --sdk iphoneos swiftc -typecheck -swift-version 5 -target arm64-apple-ios26.0 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" SalaryApp/Localization.swift SalaryApp/OneDriveAuthorizationReply.swift SalaryApp/OneDriveTrialView.swift

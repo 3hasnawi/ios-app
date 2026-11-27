@@ -13,6 +13,7 @@ public sealed record RefundPayee(string Name,string Rank,string Workplace,string
 public sealed record RefundBank(string Code,string Name,string Bic,List<RefundPayee> People){public long Total=>People.Sum(p=>p.Amount);}
 public sealed record RefundBatch(string Id,string Source,DateOnly Date,string Payer,string Account,List<RefundPayee> People,JsonObject? Original=null,string? ArchiveId=null)
 {
+    public string? ArchiveDigest {get;init;}
     public static RefundPayee Employee(A.Employee e){
         var fields=WorkReports.Fields(e);
         string Get(string label)=>fields.GetValueOrDefault(Arabic.Key(label))??"";
@@ -139,8 +140,9 @@ public sealed partial class Store
     public List<RefundBatch> Refunds(){
         var result=new List<RefundBatch>();using var zip=System.IO.Compression.ZipFile.OpenRead(Archive);
         Records(zip,"refunds.jsonl",line=>{
-            var data=JsonNode.Parse(line.GetProperty("contents").GetBytesFromBase64())!.AsObject();
-            result.Add(DecodeRefund(data,line.GetProperty("id").GetString()));
+            var bytes=line.GetProperty("contents").GetBytesFromBase64();
+            var data=JsonNode.Parse(bytes)!.AsObject();
+            result.Add(DecodeRefund(data,line.GetProperty("id").GetString()) with {ArchiveDigest=Convert.ToHexStringLower(SHA256.HashData(bytes))});
         });return result.OrderByDescending(b=>b.Date).ToList();
     }
     public string SaveRefund(RefundBatch batch,string? revision,bool remove=false,bool asDraft=false){

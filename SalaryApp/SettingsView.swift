@@ -125,11 +125,11 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("backupRow")
                     NavigationLink {
-                        OneDriveTrialView { data in
+                        OneDriveTrialView(openRefund: { data in
                             let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: data)
                             _ = try snapshot.plan()
                             trialRefund = OpenRefund(snapshot: snapshot)
-                        }
+                        })
                             .sheet(item: $trialRefund) { record in
                                 NavigationStack {
                                     RefundArchivedDetail(snapshot: record.snapshot)

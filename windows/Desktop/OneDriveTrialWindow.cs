@@ -26,6 +26,8 @@ internal sealed class OneDriveTrialWindow : Window
     readonly CancellationTokenSource lifetime = new();
     readonly HttpClient network = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
         { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 1_000_000 };
+    readonly Func<string,string,string,Task<string>>? savedAction;
+    const string SavedPrefix = "payroll-refund-saved-v1-";
     const string RefundPrefix = "payroll-refund-trial-v1-";
     readonly Action<Window,string>? openRefund;
     readonly string local;
@@ -34,12 +36,14 @@ internal sealed class OneDriveTrialWindow : Window
     bool closed;
     readonly bool hindiNumbers;
 
-    public OneDriveTrialWindow(bool hindiNumbers, string? trialDirectory = null, Action<Window,string>? openRefund = null)
+    public OneDriveTrialWindow(bool hindiNumbers, string? trialDirectory = null, Action<Window,string>? openRefund = null, Func<string,string,string,Task<string>>? savedAction = null)
     {
         local = trialDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnbarPayroll", "OneDriveTrialV1");
         this.hindiNumbers = hindiNumbers;
         this.openRefund = openRefund;
-        Title = "اختبار الربط بـ OneDrive";
+        this.savedAction = savedAction;
+        if (savedAction!=null) network.MaxResponseContentBufferSize=64*1024*1024;
+        Title = savedAction==null ? "اختبار الربط بـ OneDrive" : "مزامنة دفعة إعادة المبالغ";
         Width = 780; Height = 610;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new DockPanel();
@@ -56,9 +60,9 @@ internal sealed class OneDriveTrialWindow : Window
         };
     }
 
-    static string Resource(string extension)
+    string Resource(string extension)
     {
-        using var stream = typeof(OneDriveTrialWindow).Assembly.GetManifestResourceStream("OneDriveTrial." + extension)
+        using var stream = typeof(OneDriveTrialWindow).Assembly.GetManifestResourceStream((savedAction==null ? "OneDriveTrial." : "SavedRefundSync.") + extension)
             ?? throw new InvalidDataException("تعذّر تحميل شاشة التجربة.");
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
@@ -80,7 +84,7 @@ internal sealed class OneDriveTrialWindow : Window
             web.Settings.AreDevToolsEnabled = false;
             web.Settings.AreHostObjectsAllowed = false;
             var html = Resource("html").Replace("data-numbers=\"latn\"", hindiNumbers ? "data-numbers=\"arab\"" : "data-numbers=\"latn\"");
-            var document = Encoding.UTF8.GetBytes(html.Replace("/* TRIAL_ENGINE */", Resource("js")));
+            var document = Encoding.UTF8.GetBytes(html.Replace(savedAction==null ? "/* TRIAL_ENGINE */" : "/* SYNC_ENGINE */", Resource("js")));
             // عنوان محلي ثابت للصفحة المضمّنة ولرسائلها. لا يعتمد على عنوان التنقّل الداخلي لـ NavigateToString.
             web.AddWebResourceRequestedFilter(PageUrl, CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.Document);
             web.WebResourceRequested += (_, e) =>
@@ -112,7 +116,7 @@ internal sealed class OneDriveTrialWindow : Window
                     var m = json.RootElement;
                     n = m.GetProperty("n").GetInt32();
                     var action = m.GetProperty("action").GetString()!;
-                    if (action == "load") pageStarted.TrySetResult();
+                    if (action is "load" or "selection") pageStarted.TrySetResult();
                     value = await Perform(action, m.GetProperty("id").GetString()!, m.GetProperty("value").GetString()!);
                 }
                 catch (MsalClientException) { error = "لم يكتمل تسجيل الدخول عبر متصفح ويندوز."; }
@@ -147,6 +151,14 @@ internal sealed class OneDriveTrialWindow : Window
 
     async Task<string> Perform(string action, string id, string value)
     {
+        if(savedAction!=null){
+            switch(action){
+                case "selection": case "validate": case "local": case "apply": return await savedAction(action,id,value);
+                case "hash": return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+                case "load": case "store": case "login": case "folder": case "list": case "read": case "write": case "claim": case "claimRead": break;
+                default: throw new InvalidDataException("طلب غير صالح.");
+            }
+        }
         var file = Path.Combine(local, action is "refundLoad" or "refundStore" ? "refunds.json" : "state.json");
         switch (action)
         {
@@ -200,14 +212,33 @@ internal sealed class OneDriveTrialWindow : Window
                 using var page = JsonDocument.Parse(await Graph(next));
                 var obj = page.RootElement;
                 foreach (var item in obj.GetProperty("value").EnumerateArray())
-                    if (item.GetProperty("name").GetString() is string name && (name.StartsWith(Prefix,StringComparison.Ordinal) || name.StartsWith(RefundPrefix,StringComparison.Ordinal))) names.Add(name);
+                    if (item.GetProperty("name").GetString() is string name && (savedAction!=null ? name.StartsWith(SavedPrefix,StringComparison.Ordinal) || name=="payroll-refund-link-v1.json" : name.StartsWith(Prefix,StringComparison.Ordinal) || name.StartsWith(RefundPrefix,StringComparison.Ordinal))) names.Add(name);
                 next = obj.TryGetProperty("@odata.nextLink", out var link) ? link.GetString() : null;
             }
             return JsonSerializer.Serialize(names);
         }
-        if (!Guid.TryParseExact(id,"D",out var key) || key.ToString("D") != id || action is not ("read" or "write" or "refundRead" or "refundWrite") || Encoding.UTF8.GetByteCount(value)>16384)
-            throw new InvalidDataException("ملف تجربة غير صالح.");
-        var prefix = action is "refundRead" or "refundWrite" ? RefundPrefix : Prefix;
+        if(savedAction!=null && action is ("claim" or "claimRead")){
+            var path=root+":/payroll-refund-link-v1.json:/content";
+            if(action=="claim"){
+                if(!Guid.TryParseExact(id,"D",out var selected) || selected.ToString("D")!=id)
+                    throw new InvalidDataException("معرف الدفعة غير صحيح.");
+                await Graph(path+"?@microsoft.graph.conflictBehavior=fail",body:JsonSerializer.Serialize(id));
+                return "";
+            }
+            return JsonSerializer.Deserialize<string>(await Graph(path,download:true)) ?? "";
+        }
+        string prefix;
+        if(savedAction!=null){
+            var parts=id.Split('.');
+            if(parts.Length!=2 || !Guid.TryParseExact(parts[0],"D",out var batchId) || batchId.ToString("D")!=parts[0] ||
+                parts[1].Length!=64 || !parts[1].All(c=>char.IsAsciiDigit(c) || c is >= 'a' and <= 'f') ||
+                Encoding.UTF8.GetByteCount(value)>64*1024*1024)throw new InvalidDataException("ملف المزامنة غير صالح.");
+            prefix=SavedPrefix;
+        }else{
+            if (!Guid.TryParseExact(id,"D",out var key) || key.ToString("D") != id || action is not ("read" or "write" or "refundRead" or "refundWrite") || Encoding.UTF8.GetByteCount(value)>16384)
+                throw new InvalidDataException("ملف تجربة غير صالح.");
+            prefix = action is "refundRead" or "refundWrite" ? RefundPrefix : Prefix;
+        }
         var url = root + ":/" + prefix + id + ".json:/content";
         if (action is "read" or "refundRead") return await Graph(url, download:true);
         await Graph(url + "?@microsoft.graph.conflictBehavior=fail", body:value);

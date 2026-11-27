@@ -69,8 +69,8 @@ with tempfile.TemporaryDirectory() as tmp:
     preview.write_text("import SwiftUI\nimport PDFKit\n"
                        + section("EmployeeDeductions.swift", "struct StatementPDF:", "/// كشف أفقي")
                        + section("ReportPreview.swift", "struct PDFPreview:", "/// يحمّل صفوف الكشف")
-                       + "enum AppSettings { static var isEnglish: Bool { false } }\n"
+                       + "enum AppSettings { enum Numerals { case arabicIndic, latin }; static let numerals = Numerals.latin; static var isEnglish: Bool { false } }\n"
                        + "enum PerfLog { static func record(_ name: String, since: Date) {} }\n")
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     subprocess.run(["xcrun", "swiftc", "-typecheck", "-sdk", sdk, "-target", "arm64-apple-ios26.0",
-                    *files, str(preview), str(app / "TransferAdaptivePDF.swift"), str(app / "DocumentPicker.swift"), *shared, str(app / "RefundAmountField.swift"), str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)
+                    *files, str(preview), str(app / "OneDriveAuthorizationReply.swift"), str(app / "OneDriveTrialView.swift"), str(app / "TransferAdaptivePDF.swift"), str(app / "DocumentPicker.swift"), *shared, str(app / "RefundAmountField.swift"), str(app / "RefundHistoryView.swift"), str(app / "EmployeeRefundView.swift"), str(app / "RefundSearchEntrySheet.swift")], check=True)

@@ -13,10 +13,14 @@ targets:
     platform: iOS
     sources:
       - path: SalaryApp
-        excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrial.html", "OneDriveTrial.js"]
+        excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrial.html", "OneDriveTrial.js", "SavedRefundSync.html", "SavedRefundSync.js"]
       - path: SalaryApp/OneDriveTrial.html
         buildPhase: resources
       - path: SalaryApp/OneDriveTrial.js
+        buildPhase: resources
+      - path: SalaryApp/SavedRefundSync.html
+        buildPhase: resources
+      - path: SalaryApp/SavedRefundSync.js
         buildPhase: resources
     dependencies:
       - package: ZIPFoundation

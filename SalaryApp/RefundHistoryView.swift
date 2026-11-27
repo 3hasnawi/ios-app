@@ -10,13 +10,58 @@ struct RefundHistoryView: View {
     @State private var deleting = false
     @State private var error: String?
 
+    private struct SyncRequest: Identifiable {
+        let id = UUID()
+        let batch: UUID?
+    }
+    @State private var syncRequest: SyncRequest?
+    @State private var syncState: SyncState?
+    private struct SyncState: Decodable {
+        let batch: String, stamp: String
+        let last: Double
+        let graph: [String:[String]]
+        var hasConflict: Bool { Set(graph.keys).subtracting(graph.values.flatMap { $0 }).count > 1 }
+    }
+
+    private func reload() async {
+        do {
+            records = try await Task.detached { [storage] in try storage.archived() }.value
+            let file = URL.applicationSupportDirectory.appendingPathComponent("OneDriveSavedRefundV1/state.json")
+            syncState = try? JSONDecoder().decode(SyncState.self, from: Data(contentsOf: file))
+            error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func syncAction(_ request: SyncRequest, _ action: String, _ key: String, _ value: String) async throws -> String {
+        if action == "selection" { return request.batch?.uuidString.lowercased() ?? "" }
+        guard let id = UUID(uuidString: key), request.batch == nil || request.batch == id else { throw CocoaError(.fileReadCorruptFile) }
+        let result = try await Task.detached { [storage] in
+            switch action {
+            case "local": return try storage.sharedData(id).map { String(decoding: $0, as: UTF8.self) } ?? ""
+            case "validate": try RefundStorage.checkShared(Data(value.utf8), id: id)
+            case "apply":
+                struct Change: Decodable { let expected: String, snapshot: String }
+                let change = try JSONDecoder().decode(Change.self, from: Data(value.utf8))
+                try storage.applyShared(Data(change.snapshot.utf8), id: id, expected: change.expected)
+            default: throw CocoaError(.fileReadCorruptFile)
+            }
+            return ""
+        }.value
+        if action == "apply" { BackupManager.shared.markChanged() }
+        return result
+    }
+
     var body: some View {
         List {
+            Button(tr("استلام الدفعة من OneDrive", "Receive batch from OneDrive"), systemImage: "icloud.and.arrow.down") {
+                syncRequest = SyncRequest(batch: nil)
+            }
             if let error { Text(error).foregroundStyle(.red) }
             else if records.isEmpty { Text(tr("لا توجد دفعات محفوظة.", "No saved batches.")) }
             ForEach(records) { record in
+                let sync = { syncRequest = SyncRequest(batch: record.snapshot.batchID) }
                 NavigationLink {
-                    RefundArchivedDetail(snapshot: record.snapshot)
+                    RefundArchivedDetail(snapshot: record.snapshot, onSync: sync)
                 } label: {
                     VStack(alignment: .leading) {
                         Text(record.snapshot.date, format: .dateTime.year().month().day())
@@ -24,10 +69,18 @@ struct RefundHistoryView: View {
                               record.snapshot.enteredTotal.map { Money.format(Double($0)) } ?? "",
                               tr("عدد المنتسبين", "Employees") + " " + String(record.snapshot.rows.count)]
                             .filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                        if let link = syncState, link.batch == record.snapshot.batchID.uuidString.lowercased() {
+                            let digest = record.revision.map { String(format: "%02x",$0) }.joined()
+                            Text(link.hasConflict ? tr("تعارض يحتاج مراجعة", "Conflict needs review") :
+                                    digest != link.stamp ? tr("بانتظار الإرسال", "Pending upload") :
+                                    tr("آخر مزامنة", "Last synced") + " · " + Date(timeIntervalSince1970: link.last / 1000).formatted())
+                                .font(.caption)
+                        }
                     }
                 }
                 .accessibilityIdentifier("refundHistoryRow")
                 .contextMenu {
+                    Button(tr("مزامنة هذه الدفعة", "Sync this batch"), systemImage: "arrow.triangle.2.circlepath", action: sync)
                     Button(tr("تعديل الدفعة", "Edit batch"), systemImage: "pencil") {
                         editor = RefundDraft(storage: storage, editing: record)
                     }.accessibilityIdentifier("editSavedRefund")
@@ -39,9 +92,14 @@ struct RefundHistoryView: View {
         }
         .navigationTitle(tr("الدفعات المحفوظة", "Saved batches"))
         .disabled(deleting)
-        .task {
-            do { records = try await Task.detached { [storage] in try storage.archived() }.value }
-            catch { self.error = error.localizedDescription }
+        .task { await reload() }
+        .sheet(item: $syncRequest, onDismiss: { Task { await reload() } }) { request in
+            NavigationStack {
+                OneDriveTrialView(savedAction: { try await syncAction(request, $0, $1, $2) })
+                    .navigationTitle(tr("مزامنة الدفعة", "Batch sync"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { Button(tr("إغلاق", "Close")) { syncRequest = nil } }
+            }
         }
         .sheet(item: $editor) { session in
             NavigationStack {
@@ -76,6 +134,7 @@ struct RefundHistoryView: View {
 
 struct RefundArchivedDetail: View {
     let snapshot: RefundSnapshot
+    var onSync: (() -> Void)? = nil
     @State private var exporting = false
     @State private var error: String?
     @State private var preview: StatementPDF?
@@ -118,6 +177,9 @@ struct RefundArchivedDetail: View {
 
     var body: some View {
         List {
+            if let onSync {
+                Button(tr("مزامنة هذه الدفعة", "Sync this batch"), systemImage: "arrow.triangle.2.circlepath", action: onSync)
+            }
             LabeledContent(tr("تاريخ التحويل", "Transfer date")) { Text(snapshot.date, format: .dateTime.year().month().day()) }
             if !snapshot.source.isEmpty { LabeledContent(tr("جهة الإعادة", "Refund source"), value: snapshot.source) }
             LabeledContent(tr("شهر الرواتب", "Payroll month"), value: snapshot.payrollMonths)

@@ -112,7 +112,11 @@ public partial class MainWindow
     async Task WorkPage(string key)
     {
         if(key==SearchName){SearchAll();return;}
-        if(store.Active==null){CanvasArea.Children.Add(Text("استورد نسخة احتياطية أو ملف Excel من الإعدادات."));return;}
+        if(store.Active==null){
+            if(key==RefundTransfers)CanvasArea.Children.Add(ButtonFor("استلام الدفعة من OneDrive",()=>SyncSavedRefund(),"\uE896"));
+            else CanvasArea.Children.Add(Text("استورد نسخة احتياطية أو ملف Excel من الإعدادات."));
+            return;
+        }
         var requestGeneration=generation;var month=SelectedMonth?.Name??"";var revision=store.Active;var loading=Text("جارٍ إعداد البيانات…",16);CanvasArea.Children.Add(loading);
         try{
             if(key==AuditName){

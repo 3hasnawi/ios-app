@@ -1,0 +1,92 @@
+<!doctype html><html lang="ar" dir="rtl" data-numbers="latn"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>مزامنة دفعة إعادة المبالغ</title>
+<style>
+:root{--surface:#f4f7f5;--ink:#173f36;--border:#c7d5cf;--accent:#195c4b}
+@media(prefers-color-scheme:dark){:root{--surface:#1e2a28;--ink:#e4f0e9;--border:#465b52;--accent:#226552}}
+main{padding:1rem 1.25rem;border-radius:1rem;background:var(--surface);color:var(--ink);border:1px solid var(--border)}
+h2{margin:.25rem 0;font-size:1.3rem}#connect{color:white;background:var(--accent);border-color:transparent}#status{margin-bottom:0;font-size:.95rem}
+details{border-top:1px solid var(--border);padding-top:.65rem}summary{cursor:pointer}
+:root{color-scheme:light dark;font:16px system-ui,sans-serif}body{max-width:44rem;margin:0 auto;padding:1rem}p{line-height:1.65}button{font:inherit;padding:.55rem .9rem;border:1px solid #839590;border-radius:.55rem;margin:.25rem 0}button:enabled{cursor:pointer}details{margin:.75rem 0}li{margin:.35rem 0}</style>
+<main><h2>مزامنة دفعة إعادة المبالغ</h2><p id="description"></p><button id="connect" disabled>تسجيل الدخول إلى OneDrive</button>
+<p role="status" id="status"></p><div id="versions"></div></main>
+<script>/* SYNC_ENGINE */</script><script>
+const el=id=>document.getElementById(id);
+let shownVersions="", selected="", connected=false, busy=false, seq=0, timer,delay=15000;
+document.documentElement.dir=english?"ltr":"rtl";
+document.querySelector("h2").textContent=document.title=savedText("مزامنة دفعة إعادة المبالغ","Sync saved refund batch");
+el("connect").textContent=savedText("تسجيل الدخول إلى OneDrive","Sign in to OneDrive");
+const requests=new Map();
+if (window.chrome?.webview) window.chrome.webview.addEventListener("message",({data})=>{
+    const request=requests.get(data.n);
+    if (!request) return;
+    requests.delete(data.n);
+    if(data.error)request.reject(new Error(data.error));else request.resolve(data.value);
+});
+async function api(action,id="",value="") {
+    const msg={action,id,value,n:++seq};
+    if(window.webkit?.messageHandlers?.trial) return window.webkit.messageHandlers.trial.postMessage(msg);
+    return new Promise((resolve,reject)=>{requests.set(msg.n,{resolve,reject});window.chrome.webview.postMessage(msg);});
+}
+async function refresh({login=false,choice=null}={}) {
+    if(busy || !login && (!connected || document.hidden || !navigator.onLine))return;
+    busy=true;clearTimeout(timer);el("connect").disabled=true;
+    try {
+        if(login){connected=false;await api("login");connected=true;el("connect").textContent=savedText("مزامنة الآن","Sync now");}
+        const result=await syncSavedRefund(api,selected,choice);
+        el("status").textContent=result.message+(result.last?" · "+new Date(result.last).toLocaleString(locale):"");
+        delay=15000;
+        if(shownVersions===(result.key || ""))return;
+        shownVersions=result.key || "";
+        el("versions").replaceChildren();
+        for(const version of result.versions || []){
+            const details=document.createElement("details"), heading=document.createElement("summary");
+            heading.textContent=version.label+" · "+version.id.slice(0,8);
+            details.append(heading);
+            const data=JSON.parse(version.snapshot);
+            const metadata=document.createElement("p");
+            metadata.textContent=[new Date(Date.UTC(2001,0,1)+data.date*1000).toLocaleDateString(locale),data.payer,data.account].join(" · ");
+            details.append(metadata);
+            const list=document.createElement("ul");
+            for(const row of data.rows){
+                const item=document.createElement("li"), person=row.candidate.person;
+                item.textContent=[person.name,row.amount+savedText(" د.ع"," IQD"),person.bank,person.iban].join(" · ");
+                list.append(item);
+            }
+            const adopt=document.createElement("button");
+            adopt.textContent=savedText("اعتماد هذه النسخة","Use this version");
+            adopt.onclick=()=>refresh({choice:{key:result.key,id:version.id}});
+            details.append(list,adopt);el("versions").append(details);
+        }
+        delay=15000;
+    } catch(error){
+        const message=String(error.message || error);
+        el("status").textContent=message;
+        if(message.includes("401") || (message.includes("حساب OneDrive") || message.includes("OneDrive account"))){connected=false;el("connect").textContent=savedText("تسجيل الدخول مجدداً","Sign in again");}
+        delay=Math.min(delay*2,120000);
+    }
+    finally{
+        busy=false;el("connect").disabled=false;
+        if(connected && !document.hidden && navigator.onLine)timer=setTimeout(refresh,delay);
+    }
+}
+window.addEventListener("online",()=>refresh());
+window.addEventListener("offline",()=>{clearTimeout(timer);el("status").textContent=savedText("دون اتصال · تبقى التعديلات محفوظة على الجهاز.","Offline · Edits are saved on this device.");});
+document.addEventListener("visibilitychange",()=>{clearTimeout(timer);refresh();});
+(async()=>{
+    try {
+        selected=await api("selection");
+        const link=JSON.parse(await api("load") || "null");
+        const raw=selected ? await api("local",selected) : "";
+        el("description").textContent=selected ? summary(raw)+savedText(" — ستُزامن بيانات هذه الدفعة وآيباناتها مع حساب OneDrive الذي تختاره."," — Sync this batch, including its IBANs, to the OneDrive account you select.") :
+            savedText("افتح بالحساب نفسه لاستلام الدفعة المشتركة وتحديث سجلها في الدفعات المحفوظة.","Sign in with the same account to receive the shared batch in Saved batches.");
+        el("status").textContent=link?.last?savedText("آخر مزامنة: ","Last synced · ")+new Date(link.last).toLocaleString(locale):savedText("بانتظار الربط","Waiting to connect");
+        if(selected && (!link || link.stamp!==await api("hash","",raw)))el("status").textContent=savedText("بانتظار الإرسال","Pending upload");
+        const button=el("connect");
+        button.disabled=false;
+        button.textContent=selected ? savedText("تسجيل الدخول ومزامنة هذه الدفعة","Sign in and sync this batch") : savedText("تسجيل الدخول واستلام الدفعة","Sign in and receive batch");
+        button.onclick=()=>refresh({login:!connected});
+    }catch(error){el("status").textContent=String(error.message || error);}
+})();
+</script></html>

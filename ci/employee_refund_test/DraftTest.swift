@@ -161,6 +161,16 @@ import PDFKit
         precondition(afterClear.count == 1 && afterClear[0].snapshot.rows.count == 2 && RefundDraft(storage: storage).rows.isEmpty)
         // تعديل الأرشيف مع بقاء المسودة الحية مستقلة وحماية التعديل من نسخة متقادمة.
         let original = afterClear[0]
+        let remote = RefundStorage(root: root.appendingPathComponent("shared-device"))
+        let sharedID = original.snapshot.batchID
+        let originalBytes = try storage.sharedData(sharedID)!
+        try remote.applyShared(originalBytes,id:sharedID,expected:"")
+        let receivedBytes = try remote.sharedData(sharedID)
+        precondition(receivedBytes == originalBytes)
+        do { try remote.applyShared(originalBytes,id:sharedID,expected:"stale"); fatalError("Overwrote a concurrent edit") } catch {}
+        let received = try remote.archived()
+        precondition(received.count == 1 && received[0].revision == original.revision)
+        do { try remote.applyShared(originalBytes,id:UUID(),expected:""); fatalError("Imported wrong batch") } catch {}
         let editor = RefundDraft(storage: storage, editing: original)
         editor.setAmount("١٢٣٤٥", for: one.id)
         precondition(editor.rows.first?.amount == "١٢٣٤٥")

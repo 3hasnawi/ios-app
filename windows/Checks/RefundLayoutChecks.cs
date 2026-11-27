@@ -37,6 +37,15 @@ internal static class RefundLayoutChecks
         }
         if (Environment.GetEnvironmentVariable("TRIAL_REFUND_SNAPSHOT") is {} path) {
             batch=Store.DecodeRefund(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllBytes(path))!.AsObject());
+            var synced=new Store(Path.Combine(folder,"saved-refund-sync-"+Guid.NewGuid().ToString("N")));
+            var id=Guid.Parse(batch.Id);
+            var json=File.ReadAllText(path);
+            synced.ApplySharedRefund(id,json,"");
+            if(synced.ReadSharedRefund(id)!=json || synced.Refunds().Single().Id!=batch.Id)
+                throw new InvalidDataException("Saved refund archive roundtrip");
+            var stale=false;
+            try{synced.ApplySharedRefund(id,json,"stale");}catch(InvalidDataException){stale=true;}
+            if(!stale || synced.ReadSharedRefund(id)!=json)throw new InvalidDataException("Lost concurrent edit");
             groups=batch.Groups();
             if(batch.People.Count!=2 || groups.Count!=2 || groups.Sum(g=>g.Total)!=40000)
                 throw new InvalidDataException("Trial refund totals");

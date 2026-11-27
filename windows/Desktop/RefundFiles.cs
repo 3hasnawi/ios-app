@@ -45,6 +45,32 @@ public partial class MainWindow
         dialog.ShowDialog();
     }
 
+    string SavedSyncDirectory => Path.Combine(store.Root,"OneDriveSavedRefundV1");
+
+    void SyncSavedRefund(string? selected = null)
+    {
+        Guid? selection = selected == null ? null : Guid.Parse(selected);
+        Task<string> Handle(string action,string key,string value) => Task.Run(() => {
+            if(action=="selection")return selection?.ToString("D") ?? "";
+            if(!Guid.TryParse(key,out var batch) || selection.HasValue && batch!=selection)
+                throw new InvalidDataException("معرف الدفعة غير صحيح.");
+            switch(action){
+                case "local": return store.ReadSharedRefund(batch);
+                case "validate": Store.ValidateSharedRefund(batch,value);break;
+                case "apply":
+                    using(var change=System.Text.Json.JsonDocument.Parse(value)){
+                        var root=change.RootElement;
+                        store.ApplySharedRefund(batch,root.GetProperty("snapshot").GetString()!,root.GetProperty("expected").GetString()!);
+                    }
+                    break;
+                default: throw new InvalidDataException("طلب غير صالح.");
+            }
+            return "";
+        });
+        new OneDriveTrialWindow(appearance.Hindi, SavedSyncDirectory, savedAction:Handle){Owner=this}.ShowDialog();
+        ShowPage(RefundTransfers);
+    }
+
     void RefundFiles(A.BackupSnapshot source,string month,RefundBatch batch,IReadOnlyList<RefundBatch>? saved=null)
     {
         CanvasArea.Children.Clear();PageTitle.Text=RefundTransfers;
@@ -57,6 +83,25 @@ public partial class MainWindow
         var actions=Bar(Labeled("الدفعات المحفوظة",picker,270),start,ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
             ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
                 _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D"));
+        actions.Children.Add(ButtonFor("مزامنة هذه الدفعة",()=>SyncSavedRefund(batch.Id),"\uE895"));
+        actions.Children.Add(ButtonFor("استلام الدفعة من OneDrive",()=>SyncSavedRefund(),"\uE896"));
+        var stateFile=Path.Combine(SavedSyncDirectory,"state.json");
+        if(File.Exists(stateFile)){
+            try {
+                using var state=System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(stateFile));
+                var link=state.RootElement;
+                if(string.Equals(link.GetProperty("batch").GetString(),batch.Id,StringComparison.OrdinalIgnoreCase)){
+                    var graph=link.GetProperty("graph").EnumerateObject().ToArray();
+                    var parents=graph.SelectMany(n=>n.Value.EnumerateArray()).Select(n=>n.GetString()).ToHashSet();
+                    var status=graph.Count(n=>!parents.Contains(n.Name))>1 ? "تعارض يحتاج مراجعة" :
+                        link.GetProperty("stamp").GetString()!=batch.ArchiveDigest ? "بانتظار الإرسال" :
+                        "آخر مزامنة · "+DateTimeOffset.FromUnixTimeMilliseconds(link.GetProperty("last").GetInt64()).LocalDateTime.ToString("g");
+                    actions.Children.Add(Text(status,13));
+                }
+            }catch(Exception ex) when(ex is IOException or System.Text.Json.JsonException or KeyNotFoundException){
+                actions.Children.Add(Text("تعذّرت قراءة حالة المزامنة",13));
+            }
+        }
         CanvasArea.Children.Add(RefundDocumentPanel(batch,raf=>RefundStyle(batch,raf,source),actions,this));
     }
 
