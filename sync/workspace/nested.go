@@ -14,7 +14,7 @@ type reconciliation struct {
 }
 
 func (r *reconciliation) pick(path []string, b, l, c []byte, structured bool) []byte {
-	if len(path) >= 4 && path[0] == "refund" && path[len(path)-2] == "rows" {
+	if len(path) >= 4 && path[0] == "refund" && path[len(path)-2] == "rows" && path[len(path)-1] != "ترتيب القيود" {
 		// Core Data regenerates a candidate's handle on import. Compare the
 		// portable person and amount, but retain a full, decodable native row.
 		portable := func(raw []byte) []byte {
