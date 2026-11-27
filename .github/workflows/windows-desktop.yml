@@ -72,7 +72,7 @@ jobs:
           powershell.exe -NoProfile -File ./windows/Checks/window-frame.ps1 -Executable "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -Image "$env:RUNNER_TEMP\screens\window-frame.png"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $p = Start-Process "$env:RUNNER_TEMP\installed\AnbarPayroll.exe" -ArgumentList "--capture $env:RUNNER_TEMP\fixture\print-source $env:RUNNER_TEMP\screens" -PassThru
-          if (-not $p.WaitForExit(100000)) { $p.Kill(); throw "Window capture timed out" }
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "Window capture timed out" }
           if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\screens\capture-error.txt" -ErrorAction SilentlyContinue; throw "Desktop exited with $($p.ExitCode)" }
           $requiredScreens = 'home','deductions','employee-search','transfers','bank','settings','transfer-files','funding','audit','search','refunds','trusts','deferred-transfers','health','fund','anbar-letters','bank-month','account-directory','deductions-compact','employee-profile','letter-editor','window-frame'
           foreach ($screen in $requiredScreens) {

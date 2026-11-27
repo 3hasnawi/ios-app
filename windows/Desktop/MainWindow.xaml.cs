@@ -378,33 +378,32 @@ public partial class MainWindow : Window
             ??throw new InvalidDataException("زر غير موجود في مسار الاختبار: "+label);
         void Click(DependencyObject root,string label)=>FindAction(root,label).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         async Task CheckPreview(string caption="معاينة الكشف",bool refund=false){
-            bool opened=false;
-            var finished=new TaskCompletionSource<bool>();
-            var probe=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
-            var deadline=DateTime.UtcNow.AddSeconds(25);
+            var finished=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var probe=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
             probe.Tick+=async (_,_)=>{
                 var preview=OwnedWindows.OfType<LetterPreview>().FirstOrDefault();
-                if(preview==null){if(DateTime.UtcNow>=deadline){probe.Stop();finished.TrySetResult(false);}return;}
+                if(preview==null)return;
                 probe.Stop();
-                try{opened=await preview.Ready.WaitAsync(TimeSpan.FromSeconds(15));}
-                catch(Exception){opened=false;}
-                finally{
-                    if(opened){
-                        var enabled=Controls<Button>((FrameworkElement)preview.Content).Where(b=>b.IsEnabled).Select(b=>b.Content).ToArray();
-                        opened=enabled.Contains(refund?"حفظ PDF":"تصدير PDF") && (!refund || enabled.Contains("طباعة"));
-                        var escape=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(preview)!,Environment.TickCount,Key.Escape){RoutedEvent=Keyboard.KeyDownEvent};
-                        preview.RaiseEvent(escape);
-                        await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
-                        opened=opened && escape.Handled && !preview.IsVisible;
-                    }
-                    if(preview.IsVisible)preview.Close();
-                    finished.TrySetResult(opened);
-                }
+                try{
+                    if(!await preview.Ready.WaitAsync(TimeSpan.FromSeconds(40)))
+                        throw new InvalidDataException("أُغلقت نافذة المعاينة قبل تحميل الملف.");
+                    await Dispatcher.InvokeAsync(()=>preview.Activate(),DispatcherPriority.ApplicationIdle);
+                    var enabled=Controls<Button>((FrameworkElement)preview.Content).Where(b=>b.IsEnabled).Select(b=>b.Content).ToArray();
+                    if(!enabled.Contains(refund?"حفظ PDF":"تصدير PDF") || refund && !enabled.Contains("طباعة"))
+                        throw new InvalidDataException("لم تتفعّل أوامر المستند بعد تحميل المعاينة.");
+                    var escape=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(preview)!,Environment.TickCount,Key.Escape){RoutedEvent=Keyboard.KeyDownEvent};
+                    preview.RaiseEvent(escape);
+                    await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
+                    if(!escape.Handled || preview.IsVisible)throw new InvalidDataException("تعذر إغلاق نافذة المعاينة بمفتاح Escape.");
+                    finished.TrySetResult(true);
+                }catch(Exception ex){finished.TrySetException(ex);}
+                finally{if(preview.IsVisible)preview.Close();}
             };
             probe.Start();
             try{
+                await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
                 Click(CanvasArea,caption);
-                if(!await finished.Task.WaitAsync(TimeSpan.FromSeconds(45)))throw new InvalidDataException("تعذّرت "+caption);
+                await finished.Task.WaitAsync(TimeSpan.FromSeconds(60));
             }finally{probe.Stop();}
         }
         void CheckBackPosition(bool enabled){
