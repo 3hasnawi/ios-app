@@ -209,29 +209,80 @@ struct HomeAccounting<Shortcuts: View>: View {
                 .frame(maxWidth: .infinity, minHeight: 108)
                 .background(cardSurface, in: RoundedRectangle(cornerRadius: 21))
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 156), spacing: 10)], alignment: .leading, spacing: 10) {
-                ForEach(items, id: \.id) { item in
-                    Button { openRoute(item.route) } label: {
+            HomeReviewPager(items: items, openRoute: openRoute)
+                .id(month.name)
+        }
+    }
+}
+
+private struct HomeReviewPager: View {
+    let items: [HomeReviewItem]
+    let openRoute: (HomeRoute) -> Void
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 122
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var selection: String?
+    @State private var visible = false
+    @GestureState private var dragging = false
+
+    var body: some View {
+        if !items.isEmpty {
+            let index = items.firstIndex { $0.id == selection } ?? 0
+            let current = items[index]
+            let nextID = items[(index + 1) % items.count].id
+            let pages = Binding(get: { current.id }, set: { selection = $0 })
+            let canRotate = items.count > 1 && visible && scenePhase == .active && !dragging && !voiceOver
+            TabView(selection: pages) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    Button {
+                        selection = item.id
+                        openRoute(item.route)
+                    } label: {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
                                 Label(item.priority.label, systemImage: item.symbol)
                                     .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.primary)
                                     .padding(.horizontal, 7).padding(.vertical, 3)
                                     .background(item.priority.color.opacity(0.20), in: Capsule())
                                 Spacer()
-                                Image(systemName: "chevron.forward").font(.caption2).foregroundStyle(.secondary)
+                                Text(tr("حالة \(Num.format(index + 1)) من \(Num.format(items.count))", "Review \(index + 1) of \(items.count)"))
+                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                             }
-                            Text(item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                            HStack {
+                                Text(item.title).font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Image(systemName: "chevron.forward").font(.caption).foregroundStyle(.secondary)
+                            }
                             Text(item.detail).font(.caption).foregroundStyle(.secondary)
                         }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, minHeight: 98, alignment: .topLeading)
-                        .background(cardSurface, in: RoundedRectangle(cornerRadius: 16))
-                        .contentShape(RoundedRectangle(cornerRadius: 16))
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityActions {
+                        if items.count > 1 {
+                            Button(tr("الحالة السابقة", "Previous review item")) { selection = items[(index + items.count - 1) % items.count].id }
+                            Button(tr("الحالة التالية", "Next review item")) { selection = items[(index + 1) % items.count].id }
+                        }
+                    }
                     .accessibilityIdentifier("homeReview-" + item.id)
+                    .tag(item.id)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: height)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .simultaneousGesture(DragGesture(minimumDistance: 4).updating($dragging) { _, inProgress, _ in inProgress = true })
+            .onScrollVisibilityChange(threshold: 0.5) { visible = $0 }
+            .task(id: canRotate ? nextID : nil) {
+                guard canRotate else { return }
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                guard !Task.isCancelled else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+                    selection = nextID
                 }
             }
         }

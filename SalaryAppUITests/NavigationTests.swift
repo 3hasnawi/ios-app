@@ -59,16 +59,29 @@ final class NavigationTests: XCTestCase {
         }
     }
 
-    func testHomeReviewReturnsToSameCardWithOneBack() {
+    func testHomeReviewReturnsToSameCardWithOneBack() throws {
+        func waitUntil(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+            return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        }
         continueAfterFailure = false
         app.launchArguments += ["-skipLock", "YES", "-seedHomeReviewNavigation", "YES", "-selectedMonth", "تشرين الأول 2099"]
         app.launch()
-        let first = element("homeReview-entity-added")
+        let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "homeReview-"))
+        func current() -> XCUIElement? { cards.allElementsBoundByIndex.first(where: { $0.isHittable }) }
+        XCTAssertTrue(waitUntil(40) { current() != nil })
+        let initial = try XCTUnwrap(current()).identifier
+        XCTAssertTrue(waitUntil(9) { current().map { $0.identifier != initial } ?? false })
         let second = element("homeReview-entity-missing")
-        XCTAssertTrue(first.waitForExistence(timeout: 40))
-        first.swipeRight()
-        if !second.isHittable { first.swipeLeft() }
+        for _ in 0..<16 {
+            if second.isHittable { break }
+            current()?.swipeRight()
+        }
         XCTAssertTrue(second.isHittable)
+        second.swipeLeft()
+        XCTAssertTrue(waitUntil(2) { !second.isHittable })
+        current()?.swipeRight()
+        XCTAssertTrue(waitUntil(2) { second.isHittable })
         let position = second.frame.midY
         second.tap()
         let detail = app.navigationBars["جهات غائبة عن الشهر"]
