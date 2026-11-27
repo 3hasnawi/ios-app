@@ -14,14 +14,10 @@ targets:
     sources:
       - path: SalaryApp
         excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrial.html", "OneDriveTrial.js", "SavedRefundSync.html", "SavedRefundSync.js"]
-      - path: SalaryApp/OneDriveTrial.html
-        buildPhase: resources
-      - path: SalaryApp/OneDriveTrial.js
-        buildPhase: resources
-      - path: SalaryApp/SavedRefundSync.html
-        buildPhase: resources
-      - path: SalaryApp/SavedRefundSync.js
-        buildPhase: resources
+    preBuildScripts:
+      - name: Compile shared OneDrive sync engine
+        script: '"$SRCROOT/sync/workspace/apple-build.sh"'
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: ZIPFoundation
     scheme:
@@ -52,6 +48,8 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [com.example.SalaryApp.periodicBackup]
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        OTHER_LDFLAGS: '$(inherited) "$(DERIVED_FILE_DIR)/libpayrollsync.a" -framework Security -framework CoreFoundation -framework SystemConfiguration -lresolv'
         PRODUCT_BUNDLE_IDENTIFIER: com.example.SalaryApp
         CODE_SIGN_ENTITLEMENTS: SalaryApp/SalaryApp.entitlements
         MARKETING_VERSION: "1.4"

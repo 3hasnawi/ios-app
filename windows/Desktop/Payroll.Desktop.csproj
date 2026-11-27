@@ -9,5 +9,13 @@
     <Content Include="../../SalaryApp/Assets.xcassets/IraqEmblem.imageset/IraqEmblem.png" Link="IraqEmblem.png" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../Core/Payroll.Core.csproj" />
   </ItemGroup>
-  <Import Project="OneDriveTrial.props" />
+  <ItemGroup>
+    <Compile Remove="OneDriveTrialWindow.cs" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.92.0" />
+    <None Include="$(BaseIntermediateOutputPath)payroll-sync.exe" Link="payroll-sync.exe" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CompileWorkspaceSync" BeforeTargets="PrepareForBuild">
+    <Exec WorkingDirectory="../../sync/workspace" Command="go build -trimpath -o &quot;$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)payroll-sync.exe&quot; ./cmd/desktop" EnvironmentVariables="GOOS=windows;GOARCH=amd64;CGO_ENABLED=0" />
+  </Target>
 </Project>

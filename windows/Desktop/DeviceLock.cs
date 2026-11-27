@@ -22,6 +22,7 @@ internal sealed class DeviceLock
 
     readonly Func<Window,Task<string?>> verify;
     readonly Action<int> save;
+    internal bool SyncLocked => gate!=null || verifying || covered.Count!=0;
     public DeviceLock():this(ReadDelay(),Verify,seconds=>Registry.SetValue(Key,Value,seconds,RegistryValueKind.DWord)) {}
     internal DeviceLock(int delay,Func<Window,Task<string?>> verify,Action<int> save)
     {

@@ -280,7 +280,7 @@ actor BackupActor {
     }
 
     /// يستبدل كل البيانات بمحتوى النسخة. يعيد الإعدادات المحفوظة فيها.
-    func restore(from folder: URL, progress: ProgressSink?, recoverable: Bool = false) throws -> [String: Data] {
+    func restore(from folder: URL, progress: ProgressSink?, recoverable: Bool = false, validateOnly: Bool = false) throws -> [String: Data] {
         let decoder = JSONDecoder()
         func records<T: Decodable>(_ name: String, _ type: T.Type) throws -> [T] {
             var result: [T] = []
@@ -415,6 +415,7 @@ actor BackupActor {
         } else { preparedRefunds = nil }
         defer { if let preparedRefunds { try? FileManager.default.removeItem(at: preparedRefunds) } }
 
+        if validateOnly { return settings }
         if recoverable {
             guard let store = modelContainer.configurations.first?.url else { throw BackupError.folderUnavailable }
             try RestoreSafety.prepare(store: store, includeRefunds: preparedRefunds != nil)
@@ -1277,6 +1278,54 @@ final class BackupManager {
         }
     }
 
+    private var syncCompletion: CheckedContinuation<Void, Error>?
+
+    var workSyncStamp: String {
+        let defaults = UserDefaults.standard
+        var hash = SHA256()
+        for key in BackupFormat.settingsKeys.sorted() {
+            guard let value = defaults.object(forKey: key),
+                  let bytes = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) else { continue }
+            hash.update(data: Data(key.utf8))
+            hash.update(data: Data(SHA256.hash(data: bytes)))
+        }
+        let changed = defaults.object(forKey: Self.changedKey) as? Date
+        return String(changed?.timeIntervalSince1970 ?? 0) + ":" + Data(hash.finalize()).base64EncodedString()
+    }
+
+    var workSyncAvailable: Bool {
+        !isWorking && pendingRestore == nil && !SharedModel.health.restoring && !SharedModel.health.restartRequired &&
+        !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting && !AppLock.shared.isLocked
+    }
+
+    func workSyncExport() async throws -> URL {
+        guard workSyncAvailable else { throw BackupError.sourceChanged }
+        isWorking = true
+        defer { isWorking = false }
+        return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync")).0
+    }
+
+    func workSyncValidate(_ file: URL) async throws -> URL {
+        let folder = try await Self.extractForRestore(file)
+        do {
+            _ = try await BackupActor(modelContainer: SharedModel.container).restore(from: folder, progress: nil, validateOnly: true)
+            return folder
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+    }
+
+    func workSyncApply(_ folder: URL, expected: String) async throws {
+        guard workSyncAvailable, workSyncStamp == expected else { throw BackupError.sourceChanged }
+        let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
+        try await withCheckedThrowingContinuation { continuation in
+            syncCompletion = continuation
+            pendingRestore = (folder, manifest)
+            confirmRestore()
+        }
+    }
+
     func confirmRestore() {
         guard let pending = pendingRestore else { return }
         guard !isWorking, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
@@ -1307,6 +1356,9 @@ final class BackupManager {
                        let normalized = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) {
                         result[item.key] = normalized
                     }
+                }
+                if syncCompletion != nil {
+                    for key in BackupFormat.settingsKeys where settings[key] == nil { UserDefaults.standard.removeObject(forKey: key) }
                 }
                 for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted", WorkReport.pinsKey, "homeHiddenWorkReports", "windowsContentTextLevel", ContractTransferArchive.key] where settings[key] == nil {
                     UserDefaults.standard.removeObject(forKey: key)
@@ -1343,12 +1395,23 @@ final class BackupManager {
                 OfficialBookStore.shared.reload()
                 StaffImportState.shared.version += 1
                 progress.end()
+                markChanged()
+                if let continuation = syncCompletion {
+                    syncCompletion = nil
+                    continuation.resume()
+                    return
+                }
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",
                              "Restored: \(pending.manifest.months.count) months, \(pending.manifest.staff) staff.")
             } catch {
                 if RestoreSafety.pending { SharedModel.health.restartRequired = true }
                 BankStatementCache.shared.invalidate()
                 progress.end()
+                if let continuation = syncCompletion {
+                    syncCompletion = nil
+                    continuation.resume(throwing: error)
+                    return
+                }
                 message = tr("تعذّر الاسترجاع: \(error.localizedDescription)", "Restore failed: \(error.localizedDescription)")
             }
         }

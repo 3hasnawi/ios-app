@@ -7,6 +7,10 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 45
     steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
       - uses: actions/checkout@v4
       - name: Prepare iPhone and synthetic payroll
         run: |

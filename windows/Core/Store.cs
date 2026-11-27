@@ -21,7 +21,7 @@ public sealed partial class Store(string root)
     public const string BackupName="نسخة الرواتب.zip";
     public string Archive=>Path.Combine(Active??throw new InvalidOperationException("اختر نسخة أولاً."),BackupName);
     public void Import(string source,IProgress<string>? progress=null,CancellationToken token=default) => Install(source,progress,token, false,null);
-    private string Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected,byte[]? pending=null)
+    private string Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected,byte[]? pending=null,bool restoring=false)
     {
         Directory.CreateDirectory(Root);
         using var lease=new FileStream(Path.Combine(Root,"import.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -42,7 +42,7 @@ public sealed partial class Store(string root)
             }
             File.WriteAllText(Path.Combine(stage,"archive.sha256"),Convert.ToHexString(fileHash.GetHashAndReset()));
             using(var db=Connect(stage,false)) BackupReader.Index(zip,db,progress,token);
-            if(!checkRevision && Active is {} before)CheckRestoredTransfers(Path.Combine(before,BackupName),zip);
+            if((restoring || !checkRevision) && Active is {} before)CheckRestoredTransfers(Path.Combine(before,BackupName),zip);
             token.ThrowIfCancellationRequested();
             File.WriteAllText(next,id);
             File.Move(next,Pointer,true);

@@ -17,11 +17,6 @@ struct SettingsView: View {
     @AppStorage(AppSettings.textSizeKey) private var textSize = -1
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage(AppLock.timeoutKey) private var lockTimeout = 0
-    private struct OpenRefund: Identifiable {
-        let snapshot: RefundSnapshot
-        var id: UUID { snapshot.batchID }
-    }
-    @State private var trialRefund: OpenRefund?
     @State private var changingLock = false
     @State private var lockMessage: String?
     @State private var storeSize: Int64?
@@ -125,24 +120,10 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("backupRow")
                     NavigationLink {
-                        OneDriveTrialView(openRefund: { data in
-                            let snapshot = try JSONDecoder().decode(RefundSnapshot.self, from: data)
-                            _ = try snapshot.plan()
-                            trialRefund = OpenRefund(snapshot: snapshot)
-                        })
-                            .sheet(item: $trialRefund) { record in
-                                NavigationStack {
-                                    RefundArchivedDetail(snapshot: record.snapshot)
-                                        .toolbar {
-                                            Button(tr("إغلاق", "Close")) { trialRefund = nil }
-                                        }
-                                }
-                            }
-                            .navigationTitle(tr("تجربة OneDrive", "OneDrive trial"))
-                            .navigationBarTitleDisplayMode(.inline)
+                        WorkspaceSyncSettings()
                     } label: {
-                        SettingRow(title: tr("تجربة OneDrive", "OneDrive trial"), systemImage: "arrow.triangle.2.circlepath",
-                                   color: .teal, subtitle: tr("دفعة وهمية بين الأجهزة", "A sample batch across devices")) { EmptyView() }
+                        SettingRow(title: tr("المزامنة عبر OneDrive", "OneDrive sync"), systemImage: "arrow.triangle.2.circlepath.icloud",
+                                   color: .teal, subtitle: WorkspaceSync.shared.status) { EmptyView() }
                     }
                 } header: {
                     Text(tr("البيانات", "Data"))

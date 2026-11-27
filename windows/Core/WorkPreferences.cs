@@ -48,7 +48,27 @@ public sealed partial class Store
         SalaryDesktop.Core.ReportFiles.Save(JsonSerializer.SerializeToUtf8Bytes(changes), Path.Combine(revision, PendingFile), ".json");
     }
 
-    public void ExportBackup(string destination)
+    static string Stamp(string? revision,byte[]? pending) => (revision??"empty")+"|"+
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(pending??[]));
+    public string WorkspaceStamp {
+        get { var revision=Active; return Stamp(revision,PendingSettings(revision)); }
+    }
+
+    public void ValidateWorkspace(string archive)
+    {
+        var root=Directory.CreateTempSubdirectory("payroll-sync-check-");
+        try { new Store(root.FullName).Import(archive); if(Active is {} rev)CheckRestoredTransfers(Path.Combine(rev,BackupName),archive); }
+        finally { root.Delete(true); }
+    }
+    public string ApplyWorkspace(string archive,string expected)
+    {
+        var revision=Active;
+        var pending=PendingSettings(revision);
+        if(Stamp(revision,pending)!=expected)throw new IOException("تغيّرت البيانات أثناء المزامنة.");
+        return Stamp(Install(archive,null,default,true,revision,pending,restoring:true),null);
+    }
+    public void ExportBackup(string destination) => ExportWorkspace(destination);
+    public string ExportWorkspace(string destination)
     {
         var revision = Active ?? throw new InvalidOperationException("اختر نسخة أولاً.");
         if (PendingSettings(revision) != null) revision = Rewrite(revision, null, null);
@@ -59,5 +79,6 @@ public sealed partial class Store
             File.Copy(Archive, temp);
             File.Move(temp, destination, true);
         } finally { File.Delete(temp); }
+        return Stamp(revision,null);
     }
 }

@@ -18,9 +18,21 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 15
     steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
       - uses: actions/checkout@v4
+      - name: Check iOS sync library and Swift calling convention without building the app
+        run: |
+          export SRCROOT="$PWD" PLATFORM_NAME=iphoneos ARCHS=arm64 DERIVED_FILE_DIR="$RUNNER_TEMP" SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          sync/workspace/apple-build.sh
+          xcrun nm -gj "$RUNNER_TEMP/libpayrollsync.a" | grep '^_payroll_sync$'
       - name: iPhone release numbering and AltStore metadata
         run: python3 ci/test_ios_release_version.py
+      - name: Check permanent OneDrive merge, stale writes and interrupted sessions with fictional records
+        working-directory: sync/workspace
+        run: go test ./...
       - name: OneDrive fictional three-device trial
         run: |
           node --test ci/onedrive_trial_test.cjs ci/saved_refund_sync_test.cjs

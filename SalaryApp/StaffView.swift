@@ -150,6 +150,7 @@ struct RootView: View {
                 UnifiedSearchView()
             }
         }
+        .disabled(SharedModel.health.restoring)
         // النظام يرسم الزجاج ويحرّك المؤشر ويصغّر الشريط أثناء التمرير.
         .tabBarMinimizeBehavior(.onScrollDown)
         .fullScreenCover(isPresented: $router.showReports) {
@@ -174,6 +175,13 @@ struct RootView: View {
             await AutoPilot.shared.run()
         }
         // نسخة فاتت (أُغلق التطبيق أثناء النسخ أو تعذّر الوصول للمجلد): تُكمل عند فتح التطبيق أو الخروج منه.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await WorkspaceSync.shared.automatic()
+                do { try await Task.sleep(for: .seconds(90)) } catch { return }
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .inactive else { return }
             Task {
