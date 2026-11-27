@@ -64,7 +64,21 @@ static class MonthlyCycleTests
             "older index upgrades in place with original archive and person data intact");
         var person=store.PersonSnapshot(name);check(person.Employees.Count==2&&person.Employees.All(e=>e.Name==name)&&person.Deductions.All(d=>d.Name==name),"unified profile only expands matching employee rows");
         var slip=A.PersonProfiles.Payslip(A.PersonProfiles.Build(person,name,[staff]).Months[0]);check(slip.Net==5000&&slip.Info.Any(i=>i.Title=="طريقة الدفع"&&i.Value=="بطاقة"),"profile payslip shows payment method from payroll");
-        var signed=File.ReadAllBytes(Path.Combine(dir,"original-book.pdf"));store.ArchivePdf(store.Snapshot(),"كتاب تجريبي",month,null,signed);
+        var signed=File.ReadAllBytes(Path.Combine(dir,"original-book.pdf"));var beforeLink=store.Snapshot();
+        var trustEntries=A.SalaryTrust.ReadFromBackup(beforeLink).Entries;
+        var linkIds=trustEntries.Select(e=>e.Id).ToHashSet();
+        var rev=store.Active;
+        try{store.ArchivePdf(beforeLink,"كتاب تجريبي",month,null,signed,new HashSet<string>{"missing"});throw new Exception("accepted stale trust rows");}
+        catch(InvalidDataException){check(store.Active==rev,"failed link does not create an orphan PDF");}
+        store.ArchivePdf(beforeLink,"كتاب تجريبي",month,null,signed,linkIds);
+        var linked=store.Snapshot();var bookId=linked.Books.Single().Id;
+        var firstId=new HashSet<string>{trustEntries[0].Id};
+        store.UpdateTrustBook(linked,firstId,bookId,unlink:true);
+        var removed=store.Snapshot();var partialLinks=A.SalaryTrust.ReadFromBackup(removed).Entries;
+        check(partialLinks.All(e=>(e.BookIds?.Count??0)==(firstId.Contains(e.Id)?0:1)),"unlink only the selected trust rows");
+        store.UpdateTrustBook(removed,firstId,bookId);
+        var relinked=A.SalaryTrust.ReadFromBackup(store.Snapshot()).Entries;
+        check(relinked.All(e=>e.BookIds?.Count==1) && relinked.Select(e=>(e.Id,e.Amount,e.ImportedStatus,e.ImportedPaymentDate)).SequenceEqual(trustEntries.Select(e=>(e.Id,e.Amount,e.ImportedStatus,e.ImportedPaymentDate))),"scan and link share one PDF and preserve trust amounts and payment fields");
         var refs=new MemoryStream();var manifest=new List<object>();
         using(var package=new ZipArchive(refs,ZipArchiveMode.Create,true)){
             foreach(string id in new[]{"rafidain_group","other_banks_group","food_company","food_tax","tax_social","cash_salary","contracts","water","housing","rafidain_anbar","ramadi"}){

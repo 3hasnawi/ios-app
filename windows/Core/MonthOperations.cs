@@ -33,12 +33,26 @@ public sealed partial class Store
         var links=A.IndividualLetterLinks.Read(s);links[id]=A.IndividualLetterLinks.FromEntry(entry);
         Rewrite(Path.GetDirectoryName(s.SourcePath),null,new Dictionary<string,byte[]>{{"transferLetterEntityLinks",A.IndividualLetterLinks.Encode(links)}});
     }
-    public void ArchivePdf(A.BackupSnapshot s,string title,string month,string? entity,byte[] pdf){
-        title=title.Trim();if(title.Length is 0 or >300||title.Any(char.IsControl)||!s.Months.Any(m=>m.Name==month)||pdf.Length is <6 or >60000000||!pdf.AsSpan(0,5).SequenceEqual("%PDF-"u8))throw new InvalidDataException("راجع عنوان الكتاب والشهر وملف PDF.");
+    public void UpdateTrustBook(A.BackupSnapshot s,IReadOnlySet<string> rows,Guid bookId,bool unlink=false){
+        if(s.Books.All(b=>b.Id!=bookId))throw new InvalidDataException("الكتاب غير موجود في الأرشيف.");
+        var ledger=A.SalaryTrust.ReadFromBackup(s);
+        if(unlink){
+            if(rows.Count==0 || !rows.IsSubsetOf(ledger.Entries.Select(e=>e.Id).ToHashSet()))throw new InvalidDataException("أعد اختيار قيود الأمانات.");
+            ledger=ledger with{Entries=ledger.Entries.Select(e=>rows.Contains(e.Id)?e with{
+                BookIds=e.BookIds?.Where(raw=>Guid.Parse(raw)!=bookId).ToArray()}:e).ToArray()};
+        }else ledger=A.SalaryTrust.Link(ledger,bookId,rows);
+        Rewrite(Path.GetDirectoryName(s.SourcePath),null,new Dictionary<string,byte[]>{{A.SalaryTrust.SettingsKey,A.SalaryTrust.Plist(ledger)}});
+    }
+    public void ArchivePdf(A.BackupSnapshot s,string title,string month,string? entity,byte[] pdf,IReadOnlySet<string>? trustRows=null){
+        var ledger=trustRows==null?null:A.SalaryTrust.ReadFromBackup(s);
+        bool knownMonth=s.Months.Any(m=>m.Name==month)||ledger?.Entries.Any(e=>trustRows!.Contains(e.Id)&&A.SalaryTrust.MonthLabel(e.Year,e.Month)==month)==true;
+        title=title.Trim();if(title.Length is 0 or >300||title.Any(char.IsControl)||!knownMonth||pdf.Length is <6 or >60000000||!pdf.AsSpan(0,5).SequenceEqual("%PDF-"u8))throw new InvalidDataException("راجع عنوان الكتاب والشهر وملف PDF.");
         using var document=UglyToad.PdfPig.PdfDocument.Open(pdf);
         if(document.NumberOfPages is <1 or >3)throw new InvalidDataException("يقبل أرشيف الكتب من صفحة إلى ثلاث صفحات.");
         foreach(var page in document.GetPages())if(page.Width<=0||page.Height<=0)throw new InvalidDataException("صفحة غير صالحة.");
-        Rewrite(Path.GetDirectoryName(s.SourcePath),null,null,book:(new(Guid.NewGuid(),title,month,document.NumberOfPages,entity,NowIos),pdf));
+        var book=new A.ArchiveBook(Guid.NewGuid(),title,month,document.NumberOfPages,entity,NowIos);
+        var changes=ledger==null?null:new Dictionary<string,byte[]>{{A.SalaryTrust.SettingsKey,A.SalaryTrust.Plist(A.SalaryTrust.Link(ledger,book.Id,trustRows!))}};
+        Rewrite(Path.GetDirectoryName(s.SourcePath),null,changes,book:(book,pdf));
     }
     public void RenameAgency(A.BackupSnapshot s,string from,string input){
         var names=Agencies();string target=input.Trim();

@@ -190,15 +190,35 @@ public partial class MainWindow
     {
         var ledger=A.SalaryTrust.ReadFromBackup(s);
         var dock=new DockPanel();var q=new TextBox();var g=GridView(("الاسم","Name",2),("عدد القيود","Count",1),("المجموع","Total",1),("المتبقي المؤكد","Remaining",1));
-        var top=Column(FilterBar(("بحث عن منتسب",q,1)));DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);dock.Children.Add(g);CanvasArea.Children.Add(dock);
-        var byPerson=ledger.Entries.GroupBy(e=>Arabic.Match(e.Name)).ToDictionary(k=>k.Key,k=>k.OrderByDescending(e=>e.Year*100+e.Month).ToArray());
-        void Draw(){g.ItemsSource=byPerson.Where(p=>p.Key.Contains(Arabic.Match(q.Text))).Select(p=>new TrustPerson(p.Key,p.Value[0].Name,p.Value.Length,Arabic.Money(p.Value.Sum(e=>e.Amount)),Arabic.Money(A.SalaryTrust.Outstanding(p.Value)))).ToList();}
-        q.TextChanged+=(_,_)=>Draw();Draw();
-        g.MouseDoubleClick+=(_,_)=>{if(g.SelectedItem is not TrustPerson p)return;var grid=GridView(("الشهر","Month",1),("المبلغ","Amount",1),("الحالة","Status",1),("تاريخ الصرف","Date",1),("الملاحظات","Note",1.6));
-            grid.Width=720;grid.Height=320;grid.ItemsSource=byPerson[p.Key].Select(e=>new{Month=A.SalaryTrust.MonthLabel(e.Year,e.Month),Amount=Arabic.Money(e.Amount),Status=e.ImportedStatus,Date=e.ImportedPaymentDate??string.Join("، ",e.Payments.Select(x=>x.BookDate)),Note=string.Join(" · ",new[]{e.CaseStatus,e.Note}.Where(x=>x.Length>0).Distinct())});Form(p.Name,grid,Text("المجموع　"+p.Total),PreviewButton(TrustName+" - "+p.Name,()=>Task.Run(()=>A.SalaryTrustReports.Pdf(Sheet(byPerson[p.Key],p.Name),Fonts(),DateTime.Now))));};
-        A.ReportSheet Sheet(A.SalaryTrustEntry[] entries,string query)=>A.SalaryTrustReports.Sheet(ledger,entries,A.ReportSheet.HeaderFor(s),"كل الأشهر","كل الحالات",query);
-        A.SalaryTrustEntry[] Selected(string query)=>ledger.Entries.Where(e=>Arabic.Match(e.Name).Contains(Arabic.Match(query))).ToArray();
-        top.Children.Add(Bar(PreviewButton(TrustName,()=>{var query=q.Text;var entries=Selected(query);return Task.Run(()=>A.SalaryTrustReports.Pdf(Sheet(entries,query),Fonts(),DateTime.Now));}),ButtonFor("تصدير Excel",()=>{var query=q.Text;var entries=Selected(query);_=SaveFile(TrustName,"xlsx",()=>A.SalaryTrustReports.Excel(Sheet(entries,query),entries));})));
+        var periods=ledger.Entries.Select(e=>(e.Year,e.Month)).Distinct().OrderByDescending(m=>m.Year).ThenByDescending(m=>m.Month).ToArray();
+        var month=Choices(new[]{"كل الأشهر"}.Concat(periods.Select(m=>A.SalaryTrust.MonthLabel(m.Year,m.Month))));
+        var status=Choices(A.SalaryTrust.Filters.Select(f=>f.Title));
+        var top=Column(FilterBar(("بحث عن منتسب",q,1),("الشهر",month,0),("حالة الصرف",status,0)));
+        DockPanel.SetDock(top,Dock.Top);dock.Children.Add(top);dock.Children.Add(g);CanvasArea.Children.Add(dock);
+        A.SalaryTrustEntry[] Visible(){
+            var key=Arabic.Match(q.Text);
+            var filter=A.SalaryTrust.Filters[status.SelectedIndex].Filter;
+            return ledger.Entries.Where(e=>Arabic.Match(e.Name).Contains(key)&&A.SalaryTrust.Includes(filter,e)&&
+                (month.SelectedIndex==0 || (e.Year,e.Month)==periods[month.SelectedIndex-1])).OrderByDescending(e=>e.Year).ThenByDescending(e=>e.Month).ToArray();
+        }
+        void Draw()=>g.ItemsSource=Visible().GroupBy(e=>Arabic.Match(e.Name)).Select(group=>new TrustPerson(group.Key,group.First().Name,group.Count(),
+            Arabic.Money(group.Sum(e=>e.Amount)),Arabic.Money(A.SalaryTrust.Outstanding(group)))).ToList();
+        q.TextChanged+=(_,_)=>Draw();month.SelectionChanged+=(_,_)=>Draw();status.SelectionChanged+=(_,_)=>Draw();Draw();
+        A.ReportSheet Sheet(A.SalaryTrustEntry[] entries,string query)=>A.SalaryTrustReports.Sheet(ledger,entries,A.ReportSheet.HeaderFor(s),month.SelectedItem.ToString()!,status.SelectedItem.ToString()!,query);
+        var pdf=PreviewButton(TrustName,()=>{var sheet=Sheet(Visible(),q.Text);return Task.Run(()=>A.SalaryTrustReports.Pdf(sheet,Fonts(),DateTime.Now));},printAndSave:true);
+        var excel=ButtonFor("تصدير Excel",()=>{var entries=Visible();var sheet=Sheet(entries,q.Text);_=SaveFile(TrustName,"xlsx",()=>A.SalaryTrustReports.Excel(sheet,entries));});
+        A.SalaryTrustEntry[] SelectedPeople(){
+            var keys=g.SelectedItems.Cast<TrustPerson>().Select(p=>p.Key).ToHashSet();
+            return Visible().Where(e=>keys.Contains(Arabic.Match(e.Name))).ToArray();
+        }
+        g.SelectionMode=DataGridSelectionMode.Extended;g.SelectionUnit=DataGridSelectionUnit.FullRow;
+        var link=ButtonFor("ربط القيود الظاهرة للمحددين بكتاب",()=>Guard(()=>TrustDocument(s,SelectedPeople())),"\uE71B");link.IsEnabled=false;
+        g.SelectionChanged+=(_,_)=>link.IsEnabled=g.SelectedItems.Count>0;top.Children.Add(Bar(pdf,excel,link));
+        g.MouseDoubleClick+=(_,e)=>{if(e.OriginalSource is DependencyObject el && ItemsControl.ContainerFromElement(g,el) is DataGridRow{Item:TrustPerson person}){
+            var entries=Visible().Where(row=>Arabic.Match(row.Name)==person.Key).ToArray();
+            TrustDetails(s,person.Name,entries,Sheet(entries,person.Name));
+        }};
+
     }
     record TrustPerson(string Key,string Name,int Count,string Total,string Remaining);
 }

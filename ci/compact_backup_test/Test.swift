@@ -102,6 +102,7 @@ import CoreGraphics
                 let trustRaw = try PropertyListSerialization.propertyList(from: settings[SalaryTrust.settingsKey]!, format: nil) as! Data
                 let trusts = try SalaryTrust.decode(trustRaw)
                 precondition(trusts.entries.count == 2 && trusts.entries.reduce(0) { $0 + $1.amount } == 201 && state.staff.count == 1)
+                precondition(trusts.entries.allSatisfy { $0.bookIds?.count == 1 } && Set(trusts.entries.flatMap { $0.bookIds ?? [] }).count == 1)
                 print("PASS Windows archived expenses, Excel trusts and staff restored with Apple models")
             } else { precondition(!path.hasSuffix("windows-month.zip")) }
             print("PASS Windows archive restored by the production SwiftData BackupActor, including LZFSE deferred batch")
