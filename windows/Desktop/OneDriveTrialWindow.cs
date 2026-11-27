@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using Microsoft.Identity.Client;
 using Microsoft.Web.WebView2.Core;
@@ -17,23 +18,32 @@ internal sealed class OneDriveTrialWindow : Window
     const string ClientId = "986d159c-3325-4480-af32-3572c0c9f3c9";
     const string Drive = "https://graph.microsoft.com/v1.0/me/drive/";
     const string Prefix = "payroll-trial-v1-";
+    const string PageUrl = "https://onedrive-trial.invalid/index.html";
+    readonly TextBlock status = new() { Text = "جارٍ فتح شاشة تسجيل الدخول…", Margin = new Thickness(16),
+        FlowDirection = FlowDirection.RightToLeft, TextWrapping = TextWrapping.Wrap };
+    readonly TaskCompletionSource pageStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly WebView2 viewer = new();
     readonly CancellationTokenSource lifetime = new();
     readonly HttpClient network = new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
         { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 1_000_000 };
-    readonly string local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnbarPayroll", "OneDriveTrialV1");
+    readonly string local;
     string token = "", root = "";
     FileStream? exclusive;
     bool closed;
     readonly bool hindiNumbers;
 
-    public OneDriveTrialWindow(bool hindiNumbers)
+    public OneDriveTrialWindow(bool hindiNumbers, string? trialDirectory = null)
     {
+        local = trialDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnbarPayroll", "OneDriveTrialV1");
         this.hindiNumbers = hindiNumbers;
         Title = "اختبار الربط بـ OneDrive";
         Width = 780; Height = 610;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Content = viewer;
+        var panel = new DockPanel();
+        DockPanel.SetDock(status, Dock.Top);
+        panel.Children.Add(status);
+        panel.Children.Add(viewer);
+        Content = panel;
         Loaded += async (_, _) => await Initialize();
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
         Closed += (_, _) =>
@@ -59,18 +69,38 @@ internal sealed class OneDriveTrialWindow : Window
             // One local outbox per Windows user, even if two app processes are open.
             exclusive = new FileStream(Path.Combine(local,"session.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
             var profile = Path.Combine(local, "WebView");
-            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: profile);
+            var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: profile).WaitAsync(TimeSpan.FromSeconds(40), lifetime.Token);
             if (closed) return;
-            await viewer.EnsureCoreWebView2Async(environment);
+            await viewer.EnsureCoreWebView2Async(environment).WaitAsync(TimeSpan.FromSeconds(40), lifetime.Token);
             if (closed) return;
             var web = viewer.CoreWebView2;
             web.Settings.AreDevToolsEnabled = false;
             web.Settings.AreHostObjectsAllowed = false;
-            web.NavigationStarting += (_, e) => e.Cancel = e.Uri != "about:blank";
+            var html = Resource("html").Replace("data-numbers=\"latn\"", hindiNumbers ? "data-numbers=\"arab\"" : "data-numbers=\"latn\"");
+            var document = Encoding.UTF8.GetBytes(html.Replace("/* TRIAL_ENGINE */", Resource("js")));
+            // عنوان محلي ثابت للصفحة المضمّنة ولرسائلها. لا يعتمد على عنوان التنقّل الداخلي لـ NavigateToString.
+            web.AddWebResourceRequestedFilter(PageUrl, CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.Document);
+            web.WebResourceRequested += (_, e) =>
+            {
+                if (e.Request.Uri == PageUrl && e.Request.Method == "GET")
+                    e.Response = environment.CreateWebResourceResponse(new MemoryStream(document, writable:false), 200, "OK",
+                        "Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff");
+            };
+            web.NavigationStarting += (_, e) => e.Cancel = e.Uri != PageUrl;
+            web.NavigationCompleted += (_, e) =>
+            {
+                if (!e.IsSuccess && !pageStarted.Task.IsCompleted)
+                    pageStarted.TrySetException(new InvalidDataException("تعذّر تحميل صفحة تسجيل الدخول (" + e.WebErrorStatus + ")."));
+            };
+            web.ProcessFailed += (_, e) =>
+            {
+                if (!closed && e.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited or CoreWebView2ProcessFailedKind.RenderProcessExited)
+                    ShowFailure("توقف عارض WebView2. أغلق نافذة التجربة وافتحها مجدداً.");
+            };
             web.NewWindowRequested += (_, e) => e.Handled = true;
             web.WebMessageReceived += async (_, e) =>
             {
-                if (closed || e.Source != "about:blank") return;
+                if (closed || e.Source != PageUrl) return;
                 int n = 0;
                 string value = "", error = "";
                 try
@@ -78,22 +108,38 @@ internal sealed class OneDriveTrialWindow : Window
                     using var json = JsonDocument.Parse(e.WebMessageAsJson);
                     var m = json.RootElement;
                     n = m.GetProperty("n").GetInt32();
-                    value = await Perform(m.GetProperty("action").GetString()!, m.GetProperty("id").GetString()!, m.GetProperty("value").GetString()!);
+                    var action = m.GetProperty("action").GetString()!;
+                    if (action == "load") pageStarted.TrySetResult();
+                    value = await Perform(action, m.GetProperty("id").GetString()!, m.GetProperty("value").GetString()!);
                 }
                 catch (MsalClientException) { error = "لم يكتمل تسجيل الدخول عبر متصفح ويندوز."; }
                 catch (MsalServiceException ex) { error = "تعذّر تسجيل الدخول لدى Microsoft (" + ex.ErrorCode + ")."; }
                 catch (Exception ex) { error = ex is InvalidDataException ? ex.Message : "تعذّر إكمال الطلب. تحقق من الاتصال وحاول مجدداً."; }
                 if (!closed) web.PostWebMessageAsJson(JsonSerializer.Serialize(new { n, value, error }));
             };
-            var html = Resource("html").Replace("data-numbers=\"latn\"", hindiNumbers ? "data-numbers=\"arab\"" : "data-numbers=\"latn\"");
-            web.NavigateToString(html.Replace("/* TRIAL_ENGINE */", Resource("js")));
+            web.Navigate(PageUrl);
+            await pageStarted.Task.WaitAsync(TimeSpan.FromSeconds(30), lifetime.Token);
+            if (!closed && viewer.Visibility == Visibility.Visible) status.Visibility = Visibility.Collapsed;
         }
-        catch (Exception) when (!closed)
+        catch (Exception ex) when (!closed)
         {
-            MessageBox.Show(this, "تعذّر فتح التجربة. أغلق أي نافذة تجربة أخرى وتحقق من توفر WebView2.", Title);
-            Close();
+            var message = ex switch
+            {
+                InvalidDataException => ex.Message,
+                IOException when exclusive == null => "تعذّر فتح مجلد التجربة. تحقق من صلاحية المجلد وأغلق أي نافذة تجربة أخرى.",
+                TimeoutException => "لم يستجب عارض WebView2. أغلق نافذة التجربة وافتحها مجدداً.",
+                _ => "تعذّر تشغيل شاشة التجربة. تحقق من تثبيت Microsoft Edge WebView2 Runtime."
+            };
+            ShowFailure(message);
         }
         catch (Exception) when (closed) { }
+    }
+
+    void ShowFailure(string message)
+    {
+        viewer.Visibility = Visibility.Collapsed;
+        status.Text = message;
+        status.Visibility = Visibility.Visible;
     }
 
     async Task<string> Perform(string action, string id, string value)

@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Open the OneDrive trial sign-in window in WebView2
+        timeout-minutes: 4
+        run: dotnet run --project windows/OneDriveTrialChecks -- "$env:RUNNER_TEMP/onedrive-trial-windows.png"
       - name: Install the x64 Access provider for the native database import test
         run: |
           $installer = Join-Path $env:RUNNER_TEMP 'access-provider.exe'

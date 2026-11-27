@@ -10,6 +10,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Open the OneDrive trial sign-in window in WebView2
+        timeout-minutes: 4
+        run: dotnet run --project windows/OneDriveTrialChecks -- "$env:RUNNER_TEMP/onedrive-trial-windows.png"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onedrive-trial-windows-screen
+          path: ${{ runner.temp }}/onedrive-trial-windows.png
       - name: Check device lock startup, rejection and background privacy
         timeout-minutes: 2
         run: dotnet run --project windows/DeviceLockChecks/DeviceLockChecks.csproj

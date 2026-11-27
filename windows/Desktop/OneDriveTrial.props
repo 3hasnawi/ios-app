@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../SalaryApp/OneDriveTrial.html" LogicalName="OneDriveTrial.html" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../SalaryApp/OneDriveTrial.js" LogicalName="OneDriveTrial.js" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.92.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
+  </ItemGroup>
+</Project>
