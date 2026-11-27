@@ -271,12 +271,14 @@ public static class ReconciliationPdf
                                 float monthWidth = W(date.Month, signatureFont), yearWidth = W(date.Year, signatureFont);
                                 float slashWidth = W("/", signatureFont);
                                 float gap = W(" ", signatureFont);
-                                float left = rect.MidX - (monthWidth + yearWidth + slashWidth + 2 * gap) / 2;
+                                float left = rect.MidX - (monthWidth + yearWidth + 2 * slashWidth + 3 * gap) / 2;
                                 Draw([date.Year], signatureFont, SKRect.Create(left, signatureY, yearWidth, height), 1);
                                 left += yearWidth + gap;
                                 Draw(["/"], signatureFont, SKRect.Create(left, signatureY, slashWidth, height), 1);
                                 left += slashWidth + gap;
                                 Draw([date.Month], signatureFont, SKRect.Create(left, signatureY, monthWidth, height), 1);
+                                left += monthWidth + gap;
+                                Draw(["/"], signatureFont, SKRect.Create(left, signatureY, slashWidth, height), 1);
                             }
                             else Draw(lines, signatureFont, rect, 1);
                             signatureY += height;

@@ -556,13 +556,7 @@ public static class AdaptiveLetterPdf
             var parts=fields[i].ReplaceLineEndings("\n").Trim().Split('\n',StringSplitOptions.TrimEntries);
             if(parts.Length==1)parts=[roles[i],parts[0],jobs[i]];
             if(parts.Length!=3||parts.Any(string.IsNullOrWhiteSpace))throw new InvalidDataException("أدخل العنوان الوظيفي والاسم والمنصب في ثلاثة أسطر لكل توقيع.");
-            var signatureDate=date;
-            if(i==2){
-                var pieces=date.Split('/',StringSplitOptions.RemoveEmptyEntries|StringSplitOptions.TrimEntries);
-                if(pieces.Length==2&&int.TryParse(TransferPreparation.NormalizeAccount(pieces[0]),out var month)&&month is >=1 and <=12)
-                    signatureDate=" / "+MonthName(month)+" / "+pieces[1];
-            }
-            rows.Add(string.Join('\n',parts)+"\n"+signatureDate);
+            rows.Add(string.Join('\n',parts)+"\n"+date);
         }
         return rows.Count switch{1=>["","",rows[0]],2=>[rows[0],"",rows[1]],3=>rows.ToArray(),_=>throw new InvalidDataException("أدخل توقيعاً واحداً على الأقل.")};
     }

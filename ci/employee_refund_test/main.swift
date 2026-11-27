@@ -153,6 +153,8 @@ for (groups, settings) in [(raf.groups, letters.rafidain), (other, letters.other
     guard case .paragraph(let copies) = letter.last else { fatalError("Missing copies footer") }
     guard case .paragraph(let reference) = letter[1] else { fatalError("Missing reference") }
     precondition(reference.text.components(separatedBy: "\n").first == "العدد: ١\u{200F}/٢٢/ح/")
+    guard case .table(let committee) = letter[letter.count - 2] else { fatalError("Missing signatures") }
+    precondition(committee.rows[0].count == 3 && committee.rows[0].allSatisfy { $0.hasSuffix(" / ١١ / ٢٠٢٦") })
     precondition(copies.text == expectedCopies)
 }
 let codes = ["RSHD", "OTHR", "BANK", "TEST"]

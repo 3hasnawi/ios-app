@@ -119,9 +119,9 @@ import CoreText
         try check(PDFDocument(url: reportedPDF) != nil, "reconciliation PDF Arabic funding description")
         var customSignatures = BankReconciliation.preparedSignatures(statement)
         customSignatures.memberFirst = "اسم تجريبي أول"; customSignatures.firstRank = "رتبة تجريبية"
-        customSignatures.firstPosition = "منصب تجريبي"; customSignatures.firstDate = " / 6 / 2026"
+        customSignatures.firstPosition = "منصب تجريبي"; customSignatures.firstDate = "٢٠٢٦ / ٦"
         customSignatures.memberSecond = "اسم تجريبي ثان"; customSignatures.secondRank = "رتبة ثانية"
-        customSignatures.secondPosition = "منصب ثان"; customSignatures.secondDate = " / 7 / 2026"
+        customSignatures.secondPosition = "منصب ثان"; customSignatures.secondDate = "7 / 2026"
         let signaturesRoundTrip = try BankReconciliation.decode(JSONEncoder().encode(BankReconciliation.Ledger(periods: [customSignatures])))
         try check(signaturesRoundTrip.periods == [customSignatures], "reconciliation committee details survive backup")
         try check(BankReconciliation.signatureLines(customSignatures, first: true) == ["رتبة تجريبية", "اسم تجريبي أول", "منصب تجريبي", " / ٦ / ٢٠٢٦"], "reconciliation editable signature lines")
@@ -234,16 +234,12 @@ import CoreText
             throw Failure(errorDescription: "invalid outgoing month accepted")
         } catch is Failure { throw Failure(errorDescription: "invalid outgoing month accepted") } catch { }
         let sharedDates = TransferWordGroupDraft.signatureCells(["عضو أول", "عضو ثان", "عضو ثالث"], date: outgoingDate, adaptivePDF: true)
-        try check(sharedDates.count == 3 && sharedDates[0].contains(outgoingDate) && sharedDates[1].contains(outgoingDate) && sharedDates[2].contains(" / تشرين الثاني / ٢٠٢٦"), "only third signature spells the outgoing month")
-        let wordDates = TransferWordGroupDraft.signatureCells(["عضو أول", "عضو ثان", "عضو ثالث"], date: " / 10 / 2026", adaptivePDF: false)
-        try check(wordDates[0].contains(" / 10 / 2026") && wordDates[1].contains(" / 10 / 2026") && wordDates[2].contains(" / تشرين الأول / 2026"), "Word third signature spells the month and preserves year")
-        try check(TransferWordGroupDraft.thirdMemberDate("15 / ١٢ / ٢٠٢٦") == "15 / كانون الأول / ٢٠٢٦" && TransferWordGroupDraft.thirdMemberDate("تاريخ غير معروف") == "تاريخ غير معروف", "third signature preserves a specified day, year and unknown dates")
-        let iraqiMonths = ["كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول", "تشرين الأول", "تشرين الثاني", "كانون الأول"]
-        for (index, name) in iraqiMonths.enumerated() {
-            let date = " / \(index + 1) / 2026"
+        try check(sharedDates.count == 3 && sharedDates.allSatisfy { $0.hasSuffix(outgoingDate) }, "numeric outgoing date for all signers")
+        for month in 1...12 {
+            let date = " / \(month) / 2026"
             for pdf in [false, true] {
                 let cells = TransferWordGroupDraft.signatureCells(["أول", "ثان", "ثالث"], date: date, adaptivePDF: pdf)
-                try check(cells.count == 3 && cells[0].contains(date) && cells[1].contains(date) && cells[2].contains(" / \(name) / 2026"), "signature month name and unchanged first members for all months")
+                try check(cells.count == 3 && cells.allSatisfy { $0.hasSuffix(date) }, "numeric month and leading slash for all signers")
             }
         }
         try check(TransferWordGroupDraft.referenceText(number: "١", date: outgoingDate, adaptivePDF: true).contains(outgoingDate), "reference date uses outgoing month")
@@ -844,7 +840,7 @@ import CoreText
         do { _ = try CustomTransferTemplate.encode([invalidOffsetTemplate]); throw Failure(errorDescription: "out-of-range signature offset accepted") }
         catch is Failure { throw Failure(errorDescription: "out-of-range signature offset accepted") } catch { }
         let letterSignatures = try CustomTransferTemplate.signatureCells(["صفة أولى\nاسم أول\nمنصب أول", "صفة ثانية\nاسم ثان\nمنصب ثان", "صفة ثالثة\nاسم ثالث\nمنصب ثالث"], date: " / ١٠ / ٢٠٢٦")
-        try check(letterSignatures[0] == "صفة أولى\nاسم أول\nمنصب أول\n / ١٠ / ٢٠٢٦" && letterSignatures[2].hasSuffix("تشرين الأول / ٢٠٢٦"), "custom signature lines and automatic dates")
+        try check(letterSignatures[0] == "صفة أولى\nاسم أول\nمنصب أول\n / ١٠ / ٢٠٢٦" && letterSignatures[2].hasSuffix(" / ١٠ / ٢٠٢٦"), "custom signature lines and automatic dates")
         let oneSignature = try CustomTransferTemplate.signatureCells(["صفة\nاسم واحد\nمنصب", "", ""], date: " / ١٠ / ٢٠٢٦")
         try check(oneSignature[0].isEmpty && oneSignature[1].isEmpty && oneSignature[2].contains("اسم واحد"), "single signature is placed in left column")
         let twoSignatures = try CustomTransferTemplate.signatureCells(["صفة\nاسم أول\nمنصب", "", "صفة\nاسم ثالث\nمنصب"], date: " / ١٠ / ٢٠٢٦")

@@ -91,8 +91,7 @@ nonisolated struct CustomTransferTemplate: Codable, Identifiable, Equatable, Sen
             guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty }) else {
                 throw invalid("اكتب لكل عضو ثلاثة أسطر: العنوان الوظيفي، ثم الاسم، ثم المنصب.")
             }
-            let signatureDate = index == 2 ? TransferWordGroupDraft.thirdMemberDate(date) : date
-            return parts.joined(separator: "\n") + "\n" + signatureDate
+            return parts.joined(separator: "\n") + "\n" + date
         }
         switch rendered.count {
         case 1: return ["", "", rendered[0]] // العمود الأخير على يسار صفحة الكتاب.

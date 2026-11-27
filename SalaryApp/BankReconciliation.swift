@@ -88,14 +88,28 @@ nonisolated enum BankReconciliation {
         return value
     }
     static func signatureLines(_ period: Period, first: Bool) -> [String] {
+        func displayDate(_ saved: String?) -> String {
+            let value = saved ?? signatureDate(period.end)
+            var parts = value.trimmingCharacters(in: CharacterSet(charactersIn: " /"))
+                .components(separatedBy: "/").map { $0.trimmingCharacters(in: .whitespaces) }
+            func isYear(_ field: String) -> Bool { field.count == 4 && field.allSatisfy(\.isNumber) }
+            if parts.count == 3 {
+                let yearFirst = isYear(parts[0])
+                if let day = Int(ArabicText.latinDigits(parts[yearFirst ? 2 : 0])), (1...31).contains(day) {
+                    parts.remove(at: yearFirst ? 2 : 0)
+                }
+            }
+            let key = parts.count == 2 && parts.contains(where: isYear) ? MonthName.sortKey(parts.joined(separator: " ")) : 0
+            return ReportSheet.easternDigits(key == 0 ? value : " / \(key % 100) / \(key / 100)")
+        }
         if first {
             return [period.firstRank ?? "عقيد الشرطة", period.memberFirst,
                     period.firstPosition ?? "مدير قسم التدقيق والرقابة الداخلية",
-                    ReportSheet.easternDigits(period.firstDate ?? signatureDate(period.end))]
+                    displayDate(period.firstDate)]
         }
         return [period.secondRank ?? "العميد", period.memberSecond,
                 period.secondPosition ?? "مدير الحسابات",
-                ReportSheet.easternDigits(period.secondDate ?? signatureDate(period.end))]
+                displayDate(period.secondDate)]
     }
     struct Ledger: Codable, Sendable {
         var version = 1

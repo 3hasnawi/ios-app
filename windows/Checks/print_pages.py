@@ -37,7 +37,7 @@ for path in sorted([*screens.glob("*.pdf"), *native.glob("*.pdf")]):
             for right_column, month in [(True, "١١"), (False, "١٢")]:
                 signature = [c for c in chars if (c["origin"][0] > document[-1].rect.width / 2) == right_column]
                 visual = "".join(c["c"] for c in sorted(signature, key=lambda c: c["origin"][0]))
-                assert visual == "٢٠٢٦/" + month, (path, right_column, visual)
+                assert visual == "٢٠٢٦/" + month + "/", (path, right_column, visual)
         if path.stem == "command":
             assert len(document) == 1 and document[0].rect.width > document[0].rect.height
         print("PASS printed", path.name, len(document), "A4 pages with selectable text")

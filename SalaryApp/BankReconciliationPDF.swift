@@ -302,7 +302,8 @@ nonisolated enum BankReconciliationPDF {
                 let wanted = identity(expected)
                 let actual = trimAdjacentPlaceholder(identity(output.selection(for: box)?.string ?? ""), expected: wanted)
                 let isDate = column == 0 || column == 6
-                let matches = actual == wanted || (isDate && matchesDate(actual, expected: wanted)) ||
+                let sameSlashes = column != 6 || actual.filter { $0 == "/" }.count == wanted.filter { $0 == "/" }.count
+                let matches = actual == wanted || (isDate && sameSlashes && matchesDate(actual, expected: wanted)) ||
                     (column == 1 && matchesDescription(actual, expected: wanted)) ||
                     ([5, 7, 11].contains(column) && TransferAnbarTablePDF.matchesExtractedCell(actual, expected: wanted))
                 guard matches else {

@@ -47,9 +47,22 @@ public static class BankReconciliation
     public static IReadOnlyList<string> SignatureLines(BankPeriod period, bool first)
     {
         var c = period.Committee ?? new BankCommittee();
-        var date = $" / {period.End.Month} / {period.End.Year}";
-        if (first) return [c.FirstRank ?? "عقيد الشرطة", period.FirstMember, c.FirstPosition ?? "مدير قسم التدقيق والرقابة الداخلية", ReportSheet.Eastern(c.FirstDate ?? date)];
-        return [c.SecondRank ?? "العميد", period.SecondMember, c.SecondPosition ?? "مدير الحسابات", ReportSheet.Eastern(c.SecondDate ?? date)];
+        string DisplayDate(string? saved)
+        {
+            var value = saved ?? $" / {period.End.Month} / {period.End.Year}";
+            var parts = value.Trim(' ', '/').Split('/', StringSplitOptions.TrimEntries);
+            static bool IsYear(string field) => field.Length == 4 && field.All(char.IsDigit);
+            if (parts.Length == 3)
+            {
+                bool yearFirst = IsYear(parts[0]);
+                if (int.TryParse(TransferPreparation.NormalizeAccount(yearFirst ? parts[2] : parts[0]), out int day) && day is >= 1 and <= 31)
+                    parts = yearFirst ? parts[..2] : parts[1..];
+            }
+            var key = parts.Length == 2 && parts.Any(IsYear) ? MonthNames.SortKey(string.Join(' ', parts)) : 0;
+            return ReportSheet.Eastern(key == 0 ? value : $" / {key % 100} / {key / 100}");
+        }
+        if (first) return [c.FirstRank ?? "عقيد الشرطة", period.FirstMember, c.FirstPosition ?? "مدير قسم التدقيق والرقابة الداخلية", DisplayDate(c.FirstDate)];
+        return [c.SecondRank ?? "العميد", period.SecondMember, c.SecondPosition ?? "مدير الحسابات", DisplayDate(c.SecondDate)];
     }
     /// يرفض تغيير فترة معتمدة أو حذفها دون إلغاء اعتمادها أولاً.
     public static void CheckLocked(IReadOnlyList<BankPeriod> before, IReadOnlyList<BankPeriod> after)
