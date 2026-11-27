@@ -6,10 +6,14 @@
 <TextBlock Text="قسم الحسابات" FontSize="{DynamicResource UiFont23}" FontWeight="Bold" Foreground="White"/><TextBlock Text="قيادة شرطة محافظة الأنبار" FontSize="{DynamicResource UiFont12}" Foreground="#CDDFD3" Margin="0,5,0,0"/></StackPanel>
 <TextBlock x:Name="NavFoot" DockPanel.Dock="Bottom" Text="بيانات محلية على هذه الحاسبة" Foreground="#CEE0D5" FontSize="{DynamicResource UiFont12}"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="Nav"/></ScrollViewer></DockPanel></Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<Border Background="{DynamicResource ControlSolidFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="25,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-<Button x:Name="BackButton" Height="40" Click="BackClick" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Hidden" ToolTip="الرجوع" AutomationProperties.Name="الرجوع">
-  <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE72A;" VerticalAlignment="Center" Margin="0,0,6,0"/><TextBlock Text="رجوع" VerticalAlignment="Center"/></StackPanel>
-</Button>
+<Border Background="{DynamicResource ControlSolidFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition MinWidth="40"/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+<Grid Grid.Column="0">
+  <Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+  <Button x:Name="BackButton" Grid.Column="0" Height="40" Padding="0" Click="BackClick" IsEnabled="False"
+          VerticalAlignment="Center" HorizontalContentAlignment="Center" ToolTip="الرجوع" AutomationProperties.Name="الرجوع">
+    <TextBlock FlowDirection="LeftToRight" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE72B;" FontSize="17"/>
+  </Button>
+</Grid>
 <TextBlock x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
 <TextBlock Grid.Column="1" Text="البحث الشامل" Visibility="{Binding Visibility, ElementName=SearchLayer}" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 <ComboBox Grid.Column="2" x:Name="Period" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"

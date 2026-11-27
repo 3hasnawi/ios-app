@@ -49,8 +49,7 @@ public partial class MainWindow : Window
     IInputElement? focusBeforeSearch;
     bool SearchIsOpen=>SearchLayer.Visibility==Visibility.Visible;
 
-    void UpdateBackButton()=>BackButton.Visibility=SearchIsOpen || subpageBack!=null || pageHistory.Count>0
-        ?Visibility.Visible:Visibility.Hidden;
+    void UpdateBackButton()=>BackButton.IsEnabled=SearchIsOpen || subpageBack!=null || pageHistory.Count>0;
 
     void SetSubpageBack(Action back){subpageBack=back;UpdateBackButton();}
 
@@ -484,6 +483,16 @@ public partial class MainWindow : Window
                 if(!await finished.Task.WaitAsync(TimeSpan.FromSeconds(45)))throw new InvalidDataException("تعذّرت "+caption);
             }finally{probe.Stop();}
         }
+        void CheckBackPosition(bool enabled){
+            UpdateLayout();
+            var backLeft=BackButton.PointToScreen(new Point());
+            var backRight=BackButton.PointToScreen(new Point(BackButton.ActualWidth,0));
+            var sideLeft=SidePanel.PointToScreen(new Point());
+            var sideRight=SidePanel.PointToScreen(new Point(SidePanel.ActualWidth,0));
+            double gap=(Math.Min(sideLeft.X,sideRight.X)-Math.Max(backLeft.X,backRight.X))/VisualTreeHelper.GetDpi(this).DpiScaleX;
+            if(!BackButton.IsVisible || BackButton.IsEnabled!=enabled || Math.Abs(BackButton.ActualWidth-40)>1 || Math.Abs(gap-8)>1)
+                throw new InvalidDataException("تغيّر موضع زر الرجوع أو حالته في شريط العنوان.");
+        }
         async Task ChooseMonth(int key){
             Period.ApplyTemplate();
             var opener=(Button)Period.Template.FindName("MonthButton",Period);
@@ -501,6 +510,7 @@ public partial class MainWindow : Window
                 var order=Nav.Children.OfType<Button>().Select(AutomationProperties.GetName).ToList();
                 if(order.IndexOf(ArchiveName)!=order.IndexOf("الإعدادات")-1 || order.IndexOf(DeductionsName)!=1)throw new InvalidDataException("ترتيب قسم الاستقطاعات غير صحيح.");
                 Click(Nav,DeductionsName);
+                CheckBackPosition(true);
                 agency!.SelectedItem=sample.Agency;debounce.Stop();await LoadGrid();
                 if(search!=null||grid!.Items.Count==0||grid.Items.Cast<Deduction>().Any(r=>r.Agency!=sample.Agency))throw new InvalidDataException("تصفية القائمة لا تطابق الجهة المختارة.");
                 UpdateLayout();
@@ -547,7 +557,8 @@ public partial class MainWindow : Window
                     date.IsDropDownOpen=false;
                     await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.ApplicationIdle);
                     OpenKeyboardSearch();
-                    if(!SearchIsOpen || !BackButton.IsVisible)throw new InvalidDataException("تعذّر فتح البحث من الدفعة.");
+                    CheckBackPosition(true);
+                    if(!SearchIsOpen)throw new InvalidDataException("تعذّر فتح البحث من الدفعة.");
                     BackButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if(SearchIsOpen || !group.IsVisible || page!=CurrentTransfers)throw new InvalidDataException("تعذّر الرجوع إلى الدفعة من البحث.");
                     group.SelectedIndex=(int)SalaryDesktop.Core.TransferGroup.Anbar;
@@ -641,6 +652,7 @@ public partial class MainWindow : Window
                 List<Button> HomeButtons(string prefix)=>Controls<Button>(CanvasArea)
                     .Where(button=>AutomationProperties.GetAutomationId(button).StartsWith(prefix,StringComparison.Ordinal)).ToList();
                 void CheckHomeFit(){
+                    CheckBackPosition(false);
                     var visiblePins=HomeButtons("HomePin-");
                     if(BodyViewport.ScrollableHeight>1 || BodyViewport.ScrollableWidth>1 ||
                         visiblePins.Count>8 || (pins.Count>0 && visiblePins.Count==0))
