@@ -202,6 +202,12 @@ func render(i *index, path string) {
 		must(decode(b, &v))
 		decoded[p[1]] = obj(v)
 	})
+	var contracts []any
+	if rows(tx).Get([]byte(recKey("contractFormat", contractKey))) != nil {
+		groups := map[string]Object{}
+		iterate(tx, "contract", func(p []string, b []byte) { var group Object; must(decode(b, &group)); groups[p[1]] = group })
+		settings[contractKey], contracts = applyContracts(groups)
+	}
 	output("settings.json", settings)
 	for _, x := range []struct {
 		k string
@@ -226,7 +232,7 @@ func render(i *index, path string) {
 			man["contentVersion"] = 11
 		}
 	}
-	contracts := array(decoded["contractTransferBatchesV1"]["records"])
+
 	markers := []string{}
 	for _, v := range contracts {
 		c := obj(v)

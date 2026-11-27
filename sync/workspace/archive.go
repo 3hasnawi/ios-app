@@ -114,6 +114,10 @@ func settingRows(w *batchWriter, k string, raw []byte) {
 	must(e)
 	// JSON ledgers split at stable item IDs or dictionary keys. Opaque plists retain their bytes.
 	data, ok := value.([]byte)
+	if k == contractKey && ok && len(data) > 0 {
+		contractRows(w, data)
+		return
+	}
 	var v any
 	if !ok || len(data) == 0 || decode(data, &v) != nil {
 		w.put(recKey("setting", k), encode(raw))

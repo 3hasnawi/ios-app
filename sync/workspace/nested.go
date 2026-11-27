@@ -20,6 +20,9 @@ func (r *reconciliation) pick(path []string, b, l, c []byte, structured bool) []
 	case bytes.Equal(b, l):
 		return c
 	}
+	if len(path) == 3 && path[0] == "contract" {
+		structured = false
+	}
 	if structured && l != nil && c != nil {
 		var v [3]any
 		for i, data := range [][]byte{b, l, c} {

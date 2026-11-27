@@ -84,7 +84,11 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	defer lock.Close()
 	stateFile := filepath.Join(r.Dir, "checkpoint.json")
 	pendingFile := filepath.Join(r.Dir, "prepared.json")
-	candidate := filepath.Join(r.Dir, "candidate.zip")
+	fileFor := func(transaction string) string {
+		id, e := hex.DecodeString(transaction)
+		check(e == nil && len(id) == 16, "Invalid sync transaction")
+		return filepath.Join(r.Dir, "candidate-"+transaction+".zip")
+	}
 	var s checkpoint
 	bound := load(stateFile, &s)
 	var p prepared
@@ -94,6 +98,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	}
 	if r.Action == "ack" {
 		check(load(pendingFile, &p) && r.Transaction == p.Transaction && validHash(p.Target), "Expired sync transaction")
+		candidate := fileFor(p.Transaction)
 		dest := cached(p.Target)
 		copyFile(candidate, dest)
 		previous := s.Base
@@ -120,6 +125,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	}
 	if r.Action == "publish" {
 		check(load(pendingFile, &p) && r.Transaction == p.Transaction && r.Stamp == p.Stamp, "Expired sync transaction")
+		candidate := fileFor(p.Transaction)
 		if p.Target == "" || p.Target != h.Hash {
 			check(h.ETag == p.ETag && h.Hash == p.Seen, errRace.Error())
 			if p.Publish {
@@ -134,6 +140,21 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		return Result{Status: "committed", File: candidate, Transaction: p.Transaction, Apply: p.Apply}
 	}
 	check(r.Action == "prepare", "Unknown action")
+	if load(pendingFile, &p) && p.Target != "" && p.Target == h.Hash && r.Stamp == p.Stamp {
+		if _, e := os.Stat(fileFor(p.Transaction)); e == nil {
+			return Result{Status: "ready", Transaction: p.Transaction, File: fileFor(p.Transaction), Apply: p.Apply}
+		}
+	}
+	// A local checkpoint and the current cloud revision suffice for the next three-way merge.
+	for _, pattern := range []string{"revision-*.zip", "working-*", "copy-*", "candidate-*.zip"} {
+		matches, _ := filepath.Glob(filepath.Join(r.Dir, pattern))
+		for _, file := range matches {
+			if s.Base != "" && file == cached(s.Base) || h.Hash != "" && file == cached(h.Hash) || p.Transaction != "" && file == fileFor(p.Transaction) {
+				continue
+			}
+			_ = os.RemoveAll(file)
+		}
+	}
 	if s.Base != "" && h.Hash == s.Base && s.Stamp == r.Stamp {
 		return Result{Status: "synced"}
 	}
@@ -161,6 +182,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	_, e = rand.Read(id)
 	must(e)
 	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp}
+	candidate := fileFor(p.Transaction)
 	switch {
 	case r.Empty || (s.Base != "" && s.Stamp == r.Stamp):
 		copyFile(remote, candidate)

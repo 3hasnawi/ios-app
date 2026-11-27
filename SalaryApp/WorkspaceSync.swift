@@ -50,9 +50,23 @@ final class WorkspaceSync {
     func choose(_ conflict: SyncConflict, _ side: String) { choices[conflict.key] = ["ticket":conflict.ticket,"side":side] }
     func automatic() async {
         guard enabled, conflicts.isEmpty, UIApplication.shared.applicationState == .active else { return }
-        await synchronize()
+        await synchronize(automatic:true)
     }
-    func synchronize() async {
+    private func mayInstall(automatic: Bool) -> Bool {
+        guard UIApplication.shared.applicationState == .active, !AppLock.shared.isLocked else { return false }
+        guard automatic else { return true }
+        let router = AppRouter.shared
+        guard (router.tab == .payroll || router.tab == .settings), !router.showReports,
+              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
+              let root = scene.keyWindow?.rootViewController, root.presentedViewController == nil else { return false }
+        func editing(_ controller: UIViewController) -> Bool {
+            if controller.viewIfLoaded?.window == nil { return false }
+            if let nav = controller as? UINavigationController, nav.viewControllers.count > 1 { return true }
+            return controller.presentedViewController != nil || controller.children.contains(where:editing)
+        }
+        return !editing(root)
+    }
+    func synchronize(automatic: Bool = false) async {
         let store = BackupManager.shared
         guard enabled, !busy, store.workSyncAvailable else { return }
         busy = true
@@ -88,13 +102,20 @@ final class WorkspaceSync {
             }
             if reply.status == "waiting" { status = tr("بانتظار بيانات للمزامنة", "Waiting for data"); return }
             if reply.status == "ready", let path = reply.file, let transaction = reply.transaction {
+                if reply.apply == true && !mayInstall(automatic:automatic) {
+                    status = tr("توجد تعديلات ستصل عند العودة إلى الرئيسية", "Updates will be applied when you return home")
+                    return
+                }
                 validated = try await store.workSyncValidate(URL(fileURLWithPath:path))
                 guard store.workSyncStamp == stamp, store.workSyncAvailable else { throw BackupError.sourceChanged }
                 args["transaction"] = transaction
                 args["action"] = "publish"
                 reply = try await call(args)
                 guard reply.status == "committed", store.workSyncStamp == stamp else { throw BackupError.sourceChanged }
-                if reply.apply == true, let validated { try await store.workSyncApply(validated,expected:stamp) }
+                if reply.apply == true, let validated {
+                    guard mayInstall(automatic:automatic) else { throw BackupError.sourceChanged }
+                    try await store.workSyncApply(validated,expected:stamp)
+                }
                 args["action"] = "ack"
                 args["stamp"] = reply.apply == true ? store.workSyncStamp : stamp
                 reply = try await call(args)

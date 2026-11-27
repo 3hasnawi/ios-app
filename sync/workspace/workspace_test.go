@@ -268,3 +268,36 @@ func TestPortableRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestContractBinaryLedger(t *testing.T) {
+	makeRow := func(id, month string) Object {
+		return Object{"id": id, "month": month, "held": 12.5, "compressed": []byte{0, 255, 8}, "prepared": Object{"one": 7}, "confirmed": Object{}}
+	}
+	id := "00000000-0000-4000-8000-000000000001"
+	other := "00000000-0000-4000-8000-000000000002"
+	input := []any{makeRow(id, "first"), makeRow(other, "second")}
+	db, e := openIndex(filepath.Join(t.TempDir(), "contract"))
+	must(e)
+	defer db.close()
+	w := &batchWriter{index: db}
+	defer w.stop()
+	contractRows(w, plistData(Object{"version": 1, "records": input}))
+	w.flush()
+	path := filepath.Join(t.TempDir(), "merged.zip")
+	render(db, path)
+	file, e := zip.OpenReader(path)
+	must(e)
+	defer file.Close()
+	var m Object
+	must(decode(readEntry(&file.Reader, "manifest.json", 1<<20), &m))
+	if number(m["contractBatchCount"]) != 2 || len(array(m["contractExecutionMarkers"])) != 2 {
+		t.Fatal("contract execution was dropped")
+	}
+	var settings map[string][]byte
+	must(decode(readEntry(&file.Reader, "settings.json", 1<<20), &settings))
+	bytesValue := readPlist(settings[contractKey]).([]byte)
+	actual := array(obj(readPlist(bytesValue))["records"])
+	if len(actual) != 2 || !bytes.Equal(obj(actual[0])["compressed"].([]byte), []byte{0, 255, 8}) {
+		t.Fatal("sealed contract data changed")
+	}
+}

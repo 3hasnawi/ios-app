@@ -86,12 +86,20 @@ import CoreGraphics
             return
         }
         if let fixture = ProcessInfo.processInfo.environment["MERGED_WORKSPACE_ARCHIVE"] {
-            let folder = try await Restore.extractForRestore(URL(fileURLWithPath: fixture))
-            let target = try database()
-            let settings = try await BackupActor(modelContainer: target).restore(from: folder, progress: nil)
-            precondition(settings["bankReconciliations"] != nil)
-            let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-            precondition(manifest.employees == 1 && manifest.deductions == 40 && manifest.refundBatchCount == 1 && manifest.books == 1)
+            var stage = "extract"
+            do {
+                let folder = try await Restore.extractForRestore(URL(fileURLWithPath: fixture))
+                stage = "validate and apply"
+                let target = try database()
+                let settings = try await BackupActor(modelContainer: target).restore(from: folder, progress: nil)
+                let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
+                guard settings["bankReconciliations"] != nil, manifest.employees == 1, manifest.deductions == 40, manifest.refundBatchCount == 1, manifest.books == 1 else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+            } catch {
+                FileHandle.standardError.write(Data("Merged archive \(stage) failed: \(error) · \(error.localizedDescription)\n".utf8))
+                exit(1)
+            }
             print("PASS native Apple restore of merged payroll, deductions, books, refunds and reconciliation")
             // The isolated restore above installs settings/files. Run the remaining reference cases in a fresh invocation.
             return
