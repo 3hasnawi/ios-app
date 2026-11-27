@@ -93,7 +93,8 @@ import CoreGraphics
                 let target = try database()
                 let settings = try await BackupActor(modelContainer: target).restore(from: folder, progress: nil)
                 let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-                guard settings["bankReconciliations"] != nil, manifest.employees == 1, manifest.deductions == 40, manifest.refundBatchCount == 1, manifest.books == 1 else {
+                stage = "check restored values"
+                guard settings[BankReconciliation.settingsKey] != nil, manifest.employees == 1, manifest.deductions == 40, manifest.refundBatchCount == 1, manifest.books == 1 else {
                     throw CocoaError(.fileReadCorruptFile)
                 }
             } catch {

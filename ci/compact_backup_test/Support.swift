@@ -15,7 +15,7 @@ struct TransferLetterCustomizationStore: Codable {
     func validateUnifiedTemplates() throws {}
 }
 enum CustomTransferTemplate { static let settingsKey = "custom"; static func decode(_ data: Data) throws -> Data { data } }
-enum BankReconciliation { static let settingsKey = "reconciliation"; static func decode(_ data: Data) throws -> Data { data } }
+enum BankReconciliation { static let settingsKey = "bankReconciliations"; static func decode(_ data: Data) throws -> Data { data } }
 
 enum TransferIssuance { static let settingsKey = "issuance" }
 enum TransferReferencePack { static let settingsKey = "references"; static func validateData(_ data: Data) throws -> Data { data } }
