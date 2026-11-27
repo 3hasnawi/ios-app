@@ -148,17 +148,25 @@ internal sealed class LetterPreview:Window
             };
         }
         panel.Children.Add(viewer);bool closed=false;
-        Closed+=(_,_)=>{closed=true;loaded.TrySetResult(false);viewer.Dispose();};
+        var folder=Path.Combine(Path.GetTempPath(),"AnbarPayroll",Guid.NewGuid().ToString("N"));
+        var file=Path.Combine(folder,"preview.pdf");
+        void Cleanup(){
+            try{if(Directory.Exists(folder))Directory.Delete(folder,true);}
+            catch(IOException){}catch(UnauthorizedAccessException){}
+        }
+        Closed+=(_,_)=>{closed=true;loaded.TrySetResult(false);viewer.Dispose();Cleanup();};
         Loaded+=async (_,_)=>{
             try{
+                // يقرأ عارض PDF الملف محلياً، بما في ذلك طلبات المقاطع التي يرسلها عند الطباعة والتنقل.
+                Directory.CreateDirectory(folder);
+                await File.WriteAllBytesAsync(file,pdf);
+                if(closed){Cleanup();return;}
                 var profile=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AnbarPayroll","WebView");
                 var env=await CoreWebView2Environment.CreateAsync(userDataFolder:profile);if(closed)return;
                 await viewer.EnsureCoreWebView2Async(env);if(closed)return;
-                const string url="https://preview.invalid/letter.pdf";
+                var url=new Uri(file);
                 var web=viewer.CoreWebView2;web.Settings.AreDevToolsEnabled=false;
-                web.AddWebResourceRequestedFilter(url,CoreWebView2WebResourceContext.All);
-                web.WebResourceRequested+=(_,e)=>e.Response=env.CreateWebResourceResponse(new MemoryStream(pdf,false),200,"OK","Content-Type: application/pdf\r\nCache-Control: no-store");
-                web.NavigationStarting+=(_,e)=>e.Cancel=e.Uri!=url;
+                web.NavigationStarting+=(_,e)=>e.Cancel=!url.Equals(new Uri(e.Uri));
                 web.NewWindowRequested+=(_,e)=>e.Handled=true;
                 web.NavigationCompleted+=(_,e)=>{
                     if(save!=null)save.IsEnabled=e.IsSuccess;
@@ -166,7 +174,7 @@ internal sealed class LetterPreview:Window
                     if(e.IsSuccess)loaded.TrySetResult(true);
                     else loaded.TrySetException(new IOException("تعذّرت معاينة المستند: "+e.WebErrorStatus));
                 };
-                web.Navigate(url);
+                web.Navigate(url.AbsoluteUri);
             }catch(Exception e){loaded.TrySetException(e);if(!closed){panel.Children.Remove(viewer);panel.Children.Add(new TextBlock{Text=e.Message,TextWrapping=TextWrapping.Wrap});}}
         };
     }
