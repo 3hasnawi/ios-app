@@ -119,6 +119,14 @@ struct SettingsView: View {
                                    subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
                     }
                     .accessibilityIdentifier("backupRow")
+                    NavigationLink {
+                        OneDriveTrialView()
+                            .navigationTitle(tr("تجربة OneDrive", "OneDrive trial"))
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        SettingRow(title: tr("تجربة OneDrive", "OneDrive trial"), systemImage: "arrow.triangle.2.circlepath",
+                                   color: .teal, subtitle: tr("دفعة وهمية بين الأجهزة", "A sample batch across devices")) { EmptyView() }
+                    }
                 } header: {
                     Text(tr("البيانات", "Data"))
                 }

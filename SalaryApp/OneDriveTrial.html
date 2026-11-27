@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-numbers="latn"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">
+<title>تجربة OneDrive</title>
+<style>
+:root{color-scheme:light dark;font:16px system-ui,sans-serif;--paper:#fff;--ink:#172d32;--line:#ccdbd7;--green:#175b51;--bg:#f4f7f6}
+@media(prefers-color-scheme:dark){:root{--paper:#232b2c;--ink:#edf6f4;--line:#51605e;--green:#256b60;--bg:#182021}}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--ink);margin:0;padding:16px}main{max-width:800px;margin:auto}section{background:var(--paper);border:1px solid var(--line);border-radius:12px;margin:0 0 12px;padding:14px}
+p{line-height:1.55;margin:0 0 8px}h2{font-size:1.05rem;margin:0 0 10px}.row{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+button,select{color:inherit;font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--paper)}button.primary{background:var(--green);color:white}button:disabled,select:disabled{opacity:.55}#status{margin:12px 0 0}#history p{border-bottom:1px solid var(--line);padding:6px 0}#device{font-size:.8rem;overflow-wrap:anywhere}output{font-weight:650}details{margin-top:12px}
+</style><main>
+<section><h2 data-en="OneDrive connection test">اختبار الربط بـ OneDrive</h2><p data-en="A fictional batch shared across your test devices. Use the same Microsoft account on all three devices.">دفعة وهمية مشتركة بين أجهزة التجربة. استخدم نفس حساب Microsoft على الأجهزة الثلاثة.</p>
+<div class="row"><button id="login" class="primary" data-en="Sign in">تسجيل الدخول</button><button id="sync" data-en="Sync test batch">مزامنة التجربة</button></div>
+<p role="status" id="status" data-en="Opening the local test…">جارٍ قراءة التجربة المحلية…</p><small id="device"></small></section>
+<section><h2 data-en="Edit test batch">تعديل الدفعة التجريبية</h2><div class="row"><select id="member" aria-label="المنتسب"><option value="0" data-en="Test employee A">منتسب تجريبي أ</option><option value="1" data-en="Test employee B">منتسب تجريبي ب</option></select>
+<select id="amount" aria-label="المبلغ"><option value="10000">١٠٬٠٠٠ دينار</option><option value="20000">٢٠٬٠٠٠ دينار</option><option value="30000">٣٠٬٠٠٠ دينار</option></select>
+<button id="save" data-en="Save change">حفظ التعديل</button></div></section>
+<section><h2 data-en="Batch totals">حصيلة الدفعة</h2><div id="rows"></div><output id="total"></output><p id="pending"></p><details><summary data-en="Edit history">سجل التعديلات</summary><div id="history"></div></details></section>
+</main><script>/* TRIAL_ENGINE */</script><script>
+const $ = id => document.getElementById(id);
+let state, busy=false, signedIn=false;
+let sequence=0;
+const requests=new Map();
+if (window.chrome?.webview) window.chrome.webview.addEventListener("message",({data})=>{
+    const request=requests.get(data.n);
+    if (!request) return;
+    requests.delete(data.n);
+    if (data.error) request.reject(new Error(data.error)); else request.resolve(data.value);
+});
+async function api(action,id="",value="") {
+    const msg={n:++sequence,action,id,value};
+    if (window.webkit?.messageHandlers?.trial)
+        return await window.webkit.messageHandlers.trial.postMessage(msg);
+    return new Promise((resolve,reject)=>{
+        requests.set(msg.n,{resolve,reject});
+        window.chrome.webview.postMessage(msg);
+    });
+}
+const en=document.documentElement.lang==="en";
+const locale=(en?"en-US":"ar-IQ")+"-u-nu-"+document.documentElement.dataset.numbers;
+const num = n=>n.toLocaleString(locale);
+const text=(ar,english)=>en?english:ar;
+if (en) {
+    document.documentElement.dir="ltr";
+    document.querySelectorAll("[data-en]").forEach(el=>el.textContent=el.dataset.en);
+    $("member").setAttribute("aria-label","Employee"); $("amount").setAttribute("aria-label","Amount");
+}
+for (const option of $("amount").options) option.textContent=num(Number(option.value))+text(" دينار"," IQD");
+const memberName=i=>$("member").options[i].textContent;
+function line(box,text) {const p=document.createElement("p"); p.textContent=text; box.append(p);}
+function draw() {
+    $("login").disabled=busy || !state;
+    $("sync").disabled=busy || !signedIn;
+    $("save").disabled=busy || !state?.folder;
+    if (!state) return;
+    $("rows").replaceChildren(); $("history").replaceChildren();
+    let total=0;
+    for (let i=0;i<members.length;i++) {
+        const choices=heads(state.edits,i);
+        if (!choices.length) continue;
+        total+=choices[0].amount;
+        line($("rows"),memberName(i)+" · "+num(choices[0].amount)+text(" دينار"," IQD"));
+        if (choices.length>1) line($("rows"),text("تعديلات متزامنة: ","Concurrent amounts: ")+choices.map(e=>num(e.amount)).join("، ")+text(" — اعتُمد الأحدث؛ احفظ القيمة المطلوبة لحسم التعارض."," — newest shown; save the desired amount to resolve."));
+    }
+    $("total").textContent=text("المجموع ","Total ")+num(total)+text(" دينار"," IQD");
+    $("pending").textContent=text("تعديلات بانتظار الإرسال: ","Pending edits: ")+num(state.pending.length);
+    for (const e of [...state.edits].sort(latest))
+        line($("history"),memberName(e.member)+" · "+num(e.amount)+text(" دينار · "," IQD · ")+new Date(e.time).toLocaleString(locale)+" · "+e.id.slice(0,8));
+}
+async function commit(next) {
+    await api("store","",JSON.stringify(next));
+    state=next;
+}
+async function run(work) {
+    if(busy)return;
+    busy=true;draw();
+    try { await work(); }
+    catch(e){$("status").textContent=String(e.message || e);}
+    finally{busy=false;draw();}
+}
+async function syncTrial() {
+    $("status").textContent=text("جارٍ قراءة ملفات التجربة والتحقق من التعديلات…","Reading and verifying test edits…");
+    await commit(await synchronize(state,api));
+    $("status").textContent=text("اكتملت المزامنة · ","Test batch synced · ")+new Date().toLocaleTimeString(locale);
+}
+$("login").onclick=()=>run(async()=>{
+    signedIn=false;
+    $("status").textContent=text("بانتظار تسجيل الدخول عبر Microsoft…","Waiting for Microsoft sign-in…");
+    await api("login"); signedIn=true; await syncTrial();
+});
+$("sync").onclick=()=>run(syncTrial);
+$("save").onclick=()=>run(async()=>{
+    const b=crypto.getRandomValues(new Uint8Array(16)); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+    const hex=Array.from(b,n=>n.toString(16).padStart(2,"0")).join("");
+    const id=[hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join("-");
+    await commit(addEdit(state,Number($("member").value),Number($("amount").value),id,Date.now()));
+    $("status").textContent=text("حُفظ محلياً بانتظار الاتصال.","Saved locally; waiting for a connection.");
+    if (signedIn && navigator.onLine) await syncTrial();
+});
+function resume() {
+    if (signedIn && !busy && !document.hidden && navigator.onLine) run(syncTrial);
+}
+window.addEventListener("online",resume);
+document.addEventListener("visibilitychange",resume);
+run(async()=>{
+    state=decodeState(await api("load"));
+    $("device").textContent=await api("device");
+    $("status").textContent=state.folder?text("التجربة محفوظة على هذا الجهاز. سجّل الدخول لتبادل التعديلات.","Local test loaded. Sign in to exchange edits."):text("سجّل الدخول لربط الجهاز بمجلد التجربة.","Sign in to link this device to the test folder.");
+});
+</script></html>

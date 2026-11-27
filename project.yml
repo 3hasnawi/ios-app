@@ -13,7 +13,11 @@ targets:
     platform: iOS
     sources:
       - path: SalaryApp
-        excludes: ["Info.plist", "SalaryApp.entitlements"]
+        excludes: ["Info.plist", "SalaryApp.entitlements", "OneDriveTrial.html", "OneDriveTrial.js"]
+      - path: SalaryApp/OneDriveTrial.html
+        buildPhase: resources
+      - path: SalaryApp/OneDriveTrial.js
+        buildPhase: resources
     dependencies:
       - package: ZIPFoundation
     scheme:
@@ -22,6 +26,8 @@ targets:
       path: SalaryApp/Info.plist
       properties:
         CFBundleDisplayName: الرواتب
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [msauth.com.example.SalaryApp]
         CFBundleDevelopmentRegion: ar
         CFBundleLocalizations: [ar]
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
