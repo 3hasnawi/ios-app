@@ -516,7 +516,11 @@ public partial class MainWindow : Window
                     var y=group.TranslatePoint(new Point(),CanvasArea).Y;
                     if(new Control[]{date,exportButton,options}.Any(c=>Math.Abs(c.TranslatePoint(new Point(),CanvasArea).Y-y)>1 || Math.Abs(c.ActualHeight-group.ActualHeight)>1))
                         throw new InvalidDataException("حقول التحويل وأوامره ليست في صف واحد.");
-                    date.IsDropDownOpen=true;UpdateLayout();
+                    await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
+                    if(!date.IsEnabled || !date.IsLoaded || date.Template.FindName("PART_Button",date) is not Button openDate)
+                        throw new InvalidDataException($"تقويم التحويل غير جاهز. الشهر {SelectedMonth?.Key}، متاح {date.IsEnabled}، محمل {date.IsLoaded}.");
+                    openDate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    await Dispatcher.InvokeAsync(()=>UpdateLayout(),DispatcherPriority.ApplicationIdle);
                     if(date.Template.FindName("PART_Popup",date) is not System.Windows.Controls.Primitives.Popup {IsOpen:true})
                         throw new InvalidDataException("تعذّر فتح تقويم التحويل.");
                     date.IsDropDownOpen=false;

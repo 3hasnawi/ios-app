@@ -115,7 +115,8 @@ public partial class MainWindow
         var group=Choices(["الرافدين","الرشيد والمصارف الأخرى","فرع الأنبار والكتب المنفردة","جهات تحتاج مراجعة"]);
         group.SelectedIndex=(int)(held?deferredGroup:currentGroup);
         var date=new DatePicker{SelectedDate=transferDates.GetValueOrDefault(month,DateTime.Today)};
-        date.SelectedDateChanged+=(_,_)=>{if(date.IsEnabled && date.SelectedDate is {} selected)transferDates[month]=selected;};
+        bool restoringDate=false;
+        date.SelectedDateChanged+=(_,_)=>{if(!restoringDate && date.IsEnabled && date.SelectedDate is {} selected)transferDates[month]=selected;};
         group.MinWidth=210*(1+appearance.Level*.05);
         date.MinWidth=132*(1+appearance.Level*.05);
         var filter=FilterBar(("المجموعة",group,0),("تاريخ التحويل",date,0));
@@ -164,8 +165,9 @@ public partial class MainWindow
             var bankGroup=g is A.TransferGroup.Rafidain or A.TransferGroup.OtherBanks;
             var marker=(held?"deferred":"current")+"|group|"+System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(g.ToString());
             var prepared=batch!=null&&bankGroup?Store.PreparedDate(s,month,marker):null;
-            date.IsEnabled=false;
+            restoringDate=true;
             date.SelectedDate=prepared??transferDates.GetValueOrDefault(month,DateTime.Today);
+            restoringDate=false;
             date.IsEnabled=bankGroup&&prepared==null;
             var rows=plan.Entries.Where(e=>e.Group==g).ToArray();
             bool branch=g==A.TransferGroup.Anbar;
