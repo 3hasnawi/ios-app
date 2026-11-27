@@ -7,6 +7,7 @@ namespace AnbarPayroll.Desktop;
 public partial class App : Application
 {
     private Mutex? mutex;
+    internal DeviceLock DeviceLock {get;private set;}=null!;
     static void CloseOnEscape(object sender, KeyEventArgs e)
     {
         var window = (Window)sender;
@@ -33,7 +34,16 @@ public partial class App : Application
         bool capture=e.Args.Length==3&&e.Args[0]=="--capture";
         string root=capture?e.Args[1]:Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"AnbarPayroll");
         if(!capture){mutex=new Mutex(true,@"Local\AnbarPayroll.Desktop",out var created);if(!created){MessageBox.Show("برنامج الحسابات مفتوح بالفعل.");Shutdown();return;}}
+        ShutdownMode=ShutdownMode.OnExplicitShutdown;
+        try {
+            DeviceLock=new DeviceLock();
+            if(!DeviceLock.Start()){Shutdown();return;}
+        }catch(Exception){
+            MessageBox.Show("تعذّر التحقق من إعداد قفل التطبيق.","قفل التطبيق");
+            Shutdown(1);return;
+        }
         var window=new MainWindow(new Store(root));MainWindow=window;
+        ShutdownMode=ShutdownMode.OnMainWindowClose;
         if(capture)window.Loaded+=async (_,_)=>{try{await window.Capture(e.Args[2]);Shutdown(0);}catch(Exception ex){File.WriteAllText(Path.Combine(e.Args[2],"capture-error.txt"),ex.ToString());Shutdown(1);}};
         window.Show();
         if(!capture)window.StartUpdateChecks();

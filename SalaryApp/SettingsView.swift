@@ -76,7 +76,8 @@ struct SettingsView: View {
                         Text(tr("بعد 5 دقائق", "After 5 minutes")).tag(300)
                         Text(tr("بعد 15 دقيقة", "After 15 minutes")).tag(900)
                     } label: {
-                        SettingRow(title: tr("قفل \(AppLock.methodName)", "\(AppLock.methodName) lock"), systemImage: AppLock.systemImage, color: .green) { EmptyView() }
+                        SettingRow(title: tr("قفل التطبيق", "App lock"), systemImage: AppLock.systemImage, color: .green,
+                                   subtitle: AppLock.unlockMethods) { EmptyView() }
                     }
                     .disabled(changingLock)
                     .accessibilityIdentifier("faceIDToggle")

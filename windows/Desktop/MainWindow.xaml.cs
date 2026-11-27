@@ -253,7 +253,25 @@ public partial class MainWindow : Window
             storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
         }
         storage.Children.Add(Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5")));
-        var updates=Box(Column(Text("تحديث التطبيق",18,true),
+        var deviceLock=((App)Application.Current).DeviceLock;
+        var lockTime=Choices(["متوقف","فوراً","بعد دقيقة","بعد 5 دقائق","بعد 15 دقيقة"]);
+        AutomationProperties.SetName(lockTime,"قفل التطبيق");
+        lockTime.SelectedIndex=Array.IndexOf(DeviceLock.Delays,deviceLock.Delay);
+        var lockStatus=Text("فتح برمز الجهاز PIN أو البصمة عبر Windows Hello.",14);
+        lockTime.SelectionChanged+=async (_,_)=>{
+            if(lockTime.SelectedIndex<0)return;
+            int seconds=DeviceLock.Delays[lockTime.SelectedIndex];
+            if(seconds==deviceLock.Delay || !lockTime.IsEnabled)return;
+            lockTime.IsEnabled=false;
+            try{
+                string? error=await deviceLock.Change(this,seconds);
+                lockStatus.Text=error??(seconds<0?"قفل التطبيق متوقف.":"القفل مفعّل عند الفتح وعند العودة بعد المدة المختارة.");
+            }catch(Exception){lockStatus.Text="تعذّر حفظ إعداد القفل على هذا الجهاز.";}
+            finally{lockTime.SelectedIndex=Array.IndexOf(DeviceLock.Delays,deviceLock.Delay);lockTime.IsEnabled=true;}
+        };
+        var updateTitle=Text("تحديث التطبيق",18,true);
+        updateTitle.Margin=new Thickness(0,12,0,0);
+        var updates=Box(Column(Text("قفل التطبيق",18,true),lockStatus,lockTime,updateTitle,
             Text("الإصدار المثبّت "+WindowsRelease.DisplayVersion(InstalledVersion),14),
             Bar(ButtonFor("التحقق من تحديث",()=>_=CheckForUpdate(true),"\uE895"))));
         var cards=new[]{backup,AppearanceSettings(),Box(storage),updates};

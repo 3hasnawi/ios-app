@@ -69,6 +69,13 @@ final class AppLock {
         }
     }
 
+    static var unlockMethods: String {
+        switch kind {
+        case .faceID, .touchID, .opticID: tr("\(methodName) أو رمز الجهاز", "\(methodName) or device passcode")
+        case .passcode, .none: tr("رمز الجهاز", "Device passcode")
+        }
+    }
+
     static var systemImage: String {
         switch kind {
         case .faceID: "faceid"
@@ -198,7 +205,7 @@ private struct LockScreen: View {
                     .background(Theme.salaryGradient, in: Circle())
                 Text(tr("تطبيق الرواتب مقفل", "Payroll is locked"))
                     .font(.title2.bold())
-                Text(tr("استخدم \(AppLock.methodName) لعرض البيانات", "Use \(AppLock.methodName) to view your data"))
+                Text(tr("استخدم \(AppLock.unlockMethods) لعرض البيانات", "Use \(AppLock.unlockMethods) to view your data"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

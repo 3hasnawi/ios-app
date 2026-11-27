@@ -10,6 +10,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Check device lock startup, rejection and background privacy
+        timeout-minutes: 2
+        run: dotnet run --project windows/DeviceLockChecks/DeviceLockChecks.csproj
       - name: Export fictional payroll and edited preferences
         run: dotnet run --project windows/Checks/Payroll.Checks.csproj -- --write-preference-archive "$env:RUNNER_TEMP/windows.zip"
       - name: Verify refund PDFs and individual CSV routing on Windows
@@ -34,7 +37,7 @@ jobs:
       - name: Exercise the iPhone archive and letter reference implementations
         run: |
           python3 ci/compact_backup_test/run.py
-          swiftc -frontend -parse SalaryApp/HomeAccounting.swift SalaryApp/HomeDashboard.swift SalaryApp/EmployeeRefundView.swift SalaryApp/RefundHistoryView.swift
+          swiftc -frontend -parse SalaryApp/AppLock.swift SalaryApp/SettingsView.swift SalaryApp/HomeAccounting.swift SalaryApp/HomeDashboard.swift SalaryApp/EmployeeRefundView.swift SalaryApp/RefundHistoryView.swift
           python3 ci/employee_refund_test/run.py
           python3 ci/report_layout_test/run.py
       - uses: actions/download-artifact@v4
