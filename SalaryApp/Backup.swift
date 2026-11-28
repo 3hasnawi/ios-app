@@ -692,21 +692,18 @@ final class BackupManager {
 
     // MARK: - إنشاء نسخة
 
-    private func makeBackup(title: String, forWorkspace: Bool = false) async throws -> (URL, BackupFormat.Manifest) {
+    private func makeBackup(title: String, forCloudTransfer: Bool = false) async throws -> (URL, BackupFormat.Manifest) {
         RefundDraft.shared.flushAmount()
         if let error = RefundDraft.shared.storageError { throw NSError(domain: "RefundBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: error]) }
-        func revisionDate() -> Date? {
-            forWorkspace ? UserDefaults.standard.object(forKey: Self.changedKey) as? Date : Self.backupChangeDate
-        }
-        let revision = revisionDate()
+        let revision = Self.backupChangeDate
         let staffRevision = StaffImportState.shared.version
-        let settings = try (forWorkspace ? BackupFormat.workspaceSettingsKeys : BackupFormat.settingsKeys).reduce(into: [String: Data]()) { dict, key in
+        let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 if key == ContractTransferArchive.key, (value as? Data)?.isEmpty == true { return }
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
             }
         }
-        let progress = forWorkspace ? nil : ImportProgress.shared
+        let progress = forCloudTransfer ? nil : ImportProgress.shared
         progress?.begin(title)
         defer { progress?.end() }
         let sink = progress?.sink(0, 1, tr("تجهيز النسخة", "Preparing backup"))
@@ -714,7 +711,7 @@ final class BackupManager {
         let result = try await Task.detached(priority: .userInitiated) {
             try await BackupActor(modelContainer: container).export(settings: settings, progress: sink)
         }.value
-        guard revision == revisionDate(),
+        guard revision == Self.backupChangeDate,
               staffRevision == StaffImportState.shared.version, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
             BackupFormat.removeExport(result.0)
             throw BackupError.sourceChanged
@@ -1287,7 +1284,7 @@ final class BackupManager {
         guard workSyncAvailable else { throw BackupError.sourceChanged }
         isWorking = true
         defer { isWorking = false }
-        return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync"), forWorkspace: true).0
+        return try await makeBackup(title: tr("تجهيز النسخة الكاملة", "Preparing full backup"), forCloudTransfer: true).0
     }
 
     func workSyncValidate(_ file: URL) async throws -> URL {
@@ -1645,7 +1642,7 @@ struct BackupView: View {
                 NavigationLink {
                     WorkspaceSyncSettings()
                 } label: {
-                    SettingRow(title: tr("مزامنة OneDrive", "OneDrive sync"), systemImage: "arrow.triangle.2.circlepath",
+                    SettingRow(title: tr("النسخ عبر OneDrive", "OneDrive backups"), systemImage: "arrow.triangle.2.circlepath",
                                color: .teal, subtitle: WorkspaceSync.shared.status) { EmptyView() }
                 }
                 .accessibilityIdentifier("backupOneDriveSync")

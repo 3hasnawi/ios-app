@@ -7,6 +7,7 @@ import (
 	"fmt"
 	bolt "go.etcd.io/bbolt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -107,6 +108,15 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		check(validHash(hash), "Invalid revision")
 		return filepath.Join(r.Dir, "revision-"+hash+".zip")
 	}
+	if r.Action == "backup-ack" {
+		var receipt backupReceipt
+		path := filepath.Join(r.Dir, "received.json")
+		check(bound && load(path, &receipt) && receipt.Transaction == r.Transaction && validHash(receipt.Revision), "انتهت جلسة استيراد النسخة.")
+		s.Base, s.Stamp, s.Generation = receipt.Revision, r.Stamp, receipt.Generation
+		must(atomicFile(stateFile, encode(s)))
+		os.Remove(path)
+		return Result{Status: "imported"}
+	}
 	if r.Action == "ack" {
 		check(load(pendingFile, &p) && r.Transaction == p.Transaction && validHash(p.Target), "Expired sync transaction")
 		candidate := fileFor(p.Transaction)
@@ -141,7 +151,14 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	}()
 	g := openDrive(r.Token)
 	check(!bound || s.Folder == g.folder, "هذا الجهاز مرتبط بحساب OneDrive آخر. استخدم الحساب المرتبط.")
-	h := g.marker(!bound)
+	readOnly := r.Action == "backup-download" || r.Action == "preview" || r.Action == "history"
+	h := g.marker(!bound && !readOnly)
+	if !bound && readOnly && h.ID == "" {
+		if r.Action == "history" {
+			return Result{Status: "history"}
+		}
+		panic("لا توجد نسخة مكتملة على OneDrive. ارفع نسخة أولاً.")
+	}
 	check(!bound || s.Marker == h.ID, "تغير مجلد المزامنة. تحقق من حساب OneDrive.")
 	check(s.Base == "" || h.Hash != "", "Missing cloud history")
 	if !bound {
@@ -156,7 +173,26 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	if r.Local != "" {
 		g.sources = append(g.sources, r.Local)
 	}
-	g.flushNotes(r.Dir)
+	if !readOnly {
+		g.flushNotes(r.Dir)
+	}
+	if r.Action == "backup-upload" {
+		check(r.Local != "", "اختر نسخة كاملة للرفع.")
+		idx := g.uploadBackup(r.Local, h.Hash)
+		revision := g.put(indexPrefix, encode(idx))
+		generation := sum([]byte(revision))
+		if !g.claimIfCurrent(h, revision, generation) {
+			// رفض OneDrive نشر المؤشر قطعياً؛ نحذف ملف هذه المحاولة وحده.
+			g.request("DELETE", "items/"+url.PathEscape(idx.FileID), nil, nil, 1<<20)
+			panic(errRace)
+		}
+		s.Base, s.Stamp, s.Generation = revision, r.Stamp, generation
+		must(atomicFile(stateFile, encode(s)))
+		return Result{Status: "uploaded"}
+	}
+	if r.Action == "backup-download" {
+		return receiveBackup(r, g, h)
+	}
 	if r.Action == "history" {
 		return g.history(h, r)
 	}

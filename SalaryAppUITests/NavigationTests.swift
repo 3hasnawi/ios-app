@@ -564,7 +564,7 @@ final class NavigationTests: XCTestCase {
             let sync = element("backupOneDriveSync")
             if wait(sync, "المزامنة ضمن النسخ الاحتياطي") {
                 sync.tap()
-                wait(app.navigationBars["مزامنة OneDrive"], "إعدادات المزامنة")
+                wait(app.navigationBars["النسخ عبر OneDrive"], "إعدادات المزامنة")
                 app.navigationBars.buttons.element(boundBy: 0).tap()
                 wait(element("saveBackup"), "العودة إلى النسخ الاحتياطي")
             }

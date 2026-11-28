@@ -78,7 +78,7 @@ func (g *drive) requestPrefix(method, path string, data []byte, headers map[stri
 	}
 	resp, e := g.client.Do(req)
 	if e != nil {
-		panic("تعذّر الاتصال بـ OneDrive. تحقق من الاتصال ثم اضغط مزامنة الآن.")
+		panic("تعذّر الاتصال بـ OneDrive. تحقق من الاتصال ثم أعد المحاولة.")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 429 || resp.StatusCode == 503 {
@@ -113,6 +113,9 @@ func connect(token string) *drive {
 func (g *drive) marker(create bool) head {
 	path := g.root + markerName
 	code, b := g.request("GET", path+"?$select=id,eTag,description", nil, nil, 1<<20)
+	if code == 404 && !create {
+		return head{}
+	}
 	if code == 404 && create {
 		c, _ := g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", []byte("{\"format\":1}"), nil, 1<<20)
 		if c != 409 {
@@ -135,17 +138,23 @@ func (g *drive) marker(create bool) head {
 	return head{i, revision, generation}
 }
 func (g *drive) claim(h head, id, generation string) {
+	if !g.claimIfCurrent(h, id, generation) {
+		panic(errRace)
+	}
+}
+func (g *drive) claimIfCurrent(h head, id, generation string) bool {
 	if generation != "" {
 		id = "restore/" + generation + "/" + id
 	}
 	c, b := g.request("PATCH", "items/"+url.PathEscape(h.ID), encode(Object{"description": id}), map[string]string{"If-Match": h.ETag, "Content-Type": "application/json"}, 1<<20)
 	if c == 412 {
-		panic(errRace)
+		return false
 	}
 	ok(c)
 	var updated item
 	must(decode(b, &updated))
 	check(updated.Description == id, "OneDrive did not confirm the revision")
+	return true
 }
 func (g *drive) get(prefix, hash string, limit int64) []byte {
 	check(validHash(hash), "Invalid OneDrive hash")
@@ -237,6 +246,7 @@ func (g *drive) put(prefix string, b []byte) string {
 }
 
 type fileIndex struct {
+	FileID   string   `json:"fileID,omitempty"`
 	At       int64    `json:"at,omitempty"`
 	Kind     string   `json:"kind,omitempty"`
 	Format   int      `json:"format"`

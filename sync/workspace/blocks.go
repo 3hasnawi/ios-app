@@ -204,6 +204,10 @@ func (g *drive) upload(path, previous string) string {
 
 func (g *drive) download(id, dest string) {
 	idx := g.indexFor(id)
+	if idx.Format == 2 {
+		g.downloadBackup(idx, dest)
+		return
+	}
 	check(idx.Size > 0 && len(idx.Blocks) > 0 && int64(len(idx.Blocks)-1) <= idx.Size/(1<<20), "Invalid OneDrive index")
 	needed := map[string]bool{}
 	for _, hash := range idx.Blocks {

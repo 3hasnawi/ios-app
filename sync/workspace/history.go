@@ -28,7 +28,7 @@ type historyPreview struct {
 func (g *drive) indexFor(id string) fileIndex {
 	var idx fileIndex
 	must(decode(g.get(indexPrefix, id, 4<<20), &idx))
-	check(idx.Format == 1 && validHash(idx.SHA) && (idx.Previous == "" || validHash(idx.Previous)), "Invalid OneDrive history index")
+	check((idx.Format == 1 || idx.Format == 2 && idx.FileID != "" && idx.Size > 0) && validHash(idx.SHA) && (idx.Previous == "" || validHash(idx.Previous)), "Invalid OneDrive history index")
 	return idx
 }
 func (g *drive) point(id string, idx fileIndex) historyPoint {

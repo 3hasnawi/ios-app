@@ -102,7 +102,7 @@ public sealed partial class Store
         var theme = ReadWorkPreferences().GetValueOrDefault("appAppearance") ?? fallbackTheme;
         return Stamp(Install(archive,null,default,true,revision,pending,restoring:true,localTheme:theme,verified:verified),null);
     }
-    public void ExportBackup(string destination) => ExportArchive(destination,forWorkspace:false);
+    public string ExportBackup(string destination) => ExportArchive(destination,forWorkspace:false);
     public string ExportWorkspace(string destination) => ExportArchive(destination,forWorkspace:true);
     private string ExportArchive(string destination,bool forWorkspace)
     {
