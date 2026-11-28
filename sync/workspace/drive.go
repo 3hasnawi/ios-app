@@ -26,6 +26,7 @@ type drive struct {
 }
 type item struct {
 	ID          string `json:"id"`
+	Name        string `json:"name"`
 	ETag        string `json:"eTag"`
 	Description string `json:"description"`
 	Size        int64  `json:"size"`
@@ -58,6 +59,13 @@ func retryDeadline(header string, now time.Time) time.Time {
 	return now.Add(time.Minute)
 }
 func (g *drive) request(method, path string, data []byte, headers map[string]string, limit int64) (int, []byte) {
+	code, body := g.requestPrefix(method, path, data, headers, limit+1)
+	check(int64(len(body)) <= limit, "تجاوز رد OneDrive الحجم المتوقع.")
+	return code, body
+}
+
+// قراءة محدودة عند التحقق من المحتوى، حتى لو كان الجزء التالف أطول بكثير من المتوقع.
+func (g *drive) requestPrefix(method, path string, data []byte, headers map[string]string, limit int64) (int, []byte) {
 	endpoint := graph + path
 	if path == "$batch" {
 		endpoint = "https://graph.microsoft.com/v1.0/$batch"
@@ -76,9 +84,8 @@ func (g *drive) request(method, path string, data []byte, headers map[string]str
 	if resp.StatusCode == 429 || resp.StatusCode == 503 {
 		panic(retryAfter{retryDeadline(resp.Header.Get("Retry-After"), time.Now())})
 	}
-	b, e := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	b, e := io.ReadAll(io.LimitReader(resp.Body, limit))
 	must(e)
-	check(int64(len(b)) <= limit, "OneDrive response exceeds size limit")
 	return resp.StatusCode, b
 }
 func ok(code int) {
@@ -156,6 +163,60 @@ func (g *drive) setTransferring(active bool) {
 		g.onTransfer(active)
 	}
 }
+
+// الحد الإضافي يكشف المحتوى الأطول من المتوقع حتى إذا بدأت بايتاته بالجزء الصحيح.
+func (g *drive) blobMatches(path, hash string, size int) (exists, matches bool) {
+	code, actual := g.requestPrefix("GET", path+":/content", nil, nil, int64(size)+1)
+	if code == 404 {
+		return false, false
+	}
+	ok(code)
+	return true, len(actual) == size && sum(actual) == hash
+}
+
+// عند اختلاف الحجم الوصفي نتحقق من البايتات نفسها قبل إصلاح أي ملف في السحابة.
+func (g *drive) ensureBlob(prefix, hash string, data []byte, inspect bool) {
+	check(validHash(hash) && sum(data) == hash, "تغيّر ملف المزامنة أثناء التجهيز.")
+	name := prefix + hash
+	path := g.root + name
+	for attempt := 0; attempt < 3; attempt++ {
+		if !inspect {
+			code, _ := g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", data, map[string]string{"Content-Type": "application/octet-stream"}, 1<<20)
+			if code != 409 && code != 412 {
+				ok(code)
+				return
+			}
+		}
+		code, meta := g.request("GET", path+"?$select=id,name,eTag", nil, nil, 1<<20)
+		if code == 404 {
+			inspect = false
+			continue
+		}
+		ok(code)
+		var current item
+		must(decode(meta, &current))
+		exists, matches := g.blobMatches(path, hash, len(data))
+		if !exists {
+			inspect = false
+			continue
+		}
+		if matches {
+			return
+		}
+		check(current.ID != "" && current.Name == name && current.ETag != "", "تعذّر التأكد من هوية جزء المزامنة في OneDrive. أُوقفت المزامنة لحماية البيانات.")
+		code, _ = g.request("PUT", "items/"+url.PathEscape(current.ID)+"/content", data,
+			map[string]string{"Content-Type": "application/octet-stream", "If-Match": current.ETag}, 1<<20)
+		if code == 412 || code == 404 {
+			inspect = true
+			continue
+		}
+		ok(code)
+		g.get(prefix, hash, int64(len(data)))
+		return
+	}
+	panic("تغيّر جزء المزامنة في OneDrive أثناء التحقق. أعد المزامنة.")
+}
+
 func (g *drive) put(prefix string, b []byte) string {
 	id := sum(b)
 	path := g.root + prefix + id
@@ -163,16 +224,15 @@ func (g *drive) put(prefix string, b []byte) string {
 	if code == 200 {
 		var i item
 		must(decode(data, &i))
-		check(i.Size == int64(len(b)), "OneDrive block size mismatch")
+		if i.Size != int64(len(b)) {
+			g.ensureBlob(prefix, id, b, true)
+		}
 		return id
 	}
 	if code != 404 {
 		ok(code)
 	}
-	code, _ = g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", b, nil, 1<<20)
-	if code != 409 {
-		ok(code)
-	}
+	g.ensureBlob(prefix, id, b, false)
 	return id
 }
 

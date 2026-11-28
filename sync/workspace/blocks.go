@@ -71,9 +71,14 @@ func scanBlocks(file *os.File, visit func(string, blockRef), digest io.Writer) {
 	}
 }
 
-// يتحقق طلب Graph مجمّع واحد من عشرين جزءاً، بما فيها الأجزاء التي ربما حذفها المستخدم من السحابة.
-func (g *drive) missingBlocks(ids []string, refs map[string]blockRef) []string {
-	var missing []string
+type blockUpload struct {
+	id      string
+	inspect bool
+}
+
+// نفحص حتى عشرين جزءاً في الطلب الواحد، ونقرأ المحتوى عند اختلاف الحجم الوصفي.
+func (g *drive) blocksToUpload(ids []string, refs map[string]blockRef) []blockUpload {
+	var missing []blockUpload
 	for len(ids) > 0 {
 		group := ids[:min(20, len(ids))]
 		ids = ids[len(group):]
@@ -102,9 +107,15 @@ func (g *drive) missingBlocks(ids []string, refs map[string]blockRef) []string {
 			seen[r.ID] = true
 			switch r.Status {
 			case 404:
-				missing = append(missing, r.ID)
+				missing = append(missing, blockUpload{id: r.ID})
 			case 200:
-				check(r.Body.Size == int64(refs[r.ID].size), "OneDrive block size mismatch")
+				if r.Body.Size != int64(refs[r.ID].size) {
+					g.setTransferring(true)
+					exists, matches := g.blobMatches(g.root+chunkPrefix+r.ID, r.ID, refs[r.ID].size)
+					if !matches {
+						missing = append(missing, blockUpload{id: r.ID, inspect: exists})
+					}
+				}
 			case 429, 503:
 				var delay string
 				for key, value := range r.Headers {
@@ -140,10 +151,10 @@ func (g *drive) upload(path, previous string) string {
 		}
 	}, h)
 	idx.SHA = hex.EncodeToString(h.Sum(nil))
-	missing := g.missingBlocks(ids, refs)
+	missing := g.blocksToUpload(ids, refs)
 	var total, done int64
-	for _, id := range missing {
-		total += int64(refs[id].size)
+	for _, block := range missing {
+		total += int64(refs[block.id].size)
 	}
 	if len(missing) > 0 {
 		g.setTransferring(true)
@@ -158,21 +169,14 @@ func (g *drive) upload(path, previous string) string {
 		group := missing[:min(3, len(missing))]
 		missing = missing[len(group):]
 		completed := make(chan result, len(group))
-		for _, id := range group {
+		for _, block := range group {
 			go func() {
-				r := refs[id]
+				r := refs[block.id]
 				defer func() { completed <- result{r.size, recover()} }()
 				data := make([]byte, r.size)
 				_, e := f.ReadAt(data, r.offset)
 				must(e)
-				check(sum(data) == id, "تغيّر ملف المزامنة أثناء الرفع.")
-				path := g.root + chunkPrefix + id
-				code, _ := g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", data, map[string]string{"Content-Type": "application/octet-stream"}, 1<<20)
-				if code == 409 {
-					g.get(chunkPrefix, id, maxBlock)
-				} else {
-					ok(code)
-				}
+				g.ensureBlob(chunkPrefix, block.id, data, block.inspect)
 			}()
 		}
 		var failure any

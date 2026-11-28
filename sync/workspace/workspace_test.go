@@ -25,17 +25,19 @@ import (
 )
 
 type mockDrive struct {
-	mu                                sync.Mutex
-	payloadGets, payloadPuts, batches int
-	failGetAt                         int
-	descriptions                      map[string]string
-	rateLimited                       bool
-	requests                          int
-	blobs                             map[string][]byte
-	created                           map[string]time.Time
-	revision                          int
-	hash                              string
-	marker                            bool
+	mu                                     sync.Mutex
+	payloadGets, payloadPuts, batches      int
+	failGetAt                              int
+	omitSize, rejectRepair, truncateRepair bool
+	repairAttempts                         int
+	descriptions                           map[string]string
+	rateLimited                            bool
+	requests                               int
+	blobs                                  map[string][]byte
+	created                                map[string]time.Time
+	revision                               int
+	hash                                   string
+	marker                                 bool
 }
 
 func (m *mockDrive) open(token string) *drive {
@@ -74,7 +76,11 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 			if ok {
 				status = 200
 			}
-			replies = append(replies, Object{"id": sub.ID, "status": status, "body": Object{"size": len(value)}})
+			body := Object{}
+			if !m.omitSize {
+				body["size"] = len(value)
+			}
+			replies = append(replies, Object{"id": sub.ID, "status": status, "body": body})
 		}
 		data = encode(Object{"responses": replies})
 	case name == markerName:
@@ -114,6 +120,21 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		var payload item
 		must(json.NewDecoder(r.Body).Decode(&payload))
 		m.descriptions[name] = payload.Description
+	case r.Method == "PUT" && strings.HasSuffix(path, "/content") && !strings.HasSuffix(path, ":/content"):
+		name := strings.TrimSuffix(strings.TrimPrefix(path, "items/"), "/content")
+		m.repairAttempts++
+		if r.Header.Get("If-Match") != "idx" || m.rejectRepair {
+			status = 412
+			break
+		}
+		if _, ok := m.blobs[name]; !ok {
+			status = 404
+			break
+		}
+		m.blobs[name], _ = io.ReadAll(r.Body)
+		if m.truncateRepair {
+			m.blobs[name] = m.blobs[name][:1]
+		}
 	case r.Method == "PUT":
 		if strings.HasPrefix(name, chunkPrefix) {
 			m.payloadPuts++
@@ -141,7 +162,11 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 			}
 			data = b
 		} else {
-			data = encode(Object{"size": len(b), "createdDateTime": m.created[name], "id": name, "eTag": "idx", "description": m.descriptions[name]})
+			meta := Object{"name": name, "createdDateTime": m.created[name], "id": name, "eTag": "idx", "description": m.descriptions[name]}
+			if !m.omitSize {
+				meta["size"] = len(b)
+			}
+			data = encode(meta)
 		}
 	}
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
@@ -636,6 +661,55 @@ func TestFinancialHistoryPreview(t *testing.T) {
 	p := runWith(r, g.open).Preview
 	if p == nil || p.Staff != 0 || p.Employees != 1 || p.Refunds != 1 || p.Net != "100000.00" || p.Deductions != "2260000.00" {
 		t.Fatal(p)
+	}
+}
+
+func TestMisreportedOneDriveSizesAndConditionalRepair(t *testing.T) {
+	server := &mockDrive{blobs: map[string][]byte{}}
+	g := server.open("test")
+	path := fixture(t, map[string]string{"office": "10"})
+	id := g.upload(path, "")
+	idx := g.indexFor(id)
+	key := chunkPrefix + idx.Blocks[0]
+	original := bytes.Clone(server.blobs[key])
+	server.omitSize = true
+	puts, gets := server.payloadPuts, server.payloadGets
+	g.upload(path, id)
+	if server.payloadPuts != puts || server.repairAttempts != 0 || server.payloadGets <= gets {
+		t.Fatal("missing size must verify the bytes without rewriting them")
+	}
+	indexBytes := bytes.Clone(server.blobs[indexPrefix+id])
+	if g.put(indexPrefix, indexBytes) != id || server.repairAttempts != 0 {
+		t.Fatal("incorrect index size forced a rewrite")
+	}
+	server.blobs[key] = append(bytes.Clone(original), 0xff)
+	g.upload(path, id)
+	if server.repairAttempts != 1 || !bytes.Equal(server.blobs[key], original) {
+		t.Fatal("corruption not repaired from the verified source")
+	}
+	server.blobs[indexPrefix+id] = []byte("bad")
+	if g.put(indexPrefix, indexBytes) != id || !bytes.Equal(server.blobs[indexPrefix+id], indexBytes) {
+		t.Fatal("index repair failed")
+	}
+	syncTest(t, server, Request{Dir: t.TempDir(), Stamp: "base", Local: path}, "")
+	baseHead := server.hash
+	for _, race := range []bool{true, false} {
+		server.blobs[key] = []byte("bad")
+		server.rejectRepair = race
+		server.truncateRepair = !race
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatal("failed repair reported success")
+				}
+			}()
+			head := g.marker(false)
+			next := g.upload(path, head.Hash)
+			g.claim(head, next, head.Generation)
+		}()
+		if server.hash != baseHead {
+			t.Fatal("published after an unverified repair")
+		}
 	}
 }
 
