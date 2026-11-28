@@ -146,6 +146,7 @@ final class WorkspaceSync {
             policy.isExcludedFromBackup = true
             try dir.setResourceValues(policy)
             var args: [String:Any] = ["action":action,"dir":dir.path,"token":token,"stamp":stamp,"choices":choices]
+            args["resumeDeferred"] = automatic
             args["head"] = historyHead
             args["revision"] = point?.id
             if action == "history" {
@@ -165,7 +166,8 @@ final class WorkspaceSync {
                 return
             }
             if reply.status == "export" {
-                do { exported = try await store.workSyncExport(); args["local"] = exported?.path }
+                status = tr("تجهيز المزامنة", "Preparing sync")
+                do { exported = try await store.workSyncExport(automatic: automatic); args["local"] = exported?.path }
                 catch BackupError.emptyData { args["empty"] = true }
                 guard store.workSyncStamp == stamp else { throw BackupError.sourceChanged }
                 reply = try await call(args)

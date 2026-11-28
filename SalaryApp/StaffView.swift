@@ -262,7 +262,7 @@ struct RootView: View {
         } message: {
             Text(backup.message ?? "")
         }
-        .disabled(backup.isWorking || importCenter.isBusy || staffImport.isImporting)
+        .disabled((backup.isWorking && !backup.preparingAutomaticSync) || importCenter.isBusy || staffImport.isImporting)
     }
 }
 

@@ -263,6 +263,7 @@ public partial class MainWindow
             if(login){File.WriteAllText(AccountPath,auth.Account.HomeAccountId.Identifier);File.WriteAllText(EnabledPath,"1");}
             var stamp=store.WorkspaceStamp;
             var args=new Dictionary<string,object>{{"action",action},{"dir",SyncDir},{"token",auth.AccessToken},{"stamp",stamp},{"choices",syncChoices},{"empty",store.Active==null}};
+            args["resumeDeferred"]=syncDialog==null;
             if(historyHead!=null)args["head"]=historyHead;
             if(point!=null)args["revision"]=point.id;
             if(action=="history"){

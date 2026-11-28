@@ -551,6 +551,7 @@ final class BackupManager {
     private static let testFileKey = "backupTestFile"
 
     var isWorking = false
+    private(set) var preparingAutomaticSync = false
     var message: String?
     /// تحذير محلي يعتمد على فهرس سابق، ولا يغيّر البيانات أو النسخة.
     var integrityWarning = false
@@ -706,10 +707,10 @@ final class BackupManager {
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
             }
         }
-        let progress = ImportProgress.shared
-        progress.begin(title)
-        defer { progress.end() }
-        let sink = progress.sink(0, 1, tr("تجهيز النسخة", "Preparing backup"))
+        let progress = preparingAutomaticSync ? nil : ImportProgress.shared
+        progress?.begin(title)
+        defer { progress?.end() }
+        let sink = progress?.sink(0, 1, tr("تجهيز النسخة", "Preparing backup"))
         let container = SharedModel.container
         let result = try await Task.detached(priority: .userInitiated) {
             try await BackupActor(modelContainer: container).export(settings: settings, progress: sink)
@@ -1277,10 +1278,11 @@ final class BackupManager {
         !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting && !AppLock.shared.isLocked
     }
 
-    func workSyncExport() async throws -> URL {
+    func workSyncExport(automatic: Bool) async throws -> URL {
         guard workSyncAvailable else { throw BackupError.sourceChanged }
+        preparingAutomaticSync = automatic
         isWorking = true
-        defer { isWorking = false }
+        defer { isWorking = false; preparingAutomaticSync = false }
         return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync"), forWorkspace: true).0
     }
 

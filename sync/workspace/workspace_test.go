@@ -317,6 +317,52 @@ func TestNestedRefundEditsDeletionAndStaleDecision(t *testing.T) {
 		t.Fatal("stale choice accepted")
 	}
 }
+func TestPollingDeferredMergeReusesCandidate(t *testing.T) {
+	drive := &mockDrive{blobs: map[string][]byte{}}
+	pc := Request{Dir: t.TempDir(), Stamp: "pc1", Local: fixture(t, map[string]string{"office": "20"})}
+	syncTest(t, drive, pc, "")
+	phone := Request{Dir: t.TempDir(), Token: "test", Action: "prepare", ResumeDeferred: true, Stamp: "phone1", Local: fixture(t, map[string]string{"phone": "10"})}
+	pending := runWith(phone, drive.open)
+	if pending.Status != "ready" || !pending.Apply {
+		t.Fatal(pending)
+	}
+	phone.Local = ""
+	gets, puts := drive.payloadGets, drive.payloadPuts
+	for i := 0; i < 3; i++ {
+		next := runWith(phone, drive.open)
+		if next.Status != "ready" || next.Transaction != pending.Transaction || drive.payloadGets != gets || drive.payloadPuts != puts {
+			t.Fatal("unnecessary preparation or transfer", next)
+		}
+	}
+	changed := phone
+	changed.ResumeDeferred = false
+	if next := runWith(changed, drive.open); next.Status != "export" {
+		t.Fatal("manual retry should rebuild an unpublished candidate", next)
+	}
+	changed = phone
+	changed.Stamp = "phone2"
+	if next := runWith(changed, drive.open); next.Status != "export" {
+		t.Fatal("ignored local edit", next)
+	}
+	changed = phone
+	changed.Choices = map[string]decision{"key": {Ticket: "new", Side: "remote"}}
+	if next := runWith(changed, drive.open); next.Status != "export" {
+		t.Fatal("ignored changed choices", next)
+	}
+	pc.Stamp, pc.Local = "pc2", fixture(t, map[string]string{"office": "35"})
+	syncTest(t, drive, pc, "")
+	if next := runWith(phone, drive.open); next.Status != "export" {
+		t.Fatal("reused outdated cloud head", next)
+	}
+	phone.Local = fixture(t, map[string]string{"phone": "10"})
+	syncTest(t, drive, phone, "")
+	phone.Local = ""
+	gets, puts = drive.payloadGets, drive.payloadPuts
+	if next := runWith(phone, drive.open); next.Status != "synced" || drive.payloadGets != gets || drive.payloadPuts != puts {
+		t.Fatal("unchanged poll requested another export or transfer", next)
+	}
+}
+
 func TestConditionalPublishAndCorruptDownload(t *testing.T) {
 	g := &mockDrive{blobs: map[string][]byte{}}
 	a := Request{Action: "prepare", Token: "test", Dir: t.TempDir(), Local: fixture(t, map[string]string{"account": "10"}), Stamp: "a"}

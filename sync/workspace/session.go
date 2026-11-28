@@ -17,7 +17,7 @@ type Request struct {
 	Reason                                        string
 	Revision, Head, Cursor                        string
 	Until                                         int64
-	Empty                                         bool
+	Empty, ResumeDeferred                         bool
 	Choices                                       map[string]decision
 }
 type Result struct {
@@ -35,6 +35,7 @@ type Result struct {
 type checkpoint struct{ Folder, Marker, Base, Stamp, Generation string }
 type prepared struct {
 	Transaction, ETag, Seen, Target, Stamp, Generation, Restore string
+	ChoicesDigest                                               string
 	Apply, Publish                                              bool
 }
 
@@ -206,9 +207,16 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		return Result{Status: "committed", File: candidate, Transaction: p.Transaction, Apply: p.Apply}
 	}
 	check(r.Action == "prepare", "Unknown action")
-	if load(pendingFile, &p) && p.Target != "" && p.Target == h.Hash && r.Stamp == p.Stamp {
-		if _, e := os.Stat(fileFor(p.Transaction)); e == nil {
-			return Result{Status: "ready", Transaction: p.Transaction, File: fileFor(p.Transaction), Apply: p.Apply}
+	choicesDigest := sum(encode(r.Choices))
+	if load(pendingFile, &p) && r.Stamp == p.Stamp {
+		committed := p.Target != "" && p.Target == h.Hash
+		// عند تأجيل تطبيق نسخة أثناء التصفح نعيد استخدامها ما دامت البيانات والاختيارات مطابقة.
+		deferred := r.ResumeDeferred && p.Apply && p.Target == "" && p.Restore == "" && p.Seen == h.Hash &&
+			p.ETag == h.ETag && p.Generation == h.Generation && p.ChoicesDigest == choicesDigest
+		if committed || deferred {
+			if info, e := os.Stat(fileFor(p.Transaction)); e == nil && info.Mode().IsRegular() && info.Size() > 0 {
+				return Result{Status: "ready", Transaction: p.Transaction, File: fileFor(p.Transaction), Apply: p.Apply}
+			}
 		}
 	}
 	// A local checkpoint and the current cloud revision suffice for the next three-way merge.
@@ -247,7 +255,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	id := make([]byte, 16)
 	_, e = rand.Read(id)
 	must(e)
-	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp, Generation: h.Generation}
+	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp, Generation: h.Generation, ChoicesDigest: choicesDigest}
 	candidate := fileFor(p.Transaction)
 	localUnchanged := s.Base != "" && s.Stamp == r.Stamp
 	local := r.Local
