@@ -117,12 +117,28 @@ public sealed partial class Store
             throw new InvalidDataException($"دفعة عقود {saved[key.Item1].Month} · {field} مفقود أو مختلف في النسخة المختارة. أُوقفت العملية لحفظ حالة الدفعة.");
         }
     }
-    public sealed record CancelledContract(string Month,decimal Held,DateTime Cancelled,int Prepared,int Confirmed);
+    public sealed record CancelledContract(string Id,string Month,decimal Held,DateTime Cancelled,int Prepared,int Confirmed)
+    {
+        public string Amount=>Arabic.Money(Held);
+        public string Date=>Cancelled.ToString("d");
+    }
+    static bool RemovedFromHistory(NSDictionary record)=>
+        record.ContainsKey("removedFromHistory") && record["removedFromHistory"].Equals(new NSNumber(true));
     public static IReadOnlyList<CancelledContract> CancelledContracts(A.BackupSnapshot snapshot) =>
-        ContractRecords(snapshot).Where(r=>r.ContainsKey("cancelledAt")).Select(r=>new CancelledContract(
-            r["month"].ToString()!,decimal.Parse(r["held"].ToString()!,System.Globalization.CultureInfo.InvariantCulture),
+        ContractRecords(snapshot).Where(r=>r.ContainsKey("cancelledAt") && !RemovedFromHistory(r)).Select(r=>new CancelledContract(
+            r["id"].ToString()!,r["month"].ToString()!,decimal.Parse(r["held"].ToString()!,System.Globalization.CultureInfo.InvariantCulture),
             ((NSDate)r["cancelledAt"]).Date.ToLocalTime(),((NSDictionary)r["prepared"]).Count,((NSDictionary)r["confirmed"]).Count))
             .OrderByDescending(row=>row.Cancelled).ToList();
+    public static bool HasCancelledConfirmation(A.BackupSnapshot snapshot,string month)=>
+        ContractRecords(snapshot).Any(r=>r.ContainsKey("cancelledAt") && r["month"].ToString()==month && ((NSDictionary)r["confirmed"]).Count>0);
+
+    public void DeleteCancelledContract(A.BackupSnapshot snapshot,string id){
+        var records=ContractRecords(snapshot);
+        var item=records.SingleOrDefault(r=>string.Equals(r["id"].ToString(),id,StringComparison.OrdinalIgnoreCase));
+        if(item==null || !item.ContainsKey("cancelledAt"))throw new InvalidDataException("اختر دفعة عقود ملغاة من السجل.");
+        item["removedFromHistory"]=new NSNumber(true);
+        SaveContractRecords(snapshot,records);
+    }
 
     static NSDictionary? ActiveRecord(IEnumerable<NSDictionary> records,string month)=>records.SingleOrDefault(r=>r["month"].ToString()==month&&!r.ContainsKey("cancelledAt"));
     public static ContractBatch? ActiveBatch(A.BackupSnapshot s,string month){
@@ -186,6 +202,10 @@ public sealed partial class Store
         else if(prepared!=null){var issued=(NSDictionary)active["prepared"];if(!issued.ContainsKey(prepared))issued[prepared]=new NSDate(date!.Value.ToUniversalTime());}
         else if(((NSDictionary)active["prepared"]).Count==0)records.Remove(active);
         else active["cancelledAt"]=new NSDate(DateTime.UtcNow);
+        SaveContractRecords(s,records,insert);
+    }
+
+    void SaveContractRecords(A.BackupSnapshot s,List<NSDictionary> records,ContractBatch? insert=null){
         var data=new NSDictionary();data["version"]=new NSNumber(records.Any(r=>r.ContainsKey("cancelledAt"))?2:1);data["records"]=new NSArray(records.ToArray());
         var markers=new List<string>();
         foreach(var r in records){var id=r["id"].ToString();if(r.ContainsKey("cancelledAt"))markers.Add(id+"|cancelled");

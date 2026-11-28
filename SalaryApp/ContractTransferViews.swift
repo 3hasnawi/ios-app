@@ -15,6 +15,59 @@ enum ContractBatchStore {
     }
 }
 
+struct ContractHistoryView: View {
+    @AppStorage(ContractTransferArchive.key) private var data = Data()
+    @State private var archive = ContractTransferArchive()
+    @State private var selection: ContractTransferArchive.Record?
+    @State private var confirming = false
+    @State private var failure: String?
+
+    var body: some View {
+        List(archive.visibleRecords) { item in
+            NavigationLink { ContractTransferRecordView(id: item.id) } label: {
+                VStack(alignment: .leading) {
+                    LabeledContent(item.month, value: Money.format(item.held))
+                    if let date = item.cancelledAt {
+                        LabeledContent(tr("أُلغي التأجيل", "Deferral cancelled")) { Text(date, style: .date) }
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .contextMenu {
+                if item.cancelledAt != nil {
+                    Button(role: .destructive) {
+                        selection = item
+                        confirming = true
+                    } label: { Label(tr("حذف الدفعة الملغاة", "Delete cancelled batch"), systemImage: "trash") }
+                }
+            }
+        }
+        .overlay {
+            if archive.visibleRecords.isEmpty {
+                ContentUnavailableView(tr("لا توجد دفعات محفوظة", "No saved batches"), systemImage: "tray")
+            }
+        }
+        .navigationTitle(tr("دفعات العقود المؤجلة", "Deferred contract batches"))
+        .onChange(of: data, initial: true) {
+            do { archive = try ContractTransferArchive.read(data) }
+            catch { archive = .init(); failure = error.localizedDescription }
+        }
+        .alert(tr("حذف الدفعة الملغاة؟", "Delete cancelled batch?"), isPresented: $confirming, presenting: selection) { item in
+            Button(tr("حذف", "Delete"), role: .destructive) {
+                do { try ContractBatchStore.update { try $0.removeCancelled(item) } }
+                catch { failure = error.localizedDescription }
+            }
+            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
+        } message: { item in
+            Text(tr("شهر الاستحقاق", "Funding month") + " · " + item.month + "\n" + Money.format(item.held) + "\n" +
+                 tr("تُحذف من القائمة وتُحفظ إثباتات التنفيذ.", "The batch is removed from the list. Transfer evidence is retained."))
+        }
+        .alert(tr("تعذّر فتح السجل أو تعديله", "Could not open or update the history"), isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button(tr("موافق", "OK")) {}
+        } message: { Text(failure ?? "") }
+    }
+}
+
 struct ContractBatchOverview: View {
     let batch: ContractTransferBatch
     var body: some View {

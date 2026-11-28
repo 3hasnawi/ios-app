@@ -787,4 +787,27 @@ func TestCancelledContractAndNewActiveBatchSameMonth(t *testing.T) {
 	d.claim(head, d.upload(archive(active), head.Hash), "")
 	pc.Local = ""
 	assertRecords(syncTest(t, server, pc, "").File)
+	// الحذف من جهاز مع احتفاظ الجهاز الآخر بنسخة غير محدّثة ودفعة نشطة للشهر.
+	old["removedFromHistory"] = true
+	for _, deletedOnLeft := range []bool{true, false} {
+		device, unchanged := archive(old, active), merged
+		if !deletedOnLeft {
+			device, unchanged = unchanged, device
+		}
+		drive := &mockDrive{blobs: map[string][]byte{}}
+		syncTest(t, drive, Request{Dir: t.TempDir(), Stamp: "first", Local: device}, "")
+		result := syncTest(t, drive, Request{Dir: t.TempDir(), Stamp: "second", Local: unchanged}, "").File
+		assertRecords(result)
+		z, err := zip.OpenReader(result)
+		must(err)
+		var settings map[string][]byte
+		must(decode(readEntry(&z.Reader, "settings.json", rowLimit), &settings))
+		z.Close()
+		for _, row := range array(obj(readPlist(contractDateObjects(readPlist(settings[contractKey]).([]byte), false)))["records"]) {
+			record := obj(row)
+			if (record["removedFromHistory"] == true) != (str(record, "id") == cancelledID) {
+				t.Fatal("حالة حذف الدفعة خاطئة", deletedOnLeft)
+			}
+		}
+	}
 }

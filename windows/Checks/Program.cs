@@ -15,7 +15,11 @@ if(args is ["--read-contract-history",var mergedHistory,var missingHistory]){
         try{storeHistory.ApplyWorkspace(missingHistory,storeHistory.WorkspaceStamp);throw new Exception("accepted missing contract");}
         catch(InvalidDataException ex) when(ex.Message.Contains(cancelled.Month)){}
         if(before!=storeHistory.Active)throw new Exception("missing history replaced the device data");
-        Console.WriteLine("PASS retained cancelled contract and rejected missing history");
+        storeHistory.DeleteCancelledContract(storeHistory.Snapshot(),cancelled.Id);
+        var deleted=storeHistory.Snapshot();
+        if(Store.CancelledContracts(deleted).Count!=0 || !Store.HasCancelledConfirmation(deleted,cancelled.Month))
+            throw new Exception("Deleting a cancelled contract lost its confirmation or kept it in the list");
+        Console.WriteLine("PASS removed cancelled contract, retained evidence and rejected missing history");
     }finally{root.Delete(true);}
     return;
 }

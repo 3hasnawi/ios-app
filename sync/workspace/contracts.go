@@ -71,6 +71,15 @@ func mergeContracts(r *reconciliation, path []string, values [3][]byte) []byte {
 			default:
 				panic("تختلف بيانات تنفيذ دفعة العقود الملغاة لشهر " + path[1] + " بين الجهازين. حُفظت النسختان للمراجعة.")
 			}
+			// الحذف من سجل العرض مستقل عن إثبات التنفيذ وقد يصل من جهاز آخر.
+			if contractArchive(left)["removedFromHistory"] == true || contractArchive(right)["removedFromHistory"] == true {
+				row := obj(archived[id])
+				record := contractArchive(row)
+				if record["removedFromHistory"] != true {
+					record["removedFromHistory"] = true
+					row["archive"] = b64.EncodeToString(plistData(record))
+				}
+			}
 		}
 		for _, group := range groups {
 			delete(group, id)
@@ -97,9 +106,10 @@ func mergeContracts(r *reconciliation, path []string, values [3][]byte) []byte {
 	return encode(archived)
 }
 
+func contractArchive(row Object) Object { return obj(readPlist(un64(str(row, "archive")))) }
+
 func coversContract(newer, older Object) bool {
-	record := func(row Object) Object { return obj(readPlist(un64(str(row, "archive")))) }
-	a, b := record(newer), record(older)
+	a, b := contractArchive(newer), contractArchive(older)
 	for _, field := range []string{"prepared", "confirmed"} {
 		for key, value := range obj(b[field]) {
 			if !reflect.DeepEqual(obj(a[field])[key], value) {
@@ -112,7 +122,7 @@ func coversContract(newer, older Object) bool {
 	if b["cancelledAt"] != nil && !reflect.DeepEqual(b["cancelledAt"], a["cancelledAt"]) {
 		return false
 	}
-	for _, field := range []string{"cancelledAt", "reviewedImport"} {
+	for _, field := range []string{"cancelledAt", "reviewedImport", "removedFromHistory"} {
 		delete(a, field)
 		delete(b, field)
 	}

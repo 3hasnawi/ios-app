@@ -90,6 +90,7 @@ nonisolated struct ContractTransferArchive: Codable {
         var confirmed: [String: Date] = [:]
         var reviewedImport: Date?
         var cancelledAt: Date?
+        var removedFromHistory: Bool?
         func batch() throws -> ContractTransferBatch {
             let batch = try JSONDecoder().decode(ContractTransferBatch.self, from: ContractBatchPayload.unpack(compressed))
             try batch.validate()
@@ -99,6 +100,18 @@ nonisolated struct ContractTransferArchive: Codable {
     }
     var version = 1
     var records: [Record] = []
+    var visibleRecords: [Record] { records.filter { $0.removedFromHistory != true } }
+
+    mutating func removeCancelled(_ reviewed: Record) throws {
+        guard let index = records.firstIndex(where: { $0.id == reviewed.id }),
+              let cancelled = reviewed.cancelledAt, records[index].cancelledAt == cancelled,
+              records[index].prepared == reviewed.prepared, records[index].confirmed == reviewed.confirmed else {
+            throw TransferIndividualPlan.Failure.invalidSource
+        }
+        // تبقى إثباتات التحويلات المؤكدة متاحة لمراجعة الشهر بعد الحذف من القائمة.
+        records[index].removedFromHistory = true
+    }
+
     func activeRecord(for month: String) -> Record? {
         records.first { $0.month == month && $0.cancelledAt == nil }
     }
@@ -108,6 +121,7 @@ nonisolated struct ContractTransferArchive: Codable {
         let archive = try PropertyListDecoder().decode(Self.self, from: data)
         let active = archive.records.filter { $0.cancelledAt == nil }
         guard archive.version == (active.count == archive.records.count ? 1 : 2),
+              active.allSatisfy({ $0.removedFromHistory != true }),
               Set(active.map(\.month)).count == active.count,
               Set(archive.records.map(\.id)).count == archive.records.count else { throw TransferIndividualPlan.Failure.invalidSource }
         return archive

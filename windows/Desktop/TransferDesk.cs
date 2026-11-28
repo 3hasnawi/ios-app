@@ -96,11 +96,30 @@ public partial class MainWindow
             var history=GridView(("شهر الاستحقاق","Month",1.5),("المبلغ المؤجل","Amount",1.2),("تاريخ الإلغاء","Date",1.4),
                 ("ملفات مجهّزة","Prepared",1),("تحويلات مؤكدة","Confirmed",1));
             history.MaxHeight=210;
-            history.ItemsSource=cancelled.Select(row=>new{row.Month,Amount=Arabic.Money(row.Held),
-                Date=row.Cancelled.ToString("d"),row.Prepared,row.Confirmed}).ToList();
+            history.ItemsSource=cancelled;
+            var menu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft,PlacementTarget=history,Placement=PlacementMode.MousePoint};
+            history.ContextMenu=menu;
+            MenuAction(menu,"حذف الدفعة الملغاة",()=>{
+                if(history.SelectedItem is not Store.CancelledContract item)return;
+                if(!Form("حذف الدفعة الملغاة؟",Text(item.Month+"　·　"+item.Date+"　·　"+item.Amount),
+                    Text("تُحذف من القائمة وتُحفظ إثباتات التنفيذ.")))return;
+                _=Working(()=>store.DeleteCancelledContract(s,item.Id),"حُذفت الدفعة الملغاة من السجل.",()=>ShowPage(DeferredTransfers));
+            });
+            bool SelectClickedRow(object source){
+                if(source is not DependencyObject el || ItemsControl.ContainerFromElement(history,el) is not DataGridRow { Item: Store.CancelledContract item })return false;
+                history.SelectedItem=item;
+                return true;
+            }
+            history.PreviewMouseLeftButtonUp+=(_,e)=>{
+                if(!SelectClickedRow(e.OriginalSource))return;
+                menu.IsOpen=true;e.Handled=true;
+            };
+            history.ContextMenuOpening+=(_,e)=>{
+                if(e.CursorLeft>=0 ? !SelectClickedRow(e.OriginalSource) : history.SelectedItem is not Store.CancelledContract)e.Handled=true;
+            };
             head.Children.Add(new Expander{Header=$"الدفعات المؤجلة الملغاة ({cancelled.Count})",Content=history});
-        }else if(!held && cancelled.Any(row=>row.Month==month && row.Confirmed>0)){
-            head.Children.Add(Text("توجد تحويلات مؤكدة قبل إلغاء التأجيل. راجع الدفعات المؤجلة الملغاة قبل إرسال المبلغ الشامل."));
+        }else if(!held && Store.HasCancelledConfirmation(s,month)){
+            head.Children.Add(Text("توجد تحويلات مؤكدة قبل إلغاء التأجيل. تحقّق من تنفيذها قبل إرسال المبلغ الشامل."));
         }
         if(held){
             void ChangeDeferral(){

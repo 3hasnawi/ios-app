@@ -431,17 +431,7 @@ struct TransferFilesView: View {
             if let archiveError { Text(archiveError).foregroundStyle(.red) }
             if !heldArchive.records.isEmpty {
                 NavigationLink {
-                    List(heldArchive.records) { item in
-                        NavigationLink { ContractTransferRecordView(id: item.id) } label: {
-                            VStack(alignment: .leading) {
-                                LabeledContent(item.month, value: Money.format(item.held))
-                                if let date = item.cancelledAt {
-                                    LabeledContent(tr("أُلغي التأجيل", "Deferral cancelled")) { Text(date, style: .date) }
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }.navigationTitle(tr("دفعات العقود المؤجلة", "Deferred contract batches"))
+                    ContractHistoryView()
                 } label: { Label(tr("دفعات العقود المؤجلة", "Deferred contract batches"), systemImage: "tray.full") }
             }
             if !linksValid { Section { Text(tr("تعذّرت قراءة روابط الحسابات؛ لا يمكن اعتماد التصنيف أو التصدير حتى استعادة الروابط.", "Account links could not be read; classification and export are unavailable until they are restored.")).foregroundStyle(.red) } }

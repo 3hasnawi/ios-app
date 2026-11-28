@@ -110,6 +110,11 @@ import SwiftData
     try repeated.insert(replacement)
     let reloaded = try ContractTransferArchive.read(repeated.encoded())
     precondition(reloaded.records.count == 2 && reloaded.activeRecord(for: month)?.id == replacement.id)
+    do { try repeated.removeCancelled(reloaded.activeRecord(for: month)!); preconditionFailure("Deleted an active contract batch") } catch TransferIndividualPlan.Failure.invalidSource {}
+    try repeated.removeCancelled(archive.records[0])
+    let deleted = try ContractTransferArchive.read(repeated.encoded())
+    precondition(deleted.visibleRecords.map(\.id) == [replacement.id] && deleted.executionMarkers == reloaded.executionMarkers)
+    try archive.removeCancelled(archive.records[0])
     let data = try archive.encoded(), settings = [ContractTransferArchive.key:try PropertyListSerialization.data(fromPropertyList:data,format:.binary,options:0)]
     let (file, manifest) = try await BackupActor(modelContainer:container).export(settings:settings,progress:nil)
     defer { BackupFormat.removeExport(file) }
@@ -121,6 +126,7 @@ import SwiftData
     try roundTrip.checkRestore(over:archive)
     precondition(roundTrip.records[0].cancelledAt == date && roundTrip.activeRecord(for: month) == nil)
     precondition(roundTrip.executionMarkers == archive.executionMarkers && roundTrip.version == 2)
+    precondition(roundTrip.visibleRecords.isEmpty)
     let after = try roundTrip.records[0].batch()
     checkRepeatedRows(after)
     precondition(after.held==batch.held && after.parts(.deferred,category:.anbar).count==1)
