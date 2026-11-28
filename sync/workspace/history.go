@@ -26,10 +26,22 @@ type historyPreview struct {
 }
 
 func (g *drive) indexFor(id string) fileIndex {
-	var idx fileIndex
-	must(decode(g.get(indexPrefix, id, 4<<20), &idx))
-	check((idx.Format == 1 || idx.Format == 2 && idx.FileID != "" && idx.Size > 0) && validHash(idx.SHA) && (idx.Previous == "" || validHash(idx.Previous)), "Invalid OneDrive history index")
+	idx, found := g.readIndex(id)
+	check(found, "هذه النسخة لم تعد موجودة في OneDrive.")
 	return idx
+}
+func (g *drive) readIndex(id string) (fileIndex, bool) {
+	check(validHash(id), "Invalid revision")
+	code, b := g.request("GET", g.root+indexPrefix+id+":/content", nil, nil, 4<<20)
+	if code == 404 {
+		return fileIndex{}, false
+	}
+	ok(code)
+	check(sum(b) == id, "فشل التحقق من بصمة فهرس النسخة.")
+	var idx fileIndex
+	must(decode(b, &idx))
+	check((idx.Format == 1 || idx.Format == 2 && idx.FileID != "" && idx.Size > 0) && validHash(idx.SHA) && (idx.Previous == "" || validHash(idx.Previous)), "Invalid OneDrive history index")
+	return idx, true
 }
 func (g *drive) point(id string, idx fileIndex) historyPoint {
 	code, b := g.request("GET", g.root+indexPrefix+id+"?$select=createdDateTime,description", nil, nil, 1<<20)
@@ -61,12 +73,16 @@ func (g *drive) findRevision(current, target string) historyPoint {
 }
 func (g *drive) history(h head, r Request) Result {
 	id := h.Hash
-	if r.Cursor != "" {
+	if r.Cursor != "" && !r.RecentBackups {
 		check(h.Hash == r.Head && validHash(r.Cursor), "تغيّر سجل المزامنة. حدّث القائمة.")
 		id = r.Cursor
 	}
 	result := Result{Status: "history", Head: h.Hash}
-	for id != "" && len(result.Points) < 15 {
+	for visited := 0; id != "" && len(result.Points) < 15; visited++ {
+		if r.RecentBackups && visited == retainedBackups {
+			id = ""
+			break
+		}
 		idx := g.indexFor(id)
 		point := g.point(id, idx)
 		id = idx.Previous
@@ -78,6 +94,9 @@ func (g *drive) history(h head, r Request) Result {
 	return result
 }
 func (g *drive) preview(h head, r Request) Result {
+	if r.RecentBackups {
+		g.requireRetainedBackup(h, r.Revision)
+	}
 	check(h.Hash == r.Head, "تغيّر سجل المزامنة. حدّث القائمة.")
 	g.findRevision(h.Hash, r.Revision)
 	dir, e := os.MkdirTemp(r.Dir, "preview-")
@@ -144,6 +163,10 @@ func (g *drive) flushNotes(dir string) {
 			continue
 		}
 		code, b := g.request("GET", g.root+indexPrefix+p[1]+"?$select=id,eTag,description", nil, nil, 1<<20)
+		if code == 404 {
+			must(os.Remove(name))
+			continue
+		}
 		ok(code)
 		var i item
 		must(decode(b, &i))
@@ -151,6 +174,10 @@ func (g *drive) flushNotes(dir string) {
 			check(i.ID != "" && i.ETag != "", "Invalid revision metadata")
 			description := strings.TrimSpace(i.Description + "\npayroll-before-" + p[2])
 			code, _ = g.request("PATCH", "items/"+url.PathEscape(i.ID), encode(Object{"description": description}), map[string]string{"Content-Type": "application/json", "If-Match": i.ETag}, 1<<20)
+			if code == 404 {
+				must(os.Remove(name))
+				continue
+			}
 			if code == 412 {
 				continue
 			}

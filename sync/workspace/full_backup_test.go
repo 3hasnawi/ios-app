@@ -21,6 +21,8 @@ type backupGraph struct {
 	failAfter          int
 	badDownload        bool
 	loseRace           bool
+	failOldDelete      bool
+	names              map[string]string
 	uploads, downloads int
 }
 
@@ -52,6 +54,10 @@ func (s *backupGraph) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		id := "backup-" + strconv.Itoa(s.uploads)
 		s.blobs[id] = s.staged
+		if s.names == nil {
+			s.names = map[string]string{}
+		}
+		s.names[s.name] = id
 		s.uploads++
 		if s.loseRace {
 			s.revision++
@@ -66,7 +72,20 @@ func (s *backupGraph) RoundTrip(r *http.Request) (*http.Response, error) {
 		return response(200, encode(Object{"uploadUrl": "https://upload.test/resumable"})), nil
 	}
 	if strings.HasPrefix(p, "/v1.0/me/drive/items/backup-") && r.Method == "DELETE" {
-		delete(s.blobs, strings.TrimPrefix(p, "/v1.0/me/drive/items/"))
+		id := strings.TrimPrefix(p, "/v1.0/me/drive/items/")
+		if etag := r.Header.Get("If-Match"); etag != "" {
+			check(etag == "full-etag", "unexpected backup etag")
+			if s.failOldDelete {
+				return response(500, nil), nil
+			}
+		}
+		for name, value := range s.names {
+			if value == id {
+				delete(s.names, name)
+				break
+			}
+		}
+		delete(s.blobs, id)
 		return response(204, nil), nil
 	}
 	if strings.HasPrefix(p, "/v1.0/me/drive/items/backup-") && strings.HasSuffix(p, "/content") {
@@ -79,6 +98,33 @@ func (s *backupGraph) RoundTrip(r *http.Request) (*http.Response, error) {
 			b[len(b)-1] ^= 255
 		}
 		return response(200, b), nil
+	}
+	const folder = "/v1.0/me/drive/items/folder:/"
+	if strings.HasPrefix(p, folder) {
+		name := strings.TrimPrefix(p, folder)
+		if r.Method == "GET" && strings.HasPrefix(name, "payroll-backup-") {
+			id, found := s.names[name]
+			if !found {
+				return response(404, nil), nil
+			}
+			return response(200, encode(Object{"id": id, "name": name, "eTag": "full-etag"})), nil
+		}
+		if r.Method == "DELETE" && (strings.HasPrefix(name, indexPrefix) || strings.HasPrefix(name, chunkPrefix)) {
+			if _, found := s.blobs[name]; !found {
+				return response(404, nil), nil
+			}
+			delete(s.blobs, name)
+			return response(204, nil), nil
+		}
+	}
+	if strings.HasPrefix(p, "/v1.0/me/drive/items/backup-") && r.Method == "GET" {
+		id := strings.TrimPrefix(p, "/v1.0/me/drive/items/")
+		for name, value := range s.names {
+			if value == id {
+				return response(200, encode(Object{"name": name})), nil
+			}
+		}
+		return response(404, nil), nil
 	}
 	return s.mockDrive.RoundTrip(r)
 }
@@ -184,5 +230,126 @@ func TestFullBackupsOneWayHistoryAndAtomicFailure(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(phone.Dir, "received-*.zip"))
 	if !bytes.Equal(before, after) || len(files) != 0 || server.open("test").marker(false).Hash != newest {
 		t.Fatal("corruption accepted or leaked partial import")
+	}
+}
+
+func TestKeepsOnlyTwoCompletedFullBackups(t *testing.T) {
+	server := &backupGraph{mockDrive: &mockDrive{blobs: map[string][]byte{"unrelated": []byte("untouched")}}}
+	sender := Request{Action: "backup-upload", Token: "test", Dir: t.TempDir()}
+	phone := Request{Action: "backup-download", Token: "test", Dir: t.TempDir(), RecentBackups: true}
+	var revisions, sources []string
+	upload := func(value string, warning bool) {
+		t.Helper()
+		sender.Local = fixture(t, map[string]string{"test": value})
+		result := runWith(sender, server.open)
+		if result.Status != "uploaded" || (result.Warning != "") != warning {
+			t.Fatal(result)
+		}
+		revisions = append(revisions, server.open("test").marker(false).Hash)
+		sources = append(sources, sender.Local)
+	}
+	restoreBoth := func() {
+		t.Helper()
+		n := len(revisions)
+		history := phone
+		history.Action = "history"
+		result := runWith(history, server.open)
+		if len(result.Points) != 2 || result.Points[0].ID != revisions[n-1] || result.Points[1].ID != revisions[n-2] || result.Cursor != "" {
+			t.Fatal(result)
+		}
+		before := len(server.blobs)
+		for i := n - 2; i < n; i++ {
+			r := phone
+			r.Revision, r.Head = revisions[i], result.Head
+			got := runWith(r, server.open)
+			actual, e := os.ReadFile(got.File)
+			must(e)
+			expected, e := os.ReadFile(sources[i])
+			must(e)
+			if !bytes.Equal(actual, expected) {
+				t.Fatal("incorrect remaining backup")
+			}
+			must(os.Remove(got.File))
+		}
+		if len(server.blobs) != before {
+			t.Fatal("import changed cloud storage")
+		}
+	}
+	reject := func(r Request) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Fatal("expected failure", r.Action)
+			}
+		}()
+		runWith(r, server.open)
+	}
+	upload("1", false)
+	upload("2", false)
+	server.loseRace = true
+	reject(sender)
+	restoreBoth()
+	if len(server.names) != 2 {
+		t.Fatal("failed upload changed completed files")
+	}
+	upload("3", false)
+	restoreBoth()
+	if len(server.names) != 2 || server.blobs[indexPrefix+revisions[0]] != nil || server.blobs["backup-0"] != nil {
+		t.Fatal("oldest backup not pruned")
+	}
+	expired := phone
+	expired.Revision, expired.Head = revisions[0], revisions[2]
+	reject(expired)
+	server.failOldDelete = true
+	upload("4", true)
+	restoreBoth()
+	if len(server.names) != 3 || server.blobs[indexPrefix+revisions[1]] == nil {
+		t.Fatal("lost retry information")
+	}
+	server.failOldDelete = false
+	upload("5", false)
+	restoreBoth()
+	if len(server.names) != 2 || server.blobs[indexPrefix+revisions[1]] != nil || server.blobs[indexPrefix+revisions[2]] != nil || string(server.blobs["unrelated"]) != "untouched" {
+		t.Fatal("incorrect cleanup after retry")
+	}
+}
+
+func TestRetentionPreservesLegacySharedBlocks(t *testing.T) {
+	server := &backupGraph{mockDrive: &mockDrive{blobs: map[string][]byte{}}}
+	sender := Request{Action: "backup-upload", Token: "test", Dir: t.TempDir(), Local: fixture(t, map[string]string{"old": "1"})}
+	syncTest(t, server.mockDrive, sender, "")
+	g := server.open("test")
+	oldest := g.marker(false).Hash
+	clone := g.indexFor(oldest)
+	clone.Previous = oldest
+	previous := g.put(indexPrefix, encode(clone))
+	g.claim(g.marker(false), previous, "")
+	legacyFile := sender.Local
+	sender.Local = fixture(t, map[string]string{"new": "2"})
+	if r := runWith(sender, server.open); r.Warning != "" {
+		t.Fatal(r)
+	}
+	if len(clone.Blocks) == 0 || server.blobs[indexPrefix+oldest] != nil {
+		t.Fatal("legacy test setup or cleanup")
+	}
+	phone := Request{Action: "backup-download", Token: "test", Dir: t.TempDir(), Head: g.marker(false).Hash, Revision: previous}
+	got := runWith(phone, server.open)
+	actual, e := os.ReadFile(got.File)
+	must(e)
+	expected, e := os.ReadFile(legacyFile)
+	must(e)
+	if !bytes.Equal(actual, expected) {
+		t.Fatal("shared blocks were lost")
+	}
+	if r := runWith(sender, server.open); r.Warning != "" {
+		t.Fatal(r)
+	}
+	for _, id := range clone.Blocks {
+		if server.blobs[chunkPrefix+id] != nil {
+			t.Fatal("unreferenced block retained")
+		}
+	}
+	if server.blobs[indexPrefix+previous] != nil || len(server.names) != 2 {
+		t.Fatal("failed to expire legacy revision")
 	}
 }

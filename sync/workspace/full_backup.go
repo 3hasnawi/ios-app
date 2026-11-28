@@ -81,7 +81,7 @@ func (g *drive) uploadBackup(path, previous string) fileIndex {
 		start = end
 		g.progress(Upload, start, size)
 	}
-	return fileIndex{Format: 2, FileID: saved.ID, At: time.Now().UnixMilli(), Kind: "backup", Previous: previous, Size: size, SHA: hex.EncodeToString(digest.Sum(nil))}
+	return fileIndex{Format: 2, FileID: saved.ID, FileName: saved.Name, At: time.Now().UnixMilli(), Kind: "backup", Previous: previous, Size: size, SHA: hex.EncodeToString(digest.Sum(nil))}
 }
 
 func (g *drive) downloadBackup(idx fileIndex, dest string) {
@@ -152,7 +152,7 @@ func receiveBackup(r Request, g *drive, h head) Result {
 	check(revision != "", "لا توجد نسخة مكتملة على OneDrive. ارفع نسخة من الجهاز الذي يحتوي بياناتك.")
 	if r.Revision != "" {
 		check(r.Head == h.Hash, "تغيّر سجل النسخ. حدّث القائمة.")
-		g.findRevision(h.Hash, r.Revision)
+		g.requireRetainedBackup(h, r.Revision)
 		revision = r.Revision
 	}
 	transaction := backupID()

@@ -29,7 +29,7 @@ public partial class MainWindow
     async Task MarkWorkspacePoint(string reason){
         if(File.Exists(AccountPath))await CallWorkspace(new(){{"dir",SyncDir},{"action","note"},{"reason",reason}});
     }
-    sealed record SyncResult(string status,string? error,string? file,string? transaction,string? head,string? cursor,HistoryPoint[]? points,HistoryPreview? preview);
+    sealed record SyncResult(string status,string? error,string? warning,string? file,string? transaction,string? head,string? cursor,HistoryPoint[]? points,HistoryPreview? preview);
     IPublicClientApplication? account;
     Window? syncDialog;
     StackPanel? syncPanel;
@@ -108,7 +108,7 @@ public partial class MainWindow
             if(!syncing && HasPendingUpload())syncPanel.Children.Add(Text("تعديلات محلية بانتظار الرفع",14,true));
             var last=Path.Combine(SyncDir,"last");
             if(File.Exists(last))syncPanel.Children.Add(Text("آخر نقل ناجح　"+File.GetLastWriteTime(last).ToString("g"),14));
-            syncPanel.Children.Add(ButtonFor("سجل المزامنة والاستعادة",()=>{
+            syncPanel.Children.Add(ButtonFor("آخر نسختين والاستعادة",()=>{
                 showingHistory=true;historyUntil=null;_=WorkspaceRun(action:"history");
             },"\uE81C"));
             syncPanel.Children.Add(ButtonFor("تسجيل الخروج",()=>_=WorkspaceRun(logout:true),"\uE8AC"));
@@ -238,7 +238,7 @@ public partial class MainWindow
                            await app.AcquireTokenSilent(scopes,current).ExecuteAsync();
             if(login){File.WriteAllText(AccountPath,auth.Account.HomeAccountId.Identifier);syncStatus="الحساب مرتبط";return;}
             var stamp=store.WorkspaceStamp;
-            var args=new Dictionary<string,object>{{"action",action},{"dir",SyncDir},{"token",auth.AccessToken},{"stamp",stamp}};
+            var args=new Dictionary<string,object>{{"action",action},{"dir",SyncDir},{"token",auth.AccessToken},{"stamp",stamp},{"recentBackups",true}};
             if(historyHead!=null)args["head"]=historyHead;
             if(point!=null)args["revision"]=point.id;
             if(action=="history"){
@@ -276,7 +276,7 @@ public partial class MainWindow
                 finally{busy=false;IsEnabled=true;}
                 reply=await CallWorkspace(new(){{"action","backup-ack"},{"dir",SyncDir},{"stamp",stamp},{"transaction",reply.transaction!}});
             }
-            if(action=="backup-upload" && reply.status=="uploaded")syncStatus="اكتمل رفع النسخة الكاملة";
+            if(action=="backup-upload" && reply.status=="uploaded")syncStatus=reply.warning??"اكتمل رفع النسخة الكاملة";
             else if(action=="backup-download" && reply.status=="imported")syncStatus="اكتمل استيراد النسخة على هذا الجهاز";
             else throw new IOException("تعذّر إكمال نقل النسخة.");
             File.WriteAllText(Path.Combine(SyncDir,"last"),"1");

@@ -30,7 +30,7 @@ private struct SyncReply: Decodable {
     let points: [WorkspacePoint]?
     let preview: WorkspacePreview?
     let status: String
-    let error, file, transaction: String?
+    let error, file, transaction, warning: String?
 }
 @Observable @MainActor
 final class WorkspaceSync {
@@ -134,7 +134,7 @@ final class WorkspaceSync {
             var policy = URLResourceValues()
             policy.isExcludedFromBackup = true
             try dir.setResourceValues(policy)
-            var args: [String:Any] = ["action":action,"dir":dir.path,"token":token,"stamp":stamp]
+            var args: [String:Any] = ["action":action,"dir":dir.path,"token":token,"stamp":stamp,"recentBackups":true]
             args["head"] = historyHead
             args["revision"] = point?.id
             if action == "history" {
@@ -178,8 +178,12 @@ final class WorkspaceSync {
                 throw AccountError(tr("تعذّر إكمال نقل النسخة", "Could not complete backup transfer"))
             }
             last = Date(); defaults.set(last,forKey:"oneDriveLastSync")
-            status = action == "backup-upload" ? tr("اكتمل رفع النسخة الكاملة", "Full backup uploaded") :
-                tr("اكتمل استيراد النسخة على هذا الجهاز", "Backup imported on this device")
+            if reply.warning != nil {
+                status = tr("اكتمل الرفع، وتعذّر إكمال حذف النسخ الأقدم. ستُعاد محاولة التنظيف عند الرفع التالي.", "Uploaded. Cleanup of older backups will be retried on the next upload.")
+            } else {
+                status = action == "backup-upload" ? tr("اكتمل رفع النسخة الكاملة", "Full backup uploaded") :
+                    tr("اكتمل استيراد النسخة على هذا الجهاز", "Backup imported on this device")
+            }
         } catch { show(error) }
     }
     private func call(_ args: [String:Any]) async throws -> SyncReply {
@@ -248,7 +252,7 @@ struct WorkspaceSyncSettings: View {
                     if let last = sync.last {
                         LabeledContent(tr("آخر نقل ناجح", "Last successful transfer")) { Text(last.formatted()) }
                     }
-                    NavigationLink(tr("سجل المزامنة والاستعادة", "Sync history and restore")) { WorkspaceHistoryView() }
+                    NavigationLink(tr("آخر نسختين والاستعادة", "Last two backups and restore")) { WorkspaceHistoryView() }
                     Button(tr("تسجيل الخروج", "Sign out"),role:.destructive) { sync.signOut() }
                 }
                 Button(sync.linked ? tr("إعادة ربط الحساب", "Reconnect account") : tr("تسجيل الدخول إلى Microsoft", "Sign in to Microsoft")) { Task { await sync.signIn() } }

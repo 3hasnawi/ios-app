@@ -246,6 +246,7 @@ func (g *drive) put(prefix string, b []byte) string {
 }
 
 type fileIndex struct {
+	FileName string   `json:"fileName,omitempty"`
 	FileID   string   `json:"fileID,omitempty"`
 	At       int64    `json:"at,omitempty"`
 	Kind     string   `json:"kind,omitempty"`

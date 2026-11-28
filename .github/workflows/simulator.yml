@@ -68,6 +68,9 @@ jobs:
       - name: Check OneDrive transfers, silent polls, merge and interrupted sessions with fictional records
         working-directory: sync/workspace
         run: go test ./...
+      - name: Verify the last two completed OneDrive backups remain restorable
+        working-directory: sync/workspace
+        run: go test -race -run "TestKeepsOnlyTwoCompletedFullBackups|TestRetentionPreservesLegacySharedBlocks"
       - name: Preview historical financial totals from the synthetic Windows archive
         working-directory: sync/workspace
         run: |

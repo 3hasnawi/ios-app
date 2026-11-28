@@ -14,6 +14,7 @@ import (
 )
 
 type Request struct {
+	RecentBackups                                 bool
 	Action, Dir, Token, Stamp, Local, Transaction string
 	Reason                                        string
 	Revision, Head, Cursor                        string
@@ -22,6 +23,7 @@ type Request struct {
 	Choices                                       map[string]decision
 }
 type Result struct {
+	Warning     string          `json:"warning,omitempty"`
 	Head        string          `json:"head,omitempty"`
 	Cursor      string          `json:"cursor,omitempty"`
 	Points      []historyPoint  `json:"points,omitempty"`
@@ -188,7 +190,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		}
 		s.Base, s.Stamp, s.Generation = revision, r.Stamp, generation
 		must(atomicFile(stateFile, encode(s)))
-		return Result{Status: "uploaded"}
+		return Result{Status: "uploaded", Warning: g.pruneBackups(revision)}
 	}
 	if r.Action == "backup-download" {
 		return receiveBackup(r, g, h)
