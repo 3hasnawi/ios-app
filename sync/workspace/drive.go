@@ -20,6 +20,8 @@ const graph = "https://graph.microsoft.com/v1.0/me/drive/"
 const markerName = "payroll-workspace-v1.json"
 
 type drive struct {
+	onTransfer          func(bool)
+	transferring        bool
 	token, folder, root string
 	client              *http.Client
 }
@@ -142,6 +144,15 @@ func (g *drive) get(prefix, hash string, limit int64) []byte {
 	check(sum(b) == hash, "فشل التحقق من بصمة ملف المزامنة.")
 	return b
 }
+func (g *drive) setTransferring(active bool) {
+	if g.transferring == active {
+		return
+	}
+	g.transferring = active
+	if g.onTransfer != nil {
+		g.onTransfer(active)
+	}
+}
 func (g *drive) put(prefix string, b []byte) string {
 	id := sum(b)
 	path := g.root + prefix + id
@@ -154,6 +165,9 @@ func (g *drive) put(prefix string, b []byte) string {
 	}
 	if code != 404 {
 		ok(code)
+	}
+	if prefix == chunkPrefix {
+		g.setTransferring(true)
 	}
 	code, _ = g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", b, nil, 1<<20)
 	if code != 409 {
@@ -176,6 +190,7 @@ const chunkPrefix = "payroll-work-block-v1-"
 const indexPrefix = "payroll-work-index-v1-"
 
 func (g *drive) upload(path, previous string) string {
+	defer g.setTransferring(false)
 	f, e := os.Open(path)
 	must(e)
 	defer f.Close()
@@ -231,6 +246,8 @@ func (g *drive) download(id, dest string) {
 	defer f.Close()
 	h := sha256.New()
 	var total int64
+	g.setTransferring(true)
+	defer g.setTransferring(false)
 	for _, part := range idx.Blocks {
 		b := g.get(chunkPrefix, part, 8<<20)
 		total += int64(len(b))

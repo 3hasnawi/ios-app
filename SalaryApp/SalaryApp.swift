@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct SalaryApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
     @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system.rawValue
     @AppStorage(AppSettings.numeralsKey) private var numerals = AppNumerals.latin.rawValue
@@ -25,7 +26,15 @@ struct SalaryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppLockGate { DatabaseLaunchView() }
+            AppLockGate {
+                DatabaseLaunchView()
+                    .background {
+                        if WorkspaceSync.shared.transferring, scenePhase == .active,
+                           !AppLock.shared.isLocked, !AppLock.shared.pendingForegroundCheck {
+                            SyncTransferIndicator().frame(width: 0, height: 0).allowsHitTesting(false)
+                        }
+                    }
+            }
                 .environment(\.layoutDirection, language == AppLanguage.english.rawValue ? .leftToRight : .rightToLeft)
                 .environment(\.locale, AppSettings.locale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)

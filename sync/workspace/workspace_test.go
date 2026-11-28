@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -499,4 +500,39 @@ func TestFinancialHistoryPreview(t *testing.T) {
 	if p == nil || p.Staff != 0 || p.Employees != 1 || p.Refunds != 1 || p.Net != "100000.00" || p.Deductions != "2260000.00" {
 		t.Fatal(p)
 	}
+}
+
+func TestTransferIndicatorTracksPayload(t *testing.T) {
+	server := &mockDrive{blobs: map[string][]byte{}}
+	d := server.open("test")
+	var events []bool
+	d.onTransfer = func(active bool) { events = append(events, active) }
+	checkEvents := func(expected ...bool) {
+		t.Helper()
+		if !slices.Equal(events, expected) {
+			t.Fatalf("indicator events %v, want %v", events, expected)
+		}
+		events = nil
+	}
+	path := fixture(t, map[string]string{"office": "10"})
+	d.marker(true)
+	checkEvents()
+	id := d.upload(path, "")
+	checkEvents(true, false)
+	d.indexFor(id)
+	d.upload(path, id)
+	checkEvents()
+	d.download(id, filepath.Join(t.TempDir(), "received.zip"))
+	checkEvents(true, false)
+	idx := d.indexFor(id)
+	delete(server.blobs, chunkPrefix+idx.Blocks[0])
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("missing payload was accepted")
+			}
+		}()
+		d.download(id, filepath.Join(t.TempDir(), "failed.zip"))
+	}()
+	checkEvents(true, false)
 }

@@ -82,7 +82,7 @@ func sameIndex(a, b *index) bool {
 }
 
 // Every active device retains its last acknowledged common ancestor until its local commit succeeds.
-func run(r Request) Result { return runWith(r, connect) }
+
 func runWith(r Request, openDrive func(string) *drive) Result {
 	check(filepath.IsAbs(r.Dir), "Missing workspace directory")
 	must(os.MkdirAll(r.Dir, 0700))
@@ -282,7 +282,8 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	must(atomicFile(pendingFile, encode(p)))
 	return Result{Status: "ready", Transaction: p.Transaction, File: candidate, Apply: p.Apply}
 }
-func Call(raw []byte) (reply []byte) {
+func Call(raw []byte) []byte { return CallWithTransfer(raw, nil) }
+func CallWithTransfer(raw []byte, onTransfer func(bool)) (reply []byte) {
 	defer func() {
 		if e := recover(); e != nil {
 			reply = encode(Result{Status: "error", Error: fmt.Sprint(e)})
@@ -290,5 +291,9 @@ func Call(raw []byte) (reply []byte) {
 	}()
 	var r Request
 	must(decode(raw, &r))
-	return encode(run(r))
+	return encode(runWith(r, func(token string) *drive {
+		g := connect(token)
+		g.onTransfer = onTransfer
+		return g
+	}))
 }

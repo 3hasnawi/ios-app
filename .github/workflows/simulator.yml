@@ -65,7 +65,7 @@ jobs:
           cache: false
       - uses: actions/checkout@v4
 
-      - name: Check permanent OneDrive merge, stale writes and interrupted sessions with fictional records
+      - name: Check OneDrive transfers, silent polls, merge and interrupted sessions with fictional records
         working-directory: sync/workspace
         run: go test ./...
       - name: Preview historical financial totals from the synthetic Windows archive

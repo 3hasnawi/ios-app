@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-@_silgen_name("payroll_sync") private func payrollSync(_ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("payroll_sync") private func payrollSync(_ input: UnsafePointer<CChar>, _ transfer: @convention(c) (Int32) -> Void) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("payroll_sync_free") private func payrollSyncFree(_ output: UnsafeMutablePointer<CChar>)
 
 struct SyncConflict: Decodable, Identifiable {
@@ -50,6 +50,7 @@ final class WorkspaceSync {
     var enabled = UserDefaults.standard.bool(forKey: "oneDriveSyncEnabled")
     var linked = false
     var status = tr("المزامنة متوقفة", "Sync is off")
+    private(set) var transferring = false
     var busy = false
     var points: [WorkspacePoint] = []
     var historyHead = ""
@@ -208,7 +209,10 @@ final class WorkspaceSync {
         let request = try JSONSerialization.data(withJSONObject:args)
         let bytes = try await Task.detached(priority:.utility) {
             try String(decoding:request,as:UTF8.self).withCString { input -> Data in
-                guard let result = payrollSync(input) else { throw AccountError("تعذّر تشغيل المزامنة.") }
+                let result = payrollSync(input) { active in
+                    DispatchQueue.main.async { WorkspaceSync.shared.transferring = active != 0 }
+                }
+                guard let result else { throw AccountError("تعذّر تشغيل المزامنة.") }
                 defer { payrollSyncFree(result) }
                 return Data(bytes:result,count:strlen(result))
             }
