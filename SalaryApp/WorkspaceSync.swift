@@ -5,30 +5,13 @@ import SwiftUI
 @_silgen_name("payroll_sync_free") private func payrollSyncFree(_ output: UnsafeMutablePointer<CChar>)
 
 struct WorkspacePoint: Decodable, Identifiable {
-    let id, kind: String
-    let notes: [String]?
+    let id: String
     let at: Int64
-    var date: Date { Date(timeIntervalSince1970:Double(at)/1000) }
-    var label: String {
-        if let notes, !notes.isEmpty {
-            return notes.map { $0 == "import" ? tr("قبل الاستيراد", "Before import") : tr("قبل الحذف", "Before deletion") }.joined(separator:" · ")
-        }
-        switch kind {
-        case "backup": return tr("نسخة كاملة", "Full backup")
-        case "beforeRestore": return tr("قبل الاستعادة", "Before restore")
-        case "restore": return tr("بعد الاستعادة", "Restored")
-        default: return tr("مزامنة", "Sync")
-        }
-    }
-}
-struct WorkspacePreview: Decodable {
-    let staff, employees, refunds: Int
-    let net, deductions: Double
+    var date: Date { Date(timeIntervalSince1970: Double(at)/1000) }
 }
 private struct SyncReply: Decodable {
-    let head, cursor: String?
+    let head: String?
     let points: [WorkspacePoint]?
-    let preview: WorkspacePreview?
     let status: String
     let error, file, transaction, warning: String?
 }
@@ -36,8 +19,7 @@ private struct SyncReply: Decodable {
 final class WorkspaceSync {
     static let shared = WorkspaceSync()
     private let account = OneDriveAccount()
-    private let defaults = UserDefaults.standard
-    private(set) var pendingUpload = false
+    private(set) var failed = false
     var linked = false
     var status = tr("نقل النسخ يدوي", "Manual backup transfer")
     private(set) var transferring = false
@@ -46,45 +28,15 @@ final class WorkspaceSync {
     var busy = false
     var points: [WorkspacePoint] = []
     var historyHead = ""
-    var cursor: String?
-    var preview: WorkspacePreview?
-    var selected: WorkspacePoint?
-    var last = UserDefaults.standard.object(forKey: "oneDriveLastSync") as? Date
     init() {
         linked = (try? account.storedToken()) != nil
     }
-    func signIn() async {
-        guard !busy else { return }
-        busy = true
-        defer { busy = false }
-        do {
-            try await account.login()
-            linked = true
-            refreshPendingUpload()
-            status = tr("الحساب مرتبط", "Account connected")
-        } catch { show(error) }
+    private func show(_ error: Error) {
+        failed = true
+        status = (error as? OneDriveAuthorizationReplyError)?.message ?? error.localizedDescription
     }
-    func signOut() {
-        guard !busy else { return }
-        do { try account.logout(); linked = false; points = []; preview = nil; selected = nil; historyHead = ""; cursor = nil; pendingUpload = false; status = tr("تم تسجيل الخروج", "Signed out") }
-        catch { show(error) }
-    }
-    private func show(_ error: Error) { status = (error as? OneDriveAuthorizationReplyError)?.message ?? error.localizedDescription }
     private var workspaceDirectory: URL {
         URL.applicationSupportDirectory.appendingPathComponent("OneDriveWorkspace", isDirectory: true)
-    }
-
-    // نقرأ الإقرار المحلي نفسه الذي يستخدمه محرك الدمج، بما فيه إقرارات الإصدارات السابقة.
-    func refreshPendingUpload() {
-        guard linked else { pendingUpload = false; return }
-        struct Checkpoint: Decodable { let Stamp: String }
-        let file = workspaceDirectory.appendingPathComponent("checkpoint.json")
-        if let data = try? Data(contentsOf: file), let checkpoint = try? JSONDecoder().decode(Checkpoint.self, from: data),
-           !checkpoint.Stamp.isEmpty {
-            pendingUpload = checkpoint.Stamp != BackupManager.shared.workSyncStamp
-        } else {
-            pendingUpload = BackupManager.shared.hasWorkspaceChangesBeforeFirstSync
-        }
     }
 
     func rememberPoint(_ reason: String) async {
@@ -93,19 +45,18 @@ final class WorkspaceSync {
         do { _ = try await call(["action":"note","reason":reason,"dir":dir.path]) }
         catch { show(error) }
     }
-    func localDataSaved() {
-        if linked { pendingUpload = true }
-    }
-
     private var mayInstall: Bool {
         UIApplication.shared.applicationState == .active && !AppLock.shared.isLocked
     }
 
     func synchronize(action: String, point: WorkspacePoint? = nil,
-                     more: Bool = false, until: Date? = nil) async {
+                     reconnect: Bool = false) async {
         let store = BackupManager.shared
-        guard linked, !busy else { return }
+        guard !busy else { return }
+        failed = false
+        if action == "history" { points = []; historyHead = "" }
         guard store.workSyncAvailable else {
+            failed = true
             status = tr("انتظر انتهاء العملية الحالية ثم أعد المحاولة", "Wait for the current operation to finish, then try again")
             return
         }
@@ -116,7 +67,6 @@ final class WorkspaceSync {
             showingProgress = false
             transferFraction = nil
             busy = false
-            refreshPendingUpload()
         }
         var exported: URL?, received: URL?, validated: URL?
         defer {
@@ -126,7 +76,8 @@ final class WorkspaceSync {
         }
         do {
             status = tr("جارٍ الاتصال بـ OneDrive…", "Connecting to OneDrive…")
-            let token = try await account.access()
+            let token = try await account.backupAccess(reconnect: reconnect)
+            try Task.checkCancellation()
             linked = true
             let stamp = store.workSyncStamp
             var dir = workspaceDirectory
@@ -137,12 +88,6 @@ final class WorkspaceSync {
             var args: [String:Any] = ["action":action,"dir":dir.path,"token":token,"stamp":stamp,"recentBackups":true]
             args["head"] = historyHead
             args["revision"] = point?.id
-            if action == "history" {
-                if more { args["cursor"] = cursor }
-                else { points = []; cursor = nil }
-                if let until { args["until"] = Int64(until.timeIntervalSince1970 / 60) * 60_000 + 59_999 }
-            }
-            if action == "history" || action == "preview" { preview = nil; selected = nil }
             if action == "backup-upload" {
                 status = tr("تجهيز النسخة الاحتياطية الكاملة…", "Preparing full backup…")
                 let file = try await store.workSyncExport()
@@ -154,12 +99,9 @@ final class WorkspaceSync {
             }
             var reply = try await call(args)
             if reply.status == "history" {
-                points.append(contentsOf:reply.points ?? []); cursor = reply.cursor; historyHead = reply.head ?? ""
-                status = points.isEmpty ? tr("لا توجد نقاط مزامنة لهذه الفترة", "No sync points in this period") : tr("سجل المزامنة", "Sync history")
-                return
-            }
-            if reply.status == "preview" {
-                preview = reply.preview; selected = point; status = tr("معاينة نقطة المزامنة", "Sync point preview")
+                points = reply.points ?? []
+                historyHead = reply.head ?? ""
+                status = points.isEmpty ? tr("لا توجد نسخة محفوظة على OneDrive.", "No backup saved on OneDrive.") : tr("اختر النسخة المراد استيرادها.", "Choose the backup to import.")
                 return
             }
             if action == "backup-download", reply.status == "downloaded", let file = reply.file, let transaction = reply.transaction {
@@ -177,7 +119,7 @@ final class WorkspaceSync {
                     (action == "backup-download" && reply.status == "imported") else {
                 throw AccountError(tr("تعذّر إكمال نقل النسخة", "Could not complete backup transfer"))
             }
-            last = Date(); defaults.set(last,forKey:"oneDriveLastSync")
+            if action == "backup-download" { points = [] }
             if reply.warning != nil {
                 status = tr("اكتمل الرفع، وتعذّر إكمال حذف النسخ الأقدم. ستُعاد محاولة التنظيف عند الرفع التالي.", "Uploaded. Cleanup of older backups will be retried on the next upload.")
             } else {
@@ -233,100 +175,55 @@ struct WorkspaceSyncProgress: View {
     }
 }
 
-struct WorkspaceSyncSettings: View {
+struct OneDriveBackupView: View {
+    let operation: BackupOperation
     @State private var sync = WorkspaceSync.shared
+    @State private var selection: WorkspacePoint?
     @State private var confirmImport = false
-    var body: some View {
-        Form {
-            Section("OneDrive") {
-                if sync.linked {
-                    Button { Task { await sync.synchronize(action:"backup-upload") } } label: {
-                        Label(tr("رفع نسخة كاملة", "Upload full backup"), systemImage:"arrow.up.doc")
-                    }
-                    Button { confirmImport = true } label: {
-                        Label(tr("استيراد أحدث نسخة", "Import latest backup"), systemImage:"arrow.down.doc")
-                    }
-                    if !sync.busy && sync.pendingUpload {
-                        Label(tr("تعديلات محلية بانتظار الرفع", "Local changes pending upload"), systemImage: "arrow.up.circle")
-                    }
-                    if let last = sync.last {
-                        LabeledContent(tr("آخر نقل ناجح", "Last successful transfer")) { Text(last.formatted()) }
-                    }
-                    NavigationLink(tr("آخر نسختين والاستعادة", "Last two backups and restore")) { WorkspaceHistoryView() }
-                    Button(tr("تسجيل الخروج", "Sign out"),role:.destructive) { sync.signOut() }
-                }
-                Button(sync.linked ? tr("إعادة ربط الحساب", "Reconnect account") : tr("تسجيل الدخول إلى Microsoft", "Sign in to Microsoft")) { Task { await sync.signIn() } }
-            }.disabled(sync.busy)
-            Section(tr("حالة النقل", "Transfer status")) {
-                HStack { if sync.busy { ProgressView() }; Text(sync.status) }
-            }
-        }
-        .alert(tr("استيراد أحدث نسخة؟", "Import the latest backup?"), isPresented:$confirmImport) {
-            Button(tr("استيراد", "Import"), role:.destructive) { Task { await sync.synchronize(action:"backup-download") } }
-            Button(tr("إلغاء", "Cancel"),role:.cancel) {}
-        } message: {
-            Text(tr("بعد التحقق من الملف ستُستبدل بيانات هذا الجهاز ببيانات النسخة الموجودة على OneDrive، بما فيها الدفعات.", "After verification, the OneDrive backup will replace this device’s data, including its batches."))
-        }
-        .onAppear { sync.refreshPendingUpload() }
-        .navigationTitle(tr("النسخ عبر OneDrive", "OneDrive backups"))
-    }
-}
+    @State private var started = false
 
-private struct WorkspaceHistoryView: View {
-    @State private var sync = WorkspaceSync.shared
-    @State private var until = Date()
-    @State private var filter = false
-    @State private var activeUntil: Date?
-    @State private var confirming = false
+    private func start(reconnect: Bool = false) async {
+        await sync.synchronize(action: operation == .upload ? "backup-upload" : "history", reconnect: reconnect)
+    }
+
     var body: some View {
         List {
-            Section {
-                Toggle(tr("حتى تاريخ ووقت محددين", "Up to a date and time"),isOn:$filter)
-                if filter { DatePicker(tr("حتى", "Until"),selection:$until) }
-                Button(tr("عرض النقاط", "Show sync points")) {
-                    activeUntil = filter ? until : nil
-                    Task { await sync.synchronize(action:"history",until:activeUntil) }
-                }
-                Text(sync.status).font(.footnote)
-                if sync.busy { ProgressView() }
-            }
-            if let p = sync.selected, let v = sync.preview {
-                Section(tr("معاينة نقطة المزامنة", "Sync point preview")) {
-                    Text(p.date.formatted(date:.abbreviated,time:.standard))
-                    LabeledContent(tr("عدد الملاك", "Staff"),value:Num.format(v.staff))
-                    LabeledContent(tr("قيود الرواتب", "Payroll records"),value:Num.format(v.employees))
-                    LabeledContent(tr("دفعات الإعادة", "Refund batches"),value:Num.format(v.refunds))
-                    LabeledContent(tr("مجموع صافي الرواتب", "Total net salaries"),value:Money.format(v.net))
-                    LabeledContent(tr("مجموع الاستقطاعات", "Total deductions"),value:Money.format(v.deductions))
-                    Button(tr("استعادة هذه النقطة", "Restore this point"),role:.destructive) { confirming = true }
+            if !sync.showingProgress {
+                HStack {
+                    if sync.busy { ProgressView() }
+                    Text(sync.status)
                 }
             }
-            Section(tr("نقاط المزامنة", "Sync points")) {
-                ForEach(sync.points) { p in
+            if operation == .restore && !sync.busy {
+                ForEach(sync.points) { point in
                     Button {
-                        Task { await sync.synchronize(action:"preview",point:p) }
+                        selection = point
+                        confirmImport = true
                     } label: {
-                        LabeledContent(p.date.formatted(date:.abbreviated,time:.standard),
-                                       value:p.id == sync.historyHead ? tr("الحالية", "Current") + " · " + p.label : p.label)
+                        LabeledContent(point.id == sync.historyHead ? tr("أحدث نسخة", "Latest backup") : tr("النسخة السابقة", "Previous backup")) {
+                            Text(point.date.formatted(date: .abbreviated, time: .standard))
+                        }
                     }
                 }
-                if sync.cursor != nil {
-                    Button(tr("عرض الأقدم", "Show older")) {
-                        Task { await sync.synchronize(action:"history",more:true,until:activeUntil) }
-                    }
-                }
+            }
+            if sync.failed && !sync.busy {
+                Button(tr("إعادة المحاولة", "Try again")) { Task { await start() } }
+                Button(tr("إعادة ربط الحساب", "Reconnect account")) { Task { await start(reconnect: true) } }
             }
         }
-        .disabled(sync.busy)
-        .navigationTitle(tr("سجل المزامنة", "Sync history"))
-        .task { await sync.synchronize(action:"history") }
-        .alert(tr("استعادة النقطة المحددة؟", "Restore the selected point?"),isPresented:$confirming) {
-            Button(tr("استعادة", "Restore"),role:.destructive) {
-                if let p = sync.selected { Task { await sync.synchronize(action:"backup-download",point:p) } }
+        .navigationTitle(operation.title + " · OneDrive")
+        .task {
+            guard !started else { return }
+            started = true
+            await start()
+        }
+        .alert(tr("استيراد النسخة؟", "Import backup?"), isPresented: $confirmImport, presenting: selection) { point in
+            Button(tr("استيراد", "Import"), role: .destructive) {
+                Task { await sync.synchronize(action: "backup-download", point: point) }
             }
-            Button(tr("إلغاء", "Cancel"),role:.cancel) {}
-        } message: {
-            Text(tr("ستُستبدل بيانات هذا الجهاز ببيانات النقطة المختارة.", "The selected backup will replace the data on this device."))
+            Button(tr("إلغاء", "Cancel"), role: .cancel) {}
+        } message: { point in
+            Text(tr("ستُستبدل بيانات هذا الجهاز، بما فيها الدفعات، ببيانات نسخة", "This device’s data, including its batches, will be replaced with the backup from") + " " + point.date.formatted(date: .abbreviated, time: .standard))
         }
     }
 }

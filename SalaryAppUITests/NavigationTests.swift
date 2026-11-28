@@ -559,14 +559,15 @@ final class NavigationTests: XCTestCase {
                 for _ in 0..<3 where !backup.isHittable { app.swipeUp() }
                 backup.tap()
             }
-            wait(element("saveBackup"), "حفظ نسخة")
-            wait(element("restoreBackup"), "استرجاع نسخة")
-            let sync = element("backupOneDriveSync")
-            if wait(sync, "المزامنة ضمن النسخ الاحتياطي") {
-                sync.tap()
-                wait(app.navigationBars["النسخ عبر OneDrive"], "إعدادات المزامنة")
-                app.navigationBars.buttons.element(boundBy: 0).tap()
-                wait(element("saveBackup"), "العودة إلى النسخ الاحتياطي")
+            XCTAssertFalse(element("backupOneDriveSync").exists)
+            for id in ["saveBackup", "restoreBackup"] {
+                let action = element(id)
+                if wait(action, "خيار النسخة") {
+                    action.tap()
+                    wait(app.buttons["OneDrive"], "مجلد OneDrive")
+                    wait(app.buttons["محلي"], "ملف محلي")
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78)).tap()
+                }
             }
             app.navigationBars.buttons.element(boundBy: 0).tap()
             wait(app.navigationBars["الإعدادات"], "العودة إلى الإعدادات")

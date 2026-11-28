@@ -236,12 +236,8 @@ public partial class MainWindow : Window
         }
         var active=store.Active;
         long archive=active==null?0:new FileInfo(store.Archive).Length;
-        var save=ButtonFor("تصدير نسخة",ExportBackup,"\uE74E");
-        save.IsEnabled=active!=null;
         var backup=Box(Column(Text("النسخ الاحتياطي",18,true),
-            Text(active==null?"لم تُفتح نسخة بعد.":"حجم النسخة "+Size(archive)+"　·　عدد الفترات "+months.Count+"　·　صيغة "+store.Metadata("format"),14),
-            Text("صدّر آخر عملك بما فيه الدفعات المحفوظة، ثم استورد الملف على الجهاز الآخر.",14),
-            Bar(ButtonFor("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5",true),save)));
+            Bar(BackupLocationButton(true),BackupLocationButton(false))));
         var storage=Column(Text("البيانات على الحاسبة",18,true));
         if(active!=null){
             long lookup=new FileInfo(Path.Combine(active,"lookup.db")).Length;
@@ -256,8 +252,7 @@ public partial class MainWindow : Window
         }else{
             storage.Children.Add(Text("تظهر مساحة الأرشيف وفهرس البحث بعد فتح نسخة.",14));
         }
-        storage.Children.Add(Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5"),
-            ButtonFor("النسخ عبر OneDrive",OpenWorkspaceSync,"\uE895")));
+        storage.Children.Add(Bar(ButtonFor("استيراد ملف بيانات",()=>_=ImportDataFile(),"\uE8B5")));
         var deviceLock=((App)Application.Current).DeviceLock;
         var lockTime=Choices(["متوقف","فوراً","بعد دقيقة","بعد 5 دقائق","بعد 15 دقيقة"]);
         AutomationProperties.SetName(lockTime,"قفل التطبيق");
@@ -300,17 +295,28 @@ public partial class MainWindow : Window
         CanvasArea.Children.Add(new ScrollViewer{Content=layout,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalContentAlignment=HorizontalAlignment.Stretch});
     }
+    Button BackupLocationButton(bool upload)
+    {
+        var menu=new ContextMenu{FlowDirection=FlowDirection.RightToLeft,Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom};
+        MenuAction(menu,"OneDrive",()=>OpenWorkspaceSync(upload));
+        MenuAction(menu,"محلي",()=>{if(upload)ExportBackup();else _=ImportBackup();});
+        var button=ButtonFor(upload?"رفع نسخة":"استيراد نسخة",()=>menu.IsOpen=true,upload?"\uE898":"\uE896");
+        menu.PlacementTarget=button;
+        button.ContextMenu=menu;
+        button.IsEnabled=!upload || store.Active!=null;
+        return button;
+    }
     void ExportBackup()
     {
-        if(busy || store.Active==null)return;
-        var dialog=new SaveFileDialog{Title="تصدير نسخة",FileName=Store.BackupName,
+        if(busy || syncing || store.Active==null)return;
+        var dialog=new SaveFileDialog{Title="رفع نسخة · محلي",FileName=Store.BackupName,
             Filter="نسخة احتياطية مشتركة (*.zip)|*.zip",DefaultExt=".zip"};
         if(dialog.ShowDialog(this)!=true)return;
         _=Working(()=>store.ExportBackup(dialog.FileName),"صُدّرت النسخة. يمكنك استرجاع هذا الملف على الآيفون أو استيراده على حاسبة أخرى.",()=>ShowPage("الإعدادات"));
     }
     async Task ImportBackup()
     {
-        if(busy)return;
+        if(busy || syncing)return;
         var d=new OpenFileDialog{Filter="نسخة احتياطية مشتركة (*.zip)|*.zip",Title="استيراد نسخة"};
         if(d.ShowDialog(this)!=true)return;
         if(store.Active!=null && MessageBox.Show(this,
@@ -620,7 +626,11 @@ public partial class MainWindow : Window
                 if(cards.Children.Count!=4 || (CanvasArea.ActualWidth>=820 && CanvasArea.ActualHeight>=500 &&
                     (cards.ColumnDefinitions.Count!=2 || settingsView.ScrollableHeight>1 || settingsView.ScrollableWidth>1)))
                     throw new InvalidDataException("لم تظهر أقسام الإعدادات معاً ضمن مساحة الشاشة الكبيرة.");
-                foreach(var action in new[]{"استيراد نسخة","تصدير نسخة","استيراد ملف بيانات","التحقق من تحديث"})
+                foreach(var action in new[]{"رفع نسخة","استيراد نسخة"}){
+                    var choices=FindAction(cards,action).ContextMenu!.Items.OfType<MenuItem>().Select(i=>i.Header as string);
+                    if(!choices.SequenceEqual(new[]{"OneDrive","محلي"}))throw new InvalidDataException("خيارات مكان النسخة غير مطابقة.");
+                }
+                foreach(var action in new[]{"استيراد ملف بيانات","التحقق من تحديث"})
                     FindAction(cards,action);
             }
             if(name=="الرئيسية"){

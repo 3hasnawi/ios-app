@@ -8,7 +8,6 @@ struct SettingsView: View {
     private var months: [PayrollMonth]
     @State private var importState = StaffImportState.shared
     @State private var importCenter = ImportCenter.shared
-    @State private var backup = BackupManager.shared
     @State private var bookStore = OfficialBookStore.shared
     @Environment(\.modelContext) private var context
     @AppStorage(AppSettings.languageKey) private var language = AppLanguage.arabic.rawValue
@@ -115,8 +114,7 @@ struct SettingsView: View {
                     NavigationLink {
                         BackupView()
                     } label: {
-                        SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "externaldrive.fill", color: .pink,
-                                   subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
+                        SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "externaldrive.fill", color: .pink) { EmptyView() }
                     }
                     .accessibilityIdentifier("backupRow")
                 } header: {

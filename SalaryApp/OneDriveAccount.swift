@@ -89,6 +89,23 @@ final class OneDriveAccount: NSObject, ASWebAuthenticationPresentationContextPro
         try await exchange(["client_id": client, "grant_type": "refresh_token", "refresh_token":refresh, "scope":scope])
         return token
     }
+    func backupAccess(reconnect: Bool) async throws -> String {
+        let saved = try storedToken()
+        if reconnect || saved == nil {
+            try await login()
+        } else {
+            do { return try await access() }
+            catch OneDriveAuthorizationReplyError.microsoft(let message) {
+                let reason = message.components(separatedBy: " · ").first ?? message
+                guard ["invalid_grant", "interaction_required", "consent_required", "login_required"].contains(reason) else {
+                    throw OneDriveAuthorizationReplyError.microsoft(message)
+                }
+                try await login()
+            }
+        }
+        return try await access()
+    }
+
     private func exchange(_ fields: [String:String]) async throws {
         let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn:"-._~"))
         var request = URLRequest(url: URL(string: authority+"token")!)

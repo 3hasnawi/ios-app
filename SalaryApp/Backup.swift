@@ -842,7 +842,6 @@ final class BackupManager {
 
     func markChanged() {
         UserDefaults.standard.set(Date(), forKey: Self.changedKey)
-        WorkspaceSync.shared.localDataSaved()
         version += 1
     }
 
@@ -1269,12 +1268,6 @@ final class BackupManager {
         return String(changed?.timeIntervalSince1970 ?? 0) + ":" + Data(hash.finalize()).base64EncodedString()
     }
 
-    var hasWorkspaceChangesBeforeFirstSync: Bool {
-        UserDefaults.standard.object(forKey: Self.changedKey) != nil ||
-            UserDefaults.standard.object(forKey: "oneDriveRestoredRevision") != nil ||
-            UserDefaults.standard.data(forKey: Self.safetyManifestKey) != nil
-    }
-
     var workSyncAvailable: Bool {
         !isWorking && pendingRestore == nil && !SharedModel.health.restoring && !SharedModel.health.restartRequired &&
         !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting && !AppLock.shared.isLocked
@@ -1617,38 +1610,50 @@ extension FilePicker {
 
 // MARK: - صفحة النسخ الاحتياطي
 
+enum BackupOperation: Hashable {
+    case upload, restore
+    var title: String {
+        self == .upload ? tr("رفع نسخة", "Upload backup") : tr("استيراد نسخة", "Import backup")
+    }
+}
+
 struct BackupView: View {
     @State private var manager = BackupManager.shared
+    @State private var cloud: BackupOperation?
+
+    private func backupMenu(_ operation: BackupOperation) -> some View {
+        Menu {
+            Button("OneDrive", systemImage: "cloud") { cloud = operation }
+            Button(tr("محلي", "Local"), systemImage: "folder") {
+                if operation == .upload {
+                    manager.chooseLocation()
+                } else {
+                    Task {
+                        await FilePicker.waitUntilSettled()
+                        manager.pickRestore()
+                    }
+                }
+            }
+        } label: {
+            SettingRow(title: operation.title,
+                       systemImage: operation == .upload ? "square.and.arrow.up" : "square.and.arrow.down",
+                       color: operation == .upload ? .blue : .indigo) { EmptyView() }
+        }
+        .accessibilityIdentifier(operation == .upload ? "saveBackup" : "restoreBackup")
+    }
 
     var body: some View {
         List {
             Section {
-                Button {
-                    manager.chooseLocation()
-                } label: {
-                    SettingRow(title: tr("حفظ نسخة", "Save a backup"), systemImage: "square.and.arrow.up", color: .blue) { EmptyView() }
-                }
-                .accessibilityIdentifier("saveBackup")
-                Button {
-                    manager.pickRestore()
-                } label: {
-                    SettingRow(title: tr("استرجاع نسخة", "Restore a backup"), systemImage: "arrow.counterclockwise", color: .indigo) { EmptyView() }
-                }
-                .accessibilityIdentifier("restoreBackup")
+                backupMenu(.upload)
+                backupMenu(.restore)
             }
-            .disabled(manager.isWorking || manager.pendingRestore != nil)
-
-            Section {
-                NavigationLink {
-                    WorkspaceSyncSettings()
-                } label: {
-                    SettingRow(title: tr("النسخ عبر OneDrive", "OneDrive backups"), systemImage: "arrow.triangle.2.circlepath",
-                               color: .teal, subtitle: WorkspaceSync.shared.status) { EmptyView() }
-                }
-                .accessibilityIdentifier("backupOneDriveSync")
-            }
+            .disabled(manager.isWorking || manager.pendingRestore != nil || WorkspaceSync.shared.busy)
         }
         .navigationTitle(tr("النسخ الاحتياطي", "Backup"))
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $cloud) { operation in
+            OneDriveBackupView(operation: operation)
+        }
     }
 }

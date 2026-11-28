@@ -217,7 +217,7 @@ public partial class MainWindow
         staff.VerticalAlignment=VerticalAlignment.Center;staff.Margin=new Thickness(6,0,10,0);
         DockPanel.SetDock(staff,Dock.Left);people.Children.Add(staff);people.Children.Add(ranks);
         var summary=Column(band,people);
-        if(revision==null)summary.Children.Add(HomeAction("استيراد نسخة",()=>_=ImportBackup(),"\uE8E5"));
+        if(revision==null)summary.Children.Add(BackupLocationButton(false));
         var banner=Box(summary);banner.Padding=new Thickness(10,6,10,6);
         board.Children.Add(banner);
 
