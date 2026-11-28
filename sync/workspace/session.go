@@ -118,6 +118,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		must(atomicFile(stateFile, encode(s)))
 		os.Remove(pendingFile)
 		os.Remove(candidate)
+		_ = os.RemoveAll(filepath.Join(r.Dir, "incoming-blocks"))
 		if previous != "" && previous != s.Base {
 			os.Remove(cached(previous))
 		}
@@ -146,6 +147,13 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		s.Folder = g.folder
 		s.Marker = h.ID
 		must(atomicFile(stateFile, encode(s)))
+	}
+	g.cacheDir = filepath.Join(r.Dir, "incoming-blocks")
+	if s.Base != "" {
+		g.sources = append(g.sources, cached(s.Base))
+	}
+	if r.Local != "" {
+		g.sources = append(g.sources, r.Local)
 	}
 	g.flushNotes(r.Dir)
 	if r.Action == "history" {
@@ -241,20 +249,39 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	must(e)
 	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp, Generation: h.Generation}
 	candidate := fileFor(p.Transaction)
+	localUnchanged := s.Base != "" && s.Stamp == r.Stamp
+	local := r.Local
+	base := ""
+	if s.Base != "" {
+		base = cached(s.Base)
+	}
+	reconcileHistory := false
+	if s.Base != "" && !r.Empty && h.Generation == s.Generation {
+		if localUnchanged {
+			local = base
+			if _, e := os.Stat(base); os.IsNotExist(e) {
+				if r.Local == "" {
+					return Result{Status: "export"}
+				}
+				base, local = r.Local, r.Local
+			} else {
+				must(e)
+			}
+			reconcileHistory = needsContractMerge(local, remote)
+		} else if h.Hash == s.Base {
+			reconcileHistory = needsContractMerge(remote, local)
+		}
+	}
 	switch {
-	case r.Empty || (s.Base != "" && s.Stamp == r.Stamp):
+	case r.Empty || (localUnchanged && !reconcileHistory):
 		copyFile(remote, candidate)
 		p.Apply = true
-	case h.Hash == s.Base:
-		copyFile(r.Local, candidate)
+	case h.Hash == s.Base && !reconcileHistory:
+		copyWorkspaceExport(local, candidate)
 		p.Publish = true
 	default:
-		base := ""
-		if s.Base != "" {
-			base = cached(s.Base)
-		}
 		idx := []*index{}
-		for n, src := range []string{base, r.Local, remote, ""} {
+		for n, src := range []string{base, local, remote, ""} {
 			db, e := openIndex(filepath.Join(scratch, fmt.Sprintf("%d.db", n)))
 			must(e)
 			defer db.close()
@@ -272,7 +299,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		if !p.Publish {
 			copyFile(remote, candidate)
 		} else if !p.Apply {
-			copyFile(r.Local, candidate)
+			copyWorkspaceExport(local, candidate)
 		} else {
 			tmp := filepath.Join(scratch, "merged.zip")
 			render(idx[3], tmp)
@@ -283,7 +310,10 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	return Result{Status: "ready", Transaction: p.Transaction, File: candidate, Apply: p.Apply}
 }
 func Call(raw []byte) []byte { return CallWithTransfer(raw, nil) }
-func CallWithTransfer(raw []byte, onTransfer func(bool)) (reply []byte) {
+func CallWithTransfer(raw []byte, onTransfer func(bool)) []byte {
+	return CallWithProgress(raw, onTransfer, nil)
+}
+func CallWithProgress(raw []byte, onTransfer func(bool), onProgress func(int, int64, int64)) (reply []byte) {
 	defer func() {
 		if e := recover(); e != nil {
 			reply = encode(Result{Status: "error", Error: fmt.Sprint(e)})
@@ -293,6 +323,7 @@ func CallWithTransfer(raw []byte, onTransfer func(bool)) (reply []byte) {
 	must(decode(raw, &r))
 	return encode(runWith(r, func(token string) *drive {
 		g := connect(token)
+		g.onProgress = onProgress
 		g.onTransfer = onTransfer
 		return g
 	}))

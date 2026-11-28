@@ -2,12 +2,42 @@ using System.Security.Cryptography;
 using AnbarPayroll;
 using ClosedXML.Excel;
 
+if(args is ["--read-contract-history",var mergedHistory,var missingHistory]){
+    var root=Directory.CreateTempSubdirectory();
+    try{
+        var storeHistory=new Store(root.FullName);
+        storeHistory.Import(mergedHistory);
+        var cancelled=Store.CancelledContracts(storeHistory.Snapshot()).Single();
+        if(cancelled.Held!=1250 || cancelled.Prepared!=1 || cancelled.Confirmed!=1)
+            throw new InvalidDataException("Cancelled contract audit was not displayed intact");
+        storeHistory.ApplyWorkspace(mergedHistory,storeHistory.WorkspaceStamp);
+        var before=storeHistory.Active;
+        try{storeHistory.ApplyWorkspace(missingHistory,storeHistory.WorkspaceStamp);throw new Exception("accepted missing contract");}
+        catch(InvalidDataException ex) when(ex.Message.Contains(cancelled.Month)){}
+        if(before!=storeHistory.Active)throw new Exception("missing history replaced the device data");
+        Console.WriteLine("PASS retained cancelled contract and rejected missing history");
+    }finally{root.Delete(true);}
+    return;
+}
 if(args is ["--read-workspace",var workspaceArchive]){
     var root=Directory.CreateTempSubdirectory();
     try{
         var target=new Store(root.FullName);target.ValidateWorkspace(workspaceArchive);
-        var stamp=target.ApplyWorkspace(workspaceArchive,target.WorkspaceStamp);
+        using var verified=target.PrepareWorkspace(workspaceArchive,true);
+        var stamp=target.ApplyWorkspace(workspaceArchive,target.WorkspaceStamp,verified:verified);
         if(stamp!=target.WorkspaceStamp || target.Months().Count!=4 || target.Refunds().Count!=2)throw new InvalidDataException("Merged portable archive mismatch");
+        target.SaveWorkPreferences(target.Active!,new(){["appAppearance"]="dark"});
+        if(target.WorkspaceStamp!=stamp)throw new InvalidDataException("Theme-only edit changed sync stamp");
+        string backup=Path.Combine(root.FullName,"theme-backup.zip");
+        target.ExportBackup(backup);
+        target.SaveWorkPreferences(target.Active!,new(){["appAppearance"]="light"});
+        stamp=target.ApplyWorkspace(backup,target.WorkspaceStamp);
+        if(stamp!=target.WorkspaceStamp || target.ReadWorkPreferences()["appAppearance"]!="light")
+            throw new InvalidDataException("Legacy cloud theme replaced device theme");
+        target.ApplyWorkspace(workspaceArchive,stamp);
+        if(target.ReadWorkPreferences()["appAppearance"]!="light")throw new InvalidDataException("Sync removed local theme");
+        target.Import(backup);
+        if(target.ReadWorkPreferences()["appAppearance"]!="dark")throw new InvalidDataException("Backup lost its theme");
     }finally{root.Delete(true);}
     return;
 }

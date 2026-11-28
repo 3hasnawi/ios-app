@@ -92,19 +92,38 @@ public sealed partial class Store
             return settings?.GetValueOrDefault(ContractKey) is {} raw?((NSData)PropertyListParser.Parse(raw)).Bytes:null;
         }
         var old=Ledger(before);if(old==null)return;
-        var error="النسخة المختارة تفتقد دفعة عقود محفوظة أو آخر حالة تنفيذها.";
-        var next=Ledger(after)??throw new InvalidDataException(error);
-        static Dictionary<string,byte[]> Batches(byte[] ledger){
+        static Dictionary<string,(string Month,byte[] Payload)> Batches(byte[] ledger){
             var root=(NSDictionary)PropertyListParser.Parse(ledger);
-            return ((NSArray)root["records"]).Cast<NSDictionary>().ToDictionary(r=>r["id"].ToString()!,r=>((NSData)r["compressed"]).Bytes);
+            return ((NSArray)root["records"]).Cast<NSDictionary>().ToDictionary(r=>r["id"].ToString()!,
+                r=>(r["month"].ToString()!,((NSData)r["compressed"]).Bytes),StringComparer.OrdinalIgnoreCase);
         }
-        var recovered=Batches(next);
-        foreach(var (id,payload) in Batches(old))
-            if(!recovered.TryGetValue(id,out var copy)||!copy.AsSpan().SequenceEqual(payload))throw new InvalidDataException(error);
-        var dates=ContractDates.Values(next);
-        foreach(var (key,value) in ContractDates.Values(old))
-            if(key.Item2!="reviewedImport"&&(!dates.TryGetValue(key,out var restored)||restored!=value))throw new InvalidDataException(error);
+        var saved=Batches(old);
+        if(saved.Count==0)return;
+        var next=Ledger(after);
+        var recovered=next==null?new Dictionary<string,(string Month,byte[] Payload)>():Batches(next);
+        foreach(var (id,batch) in saved){
+            if(!recovered.TryGetValue(id,out var copy))
+                throw new InvalidDataException($"النسخة المختارة تفتقد دفعة العقود المحفوظة لشهر {batch.Month}. أُوقفت العملية لحفظ الدفعة.");
+            if(!copy.Payload.AsSpan().SequenceEqual(batch.Payload))
+                throw new InvalidDataException($"تختلف بيانات دفعة العقود المحفوظة لشهر {batch.Month}. أُوقفت العملية لحفظ الدفعة.");
+        }
+        var dates=ContractDates.Values(next!).ToDictionary(pair=>(pair.Key.Item1.ToUpperInvariant(),pair.Key.Item2),pair=>pair.Value);
+        foreach(var (key,value) in ContractDates.Values(old)){
+            if(key.Item2=="reviewedImport" || dates.TryGetValue((key.Item1.ToUpperInvariant(),key.Item2),out var restored)&&restored==value)continue;
+            var field=key.Item2 switch{
+                "importedAt"=>"تاريخ استيراد الدفعة","cancelledAt"=>"تاريخ إلغائها",
+                var k when k.StartsWith("prepared|")=>"تاريخ تجهيز "+k[9..],
+                var k when k.StartsWith("confirmed|")=>"تاريخ تأكيد "+k[10..],_=>"حالة التنفيذ"};
+            throw new InvalidDataException($"دفعة عقود {saved[key.Item1].Month} · {field} مفقود أو مختلف في النسخة المختارة. أُوقفت العملية لحفظ حالة الدفعة.");
+        }
     }
+    public sealed record CancelledContract(string Month,decimal Held,DateTime Cancelled,int Prepared,int Confirmed);
+    public static IReadOnlyList<CancelledContract> CancelledContracts(A.BackupSnapshot snapshot) =>
+        ContractRecords(snapshot).Where(r=>r.ContainsKey("cancelledAt")).Select(r=>new CancelledContract(
+            r["month"].ToString()!,decimal.Parse(r["held"].ToString()!,System.Globalization.CultureInfo.InvariantCulture),
+            ((NSDate)r["cancelledAt"]).Date.ToLocalTime(),((NSDictionary)r["prepared"]).Count,((NSDictionary)r["confirmed"]).Count))
+            .OrderByDescending(row=>row.Cancelled).ToList();
+
     static NSDictionary? ActiveRecord(IEnumerable<NSDictionary> records,string month)=>records.SingleOrDefault(r=>r["month"].ToString()==month&&!r.ContainsKey("cancelledAt"));
     public static ContractBatch? ActiveBatch(A.BackupSnapshot s,string month){
         var r=ActiveRecord(ContractRecords(s),month);if(r==null)return null;

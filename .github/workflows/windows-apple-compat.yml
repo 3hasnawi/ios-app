@@ -18,8 +18,9 @@ jobs:
         shell: bash
         run: |
           python windows/Checks/fixture.py "$RUNNER_TEMP/workspace-fixtures"
-          (cd sync/workspace && PAYROLL_TEST_FIXTURES="$RUNNER_TEMP/workspace-fixtures" go test -run TestPortableRoundTrip)
+          (cd sync/workspace && PAYROLL_TEST_FIXTURES="$RUNNER_TEMP/workspace-fixtures" go test -run 'TestPortableRoundTrip|TestCancelledContractAndNewActiveBatchSameMonth')
           dotnet run --project windows/Checks -- --read-workspace "$RUNNER_TEMP/workspace-fixtures/merged-refunds.zip"
+          dotnet run --project windows/Checks -- --read-contract-history "$RUNNER_TEMP/workspace-fixtures/merged-contract-history.zip" "$RUNNER_TEMP/workspace-fixtures/refunds.zip"
       - name: Open the OneDrive trial sign-in window in WebView2
         timeout-minutes: 4
         run: dotnet run --project windows/OneDriveTrialChecks -- "$env:RUNNER_TEMP/onedrive-trial-windows.png"

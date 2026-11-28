@@ -22,7 +22,7 @@ public partial class MainWindow
     readonly Dictionary<string,DateTime> transferDates=new();
     A.TransferGroup currentGroup=A.TransferGroup.Rafidain,deferredGroup=A.TransferGroup.Rafidain;
 
-    sealed record TransferMonth(A.BackupSnapshot Source,ContractBatch? Batch,A.TransferSnapshot Plan,Lazy<Task<ContractBatch>> Proposal);
+    sealed record TransferMonth(A.BackupSnapshot Source,ContractBatch? Batch,IReadOnlyList<Store.CancelledContract> Cancelled,A.TransferSnapshot Plan,Lazy<Task<ContractBatch>> Proposal);
     Task<TransferMonth>? transferMonth;
     (string Revision,string Month) transferMonthKey;
 
@@ -33,7 +33,7 @@ public partial class MainWindow
                 var source=store.Snapshot(month);
                 if(Path.GetDirectoryName(source.SourcePath)!=revision)throw new IOException("تغيّرت نسخة الشهر أثناء الفتح.");
                 var frozen=Store.ActiveBatch(source,month);
-                return new TransferMonth(source,frozen,frozen?.Plan(false)??A.TransferPreparation.Prepare(source,month),
+                return new TransferMonth(source,frozen,Store.CancelledContracts(source),frozen?.Plan(false)??A.TransferPreparation.Prepare(source,month),
                     new Lazy<Task<ContractBatch>>(()=>Task.Run(()=>Store.PrepareBatch(source,month))));
             });
         }
@@ -76,7 +76,7 @@ public partial class MainWindow
         var item=new MenuItem{Header=title,IsEnabled=enabled};item.Click+=(_,_)=>Guard(action);menu.Items.Add(item);
     }
 
-    void TransferDesk(A.BackupSnapshot s,string month,bool held,ContractBatch? batch,A.TransferSnapshot plan,ContractBatch? proposal,string? issue)
+    void TransferDesk(A.BackupSnapshot s,string month,bool held,ContractBatch? batch,A.TransferSnapshot plan,ContractBatch? proposal,string? issue,IReadOnlyList<Store.CancelledContract> cancelled)
     {
         PageTitle.Text="التحويلات";
         var route=held?DeferredTransfers:CurrentTransfers;
@@ -92,6 +92,16 @@ public partial class MainWindow
         }else head.Children.Add(TransferSummary(("مجموع قيود التحويل",Arabic.Money(plan.Entries.Sum(e=>e.Amount))),
             ("المجموعات ذات المبالغ",Arabic.Money(plan.Entries.Where(e=>e.Amount>0).Select(e=>e.Group).Distinct().Count())),
             ("الجهات والبنود ذات المبالغ",Arabic.Money(plan.Entries.Count(e=>e.Amount>0)))));
+        if(held && cancelled.Count>0){
+            var history=GridView(("شهر الاستحقاق","Month",1.5),("المبلغ المؤجل","Amount",1.2),("تاريخ الإلغاء","Date",1.4),
+                ("ملفات مجهّزة","Prepared",1),("تحويلات مؤكدة","Confirmed",1));
+            history.MaxHeight=210;
+            history.ItemsSource=cancelled.Select(row=>new{row.Month,Amount=Arabic.Money(row.Held),
+                Date=row.Cancelled.ToString("d"),row.Prepared,row.Confirmed}).ToList();
+            head.Children.Add(new Expander{Header=$"الدفعات المؤجلة الملغاة ({cancelled.Count})",Content=history});
+        }else if(!held && cancelled.Any(row=>row.Month==month && row.Confirmed>0)){
+            head.Children.Add(Text("توجد تحويلات مؤكدة قبل إلغاء التأجيل. راجع الدفعات المؤجلة الملغاة قبل إرسال المبلغ الشامل."));
+        }
         if(held){
             void ChangeDeferral(){
                 if(split==null)return;

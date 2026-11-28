@@ -149,17 +149,11 @@ func merge(base, local, remote, out *index, decisions map[string]decision, after
 			section := parts(key)
 			resolver := reconciliation{choices: decisions}
 			structured := section[0] == "refund" || section[0] == "jsonSetting"
-			if section[0] == "contract" {
-				left, right, ancestor := activeContract(v[1]), activeContract(v[2]), activeContract(v[0])
-				structured = left == right || (left == ancestor || right == ancestor) && left != "" && right != ""
-				// Distinct active batches are mutually exclusive for one payroll month.
-				if left != "" && right != "" && left != right {
-					structured = false
-				}
-			}
 			var selected []byte
 			if afterRestore && !bytes.Equal(v[0], v[1]) && !bytes.Equal(v[1], v[2]) && section[0] != "pdf" && section[0] != "schema" {
 				selected = resolver.resolve(section, v[0], v[1], v[2])
+			} else if section[0] == "contract" {
+				selected = mergeContracts(&resolver, section, v)
 			} else {
 				selected = resolver.pick(section, v[0], v[1], v[2], structured)
 			}

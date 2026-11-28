@@ -21,7 +21,7 @@ public sealed partial class Store(string root)
     public const string BackupName="نسخة الرواتب.zip";
     public string Archive=>Path.Combine(Active??throw new InvalidOperationException("اختر نسخة أولاً."),BackupName);
     public void Import(string source,IProgress<string>? progress=null,CancellationToken token=default) => Install(source,progress,token, false,null);
-    private string Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected,byte[]? pending=null,bool restoring=false)
+    private string Install(string source,IProgress<string>? progress,CancellationToken token,bool checkRevision,string? expected,byte[]? pending=null,bool restoring=false,string? localTheme=null,WorkspaceValidation? verified=null)
     {
         Directory.CreateDirectory(Root);
         using var lease=new FileStream(Path.Combine(Root,"import.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
@@ -40,10 +40,23 @@ public sealed partial class Store(string root)
                 while((n=input.Read(buffer))>0){token.ThrowIfCancellationRequested();output.Write(buffer,0,n);fileHash.AppendData(buffer,0,n);}
                 output.Flush(true);
             }
-            File.WriteAllText(Path.Combine(stage,"archive.sha256"),Convert.ToHexString(fileHash.GetHashAndReset()));
-            using(var db=Connect(stage,false)) BackupReader.Index(zip,db,progress,token);
+            var digest=Convert.ToHexString(fileHash.GetHashAndReset());
+            File.WriteAllText(Path.Combine(stage,"archive.sha256"),digest);
+            if(verified!=null){
+                if(digest!=File.ReadAllText(Path.Combine(verified.Revision,"archive.sha256")))
+                    throw new InvalidDataException("تغيّر ملف المزامنة بعد التحقق منه.");
+                File.Copy(Path.Combine(verified.Revision,"lookup.db"),Path.Combine(stage,"lookup.db"));
+            }else{
+                using var db=Connect(stage,false);
+                BackupReader.Index(zip,db,progress,token);
+            }
             if((restoring || !checkRevision) && Active is {} before)CheckRestoredTransfers(Path.Combine(before,BackupName),zip);
             token.ThrowIfCancellationRequested();
+            if(localTheme!=null){
+                // نحفظ مظهر الجهاز مع النسخة المحلية قبل تبديل المؤشر، حتى عند استلام أرشيف قديم.
+                var changes=new Dictionary<string,byte[]>{{"appAppearance",Plist(new Claunia.PropertyList.NSString(localTheme))}};
+                File.WriteAllBytes(Path.Combine(stage,PendingFile),JsonSerializer.SerializeToUtf8Bytes(changes));
+            }
             File.WriteAllText(next,id);
             File.Move(next,Pointer,true);
             committed=true;

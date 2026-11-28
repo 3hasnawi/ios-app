@@ -149,7 +149,7 @@ public partial class MainWindow
                 }
                 if(!CanvasArea.Children.Contains(loading)||page!=key||revision!=store.Active||(SelectedMonth?.Name??"")!=month)return;
                 CanvasArea.Children.Remove(loading);
-                TransferDesk(data.Source,month,held,data.Batch,held&&data.Batch!=null?data.Batch.Plan(true):data.Plan,proposal,issue);
+                TransferDesk(data.Source,month,held,data.Batch,held&&data.Batch!=null?data.Batch.Plan(true):data.Plan,proposal,issue,data.Cancelled);
                 return;
             }
             var snapshot=await Task.Run(()=>key==TrustName?store.Snapshot():store.Snapshot(month));

@@ -93,6 +93,8 @@ nonisolated enum BackupFormat {
                                SalaryTrust.settingsKey, FundingApproval.settingsKey, CustomTransferTemplate.settingsKey, "bankStatementMonth", "bankStatementAccountName", "bankStatementIBAN", "bankStatementBranch", "bankStatementLocalAccount", "bankStatementManualAmounts", ContractOverrides.settingsKey, BankReconciliation.settingsKey, TransferRules.settingsKey, "transferPayrollAccountLinks", TransferIssuance.settingsKey, TransferReferencePack.settingsKey, TransferLetterCustomizationStore.settingsKey, TransferLetterEntityLinks.settingsKey, TransferHeaderFont.boldSettingsKey, TransferHeaderFont.regularSettingsKey,
                                ReportSheet.headerKey, AppSettings.languageKey, AppSettings.appearanceKey, AppSettings.numeralsKey, AppSettings.textSizeKey, "windowsContentTextLevel"]
 
+    static let workspaceSettingsKeys = settingsKeys.filter { $0 != AppSettings.appearanceKey }
+
     static func removeExport(_ file: URL) {
         let parent = file.deletingLastPathComponent()
         guard file.lastPathComponent == fileName(), parent.lastPathComponent.hasPrefix("payroll-export-"),
@@ -544,6 +546,10 @@ final class BackupManager {
     private static let errorAtKey = "autoBackupLastErrorAt"
     /// آخر تغيير في البيانات (استيراد أو حذف): إذا كان بعد آخر نسخة ناجحة تُعاد المحاولة تلقائياً.
     private static let changedKey = "backupDataChangedAt"
+    private static let appearanceChangedKey = "backupAppearanceChangedAt"
+    private static var backupChangeDate: Date? {
+        [changedKey, appearanceChangedKey].compactMap { UserDefaults.standard.object(forKey: $0) as? Date }.max()
+    }
     /// آخر تغيير شملته نسخة ناجحة أو أزاله استرجاع مؤكد؛ لا يغيّر تاريخ النسخة المعروض.
     private static let acknowledgedChangeKey = "backupAcknowledgedChangeAt"
     /// فهرس آخر نسخة ناجحة أو مسترجعة؛ لا يحتوي أسماء أشخاص أو مبالغ.
@@ -570,7 +576,7 @@ final class BackupManager {
     var lastBackup: Date? { UserDefaults.standard.object(forKey: Self.lastKey) as? Date }
     var hasUnbackedChanges: Bool {
         if BackupServerConfig.enabled && UserDefaults.standard.bool(forKey: BackupServerConfig.pendingKey) { return true }
-        return Self.hasPendingChange(UserDefaults.standard.object(forKey: Self.changedKey) as? Date,
+        return Self.hasPendingChange(Self.backupChangeDate,
                                      acknowledged: UserDefaults.standard.object(forKey: Self.acknowledgedChangeKey) as? Date,
                                      lastBackup: lastBackup)
     }
@@ -646,7 +652,7 @@ final class BackupManager {
             return
         }
         isWorking = true
-        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let changeWatermark = Self.backupChangeDate
         Task {
             defer { isWorking = false; version += 1 }
             do {
@@ -700,12 +706,15 @@ final class BackupManager {
 
     // MARK: - إنشاء نسخة
 
-    private func makeBackup(title: String) async throws -> (URL, BackupFormat.Manifest) {
+    private func makeBackup(title: String, forWorkspace: Bool = false) async throws -> (URL, BackupFormat.Manifest) {
         RefundDraft.shared.flushAmount()
         if let error = RefundDraft.shared.storageError { throw NSError(domain: "RefundBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: error]) }
-        let revision = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        func revisionDate() -> Date? {
+            forWorkspace ? UserDefaults.standard.object(forKey: Self.changedKey) as? Date : Self.backupChangeDate
+        }
+        let revision = revisionDate()
         let staffRevision = StaffImportState.shared.version
-        let settings = try BackupFormat.settingsKeys.reduce(into: [String: Data]()) { dict, key in
+        let settings = try (forWorkspace ? BackupFormat.workspaceSettingsKeys : BackupFormat.settingsKeys).reduce(into: [String: Data]()) { dict, key in
             if let value = UserDefaults.standard.object(forKey: key) {
                 if key == ContractTransferArchive.key, (value as? Data)?.isEmpty == true { return }
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
@@ -719,7 +728,7 @@ final class BackupManager {
         let result = try await Task.detached(priority: .userInitiated) {
             try await BackupActor(modelContainer: container).export(settings: settings, progress: sink)
         }.value
-        guard revision == UserDefaults.standard.object(forKey: Self.changedKey) as? Date,
+        guard revision == revisionDate(),
               staffRevision == StaffImportState.shared.version, !ImportCenter.shared.isBusy, !StaffImportState.shared.isImporting else {
             BackupFormat.removeExport(result.0)
             throw BackupError.sourceChanged
@@ -878,6 +887,11 @@ final class BackupManager {
         if let restored = restoredSettingValues[key],
            Self.isRestoredSetting(UserDefaults.standard.object(forKey: key), equalTo: restored) { return }
         restoredSettingValues.removeValue(forKey: key)
+        if key == AppSettings.appearanceKey {
+            UserDefaults.standard.set(Date(), forKey: Self.appearanceChangedKey)
+            version += 1
+            return
+        }
         markChanged()
     }
 
@@ -892,7 +906,7 @@ final class BackupManager {
         guard !Self.manualOnly, BackupServerConfig.ready || resolveFile() != nil else { return false }
         // لا نحاول كل دقيقة عند تعذّر الاتصال بمزود iCloud.
         if let lastErrorAt, Date().timeIntervalSince(lastErrorAt) < 10 * 60 { return false }
-        let changed = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let changed = Self.backupChangeDate
         let acknowledged = UserDefaults.standard.object(forKey: Self.acknowledgedChangeKey) as? Date
         let pendingChange = Self.hasPendingChange(changed, acknowledged: acknowledged, lastBackup: lastBackup) &&
             changed.map { Date().timeIntervalSince($0) >= 120 } == true
@@ -931,7 +945,7 @@ final class BackupManager {
             return "⚠️ " + BackupError.noFolder.localizedDescription
         }
         isWorking = true
-        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let changeWatermark = Self.backupChangeDate
         defer { isWorking = false; version += 1 }
         // يكمل النسخ حتى لو خرج المستخدم من التطبيق أثناءه.
         let task = UIApplication.shared.beginBackgroundTask(withName: "backup")
@@ -983,7 +997,7 @@ final class BackupManager {
         let address = BackupServerConfig.address
         let token = BackupServerConfig.token
         isWorking = true
-        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let changeWatermark = Self.backupChangeDate
         defer { isWorking = false; version += 1 }
         let task = UIApplication.shared.beginBackgroundTask(withName: "server-backup")
         defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
@@ -1284,7 +1298,7 @@ final class BackupManager {
     var workSyncStamp: String {
         let defaults = UserDefaults.standard
         var hash = SHA256()
-        for key in (BackupFormat.settingsKeys + [ExecutionAccountStore.storageKey, "oneDriveRestoredRevision"]).sorted() {
+        for key in (BackupFormat.workspaceSettingsKeys + [ExecutionAccountStore.storageKey, "oneDriveRestoredRevision"]).sorted() {
             guard let value = defaults.object(forKey: key),
                   let bytes = try? PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0) else { continue }
             hash.update(data: Data(key.utf8))
@@ -1303,7 +1317,7 @@ final class BackupManager {
         guard workSyncAvailable else { throw BackupError.sourceChanged }
         isWorking = true
         defer { isWorking = false }
-        return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync")).0
+        return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync"), forWorkspace: true).0
     }
 
     func workSyncValidate(_ file: URL) async throws -> URL {
@@ -1340,7 +1354,7 @@ final class BackupManager {
         pendingServerRestore = nil
         isWorking = true
         SharedModel.health.restoring = true
-        let changeWatermark = UserDefaults.standard.object(forKey: Self.changedKey) as? Date
+        let changeWatermark = Self.backupChangeDate
         Task {
             defer { isWorking = false; SharedModel.health.restoring = false; version += 1; try? FileManager.default.removeItem(at: pending.folder) }
             let progress = ImportProgress.shared
@@ -1349,9 +1363,10 @@ final class BackupManager {
             let sink = progress.sink(0, 1, tr("استبدال البيانات", "Replacing data"))
             let container = SharedModel.container
             do {
-                let settings = try await Task.detached(priority: .userInitiated) {
+                var settings = try await Task.detached(priority: .userInitiated) {
                     try await BackupActor(modelContainer: container).restore(from: pending.folder, progress: sink, recoverable: true)
                 }.value
+                if syncCompletion != nil { settings.removeValue(forKey: AppSettings.appearanceKey) }
                 BankStatementCache.shared.invalidate()
                 restoredSettingValues = settings.reduce(into: [:]) { result, item in
                     if let value = try? PropertyListSerialization.propertyList(from: item.value, format: nil),
@@ -1360,7 +1375,7 @@ final class BackupManager {
                     }
                 }
                 if syncCompletion != nil {
-                    for key in BackupFormat.settingsKeys where settings[key] == nil { UserDefaults.standard.removeObject(forKey: key) }
+                    for key in BackupFormat.workspaceSettingsKeys where settings[key] == nil { UserDefaults.standard.removeObject(forKey: key) }
                 }
                 for key in [SalaryTrust.settingsKey, "pendingTrustPayrollMonths", "pendingTrustPayrollStarted", WorkReport.pinsKey, "homeHiddenWorkReports", "windowsContentTextLevel", ContractTransferArchive.key] where settings[key] == nil {
                     UserDefaults.standard.removeObject(forKey: key)

@@ -1,8 +1,8 @@
 package main
 
 // #include <stdlib.h>
-// typedef void (*transfer_callback)(int);
-// static inline void notify_transfer(transfer_callback callback, int active) { callback(active); }
+// typedef void (*transfer_callback)(int, long long, long long);
+// static inline void notify_transfer(transfer_callback callback, int stage, long long done, long long total) { callback(stage, done, total); }
 import "C"
 import (
 	"payroll/workspace"
@@ -16,9 +16,12 @@ func payroll_sync(input *C.char, callback C.transfer_callback) *C.char {
 		if active {
 			value = 1
 		}
-		C.notify_transfer(callback, value)
+		C.notify_transfer(callback, value, 0, 0)
 	}
-	return C.CString(string(workspace.CallWithTransfer([]byte(C.GoString(input)), notify)))
+	progress := func(phase int, done, total int64) {
+		C.notify_transfer(callback, C.int(phase+1), C.longlong(done), C.longlong(total))
+	}
+	return C.CString(string(workspace.CallWithProgress([]byte(C.GoString(input)), notify, progress)))
 }
 
 //export payroll_sync_free

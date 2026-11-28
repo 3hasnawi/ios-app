@@ -267,6 +267,9 @@ func archiveIndex(i *index, path string) {
 	var settings map[string][]byte
 	must(decode(readEntry(&z.Reader, "settings.json", 64_000_000), &settings))
 	for k, raw := range settings {
+		if k == appearanceKey {
+			continue
+		}
 		settingRows(w, k, raw)
 	}
 	w.flush()

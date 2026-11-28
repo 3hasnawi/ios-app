@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using System.Globalization;
 using Microsoft.Identity.Client;
 
 namespace AnbarPayroll.Desktop;
@@ -186,13 +187,29 @@ public partial class MainWindow
         }
         if(historyCursor!=null)panel.Children.Add(ButtonFor("عرض الأقدم",()=>_=WorkspaceRun(action:"history",more:true),"\uE70D"));
     }
+    void SetSyncStatus(string message)
+    {
+        syncStatus=message;
+        if(syncPanel!=null && !showingHistory && syncPanel.Children.Count>0 && syncPanel.Children[0] is TextBlock label)
+            label.Text=DisplayNumerals.Format(message);
+        else if(syncDialog==null)
+            Status.Text=DisplayNumerals.Format(message);
+    }
     async Task ReadTransferEvents(StreamReader events)
     {
         bool active=false;
         try{
             while(await events.ReadLineAsync() is {} line){
+                if(line.Split(' ') is ["progress", var phase, var done, var total] &&
+                    long.TryParse(done,NumberStyles.None,CultureInfo.InvariantCulture,out var received) &&
+                    long.TryParse(total,NumberStyles.None,CultureInfo.InvariantCulture,out var size)){
+                    string label=phase=="1"?"رفع التعديلات":"استلام وتجميع النسخة";
+                    SetSyncStatus($"{label} · {received/1048576d:N1} من {size/1048576d:N1} ميغابايت");
+                    continue;
+                }
                 if(line!="transfer true" && line!="transfer false")continue;
                 active=line=="transfer true";
+                if(!active)SetSyncStatus("جارٍ إكمال المزامنة…");
                 SyncTransferIndicator.Visibility=active?Visibility.Visible:Visibility.Hidden;
                 var rotation=active && SystemParameters.ClientAreaAnimation
                     ? new DoubleAnimation(0,360,TimeSpan.FromSeconds(1.3)){RepeatBehavior=RepeatBehavior.Forever}
@@ -268,19 +285,21 @@ public partial class MainWindow
                 args["local"]=exported;args["stamp"]=stamp;reply=await CallWorkspace(args);
             }
             if(reply.status=="conflict"){syncConflicts=reply.conflicts??[];syncStatus="راجع القيود المتعارضة في إعدادات OneDrive.";return;}
+            if(reply.status=="ready"){syncConflicts=[];DrawWorkspaceSync();}
             if(reply.status=="waiting"){syncStatus="بانتظار بيانات للمزامنة";return;}
             if(reply.status=="ready" && reply.file is {} file){
                 if(reply.apply && syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات")){
                     syncStatus="توجد تعديلات ستصل عند العودة إلى الرئيسية.";return;
                 }
-                await Task.Run(()=>store.ValidateWorkspace(file));
+                SetSyncStatus("جارٍ التحقق من النسخة…");
+                using var verified = await Task.Run(()=>store.PrepareWorkspace(file,reply.apply));
                 void Check(){if(store.WorkspaceStamp!=stamp || busy || ((App)Application.Current).DeviceLock.SyncLocked)throw new IOException("تغيّرت البيانات أو أُغلق التطبيق. ستُعاد المحاولة.");}
                 Check();args["action"]="publish";args["transaction"]=reply.transaction!;reply=await CallWorkspace(args);
                 Check();if(reply.status!="committed")throw new IOException("تعذّر تأكيد المزامنة.");
                 if(reply.apply){
                     if(syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات"))throw new IOException("ستكتمل المزامنة عند العودة إلى الرئيسية.");
                     busy=true;IsEnabled=false;
-                    try{stamp=await Task.Run(()=>store.ApplyWorkspace(file,stamp));Reload();ShowPage(page);}
+                    try{stamp=await Task.Run(()=>store.ApplyWorkspace(file,stamp,appearance.Theme,verified));Reload();ShowPage(page);}
                     finally{busy=false;IsEnabled=true;}
                 }
                 args["action"]="ack";args["stamp"]=stamp;reply=await CallWorkspace(args);

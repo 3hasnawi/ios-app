@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-@_silgen_name("payroll_sync") private func payrollSync(_ input: UnsafePointer<CChar>, _ transfer: @convention(c) (Int32) -> Void) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("payroll_sync") private func payrollSync(_ input: UnsafePointer<CChar>, _ transfer: @convention(c) (Int32, Int64, Int64) -> Void) -> UnsafeMutablePointer<CChar>?
 @_silgen_name("payroll_sync_free") private func payrollSyncFree(_ output: UnsafeMutablePointer<CChar>)
 
 struct SyncConflict: Decodable, Identifiable {
@@ -178,10 +178,12 @@ final class WorkspaceSync {
             }
             if reply.status == "waiting" { status = tr("بانتظار بيانات للمزامنة", "Waiting for data"); return }
             if reply.status == "ready", let path = reply.file, let transaction = reply.transaction {
+                conflicts = []
                 if reply.apply == true && !mayInstall(automatic:automatic) {
                     status = tr("توجد تعديلات ستصل عند العودة إلى الرئيسية", "Updates will be applied when you return home")
                     return
                 }
+                status = tr("جارٍ التحقق من النسخة…", "Verifying the archive…")
                 validated = try await store.workSyncValidate(URL(fileURLWithPath:path))
                 guard store.workSyncStamp == stamp, store.workSyncAvailable else { throw BackupError.sourceChanged }
                 args["transaction"] = transaction
@@ -209,8 +211,19 @@ final class WorkspaceSync {
         let request = try JSONSerialization.data(withJSONObject:args)
         let bytes = try await Task.detached(priority:.utility) {
             try String(decoding:request,as:UTF8.self).withCString { input -> Data in
-                let result = payrollSync(input) { active in
-                    DispatchQueue.main.async { WorkspaceSync.shared.transferring = active != 0 }
+                let result = payrollSync(input) { stage, done, total in
+                    DispatchQueue.main.async {
+                        let sync = WorkspaceSync.shared
+                        sync.transferring = stage != 0
+                        if stage >= 2 {
+                            let label = stage == 2 ? tr("رفع التعديلات", "Uploading changes") : tr("استلام وتجميع النسخة", "Receiving and assembling the archive")
+                            let completed = ByteCountFormatter.string(fromByteCount: done, countStyle: .file)
+                            let size = ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
+                            sync.status = label + " · " + tr("\(completed) من \(size)", "\(completed) of \(size)")
+                        } else if stage == 0 {
+                            sync.status = tr("جارٍ إكمال المزامنة…", "Finishing sync…")
+                        }
+                    }
                 }
                 guard let result else { throw AccountError("تعذّر تشغيل المزامنة.") }
                 defer { payrollSyncFree(result) }

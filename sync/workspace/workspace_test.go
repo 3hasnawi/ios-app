@@ -3,34 +3,47 @@ package workspace
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+
+	"howett.net/plist"
 	"time"
 )
 
 type mockDrive struct {
-	descriptions map[string]string
-	rateLimited  bool
-	requests     int
-	blobs        map[string][]byte
-	created      map[string]time.Time
-	revision     int
-	hash         string
-	marker       bool
+	mu                                sync.Mutex
+	payloadGets, payloadPuts, batches int
+	failGetAt                         int
+	descriptions                      map[string]string
+	rateLimited                       bool
+	requests                          int
+	blobs                             map[string][]byte
+	created                           map[string]time.Time
+	revision                          int
+	hash                              string
+	marker                            bool
 }
 
 func (m *mockDrive) open(token string) *drive {
 	return &drive{token: token, folder: "test-account", root: "items/folder:/", client: &http.Client{Transport: m}}
 }
 func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.requests++
 	if m.rateLimited {
 		return &http.Response{StatusCode: 429, Header: http.Header{"Retry-After": {"120"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
@@ -46,6 +59,24 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		return encode(Object{"id": "marker", "eTag": strconv.Itoa(m.revision), "description": m.hash})
 	}
 	switch {
+	case r.URL.Path == "/v1.0/$batch":
+		m.batches++
+		var request struct {
+			Requests []struct{ ID, Method, URL string }
+		}
+		must(json.NewDecoder(r.Body).Decode(&request))
+		check(len(request.Requests) > 0 && len(request.Requests) <= 20, "invalid batch")
+		var replies []Object
+		for _, sub := range request.Requests {
+			check(sub.Method == "GET" && sub.URL == "/me/drive/items/folder:/"+chunkPrefix+sub.ID+"?$select=size", "invalid metadata URL")
+			status := 404
+			value, ok := m.blobs[chunkPrefix+sub.ID]
+			if ok {
+				status = 200
+			}
+			replies = append(replies, Object{"id": sub.ID, "status": status, "body": Object{"size": len(value)}})
+		}
+		data = encode(Object{"responses": replies})
 	case name == markerName:
 		if r.Method == "PUT" {
 			if m.marker {
@@ -84,6 +115,9 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		must(json.NewDecoder(r.Body).Decode(&payload))
 		m.descriptions[name] = payload.Description
 	case r.Method == "PUT":
+		if strings.HasPrefix(name, chunkPrefix) {
+			m.payloadPuts++
+		}
 		if _, ok := m.blobs[name]; ok {
 			status = 409
 		} else {
@@ -99,6 +133,12 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		if !ok {
 			status = 404
 		} else if strings.HasSuffix(path, ":/content") {
+			if strings.HasPrefix(name, chunkPrefix) {
+				m.payloadGets++
+				if m.failGetAt == m.payloadGets {
+					return nil, fmt.Errorf("simulated loss of connection")
+				}
+			}
 			data = b
 		} else {
 			data = encode(Object{"size": len(b), "createdDateTime": m.created[name], "id": name, "eTag": "idx", "description": m.descriptions[name]})
@@ -107,12 +147,15 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
 }
 func fixture(t *testing.T, accounts map[string]string) string {
+	return fixtureSettings(t, accounts, map[string][]byte{})
+}
+func fixtureSettings(t *testing.T, accounts map[string]string, settings map[string][]byte) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "input.zip")
 	f, e := os.Create(path)
 	must(e)
 	z := zip.NewWriter(f)
-	for name, contents := range map[string]string{"manifest.json": `{"version":2}`, "settings.json": "{}", "months.jsonl": "", "staff.jsonl": "", "employees.jsonl": "", "deductions.jsonl": ""} {
+	for name, contents := range map[string]string{"manifest.json": `{"version":2}`, "settings.json": string(encode(settings)), "months.jsonl": "", "staff.jsonl": "", "employees.jsonl": "", "deductions.jsonl": ""} {
 		w, e := z.Create(name)
 		must(e)
 		_, e = w.Write([]byte(contents))
@@ -194,6 +237,54 @@ func TestThreeDevicesOfflineMergeAndAccountConflict(t *testing.T) {
 		t.Fatal("restart reuploaded")
 	}
 }
+func TestLegacyAppearanceConflictAndAccountingMerge(t *testing.T) {
+	g := &mockDrive{blobs: map[string][]byte{}}
+	drive := g.open("test")
+	theme := func(value string) map[string][]byte {
+		data, err := plist.Marshal(value, plist.BinaryFormat)
+		must(err)
+		return map[string][]byte{appearanceKey: data}
+	}
+	// نقطة قديمة من تطبيق يزامن الثيم، وجهاز جديد عنده قيد محلي مختلف.
+	old := fixtureSettings(t, map[string]string{"common": "10", "remote": "25"}, theme("system"))
+	head := drive.marker(true)
+	drive.claim(head, drive.upload(old, ""), "")
+	req := Request{Dir: t.TempDir(), Stamp: "edit", Local: fixtureSettings(t, map[string]string{"common": "20", "local": "35"}, theme("light"))}
+	conflicts := syncTest(t, g, req, "conflict").Conflicts
+	if len(conflicts) != 1 || !strings.Contains(conflicts[0].Key, "common") {
+		t.Fatalf("expected only the accounting conflict: %+v", conflicts)
+	}
+	req.Choices = map[string]decision{conflicts[0].Key: {Ticket: conflicts[0].Ticket, Side: "local"}}
+	result := syncTest(t, g, req, "")
+	z, err := zip.OpenReader(result.File)
+	must(err)
+	defer z.Close()
+	if string(readEntry(&z.Reader, "settings.json", 1024)) != "{}" {
+		t.Fatal("published device appearance")
+	}
+	got := map[string]string{}
+	readLines(&z.Reader, "accounts.jsonl", func(v Object) { got[str(v, "entity")] = str(v, "iban") })
+	if len(got) != 3 || got["common"] != "20" || got["local"] != "35" || got["remote"] != "25" {
+		t.Fatal(got)
+	}
+	// الرفع المباشر يستخدم مساراً مختلفاً عن دمج الجهازين.
+	req.Stamp = "edit2"
+	req.Local = fixtureSettings(t, got, theme("dark"))
+	result = syncTest(t, g, req, "")
+	z2, err := zip.OpenReader(result.File)
+	must(err)
+	defer z2.Close()
+	if string(readEntry(&z2.Reader, "settings.json", 1024)) != "{}" {
+		t.Fatal("fast path published theme")
+	}
+	backup, err := zip.OpenReader(req.Local)
+	must(err)
+	defer backup.Close()
+	if !bytes.Contains(readEntry(&backup.Reader, "settings.json", 1024), []byte(appearanceKey)) {
+		t.Fatal("changed original backup")
+	}
+}
+
 func TestNestedRefundEditsDeletionAndStaleDecision(t *testing.T) {
 	build := func(a, b string) []byte {
 		v := []any{}
@@ -535,4 +626,165 @@ func TestTransferIndicatorTracksPayload(t *testing.T) {
 		d.download(id, filepath.Join(t.TempDir(), "failed.zip"))
 	}()
 	checkEvents(true, false)
+}
+
+func TestIncrementalTransferAndResume(t *testing.T) {
+	server := &mockDrive{blobs: map[string][]byte{}}
+	d := server.open("test")
+	dir := t.TempDir()
+	base := make([]byte, 32<<20)
+	rng := rand.New(rand.NewSource(1))
+	rng.Read(base)
+	oldPath := filepath.Join(dir, "base")
+	must(os.WriteFile(oldPath, base, 0600))
+	old := d.upload(oldPath, "")
+	base[0] ^= 1
+	base[len(base)-1] ^= 1
+	next := filepath.Join(dir, "edited")
+	must(os.WriteFile(next, base, 0600))
+	server.batches = 0
+	server.payloadPuts = 0
+	revision := d.upload(next, old)
+	idx := d.indexFor(revision)
+	if server.payloadPuts != 2 || server.batches != (len(idx.Blocks)+19)/20 {
+		t.Fatal("unexpected upload", server.payloadPuts, server.batches, len(idx.Blocks))
+	}
+	d.cacheDir = filepath.Join(dir, "cache")
+	d.sources = []string{oldPath}
+	server.failGetAt = 2
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("connection loss not propagated")
+			}
+		}()
+		d.download(revision, filepath.Join(dir, "partial"))
+	}()
+	before := server.payloadGets
+	final := filepath.Join(dir, "result")
+	d.download(revision, final)
+	if server.payloadGets-before != 1 {
+		t.Fatal("verified download repeated", server.payloadGets-before)
+	}
+	result, err := os.ReadFile(final)
+	must(err)
+	if !bytes.Equal(result, base) {
+		t.Fatal("incorrect reconstruction")
+	}
+	oldIdx := d.indexFor(old)
+	oldHashes := map[string]bool{}
+	for _, hash := range oldIdx.Blocks {
+		oldHashes[hash] = true
+	}
+	var uploaded int
+	for _, hash := range idx.Blocks {
+		if !oldHashes[hash] {
+			uploaded += len(server.blobs[chunkPrefix+hash])
+		}
+	}
+	t.Logf("%d/%d bytes changed, %d of %d parts uploaded, %d part fetched on retry", uploaded, len(base), server.payloadPuts, len(idx.Blocks), server.payloadGets-before)
+}
+
+func TestFilteredWindowsArchiveDigest(t *testing.T) {
+	input := os.Getenv("PAYROLL_THEME_BACKUP")
+	if input == "" {
+		t.Skip("requires a fictional v14 backup containing the device theme")
+	}
+	result := filepath.Join(t.TempDir(), "workspace.zip")
+	copyWorkspaceExport(input, result)
+	z, err := zip.OpenReader(result)
+	must(err)
+	defer z.Close()
+	var settings map[string][]byte
+	must(decode(readEntry(&z.Reader, "settings.json", 64_000_000), &settings))
+	if _, ok := settings[appearanceKey]; ok || settings["appNumerals"] == nil {
+		t.Fatal("incorrect portable settings")
+	}
+	// يعاد اشتقاق بصمة البيانات الداعمة من محتوى الملف نفسه.
+	hash := sha256.New()
+	sort.Slice(z.File, func(i, j int) bool { return z.File[i].Name < z.File[j].Name })
+	for _, f := range z.File {
+		if f.Name == "manifest.json" || f.Name == "employees.jsonl" {
+			continue
+		}
+		r, e := f.Open()
+		must(e)
+		entry := sha256.New()
+		_, e = io.Copy(entry, r)
+		r.Close()
+		must(e)
+		hash.Write([]byte(f.Name + "\x00"))
+		hash.Write(entry.Sum(nil))
+	}
+	var manifest Object
+	must(decode(readEntry(&z.Reader, "manifest.json", 1_000_000), &manifest))
+	if str(manifest, "supportingDigest") != b64.EncodeToString(hash.Sum(nil)) {
+		t.Fatal("incorrect supporting digest")
+	}
+}
+
+func TestCancelledContractAndNewActiveBatchSameMonth(t *testing.T) {
+	const cancelledID = "ABC00000-0000-4000-8000-000000000001"
+	const activeID = "ABC00000-0000-4000-8000-000000000002"
+	server := &mockDrive{blobs: map[string][]byte{}}
+	epoch := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	day := epoch.Add(800000000 * time.Second)
+	exact := math.Float64bits(800000000) + 1
+	row := func(id string) Object {
+		return Object{"id": id, "month": "شهر تجريبي", "held": 1250, "compressed": []byte{2, 6, 4}, "importedAt": day, "prepared": Object{}, "confirmed": Object{}}
+	}
+	old, active := row(cancelledID), row(activeID)
+	old["cancelledAt"] = day
+	old["prepared"] = Object{"bank": epoch}
+	old["confirmed"] = Object{"bank": day}
+	archive := func(records ...Object) string {
+		ledger := plistData(Object{"version": 2, "records": records})
+		// توليد نفس دقة NSDate الأصلية باستقلال عن محوّل تواريخ المزامنة.
+		ledger = bytes.ReplaceAll(ledger, binary.BigEndian.AppendUint64([]byte{0x33}, exact-1), binary.BigEndian.AppendUint64([]byte{0x33}, exact))
+		return fixtureSettings(t, map[string]string{"office": "10"}, map[string][]byte{contractKey: plistData(ledger)})
+	}
+	assertRecords := func(file string) {
+		z, e := zip.OpenReader(file)
+		must(e)
+		defer z.Close()
+		var settings map[string][]byte
+		must(decode(readEntry(&z.Reader, "settings.json", rowLimit), &settings))
+		ledger := readPlist(settings[contractKey]).([]byte)
+		records := array(obj(readPlist(contractDateObjects(ledger, false)))["records"])
+		if len(records) != 2 {
+			t.Fatalf("lost saved contract: %d", len(records))
+		}
+		seen := map[string]bool{}
+		for _, value := range records {
+			record := obj(value)
+			id := str(record, "id")
+			seen[id] = true
+			if record["importedAt"] != plist.UID(exact) || !bytes.Equal(record["compressed"].([]byte), []byte{2, 6, 4}) {
+				t.Fatal("changed sealed batch")
+			}
+			if id == cancelledID && (record["cancelledAt"] != plist.UID(exact) || obj(record["prepared"])["bank"] != plist.UID(0) || obj(record["confirmed"])["bank"] != plist.UID(exact)) {
+				t.Fatal("changed audit dates")
+			}
+			if id == activeID && record["cancelledAt"] != nil {
+				t.Fatal("unexpected cancellation")
+			}
+		}
+		if !seen[activeID] || !seen[cancelledID] {
+			t.Fatal(seen)
+		}
+	}
+	phone := Request{Dir: t.TempDir(), Stamp: "phone", Local: archive(old)}
+	syncTest(t, server, phone, "")
+	pc := Request{Dir: t.TempDir(), Stamp: "pc", Local: archive(active)}
+	merged := syncTest(t, server, pc, "").File
+	assertRecords(merged)
+	if dir := os.Getenv("PAYROLL_TEST_FIXTURES"); dir != "" {
+		copyFile(merged, filepath.Join(dir, "merged-contract-history.zip"))
+	}
+	// جهاز قديم نشر ملفاً أغفل التاريخ الملغى. حتى الاستلام وحده يجب أن يصون السجل المحلي.
+	d := server.open("test")
+	head := d.marker(false)
+	d.claim(head, d.upload(archive(active), head.Hash), "")
+	pc.Local = ""
+	assertRecords(syncTest(t, server, pc, "").File)
 }

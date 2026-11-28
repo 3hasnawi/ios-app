@@ -1,16 +1,12 @@
 package workspace
 
 import (
-	"bufio"
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +17,9 @@ const markerName = "payroll-workspace-v1.json"
 
 type drive struct {
 	onTransfer          func(bool)
+	onProgress          func(int, int64, int64)
+	cacheDir            string
+	sources             []string
 	transferring        bool
 	token, folder, root string
 	client              *http.Client
@@ -59,7 +58,11 @@ func retryDeadline(header string, now time.Time) time.Time {
 	return now.Add(time.Minute)
 }
 func (g *drive) request(method, path string, data []byte, headers map[string]string, limit int64) (int, []byte) {
-	req, e := http.NewRequest(method, graph+path, bytes.NewReader(data))
+	endpoint := graph + path
+	if path == "$batch" {
+		endpoint = "https://graph.microsoft.com/v1.0/$batch"
+	}
+	req, e := http.NewRequest(method, endpoint, bytes.NewReader(data))
 	must(e)
 	req.Header.Set("Authorization", "Bearer "+g.token)
 	for k, v := range headers {
@@ -166,9 +169,6 @@ func (g *drive) put(prefix string, b []byte) string {
 	if code != 404 {
 		ok(code)
 	}
-	if prefix == chunkPrefix {
-		g.setTransferring(true)
-	}
 	code, _ = g.request("PUT", path+":/content?@microsoft.graph.conflictBehavior=fail", b, nil, 1<<20)
 	if code != 409 {
 		ok(code)
@@ -188,75 +188,3 @@ type fileIndex struct {
 
 const chunkPrefix = "payroll-work-block-v1-"
 const indexPrefix = "payroll-work-index-v1-"
-
-func (g *drive) upload(path, previous string) string {
-	defer g.setTransferring(false)
-	f, e := os.Open(path)
-	must(e)
-	defer f.Close()
-	r := bufio.NewReaderSize(f, 256<<10)
-	var block bytes.Buffer
-	h := sha256.New()
-	idx := fileIndex{Format: 1, Previous: previous, At: time.Now().UnixMilli()}
-	var rolling uint64
-	flush := func() {
-		if block.Len() > 0 {
-			data := block.Bytes()
-			h.Write(data)
-			idx.Size += int64(len(data))
-			idx.Blocks = append(idx.Blocks, g.put(chunkPrefix, data))
-			block.Reset()
-			rolling = 0
-		}
-	}
-	// Content-defined boundaries re-align after an inserted row in the compressed ZIP.
-	for {
-		b, e := r.ReadByte()
-		if e == io.EOF {
-			break
-		}
-		must(e)
-		block.WriteByte(b)
-		rolling = (rolling << 1) + gear[b]
-		if block.Len() >= 8<<20 || (block.Len() >= 1<<20 && rolling&0x1fffff == 0) {
-			flush()
-		}
-	}
-	flush()
-	idx.SHA = hex.EncodeToString(h.Sum(nil))
-	return g.put(indexPrefix, encode(idx))
-}
-
-var gear = func() (table [256]uint64) {
-	for i := range table {
-		v := sha256.Sum256([]byte{byte(i)})
-		for _, b := range v[:8] {
-			table[i] = table[i]<<8 | uint64(b)
-		}
-	}
-	return
-}()
-
-func (g *drive) download(id, dest string) {
-	var idx fileIndex
-	must(json.Unmarshal(g.get(indexPrefix, id, 4<<20), &idx))
-	check(idx.Format == 1 && validHash(idx.SHA) && idx.Size > 0 && len(idx.Blocks) > 0 && int64(len(idx.Blocks)-1) <= idx.Size/(1<<20), "Invalid OneDrive index")
-	f, e := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	must(e)
-	defer f.Close()
-	h := sha256.New()
-	var total int64
-	g.setTransferring(true)
-	defer g.setTransferring(false)
-	for _, part := range idx.Blocks {
-		b := g.get(chunkPrefix, part, 8<<20)
-		total += int64(len(b))
-		check(total <= idx.Size, "Incomplete download")
-		h.Write(b)
-		_, e = f.Write(b)
-		must(e)
-	}
-	check(total == idx.Size && hex.EncodeToString(h.Sum(nil)) == idx.SHA, "Invalid archive checksum")
-	must(f.Sync())
-	must(f.Close())
-}

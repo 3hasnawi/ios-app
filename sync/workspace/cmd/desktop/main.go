@@ -13,8 +13,10 @@ func main() {
 		os.Exit(1)
 	}
 	var onTransfer func(bool)
+	var progress func(int, int64, int64)
 	if len(os.Args) == 2 && os.Args[1] == "--transfer-events" {
+		progress = func(phase int, done, total int64) { fmt.Fprintln(os.Stderr, "progress", phase, done, total) }
 		onTransfer = func(active bool) { fmt.Fprintln(os.Stderr, "transfer", active) }
 	}
-	os.Stdout.Write(workspace.CallWithTransfer(data, onTransfer))
+	os.Stdout.Write(workspace.CallWithProgress(data, onTransfer, progress))
 }

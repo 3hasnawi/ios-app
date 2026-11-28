@@ -151,11 +151,16 @@ nonisolated struct ContractTransferArchive: Codable {
     }
     func checkRestore(over old: Self) throws {
         for item in old.records {
-            guard let restored = records.first(where: { $0.id == item.id && $0.compressed == item.compressed }),
-                  (item.cancelledAt == nil || restored.cancelledAt == item.cancelledAt),
+            guard let restored = records.first(where: { $0.id == item.id }) else {
+                throw ContractTransferIssue(tr("النسخة المختارة تفتقد دفعة العقود المحفوظة لشهر \(item.month).", "The saved contract batch for \(item.month) is missing."))
+            }
+            guard restored.compressed == item.compressed else {
+                throw ContractTransferIssue(tr("تختلف بيانات دفعة العقود المحفوظة لشهر \(item.month).", "The saved contract batch for \(item.month) has different contents."))
+            }
+            guard (item.cancelledAt == nil || restored.cancelledAt == item.cancelledAt),
                   item.prepared.allSatisfy({ restored.prepared[$0.key] == $0.value }),
                   item.confirmed.allSatisfy({ restored.confirmed[$0.key] == $0.value }) else {
-                throw ContractTransferIssue(tr("النسخة المختارة تفتقد دفعة عقود محفوظة أو آخر حالة تنفيذها.", "The selected backup lacks an existing contract batch or its latest execution state."))
+                throw ContractTransferIssue(tr("دفعة عقود \(item.month) · تختلف حالة الإلغاء أو التجهيز أو تأكيد التنفيذ.", "Contract batch for \(item.month) has a different cancellation, preparation, or confirmation record."))
             }
         }
     }
