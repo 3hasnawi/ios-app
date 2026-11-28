@@ -1030,7 +1030,7 @@ struct HomeDashboard: View {
                            month.deductionCount > 0 ? tr("استقطاعات \(month.name) · \(Num.format(month.deductionCount)) قيد", "\(month.name) deductions · \(month.deductionCount)")
                                                     : tr("لم يُستورد ملف استقطاعات \(month.name)", "No deductions file for \(month.name)"), note: nil)
                 HStack(spacing: 8) {
-                    Image(systemName: "icloud.fill").font(.footnote).foregroundStyle(backup.statusColor)
+                    Image(systemName: "externaldrive.fill").font(.footnote).foregroundStyle(backup.statusColor)
                         .frame(width: 18)
                     Text(backup.statusLine).font(.footnote).foregroundStyle(backup.statusColor == .secondary ? .primary : backup.statusColor)
                         .lineLimit(1).minimumScaleFactor(0.8)
@@ -1040,7 +1040,7 @@ struct HomeDashboard: View {
             }
         }
         .contextMenu {
-            Button(tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud") { open(.backup) }
+            Button(tr("النسخ الاحتياطي", "Backup"), systemImage: "externaldrive") { open(.backup) }
             hideButton(.dataStatus)
         }
         .accessibilityIdentifier("homeDataStatus")
@@ -1074,8 +1074,8 @@ struct HomeDashboard: View {
             Button {
                 backup.pickRestore()
             } label: {
-                Label(tr("استرجاع بياناتي من نسخة iCloud", "Restore my data from iCloud backup"),
-                      systemImage: "icloud.and.arrow.down")
+                Label(tr("استرجاع بياناتي من نسخة احتياطية", "Restore my data from a backup"),
+                      systemImage: "arrow.counterclockwise")
                     .font(.subheadline.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)

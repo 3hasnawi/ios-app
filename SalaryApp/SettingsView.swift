@@ -115,16 +115,10 @@ struct SettingsView: View {
                     NavigationLink {
                         BackupView()
                     } label: {
-                        SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "icloud.fill", color: .pink,
+                        SettingRow(title: tr("النسخ الاحتياطي", "Backup"), systemImage: "externaldrive.fill", color: .pink,
                                    subtitle: backup.statusLine, subtitleColor: backup.statusColor) { EmptyView() }
                     }
                     .accessibilityIdentifier("backupRow")
-                    NavigationLink {
-                        WorkspaceSyncSettings()
-                    } label: {
-                        SettingRow(title: tr("المزامنة عبر OneDrive", "OneDrive sync"), systemImage: "arrow.triangle.2.circlepath.icloud",
-                                   color: .teal, subtitle: WorkspaceSync.shared.status) { EmptyView() }
-                    }
                 } header: {
                     Text(tr("البيانات", "Data"))
                 }

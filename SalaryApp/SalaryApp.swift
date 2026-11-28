@@ -12,13 +12,8 @@ struct SalaryApp: App {
     init() {
         // قياس السلاسة يعمل في اختبار المحاكي فقط (-perfLog YES).
         PerfLog.startIfEnabled()
-        // العمل الحالي يعتمد الملفات وiCloud فقط؛ لا نمس نسخة السيرفر السابقة أو بيانات الاتصال.
+        // النسخ من «الملفات» يدوي. تُلغى مهام النسخ المجدولة من الإصدارات السابقة.
         UserDefaults.standard.set(false, forKey: BackupServerConfig.enabledKey)
-        if UserDefaults.standard.string(forKey: "backupDestinationChoice") == "server" {
-            UserDefaults.standard.set("iCloud Drive", forKey: "backupDestinationChoice")
-        }
-        // النسخ التلقائي مفعّل افتراضياً (إلى مجلد iCloud بعد اختياره).
-        UserDefaults.standard.register(defaults: [BackupManager.autoKey: true, BackupServerConfig.notifyKey: true])
         BackupBackground.register()
         BackupBackground.schedule()
         AuditNotifications.registerDefaults()
