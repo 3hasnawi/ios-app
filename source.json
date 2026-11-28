@@ -17,6 +17,15 @@
       "category": "utilities",
       "versions": [
         {
+          "version": "2.1",
+          "buildVersion": "148",
+          "marketingVersion": "2.1",
+          "date": "2026-11-28T05:14:17+00:00",
+          "downloadURL": "https://github.com/3hasnawi/ios-app/releases/download/build-148/SalaryApp.ipa",
+          "size": 11534905,
+          "minOSVersion": "26.0"
+        },
+        {
           "version": "2.0",
           "buildVersion": "147",
           "marketingVersion": "2.0",
