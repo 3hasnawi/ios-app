@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"payroll/workspace"
@@ -11,5 +12,9 @@ func main() {
 	if e != nil {
 		os.Exit(1)
 	}
-	os.Stdout.Write(workspace.Call(data))
+	var onTransfer func(bool)
+	if len(os.Args) == 2 && os.Args[1] == "--transfer-events" {
+		onTransfer = func(active bool) { fmt.Fprintln(os.Stderr, "transfer", active) }
+	}
+	os.Stdout.Write(workspace.CallWithTransfer(data, onTransfer))
 }

@@ -5,6 +5,8 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Identity.Client;
 
@@ -184,15 +186,41 @@ public partial class MainWindow
         }
         if(historyCursor!=null)panel.Children.Add(ButtonFor("عرض الأقدم",()=>_=WorkspaceRun(action:"history",more:true),"\uE70D"));
     }
-    static async Task<SyncResult> CallWorkspace(Dictionary<string,object> args)
+    async Task ReadTransferEvents(StreamReader events)
+    {
+        bool active=false;
+        try{
+            while(await events.ReadLineAsync() is {} line){
+                if(line!="transfer true" && line!="transfer false")continue;
+                active=line=="transfer true";
+                SyncTransferIndicator.Visibility=active?Visibility.Visible:Visibility.Hidden;
+                var rotation=active && SystemParameters.ClientAreaAnimation
+                    ? new DoubleAnimation(0,360,TimeSpan.FromSeconds(1.3)){RepeatBehavior=RepeatBehavior.Forever}
+                    : null;
+                SyncTransferRotation.BeginAnimation(RotateTransform.AngleProperty,rotation);
+            }
+        }finally{
+            // قد ينتهي محرك النقل قبل إرسال إشارة التوقف.
+            if(active){
+                SyncTransferRotation.BeginAnimation(RotateTransform.AngleProperty,null);
+                SyncTransferIndicator.Visibility=Visibility.Hidden;
+            }
+        }
+    }
+    async Task<SyncResult> CallWorkspace(Dictionary<string,object> args)
     {
         using var process=new Process{StartInfo=new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory,"payroll-sync.exe")){
-            UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,
+            Arguments="--transfer-events",UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true,
             StandardInputEncoding=new UTF8Encoding(false),StandardOutputEncoding=Encoding.UTF8}};
         process.Start();
         var output=process.StandardOutput.ReadToEndAsync();
-        await process.StandardInput.WriteAsync(JsonSerializer.Serialize(args));
-        process.StandardInput.Close();
+        var events=ReadTransferEvents(process.StandardError);
+        try{
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(args));
+        }finally{
+            process.StandardInput.Close();
+            await events;
+        }
         await process.WaitForExitAsync();
         var reply=JsonSerializer.Deserialize<SyncResult>(await output)??throw new IOException("تعذّر تشغيل المزامنة.");
         if(reply.error!=null)throw new IOException(reply.error);
