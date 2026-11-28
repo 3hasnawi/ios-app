@@ -68,7 +68,7 @@
   </DockPanel>
 </Border>
 <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="65"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-<Border Background="{DynamicResource ControlSolidFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition MinWidth="40"/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+<Border Background="{DynamicResource ControlSolidFillColorDefaultBrush}" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition MinWidth="40"/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="28"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
 <Grid Grid.Column="0">
   <Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
   <Button x:Name="BackButton" Grid.Column="0" Height="40" Padding="0" Click="BackClick" IsEnabled="False"
@@ -78,8 +78,8 @@
 </Grid>
 <TextBlock Foreground="{DynamicResource TextFillColorPrimaryBrush}" x:Name="PageTitle" Grid.Column="1" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" TextAlignment="Center" VerticalAlignment="Center"/>
 <TextBlock Grid.Column="1" Text="البحث الشامل" Visibility="{Binding Visibility, ElementName=SearchLayer}" FontWeight="Bold" FontSize="{DynamicResource UiFont19}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-<Viewbox x:Name="SyncTransferIndicator" Grid.Column="1" Width="15" Height="15" Margin="0,0,0,2"
-         HorizontalAlignment="Center" VerticalAlignment="Bottom" Visibility="Hidden" IsHitTestVisible="False"
+<Viewbox x:Name="SyncTransferIndicator" Grid.Column="3" Width="15" Height="15"
+         HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Hidden" IsHitTestVisible="False"
          RenderTransformOrigin=".5,.5" AutomationProperties.Name="جارٍ نقل بيانات OneDrive">
   <Viewbox.RenderTransform><RotateTransform x:Name="SyncTransferRotation"/></Viewbox.RenderTransform>
   <Canvas Width="24" Height="24" FlowDirection="LeftToRight">
@@ -90,7 +90,7 @@
 </Viewbox>
 <ComboBox Grid.Column="2" x:Name="Period" Tag="WorkingMonth" ItemTemplate="{StaticResource DisplayNumberItem}" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center"
           ToolTip="شهر العمل" AutomationProperties.Name="شهر العمل" SelectionChanged="PeriodChanged"/>
-<Button x:Name="AccountDirectoryButton" Grid.Column="3" Height="40" Margin="6,0,0,0" Click="OpenAccountDirectory" ToolTip="دليل الحسابات المصرفية (IBAN)" AutomationProperties.Name="دليل الحسابات المصرفية" Content="حسابات IBAN"/>
+<Button x:Name="AccountDirectoryButton" Grid.Column="4" Height="40" Margin="6,0,0,0" Click="OpenAccountDirectory" ToolTip="دليل الحسابات المصرفية (IBAN)" AutomationProperties.Name="دليل الحسابات المصرفية" Content="حسابات IBAN"/>
 </Grid></Border>
 <DockPanel Grid.Row="1">
   <Button x:Name="UpdateNotice" DockPanel.Dock="Top" Visibility="Collapsed" Click="OpenUpdate" HorizontalContentAlignment="Center" Margin="8,4" Background="{DynamicResource SystemFillColorSuccessBackgroundBrush}"/>
