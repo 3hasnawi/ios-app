@@ -436,6 +436,7 @@ final class ImportCenter {
         guard !jobs.isEmpty else { cancel(); return }
         let fromTest = autoRun
         isBusy = true
+        await WorkspaceSync.shared.rememberPoint("import")
         let progress = ImportProgress.shared
         progress.begin(jobs.count == 1 ? tr("استيراد ملف", "Importing file") : tr("استيراد \(Num.format(jobs.count)) ملفات", "Importing \(jobs.count) files"))
         let container = SharedModel.container

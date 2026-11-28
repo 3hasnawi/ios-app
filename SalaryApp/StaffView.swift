@@ -59,6 +59,7 @@ final class StaffImportState {
         let container = SharedModel.container
         Task {
             do {
+                await WorkspaceSync.shared.rememberPoint("import")
                 // يُنشأ في الخلفية حتى لا تعمل القراءة والحفظ على خيط الواجهة.
                 let count = try await Task.detached(priority: .userInitiated) {
                     try await StaffImporter(modelContainer: container).importDatabase(at: url, progress: sink)
@@ -85,6 +86,7 @@ final class StaffImportState {
         Task {
             defer { isImporting = false; version += 1 }
             do {
+                await WorkspaceSync.shared.rememberPoint("delete")
                 try await StaffImporter(modelContainer: container).deleteAll()
                 BackupManager.shared.markChanged()
                 await SearchIndex.shared.invalidate()
@@ -179,7 +181,7 @@ struct RootView: View {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 await WorkspaceSync.shared.automatic()
-                do { try await Task.sleep(for: .seconds(90)) } catch { return }
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
             }
         }
         .onChange(of: scenePhase) { _, phase in

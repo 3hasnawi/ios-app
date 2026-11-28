@@ -3,6 +3,7 @@ package workspace
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,19 +12,28 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type mockDrive struct {
-	blobs    map[string][]byte
-	revision int
-	hash     string
-	marker   bool
+	descriptions map[string]string
+	rateLimited  bool
+	requests     int
+	blobs        map[string][]byte
+	created      map[string]time.Time
+	revision     int
+	hash         string
+	marker       bool
 }
 
 func (m *mockDrive) open(token string) *drive {
 	return &drive{token: token, folder: "test-account", root: "items/folder:/", client: &http.Client{Transport: m}}
 }
 func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
+	m.requests++
+	if m.rateLimited {
+		return &http.Response{StatusCode: 429, Header: http.Header{"Retry-After": {"120"}}, Body: io.NopCloser(strings.NewReader(""))}, nil
+	}
 	if r.Header.Get("Authorization") != "Bearer test" {
 		return nil, fmt.Errorf("test access denied")
 	}
@@ -60,12 +70,28 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		m.hash = str(payload, "description")
 		m.revision++
 		data = metadata()
+	case r.Method == "PATCH" && strings.HasPrefix(path, "items/"+indexPrefix):
+		name := strings.TrimPrefix(path, "items/")
+		if r.Header.Get("If-Match") != "idx" {
+			status = 412
+			break
+		}
+		if m.descriptions == nil {
+			m.descriptions = map[string]string{}
+		}
+		var payload item
+		must(json.NewDecoder(r.Body).Decode(&payload))
+		m.descriptions[name] = payload.Description
 	case r.Method == "PUT":
 		if _, ok := m.blobs[name]; ok {
 			status = 409
 		} else {
 			b, _ := io.ReadAll(r.Body)
 			m.blobs[name] = b
+			if m.created == nil {
+				m.created = map[string]time.Time{}
+			}
+			m.created[name] = time.Unix(int64(len(m.blobs)), 0).UTC()
 		}
 	default:
 		b, ok := m.blobs[name]
@@ -74,7 +100,7 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 		} else if strings.HasSuffix(path, ":/content") {
 			data = b
 		} else {
-			data = encode(Object{"size": len(b)})
+			data = encode(Object{"size": len(b), "createdDateTime": m.created[name], "id": name, "eTag": "idx", "description": m.descriptions[name]})
 		}
 	}
 	return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
@@ -331,5 +357,146 @@ func TestRestoredPhoneHandleDoesNotConflictWithPaymentEdit(t *testing.T) {
 	got := resolver.pick([]string{"refund", "batch", "rows", "test"}, makeRow("old", "10"), makeRow("new", "10"), makeRow("old", "12"), false)
 	if len(resolver.conflicts) != 0 || !bytes.Equal(got, makeRow("old", "12")) {
 		t.Fatal("a device-local employee handle masked a payment edit")
+	}
+}
+
+func TestHistoryRestoreSafetyOfflineReviewAndUndo(t *testing.T) {
+	g := &mockDrive{blobs: map[string][]byte{}}
+	a := Request{Dir: t.TempDir(), Token: "test", Stamp: "1", Local: fixture(t, map[string]string{"entity": "10"})}
+	syncTest(t, g, a, "")
+	first := g.hash
+	a.Local = fixture(t, map[string]string{"entity": "20"})
+	a.Stamp = "2"
+	syncTest(t, g, a, "")
+	latest := g.hash
+	b := Request{Dir: t.TempDir(), Token: "test", Stamp: "old-home", Empty: true}
+	syncTest(t, g, b, "")
+	a.Action = "history"
+	history := runWith(a, g.open)
+	if len(history.Points) != 2 || history.Points[0].ID != latest || history.Head != latest {
+		t.Fatal(history)
+	}
+	a.Until = history.Points[1].At
+	if len(runWith(a, g.open).Points) != 1 {
+		t.Fatal("date filter")
+	}
+	a.Until = 0
+	a.Head = latest
+	a.Revision = first
+	a.Action = "preview"
+	if runWith(a, g.open).Preview == nil || g.hash != latest {
+		t.Fatal("preview modified cloud")
+	}
+	restore := func(r Request) Result {
+		r.Action = "restore"
+		p := runWith(r, g.open)
+		r.Action = "publish"
+		r.Transaction = p.Transaction
+		v := runWith(r, g.open)
+		if !v.Apply {
+			t.Fatal("restore not applied")
+		}
+		r.Action = "ack"
+		runWith(r, g.open)
+		return v
+	}
+	expectError := func(r Request) {
+		t.Helper()
+		defer func() {
+			if recover() == nil {
+				t.Fatal("stale restore succeeded")
+			}
+		}()
+		runWith(r, g.open)
+	}
+	stale := a
+	stale.Action = "restore"
+	stale.Stamp = "unsynced"
+	expectError(stale)
+	stale.Stamp = a.Stamp
+	stale.Head = first
+	expectError(stale)
+	restore(a)
+	a.Action = "history"
+	history = runWith(a, g.open)
+	if len(history.Points) != 4 || history.Points[0].Kind != "restore" || history.Points[1].Kind != "beforeRestore" || history.Points[2].ID != latest {
+		t.Fatal(history)
+	}
+	safeguard := history.Points[1].ID
+	d := g.open("test")
+	if d.indexFor(safeguard).SHA != d.indexFor(latest).SHA || d.indexFor(history.Head).SHA != d.indexFor(first).SHA {
+		t.Fatal("wrong restore payload")
+	}
+	// A previously offline device must explicitly review even a new, nonoverlapping entry.
+	b.Empty = false
+	b.Local = fixture(t, map[string]string{"entity": "20", "offline": "30"})
+	b.Stamp = "offline-edit"
+	c := syncTest(t, g, b, "conflict").Conflicts
+	if len(c) != 1 || !strings.Contains(c[0].Key, "offline") {
+		t.Fatal(c)
+	}
+	b.Choices = map[string]decision{c[0].Key: {c[0].Ticket, "remote"}}
+	syncTest(t, g, b, "")
+	a.Head = history.Head
+	a.Revision = safeguard
+	restore(a)
+	if d.indexFor(d.marker(false).Hash).SHA != d.indexFor(latest).SHA {
+		t.Fatal("undo failed")
+	}
+}
+
+func TestBeforeImportAndDeleteNotesFromOfflineDevice(t *testing.T) {
+	g := &mockDrive{blobs: map[string][]byte{}}
+	r := Request{Dir: t.TempDir(), Token: "test", Local: fixture(t, map[string]string{"office": "10"}), Stamp: "1"}
+	syncTest(t, g, r, "")
+	previous := g.hash
+	r.Action = "note"
+	for _, kind := range []string{"import", "delete"} {
+		r.Reason = kind
+		runWith(r, func(string) *drive { panic("note contacted OneDrive") })
+	}
+	r.Stamp = "2"
+	r.Local = fixture(t, map[string]string{"office": "20"})
+	syncTest(t, g, r, "")
+	r.Dir = t.TempDir()
+	r.Action = "history"
+	history := runWith(r, g.open)
+	if len(history.Points) != 2 || history.Points[1].ID != previous || len(history.Points[1].Notes) != 2 {
+		t.Fatal(history)
+	}
+}
+func TestThrottleStopsRequestsUntilServerDeadline(t *testing.T) {
+	g := &mockDrive{rateLimited: true}
+	r := Request{Dir: t.TempDir(), Action: "prepare", Empty: true, Token: "test"}
+	for attempt := 0; attempt < 2; attempt++ {
+		func() {
+			defer func() {
+				p, ok := recover().(retryAfter)
+				if !ok || time.Until(p.until) < 119*time.Second {
+					t.Fatal("bad retry delay")
+				}
+			}()
+			runWith(r, g.open)
+		}()
+	}
+	if g.requests != 1 {
+		t.Fatal("retried during backoff", g.requests)
+	}
+}
+
+func TestFinancialHistoryPreview(t *testing.T) {
+	dir := os.Getenv("PAYROLL_TEST_FIXTURES")
+	if dir == "" {
+		t.Skip("requires the synthetic Windows archive")
+	}
+	g := &mockDrive{blobs: map[string][]byte{}}
+	r := Request{Dir: t.TempDir(), Token: "test", Stamp: "1", Local: filepath.Join(dir, "refunds.zip")}
+	syncTest(t, g, r, "")
+	r.Head = g.hash
+	r.Revision = g.hash
+	r.Action = "preview"
+	p := runWith(r, g.open).Preview
+	if p == nil || p.Staff != 0 || p.Employees != 1 || p.Refunds != 1 || p.Net != "100000.00" || p.Deductions != "2260000.00" {
+		t.Fatal(p)
 	}
 }

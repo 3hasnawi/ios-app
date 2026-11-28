@@ -62,6 +62,7 @@ struct RefundHistoryView: View {
                 Task {
                     defer { deleting = false }
                     do {
+                        await WorkspaceSync.shared.rememberPoint("delete")
                         try await Task.detached { [storage] in try storage.delete(record) }.value
                         BackupManager.shared.markChanged()
                         records.removeAll { $0.id == record.id }

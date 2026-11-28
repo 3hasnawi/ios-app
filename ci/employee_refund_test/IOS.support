@@ -22,4 +22,5 @@ enum PDFWork { static func run<T>(_ body: @escaping () throws -> T) async throws
     let isLocked = false, pendingForegroundCheck = false
 }
 
+@MainActor final class WorkspaceSync { static let shared = WorkspaceSync(); func rememberPoint(_ reason:String) async {} }
 @MainActor final class BackupManager { static let shared = BackupManager(); func markChanged() {} }

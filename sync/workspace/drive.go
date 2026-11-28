@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,12 +34,27 @@ type item struct {
 }
 type head struct {
 	item
-	Hash string
+	Hash, Generation string
 }
 
 func validHash(h string) bool {
 	b, e := hex.DecodeString(h)
 	return e == nil && len(b) == 32 && strings.ToLower(h) == h
+}
+
+type retryAfter struct{ until time.Time }
+
+func (r retryAfter) Error() string {
+	return fmt.Sprintf("طلب OneDrive تخفيف الطلبات. أعد المحاولة بعد %d ثانية.", int(time.Until(r.until).Seconds())+1)
+}
+func retryDeadline(header string, now time.Time) time.Time {
+	if n, e := strconv.ParseInt(header, 10, 32); e == nil && n > 0 {
+		return now.Add(time.Duration(n) * time.Second)
+	}
+	if date, e := http.ParseTime(header); e == nil && date.After(now) {
+		return date
+	}
+	return now.Add(time.Minute)
 }
 func (g *drive) request(method, path string, data []byte, headers map[string]string, limit int64) (int, []byte) {
 	req, e := http.NewRequest(method, graph+path, bytes.NewReader(data))
@@ -52,6 +68,9 @@ func (g *drive) request(method, path string, data []byte, headers map[string]str
 		panic("تعذّر الاتصال بـ OneDrive. ستُعاد المحاولة.")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		panic(retryAfter{retryDeadline(resp.Header.Get("Retry-After"), time.Now())})
+	}
 	b, e := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	must(e)
 	check(int64(len(b)) <= limit, "OneDrive response exceeds size limit")
@@ -93,10 +112,20 @@ func (g *drive) marker(create bool) head {
 	var i item
 	must(decode(b, &i))
 	check(i.ID != "" && i.ETag != "", "Invalid OneDrive revision")
-	check(i.Description == "" || validHash(i.Description), "Unknown OneDrive workspace version")
-	return head{i, i.Description}
+	revision := i.Description
+	generation := ""
+	if strings.HasPrefix(revision, "restore/") {
+		parts := strings.Split(revision, "/")
+		check(len(parts) == 3 && validHash(parts[1]) && validHash(parts[2]), "Invalid restore generation")
+		generation, revision = parts[1], parts[2]
+	}
+	check(revision == "" || validHash(revision), "Unknown OneDrive workspace version")
+	return head{i, revision, generation}
 }
-func (g *drive) claim(h head, id string) {
+func (g *drive) claim(h head, id, generation string) {
+	if generation != "" {
+		id = "restore/" + generation + "/" + id
+	}
 	c, b := g.request("PATCH", "items/"+url.PathEscape(h.ID), encode(Object{"description": id}), map[string]string{"If-Match": h.ETag, "Content-Type": "application/json"}, 1<<20)
 	if c == 412 {
 		panic(errRace)
@@ -134,6 +163,8 @@ func (g *drive) put(prefix string, b []byte) string {
 }
 
 type fileIndex struct {
+	At       int64    `json:"at,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
 	Format   int      `json:"format"`
 	Previous string   `json:"previous"`
 	Size     int64    `json:"size"`
@@ -151,7 +182,7 @@ func (g *drive) upload(path, previous string) string {
 	r := bufio.NewReaderSize(f, 256<<10)
 	var block bytes.Buffer
 	h := sha256.New()
-	idx := fileIndex{Format: 1, Previous: previous}
+	idx := fileIndex{Format: 1, Previous: previous, At: time.Now().UnixMilli()}
 	var rolling uint64
 	flush := func() {
 		if block.Len() > 0 {

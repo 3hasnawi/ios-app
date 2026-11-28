@@ -42,7 +42,7 @@ public partial class MainWindow
         var start=ButtonFor("دفعة جديدة",()=>_=OpenRefundEditor(source,month,null,latestDraft:true),"\uE710");
         var actions=Bar(Labeled("الدفعات المحفوظة",picker,270),start,ButtonFor("تعديل الدفعة",()=>_=OpenRefundEditor(source,month,batch),"\uE70F"),
             ButtonFor("حذف الدفعة",()=>{if(Form("حذف الدفعة المحفوظة",Text(batch.Source+"　·　"+batch.Date)))
-                _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers));},"\uE74D"));
+                _=Working(()=>store.SaveRefund(batch,Path.GetDirectoryName(source.SourcePath),true),"حُذفت الدفعة.",()=>ShowPage(RefundTransfers),"delete");},"\uE74D"));
         CanvasArea.Children.Add(RefundDocumentPanel(batch,raf=>RefundStyle(batch,raf,source),actions,this));
     }
 

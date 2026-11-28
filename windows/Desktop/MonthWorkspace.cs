@@ -43,7 +43,7 @@ public partial class MainWindow
                     if(preview.Deductions.Count>0)counts.Add(preview.Deductions.Count+" استقطاع");
                     if(!Form("مراجعة استيراد "+kind,Text(month+"　·　"+string.Join("　·　",counts)),
                         Text(preview.Employees.Count==0?"تُستبدل استقطاعات الشهر المحدد.":"تُستبدل بيانات النوع الموجود لهذا الشهر، وتُحفظ أحدث فترتين للرواتب.")))return;
-                    await Working(()=>store.ApplyExcel(preview,revision),"حُفظت بيانات "+kind+".",()=>{Reload();ShowPage("الرئيسية");});
+                    await Working(()=>store.ApplyExcel(preview,revision),"حُفظت بيانات "+kind+".",()=>{Reload();ShowPage("الرئيسية");},"import");
                     return;
                 }
             }else if(extension is ".accdb" or ".mdb"){
@@ -55,7 +55,7 @@ public partial class MainWindow
                 review=count+" نموذج كتاب";save=()=>store.ImportReferences(bytes,revision);
             }else throw new InvalidDataException("صيغة الملف غير مدعومة.");
             if(!Form("استبدال "+kind,Text(Path.GetFileName(file)),Text(review,17,true),Text("سيحل محتوى هذا الملف محل "+kind+" المحفوظة.")))return;
-            await Working(save,"حُفظت "+kind+" في النسخة المحلية.",()=>{Reload();ShowPage("الإعدادات");});
+            await Working(save,"حُفظت "+kind+" في النسخة المحلية.",()=>{Reload();ShowPage("الإعدادات");},"import");
         }catch(Exception e){Error(e);}
     }
     void ImportSigned()

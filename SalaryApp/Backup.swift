@@ -1344,6 +1344,7 @@ final class BackupManager {
         Task {
             defer { isWorking = false; SharedModel.health.restoring = false; version += 1; try? FileManager.default.removeItem(at: pending.folder) }
             let progress = ImportProgress.shared
+            if syncCompletion == nil { await WorkspaceSync.shared.rememberPoint("import") }
             progress.begin(tr("استرجاع النسخة", "Restoring backup"))
             let sink = progress.sink(0, 1, tr("استبدال البيانات", "Replacing data"))
             let container = SharedModel.container

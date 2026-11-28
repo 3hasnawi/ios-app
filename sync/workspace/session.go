@@ -14,21 +14,28 @@ import (
 
 type Request struct {
 	Action, Dir, Token, Stamp, Local, Transaction string
+	Reason                                        string
+	Revision, Head, Cursor                        string
+	Until                                         int64
 	Empty                                         bool
 	Choices                                       map[string]decision
 }
 type Result struct {
-	Status      string     `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	Conflicts   []conflict `json:"conflicts,omitempty"`
-	File        string     `json:"file,omitempty"`
-	Transaction string     `json:"transaction,omitempty"`
-	Apply       bool       `json:"apply,omitempty"`
+	Head        string          `json:"head,omitempty"`
+	Cursor      string          `json:"cursor,omitempty"`
+	Points      []historyPoint  `json:"points,omitempty"`
+	Preview     *historyPreview `json:"preview,omitempty"`
+	Status      string          `json:"status"`
+	Error       string          `json:"error,omitempty"`
+	Conflicts   []conflict      `json:"conflicts,omitempty"`
+	File        string          `json:"file,omitempty"`
+	Transaction string          `json:"transaction,omitempty"`
+	Apply       bool            `json:"apply,omitempty"`
 }
-type checkpoint struct{ Folder, Marker, Base, Stamp string }
+type checkpoint struct{ Folder, Marker, Base, Stamp, Generation string }
 type prepared struct {
-	Transaction, ETag, Seen, Target, Stamp string
-	Apply, Publish                         bool
+	Transaction, ETag, Seen, Target, Stamp, Generation, Restore string
+	Apply, Publish                                              bool
 }
 
 func load(path string, v any) bool {
@@ -79,6 +86,9 @@ func run(r Request) Result { return runWith(r, connect) }
 func runWith(r Request, openDrive func(string) *drive) Result {
 	check(filepath.IsAbs(r.Dir), "Missing workspace directory")
 	must(os.MkdirAll(r.Dir, 0700))
+	if r.Action == "note" {
+		return rememberPoint(r)
+	}
 	lock, e := bolt.Open(filepath.Join(r.Dir, "session.lock"), 0600, &bolt.Options{Timeout: time.Second})
 	must(e)
 	defer lock.Close()
@@ -102,6 +112,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		dest := cached(p.Target)
 		copyFile(candidate, dest)
 		previous := s.Base
+		s.Generation = p.Generation
 		s.Base = p.Target
 		s.Stamp = r.Stamp
 		must(atomicFile(stateFile, encode(s)))
@@ -113,6 +124,19 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		return Result{Status: "synced"}
 	}
 	check(r.Token != "", "Sign in required")
+	retryFile := filepath.Join(r.Dir, "retry-after.json")
+	var until time.Time
+	if load(retryFile, &until) && until.After(time.Now()) {
+		panic(retryAfter{until})
+	}
+	defer func() {
+		if failure := recover(); failure != nil {
+			if pause, ok := failure.(retryAfter); ok {
+				must(atomicFile(retryFile, encode(pause.until)))
+			}
+			panic(failure)
+		}
+	}()
 	g := openDrive(r.Token)
 	check(!bound || s.Folder == g.folder, "هذا الجهاز مرتبط بحساب OneDrive آخر. استخدم الحساب المرتبط.")
 	h := g.marker(!bound)
@@ -123,15 +147,49 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 		s.Marker = h.ID
 		must(atomicFile(stateFile, encode(s)))
 	}
+	g.flushNotes(r.Dir)
+	if r.Action == "history" {
+		return g.history(h, r)
+	}
+	if r.Action == "preview" {
+		return g.preview(h, r)
+	}
+	if r.Action == "restore" {
+		check(s.Base == h.Hash && s.Base != "" && s.Stamp == r.Stamp, "زامن بيانات هذا الجهاز أولاً، ثم حدّث سجل المزامنة.")
+		check(h.Hash == r.Head && r.Revision != h.Hash, "تغيّر سجل المزامنة أو تم اختيار النقطة الحالية. حدّث السجل.")
+		point := g.findRevision(h.Hash, r.Revision)
+		id := make([]byte, 16)
+		_, e := rand.Read(id)
+		must(e)
+		transaction := hex.EncodeToString(id)
+		candidate := fileFor(transaction)
+		g.download(point.ID, candidate)
+		p = prepared{Transaction: transaction, ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp, Generation: sum(id), Restore: point.ID, Apply: true, Publish: true}
+		must(atomicFile(pendingFile, encode(p)))
+		return Result{Status: "ready", Transaction: transaction, File: candidate, Apply: true}
+	}
 	if r.Action == "publish" {
 		check(load(pendingFile, &p) && r.Transaction == p.Transaction && r.Stamp == p.Stamp, "Expired sync transaction")
 		candidate := fileFor(p.Transaction)
 		if p.Target == "" || p.Target != h.Hash {
 			check(h.ETag == p.ETag && h.Hash == p.Seen, errRace.Error())
 			if p.Publish {
-				p.Target = g.upload(candidate, p.Seen)
+				if p.Restore != "" {
+					previous := g.indexFor(p.Seen)
+					previous.Previous = p.Seen
+					previous.Kind = "beforeRestore"
+					previous.At = time.Now().UnixMilli()
+					safety := g.put(indexPrefix, encode(previous))
+					selected := g.indexFor(p.Restore)
+					selected.Previous = safety
+					selected.Kind = "restore"
+					selected.At = time.Now().UnixMilli()
+					p.Target = g.put(indexPrefix, encode(selected))
+				} else {
+					p.Target = g.upload(candidate, p.Seen)
+				}
 				must(atomicFile(pendingFile, encode(p)))
-				g.claim(h, p.Target)
+				g.claim(h, p.Target, p.Generation)
 			} else {
 				p.Target = h.Hash
 				must(atomicFile(pendingFile, encode(p)))
@@ -181,7 +239,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 	id := make([]byte, 16)
 	_, e = rand.Read(id)
 	must(e)
-	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp}
+	p = prepared{Transaction: hex.EncodeToString(id), ETag: h.ETag, Seen: h.Hash, Stamp: r.Stamp, Generation: h.Generation}
 	candidate := fileFor(p.Transaction)
 	switch {
 	case r.Empty || (s.Base != "" && s.Stamp == r.Stamp):
@@ -203,7 +261,7 @@ func runWith(r Request, openDrive func(string) *drive) Result {
 			archiveIndex(db, src)
 			idx = append(idx, db)
 		}
-		conflicts, _, e := merge(idx[0], idx[1], idx[2], idx[3], r.Choices)
+		conflicts, _, e := merge(idx[0], idx[1], idx[2], idx[3], r.Choices, s.Generation != h.Generation)
 		must(e)
 		if len(conflicts) > 0 {
 			return Result{Status: "conflict", Conflicts: conflicts}

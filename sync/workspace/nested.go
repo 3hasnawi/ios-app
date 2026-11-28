@@ -165,6 +165,9 @@ func (r *reconciliation) pick(path []string, b, l, c []byte, structured bool) []
 			}
 		}
 	}
+	return r.resolve(path, b, l, c)
+}
+func (r *reconciliation) resolve(path []string, b, l, c []byte) []byte {
 	k := recKey(path...)
 	ticket := sum(encode([]string{k, sum(b), sum(l), sum(c)}))
 	choice := r.choices[k]

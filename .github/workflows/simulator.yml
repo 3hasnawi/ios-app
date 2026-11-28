@@ -68,6 +68,11 @@ jobs:
       - name: Check permanent OneDrive merge, stale writes and interrupted sessions with fictional records
         working-directory: sync/workspace
         run: go test ./...
+      - name: Preview historical financial totals from the synthetic Windows archive
+        working-directory: sync/workspace
+        run: |
+          python3 ../../windows/Checks/fixture.py "$RUNNER_TEMP/point-fixtures"
+          PAYROLL_TEST_FIXTURES="$RUNNER_TEMP/point-fixtures" go test -run TestFinancialHistoryPreview
       - name: Check automatic OneDrive trial sync with fictional devices
         run: node --test ci/onedrive_trial_test.cjs ci/saved_refund_sync_test.cjs
 

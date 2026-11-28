@@ -40,10 +40,10 @@ public partial class MainWindow
             try{File.WriteAllBytes(temp,bytes);record?.Invoke();File.Move(temp,dialog.FileName,true);}finally{if(File.Exists(temp))File.Delete(temp);}
         },"حُفظ الملف.",finish);
     }
-    async Task Working(Action action,string message,Action? finish=null)
+    async Task Working(Action action,string message,Action? finish=null,string? syncNote=null)
     {
         if(busy)return;busy=true;IsEnabled=false;Status.Text="جارٍ تنفيذ العملية…";
-        try{await Task.Run(action);busy=false;finish?.Invoke();Status.Text=message;}
+        try{if(syncNote!=null)await MarkWorkspacePoint(syncNote);await Task.Run(action);busy=false;finish?.Invoke();Status.Text=message;}
         catch(Exception ex){Error(ex);}finally{busy=false;IsEnabled=true;}
     }
     bool Form(string title,params FrameworkElement[] fields)

@@ -533,6 +533,7 @@ private struct SavedMonthsView: View {
                 Task {
                     defer { ImportCenter.shared.isBusy = false }
                     do {
+                        await WorkspaceSync.shared.rememberPoint("delete")
                         try await importer.delete(month: name)
                         BackupManager.shared.markChanged()
                         BankStatementCache.shared.invalidate()

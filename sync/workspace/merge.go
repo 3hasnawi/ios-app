@@ -116,7 +116,7 @@ func describe(b []byte) string {
 }
 
 // Three sorted cursors keep payroll and PDF payloads off the heap between records.
-func merge(base, local, remote, out *index, decisions map[string]decision) (conflicts []conflict, changed bool, err error) {
+func merge(base, local, remote, out *index, decisions map[string]decision, afterRestore bool) (conflicts []conflict, changed bool, err error) {
 	indexes := []*index{base, local, remote}
 	var curs [3]*bolt.Cursor
 	var current, values [3][]byte
@@ -157,7 +157,12 @@ func merge(base, local, remote, out *index, decisions map[string]decision) (conf
 					structured = false
 				}
 			}
-			selected := resolver.pick(section, v[0], v[1], v[2], structured)
+			var selected []byte
+			if afterRestore && !bytes.Equal(v[0], v[1]) && !bytes.Equal(v[1], v[2]) && section[0] != "pdf" && section[0] != "schema" {
+				selected = resolver.resolve(section, v[0], v[1], v[2])
+			} else {
+				selected = resolver.pick(section, v[0], v[1], v[2], structured)
+			}
 			conflicts = append(conflicts, resolver.conflicts...)
 			if !bytes.Equal(selected, v[1]) {
 				changed = true

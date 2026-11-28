@@ -317,7 +317,7 @@ public partial class MainWindow : Window
         if(store.Active!=null && MessageBox.Show(this,
             "سيستبدل استيراد «"+Path.GetFileName(d.FileName)+"» بيانات هذه الحاسبة، بما فيها الدفعات المحفوظة. هل تريد المتابعة؟",
             "استيراد نسخة",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
-        busy=true;IsEnabled=false;try{var progress=new Progress<string>(s=>Status.Text=s);await Task.Run(()=>store.Import(d.FileName,progress));Reload();busy=false;ShowPage("الرئيسية");Status.Text="تم التحقق من النسخة واستيراد بياناتها.";}catch(Exception e){Error(e);}finally{busy=false;IsEnabled=true;}
+        busy=true;IsEnabled=false;try{await MarkWorkspacePoint("import");var progress=new Progress<string>(s=>Status.Text=s);await Task.Run(()=>store.Import(d.FileName,progress));Reload();busy=false;ShowPage("الرئيسية");Status.Text="تم التحقق من النسخة واستيراد بياناتها.";}catch(Exception e){Error(e);}finally{busy=false;IsEnabled=true;}
     }
     void Books()
     {
