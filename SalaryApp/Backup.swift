@@ -551,7 +551,6 @@ final class BackupManager {
     private static let testFileKey = "backupTestFile"
 
     var isWorking = false
-    private(set) var preparingAutomaticSync = false
     var message: String?
     /// تحذير محلي يعتمد على فهرس سابق، ولا يغيّر البيانات أو النسخة.
     var integrityWarning = false
@@ -707,7 +706,7 @@ final class BackupManager {
                 dict[key] = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
             }
         }
-        let progress = preparingAutomaticSync ? nil : ImportProgress.shared
+        let progress = forWorkspace ? nil : ImportProgress.shared
         progress?.begin(title)
         defer { progress?.end() }
         let sink = progress?.sink(0, 1, tr("تجهيز النسخة", "Preparing backup"))
@@ -1258,7 +1257,7 @@ final class BackupManager {
         }
     }
 
-    private var syncCompletion: CheckedContinuation<Void, Error>?
+    private var syncCompletion: CheckedContinuation<String, Error>?
 
     var workSyncStamp: String {
         let defaults = UserDefaults.standard
@@ -1273,16 +1272,21 @@ final class BackupManager {
         return String(changed?.timeIntervalSince1970 ?? 0) + ":" + Data(hash.finalize()).base64EncodedString()
     }
 
+    var hasWorkspaceChangesBeforeFirstSync: Bool {
+        UserDefaults.standard.object(forKey: Self.changedKey) != nil ||
+            UserDefaults.standard.object(forKey: "oneDriveRestoredRevision") != nil ||
+            UserDefaults.standard.data(forKey: Self.safetyManifestKey) != nil
+    }
+
     var workSyncAvailable: Bool {
         !isWorking && pendingRestore == nil && !SharedModel.health.restoring && !SharedModel.health.restartRequired &&
         !ImportCenter.shared.isBusy && !StaffImportState.shared.isImporting && !AppLock.shared.isLocked
     }
 
-    func workSyncExport(automatic: Bool) async throws -> URL {
+    func workSyncExport() async throws -> URL {
         guard workSyncAvailable else { throw BackupError.sourceChanged }
-        preparingAutomaticSync = automatic
         isWorking = true
-        defer { isWorking = false; preparingAutomaticSync = false }
+        defer { isWorking = false }
         return try await makeBackup(title: tr("تجهيز المزامنة", "Preparing sync"), forWorkspace: true).0
     }
 
@@ -1297,10 +1301,10 @@ final class BackupManager {
         }
     }
 
-    func workSyncApply(_ folder: URL, expected: String) async throws {
+    func workSyncApply(_ folder: URL, expected: String) async throws -> String {
         guard workSyncAvailable, workSyncStamp == expected else { throw BackupError.sourceChanged }
         let manifest = try JSONDecoder().decode(BackupFormat.Manifest.self, from: Data(contentsOf: folder.appendingPathComponent("manifest.json")))
-        try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             syncCompletion = continuation
             pendingRestore = (folder, manifest)
             confirmRestore()
@@ -1381,7 +1385,7 @@ final class BackupManager {
                 UserDefaults.standard.set(UUID().uuidString, forKey:"oneDriveRestoredRevision")
                 if let continuation = syncCompletion {
                     syncCompletion = nil
-                    continuation.resume()
+                    continuation.resume(returning: workSyncStamp)
                     return
                 }
                 message = tr("تم الاسترجاع: \(pending.manifest.months.count) أشهر، \(Num.format(pending.manifest.staff)) في الملاك.",

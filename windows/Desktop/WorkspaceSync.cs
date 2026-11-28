@@ -7,7 +7,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Threading;
 using System.Globalization;
 using Microsoft.Identity.Client;
 
@@ -29,9 +28,6 @@ public partial class MainWindow
     HistoryPreview? historyPreview;
     long? historyUntil;
     bool showingHistory;
-    static readonly int[] SyncIntervals=[1,5,15,30,60,120];
-    int syncInterval=15;
-    DateTimeOffset? lastSyncAttempt;
     async Task MarkWorkspacePoint(string reason){
         if(File.Exists(AccountPath))await CallWorkspace(new(){{"dir",SyncDir},{"action","note"},{"reason",reason}});
     }
@@ -42,41 +38,25 @@ public partial class MainWindow
     Window? syncDialog;
     StackPanel? syncPanel;
     bool syncing;
-    string syncStatus="المزامنة متوقفة";
+    string syncStatus="المزامنة يدوية";
+    TextBlock? dialogStatus;
+    ProgressBar? dialogProgress;
+    bool manualTransfer;
     string SyncDir=>Path.Combine(store.Root,"OneDriveWorkspace");
-    string EnabledPath=>Path.Combine(SyncDir,"enabled");
     string AccountPath=>Path.Combine(SyncDir,"account");
-    bool SyncEnabled=>File.Exists(EnabledPath);
-    void StartWorkspaceSync()
+
+    sealed record LocalCheckpoint(string? Stamp);
+    bool HasPendingUpload()
     {
-        var intervalFile=Path.Combine(SyncDir,"interval");
-        if(File.Exists(intervalFile) && int.TryParse(File.ReadAllText(intervalFile),out var saved) && SyncIntervals.Contains(saved))syncInterval=saved;
-        var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(10)};
-        async Task Automatic(){
-            if((lastSyncAttempt==null || DateTimeOffset.UtcNow-lastSyncAttempt.Value>=TimeSpan.FromMinutes(syncInterval)) && !initializing && IsActive && !busy && syncDialog==null && syncConflicts.Length==0 && SyncEnabled)await WorkspaceRun();
-        }
-        // Watch the committed archive pointer and the portable preference journal.
-        // SQLite search-index writes and OneDrive session files do not trigger uploads.
-        Directory.CreateDirectory(store.Root);
-        var saves=new FileSystemWatcher(store.Root){IncludeSubdirectories=true,
-            NotifyFilter=NotifyFilters.FileName|NotifyFilters.LastWrite};
-        saves.Filters.Add("current");
-        saves.Filters.Add("portable-settings.json");
-        var afterSave=new DispatcherTimer{Interval=TimeSpan.FromSeconds(2)};
-        afterSave.Tick+=async (_,_)=>{afterSave.Stop();await Automatic();};
-        void Saved(object sender,FileSystemEventArgs args){
-            if(Dispatcher.HasShutdownStarted)return;
-            Dispatcher.BeginInvoke(()=>{afterSave.Stop();afterSave.Start();});
-        }
-        saves.Changed+=Saved;saves.Created+=Saved;saves.Renamed+=Saved;
-        saves.EnableRaisingEvents=true;
-        Closed+=(_,_)=>{afterSave.Stop();saves.Dispose();};
-        timer.Tick+=async (_,_)=>await Automatic();
-        Activated+=async (_,_)=>await Automatic();
-        ContentRendered+=async (_,_)=>await Automatic();
-        Closed+=(_,_)=>timer.Stop();
-        timer.Start();
+        if(store.Active==null)return false;
+        try {
+            var state=JsonSerializer.Deserialize<LocalCheckpoint>(File.ReadAllBytes(Path.Combine(SyncDir,"checkpoint.json")));
+            return state?.Stamp!=store.WorkspaceStamp;
+        } catch(IOException){return true;}
+          catch(JsonException){return true;}
+          catch(UnauthorizedAccessException){return true;}
     }
+
     IPublicClientApplication MicrosoftAccount()
     {
         if(account!=null)return account;
@@ -101,44 +81,39 @@ public partial class MainWindow
     {
         showingHistory=false;
         syncPanel=new StackPanel{Margin=new Thickness(16)};
+        var layout=new DockPanel();
+        var header=new StackPanel{Margin=new Thickness(16,12,16,0)};
+        dialogStatus=Text(syncStatus,17,true);
+        dialogProgress=new ProgressBar{Height=5,Margin=new Thickness(0,6,0,0)};
+        header.Children.Add(dialogStatus);
+        header.Children.Add(dialogProgress);
+        DockPanel.SetDock(header,Dock.Top);
+        layout.Children.Add(header);
+        layout.Children.Add(new ScrollViewer{Content=syncPanel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
         syncDialog=new Window{Owner=this,Title="مزامنة OneDrive",FlowDirection=FlowDirection.RightToLeft,
-            WindowStartupLocation=WindowStartupLocation.CenterOwner,Width=570,Height=480,
-            Content=new ScrollViewer{Content=syncPanel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};
+            WindowStartupLocation=WindowStartupLocation.CenterOwner,Width=570,Height=480,Content=layout};
         syncDialog.PreviewKeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape)syncDialog.Close();};
-        DrawWorkspaceSync();syncDialog.ShowDialog();syncDialog=null;syncPanel=null;
+        ShowSyncProgress(SyncOperationProgress.IsIndeterminate?null:SyncOperationProgress.Value);
+        DrawWorkspaceSync();syncDialog.ShowDialog();syncDialog=null;syncPanel=null;dialogProgress=null;dialogStatus=null;
     }
     void DrawWorkspaceSync()
     {
         if(syncPanel==null)return;
+        dialogStatus!.Text=DisplayNumerals.Format(syncStatus);
         syncPanel.Children.Clear();
         if(showingHistory){DrawWorkspaceHistory();syncPanel.IsEnabled=!syncing;return;}
         bool linked=File.Exists(AccountPath);
-        syncPanel.Children.Add(Text(syncStatus,17,true));
-        var last=Path.Combine(SyncDir,"last");
-        if(File.Exists(last))syncPanel.Children.Add(Text("آخر مزامنة　"+File.GetLastWriteTime(last).ToString("g"),14));
-        syncPanel.Children.Add(ButtonFor(linked?"إعادة ربط الحساب":"تسجيل الدخول إلى Microsoft",()=>_=WorkspaceRun(login:true),"\uE77B"));
         if(linked){
-            syncPanel.Children.Add(ButtonFor(SyncEnabled?"إيقاف المزامنة التلقائية":"تفعيل المزامنة التلقائية",()=>{
-                if(SyncEnabled){File.Delete(EnabledPath);syncStatus="المزامنة متوقفة";}
-                else{File.WriteAllText(EnabledPath,"1");_=WorkspaceRun();}
-                DrawWorkspaceSync();
-            },"\uE895"));
-            if(SyncEnabled){
-                var intervals=Choices(SyncIntervals.Select(m=>m+" دقيقة"));
-                intervals.SelectedIndex=Array.IndexOf(SyncIntervals,syncInterval);
-                intervals.SelectionChanged+=(_,_)=>{
-                    if(intervals.SelectedIndex<0)return;
-                    syncInterval=SyncIntervals[intervals.SelectedIndex];
-                    File.WriteAllText(Path.Combine(SyncDir,"interval"),syncInterval.ToString());
-                };
-                syncPanel.Children.Add(Labeled("فحص التغييرات كل",intervals,200));
-            }
             syncPanel.Children.Add(ButtonFor("مزامنة الآن",()=>_=WorkspaceRun(),"\uE895"));
+            if(!syncing && HasPendingUpload())syncPanel.Children.Add(Text("تعديلات محلية بانتظار الرفع",14,true));
+            var last=Path.Combine(SyncDir,"last");
+            if(File.Exists(last))syncPanel.Children.Add(Text("آخر مزامنة ناجحة　"+File.GetLastWriteTime(last).ToString("g"),14));
             syncPanel.Children.Add(ButtonFor("سجل المزامنة والاستعادة",()=>{
                 showingHistory=true;historyUntil=null;_=WorkspaceRun(action:"history");
             },"\uE81C"));
             syncPanel.Children.Add(ButtonFor("تسجيل الخروج",()=>_=WorkspaceRun(logout:true),"\uE8AC"));
         }
+        syncPanel.Children.Add(ButtonFor(linked?"إعادة ربط الحساب":"تسجيل الدخول إلى Microsoft",()=>_=WorkspaceRun(login:true),"\uE77B"));
         foreach(var row in syncConflicts){
             var key=JsonSerializer.Deserialize<string[]>(row.key)??[];
             syncPanel.Children.Add(Text(string.Join(" · ",key.Skip(1)),16,true));
@@ -170,7 +145,6 @@ public partial class MainWindow
             _=WorkspaceRun(action:"history");
         },"\uE721"));
         panel.Children.Add(filter);
-        panel.Children.Add(Text(syncStatus,15,true));
         if(historySelected is {} point && historyPreview is {} preview){
             panel.Children.Add(Text("معاينة　"+point.DateLabel,17,true));
             panel.Children.Add(Text($"عدد الملاك　{preview.staff:N0}　 ·　 قيود الرواتب　{preview.employees:N0}　 ·　 دفعات الإعادة　{preview.refunds:N0}",15));
@@ -190,10 +164,18 @@ public partial class MainWindow
     void SetSyncStatus(string message)
     {
         syncStatus=message;
-        if(syncPanel!=null && !showingHistory && syncPanel.Children.Count>0 && syncPanel.Children[0] is TextBlock label)
-            label.Text=DisplayNumerals.Format(message);
-        else if(syncDialog==null)
-            Status.Text=DisplayNumerals.Format(message);
+        if(dialogStatus!=null)dialogStatus.Text=DisplayNumerals.Format(message);
+        if(manualTransfer || syncDialog==null)Status.Text=DisplayNumerals.Format(message);
+    }
+    void ShowSyncProgress(double? fraction=null)
+    {
+        foreach(var bar in new[]{SyncOperationProgress,dialogProgress}){
+            if(bar==null)continue;
+            bar.Visibility=manualTransfer?Visibility.Visible:Visibility.Collapsed;
+            bar.IsIndeterminate=manualTransfer && !fraction.HasValue;
+            bar.Maximum=1;
+            bar.Value=Math.Clamp(fraction??0,0,1);
+        }
     }
     async Task ReadTransferEvents(StreamReader events)
     {
@@ -204,11 +186,13 @@ public partial class MainWindow
                     long.TryParse(done,NumberStyles.None,CultureInfo.InvariantCulture,out var received) &&
                     long.TryParse(total,NumberStyles.None,CultureInfo.InvariantCulture,out var size)){
                     string label=phase=="1"?"رفع التعديلات":"استلام وتجميع النسخة";
+                    ShowSyncProgress(size>0?(double)received/size:null);
                     SetSyncStatus($"{label} · {received/1048576d:N1} من {size/1048576d:N1} ميغابايت");
                     continue;
                 }
                 if(line!="transfer true" && line!="transfer false")continue;
                 active=line=="transfer true";
+                ShowSyncProgress();
                 if(!active)SetSyncStatus("جارٍ إكمال المزامنة…");
                 SyncTransferIndicator.Visibility=active?Visibility.Visible:Visibility.Hidden;
                 var rotation=active && SystemParameters.ClientAreaAnimation
@@ -246,24 +230,24 @@ public partial class MainWindow
     async Task WorkspaceRun(bool login=false,bool logout=false,string action="prepare",HistoryPoint? point=null,bool more=false)
     {
         if(syncing || busy || ((App)Application.Current).DeviceLock.SyncLocked || (!login&&!logout&&!File.Exists(AccountPath)))return;
-        if(action=="prepare"&&!logout)lastSyncAttempt=DateTimeOffset.UtcNow;
+        manualTransfer=!login && !logout && (action=="prepare" || action=="restore");
+        ShowSyncProgress();
         syncing=true;string? exported=null;
         try {
-            syncStatus="جارٍ الاتصال بـ OneDrive…";DrawWorkspaceSync();
+            SetSyncStatus("جارٍ الاتصال بـ OneDrive…");DrawWorkspaceSync();
             var app=MicrosoftAccount();
             var current=File.Exists(AccountPath)?await app.GetAccountAsync(File.ReadAllText(AccountPath)):null;
             if(logout){
                 if(current!=null)await app.RemoveAsync(current);
-                File.Delete(EnabledPath);File.Delete(AccountPath);File.Delete(Path.Combine(SyncDir,"session.dpapi"));
+                File.Delete(AccountPath);File.Delete(Path.Combine(SyncDir,"session.dpapi"));
                 syncChoices.Clear();syncConflicts=[];historyPoints.Clear();historyPreview=null;historySelected=null;historyHead=null;historyCursor=null;syncStatus="تم تسجيل الخروج";return;
             }
             string[] scopes=["https://graph.microsoft.com/Files.ReadWrite.AppFolder"];
             var auth=login?await app.AcquireTokenInteractive(scopes).WithUseEmbeddedWebView(false).WithPrompt(Prompt.SelectAccount).ExecuteAsync():
                            await app.AcquireTokenSilent(scopes,current).ExecuteAsync();
-            if(login){File.WriteAllText(AccountPath,auth.Account.HomeAccountId.Identifier);File.WriteAllText(EnabledPath,"1");}
+            if(login){File.WriteAllText(AccountPath,auth.Account.HomeAccountId.Identifier);syncStatus="الحساب مرتبط";return;}
             var stamp=store.WorkspaceStamp;
             var args=new Dictionary<string,object>{{"action",action},{"dir",SyncDir},{"token",auth.AccessToken},{"stamp",stamp},{"choices",syncChoices},{"empty",store.Active==null}};
-            args["resumeDeferred"]=syncDialog==null;
             if(historyHead!=null)args["head"]=historyHead;
             if(point!=null)args["revision"]=point.id;
             if(action=="history"){
@@ -281,38 +265,47 @@ public partial class MainWindow
                 historyPreview=reply.preview;historySelected=point;syncStatus="معاينة نقطة المزامنة";return;
             }
             if(reply.status=="export"){
+                SetSyncStatus("تجهيز التعديلات المحلية…");
                 exported=Path.Combine(SyncDir,"export-"+Guid.NewGuid().ToString("N")+".zip");
                 stamp=await Task.Run(()=>store.ExportWorkspace(exported));
                 args["local"]=exported;args["stamp"]=stamp;reply=await CallWorkspace(args);
             }
-            if(reply.status=="conflict"){syncConflicts=reply.conflicts??[];syncStatus="راجع القيود المتعارضة في إعدادات OneDrive.";return;}
+            if(reply.status=="conflict"){syncConflicts=reply.conflicts??[];syncStatus="اختر القيمة المطلوبة لكل قيد مختلف، ثم اضغط مزامنة الآن.";return;}
             if(reply.status=="ready"){syncConflicts=[];DrawWorkspaceSync();}
             if(reply.status=="waiting"){syncStatus="بانتظار بيانات للمزامنة";return;}
             if(reply.status=="ready" && reply.file is {} file){
                 if(reply.apply && syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات")){
-                    syncStatus="توجد تعديلات ستصل عند العودة إلى الرئيسية.";return;
+                    syncStatus="توجد تعديلات جاهزة. افتح إعدادات OneDrive واضغط مزامنة الآن.";return;
                 }
                 SetSyncStatus("جارٍ التحقق من النسخة…");
                 using var verified = await Task.Run(()=>store.PrepareWorkspace(file,reply.apply));
-                void Check(){if(store.WorkspaceStamp!=stamp || busy || ((App)Application.Current).DeviceLock.SyncLocked)throw new IOException("تغيّرت البيانات أو أُغلق التطبيق. ستُعاد المحاولة.");}
+                void Check(){if(store.WorkspaceStamp!=stamp || busy || ((App)Application.Current).DeviceLock.SyncLocked)throw new IOException("تغيّرت البيانات أو أُغلق التطبيق. اضغط مزامنة الآن مجدداً.");}
                 Check();args["action"]="publish";args["transaction"]=reply.transaction!;reply=await CallWorkspace(args);
                 Check();if(reply.status!="committed")throw new IOException("تعذّر تأكيد المزامنة.");
                 if(reply.apply){
-                    if(syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات"))throw new IOException("ستكتمل المزامنة عند العودة إلى الرئيسية.");
+                    if(syncDialog==null && (!IsActive || page!="الرئيسية"&&page!="الإعدادات"))throw new IOException("افتح إعدادات OneDrive واضغط مزامنة الآن مجدداً.");
+                    SetSyncStatus("جارٍ تطبيق التعديلات المستلمة…");
                     busy=true;IsEnabled=false;
                     try{stamp=await Task.Run(()=>store.ApplyWorkspace(file,stamp,appearance.Theme,verified));Reload();ShowPage(page);}
                     finally{busy=false;IsEnabled=true;}
                 }
+                SetSyncStatus("جارٍ تأكيد اكتمال المزامنة…");
                 args["action"]="ack";args["stamp"]=stamp;reply=await CallWorkspace(args);
             }
             if(reply.status!="synced")throw new IOException("تعذّر إكمال المزامنة.");
-            File.WriteAllText(Path.Combine(SyncDir,"last"),"1");syncConflicts=[];syncChoices.Clear();syncStatus="البيانات متزامنة";
+            File.WriteAllText(Path.Combine(SyncDir,"last"),"1");syncConflicts=[];syncChoices.Clear();syncStatus="اكتملت آخر مزامنة";
             if(action=="restore"){
                 historyPoints.Clear();historyCursor=null;historySelected=null;historyPreview=null;
                 syncStatus="تمت الاستعادة وحُفظت نقطة للرجوع إليها.";
             }
         }catch(MsalUiRequiredException){syncStatus="تحتاج Microsoft إلى تسجيل الدخول مجدداً.";}
         catch(Exception ex){syncStatus=ex is MsalException?"تعذّر تسجيل الدخول إلى Microsoft.":ex.Message;}
-        finally{if(exported!=null)File.Delete(exported);syncing=false;DrawWorkspaceSync();if(syncDialog==null)Status.Text=syncStatus;}
+        finally{
+            SetSyncStatus(syncStatus);
+            manualTransfer=false;ShowSyncProgress();syncing=false;
+            try{if(exported!=null)File.Delete(exported);}
+            catch(IOException ex){Debug.WriteLine(ex);}
+            DrawWorkspaceSync();
+        }
     }
 }

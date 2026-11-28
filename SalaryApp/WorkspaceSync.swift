@@ -45,12 +45,13 @@ private struct SyncReply: Decodable {
 final class WorkspaceSync {
     static let shared = WorkspaceSync()
     private let account = OneDriveAccount()
-    private var afterSave: Task<Void, Never>?
     private let defaults = UserDefaults.standard
-    var enabled = UserDefaults.standard.bool(forKey: "oneDriveSyncEnabled")
+    private(set) var pendingUpload = false
     var linked = false
-    var status = tr("المزامنة متوقفة", "Sync is off")
+    var status = tr("المزامنة يدوية", "Manual sync")
     private(set) var transferring = false
+    private(set) var showingProgress = false
+    private(set) var transferFraction: Double?
     var busy = false
     var points: [WorkspacePoint] = []
     var historyHead = ""
@@ -62,74 +63,73 @@ final class WorkspaceSync {
     var last = UserDefaults.standard.object(forKey: "oneDriveLastSync") as? Date
     init() {
         linked = (try? account.storedToken()) != nil
-        if linked { status = enabled ? tr("بانتظار المزامنة", "Waiting to sync") : tr("المزامنة متوقفة", "Sync is off") }
     }
-    func enable(_ value: Bool) { enabled = value; defaults.set(value,forKey:"oneDriveSyncEnabled") }
     func signIn() async {
         guard !busy else { return }
         busy = true
-        do { try await account.login(); linked = true; enable(true); busy = false; await synchronize() }
-        catch { busy = false; show(error) }
+        defer { busy = false }
+        do {
+            try await account.login()
+            linked = true
+            refreshPendingUpload()
+            status = tr("الحساب مرتبط", "Account connected")
+        } catch { show(error) }
     }
     func signOut() {
         guard !busy else { return }
-        do { try account.logout(); linked = false; points = []; preview = nil; selected = nil; historyHead = ""; cursor = nil; enable(false); conflicts = []; choices = [:]; status = tr("تم تسجيل الخروج", "Signed out") }
+        do { try account.logout(); linked = false; points = []; preview = nil; selected = nil; historyHead = ""; cursor = nil; pendingUpload = false; conflicts = []; choices = [:]; status = tr("تم تسجيل الخروج", "Signed out") }
         catch { show(error) }
     }
     private func show(_ error: Error) { status = (error as? OneDriveAuthorizationReplyError)?.message ?? error.localizedDescription }
     func choose(_ conflict: SyncConflict, _ side: String) { choices[conflict.key] = ["ticket":conflict.ticket,"side":side] }
-    static let intervals = [1,5,15,30,60,120]
-    var interval = {
-        let saved = UserDefaults.standard.integer(forKey:"oneDriveIntervalMinutes")
-        return WorkspaceSync.intervals.contains(saved) ? saved : 15
-    }()
-    private var lastAttempt: Date?
-    func setInterval(_ minutes: Int) {
-        guard Self.intervals.contains(minutes) else { return }
-        interval = minutes
-        defaults.set(minutes,forKey:"oneDriveIntervalMinutes")
+    private var workspaceDirectory: URL {
+        URL.applicationSupportDirectory.appendingPathComponent("OneDriveWorkspace", isDirectory: true)
     }
+
+    // نقرأ الإقرار المحلي نفسه الذي يستخدمه محرك الدمج، بما فيه إقرارات الإصدارات السابقة.
+    func refreshPendingUpload() {
+        guard linked else { pendingUpload = false; return }
+        struct Checkpoint: Decodable { let Stamp: String }
+        let file = workspaceDirectory.appendingPathComponent("checkpoint.json")
+        if let data = try? Data(contentsOf: file), let checkpoint = try? JSONDecoder().decode(Checkpoint.self, from: data),
+           !checkpoint.Stamp.isEmpty {
+            pendingUpload = checkpoint.Stamp != BackupManager.shared.workSyncStamp
+        } else {
+            pendingUpload = BackupManager.shared.hasWorkspaceChangesBeforeFirstSync
+        }
+    }
+
     func rememberPoint(_ reason: String) async {
         guard linked else { return }
-        let dir = URL.applicationSupportDirectory.appendingPathComponent("OneDriveWorkspace",isDirectory:true)
+        let dir = workspaceDirectory
         do { _ = try await call(["action":"note","reason":reason,"dir":dir.path]) }
         catch { show(error) }
     }
     func localDataSaved() {
-        guard enabled else { return }
-        afterSave?.cancel()
-        afterSave = Task {
-            do { try await Task.sleep(for:.seconds(2)) } catch { return }
-            await automatic()
-        }
+        if linked { pendingUpload = true }
     }
 
-    func automatic() async {
-        guard enabled, conflicts.isEmpty, UIApplication.shared.applicationState == .active,
-              lastAttempt.map({ Date().timeIntervalSince($0) >= Double(interval * 60) }) ?? true else { return }
-        await synchronize(automatic:true)
+    private var mayInstall: Bool {
+        UIApplication.shared.applicationState == .active && !AppLock.shared.isLocked
     }
-    private func mayInstall(automatic: Bool) -> Bool {
-        guard UIApplication.shared.applicationState == .active, !AppLock.shared.isLocked else { return false }
-        guard automatic else { return true }
-        let router = AppRouter.shared
-        guard (router.tab == .payroll || router.tab == .settings), !router.showReports,
-              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
-              let root = scene.keyWindow?.rootViewController, root.presentedViewController == nil else { return false }
-        func editing(_ controller: UIViewController) -> Bool {
-            if controller.viewIfLoaded?.window == nil { return false }
-            if let nav = controller as? UINavigationController, nav.viewControllers.count > 1 { return true }
-            return controller.presentedViewController != nil || controller.children.contains(where:editing)
-        }
-        return !editing(root)
-    }
-    func synchronize(automatic: Bool = false, action: String = "prepare", point: WorkspacePoint? = nil,
+
+    func synchronize(action: String = "prepare", point: WorkspacePoint? = nil,
                      more: Bool = false, until: Date? = nil) async {
         let store = BackupManager.shared
-        guard (enabled || (!automatic && linked)), !busy, store.workSyncAvailable else { return }
-        if action == "prepare" { lastAttempt = Date() }
+        guard linked, !busy else { return }
+        guard store.workSyncAvailable else {
+            status = tr("انتظر انتهاء العملية الحالية ثم اضغط مزامنة الآن", "Wait for the current operation to finish, then tap Sync now")
+            return
+        }
         busy = true
-        defer { busy = false }
+        transferFraction = nil
+        showingProgress = action == "prepare" || action == "restore"
+        defer {
+            showingProgress = false
+            transferFraction = nil
+            busy = false
+            refreshPendingUpload()
+        }
         var exported: URL?, validated: URL?
         defer {
             if let exported { BackupFormat.removeExport(exported) }
@@ -140,13 +140,12 @@ final class WorkspaceSync {
             let token = try await account.access()
             linked = true
             let stamp = store.workSyncStamp
-            var dir = URL.applicationSupportDirectory.appendingPathComponent("OneDriveWorkspace",isDirectory:true)
+            var dir = workspaceDirectory
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories:true, attributes:[.protectionKey:FileProtectionType.completeUntilFirstUserAuthentication])
             var policy = URLResourceValues()
             policy.isExcludedFromBackup = true
             try dir.setResourceValues(policy)
             var args: [String:Any] = ["action":action,"dir":dir.path,"token":token,"stamp":stamp,"choices":choices]
-            args["resumeDeferred"] = automatic
             args["head"] = historyHead
             args["revision"] = point?.id
             if action == "history" {
@@ -167,7 +166,7 @@ final class WorkspaceSync {
             }
             if reply.status == "export" {
                 status = tr("تجهيز المزامنة", "Preparing sync")
-                do { exported = try await store.workSyncExport(automatic: automatic); args["local"] = exported?.path }
+                do { exported = try await store.workSyncExport(); args["local"] = exported?.path }
                 catch BackupError.emptyData { args["empty"] = true }
                 guard store.workSyncStamp == stamp else { throw BackupError.sourceChanged }
                 reply = try await call(args)
@@ -175,14 +174,14 @@ final class WorkspaceSync {
             if reply.status == "conflict" {
                 conflicts = reply.conflicts ?? []
                 choices = choices.filter { entry in !conflicts.contains { $0.key == entry.key && $0.ticket != entry.value["ticket"] } }
-                status = tr("راجع القيود المختلفة", "Review conflicting records")
+                status = tr("اختر القيمة المطلوبة لكل قيد مختلف ثم اضغط مزامنة الآن", "Choose a value for each conflicting record, then tap Sync now")
                 return
             }
             if reply.status == "waiting" { status = tr("بانتظار بيانات للمزامنة", "Waiting for data"); return }
             if reply.status == "ready", let path = reply.file, let transaction = reply.transaction {
                 conflicts = []
-                if reply.apply == true && !mayInstall(automatic:automatic) {
-                    status = tr("توجد تعديلات ستصل عند العودة إلى الرئيسية", "Updates will be applied when you return home")
+                if reply.apply == true && !mayInstall {
+                    status = tr("توجد تعديلات جاهزة. اضغط مزامنة الآن بعد فتح التطبيق", "Updates are ready. Tap Sync now after reopening the app")
                     return
                 }
                 status = tr("جارٍ التحقق من النسخة…", "Verifying the archive…")
@@ -192,17 +191,20 @@ final class WorkspaceSync {
                 args["action"] = "publish"
                 reply = try await call(args)
                 guard reply.status == "committed", store.workSyncStamp == stamp else { throw BackupError.sourceChanged }
+                var installedStamp = stamp
                 if reply.apply == true, let validated {
-                    guard mayInstall(automatic:automatic) else { throw BackupError.sourceChanged }
-                    try await store.workSyncApply(validated,expected:stamp)
+                    guard mayInstall else { throw BackupError.sourceChanged }
+                    status = tr("جارٍ تطبيق التعديلات المستلمة…", "Applying received changes…")
+                    installedStamp = try await store.workSyncApply(validated,expected:stamp)
                 }
+                status = tr("جارٍ تأكيد اكتمال المزامنة…", "Confirming sync…")
                 args["action"] = "ack"
-                args["stamp"] = reply.apply == true ? store.workSyncStamp : stamp
+                args["stamp"] = installedStamp
                 reply = try await call(args)
             }
             guard reply.status == "synced" else { throw AccountError("تعذّر إكمال المزامنة.") }
             conflicts = []; choices = [:]; last = Date(); defaults.set(last,forKey:"oneDriveLastSync")
-            status = tr("البيانات متزامنة", "Data is up to date")
+            status = tr("اكتملت آخر مزامنة", "Last sync completed")
             if action == "restore" {
                 preview = nil; selected = nil; points = []; cursor = nil
                 status = tr("تمت الاستعادة وحُفظت نقطة للرجوع إليها", "Restored and saved a recovery point")
@@ -217,6 +219,7 @@ final class WorkspaceSync {
                     DispatchQueue.main.async {
                         let sync = WorkspaceSync.shared
                         sync.transferring = stage != 0
+                        sync.transferFraction = stage >= 2 && total > 0 ? min(1, max(0, Double(done) / Double(total))) : nil
                         if stage >= 2 {
                             let label = stage == 2 ? tr("رفع التعديلات", "Uploading changes") : tr("استلام وتجميع النسخة", "Receiving and assembling the archive")
                             let completed = ByteCountFormatter.string(fromByteCount: done, countStyle: .file)
@@ -238,24 +241,36 @@ final class WorkspaceSync {
     }
 }
 
+struct WorkspaceSyncProgress: View {
+    let sync: WorkspaceSync
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(sync.status).font(.subheadline.weight(.semibold))
+            ProgressView(value: sync.transferFraction)
+                .progressViewStyle(.linear)
+                .accessibilityLabel(tr("تقدم المزامنة", "Sync progress"))
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
+    }
+}
+
 struct WorkspaceSyncSettings: View {
     @State private var sync = WorkspaceSync.shared
     var body: some View {
         Form {
             Section("OneDrive") {
                 if sync.linked {
-                    Toggle(tr("المزامنة التلقائية", "Automatic sync"),isOn:Binding(get:{sync.enabled},set:{ value in
-                        sync.enable(value)
-                        if value { Task { await sync.synchronize() } }
-                    }))
-                    if sync.enabled {
-                        Picker(tr("فحص التغييرات كل", "Check for changes every"),selection:Binding(get:{sync.interval},set:{sync.setInterval($0)})) {
-                            ForEach(WorkspaceSync.intervals,id:\.self) { m in
-                                Text(Num.format(m) + " " + tr("دقيقة", "min")).tag(m)
-                            }
-                        }
-                    }
                     Button(tr("مزامنة الآن", "Sync now")) { Task { await sync.synchronize() } }
+                    if !sync.busy && sync.pendingUpload {
+                        Label(tr("تعديلات محلية بانتظار الرفع", "Local changes pending upload"), systemImage: "arrow.up.circle")
+                    }
+                    if let last = sync.last {
+                        LabeledContent(tr("آخر مزامنة ناجحة", "Last successful sync")) { Text(last.formatted()) }
+                    }
                     NavigationLink(tr("سجل المزامنة والاستعادة", "Sync history and restore")) { WorkspaceHistoryView() }
                     Button(tr("تسجيل الخروج", "Sign out"),role:.destructive) { sync.signOut() }
                 }
@@ -263,7 +278,6 @@ struct WorkspaceSyncSettings: View {
             }.disabled(sync.busy)
             Section(tr("حالة المزامنة", "Sync status")) {
                 HStack { if sync.busy { ProgressView() }; Text(sync.status) }
-                if let last = sync.last { LabeledContent(tr("آخر مزامنة", "Last sync")) { Text(last.formatted()) } }
             }
             if !sync.conflicts.isEmpty {
                 Section(tr("القيود المتعارضة", "Conflicting records")) {
@@ -282,11 +296,10 @@ struct WorkspaceSyncSettings: View {
                             }
                         }
                     }
-                    Button(tr("حفظ الاختيارات والمزامنة", "Apply selections and sync")) { Task { await sync.synchronize() } }
-                        .disabled(sync.busy || !sync.conflicts.allSatisfy { sync.choices[$0.key]?["ticket"] == $0.ticket })
                 }
             }
         }
+        .onAppear { sync.refreshPendingUpload() }
         .navigationTitle(tr("مزامنة OneDrive", "OneDrive sync"))
     }
 }

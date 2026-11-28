@@ -27,7 +27,7 @@ import (
 type mockDrive struct {
 	mu                                     sync.Mutex
 	payloadGets, payloadPuts, batches      int
-	failGetAt                              int
+	failGetAt, failPutAt                   int
 	omitSize, rejectRepair, truncateRepair bool
 	repairAttempts                         int
 	descriptions                           map[string]string
@@ -138,6 +138,9 @@ func (m *mockDrive) RoundTrip(r *http.Request) (*http.Response, error) {
 	case r.Method == "PUT":
 		if strings.HasPrefix(name, chunkPrefix) {
 			m.payloadPuts++
+			if m.failPutAt == m.payloadPuts {
+				return nil, fmt.Errorf("simulated upload interruption")
+			}
 		}
 		if _, ok := m.blobs[name]; ok {
 			status = 409
@@ -262,6 +265,98 @@ func TestThreeDevicesOfflineMergeAndAccountConflict(t *testing.T) {
 		t.Fatal("restart reuploaded")
 	}
 }
+
+// Exercise the native clients' button protocol, including an app restart after
+// publishing and before the local checkpoint is acknowledged.
+func TestManualSyncInterruptedUploadAndAcknowledgement(t *testing.T) {
+	cloud := &mockDrive{blobs: map[string][]byte{}}
+	sender := Request{Dir: t.TempDir(), Token: "test", Stamp: "original", Local: fixture(t, map[string]string{"office": "10"})}
+	receiver := Request{Dir: t.TempDir(), Token: "test", Stamp: "receiver", Empty: true}
+	syncTest(t, cloud, sender, "")
+	syncTest(t, cloud, receiver, "")
+	receiver.Empty = false
+	oldHead := cloud.hash
+	stateFile := filepath.Join(sender.Dir, "checkpoint.json")
+	checkpointBefore, err := os.ReadFile(stateFile)
+	must(err)
+	sender.Stamp = "two-new-records"
+	sender.Local = ""
+	sender.Action = "prepare"
+	if got := runWith(sender, cloud.open); got.Status != "export" {
+		t.Fatal("missed local edits", got)
+	}
+	sender.Local = fixture(t, map[string]string{"office": "10", "person A": "30", "person B": "20"})
+	prepared := runWith(sender, cloud.open)
+	if prepared.Status != "ready" || prepared.Apply {
+		t.Fatal("expected upload only", prepared)
+	}
+	sender.Action = "publish"
+	sender.Transaction = prepared.Transaction
+	cloud.failPutAt = cloud.payloadPuts + 1
+	func() {
+		defer func() {
+			if failure := recover(); failure == nil || !strings.Contains(fmt.Sprint(failure), "تعذّر الاتصال بـ OneDrive") {
+				t.Fatal("unexpected upload outcome", failure)
+			}
+		}()
+		runWith(sender, cloud.open)
+	}()
+	checkpointAfter, err := os.ReadFile(stateFile)
+	must(err)
+	if !bytes.Equal(checkpointBefore, checkpointAfter) || cloud.hash != oldHead {
+		t.Fatal("failed upload advanced local or cloud history")
+	}
+	if got := syncTest(t, cloud, receiver, ""); got.Status != "synced" {
+		t.Fatal("receiver observed incomplete work", got)
+	}
+	sender.Action = "prepare"
+	retry := runWith(sender, cloud.open)
+	sender.Action = "publish"
+	sender.Transaction = retry.Transaction
+	if got := runWith(sender, cloud.open); got.Status != "committed" {
+		t.Fatal(got)
+	}
+	published, puts := cloud.hash, cloud.payloadPuts
+	if published == oldHead {
+		t.Fatal("new cloud head missing")
+	}
+	sender.Action = "prepare"
+	sender.Local = ""
+	resume := runWith(sender, cloud.open)
+	if resume.Status != "ready" || resume.Transaction != retry.Transaction {
+		t.Fatal("lost unacknowledged transaction", resume)
+	}
+	sender.Action = "publish"
+	if got := runWith(sender, cloud.open); got.Status != "committed" {
+		t.Fatal(got)
+	}
+	sender.Action = "ack"
+	if got := runWith(sender, cloud.open); got.Status != "synced" {
+		t.Fatal(got)
+	}
+	received := syncTest(t, cloud, receiver, "")
+	if !received.Apply {
+		t.Fatal("unchanged receiver should install cloud revision")
+	}
+	z, err := zip.OpenReader(received.File)
+	must(err)
+	defer z.Close()
+	records := map[string]string{}
+	readLines(&z.Reader, "accounts.jsonl", func(v Object) { records[str(v, "entity")] = str(v, "iban") })
+	if len(records) != 3 || records["office"] != "10" || records["person A"] != "30" || records["person B"] != "20" {
+		t.Fatal(records)
+	}
+	gets := cloud.payloadGets
+	for _, device := range []Request{sender, receiver} {
+		if got := syncTest(t, cloud, device, ""); got.Status != "synced" {
+			t.Fatal("repeated button press", got)
+		}
+	}
+	if cloud.hash != published || cloud.payloadGets != gets || cloud.payloadPuts != puts {
+		t.Fatal("repeated sync or recovery transferred unnecessary data")
+	}
+}
+
 func TestLegacyAppearanceConflictAndAccountingMerge(t *testing.T) {
 	g := &mockDrive{blobs: map[string][]byte{}}
 	drive := g.open("test")
@@ -929,5 +1024,73 @@ func TestCancelledContractAndNewActiveBatchSameMonth(t *testing.T) {
 				t.Fatal("حالة حذف الدفعة خاطئة", deletedOnLeft)
 			}
 		}
+	}
+}
+
+func TestSimultaneousManualSyncRetainsBothEdits(t *testing.T) {
+	cloud := &mockDrive{blobs: map[string][]byte{}}
+	source := Request{Dir: t.TempDir(), Local: fixture(t, map[string]string{"shared": "1"}), Stamp: "seed"}
+	syncTest(t, cloud, source, "")
+	devices := make([]Request, 2)
+	keys := []string{"office", "phone"}
+	for i, key := range keys {
+		r := Request{Dir: t.TempDir(), Stamp: "initial", Empty: true, Token: "test"}
+		syncTest(t, cloud, r, "")
+		r.Stamp = "local edit"
+		r.Empty = false
+		r.Local = fixture(t, map[string]string{"shared": "1", key: "2"})
+		r.Action = "prepare"
+		ready := runWith(r, cloud.open)
+		if ready.Status != "ready" {
+			t.Fatal(ready)
+		}
+		r.Transaction = ready.Transaction
+		r.Action = "publish"
+		devices[i] = r
+	}
+	type outcome struct {
+		index   int
+		failure any
+		reply   Result
+	}
+	start := make(chan struct{})
+	results := make(chan outcome, 2)
+	for i, r := range devices {
+		go func() {
+			var reply Result
+			defer func() { results <- outcome{i, recover(), reply} }()
+			<-start
+			reply = runWith(r, cloud.open)
+		}()
+	}
+	close(start)
+	winner, loser := -1, -1
+	for range devices {
+		result := <-results
+		if result.reply.Status == "committed" && result.failure == nil {
+			winner = result.index
+		} else if fmt.Sprint(result.failure) == errRace.Error() {
+			loser = result.index
+		} else {
+			t.Fatal(result)
+		}
+	}
+	if winner < 0 || loser < 0 {
+		t.Fatal("expected one successful conditional publish and one retry")
+	}
+	ack := devices[winner]
+	ack.Action = "ack"
+	if got := runWith(ack, cloud.open); got.Status != "synced" {
+		t.Fatal(got)
+	}
+	syncTest(t, cloud, devices[loser], "")
+	snapshot := syncTest(t, cloud, source, "")
+	z, err := zip.OpenReader(snapshot.File)
+	must(err)
+	defer z.Close()
+	values := map[string]string{}
+	readLines(&z.Reader, "accounts.jsonl", func(row Object) { values[str(row, "entity")] = str(row, "iban") })
+	if len(values) != 3 || values["shared"] != "1" || values["office"] != "2" || values["phone"] != "2" {
+		t.Fatal("lost an edit after concurrent publish", values)
 	}
 }

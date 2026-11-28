@@ -102,5 +102,5 @@
   <Grid x:Name="SearchLayer" Visibility="Collapsed" Margin="{Binding Margin, ElementName=BodyViewport}"/>
   </Grid>
 </DockPanel>
-<Border Grid.Row="2" Background="{DynamicResource ControlSolidFillColorDefaultBrush}" Padding="25,6"><local:DisplayText x:Name="Status" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="{DynamicResource UiFont12}" TextWrapping="Wrap"/></Border></Grid>
+<Border Grid.Row="2" Background="{DynamicResource ControlSolidFillColorDefaultBrush}" Padding="25,6"><StackPanel><ProgressBar x:Name="SyncOperationProgress" Visibility="Collapsed" Height="4" Margin="0,0,0,4" AutomationProperties.Name="تقدم المزامنة"/><local:DisplayText x:Name="Status" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="{DynamicResource UiFont12}" TextWrapping="Wrap"/></StackPanel></Border></Grid>
 </Grid></Window>

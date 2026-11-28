@@ -176,14 +176,6 @@ struct RootView: View {
             await BackupManager.shared.autoBackupIfNeeded()
             await AutoPilot.shared.run()
         }
-        // نسخة فاتت (أُغلق التطبيق أثناء النسخ أو تعذّر الوصول للمجلد): تُكمل عند فتح التطبيق أو الخروج منه.
-        .task(id: scenePhase) {
-            guard scenePhase == .active else { return }
-            while !Task.isCancelled {
-                await WorkspaceSync.shared.automatic()
-                do { try await Task.sleep(for: .seconds(10)) } catch { return }
-            }
-        }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .inactive else { return }
             Task {
@@ -262,7 +254,7 @@ struct RootView: View {
         } message: {
             Text(backup.message ?? "")
         }
-        .disabled((backup.isWorking && !backup.preparingAutomaticSync) || importCenter.isBusy || staffImport.isImporting)
+        .disabled(backup.isWorking || importCenter.isBusy || staffImport.isImporting)
     }
 }
 

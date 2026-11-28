@@ -78,7 +78,7 @@ func (g *drive) requestPrefix(method, path string, data []byte, headers map[stri
 	}
 	resp, e := g.client.Do(req)
 	if e != nil {
-		panic("تعذّر الاتصال بـ OneDrive. ستُعاد المحاولة.")
+		panic("تعذّر الاتصال بـ OneDrive. تحقق من الاتصال ثم اضغط مزامنة الآن.")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 429 || resp.StatusCode == 503 {

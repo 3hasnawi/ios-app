@@ -90,7 +90,6 @@ public partial class MainWindow : Window
             button.Click+=(_,_)=>ShowPage(section.Name);
             Nav.Children.Add(button);
         }
-        StartWorkspaceSync();
         SizeChanged+=(_,_)=>AdaptNavigation();
         debounce.Tick+=async (_,_)=>{debounce.Stop();await LoadGrid();};
         PreviewKeyDown+=(_,e)=>{

@@ -23,6 +23,12 @@ struct SalaryApp: App {
         WindowGroup {
             AppLockGate {
                 DatabaseLaunchView()
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if WorkspaceSync.shared.showingProgress, scenePhase == .active,
+                           !AppLock.shared.isLocked, !AppLock.shared.pendingForegroundCheck {
+                            WorkspaceSyncProgress(sync: WorkspaceSync.shared)
+                        }
+                    }
                     .background {
                         if WorkspaceSync.shared.transferring, scenePhase == .active,
                            !AppLock.shared.isLocked, !AppLock.shared.pendingForegroundCheck {
